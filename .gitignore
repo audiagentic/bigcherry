@@ -1,0 +1,81 @@
+# -- Build artifacts --
+build/
+cmake-build-*/
+out/
+CMakeCache.txt
+CMakeFiles/
+
+# -- Compiled objects / binaries --
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+*.pyd
+*.dylib
+*.exp
+
+# -- C++ intermediate / generated files --
+*.gch
+*.pch
+*.ipp
+*.ii
+*.spt
+*.tlog/
+
+# -- ROCm / HIP compilation artifacts --
+hipBC/
+*.hsaco
+*.fatbin
+*.cubin
+
+# -- Python --
+__pycache__/
+*.py[cod]
+*.class
+*.egg-info/
+.eggs/
+dist/
+wheels/
+.venv/
+env/
+venv/
+
+# -- SQLite databases (tuning runs) --
+*.sqlite
+*.sqlite3
+*.db
+
+# -- Tuning / replay data --
+tuning/
+dispatch-db/
+
+# -- AI tool artifacts --
+.audiagentic/
+.clinerules/
+
+# -- Build output artifacts --
+artifacts/
+
+# -- IDE --
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -- OS --
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+Icon?
+
+# -- Logs --
+*.log
+
+# -- Cloned sub-repos (vendored dependencies) --
+# These are cloned repos that live under vendor/. Ignore their contents.
+vendor/llama.cpp/

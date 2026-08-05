@@ -1,0 +1,273 @@
+// bigcherry: signature collection, record mode (HI10).
+
+#include "hip-autotune-record.h"
+
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE_RECORD)
+
+#include "hip-autotune-build-hash.h"
+#include "hip-autotune-signature.h"
+
+#include <algorithm>
+#include <mutex>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace {
+
+// One observed signature. Standards 15.1: a second sighting increments `calls`
+// and merges its site rather than creating a second record, so the file has one
+// row per distinct operation regardless of how often it ran.
+struct Observation {
+    ggml_hip_digest signature_digest;
+    ggml_hip_digest hardware_digest;
+    std::string     canonical_json;
+    std::string     hardware_json;
+    std::string     native_stable_name;
+    uint64_t        calls;
+    uint64_t        est_bytes;
+    // Device *ordinals* seen, which is diagnostic only -- never part of the
+    // key. Two GPUs of the same class share a hardware digest (standards 10.2)
+    // and this records that it actually happened rather than assuming it.
+    std::vector<int> devices;
+};
+
+struct DigestHash {
+    size_t operator()(const ggml_hip_digest & d) const {
+        size_t v = 0;
+        for (size_t i = 0; i < sizeof(size_t) && i < GGML_HIP_DIGEST_BYTES; ++i) {
+            v |= (size_t) d.bytes[i] << (8 * i);
+        }
+        return v;
+    }
+};
+
+struct DigestEqual {
+    bool operator()(const ggml_hip_digest & a, const ggml_hip_digest & b) const {
+        return ggml_hip_digest_equal(a, b);
+    }
+};
+
+// Keyed on the *dispatch-relevant pair*: the same operation on two different
+// GPU classes is two observations, because it may well have two different
+// winners. On identical hardware it is one.
+struct PairKey {
+    ggml_hip_digest signature;
+    ggml_hip_digest hardware;
+};
+
+struct PairHash {
+    size_t operator()(const PairKey & k) const {
+        return DigestHash()(k.signature) ^ (DigestHash()(k.hardware) << 1);
+    }
+};
+
+struct PairEqual {
+    bool operator()(const PairKey & a, const PairKey & b) const {
+        return ggml_hip_digest_equal(a.signature, b.signature)
+            && ggml_hip_digest_equal(a.hardware, b.hardware);
+    }
+};
+
+std::unordered_map<PairKey, Observation, PairHash, PairEqual> g_observations;
+std::mutex g_mutex;
+
+int64_t estimate_bytes(const ggml_hip_dispatch_signature_v1 & sig) {
+    // Rough traffic estimate, used only to rank hot signatures for tuning
+    // priority (standards 7.4). Exactness would buy nothing -- the ranking is
+    // by order of magnitude, not by percent.
+    const int64_t k = sig.ne0[0];
+    return sig.ne0[1] * k + sig.ne1[1] * k + sig.ned[0] * sig.ned[1];
+}
+
+} // namespace
+
+void ggml_hip_record_observation(
+        ggml_backend_cuda_context & ctx,
+        const ggml_hip_dispatch_signature_v1 & sig,
+        const ggml_hip_hardware_key_v1 & hw,
+        const ggml_hip_digest & signature_digest,
+        const ggml_hip_digest & hardware_digest,
+        const ggml_hip_native_selection & native) {
+    PairKey key;
+    key.signature = signature_digest;
+    key.hardware  = hardware_digest;
+
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    auto found = g_observations.find(key);
+    if (found != g_observations.end()) {
+        ++found->second.calls;
+        // The device list is a set, kept small and unsorted because it has at
+        // most a handful of entries.
+        if (std::find(found->second.devices.begin(), found->second.devices.end(),
+                      ctx.device) == found->second.devices.end()) {
+            found->second.devices.push_back(ctx.device);
+        }
+        return;
+    }
+
+    Observation observation;
+    observation.signature_digest   = signature_digest;
+    observation.hardware_digest    = hardware_digest;
+    observation.canonical_json     = ggml_hip_signature_json(sig, true);
+    observation.hardware_json      = ggml_hip_hardware_json(hw);
+    observation.native_stable_name = native.candidate != nullptr
+        ? native.candidate->stable_name : "";
+    observation.calls              = 1;
+    observation.est_bytes          = (uint64_t) estimate_bytes(sig);
+    observation.devices.push_back(ctx.device);
+
+    g_observations.emplace(key, observation);
+}
+
+void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
+                           const ggml_hip_digest & hardware_digest,
+                           int device) {
+    PairKey key;
+    key.signature = signature_digest;
+    key.hardware  = hardware_digest;
+
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto found = g_observations.find(key);
+    if (found == g_observations.end()) {
+        // A warm-path hit for something never recorded cannot normally happen,
+        // but silently inventing an observation with no canonical JSON would
+        // corrupt the inventory, so do nothing rather than guess.
+        return;
+    }
+    ++found->second.calls;
+    if (std::find(found->second.devices.begin(), found->second.devices.end(),
+                  device) == found->second.devices.end()) {
+        found->second.devices.push_back(device);
+    }
+}
+
+void ggml_hip_record_flush() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_observations.empty()) {
+        return;
+    }
+
+    const char * path = getenv("GGML_HIP_DISPATCH_DB");
+    if (path == nullptr || path[0] == '\0') {
+        GGML_LOG_WARN("bigcherry: record mode observed %zu signature(s) but "
+                      "GGML_HIP_DISPATCH_DB is unset, so nothing was written\n",
+                      g_observations.size());
+        return;
+    }
+
+    // Rewritten, not appended: a checkpoint mid-run must leave a complete
+    // document, and the in-memory map is already the merged truth.
+    FILE * file = fopen(path, "w");
+    if (file == nullptr) {
+        GGML_LOG_WARN("bigcherry: cannot write record file '%s'\n", path);
+        return;
+    }
+
+    // One header line, then one line per observation. JSON Lines rather than a
+    // single document so a truncated file is still readable up to its last
+    // complete line -- which is the whole point of surviving a killed run.
+    fprintf(file,
+            "{\"kind\":\"header\",\"artifact_version\":%d,"
+            "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
+            "\"variant_set\":\"%s\",\"signature_schema\":%d,"
+            "\"hardware_schema\":%d,\"signatures\":%zu}\n",
+            GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
+            GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
+            GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
+            GGML_HIP_AUTOTUNE_VARIANT_SET_STR,
+            GGML_HIP_SIGNATURE_SCHEMA_VERSION,
+            GGML_HIP_HARDWARE_SCHEMA_VERSION,
+            g_observations.size());
+
+    for (const auto & entry : g_observations) {
+        const Observation & o = entry.second;
+        fprintf(file,
+                "{\"kind\":\"observation\",\"signature\":\"%s\","
+                "\"hardware\":\"%s\",\"native\":\"%s\",\"calls\":%llu,"
+                "\"est_bytes\":%llu,\"devices\":[",
+                ggml_hip_digest_hex(o.signature_digest).c_str(),
+                ggml_hip_digest_hex(o.hardware_digest).c_str(),
+                o.native_stable_name.c_str(),
+                (unsigned long long) o.calls,
+                (unsigned long long) o.est_bytes);
+        for (size_t i = 0; i < o.devices.size(); ++i) {
+            fprintf(file, "%s%d", i ? "," : "", o.devices[i]);
+        }
+        fprintf(file, "],\"canonical\":%s,\"hardware_key\":%s}\n",
+                o.canonical_json.c_str(), o.hardware_json.c_str());
+    }
+    fclose(file);
+
+    GGML_LOG_INFO("bigcherry: recorded %zu signature(s) to '%s'\n",
+                  g_observations.size(), path);
+}
+
+void ggml_hip_record_write_report(const char * path) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_observations.empty() || path == nullptr) {
+        return;
+    }
+
+    // Ranked by call count, because that is the order the tuner will work in
+    // (standards 7.4) and the first thing worth eyeballing is whether the top
+    // of that list is what you expected the workload to be doing.
+    std::vector<const Observation *> ranked;
+    ranked.reserve(g_observations.size());
+    for (const auto & entry : g_observations) {
+        ranked.push_back(&entry.second);
+    }
+    std::sort(ranked.begin(), ranked.end(),
+              [](const Observation * a, const Observation * b) {
+                  if (a->calls != b->calls) return a->calls > b->calls;
+                  return a->est_bytes > b->est_bytes;
+              });
+
+    FILE * file = fopen(path, "w");
+    if (file == nullptr) {
+        return;
+    }
+
+    uint64_t total_calls = 0;
+    for (const Observation * o : ranked) {
+        total_calls += o->calls;
+    }
+
+    fprintf(file, "bigcherry record coverage\n");
+    fprintf(file, "  source revision : %s\n", GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR);
+    fprintf(file, "  manifest hash   : %s\n", GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR);
+    fprintf(file, "  signatures      : %zu\n", ranked.size());
+    fprintf(file, "  total calls     : %llu\n\n",
+            (unsigned long long) total_calls);
+    fprintf(file, "  %-34s %10s %7s  %s\n",
+            "signature", "calls", "share", "native candidate");
+
+    uint64_t cumulative = 0;
+    for (size_t i = 0; i < ranked.size(); ++i) {
+        const Observation * o = ranked[i];
+        cumulative += o->calls;
+        fprintf(file, "  %-34s %10llu %6.2f%%  %s\n",
+                ggml_hip_digest_hex(o->signature_digest).c_str(),
+                (unsigned long long) o->calls,
+                100.0 * (double) o->calls / (double) total_calls,
+                o->native_stable_name.c_str());
+        // Where the workload's mass actually sits. If ten signatures cover 90%
+        // of calls, tuning the other several hundred is not where the time
+        // should go.
+        if (i + 1 == 10 || i + 1 == 50) {
+            fprintf(file, "  -- top %zu cover %.1f%% of calls --\n",
+                    i + 1, 100.0 * (double) cumulative / (double) total_calls);
+        }
+    }
+    fclose(file);
+}
+
+size_t ggml_hip_record_signature_count() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_observations.size();
+}
+
+#endif // GGML_USE_HIP && GGML_HIP_AUTOTUNE_RECORD
