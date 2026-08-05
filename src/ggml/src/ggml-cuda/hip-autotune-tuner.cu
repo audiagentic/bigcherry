@@ -52,6 +52,14 @@ struct Result {
     // offline check of which signatures two runs share. See HI23.
     ggml_hip_digest signature_digest = {};
     ggml_hip_digest hardware_digest  = {};
+
+    // HI24 noise canary. `canary_pct` is the divergence between two
+    // measurements of the *same kernel*; anything above zero is pure
+    // measurement error. -1 means the check could not be run for this
+    // signature (no same-kernel pair reached final measurement).
+    double canary_pct    = -1.0;
+    int    canary_retries = 0;
+    std::string canary_pair;   // which two entries were compared
 };
 
 struct DigestHash {
@@ -218,6 +226,9 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_MAX_WORKSPACE")) {
             c.max_workspace_bytes = (size_t) atoll(v);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_NOISE_PCT")) {
+            c.noise_canary_pct = atof(v);
         }
         return c;
     }();
@@ -477,6 +488,86 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
+    // --- noise canary (HI24) --------------------------------------------
+    //
+    // Native and a forced MMQ candidate at J == J_best are the *same kernel*:
+    // `mul_mat_q_switch_J` overwrites J_best with forced_J and calls one
+    // launcher, so forcing J_best is native rather than merely equivalent to
+    // it (RV21). Any divergence between their medians is therefore measurement
+    // error, and needs no external reference to calibrate.
+    //
+    // This is worth more than a repeatability check on native alone, because
+    // it also holds the forced path to producing native's timing -- the
+    // invariant the whole dispatch design rests on. If an upstream change ever
+    // breaks it, this fires constantly, which is the correct alarm.
+    //
+    // Costs nothing when the pair is already present: both were going to be
+    // measured anyway.
+    {
+        Measurement * twin = nullptr;
+        if (native.candidate != nullptr &&
+                native.candidate->family == GGML_HIP_FAMILY_MMQ) {
+            const bool fb = (sig.ne0[1] % 128) != 0;
+            const int j_best = ggml_cuda_mmq_native_j_best(
+                (ggml_type) sig.src0_type, fb, sig.ned[1]);
+            if (j_best != 0) {
+                for (Measurement * m : finalists) {
+                    if (m == native_m || !m->measured || m->candidate == nullptr) {
+                        continue;
+                    }
+                    if (m->candidate->family == GGML_HIP_FAMILY_MMQ &&
+                            m->candidate->variant.primary == j_best &&
+                            (m->candidate->variant.fallback != 0) == fb) {
+                        twin = m;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (int attempt = 0; twin != nullptr && native_m->median_us > 0.0; ++attempt) {
+            const double diff = std::fabs(native_m->median_us - twin->median_us);
+            result.canary_pct  = 100.0 * diff / native_m->median_us;
+            result.canary_pair = twin->candidate->stable_name;
+            if (result.canary_pct <= config.noise_canary_pct ||
+                    attempt >= config.noise_canary_retries) {
+                if (result.canary_pct > config.noise_canary_pct) {
+                    // Report rather than discard. The winner may still be
+                    // right; what is established is that this signature's
+                    // margins are not resolvable at these sample counts.
+                    GGML_LOG_WARN("bigcherry: noise canary %.1f%% on this "
+                                  "signature (native vs %s, identical "
+                                  "kernels); timings are unreliable at these "
+                                  "sample counts\n",
+                                  result.canary_pct, result.canary_pair.c_str());
+                }
+                break;
+            }
+            // Re-measure the pair interleaved, exactly as the final stage does.
+            ++result.canary_retries;
+            Measurement * pair[2] = { native_m, twin };
+            std::vector<std::vector<double>> g(2), h(2);
+            for (int round = 0; round < config.final_samples; ++round) {
+                for (int i = 0; i < 2; ++i) {
+                    std::vector<double> g1, h1;
+                    if (time_candidate(pair[i]->candidate, lc, 0, 1,
+                                       config.launches_per_sample, g1, h1)) {
+                        g[i].insert(g[i].end(), g1.begin(), g1.end());
+                        h[i].insert(h[i].end(), h1.begin(), h1.end());
+                    }
+                }
+            }
+            for (int i = 0; i < 2; ++i) {
+                if (g[i].empty()) continue;
+                pair[i]->median_us      = median_of(g[i]);
+                pair[i]->mad_us         = mad_of(g[i], pair[i]->median_us);
+                pair[i]->p95_us         = percentile_of(g[i], 0.95);
+                pair[i]->host_median_us = median_of(h[i]);
+                pair[i]->samples        = (int) g[i].size();
+            }
+        }
+    }
+
     // --- winner selection (standards 7.3) -------------------------------
     const double native_median = native_m->median_us;
     Measurement * best_m = native_m;
@@ -575,13 +666,16 @@ void ggml_hip_tuner_flush() {
                 "{\"kind\":\"result\",\"dispatch\":\"%s\","
                 "\"signature\":\"%s\",\"hardware\":\"%s\",\"winner\":\"%s\","
                 "\"improvement_pct\":%.3f,\"generated\":%d,\"eligible\":%d,"
-                "\"measured\":%d,\"reason\":\"%s\",\"candidates\":[",
+                "\"measured\":%d,\"reason\":\"%s\","
+                "\"canary_pct\":%.3f,\"canary_retries\":%d,"
+                "\"canary_pair\":\"%s\",\"candidates\":[",
                 ggml_hip_digest_hex(entry.first).c_str(),
                 ggml_hip_digest_hex(r.signature_digest).c_str(),
                 ggml_hip_digest_hex(r.hardware_digest).c_str(),
                 r.winner ? r.winner->stable_name : "",
                 r.improvement_pct, r.generated, r.eligible, r.measured,
-                r.reason.c_str());
+                r.reason.c_str(),
+                r.canary_pct, r.canary_retries, r.canary_pair.c_str());
 
         bool first = true;
         for (const Measurement & m : r.measurements) {

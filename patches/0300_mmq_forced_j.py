@@ -63,37 +63,35 @@ static void mul_mat_q_launch_forced_J(
     }}
 }}
 
-// bigcherry (HI06): upstream's J scan, unchanged, as a pure function. The tuner
-// needs the native answer both as a fallback and as the baseline a challenger
-// has to beat, and needs it without launching anything.
+// bigcherry (HI24): which J would native's own scan choose for this shape?
+//
+// This is upstream's scan, moved out of the template so it can be asked at
+// runtime. The tuner needs it to identify the forced candidate that is *the
+// same kernel* as native: `mul_mat_q_switch_J` overwrites J_best with forced_J
+// and calls one launcher, so forcing J == J_best is native rather than merely
+// equivalent to it (RV21). That makes the pair a free noise canary -- any
+// measured difference between them is measurement error, needing no external
+// reference to calibrate.
+//
+// Returns 0 when nothing is eligible, which callers must read as "no such
+// candidate" rather than "J = 0".
+// Declared here and defined once in mmq.cu, the same shape as
+// ggml_cuda_mmq_variant_is_eligible. It cannot be `inline` in this header: the
+// tuner's translation unit includes only hip-autotune-dispatch.cuh, so an
+// inline definition here leaves it with a declaration and no body, which links
+// but fails at load with an undefined symbol.
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max);
+
+// bigcherry (HI06): upstream's J scan, as a pure function. The tuner needs the
+// native answer both as a fallback and as the baseline a challenger has to
+// beat, and needs it without launching anything.
+//
+// Delegates to the runtime query above so there is one implementation rather
+// than two. A second copy of this scan would be exactly the restatement that
+// has caused four defects in this project already.
 template <ggml_type type, bool fallback>
 static int mul_mat_q_compute_J_best(const mmq_args & args) {{
-    const int    id    = ggml_cuda_get_device();
-    const int    cc    = ggml_cuda_info().devices[id].cc;
-    const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
-
-    int J_best        = 0;
-    int ntiles_J_best = INT_MAX;
-
-    for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {{
-        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc);
-        if (config.type == GGML_TYPE_COUNT) {{
-            continue;
-        }}
-
-        if (mmq_get_nbytes_shared(config, cc) > smpbo) {{
-            continue;
-        }}
-
-        const int ntiles_x = (args.ncols_max + config.J - 1) / config.J;
-
-        if (ntiles_x < ntiles_J_best) {{
-            J_best = J;
-            ntiles_J_best = ntiles_x;
-        }}
-    }}
-
-    return J_best;
+    return ggml_cuda_mmq_native_j_best(type, fallback, args.ncols_max);
 }}
 
 // bigcherry (HI06): hard eligibility (standards 12.4). Answers "could this J
@@ -142,6 +140,47 @@ bool ggml_cuda_mmq_variant_is_eligible(
     }
     return ggml_cuda_mmq_config_is_eligible(type, j, fallback, cc,
                                             shared_mem_limit);
+}
+
+// bigcherry (HI24): which J would native's own scan choose for this shape?
+//
+// Upstream's scan, lifted out of `mul_mat_q_compute_J_best` so it can be asked
+// at runtime; that template now delegates here, so there is one implementation
+// rather than two. A second copy would be exactly the restatement that has
+// caused four defects in this project already.
+//
+// The tuner needs this to identify the forced candidate that is *the same
+// kernel* as native: `mul_mat_q_switch_J` overwrites J_best with forced_J and
+// calls one launcher, so forcing J == J_best is native rather than merely
+// equivalent to it (RV21). That makes the pair a free noise canary -- any
+// difference between their medians is measurement error, calibrated without
+// any external reference.
+//
+// Returns 0 when nothing is eligible, which callers must read as "no such
+// candidate" rather than "J = 0".
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max) {
+    const int    id    = ggml_cuda_get_device();
+    const int    cc    = ggml_cuda_info().devices[id].cc;
+    const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
+
+    int J_best        = 0;
+    int ntiles_J_best = INT_MAX;
+
+    for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {
+        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc);
+        if (config.type == GGML_TYPE_COUNT) {
+            continue;
+        }
+        if (mmq_get_nbytes_shared(config, cc) > smpbo) {
+            continue;
+        }
+        const int ntiles_x = (int) ((ncols_max + config.J - 1) / config.J);
+        if (ntiles_x < ntiles_J_best) {
+            J_best        = J;
+            ntiles_J_best = ntiles_x;
+        }
+    }
+    return J_best;
 }
 
 // bigcherry (RV02): does MMQ have *any* compiled configuration for this type on

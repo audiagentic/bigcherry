@@ -64,8 +64,42 @@ Built `workload-max` for gfx1100 on brutus and ran it. It compiles clean, `nm`
 confirms `ggml_hip_mmvq_forced` threaded through the mangled native chain, and
 under `GGML_HIP_DISPATCH_MODE=tune` the whole path executes end to end.
 
-**On the real MTP workload, 79% of signatures prefer a tuned candidate.** That
-is the headline; read `RV10` first. Tuning the actual target configuration
+## The result, as of 2026-08-05 23:00
+
+**Tuned dispatch is 1.7–4.4% faster than native on prefill, end to end, on the
+real workload.** Three interleaved native/replay rounds, same binary, only the
+mode differing:
+
+| | native | replay | Δ |
+| --- | --- | --- | --- |
+| pp256 | 690.8 | **720.9** | **+4.4%** |
+| pp1024 | 1029.5 | **1052.0** | **+2.2%** |
+| pp4096 | 1253.9 | **1275.4** | **+1.7%** |
+| tg128 | 116.8 | 117.0 | flat |
+| tg512 / tg2048 | 78.7 / 86.1 | 82.7 / 88.7 | noisy, not established |
+
+Every replay run beat every native run at all three prefill points, no overlap.
+Cache fully exercised: 103,168 dispatched, 121 entries, **0 misses**. See RV20.
+
+Underneath it, **10.2% call-weighted saving on matmul time** (RV19), which is
+where the prefill gain comes from. **MMQ is 96% of matmul time**; upstream's J
+heuristic is right on three of the top five shapes and wrong on two — `J=48`
+beats it by 44% on the hottest signature (110,160 calls), `J=16:fb1` by 70% on
+another. The wins are in picking a different row of *upstream's own config
+table* per shape, not in exotic kernels.
+
+**Do not quote the generation numbers.** tg128 is flat; tg512/tg2048 favour
+replay on average but individual rounds contradict.
+
+Three things had to be fixed before any of this could be measured, and each
+silently invalidated everything before it: a contended machine (RV11), a build
+with `GGML_HIP_RCCL=OFF` (RV15), and tuning on a bench profile that never
+produced the hot shapes (RV18).
+
+---
+
+**On the real MTP workload, 79% of signatures prefer a tuned candidate.** Read
+`RV10` for that; RV19/RV20 above supersede its aggregate figures. Tuning the actual target configuration
 (`llama-server`, `--spec-type draft-mtp --spec-draft-n-max 5`, Q8_0 27B, 2× XTX
 tensor split, 3/15 samples) gave **75 forced winners against 20 native out of 95
 signatures**. The synthetic `test-backend-ops` sweep gave 8.9% on the same code
@@ -487,6 +521,22 @@ Two traps this hides:
 - **Dotfiles written on the server are invisible from `J:`** — the share hides
   them. A `.foo` marker test will read as "different folder" when it is not.
   Test with a normally-named file.
+- **Worse: *any* file created by a server-side command may be invisible from
+  `J:`**, not just dotfiles, and not just in directory listings — opening it by
+  exact path also fails. Observed 2026-08-05: a report written by `cp` on the
+  server showed `-rw-rw-r-- audumla audumla` and 14,639 bytes there, and did not
+  exist at all from Windows. Files written from the Windows side (owner `mgs`)
+  are visible on both.
+
+  So **produce repo files from the Windows side**. If a server-side tool
+  generated it, copy it back rather than writing it into the tree in place:
+
+  ```bash
+  scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
+  ```
+
+  This is a silent failure: the server-side command reports success, and the
+  file simply is not there for anyone working from `J:`.
 
 ROCm at `/opt/rocm` (7.2), cmake 3.28, ninja 1.11, python 3.12. Note the
 workstation also has a gfx1100 (RX 7900 GRE, *not* gfx1101 as earlier notes
@@ -803,6 +853,18 @@ Other knobs: `GGML_HIP_TUNE_MAX_WORKSPACE`, `GGML_HIP_DISPATCH_DB` (writes
 the fastest way to see *why* a candidate was rejected), and
 `GGML_CUDA_DISABLE_GRAPHS=1` (required for a complete tuning run, since tuning
 is skipped under graph capture — see RV05).
+
+**`GGML_HIP_TUNE_NOISE_PCT` (default 5) — the noise canary (HI24).** Native and
+a forced MMQ candidate at `J == J_best` are *the same kernel*: the patched
+`mul_mat_q_switch_J` overwrites `J_best` with `forced_J` and calls one
+launcher. So any difference between their medians is measurement error, and the
+pair calibrates the harness with no external reference. When divergence exceeds
+this threshold the tuner re-measures both interleaved and warns.
+
+Every result records `canary_pct`, `canary_retries` and `canary_pair` in the
+measurements JSONL, so a run can be audited offline for whether its timings
+were trustworthy. **Check it before believing a narrow margin** — RV21 found
+the same kernel reading 14% apart at 3 screening samples and 0.6% apart at 15.
 
 ### 5. Coverage
 
