@@ -1,0 +1,45 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ag-ledger": {
+      "command": [
+        "C:\\Users\\mgs\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "audiagentic.launcher",
+        "mcp",
+        "audiagentic.components.ledger.ledger_mcp"
+      ],
+      "environment": {
+        "AUDIAGENTIC_REPO_ROOT": "\\\\10.10.100.10\\vault\\development\\llmhosts\\bigcherry"
+      },
+      "type": "local"
+    },
+    "ag-planning": {
+      "command": [
+        "C:\\Users\\mgs\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+        "-m",
+        "audiagentic.launcher",
+        "mcp",
+        "audiagentic.components.planning.planning_mcp"
+      ],
+      "environment": {
+        "AUDIAGENTIC_REPO_ROOT": "\\\\10.10.100.10\\vault\\development\\llmhosts\\bigcherry"
+      },
+      "type": "local"
+    }
+  },
+  "provider": {
+    "audiagentic": {
+      "models": {
+        "audiagentic-rig": {
+          "name": "AUDiaGentic Embedded Rig"
+        }
+      },
+      "name": "audiagentic",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:42001/v1"
+      }
+    }
+  }
+}

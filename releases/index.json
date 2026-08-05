@@ -1,0 +1,15 @@
+{
+  "artifact_version": 1,
+  "generated_at": "2026-08-05T10:57:59.275920+00:00",
+  "releases": [
+    {
+      "slug": "b10257",
+      "revision": "22dc605c4ead20e36f447cc67b55ef87e523bd55",
+      "release_tag": "b10257",
+      "stage": "generated",
+      "manifest_hash": "d64e79c882769e73200956a6e60b008b",
+      "audit_passed": true,
+      "updated_at": "2026-08-05T10:57:59.275150+00:00"
+    }
+  ]
+}

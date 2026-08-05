@@ -1,0 +1,293 @@
+"""Candidate manifest schema and validation (HI03).
+
+The manifest is the contract between the generator and everything downstream:
+the runtime registry, the database, the replay cache, and the tests. Validating
+it here — rather than discovering a malformed record when the HIP compiler
+chokes on generated code — is the cheapest place to catch a generator bug.
+
+Validation is hand-written rather than jsonschema-based so the package has no
+runtime dependencies; the schema is small and closed enough that this costs
+little and the error messages are better for it.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+# Standards 1: a kernel family is a major algorithmic path.
+FAMILIES = ("mmvq", "mmq", "mmvf", "mmf", "blas")
+
+# Standards 2.3. Exactly one per candidate.
+SOURCE_CLASSES = (
+    "native_wrapper",
+    "existing_runtime",
+    "existing_alternative",
+    "new_generated_variant",
+    "vendor_auto",
+    "vendor_explicit",
+)
+
+# Standards 2.6. The index of an entry *is* its architecture_code, and therefore
+# its bit position in the uint64 architecture_mask.
+#
+# APPEND ONLY. Inserting an entry renumbers every one after it, which silently
+# reinterprets every architecture_mask already written to a database or replay
+# cache -- candidates would appear to support hardware they were never measured
+# on. New AMD parts go on the end, in whatever order they arrive.
+#
+# This list is the single source of truth for the enumeration: the catalog
+# generator emits the matching C++ enum into hip-autotune-arch.h, so the two
+# languages cannot drift apart (standards 2.5).
+#
+# 64 codes fit in the mask; 27 are used, leaving room for a decade of parts.
+ARCHITECTURES = (
+    "unknown",   # 0  -- matches nothing; an unrecognised GPU falls back to native
+    # GCN / Vega, wave size 64
+    "gfx803",    # 1  Tonga, Fiji, Polaris
+    "gfx900",    # 2  Vega 56/64
+    "gfx906",    # 3  Vega 20, MI50, Radeon VII
+    # CDNA, wave size 64
+    "gfx908",    # 4  CDNA1, MI100
+    "gfx90a",    # 5  CDNA2, MI210/MI250
+    "gfx942",    # 6  CDNA3, MI300
+    "gfx950",    # 7  CDNA4, MI350X/MI355X
+    # RDNA1, wave size 32
+    "gfx1010",   # 8  RX 5700
+    "gfx1011",   # 9
+    "gfx1012",   # 10 RX 5500
+    # RDNA2
+    "gfx1030",   # 11 RX 6800/6900
+    "gfx1031",   # 12 RX 6700
+    "gfx1032",   # 13 RX 6600
+    "gfx1034",   # 14
+    "gfx1035",   # 15
+    "gfx1036",   # 16
+    # RDNA3
+    "gfx1100",   # 17 RX 7900 XTX/XT/GRE
+    "gfx1101",   # 18 RX 7800/7700
+    "gfx1102",   # 19 RX 7600
+    "gfx1103",   # 20 Phoenix APU
+    # RDNA3.5
+    "gfx1150",   # 21 Strix Point
+    "gfx1151",   # 22 Strix Halo / AI Max 395
+    "gfx1152",   # 23
+    "gfx1153",   # 24
+    # RDNA4
+    "gfx1200",   # 25 RX 9060
+    "gfx1201",   # 26 RX 9070, Radeon AI PRO R9700
+)
+
+# Which upstream MMQ config table each architecture resolves to. Mirrors the
+# fallthrough in ggml_cuda_mmq_get_config: CDNA, then RDNA4, then RDNA3.5, then
+# RDNA3, and everything older lands on the RDNA2 table.
+ARCHITECTURE_FAMILY = {
+    "gfx803": "rdna2", "gfx900": "rdna2", "gfx906": "rdna2",
+    "gfx908": "cdna", "gfx90a": "cdna", "gfx942": "cdna", "gfx950": "cdna",
+    "gfx1010": "rdna2", "gfx1011": "rdna2", "gfx1012": "rdna2",
+    "gfx1030": "rdna2", "gfx1031": "rdna2", "gfx1032": "rdna2",
+    "gfx1034": "rdna2", "gfx1035": "rdna2", "gfx1036": "rdna2",
+    "gfx1100": "rdna3", "gfx1101": "rdna3", "gfx1102": "rdna3",
+    "gfx1103": "rdna3",
+    "gfx1150": "rdna3-5", "gfx1151": "rdna3-5", "gfx1152": "rdna3-5",
+    "gfx1153": "rdna3-5",
+    "gfx1200": "rdna4", "gfx1201": "rdna4",
+}
+
+# Matrix-core capability, mirroring vendors/hip.h and common.cuh:
+#
+#   AMD_MFMA_AVAILABLE  <- CDNA (gfx908/90a/942/950)
+#   AMD_WMMA_AVAILABLE  <- RDNA4 || RDNA3, and RDNA3 is `__GFX11__`, which
+#                          covers RDNA3.5 (gfx115x) as well as gfx110x
+#
+# This exists because `architecture_mask` was previously built from whichever
+# architectures the catalog happened to enumerate, so it encoded "which GPUs
+# does this build know about" rather than "which GPUs can run this candidate".
+# See review RV06.
+MFMA_ARCHITECTURES = frozenset(
+    a for a, f in ARCHITECTURE_FAMILY.items() if f == "cdna")
+WMMA_ARCHITECTURES = frozenset(
+    a for a, f in ARCHITECTURE_FAMILY.items()
+    if f in ("rdna3", "rdna3-5", "rdna4"))
+
+
+def mmf_architectures(source_type: str, architectures: list[str]) -> list[str]:
+    """Architectures on which MMF implements `source_type` at all.
+
+    From the type switch at the end of ``ggml_cuda_should_use_mmf``: F32 needs
+    MFMA (or NVIDIA Ampere, which a HIP overlay never sees), F16 and BF16 need
+    WMMA or MFMA. So every `mmf:f32` candidate is CDNA-only, and on an RDNA
+    build there is nothing for it to run on.
+
+    Deliberately coarse. That function also excludes BF16 on CDNA3 and F16/BF16
+    on CDNA1/CDNA2, and it is still the precise authority at dispatch time
+    (`ggml_hip_mmf_can_execute` calls it). This narrows the mask only where a
+    candidate can *never* run, because a mask that is too narrow silently drops
+    a workable candidate, whereas one that is slightly too wide merely defers
+    to the runtime check that already exists.
+    """
+    if source_type == "f32":
+        allowed = MFMA_ARCHITECTURES
+    else:
+        allowed = MFMA_ARCHITECTURES | WMMA_ARCHITECTURES
+    return [a for a in architectures if a in allowed]
+
+
+# Named groups for the --arch flag, so a build does not have to spell out
+# twenty-six targets.
+ARCHITECTURE_GROUPS = {
+    "all":     [a for a in ARCHITECTURES if a != "unknown"],
+    "rdna":    [a for a in ARCHITECTURES if a.startswith("gfx10") or a.startswith("gfx11") or a.startswith("gfx12")],
+    "rdna3":   ["gfx1100", "gfx1101", "gfx1102", "gfx1103"],
+    "rdna3.5": ["gfx1150", "gfx1151", "gfx1152", "gfx1153"],
+    "rdna4":   ["gfx1200", "gfx1201"],
+    "cdna":    ["gfx908", "gfx90a", "gfx942", "gfx950"],
+    "gcn":     ["gfx803", "gfx900", "gfx906"],
+}
+
+
+def resolve_architectures(spec: str) -> list[str]:
+    """Expand a comma-separated --arch spec, honouring group names.
+
+    Duplicates are collapsed and the result is ordered by architecture code, so
+    two spellings of the same target set produce the same manifest hash.
+    """
+    seen: set[str] = set()
+    for token in spec.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token in ARCHITECTURE_GROUPS:
+            seen.update(ARCHITECTURE_GROUPS[token])
+        else:
+            architecture_code(token)  # validates, with a useful message
+            seen.add(token)
+    return sorted(seen, key=ARCHITECTURES.index)
+
+VARIANT_SETS = ("inventory", "workload-max", "full-max", "replay-full", "replay-slim")
+
+REQUIRED_CANDIDATE_FIELDS = {
+    "stable_name": str,
+    "family": str,
+    "source_class": str,
+    "implementation_version": int,
+    "architectures": list,
+    "graph_safe": bool,
+    "deterministic": bool,
+    "config": dict,
+}
+
+
+class SchemaError(ValueError):
+    """The manifest does not satisfy the candidate schema."""
+
+
+def architecture_code(name: str) -> int:
+    try:
+        return ARCHITECTURES.index(name)
+    except ValueError as exc:
+        raise SchemaError(
+            f"unknown architecture {name!r}; add it to ARCHITECTURES "
+            f"(append only -- inserting would renumber existing masks)") from exc
+
+
+def architecture_mask(names: list[str]) -> int:
+    mask = 0
+    for name in names:
+        mask |= 1 << architecture_code(name)
+    return mask
+
+
+def validate_candidate(candidate: dict[str, Any], where: str) -> None:
+    for field, expected in REQUIRED_CANDIDATE_FIELDS.items():
+        if field not in candidate:
+            raise SchemaError(f"{where}: missing required field {field!r}")
+        # bool is a subclass of int, so an int field must reject True.
+        value = candidate[field]
+        if expected is int and isinstance(value, bool):
+            raise SchemaError(f"{where}: field {field!r} must be an int, got bool")
+        if not isinstance(value, expected):
+            raise SchemaError(
+                f"{where}: field {field!r} must be {expected.__name__}, "
+                f"got {type(value).__name__}")
+
+    if candidate["family"] not in FAMILIES:
+        raise SchemaError(
+            f"{where}: family {candidate['family']!r} is not one of {FAMILIES}")
+    if candidate["source_class"] not in SOURCE_CLASSES:
+        raise SchemaError(
+            f"{where}: source_class {candidate['source_class']!r} is not one "
+            f"of {SOURCE_CLASSES}")
+    if not candidate["architectures"]:
+        raise SchemaError(f"{where}: architectures must not be empty")
+    for arch in candidate["architectures"]:
+        architecture_code(arch)  # raises with a useful message
+
+    # Standards 2.1: the vN suffix of the stable name is the implementation
+    # version, and it is what makes a stored winner from an older build with
+    # changed behaviour distinguishable rather than silently reused.
+    suffix = candidate["stable_name"].rsplit(":", 1)[-1]
+    if not suffix.startswith("v") or not suffix[1:].isdigit():
+        raise SchemaError(
+            f"{where}: stable_name {candidate['stable_name']!r} must end in a "
+            f"version suffix like ':v1'")
+    if int(suffix[1:]) != candidate["implementation_version"]:
+        raise SchemaError(
+            f"{where}: stable_name suffix {suffix!r} disagrees with "
+            f"implementation_version {candidate['implementation_version']}")
+
+
+def validate_manifest(manifest: dict[str, Any]) -> None:
+    for field in ("artifact_version", "variant_set", "source_revision",
+                  "architectures", "candidates"):
+        if field not in manifest:
+            raise SchemaError(f"manifest: missing required field {field!r}")
+
+    if manifest["variant_set"] not in VARIANT_SETS:
+        raise SchemaError(
+            f"manifest: variant_set {manifest['variant_set']!r} is not one of "
+            f"{VARIANT_SETS}")
+
+    seen: dict[str, int] = {}
+    natives: dict[str, int] = {}
+    for index, candidate in enumerate(manifest["candidates"]):
+        where = f"candidate[{index}]"
+        validate_candidate(candidate, where)
+
+        name = candidate["stable_name"]
+        if name in seen:
+            raise SchemaError(
+                f"{where}: duplicate stable_name {name!r} (first seen at "
+                f"candidate[{seen[name]}]). Stable names are database "
+                f"identities; two candidates sharing one would merge their "
+                f"measurements.")
+        seen[name] = index
+
+        if candidate["source_class"] == "native_wrapper":
+            natives[candidate["family"]] = natives.get(candidate["family"], 0) + 1
+
+    # Standards 7.3: the native candidate must be measurable for every family
+    # that has candidates at all, because it is the correctness reference and
+    # the replacement baseline.
+    families_present = {c["family"] for c in manifest["candidates"]}
+    for family in families_present:
+        if family not in natives:
+            raise SchemaError(
+                f"manifest: family {family!r} has candidates but no "
+                f"native_wrapper. Without one there is no correctness "
+                f"reference and no baseline to beat.")
+
+
+def validate_and_summarise(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Validate, then return per-family and per-source-class counts."""
+    validate_manifest(manifest)
+    by_family: dict[str, int] = {}
+    by_source: dict[str, int] = {}
+    for candidate in manifest["candidates"]:
+        by_family[candidate["family"]] = by_family.get(candidate["family"], 0) + 1
+        source = candidate["source_class"]
+        by_source[source] = by_source.get(source, 0) + 1
+    return {
+        "total": len(manifest["candidates"]),
+        "by_family": dict(sorted(by_family.items())),
+        "by_source_class": dict(sorted(by_source.items())),
+    }

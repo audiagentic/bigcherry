@@ -1,0 +1,76 @@
+{
+  "revision": "22dc605c4ead20e36f447cc67b55ef87e523bd55",
+  "release_tag": "b10257",
+  "stage": "generated",
+  "bigcherry_revision": "",
+  "artifact_version": 1,
+  "audit": {
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "total": 32,
+      "passed": 32,
+      "errors": 0,
+      "warnings": 0
+    },
+    "failed_checks": []
+  },
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "already-applied",
+        "hip-autotune-validation": "already-applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "blas-coverage-include": "already-applied",
+        "blas-coverage-count": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-helpers-and-switch": "already-applied",
+        "mmq-case-signature": "already-applied",
+        "mmq-case-forward": "already-applied",
+        "mmq-instantiation-macro": "already-applied",
+        "mmq-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "mmq-coverage-include": "already-applied",
+        "mmq-coverage-count": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "mmvf-coverage-include": "already-applied",
+        "mmvf-coverage-count": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-dispatcher-params": "already-applied",
+        "mmf-instantiation-macro": "already-applied",
+        "mmf-dispatcher-forward": "already-applied",
+        "mmf-nwarps-apply": "already-applied",
+        "mmf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "mmf-coverage-include": "already-applied",
+        "mmf-coverage-count": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "mmvq-coverage-include": "already-applied",
+        "mmvq-coverage-count": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "already-applied",
+        "mmvq-cuh-signature": "already-applied"
+      }
+    }
+  },
+  "manifest_hash": "d64e79c882769e73200956a6e60b008b",
+  "notes": "patches failed: ggml/src/ggml-cuda/mmq.cu:mmq-coverage-count, ggml/src/ggml-cuda/mmvf.cu:mmvf-coverage-count, ggml/src/ggml-cuda/mmf.cu:mmf-coverage-count",
+  "first_seen": "2026-08-04T06:14:39.768930+00:00",
+  "updated_at": "2026-08-05T10:57:59.275150+00:00"
+}

@@ -1,0 +1,17 @@
+[mcp_servers]
+
+[mcp_servers.ag-ledger]
+command = 'C:\Users\mgs\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe'
+args = ['-m', 'audiagentic.launcher', 'mcp', 'audiagentic.components.ledger.ledger_mcp']
+enabled = true
+
+[mcp_servers.ag-ledger.env]
+AUDIAGENTIC_REPO_ROOT = '\\10.10.100.10\vault\development\llmhosts\bigcherry'
+
+[mcp_servers.ag-planning]
+command = 'C:\Users\mgs\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe'
+args = ['-m', 'audiagentic.launcher', 'mcp', 'audiagentic.components.planning.planning_mcp']
+enabled = true
+
+[mcp_servers.ag-planning.env]
+AUDIAGENTIC_REPO_ROOT = '\\10.10.100.10\vault\development\llmhosts\bigcherry'

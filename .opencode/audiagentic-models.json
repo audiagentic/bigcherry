@@ -1,0 +1,9 @@
+{
+  "entries": {
+    "model-endpoints/ag-rig": {
+      "model_id": "audiagentic-rig",
+      "name": "AUDiaGentic Embedded Rig",
+      "provider_id": "audiagentic"
+    }
+  }
+}
