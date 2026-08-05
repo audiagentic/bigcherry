@@ -59,6 +59,17 @@ struct ggml_hip_tuner_config {
     int    screen_keep_top       = 3;
     double screen_keep_within_pct = 10.0;
 
+    // HI24: when the same kernel measured twice differs by more than this, the
+    // signature's timings are not trustworthy and are taken again.
+    //
+    // The threshold is a statement about the harness, not the kernels: native
+    // and a forced J equal to J_best run identical code (RV21), so any gap
+    // between them is measurement error by construction. 5% is chosen against
+    // the observed floor -- a quiet machine reproduced the same kernel to 0.6%,
+    // while a 3-sample screen on a busy one diverged by 14%.
+    double noise_canary_pct      = 5.0;
+    int    noise_canary_retries  = 1;
+
     // Winner selection (standards 7.3).
     double replacement_threshold_pct = 1.0;
     double tie_pct                   = 0.5;

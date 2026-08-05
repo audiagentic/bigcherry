@@ -112,6 +112,11 @@ bool ggml_cuda_mmq_variant_is_eligible(
 bool ggml_cuda_mmq_type_is_supported(
     ggml_type type, int cc, size_t shared_mem_limit);
 
+// The J native's own scan would choose for this shape, or 0 if nothing is
+// eligible. A forced candidate at this J runs identical code to native, so the
+// pair calibrates measurement noise for free (HI24).
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max);
+
 bool ggml_cuda_mmvf_variant_is_eligible(
     ggml_type type, int block_size, bool acc_f16, int warp_size,
     size_t shared_mem_limit, int64_t ncols, int64_t width, bool has_fusion);
