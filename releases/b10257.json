@@ -2,7 +2,7 @@
   "revision": "22dc605c4ead20e36f447cc67b55ef87e523bd55",
   "release_tag": "b10257",
   "stage": "patched",
-  "bigcherry_revision": "6d8259473d7713f3aea5979a001cf714217bf757",
+  "bigcherry_revision": "3c787df7735761d1b6ff7029e8e293e2ecbb0170",
   "artifact_version": 1,
   "audit": {
     "passed": true,
@@ -20,26 +20,25 @@
     "failed_edits": [],
     "files": {
       "ggml/CMakeLists.txt": {
-        "hip-autotune-options": "already-applied",
-        "hip-autotune-validation": "already-applied"
+        "replay-diagnostics-option": "already-applied"
       },
       "ggml/src/ggml-hip/CMakeLists.txt": {
-        "hip-autotune-definitions": "already-applied"
+        "replay-diagnostics-definition": "already-applied"
       },
       "ggml/src/ggml-cuda/ggml-cuda.cu": {
         "blas-coverage-include": "already-applied",
         "blas-coverage-count": "already-applied"
       },
       "ggml/src/ggml-cuda/mmq.cuh": {
-        "mmq-helpers-and-switch": "applied",
-        "mmq-case-signature": "applied",
-        "mmq-case-forward": "applied",
-        "mmq-instantiation-macro": "applied",
-        "mmq-public-decl": "applied"
+        "mmq-helpers-and-switch": "already-applied",
+        "mmq-case-signature": "already-applied",
+        "mmq-case-forward": "already-applied",
+        "mmq-instantiation-macro": "already-applied",
+        "mmq-public-decl": "already-applied"
       },
       "ggml/src/ggml-cuda/mmq.cu": {
-        "mmq-coverage-include": "applied",
-        "mmq-coverage-count": "applied"
+        "mmq-coverage-include": "already-applied",
+        "mmq-coverage-count": "already-applied"
       },
       "ggml/src/ggml-cuda/mmvf.cuh": {
         "mmvf-public-decl": "already-applied"
@@ -66,11 +65,22 @@
       "ggml/src/ggml-cuda/mmvq.cuh": {
         "mmvq-cuh-include": "already-applied",
         "mmvq-cuh-signature": "already-applied"
+      },
+      "tools/server/server.cpp": {
+        "server-shutdown-cstdlib": "already-applied",
+        "server-shutdown-response": "already-applied",
+        "server-shutdown-route": "already-applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-tuner.cu": {
+        "result-canonical-json": "already-applied",
+        "set-result-canonical-json": "already-applied",
+        "emit-result-canonical-json": "already-applied",
+        "format-result-canonical-json": "already-applied"
       }
     }
   },
   "manifest_hash": "d64e79c882769e73200956a6e60b008b",
   "notes": "source audit failed: mmq.j_search_loop_bounds",
   "first_seen": "2026-08-04T06:14:39.768930+00:00",
-  "updated_at": "2026-08-05T13:45:48.469064+00:00"
+  "updated_at": "2026-08-07T00:06:29.510769+00:00"
 }
