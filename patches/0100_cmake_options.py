@@ -32,6 +32,7 @@ set   (GGML_HIP_AUTOTUNE_SIGNATURE_FILE "" CACHE STRING
                                             "ggml: inventory JSON driving workload-max")
 option(GGML_HIP_AUTOTUNE_SQLITE             "ggml: link SQLite for record/tune modes"          ON)
 option(GGML_HIP_AUTOTUNE_RECORD             "ggml: build signature record mode"                OFF)
+option(GGML_HIP_ROUTING_TRANSFORM           "ggml: tune sig-to-sig routing transformations"    OFF)
 
 # Accept uppercase spellings from BUILD_PROFILES.md as aliases (B10).
 set(__BC_UPPERCASE_SETS "NATIVE" "WORKLOAD_MAX" "FULL_MAX" "REPLAY_FULL" "REPLAY_SLIM")
@@ -76,6 +77,17 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
             "exclusive: a replay build must not carry the tuning engine.")
     endif()
 endif()
+
+# HI27: routing transformations are a dispatch-layer feature, so the flag is
+# meaningless without the layer. Failing here rather than silently ignoring it
+# matters because the failure mode is invisible: the build would succeed, the
+# tune would run, and transforms.jsonl would simply never be written -- which
+# reads identically to "no signature had a gap".
+if (GGML_HIP_ROUTING_TRANSFORM AND NOT (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY))
+    message(FATAL_ERROR
+        "GGML_HIP_ROUTING_TRANSFORM requires GGML_HIP_AUTOTUNE or "
+        "GGML_HIP_DISPATCH_REPLAY: there is no dispatch layer to transform in.")
+endif()
 # ---- end bigcherry -----------------------------------------------------------
 """
 
@@ -90,6 +102,13 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     endif()
     if (GGML_HIP_DISPATCH_REPLAY)
         add_compile_definitions(GGML_HIP_DISPATCH_REPLAY)
+    endif()
+    # HI27. Global rather than per-source: the transform machinery is declared
+    # in hip-autotune-types.h, which the tuner, the dispatcher and the replay
+    # loader all include. Defining it for hip-autotune-transform.cu alone would
+    # give that one file a different view of a struct the others also lay out.
+    if (GGML_HIP_ROUTING_TRANSFORM)
+        add_compile_definitions(GGML_HIP_ROUTING_TRANSFORM)
     endif()
 
     # The generated registry, manifest hash header and MMVQ instances are

@@ -281,6 +281,110 @@ struct ggml_hip_resolved_dispatch {
     bool                                  from_cache;     // false = native fallback
 };
 
+// -------------------------------------------------------- routing transforms
+//
+// A routing transformation rewrites one launch context into another that a
+// *different* family can serve. It exists because a signature's family is not
+// a property of the arithmetic -- it is a property of how the operands happen
+// to be arranged. Upstream already proves the point: ggml-cuda.cu:1879 takes
+// F32[1xK] x F32[KxN] with N above MMVF's batch bound, swaps the operands, and
+// runs MMVF against a reshaped dst rather than falling to BLAS.
+//
+// What that path does by hand for one shape, this models generally: a
+// transformation is a pure function from (signature, launch context) to a new
+// pair, plus the mathematical argument for why the two compute the same thing.
+// The tuner then measures both and keeps whichever is faster -- so a
+// transformation is a *hypothesis*, never an assumption.
+//
+// Everything here is compiled out unless GGML_HIP_ROUTING_TRANSFORM is on.
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+
+enum ggml_hip_transform_id {
+    GGML_HIP_TRANSFORM_NONE = 0,
+    GGML_HIP_TRANSFORM_TRANSPOSE_WEIGHT_FOR_MMVF = 1,
+    GGML_HIP_TRANSFORM_BATCH_FOR_MMVF            = 2,
+    // 3-15 reserved for further predefined transforms. Agent-discovered ones
+    // start at 16 so an id alone says which half of the registry it came from
+    // even in a record written by a build that no longer has it.
+    GGML_HIP_TRANSFORM_DISCOVERED_BASE = 16,
+};
+
+// Deliberately *not* GGML_HIP_SOURCE_*: that prefix already belongs to
+// ggml_hip_source_class above, and two unrelated enums sharing it would make
+// `GGML_HIP_SOURCE_PREDEFINED` read as a fifth source class.
+enum ggml_hip_transform_source {
+    GGML_HIP_TRANSFORM_SOURCE_PREDEFINED = 0,  // hand-written, equivalence proved
+    GGML_HIP_TRANSFORM_SOURCE_DISCOVERED = 1,  // agent-proposed, must pass validation
+};
+
+// Scratch the *caller* owns for the life of one transformed launch.
+//
+// Applying a transform allocates nothing. A rewritten launch context still has
+// to point at `ggml_tensor` headers describing the new shape, so the caller
+// puts this on its stack and `apply` fills it in. That matters because HI31
+// applies a transform on every dispatched launch of a transformed binding: a
+// heap allocation there would be a per-call cost paid to avoid a per-call cost.
+struct ggml_hip_transform_ctx {
+    ggml_tensor src0;
+    ggml_tensor src1;
+    ggml_tensor dst;
+
+    // Batch decomposition. A transform that produces exactly one launch leaves
+    // n_batches at 1, and `select_batch` is null.
+    int64_t n_batches   = 1;
+    int64_t batch_width = 0;   // dst columns per batch
+    int64_t total_width = 0;   // dst columns in the original operation
+};
+
+// Hard applicability, from the signature alone. Must be cheap and side-effect
+// free: the tuner asks every transform about every single-family signature.
+typedef bool (*ggml_hip_transform_can_apply_fn)(
+    const ggml_hip_dispatch_signature_v1 & sig);
+
+// Rewrite (orig_sig, orig_lc) into (*out_sig, *out_lc), using `ctx` as storage
+// for the rewritten tensor headers. Returns false if the rewrite could not be
+// built -- which `can_apply` should already have prevented, so a false here is
+// a bug rather than a routine outcome.
+typedef bool (*ggml_hip_transform_apply_fn)(
+    const ggml_hip_dispatch_signature_v1 & orig_sig,
+    const ggml_hip_launch_context &        orig_lc,
+    ggml_hip_transform_ctx *               ctx,
+    ggml_hip_dispatch_signature_v1 *       out_sig,
+    ggml_hip_launch_context *              out_lc);
+
+// Re-point `lc` at batch `index` of the decomposition in `ctx`. Null for a
+// transform that produces a single launch. The last batch may be narrower than
+// batch_width; the implementation adjusts the shape, not just the pointers.
+typedef bool (*ggml_hip_transform_select_batch_fn)(
+    ggml_hip_transform_ctx *  ctx,
+    ggml_hip_launch_context * lc,
+    int64_t                   index);
+
+// Scratch bytes beyond what the target candidate itself requests, so a
+// transform that trades memory for a family change is filtered against
+// max_workspace_bytes on the same terms as a candidate (standards 7.3).
+typedef size_t (*ggml_hip_transform_overhead_fn)(
+    const ggml_hip_dispatch_signature_v1 & sig);
+
+struct ggml_hip_routing_transformation {
+    ggml_hip_transform_id     id;
+    const char *              name;    // durable identity, as for candidates
+    ggml_hip_transform_source source;
+    bool                      equivalence_verified;
+
+    // The family this rewrite exists to reach. The tuner checks it can serve
+    // the transformed signature before measuring anything: a transform whose
+    // target still cannot serve is a rewrite that bought nothing.
+    ggml_hip_kernel_family    target_family;
+
+    ggml_hip_transform_overhead_fn     overhead_bytes;
+    ggml_hip_transform_can_apply_fn    can_apply;
+    ggml_hip_transform_apply_fn        apply;
+    ggml_hip_transform_select_batch_fn select_batch;  // null = single launch
+};
+
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 static inline uint64_t ggml_hip_arch_bit(int architecture_code) {
     return architecture_code >= 0 && architecture_code < 64
         ? (uint64_t(1) << architecture_code)
