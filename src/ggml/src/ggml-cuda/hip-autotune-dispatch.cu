@@ -431,6 +431,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+            ggml_hip_replay_record_hit(dispatch_digest, signature_digest, winner);
+#endif
         } else {
             // Standards 9.2: a miss falls back to native and records the miss.
             // Production never attempts online measurement.
@@ -1024,6 +1027,9 @@ void ggml_hip_autotune_flush(void) {
 #endif
 #ifdef GGML_HIP_DISPATCH_REPLAY
     ggml_hip_replay_flush_misses();
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+    ggml_hip_replay_flush_hits();
+#endif
 #endif
     ggml_hip_coverage_report();
 }

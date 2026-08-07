@@ -43,7 +43,8 @@ enum ggml_hip_reject_reason {
     GGML_HIP_REJECT_LAUNCH_FAILED,
     GGML_HIP_REJECT_NAN_INF,        // introduced NaN or Inf
     GGML_HIP_REJECT_TOLERANCE,      // NMSE or max error beyond policy
-    GGML_HIP_REJECT_UNSTABLE,       // non-deterministic beyond policy
+    GGML_HIP_REJECT_UNSTABLE,       // non-deterministic beyond policy (winner-only recheck)
+    GGML_HIP_REJECT_NOISY,          // timing dispersion too wide to rank (HI12 E4)
     GGML_HIP_REJECT_COUNT
 };
 
@@ -78,6 +79,21 @@ struct ggml_hip_tuner_config {
     // Correctness (standards 7.2), judged against native's own output.
     double max_nmse              = 1e-6;
     double max_abs_error         = 1e-2;
+
+    // HI12 E1: a challenger must be both materially and *consistently*
+    // faster. 0.025 is one-sided; at final_samples = 15 that means winning
+    // at least 12 of the 15 paired rounds. Below min_paired_rounds usable
+    // pairs the test is declared inconclusive rather than run underpowered.
+    double confidence_alpha    = 0.025;
+    int    min_paired_rounds   = 8;
+
+    // HI12 E4: dispersion beyond this fraction of the median means the
+    // candidate cannot be ranked at all, whatever its median says.
+    double noisy_mad_ratio     = 0.25;
+    int    verify_determinism  = 1;   // winner-only bitwise recheck
+
+    // HI12 E2: emit raw finalist samples so a winner is recomputable offline.
+    int    emit_samples        = 1;
 };
 
 const ggml_hip_tuner_config & ggml_hip_tuner_get_config();

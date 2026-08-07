@@ -10,8 +10,7 @@
       ],
       "env": {
         "AUDIAGENTIC_REPO_ROOT": "\\\\10.10.100.10\\vault\\development\\llmhosts\\bigcherry"
-      },
-      "directTools": true
+      }
     },
     "ag-planning": {
       "command": "C:\\Users\\mgs\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
@@ -23,8 +22,7 @@
       ],
       "env": {
         "AUDIAGENTIC_REPO_ROOT": "\\\\10.10.100.10\\vault\\development\\llmhosts\\bigcherry"
-      },
-      "directTools": true
+      }
     }
   }
 }
