@@ -349,7 +349,133 @@ def build_parser() -> argparse.ArgumentParser:
 
     _report.build_parser(sub)
 
+    # Inventory: convert record JSONL → SQLite + inventory JSON, or load tuning measurements.
+    inventory = sub.add_parser(
+        "inventory",
+        help="Convert record JSONL to inventory/DB, or load tuning measurements",
+    )
+    inv_sub = inventory.add_subparsers(dest="inv_subcommand")
+
+    # Record mode: JSONL → SQLite + inventory JSON (existing behavior)
+    inv_record = inv_sub.add_parser(
+        "record", help="Convert record-mode JSONL to inventory + DB"
+    )
+    inv_record.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
+    inv_record.add_argument(
+        "--inventory",
+        default=None,
+        help="inventory JSON to write (default: alongside)",
+    )
+    inv_record.add_argument(
+        "--database",
+        default=None,
+        help="SQLite database to write (default: alongside)",
+    )
+    inv_record.set_defaults(func=lambda args: cmd_inventory(args, subcmd="record"))
+
+    # Tuning mode: measurements JSONL → SQLite with winners/measurements/candidates
+    inv_tuning = inv_sub.add_parser(
+        "tuning", help="Load tuning measurements into SQLite"
+    )
+    inv_tuning.add_argument(
+        "measurements",
+        help="JSONL written by GGML_HIP_DISPATCH_DB (the .measurements.jsonl file)",
+    )
+    inv_tuning.add_argument(
+        "--database",
+        default=None,
+        help="SQLite database path (default: alongside measurements, .sqlite extension)",
+    )
+    inv_tuning.add_argument(
+        "--manifest",
+        default=None,
+        help="Manifest JSON for full candidate data (artifacts/<rev>/hip-autotune-manifest.json)",
+    )
+    inv_tuning.add_argument(
+        "--signature-source",
+        action="append",
+        default=[],
+        help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
+    )
+    inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
+
     return parser
+
+
+def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
+    """Dispatch to inventory record/tuning subcommand."""
+    from . import inventory as inv_mod
+    from pathlib import Path
+
+    if subcmd == "record":
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        inventory = inv_mod.build_inventory(record)
+        inventory_path = (
+            Path(args.inventory)
+            if args.inventory
+            else record_path.with_suffix(".inventory.json")
+        )
+        inventory_path.write_text(
+            json.dumps(inventory, indent=2) + "\n", encoding="utf-8", newline=""
+        )
+
+        database_path = (
+            Path(args.database) if args.database else record_path.with_suffix(".sqlite")
+        )
+        counts = inv_mod.build_database(
+            record, database_path, paths.SQL / "dispatch-db.sql"
+        )
+
+        print(f"read {len(record.observations)} observation(s) from {record_path}")
+        print(f"  types: mmq={inventory['mmq_types']} mmvq={inventory['mmvq_types']}")
+        print(f"         mmvf={inventory['mmvf_types']} mmf={inventory['mmf_types']}")
+        print(f"  widths: {inventory['widths']}")
+        print(f"  blas observed: {inventory['uses_blas']}")
+        print(f"  inventory: {inventory_path}")
+        print(
+            f"  database:  {database_path} "
+            f"({counts['signatures']} signatures, {counts['hardware']} hardware)"
+        )
+        return 0
+
+    elif subcmd == "tuning":
+        meas_path = Path(args.measurements)
+        if not meas_path.is_file():
+            print(f"no such measurements file: {meas_path}", file=sys.stderr)
+            return 2
+
+        db_path = (
+            Path(args.database) if args.database else meas_path.with_suffix(".sqlite")
+        )
+        manifest_path = Path(args.manifest) if args.manifest else None
+
+        counts = inv_mod.load_measurements(
+            meas_path,
+            db_path,
+            paths.SQL / "dispatch-db.sql",
+            manifest_path=manifest_path,
+            signature_source_paths=[Path(p) for p in args.signature_source],
+        )
+
+        print(
+            f"loaded {counts['results']} result(s) with "
+            f"{counts['measurements']} measurement(s) and "
+            f"{counts['candidates']} candidate(s) into {db_path}"
+        )
+        return 0
+
+    else:
+        # Backward compat: positional arg means record mode (no subcommand)
+        return cmd_inventory(args, subcmd="record")
 
 
 def main(argv: list[str] | None = None) -> int:

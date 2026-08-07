@@ -290,6 +290,7 @@ def load_measurements(
     schema_path: Path,
     *,
     manifest_path: Path | None = None,
+    signature_source_paths: list[Path] | None = None,
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
@@ -299,6 +300,12 @@ def load_measurements(
     The dispatch_digest is the primary lookup key. signature_id is NULL
     when only the dispatch digest is available — it can be linked later
     if the DB was also built from record-mode observations.
+
+    Duplicate measurements and winners (same ``build_id``, ``hardware_id``,
+    ``candidate_id``, ``objective``, ``stage``, ``dispatch_digest``) are
+    replaced by the newer data via ``INSERT OR REPLACE``, making reloads
+    idempotent. This supports incremental tuning where new runs supersede
+    old results for the same signatures.
 
     If ``manifest_path`` is provided, candidate rows are populated from
     the manifest's full descriptor data; otherwise only the stable_name
@@ -334,6 +341,23 @@ def load_measurements(
             f"bigcherry measurements file, or the run died before its first "
             f"flush."
         )
+
+    # Recover canonical shapes from record/replay diagnostics when older
+    # measurement artifacts predate inline `canonical` metadata.
+    signature_shapes: dict[str, dict[str, Any]] = {}
+    for source_path in signature_source_paths or []:
+        if not source_path.is_file():
+            continue
+        with source_path.open(encoding="utf-8") as source:
+            for line in source:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                signature_hex = row.get("signature", "")
+                canonical = row.get("canonical")
+                if len(signature_hex) == 32 and isinstance(canonical, dict):
+                    signature_shapes.setdefault(signature_hex, canonical)
 
     # Resolve manifest → candidate lookup if provided
     manifest_by_name: dict[str, dict[str, Any]] = {}
@@ -377,11 +401,20 @@ def load_measurements(
         if build_row:
             build_id = build_row[0]
         else:
+            # `compiler` is HI12 E6 -- omitted here for a while even after the
+            # tuner started writing it in the header, which is exactly the
+            # class of defect E6 exists to close.
             cursor = connection.execute(
                 "INSERT INTO build (source_revision, source_dirty, "
                 "manifest_hash, signature_schema, hardware_schema, variant_set, "
-                "dispatch_abi) VALUES (?, 0, ?, 1, 1, ?, ?)",
-                (source_revision, manifest_hash, "tuning", str(artifact_version)),
+                "dispatch_abi, compiler) VALUES (?, 0, ?, 1, 1, ?, ?, ?)",
+                (
+                    source_revision,
+                    manifest_hash,
+                    "tuning",
+                    str(artifact_version),
+                    header.get("compiler"),
+                ),
             )
             build_id = cursor.lastrowid
 
@@ -402,8 +435,52 @@ def load_measurements(
             )
             hardware_id = cursor.lastrowid
 
-        # Resolve candidate name → ID (cache lookups)
+        # Resolve candidate and signature names → IDs (cache lookups)
         candidate_cache: dict[str, int] = {}
+        signature_cache: dict[str, int | None] = {}
+
+        def _resolve_signature(result: dict[str, Any]) -> int | None:
+            signature_hex = result.get("signature", "")
+            if len(signature_hex) != 32:
+                return None
+            if signature_hex in signature_cache:
+                return signature_cache[signature_hex]
+            canonical = result.get("canonical") or signature_shapes.get(
+                signature_hex, {}
+            )
+            if not isinstance(canonical, dict):
+                canonical = {}
+            ned = canonical.get("ned", [0, 0, 0, 0])
+            ne0 = canonical.get("ne0", [0, 0, 0, 0])
+            cursor = connection.execute(
+                "SELECT signature_id FROM signature WHERE signature_digest = ?",
+                (bytes.fromhex(signature_hex),),
+            )
+            row = cursor.fetchone()
+            if row:
+                signature_id = row[0]
+            else:
+                cursor = connection.execute(
+                    "INSERT INTO signature (signature_digest, base_digest, "
+                    "schema_version, op, src0_type, src1_type, dst_type, "
+                    "m, n, k, canonical_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        bytes.fromhex(signature_hex),
+                        bytes.fromhex(signature_hex),
+                        canonical.get("schema_version", 1),
+                        str(canonical.get("op", "")),
+                        str(canonical.get("src0_type", "")),
+                        str(canonical.get("src1_type", "")),
+                        str(canonical.get("dst_type", "")),
+                        ne0[1] if len(ne0) > 1 else 0,
+                        ned[1] if len(ned) > 1 else 0,
+                        ne0[0] if ne0 else 0,
+                        json.dumps(canonical, sort_keys=True, separators=(",", ":")),
+                    ),
+                )
+                signature_id = cursor.lastrowid
+            signature_cache[signature_hex] = signature_id
+            return signature_id
 
         def _resolve_candidate(name: str) -> int:
             if name in candidate_cache:
@@ -468,6 +545,7 @@ def load_measurements(
             winner_name = result.get("winner", "")
             improvement_pct = result.get("improvement_pct", 0.0)
             reason = result.get("reason", "")
+            confidence = result.get("confidence")  # HI12 E1
 
             # Map status names to reject reasons
             status_to_reason = {
@@ -479,7 +557,10 @@ def load_measurements(
                 "nan_inf": "GGML_HIP_REJECT_NAN_INF",
                 "tolerance": "GGML_HIP_REJECT_TOLERANCE",
                 "unstable": "GGML_HIP_REJECT_UNSTABLE",
+                "noisy": "GGML_HIP_REJECT_NOISY",
             }
+
+            signature_id = _resolve_signature(result)
 
             # Insert measurement rows for each candidate
             for cand in result.get("candidates", []):
@@ -497,6 +578,15 @@ def load_measurements(
                 max_abs_err = cand.get("max_abs")
                 workspace_bytes = cand.get("workspace", 0)
                 samples = cand.get("samples", 0)
+                # HI12 E2: raw finalist samples, so a winner is recomputable
+                # offline. Absent for screened-only candidates (never a
+                # finalist) and when the tuner ran with emit_samples=0.
+                samples_us = cand.get("samples_us")
+                samples_json = (
+                    json.dumps(samples_us, separators=(",", ":"))
+                    if samples_us is not None
+                    else None
+                )
 
                 # Convert hex string to bytes for BLOB column.
                 # SQLite's X? syntax is not supported by the Python bindings;
@@ -504,16 +594,17 @@ def load_measurements(
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
 
                 connection.execute(
-                    "INSERT INTO measurement (build_id, hardware_id, "
-                    "dispatch_digest, candidate_id, objective, stage, "
+                    "INSERT OR REPLACE INTO measurement (build_id, hardware_id, "
+                    "signature_id, dispatch_digest, candidate_id, objective, stage, "
                     "accepted, reject_reason, samples, median_us, gpu_mad_us, "
                     "p95_us, host_median_us, workspace_bytes, nmse, "
-                    "max_abs_err) "
-                    "VALUES (?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, "
-                    "?, ?, ?, ?, ?, ?)",
+                    "max_abs_err, samples_json) "
+                    "VALUES (?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
+                        signature_id,
                         dispatch_bytes,
                         candidate_id,
                         accepted,
@@ -526,6 +617,7 @@ def load_measurements(
                         workspace_bytes,
                         nmse,
                         max_abs_err,
+                        samples_json,
                     ),
                 )
                 measurements_inserted += 1
@@ -555,14 +647,15 @@ def load_measurements(
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
 
                 connection.execute(
-                    "INSERT INTO winner (build_id, hardware_id, objective, "
+                    "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, objective, "
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
-                    "median_us, p95_us, workspace_bytes, reason) "
-                    "VALUES (?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "median_us, p95_us, workspace_bytes, reason, confidence) "
+                    "VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
+                        signature_id,
                         dispatch_bytes,
                         winner_id,
                         winner_name,
@@ -573,6 +666,7 @@ def load_measurements(
                         winner_p95,
                         winner_ws,
                         reason,
+                        confidence,
                     ),
                 )
                 results_inserted += 1
@@ -619,6 +713,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     tune.add_argument(
         "--manifest", default=None, help="Manifest JSON for full candidate data"
+    )
+    tune.add_argument(
+        "--signature-source",
+        action="append",
+        default=[],
+        help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
     )
 
     args = parser.parse_args(argv)
@@ -689,6 +789,7 @@ def _cmd_tuning(args) -> int:
         db_path,
         paths.SQL / "dispatch-db.sql",
         manifest_path=manifest_path,
+        signature_source_paths=[Path(p) for p in args.signature_source],
     )
 
     print(

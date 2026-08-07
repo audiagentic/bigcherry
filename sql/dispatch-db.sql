@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS measurement (
     max_rel_err      REAL,
     samples_json     TEXT,                      -- raw sample array
     measured_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (build_id, hardware_id, candidate_id, objective, stage)
+    UNIQUE (build_id, hardware_id, candidate_id, objective, stage, dispatch_digest)
 );
 
 CREATE INDEX IF NOT EXISTS measurement_dispatch_idx
