@@ -119,9 +119,12 @@ def read_measurements_sqlite(
                 }
             )
             if not entry["winner"]:
-                entry["winner"] = row.get("winner_name", "") or ""
-                entry["improvement_pct"] = row.get("improvement_pct", 0.0) or 0.0
-                entry["reason"] = row.get("winner_reason", "") or ""
+                winner_name_val = row["winner_name"]
+                entry["winner"] = winner_name_val if winner_name_val else ""
+                imp_val = row["improvement_pct"]
+                entry["improvement_pct"] = imp_val if imp_val is not None else 0.0
+                reason_val = row["winner_reason"]
+                entry["reason"] = reason_val if reason_val else ""
 
         # Fill in generated/eligible/measured counts
         for entry in by_dispatch.values():
@@ -129,8 +132,12 @@ def read_measurements_sqlite(
             entry["measured"] = sum(
                 1 for c in candidates if c["status"] == "ok" and c["samples"]
             )
+            # Eligible = not filtered by hard-identity (architecture, ineligible).
+            # Tolerance-rejected candidates were launched but failed correctness.
             entry["eligible"] = sum(
-                1 for c in candidates if c["status"] != "architecture"
+                1
+                for c in candidates
+                if c["status"].lower() not in ("architecture", "ineligible")
             )
             entry["generated"] = len(candidates)
 
@@ -162,24 +169,117 @@ def read_hot_signatures(path: Path, n: int = 20) -> list[dict[str, Any]]:
             canonical = {}
             with contextlib.suppress(json.JSONDecodeError):
                 canonical = json.loads(row["canonical_json"] or "{}")
-            m = canonical.get("m", 0)
-            n2 = canonical.get("n", 0)
-            k = canonical.get("k", 0)
+            m_val = canonical.get("m", 0)
+            n2_val = canonical.get("n", 0)
+            k_val = canonical.get("k", 0)
+            winner_name_val = row["winner_name"]
+            imp_val = row["improvement_pct"]
             rows.append(
                 {
                     "calls": row["calls"],
-                    "op": canonical.get("op", ""),
-                    "src0_type": canonical.get("src0_type", ""),
-                    "src1_type": canonical.get("src1_type", ""),
-                    "m": m,
-                    "n": n2,
-                    "k": k,
-                    "native": row["native_stable_name"],
-                    "winner": row.get("winner_name", ""),
-                    "improvement_pct": row.get("improvement_pct", 0.0) or 0.0,
+                    "op": canonical.get("op", "") or "",
+                    "src0_type": canonical.get("src0_type", "") or "",
+                    "src1_type": canonical.get("src1_type", "") or "",
+                    "m": m_val,
+                    "n": n2_val,
+                    "k": k_val,
+                    "native": row["native_stable_name"] or "",
+                    "winner": winner_name_val if winner_name_val else "",
+                    "improvement_pct": imp_val if imp_val is not None else 0.0,
                 }
             )
         return rows
+    finally:
+        connection.close()
+
+
+def read_tuning_overview(path: Path) -> dict[str, Any]:
+    """Read a quick overview of the tuning run from SQLite.
+
+    Returns a compact dict suitable for human-readable output or JSON.
+    """
+    connection = sqlite3.connect(str(path))
+    connection.row_factory = sqlite3.Row  # type: ignore[attr-defined]
+    try:
+        # Total stats
+        cursor = connection.execute("SELECT COUNT(*) as sigs FROM winner")
+        sigs = cursor.fetchone()["sigs"]
+
+        # Improvement distribution
+        cursor = connection.execute(
+            "SELECT "
+            "  COUNT(CASE WHEN improvement_pct > 10 THEN 1 END) as over_10,"
+            "  COUNT(CASE WHEN improvement_pct > 5 THEN 1 END) as over_5,"
+            "  COUNT(CASE WHEN improvement_pct > 1 THEN 1 END) as over_1,"
+            "  COUNT(CASE WHEN improvement_pct > 0.5 THEN 1 END) as over_05,"
+            "  COUNT(CASE WHEN stable_name LIKE '%:native:%' THEN 1 END) as native_winners,"
+            "  AVG(improvement_pct) as avg_imp,"
+            "  MAX(improvement_pct) as max_imp"
+            " FROM winner"
+        )
+        imp = cursor.fetchone()
+
+        # Pipeline stats
+        cursor = connection.execute("SELECT COUNT(*) as total FROM measurement")
+        total_cands = cursor.fetchone()["total"]
+
+        cursor = connection.execute(
+            "SELECT COUNT(*) as count, reject_reason FROM measurement "
+            "WHERE accepted = 0 AND reject_reason IS NOT NULL "
+            "GROUP BY reject_reason ORDER BY count DESC"
+        )
+        rejections: dict[str, int] = {r["reject_reason"]: r["count"] for r in cursor}
+
+        cursor = connection.execute(
+            "SELECT COUNT(*) as count FROM measurement WHERE accepted = 1"
+        )
+        measured = cursor.fetchone()["count"]
+
+        eligible = total_cands - rejections.get("GGML_HIP_REJECT_INELIGIBLE", 0)
+        eligible -= rejections.get("GGML_HIP_REJECT_ARCHITECTURE", 0)
+
+        # Winner by family
+        cursor = connection.execute(
+            "SELECT SUBSTR(stable_name, 1, INSTR(stable_name, ':')-1) as family,"
+            "  COUNT(*) as count "
+            "FROM winner GROUP BY family ORDER BY count DESC"
+        )
+        families: dict[str, int] = {r["family"]: r["count"] for r in cursor}
+
+        # Top tuned winners (non-native with improvement > 0)
+        cursor = connection.execute(
+            "SELECT stable_name, improvement_pct, median_us "
+            "FROM winner "
+            "WHERE stable_name NOT LIKE '%:native:%' AND improvement_pct > 0 "
+            "ORDER BY improvement_pct DESC LIMIT 10"
+        )
+        top_tuned = [
+            {
+                "name": r["stable_name"],
+                "improvement_pct": r["improvement_pct"],
+                "median_us": r["median_us"],
+            }
+            for r in cursor
+        ]
+
+        return {
+            "signatures": sigs,
+            "pipeline": {
+                "generated": total_cands,
+                "eligible": eligible,
+                "measured": measured,
+            },
+            "improvement": {
+                ">10%": imp["over_10"] or 0,
+                ">5%": imp["over_5"] or 0,
+                ">1%": imp["over_1"] or 0,
+                ">0.5%": imp["over_05"] or 0,
+                "native_retained": imp["native_winners"] or 0,
+            },
+            "families": families,
+            "rejections": rejections,
+            "top_tuned": top_tuned,
+        }
     finally:
         connection.close()
 
@@ -462,6 +562,52 @@ def cmd_families(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_overview(args: argparse.Namespace) -> int:
+    """Quick one-liner overview of the tuning run."""
+    if not args.database:
+        print(
+            "error: --database is required for overview",
+            file=sys.stderr,
+        )
+        return 2
+
+    data = read_tuning_overview(Path(args.database))
+
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+
+    sigs = data["signatures"]
+    pipe = data["pipeline"]
+    imp = data["improvement"]
+    rejections = data["rejections"]
+    families = data["families"]
+    top_tuned = data["top_tuned"]
+
+    print(f"Tuning: {sigs} signatures")
+    print(
+        f"Pipeline: {pipe['generated']} generated -> {pipe['eligible']} eligible -> {pipe['measured']} measured"
+    )
+    print(
+        f"Winners: {imp['native_retained']} native, >1%={imp[('>1%')]}, >5%={imp[('>5%')]}, >10%={imp[('>10%')]}"
+    )
+
+    if rejections:
+        rej_summary = ", ".join(
+            f"{k.split('_')[-1]}:{v}" for k, v in rejections.items()
+        )
+        print(f"Rejections: {rej_summary}")
+
+    if top_tuned:
+        print("\nTop tuned winners:")
+        for t in top_tuned:
+            print(
+                f"  +{t['improvement_pct']:.1f}%  {t['name']:60s} median={t['median_us']:.1f}us"
+            )
+
+    return 0
+
+
 def cmd_hot(args: argparse.Namespace) -> int:
     """Top-N signatures by call count."""
     if not args.database:
@@ -533,6 +679,11 @@ def build_parser(subparsers) -> None:
     summ.add_argument("--database", default=None, help="SQLite database path")
     summ.add_argument("--json", action="store_true")
     summ.set_defaults(func=cmd_summary)
+
+    over = sub.add_parser("overview", help="quick one-line summary of the tuning run")
+    over.add_argument("--database", default=None, help="SQLite database path")
+    over.add_argument("--json", action="store_true")
+    over.set_defaults(func=cmd_overview)
 
     fam = sub.add_parser("families", help="cross-family comparison for one digest")
     fam.add_argument("--dispatch", required=True, help="dispatch digest (hex)")
