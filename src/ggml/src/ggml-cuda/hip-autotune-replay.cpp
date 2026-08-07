@@ -48,6 +48,14 @@ struct Miss {
     uint64_t        calls;   // encounters that reached the resolver's cold path
 };
 
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+struct Hit {
+    ggml_hip_digest signature_digest;
+    std::string     candidate_name;
+    uint64_t        calls;
+};
+#endif
+
 struct DigestHash {
     size_t operator()(const ggml_hip_digest & digest) const {
         size_t value = 0;
@@ -66,6 +74,10 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Winner, DigestHash, DigestEqual> g_winners;
 std::unordered_map<ggml_hip_digest, Miss, DigestHash, DigestEqual>   g_misses;
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+std::unordered_map<ggml_hip_digest, Hit, DigestHash, DigestEqual>     g_hits;
+std::mutex g_hits_mutex;
+#endif
 std::mutex g_misses_mutex;
 uint64_t   g_misses_total = 0;
 bool       g_loaded = false;
@@ -340,6 +352,55 @@ bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
     *out_variant   = found->second.variant;
     return true;
 }
+
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+void ggml_hip_replay_record_hit(const ggml_hip_digest & dispatch_digest,
+                                const ggml_hip_digest & signature_digest,
+                                const ggml_hip_candidate_descriptor * candidate) {
+    if (candidate == nullptr) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_hits_mutex);
+    auto found = g_hits.find(dispatch_digest);
+    if (found != g_hits.end()) {
+        ++found->second.calls;
+        return;
+    }
+    Hit hit;
+    hit.signature_digest = signature_digest;
+    hit.candidate_name = candidate->stable_name;
+    hit.calls = 1;
+    g_hits.emplace(dispatch_digest, std::move(hit));
+}
+
+void ggml_hip_replay_flush_hits() {
+    std::lock_guard<std::mutex> lock(g_hits_mutex);
+    if (g_hits.empty()) {
+        return;
+    }
+    const char * path = getenv("GGML_HIP_DISPATCH_HIT_LOG");
+    if (path == nullptr || path[0] == '\0') {
+        return;
+    }
+    FILE * file = fopen(path, "w");
+    if (file == nullptr) {
+        GGML_LOG_WARN("bigcherry: cannot write replay hit log '%s'\\n", path);
+        return;
+    }
+    for (const auto & [digest, hit] : g_hits) {
+        fprintf(file,
+                "{\"dispatch\":\"%s\",\"signature\":\"%s\","
+                "\"candidate\":\"%s\",\"calls\":%llu}\n",
+                ggml_hip_digest_hex(digest).c_str(),
+                ggml_hip_digest_hex(hit.signature_digest).c_str(),
+                hit.candidate_name.c_str(),
+                (unsigned long long) hit.calls);
+    }
+    fclose(file);
+    GGML_LOG_INFO("bigcherry: wrote %zu replay hit(s) to '%s'\\n",
+                  g_hits.size(), path);
+}
+#endif
 
 void ggml_hip_replay_record_miss(const ggml_hip_digest & dispatch_digest,
                                  const ggml_hip_digest & signature_digest,

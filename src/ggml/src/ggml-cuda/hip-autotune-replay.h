@@ -87,6 +87,15 @@ void ggml_hip_replay_record_miss(const ggml_hip_digest & dispatch_digest,
 // teardown; no-op unless the policy is `native-record`.
 void ggml_hip_replay_flush_misses();
 
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+// Present only in diagnostic replay builds: production replay has no hit-log
+// call or branch on the dispatch hot path.
+void ggml_hip_replay_record_hit(const ggml_hip_digest & dispatch_digest,
+                                const ggml_hip_digest & signature_digest,
+                                const ggml_hip_candidate_descriptor * candidate);
+void ggml_hip_replay_flush_hits();
+#endif
+
 // Counts for diagnostics and tests.
 size_t ggml_hip_replay_entry_count();
 size_t ggml_hip_replay_miss_count();
