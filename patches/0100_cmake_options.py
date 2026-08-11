@@ -19,6 +19,9 @@ both describe builds that should not exist:
   file. Without one there is nothing to derive the candidate set from.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _OPTIONS = """

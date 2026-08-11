@@ -6,6 +6,9 @@ builds enable GGML_HIP_REPLAY_DIAGNOSTICS and write an aggregated JSONL hit log
 when GGML_HIP_DISPATCH_HIT_LOG is set.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 # Patch modules are loaded with ``tools`` on PYTHONPATH by the CLI.
 # pyright: reportMissingImports=false
 from bigcherry.patcher import Edit, FilePatch  # noqa: I001

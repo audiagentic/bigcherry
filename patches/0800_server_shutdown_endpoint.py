@@ -7,6 +7,9 @@ needed by Windows benchmark harnesses, where terminating the process skips
 backend destruction and loses buffered HIP autotune measurements.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch  # type: ignore[import-not-found]
 
 

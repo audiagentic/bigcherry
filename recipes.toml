@@ -1,0 +1,99 @@
+# Named build definitions: which upstream revision, which patches, and which
+# binaries to produce.
+version = 1
+pinned = "b10362"  # bump via `bigcherry repin`; recipes with ref="pinned" follow, others stay frozen
+
+[build.stock]
+description = "Unpatched-behaviour baseline: no dispatch layer at all."
+options = {}
+
+[build.native]
+description = "Dispatch layer compiled in, native candidates only."
+options = { GGML_HIP_AUTOTUNE = "ON" }
+variant-set = "inventory"
+
+[build.record]
+description = "Discovers which signatures a workload actually issues."
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_AUTOTUNE_RECORD = "ON" }
+variant-set = "inventory"
+
+[build.tune]
+description = "Measures candidates and writes results. The tuning workhorse."
+options = { GGML_HIP_AUTOTUNE = "ON" }
+variant-set = "workload-max"
+needs = "inventory"
+
+[build.replay]
+description = "Applies stored winners without measuring. What ships."
+options = { GGML_HIP_DISPATCH_REPLAY = "ON" }
+variant-set = "replay-full"
+needs = "inventory"
+
+[build.audit]
+description = "Compile-audit only: every candidate, ignoring the workload."
+options = { GGML_HIP_AUTOTUNE = "ON" }
+variant-set = "full-max"
+
+[platform.linux-multi]
+description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
+targets = "gfx1100;gfx1201;gfx1030"
+options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON" }
+c-compiler = "/opt/rocm/llvm/bin/clang"
+cxx-compiler = "/opt/rocm/llvm/bin/clang++"
+
+[platform.windows-gfx1100]
+description = "Local workstation, single card."
+targets = "gfx1100"
+options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
+
+[recipe.dev]
+ref = "pinned"
+states = ["validated", "untested"]
+builds = ["tune", "replay", "record"]
+platform = "linux-multi"
+
+[recipe.release]
+ref = "pinned"
+states = ["validated"]
+builds = ["record", "tune", "replay"]
+platform = "linux-multi"
+
+[recipe.core]
+ref = "pinned"
+groups = ["core"]
+states = ["validated"]
+builds = ["tune"]
+platform = "linux-multi"
+
+[recipe.upstream]
+ref = "pinned"
+groups = []   # empty list = select nothing; omitting the key entirely would mean "all groups" instead
+builds = ["stock"]
+platform = "linux-multi"
+default = true
+
+[recipe.bigcherry-native]
+ref = "pinned"
+states = ["validated"]
+builds = ["native"]
+platform = "linux-multi"
+default = true
+
+[recipe.bigcherry]
+ref = "pinned"
+states = ["validated"]
+builds = ["record", "tune", "replay"]
+platform = "linux-multi"
+default = true
+
+[recipe.workstation]
+ref = "pinned"
+states = ["validated", "untested"]
+builds = ["tune"]
+platform = "windows-gfx1100"
+
+[recipe.b10257]
+ref = "b10257"   # frozen historical recipe -- does not move when `pinned` changes
+states = ["validated"]
+builds = ["tune", "replay"]
+platform = "linux-multi"

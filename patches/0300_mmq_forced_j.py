@@ -33,6 +33,9 @@ an undefined (type, J, fallback) is rejected before launch rather than aborting
 inside it.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 # J values the switch covers. Pinned by the audit (source_audit.MMQ_J_VALUES);

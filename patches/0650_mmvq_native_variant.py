@@ -28,6 +28,9 @@ Three refusals worth keeping:
   the signature, not the candidate.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _FORCED_ROUTE = """

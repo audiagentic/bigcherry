@@ -6,11 +6,14 @@
 
 #include "hip-autotune-build-hash.h"
 #include "hip-autotune-dispatch.cuh"
+#include "hip-autotune-journal.h"
 #include "hip-autotune-signature.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <limits>
 #include <mutex>
 #include <stdio.h>
@@ -123,6 +126,81 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+// UTC, second resolution, ISO-ish -- only used to name a journal experiment
+// uniquely per process, not parsed back by anything, so exact format is not
+// load-bearing.
+std::string utc_timestamp() {
+    std::time_t now = std::time(nullptr);
+    std::tm tm_utc;
+#if defined(_WIN32)
+    gmtime_s(&tm_utc, &now);
+#else
+    gmtime_r(&now, &tm_utc);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y%m%dT%H%M%SZ", &tm_utc);
+    return std::string(buf);
+}
+
+// A compact per-candidate summary for the journal's "result" event -- not
+// the full ~80-field measurements-file record (that is built separately by
+// ggml_hip_tuner_flush()), just enough to identify which candidate won,
+// why, and how much evidence backed the answer, so a killed run's partial
+// journal is still useful without a human re-deriving it from raw samples.
+std::string journal_result_summary(
+        const ggml_hip_digest & dispatch_digest, const Result & result) {
+    return std::string("{\"kind\":\"result\",\"dispatch\":\"") +
+        ggml_hip_digest_hex(dispatch_digest) +
+        "\",\"winner\":\"" +
+        (result.winner != nullptr ? result.winner->stable_name : "(none)") +
+        "\",\"reason\":\"" + result.reason +
+        "\",\"generation\":1" +
+        ",\"generated\":" + std::to_string(result.generated) +
+        ",\"applicable\":" + std::to_string(result.applicable) +
+        ",\"eligible\":" + std::to_string(result.eligible) +
+        ",\"measured\":" + std::to_string(result.measured) +
+        ",\"improvement_pct\":" + std::to_string(result.improvement_pct) +
+        ",\"confidence\":" + std::to_string(result.confidence) + "}";
+}
+
+// Called from every g_results.emplace() site (there are several -- most are
+// early "native not eligible/rejected" exits). Emplacing into g_results and
+// appending to the journal are two independent, differently-mutexed
+// operations on purpose: g_mutex protects the in-memory map that
+// ggml_hip_tuner_flush() reads at shutdown, while the journal's own mutex
+// (inside hip-autotune-journal.cpp) guards the file handle -- holding
+// g_mutex across a filesystem fsync would serialise every concurrent
+// dispatch behind disk I/O for no reason.
+void record_result(const ggml_hip_digest & dispatch_digest, const Result & result) {
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_results.emplace(dispatch_digest, result);
+    }
+
+    // Lazy, attempt-once open: the common case (no GGML_HIP_DISPATCH_DB, or
+    // a tune run with journaling not requested) must cost nothing beyond
+    // this one atomic check on every subsequent call.
+    static std::atomic<bool> journal_open_attempted{false};
+    if (!journal_open_attempted.exchange(true)) {
+        const char * db_path = getenv("GGML_HIP_DISPATCH_DB");
+        if (db_path != nullptr && db_path[0] != '\0') {
+            const std::string journal_path = std::string(db_path) + ".journal.jsonl";
+            const std::string experiment_id = "tune-" + utc_timestamp();
+            if (!ggml_hip_journal_open(
+                    journal_path.c_str(), experiment_id,
+                    GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
+                    GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR, result.hardware_digest)) {
+                GGML_LOG_WARN("bigcherry: cannot open tuning journal '%s'; "
+                              "a killed run will not be incrementally recoverable\n",
+                              journal_path.c_str());
+            }
+        }
+    }
+    if (ggml_hip_journal_is_open()) {
+        ggml_hip_journal_append_result(journal_result_summary(dispatch_digest, result));
+    }
+}
 
 const char * reason_name(ggml_hip_reject_reason r) {
     switch (r) {
@@ -260,6 +338,41 @@ bool compare_outputs(const std::vector<float> & reference,
     return true;
 }
 
+// Diagnostic only -- attributes a device-side crash (illegal memory access,
+// XNACK fault) to the candidate that caused it. Not a replacement for the
+// crash-safe journal, a companion to it: a candidate that faults never
+// reaches record_result(), so the journal's last "result" entry alone is one
+// candidate short of the truth. This writes an "attempt" event into the SAME
+// journal, *before* the risky GPU work, so the crashing candidate is the
+// last line even when the process never executes another line of C++
+// afterward.
+//
+// Only writes once the journal is already open -- opening it here would need
+// a hardware digest that does not exist until a candidate has completed at
+// least once (see record_result), and plumbing that into this hot path for
+// a diagnostic-only feature is not worth it. Practical effect: the very
+// first candidate of a run has no attempt coverage; every candidate after
+// the first completed result does. Off by default (one getenv + atomic
+// check when unset) -- do not enable for a real tuning run, fsync-per-launch
+// is the wrong trade when nothing is crashing. Correlate against
+// `HIP_LAUNCH_BLOCKING=1`: without it, several launches can be in-flight on
+// the device ahead of the one that actually faults, and the last logged
+// attempt would name an innocent candidate that merely happened to be
+// dispatched most recently, not the one whose kernel corrupted memory.
+void trace_launch_attempt(const char * stable_name) {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_TUNE_TRACE_ATTEMPTS");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    if (!enabled || !ggml_hip_journal_is_open()) return;
+    const std::string payload =
+        "{\"candidate\":\"" + std::string(stable_name ? stable_name : "(null)") +
+        "\",\"t_us\":" + std::to_string(ggml_time_us()) + "}";
+    ggml_hip_journal_append_attempt(payload);
+}
+
 // Launch one candidate into scratch and time the complete path.
 //
 // `lc` already points at scratch, so the caller's real destination is never
@@ -270,6 +383,8 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     int warmup, int samples, int launches_per_sample,
                     std::vector<double> & gpu_us,
                     std::vector<double> & host_us) {
+    trace_launch_attempt(candidate ? candidate->stable_name : nullptr);
+
     hipEvent_t start;
     hipEvent_t stop;
     if (hipEventCreate(&start) != hipSuccess) return false;
@@ -547,8 +662,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         // reference and no baseline, so this signature is rejected rather than
         // producing a winner chosen against nothing.
         result.reason = "native not eligible; run rejected";
-        std::lock_guard<std::mutex> lock(g_mutex);
-        g_results.emplace(dispatch_digest, result);
+        record_result(dispatch_digest, result);
         return native.candidate;
     }
 
@@ -581,8 +695,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                             gpu, host)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.reason = "native failed to launch; run rejected";
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_results.emplace(dispatch_digest, result);
+            record_result(dispatch_digest, result);
             return native.candidate;
         }
         native_m->median_us      = median_of(gpu);
@@ -718,8 +831,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         // improvement_pct in this signature would be computed against a
         // number that moved.
         result.reason = "native timing unstable; run rejected";
-        std::lock_guard<std::mutex> lock(g_mutex);
-        g_results.emplace(dispatch_digest, result);
+        record_result(dispatch_digest, result);
         return native.candidate;
     }
 
@@ -953,8 +1065,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                       result.confidence);
     }
 
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_results.emplace(dispatch_digest, result);
+    record_result(dispatch_digest, result);
     return result.winner;
 }
 

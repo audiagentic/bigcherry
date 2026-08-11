@@ -1,5 +1,8 @@
 """Persist canonical signature shapes in tuning measurements."""
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch  # pyright: ignore[reportMissingImports]
 
 TUNER = FilePatch(

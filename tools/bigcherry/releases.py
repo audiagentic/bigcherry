@@ -62,6 +62,10 @@ class ReleaseRecord:
     audit: dict[str, Any] = field(default_factory=dict)
     patches: dict[str, Any] = field(default_factory=dict)
     manifest_hash: str = ""
+    #: Fingerprint of the patch selection currently applied to the checkout,
+    #: from ``recipes.tree_state_key``. Lets a build tell whether the tree is
+    #: already what it needs, instead of re-applying and forcing a rebuild.
+    tree_state: str = ""
     #: Free-form notes -- in practice, why a release is `broken`.
     notes: str = ""
     first_seen: str = ""

@@ -26,6 +26,9 @@ Applying it at the switch instead would need them recomputed by hand, and a
 forced nwarps larger than the native choice would under-allocate.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _NWARPS_APPLY = """

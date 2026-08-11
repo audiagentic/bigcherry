@@ -25,6 +25,9 @@ should never fire -- they exist to catch a generator bug, which is exactly the
 kind of thing that otherwise surfaces as a mysterious runtime failure.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _KERNEL_TEMPLATE = """// bigcherry (HI09): nwarps and rows_per_block become explicit template
