@@ -39,6 +39,9 @@ not a variant of this one (3.1), and `ggml_hip_mmvf_can_execute` rejects it
 before it reaches here.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _ELIGIBILITY_AND_ENTRY = """

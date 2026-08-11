@@ -22,6 +22,9 @@ The cuBLAS entry point also needs exposing: it is ``static`` upstream, and the
 BLAS candidate has to be able to call it.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 _INCLUDE = """

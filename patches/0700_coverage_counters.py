@@ -19,6 +19,9 @@ through the graph optimiser, so every launch arrives via the dense selector and
 coverage looks like 100%. It needs a real model.
 """
 
+GROUP = "core"
+STATE = "validated"
+
 from bigcherry.patcher import Edit, FilePatch
 
 # Both headers, because the family entries need the coverage counters (this
