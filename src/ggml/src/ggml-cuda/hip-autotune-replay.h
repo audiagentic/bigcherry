@@ -28,7 +28,7 @@
 // payload's compatibility is checked separately against the manifest hash and
 // the ABI schema versions.
 #define GGML_HIP_REPLAY_MAGIC   0x59484342u
-#define GGML_HIP_REPLAY_VERSION 1
+#define GGML_HIP_REPLAY_VERSION 2
 
 // Header of the on-disk cache. Fixed size, little-endian, no padding assumed --
 // fields are read individually rather than by struct overlay, so the file is

@@ -155,6 +155,7 @@ ggml_hip_native_selection ggml_hip_native_select(
     const int warp_size = ggml_cuda_info().devices[ctx.device].warp_size;
     const int64_t ne11  = src1->ne[1];
     const int64_t ne12  = src1->ne[2];
+    const int64_t mmid_batch = dst->ne[2];
 
     const bool bad_padding_clear =
         src0->buffer != nullptr
@@ -167,19 +168,32 @@ ggml_hip_native_selection ggml_hip_native_select(
     if (bad_padding_clear || src1->type != GGML_TYPE_F32 || dst->type != GGML_TYPE_F32) {
         family = GGML_HIP_FAMILY_BLAS;
     } else if (ids != nullptr) {
-        // MUL_MAT_ID has its own, shorter ladder upstream: MMVF, then MMQ, then
-        // MMF, then MMVQ. Mirroring it separately is less elegant than one
-        // shared ladder and considerably more likely to stay correct.
-        if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne12)) {
+        // MUL_MAT_ID follows upstream's expert-token ladder.  The vectorised
+        // quantised path must be considered before the AMD float path; both
+        // the limit and the dimension are the expert-token batch (ne[2]), not
+        // the dense output width.
+        bool selected = false;
+        const int mmvq_mmid_max = get_mmvq_mmid_max_batch(src0->type, cc);
+        if (mmid_batch <= MMVQ_MAX_BATCH_SIZE
+                && ggml_is_quantized(src0->type)
+                && mmid_batch <= mmvq_mmid_max) {
+            family = GGML_HIP_FAMILY_MMVQ;
+            selected = true;
+        } else if (mmid_batch <= MMVQ_MAX_BATCH_SIZE
+                && !ggml_is_quantized(src0->type) && GGML_CUDA_CC_IS_AMD(cc)
+                && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne12)) {
             family = GGML_HIP_FAMILY_MMVF;
-        } else if (ggml_cuda_should_use_mmq(src0->type, cc, ne12, src0->ne[2])) {
+            selected = true;
+        }
+        if (!selected && ggml_cuda_should_use_mmq(src0->type, cc, src1->ne[1], src0->ne[2])) {
             family = GGML_HIP_FAMILY_MMQ;
-        } else if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne,
+            selected = true;
+        } else if (!selected && ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne,
                                             src0->nb, ne12, /*mul_mat_id =*/ true)) {
             family = GGML_HIP_FAMILY_MMF;
-        } else if (ggml_cuda_should_use_mmvq(src0->type, cc, ne12)) {
-            family = GGML_HIP_FAMILY_MMVQ;
-        } else {
+            selected = true;
+        }
+        if (!selected) {
             family = GGML_HIP_FAMILY_BLAS;
         }
     } else if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) {
@@ -979,6 +993,15 @@ bool ggml_hip_mmvq_can_execute(const ggml_hip_candidate_descriptor * self,
         return false;
     }
     GGML_UNUSED(hw);
+
+    // The native wrapper is not exempt: upstream's MoE launcher asserts on
+    // expert-token batches above its bounded MMVQ geometry.  The old early
+    // return made the forced-path guard below ineffective for the native
+    // candidate and caused HI53's first-request crash.
+    if ((sig.flags & GGML_HIP_SIG_HAS_IDS) != 0
+            && sig.ned[2] > MMVQ_MAX_BATCH_SIZE) {
+        return false;
+    }
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {
         return true;
     }
@@ -988,7 +1011,7 @@ bool ggml_hip_mmvq_can_execute(const ggml_hip_candidate_descriptor * self,
     // forced candidate take that path would attribute the MoE kernel's timing
     // to a geometry it never used. mul_mat_vec_q_switch_ncols_dst aborts if one
     // reaches it, so this predicate is what keeps that abort unreachable.
-    if ((sig.flags & GGML_HIP_SIG_HAS_IDS) != 0 && sig.ned[1] > 1) {
+    if ((sig.flags & GGML_HIP_SIG_HAS_IDS) != 0 && sig.ned[2] > 1) {
         return false;
     }
 

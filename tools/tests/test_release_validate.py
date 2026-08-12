@@ -47,9 +47,13 @@ class ProbeTests(unittest.TestCase):
     def test_clean_probe_reports_compatible(self):
         with tempfile.TemporaryDirectory() as directory:
             staging = Path(directory)
-            with mock.patch.object(release_validate, "_run_logged", side_effect=[True, True]):
+            with mock.patch.object(release_validate, "_run_logged", side_effect=[True, True]) as run:
                 code, path = release_validate.probe("r3", staging, "master", "bigcherry")
             self.assertEqual(code, 0)
+            pull_command = run.call_args_list[0].args[0]
+            build_command = run.call_args_list[1].args[0]
+            self.assertLess(pull_command.index("--llama-root"), pull_command.index("pull"))
+            self.assertLess(build_command.index("--llama-root"), build_command.index("build"))
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "compatible"', record)
 

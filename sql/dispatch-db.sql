@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS winner (
     median_us           REAL    NOT NULL,
     p95_us              REAL    NOT NULL,
     workspace_bytes     INTEGER NOT NULL DEFAULT 0,
+    pool_peak_bytes     INTEGER,
     reason              TEXT,                      -- text explanation of why winner chosen (B3)
     confidence          REAL,
     seeded              INTEGER NOT NULL DEFAULT 0,  -- 1 = manual seed (HI11)

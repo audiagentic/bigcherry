@@ -1,0 +1,14 @@
+{
+  "revision": "680a9ae63d60d35c21a0dcd7d3fabdb9c6bfc963",
+  "release_tag": "",
+  "stage": "pulled",
+  "bigcherry_revision": "74fa32cd9e0004872e168cd1a0aa569a02985813",
+  "artifact_version": 1,
+  "audit": {},
+  "patches": {},
+  "manifest_hash": "",
+  "tree_state": "",
+  "notes": "",
+  "first_seen": "2026-08-12T12:15:55.090646+00:00",
+  "updated_at": "2026-08-12T12:15:55.090646+00:00"
+}

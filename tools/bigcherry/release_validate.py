@@ -51,7 +51,13 @@ def _run_logged(command: list[str], *, cwd: Path, log: Path) -> bool:
     return completed.returncode == 0
 
 
-def probe(run_id: str, staging_root: Path, ref: str, recipe: str) -> tuple[int, Path]:
+def probe(
+    run_id: str,
+    staging_root: Path,
+    ref: str,
+    recipe: str,
+    inventory: Path | None = None,
+) -> tuple[int, Path]:
     """Prove `ref` still audits, patches, and builds clean under `recipe`.
 
     Never touches the pinned checkout: `pull`/`build` are both told to use
@@ -73,8 +79,8 @@ def probe(run_id: str, staging_root: Path, ref: str, recipe: str) -> tuple[int, 
     }
 
     pull_ok = _run_logged(
-        [sys.executable, "-m", "bigcherry", "pull",
-         "--llama-root", str(checkout), "--ref", ref],
+        [sys.executable, "-m", "bigcherry", "--llama-root", str(checkout),
+         "pull", "--ref", ref],
         cwd=paths.REPO_ROOT, log=run / "pull.log",
     )
     record["pull"] = {"ok": pull_ok, "log": "pull.log"}
@@ -82,9 +88,14 @@ def probe(run_id: str, staging_root: Path, ref: str, recipe: str) -> tuple[int, 
         record["outcome"] = "pull-failed"
         return 1, _write(run, record)
 
+    build_command = [
+        sys.executable, "-m", "bigcherry", "--llama-root", str(checkout),
+        "build", "--recipe", recipe,
+    ]
+    if inventory is not None:
+        build_command += ["--inventory", str(inventory)]
     build_ok = _run_logged(
-        [sys.executable, "-m", "bigcherry", "build",
-         "--recipe", recipe, "--llama-root", str(checkout)],
+        build_command,
         cwd=paths.REPO_ROOT, log=run / "build.log",
     )
     record["build"] = {"ok": build_ok, "log": "build.log"}
@@ -99,8 +110,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--staging-root", default=str(paths.ARTIFACTS / "release-runs"))
     parser.add_argument("--ref", default="master")
     parser.add_argument("--recipe", default="bigcherry")
+    parser.add_argument(
+        "--inventory", default=None,
+        help="record-mode inventory JSON for recipes whose build includes tuning",
+    )
     args = parser.parse_args(argv)
-    code, path = probe(args.run_id, Path(args.staging_root), args.ref, args.recipe)
+    code, path = probe(
+        args.run_id, Path(args.staging_root), args.ref, args.recipe,
+        Path(args.inventory) if args.inventory else None,
+    )
     print(f"record: {path}")
     return code
 

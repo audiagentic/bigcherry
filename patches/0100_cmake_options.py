@@ -35,6 +35,7 @@ set   (GGML_HIP_AUTOTUNE_SIGNATURE_FILE "" CACHE STRING
                                             "ggml: inventory JSON driving workload-max")
 option(GGML_HIP_AUTOTUNE_SQLITE             "ggml: link SQLite for record/tune modes"          ON)
 option(GGML_HIP_AUTOTUNE_RECORD             "ggml: build signature record mode"                OFF)
+option(GGML_HIP_WORKSPACE_METRICS            "ggml: collect tune-only pool workspace metrics"   OFF)
 option(GGML_HIP_ROUTING_TRANSFORM           "ggml: tune sig-to-sig routing transformations"    OFF)
 
 # Accept uppercase spellings from BUILD_PROFILES.md as aliases (B10).
@@ -91,6 +92,11 @@ if (GGML_HIP_ROUTING_TRANSFORM AND NOT (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_R
         "GGML_HIP_ROUTING_TRANSFORM requires GGML_HIP_AUTOTUNE or "
         "GGML_HIP_DISPATCH_REPLAY: there is no dispatch layer to transform in.")
 endif()
+
+if (GGML_HIP_WORKSPACE_METRICS AND NOT GGML_HIP_AUTOTUNE)
+    message(FATAL_ERROR
+        "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
+endif()
 # ---- end bigcherry -----------------------------------------------------------
 """
 
@@ -113,6 +119,18 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     if (GGML_HIP_ROUTING_TRANSFORM)
         add_compile_definitions(GGML_HIP_ROUTING_TRANSFORM)
     endif()
+    if (GGML_HIP_WORKSPACE_METRICS)
+        if (NOT GGML_HIP_AUTOTUNE)
+            message(FATAL_ERROR "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
+        endif()
+        add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
+    endif()
+    if (GGML_HIP_WORKSPACE_METRICS)
+        if (NOT GGML_HIP_AUTOTUNE)
+            message(FATAL_ERROR "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
+        endif()
+        add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
+    endif()
 
     # The generated registry, manifest hash header and MMVQ instances are
     # written into the tree by `bigcherry generate` before configure.
@@ -129,8 +147,29 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     # parts of this layer .cpp -- signature, record, db, replay, metrics -- and
     # they are host C++ with no device code, so they should stay .cpp rather
     # than being renamed to compile as HIP. They therefore need their own glob.
-    file(GLOB   SRCS "../ggml-cuda/hip-autotune-*.cpp")
-    list(APPEND GGML_SOURCES_ROCM ${SRCS})
+    # Keep the production link graph explicit. A broad hip-autotune-* glob
+    # pulled tuning, journal, SMI and record machinery into replay binaries.
+    set(_BC_DISPATCH_SOURCES
+        "../ggml-cuda/hip-autotune-dispatch.cu"
+        "../ggml-cuda/hip-autotune-transform.cu"
+        "../ggml-cuda/hip-autotune-signature.cpp"
+        "../ggml-cuda/hip-autotune-blake2b.cpp")
+    if (GGML_HIP_DISPATCH_REPLAY)
+        list(APPEND _BC_DISPATCH_SOURCES
+            "../ggml-cuda/hip-autotune-replay.cpp")
+    endif()
+    if (GGML_HIP_AUTOTUNE_RECORD)
+        list(APPEND _BC_DISPATCH_SOURCES
+            "../ggml-cuda/hip-autotune-record.cpp")
+    endif()
+    if (GGML_HIP_AUTOTUNE)
+        list(APPEND _BC_DISPATCH_SOURCES
+            "../ggml-cuda/hip-autotune-tuner.cu"
+            "../ggml-cuda/hip-autotune-io.cpp"
+            "../ggml-cuda/hip-autotune-journal.cpp"
+            "../ggml-cuda/hip-autotune-smi.cpp")
+    endif()
+    list(APPEND GGML_SOURCES_ROCM ${_BC_DISPATCH_SOURCES})
 
     # Recording is a *separate capability* from tuning, and the distinction
     # matters: the inventory build records signatures with no tuner and no

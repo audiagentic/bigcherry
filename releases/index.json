@@ -1,15 +1,24 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-08-12T08:49:56.151429+00:00",
+  "generated_at": "2026-08-12T14:34:57.689967+00:00",
   "releases": [
     {
       "slug": "b10362",
       "revision": "4801e3c567d5131dd41b387df5f2d4b1370d92be",
       "release_tag": "b10362",
       "stage": "generated",
-      "manifest_hash": "d64e79c882769e73200956a6e60b008b",
+      "manifest_hash": "9f50920bc67ead41eb0822deb66d274e",
       "audit_passed": true,
-      "updated_at": "2026-08-12T08:49:55.439565+00:00"
+      "updated_at": "2026-08-12T14:34:57.684141+00:00"
+    },
+    {
+      "slug": "680a9ae63d60",
+      "revision": "680a9ae63d60d35c21a0dcd7d3fabdb9c6bfc963",
+      "release_tag": "",
+      "stage": "pulled",
+      "manifest_hash": "",
+      "audit_passed": false,
+      "updated_at": "2026-08-12T12:15:55.090646+00:00"
     },
     {
       "slug": "b10257",

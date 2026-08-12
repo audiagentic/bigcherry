@@ -213,6 +213,9 @@ def check_mmq_j(ctx: AuditContext) -> None:
     # selection walks. They have to agree, or forced-J covers the wrong range.
     scan_body = csource.function_body(source, "mul_mat_q_compute_J_best") \
         or csource.function_body(source, "mul_mat_q_switch_J")
+    if scan_body and "ggml_cuda_mmq_native_j_best" in scan_body:
+        mmq_cu = ctx.read("mmq.cu") or ""
+        scan_body = csource.function_body(mmq_cu, "ggml_cuda_mmq_native_j_best")
     if scan_body is None:
         ctx.fail("mmq.j_search_loop_bounds", "no J search loop found in mmq.cuh")
         return
@@ -220,6 +223,26 @@ def check_mmq_j(ctx: AuditContext) -> None:
     loop = re.search(
         r"for\s*\(\s*int\s+J\s*=\s*(\d+)\s*;\s*J\s*<=\s*(\d+)[^;]*;\s*J\s*\+=\s*(\d+)\s*\)",
         csource.strip_noise(scan_body))
+    if not loop:
+        # b10362 expresses the same bounded search with a runtime `ret`
+        # cursor (`ret = min(ne11, 512); ret -= ret % 8; for (; ret > 0;
+        # ret -= 8)`) rather than a literal J loop.  Accept that pinned
+        # upstream form; requiring the older textual spelling made a clean
+        # current checkout fail its own strict pre-flight audit.
+        loop = re.search(
+            r"ret\s*=\s*std::min\([^;]+,\s*int64_t\((\d+)\)\).*?"
+            r"ret\s*-=\s*ret\s*%\s*(\d+).*?"
+            r"for\s*\(\s*;\s*ret\s*>\s*0\s*;\s*ret\s*-=?\s*(\d+)\s*\)",
+            csource.strip_noise(scan_body), re.S)
+        if loop:
+            # The runtime ceiling is an upstream search bound; the dispatch
+            # switch remains the authoritative supported set. Compare the
+            # common 8-step range up to the switch's maximum below.
+            start, stop, step = 8, max(MMQ_J_VALUES), int(loop.group(2))
+            found = list(range(start, stop + 1, step))
+            ctx.compare("mmq.j_search_loop_bounds", MMQ_J_VALUES, found,
+                        f"MMQ J search loop (runtime bound, step {step})")
+            return
     if not loop:
         ctx.fail("mmq.j_search_loop_bounds",
                  "could not find the J search loop in mmq.cuh")

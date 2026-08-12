@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <cerrno>
 #include <limits>
 #include <mutex>
 #include <stdio.h>
@@ -59,6 +60,7 @@ struct Measurement {
     double   nmse                      = 0.0;
     double   max_abs_error             = 0.0;
     size_t   workspace_bytes           = 0;
+    size_t   pool_peak_bytes           = 0;
     int      samples                   = 0;
 
     // E3: max(gpu_median, host_median - host_sync_overhead) -- whichever
@@ -219,6 +221,10 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+// GPU measurements are process-global device state.  Serialize the complete
+// cold-path experiment so concurrent first encounters cannot perturb one
+// another or publish different winners for the same dispatch key.
+std::mutex g_measure_mutex;
 
 // UTC, second resolution, ISO-ish -- only used to name a journal experiment
 // uniquely per process, not parsed back by anything, so exact format is not
@@ -471,11 +477,20 @@ void trace_launch_attempt(const char * stable_name) {
 // `lc` already points at scratch, so the caller's real destination is never
 // touched -- a candidate that produces garbage must not corrupt the run it is
 // being measured inside.
+static bool hip_ok(hipError_t status, const char * what) {
+    if (status == hipSuccess) return true;
+    GGML_LOG_WARN("bigcherry: %s failed: %s\n", what, hipGetErrorString(status));
+    return false;
+}
+
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     const ggml_hip_launch_context & lc,
                     int warmup, int samples, int launches_per_sample,
                     std::vector<double> & gpu_us,
-                    std::vector<double> & host_us) {
+                    std::vector<double> & host_us,
+                    ggml_backend_cuda_context * workspace_ctx = nullptr,
+                    bool isolate_workspace = false,
+                    size_t * pool_peak_bytes = nullptr) {
     trace_launch_attempt(candidate ? candidate->stable_name : nullptr);
 
     hipEvent_t start;
@@ -484,6 +499,16 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     if (hipEventCreate(&stop)  != hipSuccess) { hipEventDestroy(start); return false; }
 
     ggml_hip_candidate_descriptor effective = *candidate;
+
+#ifdef GGML_HIP_WORKSPACE_METRICS
+    if (workspace_ctx != nullptr && isolate_workspace) {
+        workspace_ctx->pool().bc_workspace_clear_cache();
+    }
+#else
+    (void) workspace_ctx;
+    (void) isolate_workspace;
+    (void) pool_peak_bytes;
+#endif
 
     for (int i = 0; i < warmup; ++i) {
         effective.launch(&effective, lc);
@@ -497,33 +522,59 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         return false;
     }
 
+#ifdef GGML_HIP_WORKSPACE_METRICS
+    if (workspace_ctx != nullptr && isolate_workspace) {
+        // Warmup owns the fresh allocation; timed launches measure only the
+        // incremental peak attributable to this candidate.
+        workspace_ctx->pool().bc_workspace_reset_peak();
+    }
+#endif
+
     gpu_us.reserve(samples);
     host_us.reserve(samples);
 
     for (int s = 0; s < samples; ++s) {
         const int64_t host_start = ggml_time_us();
-        hipEventRecord(start, lc.stream);
+        if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
+            hipEventDestroy(start); hipEventDestroy(stop); return false;
+        }
         // Several launches per sample when one kernel is below event
         // resolution; the mean of the batch is the sample.
         for (int i = 0; i < launches_per_sample; ++i) {
             effective.launch(&effective, lc);
         }
-        hipEventRecord(stop, lc.stream);
-        if (hipEventSynchronize(stop) != hipSuccess) {
+        if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
+            hipEventDestroy(start); hipEventDestroy(stop); return false;
+        }
+        if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
             hipEventDestroy(start); hipEventDestroy(stop);
             return false;
         }
         const int64_t host_end = ggml_time_us();
 
         float ms = 0.0f;
-        hipEventElapsedTime(&ms, start, stop);
-        gpu_us.push_back((double) ms * 1000.0 / (double) launches_per_sample);
+        if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")
+                || !std::isfinite(ms) || ms <= 0.0f) {
+            hipEventDestroy(start); hipEventDestroy(stop); return false;
+        }
+        const double us = (double) ms * 1000.0 / (double) launches_per_sample;
+        if (!std::isfinite(us) || us <= 0.0) {
+            hipEventDestroy(start); hipEventDestroy(stop); return false;
+        }
+        gpu_us.push_back(us);
         host_us.push_back((double) (host_end - host_start)
                           / (double) launches_per_sample);
     }
 
     hipEventDestroy(start);
     hipEventDestroy(stop);
+#ifdef GGML_HIP_WORKSPACE_METRICS
+    if (pool_peak_bytes != nullptr && workspace_ctx != nullptr && isolate_workspace) {
+        const size_t peak = workspace_ctx->pool().bc_workspace_peak_bytes();
+        const size_t baseline = workspace_ctx->pool().bc_workspace_bytes();
+        *pool_peak_bytes = peak >= baseline ? peak - baseline : 0;
+    }
+#endif
     return hipGetLastError() == hipSuccess;
 }
 
@@ -570,13 +621,21 @@ double host_sync_overhead_us(cudaStream_t stream) {
     if (g_host_sync_overhead_us >= 0.0) return g_host_sync_overhead_us;
 
     hipEvent_t a, b;
-    hipEventCreate(&a); hipEventCreate(&b);
+    if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
+        return 0.0;
+    }
+    if (!hip_ok(hipEventCreate(&b), "hipEventCreate(overhead stop)")) {
+        hipEventDestroy(a);
+        return 0.0;
+    }
     std::vector<double> samples;
     for (int i = 0; i < 20; ++i) {
         const int64_t t0 = ggml_time_us();
-        hipEventRecord(a, stream);
-        hipEventRecord(b, stream);
-        hipEventSynchronize(b);
+        if (!hip_ok(hipEventRecord(a, stream), "hipEventRecord(overhead start)")
+                || !hip_ok(hipEventRecord(b, stream), "hipEventRecord(overhead stop)")
+                || !hip_ok(hipEventSynchronize(b), "hipEventSynchronize(overhead)")) {
+            hipEventDestroy(a); hipEventDestroy(b); return 0.0;
+        }
         samples.push_back((double) (ggml_time_us() - t0));
     }
     hipEventDestroy(a); hipEventDestroy(b);
@@ -646,43 +705,70 @@ std::string string_array_json(const std::vector<std::string> & v) {
 const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
     static ggml_hip_tuner_config config = [] {
         ggml_hip_tuner_config c;
+        auto int_env = [&](const char * name, int min_v, int max_v, int & out) {
+            const char * v = getenv(name); if (!v) return;
+            errno = 0; char * end = nullptr; const long parsed = strtol(v, &end, 10);
+            if (errno || end == v || *end != '\0' || parsed < min_v || parsed > max_v) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s (expected %d..%d)\n", name, v, min_v, max_v);
+                c.valid = false; return;
+            }
+            out = (int) parsed;
+        };
+        auto size_env = [&](const char * name, size_t & out) {
+            const char * v = getenv(name); if (!v) return;
+            errno = 0; char * end = nullptr; const unsigned long long parsed = strtoull(v, &end, 10);
+            if (errno || end == v || *end != '\0' || v[0] == '-'
+                    || parsed > (unsigned long long) std::numeric_limits<size_t>::max()) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s\n", name, v); c.valid = false; return;
+            }
+            out = (size_t) parsed;
+        };
+        auto double_env = [&](const char * name, double min_v, double max_v, double & out) {
+            const char * v = getenv(name); if (!v) return;
+            errno = 0; char * end = nullptr; const double parsed = strtod(v, &end);
+            if (errno || end == v || *end != '\0' || !std::isfinite(parsed)
+                    || parsed <= min_v || parsed >= max_v) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s\n", name, v); c.valid = false; return;
+            }
+            out = parsed;
+        };
         // Environment overrides exist so a long production tune can be traded
         // against precision without a rebuild.
         if (const char * v = getenv("GGML_HIP_TUNE_FINAL_SAMPLES")) {
-            c.final_samples = atoi(v);
+            int_env("GGML_HIP_TUNE_FINAL_SAMPLES", 2, 100000, c.final_samples);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_SCREEN_SAMPLES")) {
-            c.screen_samples = atoi(v);
+            int_env("GGML_HIP_TUNE_SCREEN_SAMPLES", 1, 100000, c.screen_samples);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_MAX_WORKSPACE")) {
-            c.max_workspace_bytes = (size_t) atoll(v);
+            size_env("GGML_HIP_TUNE_MAX_WORKSPACE", c.max_workspace_bytes);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_NOISE_PCT")) {
-            c.noise_canary_pct = atof(v);
+            double_env("GGML_HIP_TUNE_NOISE_PCT", 0.0, std::numeric_limits<double>::max(), c.noise_canary_pct);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_ALPHA")) {
-            c.confidence_alpha = atof(v);
+            double_env("GGML_HIP_TUNE_ALPHA", 0.0, 1.0, c.confidence_alpha);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_NOISY_MAD")) {
-            c.noisy_mad_ratio = atof(v);
+            double_env("GGML_HIP_TUNE_NOISY_MAD", 0.0, std::numeric_limits<double>::max(), c.noisy_mad_ratio);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_VERIFY_DETERMINISM")) {
-            c.verify_determinism = atoi(v);
+            int_env("GGML_HIP_TUNE_VERIFY_DETERMINISM", 0, 1, c.verify_determinism);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_EMIT_SAMPLES")) {
-            c.emit_samples = atoi(v);
+            int_env("GGML_HIP_TUNE_EMIT_SAMPLES", 0, 1, c.emit_samples);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_PILOT_SAMPLES")) {
-            c.pilot_samples = atoi(v);
+            int_env("GGML_HIP_TUNE_PILOT_SAMPLES", 1, 100000, c.pilot_samples);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_MIN_SAMPLE_US")) {
-            c.min_sample_us = atof(v);
+            double_env("GGML_HIP_TUNE_MIN_SAMPLE_US", 0.0, std::numeric_limits<double>::max(), c.min_sample_us);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_MAX_LPS")) {
-            c.max_launches_per_sample = atoi(v);
+            int_env("GGML_HIP_TUNE_MAX_LPS", 1, 100000, c.max_launches_per_sample);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
-            c.confirmation_samples = atoi(v);
+            int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_PRODUCTION_POLICY")) {
             c.production_policy = v;
@@ -690,6 +776,7 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_ACTIVE_POLICIES")) {
             c.active_policies = v;
         }
+        if (!c.valid) GGML_LOG_WARN("bigcherry: invalid tuning configuration; tuning disabled\n");
         return c;
     }();
     return config;
@@ -850,7 +937,7 @@ static size_t resolve_production_policy_index(const ggml_hip_tuner_config & conf
     for (size_t i = 0; i < g_policy_table_size; ++i) {
         if (config.production_policy == g_policy_table[i].name) return i;
     }
-    return 0;
+    return g_policy_table_size;
 }
 
 static bool policy_name_is_active(const std::string & name, const std::string & active_policies) {
@@ -865,6 +952,24 @@ static bool policy_name_is_active(const std::string & name, const std::string & 
         start = comma + 1;
     }
     return false;
+}
+
+static bool policy_list_is_valid(const std::string & active_policies) {
+    if (active_policies.empty() || active_policies == "all") return true;
+    size_t start = 0;
+    while (start <= active_policies.size()) {
+        const size_t comma = active_policies.find(',', start);
+        const std::string tok = active_policies.substr(
+            start, comma == std::string::npos ? std::string::npos : comma - start);
+        bool known = false;
+        for (size_t i = 0; i < g_policy_table_size; ++i) {
+            if (tok == g_policy_table[i].name) { known = true; break; }
+        }
+        if (!known) return false;
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return true;
 }
 
 static std::string policy_candidates_json(const std::vector<PolicyCandidateVerdict> & ranked) {
@@ -921,6 +1026,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         const ggml_hip_digest & dispatch_digest,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc_in) {
+    std::unique_lock<std::mutex> measure_lock(g_measure_mutex);
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const auto found = g_results.find(dispatch_digest);
@@ -930,6 +1036,18 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     }
 
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
+    const size_t resolved_production_index = resolve_production_policy_index(config);
+    const bool active_policies_valid = policy_list_is_valid(config.active_policies)
+        && policy_name_is_active("latency-v1", config.active_policies);
+    if (!config.valid || resolved_production_index == g_policy_table_size || !active_policies_valid) {
+        GGML_LOG_WARN("bigcherry: invalid tuning policy/configuration; tuning disabled\n");
+        Result invalid;
+        invalid.winner = native.candidate;
+        invalid.native_name = native.candidate ? native.candidate->stable_name : "";
+        invalid.reason = "invalid tuning configuration";
+        record_result(dispatch_digest, invalid);
+        return native.candidate;
+    }
     Result result;
     result.winner = native.candidate;
     result.native_name = native.candidate ? native.candidate->stable_name : "";
@@ -1067,7 +1185,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> pilot_gpu;
         std::vector<double> pilot_host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
-                            config.pilot_samples, 1, pilot_gpu, pilot_host)) {
+                            config.pilot_samples, 1, pilot_gpu, pilot_host,
+                            &ctx, true, nullptr)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.reason = "native pilot failed; run rejected";
             record_result(dispatch_digest, result);
@@ -1083,7 +1202,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
-                            gpu, host)) {
+                            gpu, host, &ctx, true, &native_m->pool_peak_bytes)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.reason = "native failed to launch; run rejected";
             record_result(dispatch_digest, result);
@@ -1112,7 +1231,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
-                            gpu, host)) {
+                            gpu, host, &ctx, true, &m->pool_peak_bytes)) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             continue;
         }
@@ -1360,7 +1479,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // recheck and confirmation holdout; every other policy's pick is an
     // unconfirmed shadow prediction that never touches a GPU launch or a
     // rejection reason on its own.
-    const size_t production_index = resolve_production_policy_index(config);
+    const size_t production_index = resolved_production_index;
     PolicySelection production_sel;
     {
         std::string decisions_json = "[";
@@ -1647,6 +1766,7 @@ void ggml_hip_tuner_flush() {
                     "\"effective_us\":%.3f,"
                     "\"mad_us\":%.3f,\"p95_us\":%.3f,\"host_median_us\":%.3f,"
                     "\"nmse\":%.6g,\"max_abs\":%.6g,\"workspace\":%zu,"
+                    "\"pool_peak_bytes\":%zu,"
                     "\"samples\":%d,\"sign_p\":%.4f,\"sign_wins\":%d,"
                     "\"sign_rounds\":%d",
                     first ? "" : ",",
@@ -1654,7 +1774,7 @@ void ggml_hip_tuner_flush() {
                     reason_name(m.reason), m.median_us, m.effective_us,
                     m.mad_us, m.p95_us,
                     m.host_median_us, m.nmse, m.max_abs_error,
-                    m.workspace_bytes, m.samples, m.sign_p, m.sign_wins,
+                    m.workspace_bytes, m.pool_peak_bytes, m.samples, m.sign_p, m.sign_wins,
                     m.sign_rounds);
             if (config.emit_samples && !m.final_gpu_us.empty()) {
                 fprintf(file, ",\"samples_us\":%s",
