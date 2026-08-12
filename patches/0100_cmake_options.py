@@ -103,6 +103,9 @@ endif()
 _HIP_DEFINITIONS = """
 # ---- bigcherry: HIP measured dispatch ---------------------------------------
 if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
+    # Partition BigCherry CUDA translation units out of upstream's broad glob;
+    # they are appended explicitly below so each source enters the target once.
+    list(FILTER GGML_SOURCES_ROCM EXCLUDE REGEX "hip-autotune-(dispatch|tuner|transform)\\.cu$")
     add_compile_definitions(GGML_HIP_DISPATCH)
     add_compile_definitions(GGML_HIP_AUTOTUNE_VARIANT_SET="${GGML_HIP_AUTOTUNE_VARIANT_SET}")
 
@@ -221,16 +224,6 @@ HIP_BACKEND_PATCH = FilePatch(
     path="ggml/src/ggml-hip/CMakeLists.txt",
     description="HIP backend compile definitions, generated sources, SQLite",
     edits=(
-        Edit(
-            id="hip-autotune-source-partition",
-            anchor=r'^file\(GLOB\s+GGML_SOURCES_ROCM\s+"\.\./ggml-cuda/\*\.cu"\)$',
-            rationale="remove BigCherry dispatch translation units from the upstream CUDA glob before explicit source partitioning",
-            text=(
-                'file(GLOB   GGML_SOURCES_ROCM "../ggml-cuda/*.cu")\n'
-                'list(FILTER GGML_SOURCES_ROCM EXCLUDE REGEX "hip-autotune-(dispatch|tuner|transform)\\.cu$")\n'
-            ),
-            guard=r'hip-autotune-source-partition',
-        ),
         Edit(
             id="hip-autotune-definitions",
             # Must land after GGML_SOURCES_ROCM exists (it appends to it) and
