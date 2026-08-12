@@ -50,10 +50,11 @@ CREATE TABLE IF NOT EXISTS build (
     rocm_version        TEXT,
     hip_version         TEXT,               -- HIP runtime version string (HI37)
     compiler            TEXT,               -- e.g. clang-18 (B3)
+    build_descriptor_hash TEXT,             -- complete compiler/config identity
     dispatch_abi        TEXT,               -- artifact version string (B3)
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (source_revision, manifest_hash, signature_schema,
-            hardware_schema, variant_set)
+            hardware_schema, variant_set, build_descriptor_hash)
 );
 
 -- ------------------------------------------------------------------ hardware

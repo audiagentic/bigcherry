@@ -26,6 +26,8 @@ TUNING_HEADER = {
     "artifact_version": 1,
     "source_revision": "abcdef1234567890",
     "manifest_hash": "deadbeef00112233",
+    "variant_set": "workload-max",
+    "build_descriptor_hash": "build-descriptor-test",
 }
 
 TUNING_RESULT_NATIVE = {
