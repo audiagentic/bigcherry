@@ -76,7 +76,7 @@ def ggml_type_values(ggml_h: Path) -> dict[str, int]:
     return values
 
 
-def read_results(path: Path, *, require_header: bool = True) -> list[dict[str, Any]]:
+def read_results(path: Path, *, require_header: bool = True) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Winning results from a measurements JSONL.
 
     Tolerates a truncated final line by construction -- a tuning run killed
@@ -111,7 +111,7 @@ def read_results(path: Path, *, require_header: bool = True) -> list[dict[str, A
                 raise SystemExit("unknown measurements record kind")
     if header is None and require_header:
         raise SystemExit("measurements header required")
-    return results
+    return header, results
 
 
 def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
@@ -167,9 +167,19 @@ def build(
     # A fully explicit seed file is an operator-authored provenance source and
     # may replace the measurements artifact entirely. Normal exports always
     # require the producer header.
-    results = read_results(measurements, require_header=seed_file is None)
+    producer_header, results = read_results(measurements, require_header=seed_file is None)
     if not results:
         raise SystemExit(f"no winning results in {measurements}")
+    if seed_file is None:
+        expected_revision = manifest.get("source_revision")
+        expected_manifest = manifest.get("manifest_hash")
+        if (producer_header is None or
+                producer_header.get("source_revision") != expected_revision or
+                producer_header.get("manifest_hash") != expected_manifest):
+            raise SystemExit(
+                "refusing to export: measurements producer provenance does not "
+                "match the supplied manifest (source_revision/manifest_hash)"
+            )
 
     # One entry per dispatch digest. Duplicate results are rejected by
     # read_results: silently taking the last row can combine incompatible

@@ -136,5 +136,29 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
             self.assertTrue(blob)  # exported without raising
 
 
+class ProducerProvenanceTests(unittest.TestCase):
+
+    def test_measurements_from_different_manifest_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "source_revision": "b" * 40,
+                "manifest_hash": "b" * 32,
+                "candidates": [],
+            }), encoding="utf-8")
+            ggml_h = root / "ggml.h"
+            ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+            measurements = root / "measurements.jsonl"
+            measurements.write_text("\n".join([
+                json.dumps({"kind": "header", "source_revision": "a" * 40,
+                            "manifest_hash": "a" * 32}),
+                json.dumps({"kind": "result", "dispatch": "a" * 32,
+                            "winner": "native", "native": "native"}),
+            ]) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "producer provenance"):
+                replay_cache.build(measurements, manifest, ggml_h)
+
+
 if __name__ == "__main__":
     unittest.main()
