@@ -6,8 +6,10 @@
 
 #include "hip-autotune-build-hash.h"
 #include "hip-autotune-dispatch.cuh"
+#include "hip-autotune-io.h"
 #include "hip-autotune-journal.h"
 #include "hip-autotune-signature.h"
+#include "hip-autotune-smi.h"
 
 #include <algorithm>
 #include <atomic>
@@ -113,6 +115,15 @@ struct Result {
     int    confirmation_wins     = 0;
     int    confirmation_rounds   = 0;
     double confirmation_effect_pct = 0.0;
+
+    // HI52 part 2: device clock/power/thermal snapshot, before and after this
+    // signature's measurement work. Falsification only -- never a ranking
+    // axis -- so a drift check can tell "the winner changed because the
+    // hardware got slower" from "the winner changed because the code did".
+    // "{}" (not a zeroed struct) when the capture is off, unavailable, or
+    // could not resolve the device.
+    std::string device_state_pre_json  = "{}";
+    std::string device_state_post_json = "{}";
 
     // HI34/promotion: "native" (native retained, nothing to confirm),
     // "confirmation_rejected" (a provisional winner failed fresh holdout,
@@ -483,6 +494,25 @@ int calibrated_launches_per_sample(double native_pilot_us,
     return std::max(1, std::min(needed, config.max_launches_per_sample));
 }
 
+// HI52 part 2: serialise a device-state snapshot. Emits "{}" when the capture
+// is off, unavailable, or could not resolve the device -- never a row of zeros,
+// which would be indistinguishable from a genuinely idle, cold GPU.
+std::string device_state_json(int device) {
+    if (!ggml_hip_smi_enabled()) return "{}";
+    const ggml_hip_device_state s = ggml_hip_query_device_state(device);
+    if (!s.valid) return "{}";
+    char buf[320];
+    snprintf(buf, sizeof(buf),
+             "{\"sclk_mhz\":%llu,\"mclk_mhz\":%llu,\"edge_temp_mc\":%llu,"
+             "\"junction_temp_mc\":%llu,\"socket_power_uw\":%llu,"
+             "\"busy_percent\":%u}",
+             (unsigned long long) s.sclk_mhz, (unsigned long long) s.mclk_mhz,
+             (unsigned long long) s.edge_temp_mc,
+             (unsigned long long) s.junction_temp_mc,
+             (unsigned long long) s.socket_power_uw, s.busy_percent);
+    return std::string(buf);
+}
+
 // E3: the floor cost of one timed sample with no work in it -- two event
 // records, a synchronize, and the two host clock reads. Subtracting it is
 // what makes a host-side number comparable with a GPU-side one. Measured
@@ -740,6 +770,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         record_result(dispatch_digest, result);
         return native.candidate;
     }
+
+    result.device_state_pre_json = device_state_json(ggml_cuda_get_device());
 
     // --- scratch destinations -------------------------------------------
     //
@@ -1201,6 +1233,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
+    result.device_state_post_json = device_state_json(ggml_cuda_get_device());
+
     {
         int counts[GGML_HIP_REJECT_COUNT];
         reject_counts(result, counts);
@@ -1241,13 +1275,17 @@ void ggml_hip_tuner_flush() {
         return;
     }
 
+    // HI48: same-directory temp file, fsync'd and atomically renamed over the
+    // target -- a crash mid-write leaves the previous good measurements file
+    // in place rather than a truncated one masquerading as complete.
     std::string measurements_path = std::string(path) + ".measurements.jsonl";
-    FILE * file = fopen(measurements_path.c_str(), "w");
-    if (file == nullptr) {
+    ggml_hip_atomic_file measurements_atomic;
+    if (!ggml_hip_atomic_begin(measurements_path.c_str(), measurements_atomic)) {
         GGML_LOG_WARN("bigcherry: cannot write '%s'\n",
                       measurements_path.c_str());
         return;
     }
+    FILE * file = measurements_atomic.file;
 
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
 
@@ -1286,7 +1324,8 @@ void ggml_hip_tuner_flush() {
                 "\"canary_pct\":%.3f,\"canary_retries\":%d,"
                 "\"canary_pair\":\"%s\","
                 "\"promotion_status\":\"%s\","
-                "\"launches_per_sample\":%d,\"schedule_seed\":%u",
+                "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
+                "\"device_state_pre\":%s,\"device_state_post\":%s",
                 ggml_hip_digest_hex(entry.first).c_str(),
                 ggml_hip_digest_hex(r.signature_digest).c_str(),
                 ggml_hip_digest_hex(r.hardware_digest).c_str(),
@@ -1306,7 +1345,8 @@ void ggml_hip_tuner_flush() {
                 counts[GGML_HIP_REJECT_UNSTABLE],
                 r.canary_pct, r.canary_retries, r.canary_pair.c_str(),
                 r.promotion_status.c_str(),
-                r.launches_per_sample, r.schedule_seed);
+                r.launches_per_sample, r.schedule_seed,
+                r.device_state_pre_json.c_str(), r.device_state_post_json.c_str());
 
         // HI34: schedule + fresh confirmation evidence, only meaningful (and
         // only present) once a non-native winner was nominated and put
@@ -1356,7 +1396,11 @@ void ggml_hip_tuner_flush() {
         }
         fprintf(file, "]}\n");
     }
-    fclose(file);
+    if (!ggml_hip_atomic_commit(measurements_atomic)) {
+        GGML_LOG_WARN("bigcherry: atomic measurements replacement failed for '%s'\n",
+                      measurements_path.c_str());
+        return;
+    }
 
     GGML_LOG_INFO("bigcherry: wrote %zu tuning result(s) to '%s'\n",
                   g_results.size(), measurements_path.c_str());
