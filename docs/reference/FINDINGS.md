@@ -92,8 +92,8 @@ shared-memory q6_k path.
 test on brutus. Diagnostic tooling built to pin this down (an opt-in
 `GGML_HIP_TUNE_TRACE_ATTEMPTS` journal event, see HI48) is now part of the
 tuner permanently. Tracked for investigation and fix at
-`docs/planning/active/external-fixes/EX01.md`. Quarantined from tuning
-pending root cause — see EX01 for the exact mechanism and how to lift it.
+`docs/planning/active/external-fixes/EX02.md`. Quarantined from tuning
+pending root cause — see EX02 for the exact mechanism and how to lift it.
 
 **Investigation log, 2026-08-11:**
 
