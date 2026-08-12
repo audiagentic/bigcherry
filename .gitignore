@@ -59,9 +59,23 @@ dispatch-db/
 # -- Build output artifacts --
 artifacts/
 
-# -- IDE --
+# -- IDE / Harness config (user-specific, keep locally but not in git) --
 .vscode/
 .idea/
+.claude/
+.codex/
+.gemini/
+.opencode/
+.cline/
+.continue/
+.mcp.json
+.pi/
+.roo/
+AGENTS.md
+CLAUDE.md
+COPILOT.md
+GEMINI.md
+QWEN.md
 *.swp
 *.swo
 *~
