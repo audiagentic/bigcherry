@@ -221,17 +221,23 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             row["promotion_status"] = "promoted"
             promoted_count += 1
         else:
-            row["promotion_status"] = (
-                "confirmation_rejected" if original_status == "confirmation_rejected"
-                else "rejected_bh"
-            )
+            if original_status == "confirmation_rejected":
+                rejection_status = "confirmation_rejected"
+            elif observed_effect < threshold_pct:
+                rejection_status = "rejected_effect"
+            elif low <= 0.0:
+                rejection_status = "rejected_ci"
+            else:
+                rejection_status = "rejected_bh"
+            row["promotion_status"] = rejection_status
             row["winner"] = row["native"]
             row["improvement_pct"] = 0.0
-            row["reason"] = (
-                "native retained by fresh confirmation"
-                if original_status == "confirmation_rejected"
-                else "native retained by experiment-wide promotion policy"
-            )
+            row["reason"] = {
+                "confirmation_rejected": "native retained by fresh confirmation",
+                "rejected_effect": "native retained below the declared effect threshold",
+                "rejected_ci": "native retained because the confidence interval crosses zero",
+                "rejected_bh": "native retained by experiment-wide promotion policy",
+            }[rejection_status]
     promoted_header = dict(header)
     promoted_header["promotion_policy"] = {
         "schema_version": SCHEMA_VERSION, "method": "benjamini-hochberg",

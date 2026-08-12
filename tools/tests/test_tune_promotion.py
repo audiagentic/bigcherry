@@ -81,6 +81,16 @@ class PromotionTests(unittest.TestCase):
             with self.assertRaisesRegex(tune_promotion.PromotionError, "does not match"):
                 tune_promotion.promote(source, output, resamples=1000)
 
+    def test_rejection_reason_is_classified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 99.5)
+            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
+            tune_promotion.promote(source, output, threshold_pct=1.0, resamples=1000)
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
+
     def test_bh_and_bootstrap_promote_only_supported_winner(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -94,7 +104,7 @@ class PromotionTests(unittest.TestCase):
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(report["promoted"], 1)
             self.assertEqual(promoted[1]["promotion_status"], "promoted")
-            self.assertEqual(promoted[2]["promotion_status"], "rejected_bh")
+            self.assertEqual(promoted[2]["promotion_status"], "rejected_effect")
             self.assertEqual(promoted[2]["winner"], "native")
             self.assertAlmostEqual(promoted[1]["promotion"]["q_value"], 0.002)
             self.assertAlmostEqual(promoted[2]["promotion"]["q_value"], 0.9)

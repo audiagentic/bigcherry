@@ -625,6 +625,7 @@ std::string device_state_json(int device) {
 // scope (not function-local) so `ggml_hip_tuner_flush` can report it in the
 // measurements header for audit.
 double g_host_sync_overhead_us = -1.0;
+bool g_host_sync_overhead_valid = false;
 
 double host_sync_overhead_us(cudaStream_t stream) {
     if (g_host_sync_overhead_us >= 0.0) return g_host_sync_overhead_us;
@@ -649,6 +650,7 @@ double host_sync_overhead_us(cudaStream_t stream) {
     }
     hipEventDestroy(a); hipEventDestroy(b);
     g_host_sync_overhead_us = median_of(samples);
+    g_host_sync_overhead_valid = !samples.empty();
     return g_host_sync_overhead_us;
 }
 
@@ -1689,7 +1691,7 @@ void ggml_hip_tuner_flush() {
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"compiler\":\"%s\",\"hip_version\":\"%s\","
             "\"variant_set\":\"%s\",\"build_descriptor_hash\":\"%s\","
-            "\"host_sync_overhead_us\":%.3f,\"final_samples\":%d,"
+            "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,\"final_samples\":%d,"
             "\"warmup_launches\":%d,\"screen_samples\":%d,"
             "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
@@ -1699,7 +1701,7 @@ void ggml_hip_tuner_flush() {
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
-            g_host_sync_overhead_us, config.final_samples,
+            g_host_sync_overhead_us, g_host_sync_overhead_valid ? "true" : "false", config.final_samples,
             config.warmup_launches, config.screen_samples,
             config.confirmation_samples, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
