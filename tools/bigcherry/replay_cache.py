@@ -106,10 +106,12 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
 
     Aborts the whole export rather than silently dropping the offending
     entries: a cache silently missing entries the operator expected to see
-    is a worse failure than a build that stops and says exactly why. Manual
-    `--seed` overrides are applied by the caller after this check and are
-    exempt by construction -- an explicit operator override carries its own
-    provenance, not the tuner's.
+    is a worse failure than a build that stops and says exactly why. The
+    caller excludes any dispatch covered by a manual `--seed` override
+    before calling this -- an explicit operator override carries its own
+    provenance, not the tuner's, and must not be blocked by (or need to
+    pass) the promotion state of whatever raw measurement happened to exist
+    for that same digest.
     """
     violations = []
     for digest_hex, record in entries.items():
@@ -153,8 +155,6 @@ def build(
     for record in results:
         entries[record["dispatch"]] = record
 
-    _validate_promotion_gate(entries)
-
     # Seed overrides: manual winner selection for specific dispatch digests.
     # Loaded from a JSON file mapping dispatch_hex → stable_name.
     # These override any measured winner (HI22).
@@ -173,6 +173,17 @@ def build(
                     f"is not in {manifest_path.name}"
                 )
 
+    # The gate runs on every dispatch NOT covered by an explicit seed --
+    # a seed is a separate operator decision carrying its own provenance
+    # (HI22), not the tuner's, and must not be blocked by (or need to pass)
+    # the promotion state of whatever raw measurement happened to exist for
+    # that same digest.
+    _validate_promotion_gate({
+        digest_hex: record for digest_hex, record in entries.items()
+        if digest_hex not in seed_overrides
+    })
+
+    if seed_overrides:
         # Apply overrides: replace or insert entries
         for digest_hex, stable_name in seed_overrides.items():
             entries[digest_hex] = {

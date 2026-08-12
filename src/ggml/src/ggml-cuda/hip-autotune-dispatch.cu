@@ -788,11 +788,62 @@ void ggml_hip_mmq_launch(const ggml_hip_candidate_descriptor * self,
 size_t ggml_hip_mmq_workspace(const ggml_hip_candidate_descriptor * self,
                               const ggml_hip_dispatch_signature_v1 & sig) {
     GGML_UNUSED(self);
-    // The quantised activation buffer dominates; the stream-k fixup buffer is
-    // bounded by it. An upper bound is all the workspace filter needs.
+    // HI54: this declaration was measured against the pool's own real
+    // high-water mark (HI52 part 1) and found short in 269 of 310 cases,
+    // median 1.11x, worst 554x. It was missing two things `mmq.cu`'s actual
+    // ggml_cuda_mul_mat_q allocates (lines 158-159 for dense, 209-228 for
+    // MUL_MAT_ID): the J_max activation term, and -- on the MoE path only --
+    // three id-routing buffers. Rederived directly from that source rather
+    // than patched by ratio, so the two stay in sync structurally, not just
+    // numerically for today's shapes.
+    //
+    // A third term (the stream-k fixup buffer) was investigated and NOT added
+    // -- see the comment above this function for why it is unreachable dead
+    // code on AMD hardware, and HI54's notes for what still explains the
+    // residual gap this fix does not close.
     const int64_t k_padded = GGML_PAD(sig.ne1[0], MATRIX_ROW_PADDING);
-    return (size_t) (sig.ne1[3] * sig.ne1[2] * sig.ne1[1] * k_padded)
-         * sizeof(block_q8_1_mmq) / QK8_1_MMQ;
+    const bool fallback = (sig.ne0[1] % 128) != 0;
+    const ggml_type type = (ggml_type) sig.src0_type;
+
+    // `ggml_cuda_mmq_get_J_max` needs the compute-capability code the config
+    // table is keyed on. No `hw` reaches this function (see
+    // ggml_hip_workspace_fn's signature), so it is read the same way
+    // ggml_hip_mmf_can_execute already does a few lines below: from the
+    // current device, not passed in.
+    const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+    // Same `ne11` (src1->ne[1]) feeds ggml_cuda_mmq_get_J_max on both the
+    // dense and MoE call sites in mmq.cu -- only the activation row-count
+    // term below differs between the two paths.
+    const size_t j_max_bytes =
+        (size_t) ggml_cuda_mmq_get_J_max(type, fallback, cc, sig.ne1[1])
+        * sizeof(block_q8_1_mmq);
+
+    if ((sig.flags & GGML_HIP_SIG_HAS_IDS) != 0) {
+        // MUL_MAT_ID (mmq.cu:227-228): row count is ne12*n_expert_used, not
+        // ne11 -- the dense-path row count is unrelated on this path.
+        const size_t activation_bytes =
+            (size_t) (sig.ne1[2] * sig.n_expert_used) * (size_t) k_padded
+            * sizeof(block_q8_1_mmq) / QK8_1_MMQ
+            + j_max_bytes;
+
+        // mmq.cu:209-211: ids_src1, ids_dst (int32, ne12*n_expert_used each)
+        // and expert_bounds (int32, n_expert+1). Absent from the declaration
+        // entirely before this fix -- the MoE path had zero workspace
+        // accounting of its own, on top of missing the J_max term every path
+        // was missing.
+        const size_t ne_get_rows = (size_t) (sig.ne1[2] * sig.n_expert_used);
+        const size_t id_bytes =
+            2 * ne_get_rows * sizeof(int32_t)
+            + (size_t) (sig.n_expert + 1) * sizeof(int32_t);
+        return activation_bytes + id_bytes;
+    }
+
+    // Dense (mmq.cu:158-159): row count is ne13*ne12*ne11.
+    const size_t activation_bytes =
+        (size_t) (sig.ne1[3] * sig.ne1[2] * sig.ne1[1]) * (size_t) k_padded
+        * sizeof(block_q8_1_mmq) / QK8_1_MMQ
+        + j_max_bytes;
+    return activation_bytes;
 }
 
 bool ggml_hip_mmvf_can_execute(const ggml_hip_candidate_descriptor * self,

@@ -53,11 +53,11 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ## Kernel / upstream bugs
 
-### Illegal memory access in generated MMQ candidate (q6_0, gfx1100) — 2026-08-11
+### Illegal memory access in generated MMQ candidate (q6_K, gfx1100) — 2026-08-11
 
 **Status:** internal-only
 
-**Summary:** A specific MMQ kernel configuration for q6_0-quantized inputs
+**Summary:** A specific MMQ kernel configuration for q6_K-quantized inputs
 crashes with `an illegal memory access was encountered` on an AMD RX 7900 XTX
 (gfx1100) under real MTP speculative-decoding draft widths. Reproduced
 deterministically three times across two independent instrumentation
@@ -85,7 +85,7 @@ a different, asynchronously-queued launch.
 
 Candidate identity at the point of the fault:
 `mmq:q6_k:j112:fb0:t256:o2:i128:sram-q6_k:k256:sk0:v1` — an MMQ variant for
-q6_0-quantized input, J-tile size 112, thread configuration t256/o2/i128,
+q6_K-quantized input, J-tile size 112, thread configuration t256/o2/i128,
 shared-memory q6_k path.
 
 **Internal context:** found via a live end-to-end build/tune/replay pipeline

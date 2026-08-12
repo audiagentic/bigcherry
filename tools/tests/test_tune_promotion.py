@@ -95,6 +95,19 @@ class PromotionTests(unittest.TestCase):
             with self.assertRaisesRegex(tune_promotion.PromotionError, "pending_bh"):
                 tune_promotion.promote(source, root / "out")
 
+    def test_promotion_is_deterministic_for_same_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0), result("b" * 32, 0.9, 99.5),
+            ]
+            source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            first = tune_promotion.promote(source, root / "out1.jsonl", resamples=1000)
+            second = tune_promotion.promote(source, root / "out2.jsonl", resamples=1000)
+            self.assertEqual(first["content_hash"], second["content_hash"])
+
     def test_schedule_seed_and_position_drift_are_rejected(self):
         row = result("a" * 32, 0.001, 95.0)
         row["schedule_seed"] += 1

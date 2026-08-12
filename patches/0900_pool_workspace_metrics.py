@@ -37,13 +37,22 @@ touches one upstream file instead of two.
 
 Which number this is
 --------------------
-`actual_size`, i.e. what the pool actually set aside for the caller -- for the
-VMM pool the requested size, for the legacy pool the 1.05x-rounded look-ahead
-size. That is the honest figure in both cases (it is the memory genuinely
-committed), but it is not identical between them, so a cross-machine comparison
-has to know which pool ran. Note that on every GPU available to this project --
-gfx1030, gfx1100 and gfx1201 all report `VMM: no` -- the legacy pool is the one
-that runs and the VMM pool is never instantiated.
+`bc_requested_size`, i.e. what THIS candidate asked for (`size * sizeof(T)` at
+its own `alloc()` call), not `actual_size` -- what the pool happened to set
+aside to serve that request. The two diverge in exactly the case this metric
+exists to catch: on a best-fit reuse hit, `actual_size` can be the leftover
+size of a buffer some earlier, unrelated candidate freed back into the pool,
+which is the same cross-candidate contamination HI56's cache-clear call works
+around from the other direction (evicting the stale buffer instead of
+mislabelling its size). Tracking `actual_size` instead of the request would
+silently reintroduce that contamination on any reuse hit HI56's clear did not
+already prevent.
+
+`note_alloc`/`note_free` must stay paired on the same quantity -- the real
+pool operation (`pool->free(ptr, actual_size)`) keeps using `actual_size`
+unchanged; only the accounting side-channel reads `bc_requested_size` instead,
+set once at `alloc()` time so the destructor's `note_free` sees the exact
+value `note_alloc` counted.
 
 This measures the pool high-water mark a candidate reaches, which is its real
 scratch demand. It is not the candidate's total VRAM footprint: model weights
@@ -116,7 +125,7 @@ _MEMBERS = """
 
 POOL_METRICS_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/common.cuh",
-    description="pool-level measured workspace accounting (HI52 part 1)",
+    description="pool-level measured workspace accounting (HI52 part 1, HI40 requested-size fix)",
     edits=(
         Edit(
             id="pool-workspace-members",
@@ -126,18 +135,35 @@ POOL_METRICS_PATCH = FilePatch(
             guard=r"bc_workspace_note_alloc",
         ),
         Edit(
+            id="pool-alloc-requested-size-member",
+            anchor=r"^    size_t actual_size = 0;$",
+            rationale="ggml_cuda_pool_alloc<T>'s own fields, alongside actual_size",
+            text=(
+                "    // bigcherry (HI40): what THIS candidate asked for, not what the\n"
+                "    // pool happened to hand back. `actual_size` can be a best-fit\n"
+                "    // reuse hit reflecting a stranger's leftover cached buffer -- the\n"
+                "    // exact contamination HI56's cache-clear call works around -- so\n"
+                "    // accounting must key off the request, not the allocation.\n"
+                "    size_t bc_requested_size = 0;\n"
+            ),
+            guard=r"bc_requested_size",
+        ),
+        Edit(
             id="pool-workspace-note-free",
             anchor=r"^            pool->free\(ptr, actual_size\);$",
             rationale="ggml_cuda_pool_alloc's destructor, the only free call site",
-            text="            pool->bc_workspace_note_free(actual_size); // bigcherry (HI52)\n",
-            guard=r"bc_workspace_note_free\(actual_size\)",
+            text="            pool->bc_workspace_note_free(this->bc_requested_size); // bigcherry (HI40)\n",
+            guard=r"bc_workspace_note_free\(this->bc_requested_size\)",
         ),
         Edit(
             id="pool-workspace-note-alloc",
             anchor=r"^        ptr = \(T \*\) pool->alloc\(size \* sizeof\(T\), &this->actual_size\);$",
             rationale="ggml_cuda_pool_alloc::alloc, the only alloc call site",
-            text="        pool->bc_workspace_note_alloc(this->actual_size); // bigcherry (HI52)\n",
-            guard=r"bc_workspace_note_alloc\(this->actual_size\)",
+            text=(
+                "        this->bc_requested_size = size * sizeof(T); // bigcherry (HI40)\n"
+                "        pool->bc_workspace_note_alloc(this->bc_requested_size); // bigcherry (HI52)\n"
+            ),
+            guard=r"bc_workspace_note_alloc\(this->bc_requested_size\)",
         ),
     ),
 )

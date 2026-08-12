@@ -10,7 +10,9 @@ separately.
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -74,6 +76,64 @@ class PromotionGateTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(SystemExit, "2 non-native winner"):
             replay_cache._validate_promotion_gate(entries)
+
+
+class SeedOverrideBypassesGateTests(unittest.TestCase):
+    """HI22/P0: an explicit --seed override is a separate operator decision
+    with its own provenance, not the tuner's -- build() must apply it AFTER
+    _validate_promotion_gate rather than let it satisfy or dodge the gate,
+    so a seeded entry can export even though its raw measurement never
+    reached promotion_status=='promoted'.
+    """
+
+    def _fixture(self, root: Path) -> tuple[Path, Path, Path]:
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({
+            "manifest_hash": "a" * 32,
+            "candidates": [
+                {"stable_name": "mmvq:native:v1", "family": "mmvq",
+                 "source_class": "native_wrapper", "config": {}},
+                {"stable_name": "mmvq:seeded:v1", "family": "mmvq",
+                 "source_class": "native_wrapper", "config": {}},
+            ],
+        }), encoding="utf-8")
+        ggml_h = root / "ggml.h"
+        ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+        measurements = root / "tune.measurements.jsonl"
+        # No promotion_status at all: this dispatch never went through
+        # tune-promote. Without a seed override, build() must refuse it.
+        measurements.write_text(json.dumps({
+            "kind": "result", "dispatch": "b" * 32,
+            "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+        }) + "\n", encoding="utf-8")
+        return manifest, ggml_h, measurements
+
+    def test_unseeded_unpromoted_entry_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            # Overwrite with an unpromoted non-native winner.
+            measurements.write_text(json.dumps({
+                "kind": "result", "dispatch": "b" * 32,
+                "winner": "mmvq:seeded:v1", "native": "mmvq:native:v1",
+            }) + "\n", encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                replay_cache.build(measurements, manifest, ggml_h)
+
+    def test_explicit_seed_bypasses_the_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            # Same unpromoted non-native winner as above, but now overridden
+            # by an explicit operator seed for this exact dispatch digest.
+            measurements.write_text(json.dumps({
+                "kind": "result", "dispatch": "b" * 32,
+                "winner": "mmvq:seeded:v1", "native": "mmvq:native:v1",
+            }) + "\n", encoding="utf-8")
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps({"b" * 32: "mmvq:seeded:v1"}), encoding="utf-8")
+            blob = replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+            self.assertTrue(blob)  # exported without raising
 
 
 if __name__ == "__main__":
