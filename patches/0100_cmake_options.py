@@ -222,6 +222,16 @@ HIP_BACKEND_PATCH = FilePatch(
     description="HIP backend compile definitions, generated sources, SQLite",
     edits=(
         Edit(
+            id="hip-autotune-source-partition",
+            anchor=r'^file\(GLOB\s+GGML_SOURCES_ROCM\s+"\.\./ggml-cuda/\*\.cu"\)$',
+            rationale="remove BigCherry dispatch translation units from the upstream CUDA glob before explicit source partitioning",
+            text=(
+                'file(GLOB   GGML_SOURCES_ROCM "../ggml-cuda/*.cu")\n'
+                'list(FILTER GGML_SOURCES_ROCM EXCLUDE REGEX "hip-autotune-(dispatch|tuner|transform)\\.cu$")\n'
+            ),
+            guard=r'hip-autotune-source-partition',
+        ),
+        Edit(
             id="hip-autotune-definitions",
             # Must land after GGML_SOURCES_ROCM exists (it appends to it) and
             # before the target is defined.
