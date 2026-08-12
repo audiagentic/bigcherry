@@ -1115,8 +1115,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_release_cmd.add_argument("--staging-root", default=None)
     validate_release_cmd.add_argument("--ref", default="master")
     validate_release_cmd.add_argument("--recipe", default="bigcherry")
+    validate_release_cmd.add_argument("--inventory", default=None)
     validate_release_cmd.set_defaults(func=lambda args: _validate_release_main([
         "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
+        *(["--inventory", args.inventory] if args.inventory else []),
         *(["--staging-root", args.staging_root] if args.staging_root else []),
     ]))
 
