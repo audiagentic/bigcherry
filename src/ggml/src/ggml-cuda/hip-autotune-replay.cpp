@@ -117,13 +117,16 @@ constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES;
 constexpr size_t ENT_DISPATCH  = 0;
 constexpr size_t ENT_SIGNATURE = GGML_HIP_DIGEST_BYTES;
 constexpr size_t ENT_NAME_OFF  = 2 * GGML_HIP_DIGEST_BYTES;
-constexpr size_t ENT_PRIMARY   = ENT_NAME_OFF + 4;
+constexpr size_t ENT_IMPL_VER  = ENT_NAME_OFF + 4;
+constexpr size_t ENT_PRIMARY   = ENT_IMPL_VER + 2;
 constexpr size_t ENT_SECONDARY = ENT_PRIMARY + 4;
 constexpr size_t ENT_WIDTH     = ENT_SECONDARY + 4;
 constexpr size_t ENT_ACC_F16   = ENT_WIDTH + 4;
 constexpr size_t ENT_FALLBACK  = ENT_ACC_F16 + 1;
-// These two were reserved bytes that nothing read, which meant the two most
-// recently added members of ggml_hip_variant_params could not round-trip
+// These two bytes were reserved in the v2 layout; v3 adds implementation
+// version before the variant fields so the loader can verify the manifest's
+// candidate ABI rather than trusting the stable-name suffix alone. The two
+// most recently added members of ggml_hip_variant_params could not round-trip
 // through the cache at all:
 //
 //   small_k   -- every top winner on the real MTP workload is an `sk1`
@@ -135,9 +138,6 @@ constexpr size_t ENT_FALLBACK  = ENT_ACC_F16 + 1;
 //                (F32) and be rejected by its own family's can_execute on
 //                every quantised signature, silently falling back to native.
 //
-// Taken from the reserved space, so ENT_SIZE is unchanged and no version bump
-// is needed: nothing has ever written this format (RV09), so there is no cache
-// in existence to be misread.
 constexpr size_t ENT_SMALL_K   = ENT_FALLBACK + 1;
 constexpr size_t ENT_SRC0_TYPE = ENT_SMALL_K + 1;
 constexpr size_t ENT_SIZE      = ENT_SRC0_TYPE + 1;
@@ -309,6 +309,11 @@ bool ggml_hip_replay_init() {
 
             Winner winner = {};
             winner.candidate = candidate;
+            if (read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version) {
+                reject(path, "entry implementation version differs from candidate registry");
+                g_winners.clear();
+                return;
+            }
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);

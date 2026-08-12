@@ -28,7 +28,7 @@
 // payload's compatibility is checked separately against the manifest hash and
 // the ABI schema versions.
 #define GGML_HIP_REPLAY_MAGIC   0x59484342u
-#define GGML_HIP_REPLAY_VERSION 2
+#define GGML_HIP_REPLAY_VERSION 3
 
 // Header of the on-disk cache. Fixed size, little-endian, no padding assumed --
 // fields are read individually rather than by struct overlay, so the file is
@@ -50,6 +50,7 @@ struct ggml_hip_replay_entry {
     uint8_t  dispatch_digest[GGML_HIP_DIGEST_BYTES];
     uint8_t  signature_digest[GGML_HIP_DIGEST_BYTES];
     uint32_t stable_name_offset;   // into the string table
+    uint16_t implementation_version;
     int32_t  variant_primary;
     int32_t  variant_secondary;
     int32_t  variant_width;

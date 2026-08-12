@@ -37,7 +37,7 @@ from typing import Any
 from . import autotune_catalog
 
 MAGIC = 0x59484342
-REPLAY_VERSION = 2
+REPLAY_VERSION = 3
 ARTIFACT_VERSION = 1
 SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
@@ -45,7 +45,7 @@ DIGEST_BYTES = 16
 PERSON_DISPATCH = b"llama-dispatch"
 
 # Entry layout, from the ENT_* constants in hip-autotune-replay.cpp.
-ENT_SIZE = 2 * DIGEST_BYTES + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1
+ENT_SIZE = 2 * DIGEST_BYTES + 4 + 2 + 4 + 4 + 4 + 1 + 1 + 1 + 1
 
 
 def blake2b_digest(data: bytes) -> bytes:
@@ -291,6 +291,7 @@ def build(
         packed += digest  # ENT_DISPATCH
         packed += signature  # ENT_SIGNATURE
         packed += struct.pack("<I", intern(name))
+        packed += struct.pack("<H", int(candidate.get("implementation_version", 1)))
         packed += struct.pack(
             "<iii", fields["primary"], fields["secondary"], fields["width"]
         )
