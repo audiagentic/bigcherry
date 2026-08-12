@@ -51,6 +51,14 @@ def _run_logged(command: list[str], *, cwd: Path, log: Path) -> bool:
     return completed.returncode == 0
 
 
+def _command_text(command: list[str]) -> str:
+    return subprocess.list2cmdline(command)
+
+
+def _failure_class(stage: str) -> str:
+    return "patch-drift" if stage == "build" else f"{stage}-failed"
+
+
 def probe(
     run_id: str,
     staging_root: Path,
@@ -74,18 +82,33 @@ def probe(
         raise FileExistsError(f"run already exists: {run}")
     run.mkdir(parents=True)
     record: dict[str, Any] = {
-        "schema_version": 1, "run_id": run_id, "ref": ref, "recipe": recipe,
-        "checkout": str(checkout),
+        "schema_version": 2, "run_id": run_id, "ref": ref, "recipe": recipe,
+        "checkout": str(checkout), "source_revision": ref,
+        "bigcherry_revision": "unknown",
     }
+    try:
+        record["bigcherry_revision"] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=paths.REPO_ROOT,
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        pass
 
+    pull_command = [sys.executable, "-m", "bigcherry", "--llama-root",
+                    str(checkout), "pull", "--ref", ref]
     pull_ok = _run_logged(
-        [sys.executable, "-m", "bigcherry", "--llama-root", str(checkout),
-         "pull", "--ref", ref],
+        pull_command,
         cwd=paths.REPO_ROOT, log=run / "pull.log",
     )
-    record["pull"] = {"ok": pull_ok, "log": "pull.log"}
+    record["pull"] = {"ok": pull_ok, "log": "pull.log", "stage": "pull",
+                       "command": _command_text(pull_command),
+                       "exit_code": 0 if pull_ok else 1}
     if not pull_ok:
         record["outcome"] = "pull-failed"
+        record["failure"] = {"stage": "pull",
+                              "command": _command_text(pull_command),
+                              "exit_code": 1,
+                              "failure_class": _failure_class("pull")}
         return 1, _write(run, record)
 
     build_command = [
@@ -98,8 +121,15 @@ def probe(
         build_command,
         cwd=paths.REPO_ROOT, log=run / "build.log",
     )
-    record["build"] = {"ok": build_ok, "log": "build.log"}
+    record["build"] = {"ok": build_ok, "log": "build.log", "stage": "build",
+                        "command": _command_text(build_command),
+                        "exit_code": 0 if build_ok else 1}
     record["outcome"] = "compatible" if build_ok else "patch-drift-or-build-failed"
+    if not build_ok:
+        record["failure"] = {"stage": "build",
+                              "command": _command_text(build_command),
+                              "exit_code": 1,
+                              "failure_class": _failure_class("build")}
     return (0 if build_ok else 1), _write(run, record)
 
 
