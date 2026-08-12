@@ -62,6 +62,7 @@ and the graph's own tensors are not pool allocations and are not counted.
 from bigcherry.patcher import Edit, FilePatch
 
 _LEG_CLEAR_CACHE = """
+#ifdef GGML_HIP_WORKSPACE_METRICS
     // bigcherry (HI56): `alloc()`'s best-fit reuse can hand a tiny request the
     // full size of whatever oversized buffer an EARLIER, unrelated candidate
     // freed back into `buffer_pool` -- `note_alloc(*actual_size)` then measures
@@ -75,10 +76,12 @@ _LEG_CLEAR_CACHE = """
     // candidate's own warmup allocation is what gets cached, and every sample
     // after it reuses that exact-sized buffer rather than a stranger's.
     void bc_workspace_clear_cache() override { clear_pool(); }
+#endif
 """
 
 
 _MEMBERS = """
+#ifdef GGML_HIP_WORKSPACE_METRICS
     // bigcherry (HI52): measured workspace accounting.
     //
     // Maintained by `ggml_cuda_pool_alloc` below, which is the only thing in the
@@ -121,6 +124,7 @@ _MEMBERS = """
     // legacy pool has a size-mismatched reuse cache to clear (see the
     // override below); a pool with nothing to clear correctly does nothing.
     virtual void bc_workspace_clear_cache() {}
+#endif
 """
 
 POOL_METRICS_PATCH = FilePatch(
@@ -139,12 +143,14 @@ POOL_METRICS_PATCH = FilePatch(
             anchor=r"^    size_t actual_size = 0;$",
             rationale="ggml_cuda_pool_alloc<T>'s own fields, alongside actual_size",
             text=(
+                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
                 "    // bigcherry (HI40): what THIS candidate asked for, not what the\n"
                 "    // pool happened to hand back. `actual_size` can be a best-fit\n"
                 "    // reuse hit reflecting a stranger's leftover cached buffer -- the\n"
                 "    // exact contamination HI56's cache-clear call works around -- so\n"
                 "    // accounting must key off the request, not the allocation.\n"
                 "    size_t bc_requested_size = 0;\n"
+                "#endif\n"
             ),
             guard=r"bc_requested_size",
         ),
@@ -152,7 +158,10 @@ POOL_METRICS_PATCH = FilePatch(
             id="pool-workspace-note-free",
             anchor=r"^            pool->free\(ptr, actual_size\);$",
             rationale="ggml_cuda_pool_alloc's destructor, the only free call site",
-            text="            pool->bc_workspace_note_free(this->bc_requested_size); // bigcherry (HI40)\n",
+            text=(
+                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
+                "            pool->bc_workspace_note_free(this->bc_requested_size); // bigcherry (HI40)\n"
+                "#endif\n"),
             guard=r"bc_workspace_note_free\(this->bc_requested_size\)",
         ),
         Edit(
@@ -160,8 +169,10 @@ POOL_METRICS_PATCH = FilePatch(
             anchor=r"^        ptr = \(T \*\) pool->alloc\(size \* sizeof\(T\), &this->actual_size\);$",
             rationale="ggml_cuda_pool_alloc::alloc, the only alloc call site",
             text=(
+                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
                 "        this->bc_requested_size = size * sizeof(T); // bigcherry (HI40)\n"
                 "        pool->bc_workspace_note_alloc(this->bc_requested_size); // bigcherry (HI52)\n"
+                "#endif\n"
             ),
             guard=r"bc_workspace_note_alloc\(this->bc_requested_size\)",
         ),

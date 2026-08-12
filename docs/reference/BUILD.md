@@ -141,8 +141,8 @@ error), `test-backend-ops`, `llama-bench`, `llama-server`.
 ### Windows — workstation's 7900 GRE (gfx1100)
 
 ```powershell
-$env:PATH = 'C:\Program Files\AMD\ROCm\7.1\bin;' + $env:PATH
-$env:HIP_PATH = 'C:\Program Files\AMD\ROCm\7.1'
+$env:PATH = 'C:\Program Files\AMD\ROCm\7.14\bin;' + $env:PATH
+$env:HIP_PATH = 'C:\Program Files\AMD\ROCm\7.14'
 cmake -S 'J:/development/llmhosts/bigcherry/vendor/llama.cpp' -B 'C:/bcw' -G Ninja `
   -DCMAKE_BUILD_TYPE=Release -DGGML_HIP=ON -DGGML_HIP_AUTOTUNE=ON `
   -DGGML_HIP_AUTOTUNE_VARIANT_SET=workload-max `

@@ -27,6 +27,7 @@ constexpr size_t MAX_TRACKED_MISSES = 4096;
 struct Winner {
     const ggml_hip_candidate_descriptor * candidate;
     ggml_hip_variant_params               variant;
+    ggml_hip_digest                       signature_digest;
 };
 
 // A recorded miss.
@@ -248,7 +249,7 @@ bool ggml_hip_replay_init() {
         const size_t   entries_at   = HDR_SIZE;
         const size_t   strings_at   = entries_at + (size_t) entry_count * ENT_SIZE;
         const size_t   expected     = strings_at + string_bytes;
-        if (bytes.size() < expected) {
+        if (bytes.size() != expected) {
             reject(path, "file is truncated");
             return;
         }
@@ -297,8 +298,16 @@ bool ggml_hip_replay_init() {
             ggml_hip_digest key;
             memcpy(key.bytes, entry + ENT_DISPATCH, GGML_HIP_DIGEST_BYTES);
 
+            if (g_winners.find(key) != g_winners.end()) {
+                reject(path, "duplicate dispatch digest");
+                g_winners.clear();
+                return;
+            }
+
             Winner winner = {};
             winner.candidate = candidate;
+            memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
+                   GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);
             winner.variant.secondary = read_i32(entry + ENT_SECONDARY);
             winner.variant.width     = read_i32(entry + ENT_WIDTH);
@@ -341,11 +350,13 @@ bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
                             const ggml_hip_digest & signature_digest,
                             const ggml_hip_candidate_descriptor ** out_candidate,
                             ggml_hip_variant_params * out_variant) {
-    GGML_UNUSED(signature_digest);
     ggml_hip_replay_init();
 
     const auto found = g_winners.find(dispatch_digest);
     if (found == g_winners.end()) {
+        return false;
+    }
+    if (!ggml_hip_digest_equal(found->second.signature_digest, signature_digest)) {
         return false;
     }
     *out_candidate = found->second.candidate;

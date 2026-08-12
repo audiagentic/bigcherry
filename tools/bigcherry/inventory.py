@@ -15,6 +15,7 @@ moving the writer offline did not change what is stored, only who stores it.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import sys
@@ -386,6 +387,12 @@ def load_measurements(
 
     try:
         connection.execute("PRAGMA foreign_keys = ON")
+        for table in ("measurement", "winner"):
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if "run_id" not in columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN run_id INTEGER")
+            if "pool_peak_bytes" not in columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN pool_peak_bytes INTEGER")
 
         # Find or create build row
         source_revision = header.get("source_revision", "")
@@ -417,13 +424,45 @@ def load_measurements(
                 (
                     source_revision,
                     manifest_hash,
-                    "tuning",
+                    header.get("variant_set", "tuning"),
                     str(artifact_version),
                     header.get("compiler"),
                     header.get("hip_version"),
                 ),
             )
             build_id = cursor.lastrowid
+
+        dispatches = sorted({str(row.get("dispatch", "")) for row in results
+                             if isinstance(row.get("dispatch"), str)})
+        workload_digest = hashlib.blake2b(
+            "\n".join(dispatches).encode("ascii", "ignore"), digest_size=16
+        ).digest()
+        run_material = json.dumps({
+            "source_revision": source_revision,
+            "manifest_hash": manifest_hash,
+            "measurements": str(measurements_path.resolve()),
+            "workload_digest": workload_digest.hex(),
+            "header": header,
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        run_digest = hashlib.blake2b(run_material, digest_size=16).digest()
+        cursor = connection.execute(
+            "SELECT run_id FROM tuning_run WHERE run_digest = ?", (run_digest,))
+        run_row = cursor.fetchone()
+        if run_row:
+            run_id = run_row[0]
+        else:
+            cursor = connection.execute(
+                "INSERT INTO tuning_run (build_id, run_digest, workload_digest, "
+                "workload_label, host_sync_overhead_us, config_json, machine_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (build_id, run_digest, workload_digest, header.get("workload_label"),
+                 header.get("host_sync_overhead_us"),
+                 json.dumps(header, sort_keys=True, separators=(",", ":")),
+                 json.dumps({"compiler": header.get("compiler"),
+                             "hip_version": header.get("hip_version")},
+                            sort_keys=True, separators=(",", ":"))),
+            )
+            run_id = cursor.lastrowid
 
         # Find hardware row (use placeholder if not from record mode)
         # The measurements JSONL doesn't include hardware info directly.
@@ -437,19 +476,43 @@ def load_measurements(
         # explicit stub row keyed by that digest when the descriptor is
         # incomplete -- never a placeholder zero digest pretending to be
         # measured hardware.
-        cursor = connection.execute("SELECT hardware_id FROM hardware LIMIT 1")
-        hw_row = cursor.fetchone()
-        if hw_row:
-            hardware_id = hw_row[0]
-        else:
-            # Create placeholder — user can update later or from record-mode DB
-            cursor = connection.execute(
-                "INSERT INTO hardware (hardware_digest, architecture, "
-                "architecture_code, wave_size, compute_units, feature_flags, "
-                "canonical_json) VALUES (X'00000000000000000000000000000000', "
-                "'unknown', 0, 64, 1, 0, '{}')"
-            )
-            hardware_id = cursor.lastrowid
+        hardware_ids: dict[str, int] = {}
+        legacy_hardware_id: int | None = None
+
+        def _resolve_hardware(result: dict[str, Any]) -> int:
+            nonlocal legacy_hardware_id
+            digest_hex = result.get("hardware")
+            if not isinstance(digest_hex, str) or len(digest_hex) != 32:
+                if legacy_hardware_id is None:
+                    cursor = connection.execute(
+                        "INSERT INTO hardware (hardware_digest, architecture, "
+                        "architecture_code, wave_size, compute_units, feature_flags, "
+                        "canonical_json) VALUES (X'00000000000000000000000000000000', "
+                        "'unknown-incomplete', 0, 0, 0, 0, '{\"complete\":false}')"
+                    )
+                    legacy_hardware_id = cursor.lastrowid
+                return legacy_hardware_id
+            try:
+                raw = bytes.fromhex(digest_hex)
+            except ValueError as exc:
+                raise RecordError(f"invalid tuning hardware digest: {digest_hex!r}") from exc
+            if len(raw) != 16:
+                raise RecordError("tuning hardware digest must be 16 bytes")
+            if digest_hex not in hardware_ids:
+                cursor = connection.execute(
+                    "SELECT hardware_id FROM hardware WHERE hardware_digest = ?", (raw,))
+                row = cursor.fetchone()
+                if row:
+                    hardware_ids[digest_hex] = row[0]
+                else:
+                    cursor = connection.execute(
+                        "INSERT INTO hardware (hardware_digest, architecture, "
+                        "architecture_code, wave_size, compute_units, feature_flags, "
+                        "canonical_json) VALUES (?, 'unknown-incomplete', 0, 0, 0, 0, ?)",
+                        (raw, json.dumps({"digest": digest_hex, "complete": False}, sort_keys=True)),
+                    )
+                    hardware_ids[digest_hex] = cursor.lastrowid
+            return hardware_ids[digest_hex]
 
         # Resolve candidate and signature names → IDs (cache lookups)
         candidate_cache: dict[str, int] = {}
@@ -554,6 +617,7 @@ def load_measurements(
         measurements_inserted = 0
 
         for result in results:
+            hardware_id = _resolve_hardware(result)
             dispatch_hex = result.get("dispatch", "")
             if not dispatch_hex or len(dispatch_hex) != 32:
                 continue
@@ -598,6 +662,7 @@ def load_measurements(
                 nmse = cand.get("nmse")
                 max_abs_err = cand.get("max_abs")
                 workspace_bytes = cand.get("workspace", 0)
+                pool_peak_bytes = cand.get("pool_peak_bytes")
                 samples = cand.get("samples", 0)
                 effective_us = cand.get("effective_us")  # HI50 ranking metric
                 # HI12 E2: raw finalist samples, so a winner is recomputable
@@ -617,19 +682,20 @@ def load_measurements(
 
                 connection.execute(
                     "INSERT OR REPLACE INTO measurement (build_id, hardware_id, "
-                    "signature_id, dispatch_digest, candidate_id, objective, stage, "
+                    "signature_id, dispatch_digest, candidate_id, run_id, objective, stage, "
                     "accepted, reject_reason, samples, launches_per_sample, "
                     "median_us, gpu_mad_us, "
-                    "p95_us, host_median_us, workspace_bytes, nmse, "
+                    "p95_us, host_median_us, workspace_bytes, pool_peak_bytes, nmse, "
                     "max_abs_err, samples_json, effective_us) "
-                    "VALUES (?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, ?, "
-                    "?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
                         signature_id,
                         dispatch_bytes,
                         candidate_id,
+                        run_id,
                         accepted,
                         reject_reason,
                         samples,
@@ -639,6 +705,7 @@ def load_measurements(
                         p95_us,
                         host_median_us,
                         workspace_bytes,
+                        pool_peak_bytes,
                         nmse,
                         max_abs_err,
                         samples_json,
@@ -665,26 +732,29 @@ def load_measurements(
                 winner_median = None
                 winner_p95 = None
                 winner_ws = 0
+                winner_pool_peak = None
                 for cand in result.get("candidates", []):
                     if cand.get("name") == winner_name:
                         winner_median = cand.get("median_us")
                         winner_p95 = cand.get("p95_us")
                         winner_ws = cand.get("workspace", 0)
+                        winner_pool_peak = cand.get("pool_peak_bytes")
                         break
 
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
 
                 connection.execute(
-                    "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, objective, "
+                    "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, run_id, objective, "
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
-                    "median_us, p95_us, workspace_bytes, reason, confidence, "
+                    "median_us, p95_us, workspace_bytes, pool_peak_bytes, reason, confidence, "
                     "promotion_status, q_value) "
-                    "VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
                         signature_id,
+                        run_id,
                         dispatch_bytes,
                         winner_id,
                         winner_name,
@@ -694,6 +764,7 @@ def load_measurements(
                         winner_median,
                         winner_p95,
                         winner_ws,
+                        winner_pool_peak,
                         reason,
                         confidence,
                         promotion_status,

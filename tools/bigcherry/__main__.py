@@ -13,6 +13,7 @@ meaningful against a manifest generated from that same tree.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import subprocess
@@ -458,6 +459,8 @@ def _cmake_configure_args(
         *,
         variant_set: str | None = None,
         inventory: str | None = None,
+        c_compiler: str | None = None,
+        cxx_compiler: str | None = None,
 ) -> list[str]:
     options = {
         "CMAKE_BUILD_TYPE": "Release",
@@ -476,10 +479,35 @@ def _cmake_configure_args(
         if inventory:
             options["GGML_HIP_AUTOTUNE_SIGNATURE_FILE"] = str(
                 Path(inventory).resolve())
-    if platform.c_compiler:
-        options["CMAKE_C_COMPILER"] = platform.c_compiler
-    if platform.cxx_compiler:
-        options["CMAKE_CXX_COMPILER"] = platform.cxx_compiler
+    # A CLI override beats the platform's declared toolchain -- same
+    # rationale as variant_set above, e.g. pointing a checkout that has no
+    # local ROCm install at a toolchain that lives elsewhere.
+    resolved_c_compiler = c_compiler or platform.c_compiler
+    resolved_cxx_compiler = cxx_compiler or platform.cxx_compiler
+    if resolved_c_compiler:
+        options["CMAKE_C_COMPILER"] = resolved_c_compiler
+    if resolved_cxx_compiler:
+        options["CMAKE_CXX_COMPILER"] = resolved_cxx_compiler
+    # An LLVM toolchain on Windows needs an RC compiler too (MSVC's Windows
+    # SDK rc.exe is not assumed present); llvm-rc ships alongside clang in
+    # the same bin/, so derive it rather than adding a third override flag.
+    if resolved_c_compiler:
+        llvm_rc = Path(resolved_c_compiler).parent / "llvm-rc.exe"
+        if llvm_rc.is_file():
+            # as_posix(), not str(): CMake embeds this value literally into
+            # CMakeRCCompiler.cmake, and a raw Windows backslash there is an
+            # invalid escape sequence in CMake's string syntax.
+            options["CMAKE_RC_COMPILER"] = llvm_rc.as_posix()
+        # The HIP package config (hip-config.cmake) lives under the same
+        # install root as the compiler (<root>/bin/clang.exe, package config
+        # under <root>/lib/cmake/hip/) -- derive it so a ROCm install found
+        # via --c-compiler is also usable for find_package(hip).
+        rocm_root = Path(resolved_c_compiler).parent.parent
+        if (rocm_root / "lib" / "cmake" / "hip" / "hip-config.cmake").is_file():
+            existing = options.get("CMAKE_PREFIX_PATH", "")
+            prefix_path = rocm_root.as_posix()
+            options["CMAKE_PREFIX_PATH"] = (
+                f"{existing};{prefix_path}" if existing else prefix_path)
     return [
         "cmake", "-S", str(root), "-B", str(build_dir), "-G", "Ninja",
         *(f"-D{key}={value}" for key, value in sorted(options.items())),
@@ -519,7 +547,8 @@ def _build_one_recipe(
             dry_run=args.dry_run)
         configure = _cmake_configure_args(
             recipe, build, platform, root, build_dir,
-            variant_set=args.variant_set, inventory=args.inventory)
+            variant_set=args.variant_set, inventory=args.inventory,
+            c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler)
         compile_cmd = ["cmake", "--build", str(build_dir), "-j"]
         if args.target:
             compile_cmd += ["--target", *args.target]
@@ -565,6 +594,21 @@ def cmd_build(args: argparse.Namespace) -> int:
     except recipes.RecipeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+
+    # groups/states override the chosen recipe(s) axis by axis, same as
+    # apply's --groups/--states -- e.g. to build against a recipe's ref and
+    # builds while skipping a group with a known-broken patch.
+    override_groups = patchset.parse_filter(getattr(args, "groups", None))
+    override_states = patchset.parse_filter(getattr(args, "states", None))
+    if override_groups is not None or override_states is not None:
+        chosen = [
+            dataclasses.replace(
+                recipe,
+                groups=override_groups if override_groups is not None else recipe.groups,
+                states=override_states if override_states is not None else recipe.states,
+            )
+            for recipe in chosen
+        ]
 
     root = paths.llama_root(args.llama_root)
 
@@ -915,6 +959,24 @@ def build_parser() -> argparse.ArgumentParser:
     build_cmd.add_argument(
         "--dry-run", action="store_true",
         help="print the cmake commands without running them")
+    build_cmd.add_argument(
+        "--c-compiler", default=None,
+        help="override the platform's CMAKE_C_COMPILER (e.g. a different "
+             "ROCm install's clang)")
+    build_cmd.add_argument(
+        "--cxx-compiler", default=None,
+        help="override the platform's CMAKE_CXX_COMPILER (e.g. a different "
+             "ROCm install's clang++)")
+    build_cmd.add_argument(
+        "--groups", default=None,
+        help="comma-separated patch groups, overriding the recipe's "
+             "(e.g. 'core'). Empty string selects none.",
+    )
+    build_cmd.add_argument(
+        "--states", default=None,
+        help=f"comma-separated patch states, overriding the recipe's "
+             f"({', '.join(patchset.STATES)}).",
+    )
     build_cmd.set_defaults(func=cmd_build)
 
     from . import autotune_schema as _schema

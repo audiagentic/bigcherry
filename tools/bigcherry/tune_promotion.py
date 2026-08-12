@@ -152,8 +152,8 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
     for row in results:
         if row.get("winner") == row.get("native"):
             continue
-        if row.get("promotion_status") != "pending_bh":
-            raise PromotionError("non-native result lacks current pending_bh confirmation")
+        if row.get("promotion_status") not in {"pending_bh", "confirmation_rejected"}:
+            raise PromotionError("non-native result lacks current pending_bh/confirmation evidence")
         validate_schedule(row)
         dispatch = row.get("dispatch")
         p_value = row.get("confirmation", {}).get("p_value")

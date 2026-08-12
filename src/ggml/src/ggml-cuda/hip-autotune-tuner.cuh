@@ -52,6 +52,7 @@ enum ggml_hip_reject_reason {
 // Tuning parameters. Defaults are the values standards 7 and 8 specify; they
 // are here rather than hard-coded so a long run can trade precision for time.
 struct ggml_hip_tuner_config {
+    bool   valid                   = true;
     int    warmup_launches       = 15;   // 10-20 (standards 11.4)
     int    screen_samples        = 20;   // 15-30
     int    final_samples         = 100;  // standards 11.5

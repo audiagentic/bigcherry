@@ -27,15 +27,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import struct
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from . import autotune_catalog
 
 MAGIC = 0x59484342
-REPLAY_VERSION = 1
+REPLAY_VERSION = 2
 ARTIFACT_VERSION = 1
 SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
@@ -74,13 +76,15 @@ def ggml_type_values(ggml_h: Path) -> dict[str, int]:
     return values
 
 
-def read_results(path: Path) -> list[dict[str, Any]]:
+def read_results(path: Path, *, require_header: bool = True) -> list[dict[str, Any]]:
     """Winning results from a measurements JSONL.
 
     Tolerates a truncated final line by construction -- a tuning run killed
     mid-write still yields every result it had already flushed.
     """
     results = []
+    header: dict[str, Any] | None = None
+    seen: set[str] = set()
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             line = line.strip()
@@ -88,10 +92,25 @@ def read_results(path: Path) -> list[dict[str, Any]]:
                 continue
             try:
                 record = json.loads(line)
-            except json.JSONDecodeError:
-                continue  # truncated tail; everything before it stands
-            if record.get("kind") == "result" and record.get("winner"):
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"malformed measurements JSONL: {path}: {exc}") from exc
+            if record.get("kind") == "header":
+                if header is not None:
+                    raise SystemExit("duplicate measurements header")
+                header = record
+            elif record.get("kind") == "result" and record.get("winner"):
+                dispatch = record.get("dispatch")
+                if (not isinstance(dispatch, str) or
+                        not re.fullmatch(r"[0-9a-fA-F]{32}", dispatch)):
+                    raise SystemExit("result has malformed dispatch digest")
+                if dispatch in seen:
+                    raise SystemExit(f"duplicate dispatch digest: {dispatch}")
+                seen.add(dispatch)
                 results.append(record)
+            elif record:
+                raise SystemExit("unknown measurements record kind")
+    if header is None and require_header:
+        raise SystemExit("measurements header required")
     return results
 
 
@@ -145,12 +164,16 @@ def build(
     by_name = {c["stable_name"]: c for c in manifest["candidates"]}
     type_values = ggml_type_values(ggml_h)
 
-    results = read_results(measurements)
+    # A fully explicit seed file is an operator-authored provenance source and
+    # may replace the measurements artifact entirely. Normal exports always
+    # require the producer header.
+    results = read_results(measurements, require_header=seed_file is None)
     if not results:
         raise SystemExit(f"no winning results in {measurements}")
 
-    # One entry per dispatch digest. A signature tuned more than once keeps the
-    # last verdict, which is the one taken with the most warmed-up device.
+    # One entry per dispatch digest. Duplicate results are rejected by
+    # read_results: silently taking the last row can combine incompatible
+    # tuning epochs into one cache.
     entries: dict[str, dict[str, Any]] = {}
     for record in results:
         entries[record["dispatch"]] = record
@@ -223,11 +246,16 @@ def build(
 
         digest = bytes.fromhex(digest_hex)
         if len(digest) != DIGEST_BYTES:
-            skipped += 1
-            continue
+            raise SystemExit(f"malformed dispatch digest: {digest_hex!r}")
+
+        signature_hex = record.get("signature") or digest_hex
+        if (not isinstance(signature_hex, str)
+                or not re.fullmatch(r"[0-9a-fA-F]{32}", signature_hex)):
+            raise SystemExit(f"winner {digest_hex} has malformed signature digest")
+        signature = bytes.fromhex(signature_hex)
 
         packed += digest  # ENT_DISPATCH
-        packed += b"\x00" * DIGEST_BYTES  # ENT_SIGNATURE, unused by lookup
+        packed += signature  # ENT_SIGNATURE
         packed += struct.pack("<I", intern(name))
         packed += struct.pack(
             "<iii", fields["primary"], fields["secondary"], fields["width"]
@@ -246,8 +274,6 @@ def build(
     header += bytes.fromhex(manifest["manifest_hash"])
     header += blake2b_digest(payload)
 
-    if skipped:
-        print(f"  warning: {skipped} entry/entries had a malformed digest")
     print(
         f"  {entry_count} winner(s), {len(strings)} distinct candidate(s), "
         f"{len(string_blob)} string byte(s)"
@@ -297,7 +323,21 @@ def main(argv: list[str] | None = None) -> None:
         args.ggml_header,
         seed_file=args.seed,
     )
-    args.output.write_bytes(blob)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=args.output.name + ".tmp-",
+                                     dir=args.output.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(blob)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, args.output)
+    except BaseException:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
     print(f"wrote {args.output} ({len(blob)} bytes)")
     print("Load it with GGML_HIP_DISPATCH_CACHE=<path> GGML_HIP_DISPATCH_MODE=replay")
 
