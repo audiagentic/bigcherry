@@ -146,7 +146,8 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
         "../ggml-cuda/hip-autotune-dispatch.cu"
         "../ggml-cuda/hip-autotune-transform.cu"
         "../ggml-cuda/hip-autotune-signature.cpp"
-        "../ggml-cuda/hip-autotune-blake2b.cpp")
+        "../ggml-cuda/hip-autotune-blake2b.cpp"
+        "../ggml-cuda/hip-autotune-coverage.cpp")
     if (GGML_HIP_DISPATCH_REPLAY)
         list(APPEND _BC_DISPATCH_SOURCES
             "../ggml-cuda/hip-autotune-replay.cpp")
@@ -229,6 +230,17 @@ HIP_BACKEND_PATCH = FilePatch(
             rationale="the end of the GGML_SOURCES_ROCM glob block",
             text=_HIP_DEFINITIONS,
             guard=r"bigcherry: HIP measured dispatch",
+        ),
+        Edit(
+            id="hip-autotune-coverage-source",
+            anchor=r'^        "\.\./ggml-cuda/hip-autotune-blake2b\.cpp"\)$',
+            rationale="add the coverage implementation to an already-applied explicit source split",
+            mode="replace",
+            text=(
+                '        "../ggml-cuda/hip-autotune-blake2b.cpp"\n'
+                '        "../ggml-cuda/hip-autotune-coverage.cpp")'
+            ),
+            guard=r'hip-autotune-coverage\.cpp',
         ),
         # No link edit. The dispatch layer has no external dependencies -- the
         # only one it ever had was SQLite, and record mode writes JSON Lines

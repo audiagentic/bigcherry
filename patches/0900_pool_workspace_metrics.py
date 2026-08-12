@@ -143,7 +143,7 @@ POOL_METRICS_PATCH = FilePatch(
             anchor=r"^    size_t actual_size = 0;$",
             rationale="ggml_cuda_pool_alloc<T>'s own fields, alongside actual_size",
             text=(
-                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
+                "\n#ifdef GGML_HIP_WORKSPACE_METRICS\n"
                 "    // bigcherry (HI40): what THIS candidate asked for, not what the\n"
                 "    // pool happened to hand back. `actual_size` can be a best-fit\n"
                 "    // reuse hit reflecting a stranger's leftover cached buffer -- the\n"
@@ -159,7 +159,7 @@ POOL_METRICS_PATCH = FilePatch(
             anchor=r"^            pool->free\(ptr, actual_size\);$",
             rationale="ggml_cuda_pool_alloc's destructor, the only free call site",
             text=(
-                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
+                "\n#ifdef GGML_HIP_WORKSPACE_METRICS\n"
                 "            pool->bc_workspace_note_free(this->bc_requested_size); // bigcherry (HI40)\n"
                 "#endif\n"),
             guard=r"bc_workspace_note_free\(this->bc_requested_size\)",
@@ -169,7 +169,7 @@ POOL_METRICS_PATCH = FilePatch(
             anchor=r"^        ptr = \(T \*\) pool->alloc\(size \* sizeof\(T\), &this->actual_size\);$",
             rationale="ggml_cuda_pool_alloc::alloc, the only alloc call site",
             text=(
-                "#ifdef GGML_HIP_WORKSPACE_METRICS\n"
+                "\n#ifdef GGML_HIP_WORKSPACE_METRICS\n"
                 "        this->bc_requested_size = size * sizeof(T); // bigcherry (HI40)\n"
                 "        pool->bc_workspace_note_alloc(this->bc_requested_size); // bigcherry (HI52)\n"
                 "#endif\n"
