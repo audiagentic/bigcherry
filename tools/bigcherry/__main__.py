@@ -1058,6 +1058,28 @@ def build_parser() -> argparse.ArgumentParser:
         *(["--staging-root", args.staging_root] if args.staging_root else []),
     ]))
 
+    rank_replay_cmd = sub.add_parser(
+        "rank-replay",
+        help="report/replay ranking-policy decisions recorded in a measurements file (HI50)",
+    )
+    rank_replay_cmd.add_argument("measurements")
+    rank_replay_cmd.add_argument("--dispatch", help="full per-policy candidate detail for one dispatch")
+    rank_replay_cmd.add_argument("--verify-parity", action="store_true",
+                             help="assert the production policy's pick matches provisional_winner")
+    rank_replay_cmd.add_argument("--policy-module",
+                             help="registry name, dotted module path, or .py file of a "
+                                  "not-yet-installed policy to replay alongside the recorded ones")
+    rank_replay_cmd.add_argument("--output", help="write the JSON report here too")
+    rank_replay_cmd.add_argument("--json", action="store_true", help="print JSON instead of a text summary")
+    rank_replay_cmd.set_defaults(func=lambda args: _rank_replay_main([
+        args.measurements,
+        *(["--dispatch", args.dispatch] if args.dispatch else []),
+        *(["--verify-parity"] if args.verify_parity else []),
+        *(["--policy-module", args.policy_module] if args.policy_module else []),
+        *(["--output", args.output] if args.output else []),
+        *(["--json"] if args.json else []),
+    ]))
+
     resource = sub.add_parser(
         "resource-report", help="parse and policy-check a compiler resource stream"
     )
@@ -1270,6 +1292,11 @@ def _resource_report_main(argv: list[str]) -> int:
 def _validate_release_main(argv: list[str]) -> int:
     from . import release_validate
     return release_validate.main(argv)
+
+
+def _rank_replay_main(argv: list[str]) -> int:
+    from . import rank_replay
+    return rank_replay.main(argv)
 
 
 def _candidate_binary_size_main(argv: list[str]) -> int:

@@ -404,16 +404,23 @@ def load_measurements(
             # `compiler` is HI12 E6 -- omitted here for a while even after the
             # tuner started writing it in the header, which is exactly the
             # class of defect E6 exists to close.
+            #
+            # KNOWN GAP (HI37/HI48, not fixed here): variant_set is still
+            # hardcoded to "tuning" rather than the real variant set, because
+            # the tuner's measurements header does not carry it yet. Do not
+            # rely on build.variant_set for anything that depends on it being
+            # accurate until that header field lands.
             cursor = connection.execute(
                 "INSERT INTO build (source_revision, source_dirty, "
                 "manifest_hash, signature_schema, hardware_schema, variant_set, "
-                "dispatch_abi, compiler) VALUES (?, 0, ?, 1, 1, ?, ?, ?)",
+                "dispatch_abi, compiler, hip_version) VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?)",
                 (
                     source_revision,
                     manifest_hash,
                     "tuning",
                     str(artifact_version),
                     header.get("compiler"),
+                    header.get("hip_version"),
                 ),
             )
             build_id = cursor.lastrowid
@@ -421,6 +428,15 @@ def load_measurements(
         # Find hardware row (use placeholder if not from record mode)
         # The measurements JSONL doesn't include hardware info directly.
         # We look for any existing hardware row or create a default.
+        #
+        # KNOWN GAP (HI37/HI48, not fixed here): this binds to whichever
+        # hardware row happens to be first, not the row matching the
+        # digest actually recorded in each result's "hardware" field. Wrong
+        # on any database that already holds more than one architecture's
+        # rows. Needs resolving by result["hardware"] digest, with an
+        # explicit stub row keyed by that digest when the descriptor is
+        # incomplete -- never a placeholder zero digest pretending to be
+        # measured hardware.
         cursor = connection.execute("SELECT hardware_id FROM hardware LIMIT 1")
         hw_row = cursor.fetchone()
         if hw_row:
@@ -546,6 +562,11 @@ def load_measurements(
             improvement_pct = result.get("improvement_pct", 0.0)
             reason = result.get("reason", "")
             confidence = result.get("confidence")  # HI12 E1
+            launches_per_sample = result.get("launches_per_sample")  # HI34
+            promotion_status = result.get("promotion_status")  # HI34/HI50
+            # HI34: only present once tune-promote has run over this row;
+            # a raw (unpromoted) measurements file has no q_value yet.
+            q_value = result.get("promotion", {}).get("q_value")
 
             # Map status names to reject reasons
             status_to_reason = {
@@ -578,6 +599,7 @@ def load_measurements(
                 max_abs_err = cand.get("max_abs")
                 workspace_bytes = cand.get("workspace", 0)
                 samples = cand.get("samples", 0)
+                effective_us = cand.get("effective_us")  # HI50 ranking metric
                 # HI12 E2: raw finalist samples, so a winner is recomputable
                 # offline. Absent for screened-only candidates (never a
                 # finalist) and when the tuner ran with emit_samples=0.
@@ -596,11 +618,12 @@ def load_measurements(
                 connection.execute(
                     "INSERT OR REPLACE INTO measurement (build_id, hardware_id, "
                     "signature_id, dispatch_digest, candidate_id, objective, stage, "
-                    "accepted, reject_reason, samples, median_us, gpu_mad_us, "
+                    "accepted, reject_reason, samples, launches_per_sample, "
+                    "median_us, gpu_mad_us, "
                     "p95_us, host_median_us, workspace_bytes, nmse, "
-                    "max_abs_err, samples_json) "
-                    "VALUES (?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, "
-                    "?, ?, ?, ?, ?, ?, ?)",
+                    "max_abs_err, samples_json, effective_us) "
+                    "VALUES (?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
@@ -610,6 +633,7 @@ def load_measurements(
                         accepted,
                         reject_reason,
                         samples,
+                        launches_per_sample,
                         median_us,
                         gpu_mad_us,
                         p95_us,
@@ -618,6 +642,7 @@ def load_measurements(
                         nmse,
                         max_abs_err,
                         samples_json,
+                        effective_us,
                     ),
                 )
                 measurements_inserted += 1
@@ -625,12 +650,15 @@ def load_measurements(
             # Insert winner row
             if winner_name:
                 winner_id = _resolve_candidate(winner_name)
-                native_name = None
-                for cand in result.get("candidates", []):
-                    cname = cand.get("name", "")
-                    if cname.endswith((":native:v1", ":native:v0")):
-                        native_name = cname
-                        break
+                # HI34: the tuner now records which candidate was native
+                # directly (result["native"]) -- prefer that over guessing
+                # from a ":native:vN" name-suffix pattern, which a fresh
+                # candidate-naming convention could silently stop matching.
+                native_name = result.get("native") or next(
+                    (c.get("name", "") for c in result.get("candidates", [])
+                     if c.get("name", "").endswith((":native:v1", ":native:v0"))),
+                    None,
+                )
                 is_native = 1 if winner_name == native_name else 0
 
                 # Find winner's measurement for median/p95
@@ -650,8 +678,9 @@ def load_measurements(
                     "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, objective, "
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
-                    "median_us, p95_us, workspace_bytes, reason, confidence) "
-                    "VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "median_us, p95_us, workspace_bytes, reason, confidence, "
+                    "promotion_status, q_value) "
+                    "VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
@@ -667,6 +696,8 @@ def load_measurements(
                         winner_ws,
                         reason,
                         confidence,
+                        promotion_status,
+                        q_value,
                     ),
                 )
                 results_inserted += 1
