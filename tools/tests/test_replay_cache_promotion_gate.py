@@ -120,6 +120,19 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 replay_cache.build(measurements, manifest, ggml_h)
 
+    def test_manifest_without_provenance_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            measurements.write_text("\n".join([
+                json.dumps({"kind": "header", "source_revision": "a" * 40,
+                            "manifest_hash": "a" * 32}),
+                json.dumps({"kind": "result", "dispatch": "b" * 32,
+                            "winner": "mmvq:native:v1", "native": "mmvq:native:v1"}),
+            ]) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "lacks producer provenance"):
+                replay_cache.build(measurements, manifest, ggml_h)
+
     def test_explicit_seed_bypasses_the_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

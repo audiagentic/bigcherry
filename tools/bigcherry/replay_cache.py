@@ -173,6 +173,12 @@ def build(
     if seed_file is None:
         expected_revision = manifest.get("source_revision")
         expected_manifest = manifest.get("manifest_hash")
+        if (not isinstance(expected_revision, str) or not expected_revision or
+                not isinstance(expected_manifest, str) or not expected_manifest):
+            raise SystemExit(
+                "refusing to export: supplied manifest lacks producer provenance "
+                "(source_revision/manifest_hash)"
+            )
         if (producer_header is None or
                 producer_header.get("source_revision") != expected_revision or
                 producer_header.get("manifest_hash") != expected_manifest):
