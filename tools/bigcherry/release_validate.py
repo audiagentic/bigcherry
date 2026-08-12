@@ -105,7 +105,7 @@ def probe(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="bigcherry validate-release", description=__doc__)
+        prog="bigcherry probe-release", description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--staging-root", default=str(paths.ARTIFACTS / "release-runs"))
     parser.add_argument("--ref", default="master")

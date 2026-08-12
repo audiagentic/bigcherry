@@ -19,7 +19,7 @@ variant-set = "inventory"
 
 [build.tune]
 description = "Measures candidates and writes results. The tuning workhorse."
-options = { GGML_HIP_AUTOTUNE = "ON" }
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_WORKSPACE_METRICS = "ON" }
 variant-set = "workload-max"
 needs = "inventory"
 

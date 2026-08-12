@@ -57,6 +57,17 @@ class ProbeTests(unittest.TestCase):
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "compatible"', record)
 
+    def test_inventory_is_forwarded_to_isolated_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            staging = Path(directory)
+            inventory = staging / "inventory.json"
+            inventory.write_text("{}", encoding="utf-8")
+            with mock.patch.object(release_validate, "_run_logged", side_effect=[True, True]) as run:
+                code, _ = release_validate.probe("r4", staging, "master", "workstation", inventory)
+            self.assertEqual(code, 0)
+            build_command = run.call_args_list[1].args[0]
+            self.assertEqual(build_command[-2:], ["--inventory", str(inventory)])
+
 
 if __name__ == "__main__":
     unittest.main()

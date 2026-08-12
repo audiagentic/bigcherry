@@ -100,10 +100,8 @@ void ggml_hip_replay_flush_hits();
 size_t ggml_hip_replay_entry_count();
 size_t ggml_hip_replay_miss_count();
 
-// True when the loaded cache was tuned against a different candidate set than
-// this build carries. Its winners are still used -- they remain valid, and the
-// per-entry guards still apply -- but they were chosen from different options,
-// so "tuned" no longer means "tuned for this build".
+// True when a cache was rejected because its producer manifest differs from
+// this build. Rejected caches never expose winners to the resolver.
 bool ggml_hip_replay_is_stale();
 
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

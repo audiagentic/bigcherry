@@ -57,12 +57,16 @@ def paired_bootstrap(native: list[Any], winner: list[Any], *, seed: int,
     ]
     if not pairs:
         raise PromotionError("confirmation has no usable paired rounds")
-    effects = [100.0 * (a - b) / a for a, b in pairs]
     rng = random.Random(seed)
-    draws = sorted(
-        sum(rng.choice(effects) for _ in effects) / len(effects)
-        for _ in range(resamples)
-    )
+    draws = []
+    for _ in range(resamples):
+        sample = [rng.choice(pairs) for _ in pairs]
+        native_sorted = sorted(a for a, _ in sample)
+        winner_sorted = sorted(b for _, b in sample)
+        native_median = native_sorted[len(native_sorted) // 2]
+        winner_median = winner_sorted[len(winner_sorted) // 2]
+        draws.append(100.0 * (native_median - winner_median) / native_median)
+    draws.sort()
     return draws[int(0.025 * resamples)], draws[min(resamples - 1, int(0.975 * resamples))]
 
 
@@ -148,11 +152,13 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             not isinstance(header.get("manifest_hash"), str) or
             len(header["manifest_hash"]) != 32):
         raise PromotionError("invalid current measurements header; rerun")
-    pending: list[tuple[str, float]] = []
+    hypotheses: list[tuple[str, float]] = []
     for row in results:
-        if row.get("winner") == row.get("native"):
+        provisional = row.get("provisional_winner")
+        if not isinstance(provisional, str) or provisional == row.get("native"):
             continue
-        if row.get("promotion_status") not in {"pending_bh", "confirmation_rejected"}:
+        original_status = row.get("promotion_status")
+        if original_status not in {"pending_bh", "confirmation_rejected"}:
             raise PromotionError("non-native result lacks current pending_bh/confirmation evidence")
         validate_schedule(row)
         dispatch = row.get("dispatch")
@@ -161,12 +167,13 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
                 not isinstance(p_value, (int, float)) or
                 not math.isfinite(float(p_value)) or not 0.0 <= float(p_value) <= 1.0):
             raise PromotionError("confirmation identity/p-value missing")
-        pending.append((dispatch, float(p_value)))
-    adjusted = benjamini_hochberg(pending) if pending else {}
+        hypotheses.append((dispatch, float(p_value)))
+    adjusted = benjamini_hochberg(hypotheses) if hypotheses else {}
     accepted = {digest for digest, value in adjusted.items() if value <= q}
     promoted_count = 0
     for row in results:
-        if row.get("winner") == row.get("native"):
+        provisional = row.get("provisional_winner")
+        if not isinstance(provisional, str) or provisional == row.get("native"):
             row["promotion_status"] = "native"
             continue
         confirmation = row["confirmation"]
@@ -176,7 +183,9 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             confirmation.get("native_us", []), confirmation.get("winner_us", []),
             seed=seed, resamples=resamples,
         )
-        passed = (row["dispatch"] in accepted and
+        original_status = row["promotion_status"]
+        passed = (original_status == "pending_bh" and
+                  row["dispatch"] in accepted and
                   float(confirmation.get("effect_pct", 0.0)) >= threshold_pct and low > 0.0)
         row["promotion"] = {
             "schema_version": SCHEMA_VERSION, "q": q,
@@ -190,20 +199,27 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             row["promotion_status"] = "promoted"
             promoted_count += 1
         else:
-            row["promotion_status"] = "rejected_bh"
+            row["promotion_status"] = (
+                "confirmation_rejected" if original_status == "confirmation_rejected"
+                else "rejected_bh"
+            )
             row["winner"] = row["native"]
             row["improvement_pct"] = 0.0
-            row["reason"] = "native retained by experiment-wide promotion policy"
+            row["reason"] = (
+                "native retained by fresh confirmation"
+                if original_status == "confirmation_rejected"
+                else "native retained by experiment-wide promotion policy"
+            )
     promoted_header = dict(header)
     promoted_header["promotion_policy"] = {
         "schema_version": SCHEMA_VERSION, "method": "benjamini-hochberg",
         "q": q, "threshold_pct": threshold_pct,
-        "bootstrap_resamples": resamples, "hypotheses": len(pending),
+        "bootstrap_resamples": resamples, "hypotheses": len(hypotheses),
     }
     data = b"\n".join([canonical(promoted_header), *(canonical(row) for row in results)]) + b"\n"
     atomic_write(output, data)
     return {
-        "schema_version": SCHEMA_VERSION, "hypotheses": len(pending),
+        "schema_version": SCHEMA_VERSION, "hypotheses": len(hypotheses),
         "promoted": promoted_count,
         "content_hash": hashlib.blake2b(data, digest_size=16).hexdigest(),
         "output": str(output),

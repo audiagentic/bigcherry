@@ -179,13 +179,12 @@ ggml_hip_native_selection ggml_hip_native_select(
                 && mmid_batch <= mmvq_mmid_max) {
             family = GGML_HIP_FAMILY_MMVQ;
             selected = true;
-        } else if (mmid_batch <= MMVQ_MAX_BATCH_SIZE
-                && !ggml_is_quantized(src0->type) && GGML_CUDA_CC_IS_AMD(cc)
-                && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne12)) {
+        } else if (mmid_batch <= MMVF_MAX_BATCH_SIZE
+                && !ggml_is_quantized(src0->type) && GGML_CUDA_CC_IS_AMD(cc)) {
             family = GGML_HIP_FAMILY_MMVF;
             selected = true;
         }
-        if (!selected && ggml_cuda_should_use_mmq(src0->type, cc, src1->ne[1], src0->ne[2])) {
+        if (!selected && ggml_cuda_should_use_mmq(src0->type, cc, ne12, src0->ne[2])) {
             family = GGML_HIP_FAMILY_MMQ;
             selected = true;
         } else if (!selected && ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne,
@@ -248,6 +247,20 @@ struct Binding {
     ggml_hip_variant_params               variant;
     bool                                  from_cache;
 };
+
+// The resolver is entered for every matmul. Keep the last binding in thread
+// local storage so the overwhelmingly common repeated-signature path does not
+// construct three BLAKE2b digests or take the process-cache mutex. The full
+// digest map remains the cross-signature/cross-thread cold path and the
+// signature bytes are compared before reusing this fast entry.
+struct ThreadBinding {
+    bool valid = false;
+    int device = -1;
+    ggml_hip_dispatch_signature_v1 signature = {};
+    Binding binding = {};
+};
+
+thread_local ThreadBinding g_thread_binding;
 
 std::unordered_map<ggml_hip_digest, Binding, DigestHash, DigestEqual> g_bindings;
 std::mutex g_bindings_mutex;
@@ -353,6 +366,15 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         return resolved;
     }
 
+    if (mode != GGML_HIP_DISPATCH_MODE_RECORD &&
+            g_thread_binding.valid && g_thread_binding.device == ctx.device &&
+            memcmp(&g_thread_binding.signature, &sig, sizeof(sig)) == 0) {
+        resolved.candidate  = g_thread_binding.binding.candidate;
+        resolved.variant    = g_thread_binding.binding.variant;
+        resolved.from_cache = g_thread_binding.binding.from_cache;
+        return resolved;
+    }
+
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
     if (const auto & forced = ForcedCandidate::instance(); forced.candidate != nullptr) {
         const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
@@ -402,6 +424,12 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
                                       ctx.device);
             }
 #endif
+            if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+                g_thread_binding.valid = true;
+                g_thread_binding.device = ctx.device;
+                g_thread_binding.signature = sig;
+                g_thread_binding.binding = found->second;
+            }
             return resolved;
         }
     }
@@ -475,6 +503,12 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.candidate  = binding.candidate;
     resolved.variant    = binding.variant;
     resolved.from_cache = binding.from_cache;
+    if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+        g_thread_binding.valid = true;
+        g_thread_binding.device = ctx.device;
+        g_thread_binding.signature = sig;
+        g_thread_binding.binding = binding;
+    }
     return resolved;
 }
 
@@ -880,7 +914,11 @@ bool ggml_hip_mmvf_can_execute(const ggml_hip_candidate_descriptor * self,
     // Standards 3.1: an F16 accumulator against a request that did not ask for
     // reduced precision is a different operation, not a faster variant of this
     // one. Rejecting it here keeps it out of the measurement set entirely.
-    if (self->variant.acc_f16 && sig.src0_type != GGML_TYPE_F16) {
+    if (self->variant.acc_f16 &&
+            (sig.src0_type != GGML_TYPE_F16 ||
+             sig.prec != GGML_PREC_DEFAULT ||
+             !fast_fp16_hardware_available(ggml_cuda_info().devices[
+                 ggml_cuda_get_device()].cc))) {
         return false;
     }
     if (self->variant.width != 0 && self->variant.width != sig.ned[1]) {
@@ -914,25 +952,9 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
         return false;
     }
 
-    // Upstream's own capability gate, and it has to run before the native
-    // short-circuit below because the native wrapper is as capable of naming an
-    // uncompiled kernel as any forced variant is.
-    //
-    // ggml_cuda_mmf_variant_is_eligible does not cover this: it discards the
-    // type outright (GGML_UNUSED) and checks only nwarps bounds and shared
-    // memory. The gap is not subtle -- MMF's F32 path requires Ampere MMA or
-    // AMD MFMA, and RDNA3 has neither (it has WMMA), so *every* mmf:f32
-    // candidate is unrunnable on gfx1100 while looking perfectly eligible.
-    // Launching one does not abort cleanly: the kernel body compiled to a
-    // NO_DEVICE_CODE stub, so it faults as HSA_STATUS_ERROR_EXCEPTION, takes
-    // the queue down, and leaves the device unusable. See review RV03.
-    //
-    // Called whole rather than split into a capability half. The alignment and
-    // contiguity checks inside it are crash-prevention, not policy, and the
-    // ncols bounds track which instances upstream actually compiles. The one
-    // thing it costs is exploring ncols 9..16 on RDNA3.0, where upstream caps
-    // at 8; those candidates now report as ineligible, which is a category
-    // HI12's coverage report already distinguishes rather than hides.
+    // Capability only: do not import upstream's performance policy into
+    // eligibility. The tuner must be able to measure legal MMF shapes that
+    // upstream currently routes elsewhere.
     {
         const ggml_type type  = (ggml_type) sig.src0_type;
         const size_t    ts    = ggml_type_size(type);
@@ -950,11 +972,22 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
         const int id = ggml_cuda_get_device();
         const int cc = ggml_cuda_info().devices[id].cc;
 
-        if (!ggml_cuda_should_use_mmf(type, cc, (int) hw.wave_size, ne, nb,
-                                      (int) sig.ned[1],
-                                      (sig.flags & GGML_HIP_SIG_HAS_IDS) != 0)) {
+        if (ggml_is_quantized(type) ||
+                ne[0] % (mmf_get_rows_per_block(cc) * (4 / ts)) != 0 ||
+                nb[0] != ts) {
             return false;
         }
+        for (int i = 1; i < GGML_MAX_DIMS; ++i) {
+            if (nb[i] % (2 * ts) != 0) return false;
+        }
+        if (ne[1] % mmf_get_rows_per_block(cc) != 0) return false;
+        const bool capable =
+            (type == GGML_TYPE_F32 && (ampere_mma_available(cc) || amd_mfma_available(cc))) ||
+            (type == GGML_TYPE_F16 && (volta_mma_available(cc) || turing_mma_available(cc) ||
+                                       amd_wmma_available(cc) || amd_mfma_available(cc))) ||
+            (type == GGML_TYPE_BF16 && (ampere_mma_available(cc) || amd_wmma_available(cc) ||
+                                        amd_mfma_available(cc)));
+        if (!capable) return false;
     }
 
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {

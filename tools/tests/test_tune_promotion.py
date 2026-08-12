@@ -19,6 +19,7 @@ def result(dispatch: str, p: float, winner: float) -> dict:
         "kind": "result", "dispatch": dispatch, "native": "native",
         "signature": signature,
         "winner": "candidate", "promotion_status": "pending_bh",
+        "provisional_winner": "candidate",
         "schedule_seed": int.from_bytes(bytes.fromhex(signature)[:4], "little"),
         "schedule": {
             "schema_version": 1,
@@ -47,6 +48,25 @@ class PromotionTests(unittest.TestCase):
         )
         self.assertAlmostEqual(low, 10.0)
         self.assertAlmostEqual(high, 10.0)
+
+    def test_bootstrap_resamples_ratio_of_medians(self):
+        low, high = tune_promotion.paired_bootstrap(
+            [10.0, 20.0, 30.0], [5.0, 10.0, 15.0], seed=7, resamples=1000,
+        )
+        self.assertAlmostEqual(low, 50.0)
+        self.assertAlmostEqual(high, 50.0)
+
+    def test_confirmation_rejected_is_in_hypotheses_but_cannot_promote(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row["promotion_status"] = "confirmation_rejected"
+            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
+            report = tune_promotion.promote(source, output, resamples=1000)
+            self.assertEqual(report["hypotheses"], 1)
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "confirmation_rejected")
 
     def test_bh_and_bootstrap_promote_only_supported_winner(self):
         with tempfile.TemporaryDirectory() as directory:

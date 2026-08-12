@@ -125,13 +125,6 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
         endif()
         add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
     endif()
-    if (GGML_HIP_WORKSPACE_METRICS)
-        if (NOT GGML_HIP_AUTOTUNE)
-            message(FATAL_ERROR "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
-        endif()
-        add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
-    endif()
-
     # The generated registry, manifest hash header and MMVQ instances are
     # written into the tree by `bigcherry generate` before configure.
     if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../ggml-cuda/hip-autotune-registry.inc")

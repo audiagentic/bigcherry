@@ -228,21 +228,17 @@ bool ggml_hip_replay_init() {
             reject(path, "hardware key schema version mismatch");
             return;
         }
-        // A different candidate set means these winners were chosen from
-        // different options. That makes them possibly sub-optimal, not
-        // invalid, so it is reported rather than fatal.
-        //
-        // This used to reject the cache outright (standards 13.1). Combined
-        // with the manifest hash being part of the lookup key, it meant any
-        // rebuild that touched the catalog threw away every tuning result --
-        // hours of exclusive GPU time -- with no way to keep using it. The
-        // guards that matter are per entry and still enforced below: an entry
-        // naming a candidate this binary lacks is dropped, and the resolver
-        // re-runs `can_execute` before launching a stored winner.
-        //
-        // Interim measure; HI23 replaces it with per-entry provenance and
-        // several retained generations.
+        // Producer provenance is part of the replay safety contract. A cache
+        // made from a different candidate manifest may name a valid-looking
+        // kernel but was never measured for this binary's candidate set.
+        // Fail closed before loading any winner; do not silently run a stale
+        // production policy.
         stale = !manifest_hash_matches(data + HDR_MANIFEST);
+        if (stale) {
+            g_stale = true;
+            reject(path, "producer manifest hash differs from this build");
+            return;
+        }
 
         const uint32_t entry_count  = read_u32(data + HDR_ENTRY_COUNT);
         const uint32_t string_bytes = read_u32(data + HDR_STRING_BYTES);
@@ -329,18 +325,6 @@ bool ggml_hip_replay_init() {
             GGML_LOG_WARN("bigcherry: %zu cache entry/entries name unknown "
                           "candidates; those signatures use native selection\n",
                           unknown);
-        }
-        if (stale) {
-            // Worth a warning rather than a note: the winners are still valid
-            // and will be used, but they were chosen from a different set of
-            // candidates than this binary carries, so "tuned" no longer means
-            // "tuned for this build". Re-tune when the difference matters.
-            GGML_LOG_WARN("bigcherry: replay cache was tuned against a "
-                          "different candidate set (manifest hash differs from "
-                          "this build's %s). Its winners are still valid and "
-                          "are being used, but may no longer be the best "
-                          "available; re-tune to refresh them.\n",
-                          GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR);
         }
     });
     return g_loaded;
