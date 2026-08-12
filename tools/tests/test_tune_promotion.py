@@ -56,6 +56,9 @@ class PromotionTests(unittest.TestCase):
         self.assertAlmostEqual(low, 50.0)
         self.assertAlmostEqual(high, 50.0)
 
+    def test_bootstrap_uses_even_sample_median_average(self):
+        self.assertEqual(tune_promotion._median([10.0, 20.0, 30.0, 40.0]), 25.0)
+
     def test_confirmation_rejected_is_in_hypotheses_but_cannot_promote(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

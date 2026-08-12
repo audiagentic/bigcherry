@@ -248,11 +248,11 @@ struct Binding {
     bool                                  from_cache;
 };
 
-// The resolver is entered for every matmul. Keep the last binding in thread
-// local storage so the overwhelmingly common repeated-signature path does not
+// The resolver is entered for every matmul. Keep a small per-thread binding
+// cache so repeated signatures, including A -> B -> A interleaving, do not
 // construct three BLAKE2b digests or take the process-cache mutex. The full
 // digest map remains the cross-signature/cross-thread cold path and the
-// signature bytes are compared before reusing this fast entry.
+// signature bytes are compared before reusing these fast entries.
 struct ThreadBinding {
     bool valid = false;
     int device = -1;
@@ -260,7 +260,34 @@ struct ThreadBinding {
     Binding binding = {};
 };
 
-thread_local ThreadBinding g_thread_binding;
+struct ThreadBindingCache {
+    static constexpr size_t slot_count = 8;
+    ThreadBinding slots[slot_count] = {};
+    size_t next_slot = 0;
+
+    bool find(int device, const ggml_hip_dispatch_signature_v1 & signature,
+              Binding * binding) const {
+        for (const auto & slot : slots) {
+            if (slot.valid && slot.device == device &&
+                    memcmp(&slot.signature, &signature, sizeof(signature)) == 0) {
+                *binding = slot.binding;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void insert(int device, const ggml_hip_dispatch_signature_v1 & signature,
+                const Binding & binding) {
+        ThreadBinding & slot = slots[next_slot++ % slot_count];
+        slot.valid = true;
+        slot.device = device;
+        slot.signature = signature;
+        slot.binding = binding;
+    }
+};
+
+thread_local ThreadBindingCache g_thread_bindings;
 
 std::unordered_map<ggml_hip_digest, Binding, DigestHash, DigestEqual> g_bindings;
 std::mutex g_bindings_mutex;
@@ -366,12 +393,12 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         return resolved;
     }
 
+    Binding thread_binding = {};
     if (mode != GGML_HIP_DISPATCH_MODE_RECORD &&
-            g_thread_binding.valid && g_thread_binding.device == ctx.device &&
-            memcmp(&g_thread_binding.signature, &sig, sizeof(sig)) == 0) {
-        resolved.candidate  = g_thread_binding.binding.candidate;
-        resolved.variant    = g_thread_binding.binding.variant;
-        resolved.from_cache = g_thread_binding.binding.from_cache;
+            g_thread_bindings.find(ctx.device, sig, &thread_binding)) {
+        resolved.candidate  = thread_binding.candidate;
+        resolved.variant    = thread_binding.variant;
+        resolved.from_cache = thread_binding.from_cache;
         return resolved;
     }
 
@@ -425,10 +452,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             }
 #endif
             if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
-                g_thread_binding.valid = true;
-                g_thread_binding.device = ctx.device;
-                g_thread_binding.signature = sig;
-                g_thread_binding.binding = found->second;
+                g_thread_bindings.insert(ctx.device, sig, found->second);
             }
             return resolved;
         }
@@ -504,10 +528,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.variant    = binding.variant;
     resolved.from_cache = binding.from_cache;
     if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
-        g_thread_binding.valid = true;
-        g_thread_binding.device = ctx.device;
-        g_thread_binding.signature = sig;
-        g_thread_binding.binding = binding;
+        g_thread_bindings.insert(ctx.device, sig, binding);
     }
     return resolved;
 }

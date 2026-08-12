@@ -27,6 +27,13 @@ class PromotionError(RuntimeError):
     pass
 
 
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return ordered[middle] if len(ordered) % 2 else \
+        0.5 * (ordered[middle - 1] + ordered[middle])
+
+
 def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     header: dict[str, Any] | None = None
     results: list[dict[str, Any]] = []
@@ -61,10 +68,8 @@ def paired_bootstrap(native: list[Any], winner: list[Any], *, seed: int,
     draws = []
     for _ in range(resamples):
         sample = [rng.choice(pairs) for _ in pairs]
-        native_sorted = sorted(a for a, _ in sample)
-        winner_sorted = sorted(b for _, b in sample)
-        native_median = native_sorted[len(native_sorted) // 2]
-        winner_median = winner_sorted[len(winner_sorted) // 2]
+        native_median = _median([a for a, _ in sample])
+        winner_median = _median([b for _, b in sample])
         draws.append(100.0 * (native_median - winner_median) / native_median)
     draws.sort()
     return draws[int(0.025 * resamples)], draws[min(resamples - 1, int(0.975 * resamples))]
