@@ -92,5 +92,7 @@ Icon?
 
 # -- Cloned sub-repos (vendored dependencies) --
 # These are cloned repos that live under vendor/. Ignore their contents.
-vendor/llama.cpp/
+vendor/
 prodtest_loop.sh
+vendor/llama.cpp-stock-b10257-linux
+vendor/llama.cpp-stock-b10327-linux
