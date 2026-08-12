@@ -187,7 +187,8 @@ ggml_hip_native_selection ggml_hip_native_select(
         if (!selected && ggml_cuda_should_use_mmq(src0->type, cc, ne12, src0->ne[2])) {
             family = GGML_HIP_FAMILY_MMQ;
             selected = true;
-        } else if (!selected && ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne,
+        } else if (!selected && ggml_cuda_should_use_mmf(src0->type, cc,
+                                            /*mul_mat_id warp parity=*/ WARP_SIZE, src0->ne,
                                             src0->nb, ne12, /*mul_mat_id =*/ true)) {
             family = GGML_HIP_FAMILY_MMF;
             selected = true;
@@ -727,7 +728,8 @@ static inline bool ggml_hip_family_can_serve(
         const ggml_hip_dispatch_signature_v1 & sig) {
     const ggml_type src0 = (ggml_type) sig.src0_type;
     const int64_t   k    = sig.ne0[0];      // shared dimension
-    const int64_t   width = sig.ned[1];     // ncols_dst
+    const bool has_ids = (sig.flags & GGML_HIP_SIG_HAS_IDS) != 0;
+    const int64_t ncols_dst = has_ids ? sig.ned[2] : sig.ned[1];
 
     const bool is_float = src0 == GGML_TYPE_F32
                        || src0 == GGML_TYPE_F16
@@ -763,16 +765,16 @@ static inline bool ggml_hip_family_can_serve(
 
         case GGML_HIP_FAMILY_MMVQ:
             // mmvq.cu asserts ncols_dst <= MMVQ_MAX_BATCH_SIZE.
-            return ggml_is_quantized(src0) && width <= MMVQ_MAX_BATCH_SIZE;
+            return ggml_is_quantized(src0) && ncols_dst <= MMVQ_MAX_BATCH_SIZE;
 
         case GGML_HIP_FAMILY_MMVF:
             // mmvf.cu asserts ncols % 2 == 0 and bounds the batch.
-            return is_float && (k % 2) == 0 && width <= MMVF_MAX_BATCH_SIZE;
+            return is_float && (k % 2) == 0 && ncols_dst <= MMVF_MAX_BATCH_SIZE;
 
         case GGML_HIP_FAMILY_MMF:
             // mmf.cuh switches cols_per_block over 1..16 and asserts
             // ncols_x % 2 == 0.
-            return is_float && (k % 2) == 0 && width >= 1 && width <= 16;
+            return is_float && (k % 2) == 0 && ncols_dst >= 1 && ncols_dst <= 16;
 
         case GGML_HIP_FAMILY_BLAS:
             // hipBLAS takes anything -- the dense path dequantises first --
@@ -845,7 +847,8 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     return ggml_cuda_mmq_variant_is_eligible(
         (ggml_type) sig.src0_type, self->variant.primary,
         shape_fallback,
-        /*cc =*/ 0, hw.shared_memory_per_block, sig.ned[1]);
+        /*cc =*/ 0, hw.shared_memory_per_block,
+        (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1]);
 }
 
 void ggml_hip_mmq_launch(const ggml_hip_candidate_descriptor * self,
@@ -942,13 +945,14 @@ bool ggml_hip_mmvf_can_execute(const ggml_hip_candidate_descriptor * self,
                  ggml_cuda_get_device()].cc))) {
         return false;
     }
-    if (self->variant.width != 0 && self->variant.width != sig.ned[1]) {
+    const int64_t ncols_dst = (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1];
+    if (self->variant.width != 0 && self->variant.width != ncols_dst) {
         return false;
     }
     return ggml_cuda_mmvf_variant_is_eligible(
         (ggml_type) sig.src0_type, self->variant.primary,
         self->variant.acc_f16 != 0, hw.wave_size, hw.shared_memory_per_block,
-        sig.ne0[0], sig.ned[1], sig.fusion != GGML_HIP_FUSION_NONE);
+        sig.ne0[0], ncols_dst, sig.fusion != GGML_HIP_FUSION_NONE);
 }
 
 void ggml_hip_mmvf_launch(const ggml_hip_candidate_descriptor * self,
@@ -996,7 +1000,7 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
             ? MMF_ROWS_PER_BLOCK_CDNA : MMF_ROWS_PER_BLOCK;
 
         if (ggml_is_quantized(type) ||
-                ne[0] % (rows_per_block * (4 / ts)) != 0 ||
+                ne[0] % (hw.wave_size * (4 / ts)) != 0 ||
                 nb[0] != ts) {
             return false;
         }
@@ -1004,6 +1008,7 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
             if (nb[i] % (2 * ts) != 0) return false;
         }
         if (ne[1] % rows_per_block != 0) return false;
+        if (GGML_CUDA_CC_IS_CDNA3(cc) && type == GGML_TYPE_BF16) return false;
         const bool capable =
             (type == GGML_TYPE_F32 && (ampere_mma_available(cc) || amd_mfma_available(cc))) ||
             (type == GGML_TYPE_F16 && (volta_mma_available(cc) || turing_mma_available(cc) ||
@@ -1021,12 +1026,13 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
     if (self->variant.src0_type != sig.src0_type) {
         return false;
     }
-    if (self->variant.width != 0 && self->variant.width != sig.ned[1]) {
+    const int64_t ncols_dst = (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1];
+    if (self->variant.width != 0 && self->variant.width != ncols_dst) {
         return false;
     }
     return ggml_cuda_mmf_variant_is_eligible(
         (ggml_type) sig.src0_type, self->variant.primary, /*cc =*/ 0,
-        hw.wave_size, hw.shared_memory_per_block, sig.ned[1], sig.ne0[1]);
+        hw.wave_size, hw.shared_memory_per_block, ncols_dst, sig.ne0[1]);
 }
 
 void ggml_hip_mmf_launch(const ggml_hip_candidate_descriptor * self,
@@ -1090,7 +1096,8 @@ bool ggml_hip_mmvq_can_execute(const ggml_hip_candidate_descriptor * self,
     // Generated MMVQ instances are compiled for one exact geometry, so the
     // width has to match rather than merely fit -- an instance built for
     // ncols_dst=4 cannot serve a 2-column launch.
-    return self->variant.width == sig.ned[1];
+    const int64_t ncols_dst = (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1];
+    return self->variant.width == ncols_dst;
 }
 
 void ggml_hip_mmvq_launch(const ggml_hip_candidate_descriptor * self,

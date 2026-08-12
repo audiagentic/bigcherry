@@ -243,8 +243,17 @@ bool ggml_hip_replay_init() {
         const uint32_t entry_count  = read_u32(data + HDR_ENTRY_COUNT);
         const uint32_t string_bytes = read_u32(data + HDR_STRING_BYTES);
         const size_t   entries_at   = HDR_SIZE;
-        const size_t   strings_at   = entries_at + (size_t) entry_count * ENT_SIZE;
-        const size_t   expected     = strings_at + string_bytes;
+        if (entry_count > (SIZE_MAX - entries_at) / ENT_SIZE) {
+            reject(path, "entry table size overflows");
+            return;
+        }
+        const size_t entries_bytes = (size_t) entry_count * ENT_SIZE;
+        if (string_bytes > SIZE_MAX - entries_at - entries_bytes) {
+            reject(path, "string table size overflows");
+            return;
+        }
+        const size_t strings_at   = entries_at + entries_bytes;
+        const size_t expected     = strings_at + string_bytes;
         if (bytes.size() != expected) {
             reject(path, "file is truncated");
             return;
@@ -284,11 +293,9 @@ bool ggml_hip_replay_init() {
             const ggml_hip_candidate_descriptor * candidate =
                 ggml_hip_registry_find(strings + name_offset);
             if (candidate == nullptr) {
-                // A winner naming a candidate this binary does not carry. Skip
-                // it rather than rejecting the whole cache: the remaining
-                // entries are still valid, and this one falls back to native.
-                ++unknown;
-                continue;
+                reject(path, "entry names an unknown candidate");
+                g_winners.clear();
+                return;
             }
 
             ggml_hip_digest key;

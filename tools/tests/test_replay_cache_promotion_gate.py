@@ -116,6 +116,7 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
             measurements.write_text(json.dumps({
                 "kind": "result", "dispatch": "b" * 32,
                 "winner": "mmvq:seeded:v1", "native": "mmvq:native:v1",
+                "signature": "c" * 32,
             }) + "\n", encoding="utf-8")
             with self.assertRaises(SystemExit):
                 replay_cache.build(measurements, manifest, ggml_h)
@@ -142,9 +143,11 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
             measurements.write_text(json.dumps({
                 "kind": "result", "dispatch": "b" * 32,
                 "winner": "mmvq:seeded:v1", "native": "mmvq:native:v1",
+                "signature": "c" * 32,
             }) + "\n", encoding="utf-8")
             seed_file = root / "seed.json"
-            seed_file.write_text(json.dumps({"b" * 32: "mmvq:seeded:v1"}), encoding="utf-8")
+            seed_file.write_text(json.dumps({"b" * 32: {"winner": "mmvq:seeded:v1",
+                                                   "signature": "c" * 32}}), encoding="utf-8")
             blob = replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
             self.assertTrue(blob)  # exported without raising
 
