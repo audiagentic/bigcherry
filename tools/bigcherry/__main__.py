@@ -1122,6 +1122,20 @@ def build_parser() -> argparse.ArgumentParser:
         *(["--staging-root", args.staging_root] if args.staging_root else []),
     ]))
 
+    validate_ref_cmd = sub.add_parser(
+        "validate-ref",
+        help="alias for the isolated patch/build compatibility probe (HI46)")
+    validate_ref_cmd.add_argument("--run-id", required=True)
+    validate_ref_cmd.add_argument("--staging-root", default=None)
+    validate_ref_cmd.add_argument("--ref", default="master")
+    validate_ref_cmd.add_argument("--recipe", default="bigcherry")
+    validate_ref_cmd.add_argument("--inventory", default=None)
+    validate_ref_cmd.set_defaults(func=lambda args: _validate_release_main([
+        "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
+        *( ["--inventory", args.inventory] if args.inventory else []),
+        *( ["--staging-root", args.staging_root] if args.staging_root else []),
+    ]))
+
     rank_replay_cmd = sub.add_parser(
         "rank-replay",
         help="report/replay ranking-policy decisions recorded in a measurements file (HI50)",

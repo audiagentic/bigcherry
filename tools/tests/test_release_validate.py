@@ -34,6 +34,8 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "pull-failed"', record)
+            self.assertIn('"failure_class": "pull-failed"', record)
+            self.assertIn('"stage": "pull"', record)
 
     def test_build_failure_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -43,6 +45,8 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(code, 1)
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "patch-drift-or-build-failed"', record)
+            self.assertIn('"failure_class": "patch-drift"', record)
+            self.assertIn('"command":', record)
 
     def test_clean_probe_reports_compatible(self):
         with tempfile.TemporaryDirectory() as directory:
