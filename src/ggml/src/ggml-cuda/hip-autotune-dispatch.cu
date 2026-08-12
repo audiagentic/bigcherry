@@ -749,7 +749,7 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
         return false;
     }
 
-    // EX01 quarantine, 2026-08-11 (docs/planning/active/external-fixes/EX01.md,
+    // EX02 quarantine, 2026-08-11 (docs/planning/active/external-fixes/EX02.md,
     // docs/reference/FINDINGS.md): mmq:q6_k:j112:fb0:t256:o2:i128:sram-q6_k:
     // k256:sk0:v1 crashes with an illegal memory access on gfx1100,
     // reproduced deterministically three times across two independent
@@ -758,14 +758,14 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     // smallest J that covers the batch in one tile, so it never forces
     // J=112 onto MTP's narrow draft-decode batches the way a full sweep
     // does. Not a shared-memory-limit or workspace-sizing gap (both
-    // checked against real numbers/source and ruled out; see EX01) --
+    // checked against real numbers/source and ruled out; see EX02) --
     // root cause is still open, needs rocgdb, not more source reading.
     //
     // Scoped to exactly this stable identity, on gfx1100 only: this
     // candidate's config row is shared with other architectures whose own
     // tables define the same (type, J, I, sram_layout) -- excluding it
     // everywhere would quarantine hardware this was never proven to crash
-    // on. Remove this block once EX01 lands a real fix; do not widen it.
+    // on. Remove this block once EX02 lands a real fix; do not widen it.
     if (self->variant.src0_type == GGML_TYPE_Q6_K &&
             self->variant.primary == 112 &&
             self->variant.fallback == 0 &&
