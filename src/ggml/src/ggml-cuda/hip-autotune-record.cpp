@@ -5,6 +5,7 @@
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE_RECORD)
 
 #include "hip-autotune-build-hash.h"
+#include "hip-autotune-io.h"
 #include "hip-autotune-signature.h"
 
 #include <algorithm>
@@ -160,12 +161,15 @@ void ggml_hip_record_flush() {
     }
 
     // Rewritten, not appended: a checkpoint mid-run must leave a complete
-    // document, and the in-memory map is already the merged truth.
-    FILE * file = fopen(path, "w");
-    if (file == nullptr) {
+    // document, and the in-memory map is already the merged truth. HI48:
+    // atomic same-directory replacement, so a crash mid-rewrite leaves the
+    // previous good file in place rather than a truncated one overwriting it.
+    ggml_hip_atomic_file file_atomic;
+    if (!ggml_hip_atomic_begin(path, file_atomic)) {
         GGML_LOG_WARN("bigcherry: cannot write record file '%s'\n", path);
         return;
     }
+    FILE * file = file_atomic.file;
 
     // One header line, then one line per observation. JSON Lines rather than a
     // single document so a truncated file is still readable up to its last
@@ -200,7 +204,10 @@ void ggml_hip_record_flush() {
         fprintf(file, "],\"canonical\":%s,\"hardware_key\":%s}\n",
                 o.canonical_json.c_str(), o.hardware_json.c_str());
     }
-    fclose(file);
+    if (!ggml_hip_atomic_commit(file_atomic)) {
+        GGML_LOG_WARN("bigcherry: atomic record replacement failed for '%s'\n", path);
+        return;
+    }
 
     GGML_LOG_INFO("bigcherry: recorded %zu signature(s) to '%s'\n",
                   g_observations.size(), path);
@@ -226,10 +233,11 @@ void ggml_hip_record_write_report(const char * path) {
                   return a->est_bytes > b->est_bytes;
               });
 
-    FILE * file = fopen(path, "w");
-    if (file == nullptr) {
+    ggml_hip_atomic_file report_atomic;
+    if (!ggml_hip_atomic_begin(path, report_atomic)) {
         return;
     }
+    FILE * file = report_atomic.file;
 
     uint64_t total_calls = 0;
     for (const Observation * o : ranked) {
@@ -262,7 +270,7 @@ void ggml_hip_record_write_report(const char * path) {
                     i + 1, 100.0 * (double) cumulative / (double) total_calls);
         }
     }
-    fclose(file);
+    ggml_hip_atomic_commit(report_atomic);
 }
 
 size_t ggml_hip_record_signature_count() {

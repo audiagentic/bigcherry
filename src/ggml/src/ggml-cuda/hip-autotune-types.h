@@ -334,6 +334,12 @@ struct ggml_hip_transform_ctx {
     int64_t n_batches   = 1;
     int64_t batch_width = 0;   // dst columns per batch
     int64_t total_width = 0;   // dst columns in the original operation
+
+    // Unmoving base pointers for a batching transform's `select_batch`, so
+    // re-pointing at batch i is arithmetic on the original data pointer
+    // rather than repeated mutation of an already-offset one.
+    char * src1_base = nullptr;
+    char * dst_base  = nullptr;
 };
 
 // Hard applicability, from the signature alone. Must be cheap and side-effect
@@ -341,24 +347,29 @@ struct ggml_hip_transform_ctx {
 typedef bool (*ggml_hip_transform_can_apply_fn)(
     const ggml_hip_dispatch_signature_v1 & sig);
 
-// Rewrite (orig_sig, orig_lc) into (*out_sig, *out_lc), using `ctx` as storage
-// for the rewritten tensor headers. Returns false if the rewrite could not be
-// built -- which `can_apply` should already have prevented, so a false here is
-// a bug rather than a routine outcome.
+// Rewrite orig_lc into (*out_sig, *out_lc), using `ctx` as storage for the
+// rewritten tensor headers. No separate orig_sig parameter: everything an
+// apply function needs is already reachable from orig_lc's tensor headers,
+// and out_sig is rebuilt from the rewritten headers (never copied from
+// orig_sig and hand-edited -- see the note on signature_from_ctx). Returns
+// false if the rewrite could not be built -- which `can_apply` should
+// already have prevented, so a false here is a bug rather than a routine
+// outcome.
 typedef bool (*ggml_hip_transform_apply_fn)(
-    const ggml_hip_dispatch_signature_v1 & orig_sig,
     const ggml_hip_launch_context &        orig_lc,
     ggml_hip_transform_ctx *               ctx,
     ggml_hip_dispatch_signature_v1 *       out_sig,
     ggml_hip_launch_context *              out_lc);
 
-// Re-point `lc` at batch `index` of the decomposition in `ctx`. Null for a
-// transform that produces a single launch. The last batch may be narrower than
+// Re-point `ctx` at batch `index` of its decomposition. Null for a transform
+// that produces a single launch. The last batch may be narrower than
 // batch_width; the implementation adjusts the shape, not just the pointers.
+// No `lc` parameter: `lc` already points at ctx's headers (see
+// launch_context_from_ctx), so mutating ctx in place is what re-points the
+// launch -- there is nothing in lc itself for a batch selector to touch.
 typedef bool (*ggml_hip_transform_select_batch_fn)(
-    ggml_hip_transform_ctx *  ctx,
-    ggml_hip_launch_context * lc,
-    int64_t                   index);
+    ggml_hip_transform_ctx * ctx,
+    int64_t                  index);
 
 // Scratch bytes beyond what the target candidate itself requests, so a
 // transform that trades memory for a family change is filtered against
