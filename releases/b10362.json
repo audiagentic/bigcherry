@@ -2,7 +2,7 @@
   "revision": "4801e3c567d5131dd41b387df5f2d4b1370d92be",
   "release_tag": "b10362",
   "stage": "generated",
-  "bigcherry_revision": "057cc28e083eefe503296c13962517510bfe782f",
+  "bigcherry_revision": "8163040b0a13fe31ebdf5c462d53aae54deb49fb",
   "artifact_version": 1,
   "audit": {
     "passed": true,
@@ -83,5 +83,5 @@
   "tree_state": "f01e7ace6db1864a",
   "notes": "",
   "first_seen": "2026-08-11T23:22:00.783822+00:00",
-  "updated_at": "2026-08-12T05:56:09.708302+00:00"
+  "updated_at": "2026-08-12T07:19:45.003576+00:00"
 }

@@ -13,6 +13,7 @@ meaningful against a manifest generated from that same tree.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -283,10 +284,22 @@ def cmd_repin(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_dir(recipe: recipes.Recipe, build: recipes.Build) -> Path:
+def _build_dir(recipe: recipes.Recipe, build: recipes.Build, root: Path) -> Path:
     """One directory per (recipe, build). The variants are mutually exclusive
-    at compile time, so they must never share a configure cache."""
-    return paths.REPO_ROOT / "build" / f"{recipe.name}-{build.name}"
+    at compile time, so they must never share a configure cache.
+
+    Also isolated by `root`: a build against a non-default --llama-root (a
+    release_validate.py probe checkout, say) must never share a directory
+    with the default checkout's build of the same recipe/build name, or two
+    builds running against different checkouts would clobber each other's
+    configure cache and compiled output. The default checkout keeps its
+    original unsuffixed directory name for backward compatibility with
+    existing builds on disk.
+    """
+    name = f"{recipe.name}-{build.name}"
+    if root != paths.llama_root():
+        name += "-" + hashlib.blake2b(str(root).encode("utf-8"), digest_size=4).hexdigest()
+    return paths.REPO_ROOT / "build" / name
 
 
 #: Files ``generate`` writes into the checkout. Listed explicitly rather than
@@ -499,7 +512,7 @@ def _build_one_recipe(
 
     failed = 0
     for build in selected:
-        build_dir = _build_dir(recipe, build)
+        build_dir = _build_dir(recipe, build, root)
         generate = _generate_for(
             build, root, variant_set=args.variant_set,
             inventory=args.inventory, winners=args.winners,
@@ -1033,6 +1046,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--", *args.command,
     ]))
 
+    validate_release_cmd = sub.add_parser(
+        "validate-release",
+        help="probe patch compatibility against a ref in an isolated checkout (HI46)")
+    validate_release_cmd.add_argument("--run-id", required=True)
+    validate_release_cmd.add_argument("--staging-root", default=None)
+    validate_release_cmd.add_argument("--ref", default="master")
+    validate_release_cmd.add_argument("--recipe", default="bigcherry")
+    validate_release_cmd.set_defaults(func=lambda args: _validate_release_main([
+        "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
+        *(["--staging-root", args.staging_root] if args.staging_root else []),
+    ]))
+
     resource = sub.add_parser(
         "resource-report", help="parse and policy-check a compiler resource stream"
     )
@@ -1240,6 +1265,11 @@ def _ab_benchmark_main(argv: list[str]) -> int:
 def _resource_report_main(argv: list[str]) -> int:
     from . import resource_report
     return resource_report.main(argv)
+
+
+def _validate_release_main(argv: list[str]) -> int:
+    from . import release_validate
+    return release_validate.main(argv)
 
 
 def _candidate_binary_size_main(argv: list[str]) -> int:

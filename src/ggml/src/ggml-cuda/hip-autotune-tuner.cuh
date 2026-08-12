@@ -32,6 +32,7 @@
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE)
 
 #include <stddef.h>
+#include <string>
 
 // Why a candidate was not measured, or was measured and rejected. Recorded per
 // candidate so a thin measurement set can be explained rather than guessed at.
@@ -92,6 +93,18 @@ struct ggml_hip_tuner_config {
     double replacement_threshold_pct = 1.0;
     double tie_pct                   = 0.5;
     size_t max_workspace_bytes       = 0;  // 0 = unlimited
+
+    // HI50: which compiled-in ranking policy actually governs promotion
+    // (determinism recheck, confirmation holdout, replay cache) versus which
+    // policies merely shadow-evaluate and get recorded for offline
+    // comparison. An unrecognized production_policy falls back to the first
+    // compiled-in policy rather than silently halting promotion. "all" is
+    // the standing default for active_policies -- every compiled-in policy
+    // shadow-evaluates unless explicitly narrowed; the production policy
+    // always evaluates regardless of this list, so a misconfigured allow-list
+    // can only shrink shadow reporting, never stop promotion.
+    std::string production_policy    = "latency-v1";
+    std::string active_policies      = "all";
 
     // Correctness (standards 7.2), judged against native's own output.
     double max_nmse              = 1e-6;
