@@ -157,4 +157,41 @@ _(none logged yet)_
 
 ## Notable interactions
 
-_(none logged yet)_
+### `--split-mode row` fails outright on consumer RDNA3 (gfx1100) ROCm/HIP — 2026-08-12
+
+**Status:** internal-only
+
+**Summary:** `--split-mode row` (tensor-parallel split with cross-GPU
+reduction, the mode that would exercise RCCL) fails immediately at model-load
+time on two AMD RX 7900 XTX (gfx1100) GPUs, before any tensor-split ratio or
+memory sizing is even attempted: `device ROCm0 does not support split
+buffers`. `--split-mode layer` (pipeline-parallel, no cross-device buffer
+sharing) works normally on the same hardware/model/build. This looks like a
+real, hardware-class limitation, not a bigcherry-specific regression: `row`
+split needs the backend to allocate GPU buffers spanning multiple devices
+(peer-accessible "split buffers"), a capability data-center ROCm parts
+typically have and consumer RDNA cards typically do not.
+
+**Environment:** 2x AMD RX 7900 XTX (gfx1100), ROCm 7.2.4, Clang 22.0.0
+(roc-7.2.4 26084), llama.cpp `4801e3c567d5` (tag b10362, `bigcherry-replay`
+build), Qwopus3.6-27B-v2-MTP Q8_0.
+
+**Evidence:**
+```
+0.00.374.130 E llama_model_load: error loading model: device ROCm0 does not support split buffers
+0.00.374.150 E llama_model_load_from_file_impl: failed to load model
+```
+Reproducible immediately (fails in <1s, before weight loading starts) with
+`--split-mode row --tensor-split 1,1` on `HIP_VISIBLE_DEVICES=0,1`. The
+identical command with `--split-mode layer` instead loads and serves
+normally.
+
+**Internal context:** found while attempting the requested dual-XTX
+MTP-5/RCCL test (`docs/planning` autonomous testing sweep, 2026-08-12).
+Proceeded with `--split-mode layer` instead -- see the corresponding
+tuning-runs artifact directory `sweep-qwen27b-mtp5-dualxtx-20260812` for the
+actual run. Worth checking whether this is a known llama.cpp/ROCm
+limitation upstream, or specific to this GPU generation/ROCm version
+combination, before assuming "row + RCCL" is unusable across all AMD
+hardware this project targets (gfx1201/RDNA4 or gfx1030/RDNA2 might behave
+differently -- not yet tested).
