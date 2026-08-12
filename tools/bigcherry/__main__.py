@@ -1109,7 +1109,7 @@ def build_parser() -> argparse.ArgumentParser:
     ]))
 
     validate_release_cmd = sub.add_parser(
-        "validate-release",
+        "probe-release",
         help="probe patch compatibility against a ref in an isolated checkout (HI46)")
     validate_release_cmd.add_argument("--run-id", required=True)
     validate_release_cmd.add_argument("--staging-root", default=None)

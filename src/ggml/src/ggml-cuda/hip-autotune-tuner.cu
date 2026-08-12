@@ -501,8 +501,10 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     ggml_hip_candidate_descriptor effective = *candidate;
 
 #ifdef GGML_HIP_WORKSPACE_METRICS
+    size_t workspace_baseline = 0;
     if (workspace_ctx != nullptr && isolate_workspace) {
         workspace_ctx->pool().bc_workspace_clear_cache();
+        workspace_baseline = workspace_ctx->pool().bc_workspace_bytes();
     }
 #else
     (void) workspace_ctx;
@@ -524,8 +526,10 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 
 #ifdef GGML_HIP_WORKSPACE_METRICS
     if (workspace_ctx != nullptr && isolate_workspace) {
-        // Warmup owns the fresh allocation; timed launches measure only the
-        // incremental peak attributable to this candidate.
+        // Warmup establishes the reusable allocation baseline. Timed launches
+        // are measured above that baseline, which is explicitly checked again
+        // after the final synchronization below.
+        workspace_baseline = workspace_ctx->pool().bc_workspace_bytes();
         workspace_ctx->pool().bc_workspace_reset_peak();
     }
 #endif
@@ -566,16 +570,21 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                           / (double) launches_per_sample);
     }
 
-    hipEventDestroy(start);
-    hipEventDestroy(stop);
+    const bool destroy_ok = hipEventDestroy(start) == hipSuccess
+        && hipEventDestroy(stop) == hipSuccess;
 #ifdef GGML_HIP_WORKSPACE_METRICS
     if (pool_peak_bytes != nullptr && workspace_ctx != nullptr && isolate_workspace) {
         const size_t peak = workspace_ctx->pool().bc_workspace_peak_bytes();
-        const size_t baseline = workspace_ctx->pool().bc_workspace_bytes();
-        *pool_peak_bytes = peak >= baseline ? peak - baseline : 0;
+        const size_t current = workspace_ctx->pool().bc_workspace_bytes();
+        if (current != workspace_baseline) {
+            GGML_LOG_WARN("bigcherry: workspace did not return to baseline "
+                          "(%zu != %zu)\n", current, workspace_baseline);
+            return false;
+        }
+        *pool_peak_bytes = peak >= workspace_baseline ? peak - workspace_baseline : 0;
     }
 #endif
-    return hipGetLastError() == hipSuccess;
+    return destroy_ok && hipGetLastError() == hipSuccess;
 }
 
 // HI34: derive the shared launch batch from a one-launch-per-sample native

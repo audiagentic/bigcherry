@@ -38,17 +38,9 @@ most work.
 Not gated to CUDA/HIP at all -- this is server-side C++ with no GPU
 backend dependency, applies identically to every build.
 
-KNOWN BROKEN (EX01, 2026-08-12): this file was reconstructed from a session
-transcript after an external `git reset --hard` wiped uncommitted work, and
-its anchors do not currently match. All 4 edits below anchor into text that
-the patcher's own noise-stripping blanks before matching -- full `//`
-comment lines and `SLT_TRC(slot, "...")` string-literal content -- so
-`patcher.apply_all()` reports "matched 0 time(s)" against the real pinned
-tree even though the described code is genuinely present verbatim (verified
-directly against vendor/llama.cpp/tools/server/server-context.cpp). The
-underlying fix content/rationale is sound; only the anchor regexes need
-re-deriving off non-comment, non-string code tokens, per the convention
-1002_hip_unsafe_math_opt_in.py already follows correctly. See EX01.
+The anchors below deliberately use executable tokens only. The patcher blanks
+comments and C/C++ string literals before matching, so log messages and prose
+must never be part of an anchor.
 """
 
 from bigcherry.patcher import Edit, FilePatch
@@ -65,11 +57,8 @@ SERVER_CONTEXT_PATCH = FilePatch(
         Edit(
             id="ctx-tgt-state-exact-and-checkpoint-adopt",
             anchor=(
-                r"    // n_tokens_cur: the number of tokens added to the batch for the current slot\n"
                 r"    void create_checkpoint\(server_slot & slot, const int64_t n_tokens_cur, llama_pos pos_min, llama_pos pos_max\) \{\n"
                 r"        const int id_task = slot\.task->id;\n"
-                r"\n"
-                r"        // evict checkpoints within min-step of a previous checkpoint, unless they were"
             ),
             rationale="create_checkpoint's opening -- add the exact-state helper and adopt-existing-checkpoint fast path",
             mode="replace",
@@ -112,14 +101,14 @@ SERVER_CONTEXT_PATCH = FilePatch(
         Edit(
             id="create-checkpoint-log-level",
             anchor=(
-                r"        SLT_TRC\(slot,\n"
-                r"                \"created context checkpoint %d of %d \(pos_min = %d, pos_max = %d, n_tokens = %\" PRId64 \", size = %\.3f MiB\)\\n\","
+                r"        common_speculative_get_state\(spec\.get\(\), slot\.id, cur\.data_spec\);\n\n"
+                r"        SLT_TRC\(slot,"
             ),
             rationale="promote the checkpoint-creation log from TRC to INF (matches upstream's other checkpoint log promotions in this same fix)",
             mode="replace",
             text=(
-                "        SLT_INF(slot,\n"
-                "                \"created context checkpoint %d of %d (pos_min = %d, pos_max = %d, n_tokens = %\" PRId64 \", size = %.3f MiB)\\n\","
+                "        common_speculative_get_state(spec.get(), slot.id, cur.data_spec);\n\n"
+                "        SLT_INF(slot,"
             ),
             guard=r"SLT_INF\(slot,\n                \"created context checkpoint",
         ),
@@ -181,31 +170,23 @@ SERVER_CONTEXT_PATCH = FilePatch(
         Edit(
             id="checkpoint-restore-reset-log-level",
             anchor=(
-                r"SLT_TRC\(slot, \"restored context checkpoint \(pos_min = %d, pos_max = %d, n_tokens = %\" PRId64 \", n_past = %d, size = %\.3f MiB\)\\n\", it->pos_min, it->pos_max, it->n_tokens, n_past, \(float\) it->size\(\) / 1024 / 1024\);\n"
-                r"                                    \}\n"
-                r"\n"
-                r"                                    if \(do_reset\) \{\n"
-                r"                                        SLT_TRC\(slot, \"forcing full prompt re-processing"
+                r"                                        n_past   = std::min\(slot\.prompt\.tokens\.size_up_to_pos\(pos_next\), \(size_t\) it->n_tokens\);\n"
+                r"                                        SLT_TRC\(slot,"
             ),
             rationale="promote the restore/reset logs from TRC to INF (matches upstream's other checkpoint log promotions)",
             mode="replace",
             text=(
-                "SLT_INF(slot, \"restored context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %\" PRId64 \", n_past = %d, size = %.3f MiB)\\n\", it->pos_min, it->pos_max, it->n_tokens, n_past, (float) it->size() / 1024 / 1024);\n"
-                "                                    }\n"
-                "\n"
-                "                                    if (do_reset) {\n"
-                "                                        SLT_INF(slot, \"forcing full prompt re-processing"
+                "                                        SLT_INF(slot,"
             ),
             guard=r"SLT_INF\(slot, \"restored context checkpoint",
         ),
         Edit(
             id="checkpoint-erase-diverged-content",
             anchor=(
-                r"                                // erase any checkpoints with pos_max > pos_next\n"
                 r"                                for \(auto it = slot\.prompt\.checkpoints\.begin\(\); it != slot\.prompt\.checkpoints\.end\(\);\) \{\n"
                 r"                                    const auto & cur = \*it;\n"
                 r"                                    if \(cur\.pos_max > pos_next\) \{\n"
-                r"                                        SLT_TRC\(slot, \"erased invalidated context checkpoint"
+                r"                                        SLT_TRC\(slot,"
             ),
             rationale="erase checkpoints that cover diverged content, not just checkpoints past pos_next -- once new tokens decode, staleness becomes undetectable",
             mode="replace",
@@ -222,7 +203,7 @@ SERVER_CONTEXT_PATCH = FilePatch(
                 "                                for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end();) {\n"
                 "                                    const auto & cur = *it;\n"
                 "                                    if (cur.pos_max > pos_next || cur.pos_max >= pos_stale_min) {\n"
-                "                                        SLT_INF(slot, \"erased invalidated context checkpoint"
+                "                                        SLT_INF(slot,"
             ),
             guard=r"const llama_pos pos_stale_min = ctx_tgt_state_exact\(\)",
         ),
@@ -299,11 +280,9 @@ SERVER_TASK_PATCH = FilePatch(
         Edit(
             id="server-prompt-cache-load-selection-rule",
             anchor=(
-                r"        // don't trash large prompts\n"
                 r"        if \(f_keep_cur < 0\.25f\) \{\n"
                 r"            continue;\n"
-                r"        \}\n"
-                r"\n"
+                r"        \}\n\n"
                 r"        if \(f_keep_best < f_keep_cur && f_sim_best < f_sim_cur\) \{"
             ),
             rationale="salvage low-f_keep entries with a usable checkpoint, and select by f_sim (work saved) alone instead of also requiring the candidate to beat the current slot's own f_keep",
