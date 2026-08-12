@@ -55,8 +55,8 @@ struct ggml_hip_replay_entry {
     int32_t  variant_width;
     uint8_t  variant_acc_f16;
     uint8_t  variant_fallback;
-    uint8_t  seeded;               // 1 = hand-written, not measured
-    uint8_t  reserved;
+    uint8_t  variant_small_k;
+    uint8_t  variant_src0_type;
 };
 
 // Load the cache named by GGML_HIP_DISPATCH_CACHE, if any. Safe to call more

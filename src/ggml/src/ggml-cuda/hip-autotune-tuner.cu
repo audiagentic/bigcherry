@@ -1046,8 +1046,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
 
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
     const size_t resolved_production_index = resolve_production_policy_index(config);
-    const bool active_policies_valid = policy_list_is_valid(config.active_policies)
-        && policy_name_is_active("latency-v1", config.active_policies);
+    const bool active_policies_valid =
+        resolved_production_index < g_policy_table_size
+        && policy_list_is_valid(config.active_policies)
+        && policy_name_is_active(g_policy_table[resolved_production_index].name,
+                                 config.active_policies);
     if (!config.valid || resolved_production_index == g_policy_table_size || !active_policies_valid) {
         GGML_LOG_WARN("bigcherry: invalid tuning policy/configuration; tuning disabled\n");
         Result invalid;
@@ -1395,7 +1398,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 native.candidate->family == GGML_HIP_FAMILY_MMQ) {
             const bool fb = (sig.ne0[1] % 128) != 0;
             const int j_best = ggml_cuda_mmq_native_j_best(
-                (ggml_type) sig.src0_type, fb, sig.ned[1]);
+                (ggml_type) sig.src0_type, fb,
+                (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1]);
             if (j_best != 0) {
                 for (Measurement * m : finalists) {
                     if (m == native_m || !m->measured || m->candidate == nullptr) {

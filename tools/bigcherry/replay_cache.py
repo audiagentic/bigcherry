@@ -197,7 +197,7 @@ def build(
     # Seed overrides: manual winner selection for specific dispatch digests.
     # Loaded from a JSON file mapping dispatch_hex → stable_name.
     # These override any measured winner (HI22).
-    seed_overrides: dict[str, str] = {}
+    seed_overrides: dict[str, dict[str, str]] = {}
     if seed_file and seed_file.is_file():
         try:
             seed_overrides = json.loads(seed_file.read_text(encoding="utf-8"))
@@ -205,12 +205,30 @@ def build(
             raise SystemExit(f"seed file {seed_file} is not valid JSON: {e}") from e
 
         # Validate: every candidate must exist in the manifest
-        for digest_hex, stable_name in seed_overrides.items():
+        normalized: dict[str, dict[str, str]] = {}
+        for digest_hex, value in seed_overrides.items():
+            if not re.fullmatch(r"[0-9a-fA-F]{32}", digest_hex):
+                raise SystemExit(f"seed override has malformed dispatch digest: {digest_hex!r}")
+            if isinstance(value, str):
+                value = {"winner": value}
+            if not isinstance(value, dict) or not isinstance(value.get("winner"), str):
+                raise SystemExit("seed override must be a candidate name or object with winner")
+            stable_name = value["winner"]
             if stable_name not in by_name:
                 raise SystemExit(
                     f"seed override '{stable_name}' for dispatch {digest_hex[:16]}... "
                     f"is not in {manifest_path.name}"
                 )
+            existing = entries.get(digest_hex)
+            signature = value.get("signature") if isinstance(value, dict) else None
+            if existing is not None:
+                signature = existing.get("signature")
+            if not isinstance(signature, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", signature):
+                raise SystemExit(
+                    f"seed override for unseen dispatch {digest_hex[:16]}... requires explicit signature"
+                )
+            normalized[digest_hex] = {"winner": stable_name, "signature": signature}
+        seed_overrides = normalized
 
     # The gate runs on every dispatch NOT covered by an explicit seed --
     # a seed is a separate operator decision carrying its own provenance
@@ -224,11 +242,11 @@ def build(
 
     if seed_overrides:
         # Apply overrides: replace or insert entries
-        for digest_hex, stable_name in seed_overrides.items():
-            entries[digest_hex] = {
-                "dispatch": digest_hex,
-                "winner": stable_name,
-            }
+        for digest_hex, override in seed_overrides.items():
+            entry = dict(entries.get(digest_hex, {}))
+            entry.update({"dispatch": digest_hex, "winner": override["winner"],
+                          "signature": override["signature"], "seeded": True})
+            entries[digest_hex] = entry
 
     strings: dict[str, int] = {}
     string_blob = bytearray()

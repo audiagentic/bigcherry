@@ -34,6 +34,22 @@ def _median(values: list[float]) -> float:
         0.5 * (ordered[middle - 1] + ordered[middle])
 
 
+def _validated_effect(confirmation: dict[str, Any]) -> float:
+    native = [float(value) for value in confirmation.get("native_us", [])
+              if value is not None and math.isfinite(float(value)) and float(value) > 0]
+    winner = [float(value) for value in confirmation.get("winner_us", [])
+              if value is not None and math.isfinite(float(value)) and float(value) > 0]
+    if not native or len(native) != len(winner):
+        raise PromotionError("confirmation paired samples are missing or misaligned")
+    observed = 100.0 * (_median(native) - _median(winner)) / _median(native)
+    persisted = confirmation.get("effect_pct")
+    if not isinstance(persisted, (int, float)) or not math.isfinite(float(persisted)):
+        raise PromotionError("confirmation effect_pct is missing or non-finite")
+    if not math.isclose(observed, float(persisted), rel_tol=1e-6, abs_tol=1e-5):
+        raise PromotionError("confirmation effect_pct does not match paired samples")
+    return observed
+
+
 def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     header: dict[str, Any] | None = None
     results: list[dict[str, Any]] = []
@@ -182,6 +198,7 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             row["promotion_status"] = "native"
             continue
         confirmation = row["confirmation"]
+        observed_effect = _validated_effect(confirmation)
         seed_material = (str(header.get("manifest_hash", "")) + row["dispatch"]).encode("ascii")
         seed = int.from_bytes(hashlib.blake2b(seed_material, digest_size=8).digest(), "little")
         low, high = paired_bootstrap(
@@ -191,7 +208,7 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
         original_status = row["promotion_status"]
         passed = (original_status == "pending_bh" and
                   row["dispatch"] in accepted and
-                  float(confirmation.get("effect_pct", 0.0)) >= threshold_pct and low > 0.0)
+                  observed_effect >= threshold_pct and low > 0.0)
         row["promotion"] = {
             "schema_version": SCHEMA_VERSION, "q": q,
             "threshold_pct": threshold_pct, "bootstrap_resamples": resamples,

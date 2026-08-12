@@ -71,6 +71,16 @@ class PromotionTests(unittest.TestCase):
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(promoted[1]["promotion_status"], "confirmation_rejected")
 
+    def test_inconsistent_persisted_effect_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row["confirmation"]["effect_pct"] = 99.0
+            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
+            with self.assertRaisesRegex(tune_promotion.PromotionError, "does not match"):
+                tune_promotion.promote(source, output, resamples=1000)
+
     def test_bh_and_bootstrap_promote_only_supported_winner(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

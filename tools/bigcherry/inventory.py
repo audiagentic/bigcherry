@@ -148,11 +148,13 @@ def build_inventory(record: Record) -> dict[str, Any]:
             elif family in families:
                 families[family].add(name)
 
-        # The dst width is what the width-parameterised families are compiled
-        # for; ned[1] is the device-local column count.
+        # The dst width is operation-semantic: MUL_MAT_ID uses the expert
+        # token dimension (ned[2]), while dense MUL_MAT uses ned[1].
         ned = canonical.get("ned")
-        if isinstance(ned, list) and len(ned) > 1:
-            width = int(ned[1])
+        has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
+        width_index = 2 if has_ids else 1
+        if isinstance(ned, list) and len(ned) > width_index:
+            width = int(ned[width_index])
             if 1 <= width <= 16:
                 widths.add(width)
 
@@ -239,6 +241,7 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                 canonical = observation.get("canonical", {})
                 ned = canonical.get("ned", [0, 0, 0, 0])
                 ne0 = canonical.get("ne0", [0, 0, 0, 0])
+                has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
                 cursor = connection.execute(
                     "INSERT INTO signature (signature_digest, base_digest, "
                     "schema_version, op, src0_type, src1_type, dst_type, "
@@ -252,7 +255,7 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                         str(canonical.get("src1_type", "")),
                         str(canonical.get("dst_type", "")),
                         ne0[1] if len(ne0) > 1 else 0,
-                        ned[1] if len(ned) > 1 else 0,
+                        ned[2] if has_ids and len(ned) > 2 else ned[1] if len(ned) > 1 else 0,
                         ne0[0] if ne0 else 0,
                         json.dumps(canonical, sort_keys=True, separators=(",", ":")),
                     ),
@@ -531,6 +534,7 @@ def load_measurements(
                 canonical = {}
             ned = canonical.get("ned", [0, 0, 0, 0])
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
+            has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
             cursor = connection.execute(
                 "SELECT signature_id FROM signature WHERE signature_digest = ?",
                 (bytes.fromhex(signature_hex),),
@@ -552,7 +556,7 @@ def load_measurements(
                         str(canonical.get("src1_type", "")),
                         str(canonical.get("dst_type", "")),
                         ne0[1] if len(ne0) > 1 else 0,
-                        ned[1] if len(ned) > 1 else 0,
+                        ned[2] if has_ids and len(ned) > 2 else ned[1] if len(ned) > 1 else 0,
                         ne0[0] if ne0 else 0,
                         json.dumps(canonical, sort_keys=True, separators=(",", ":")),
                     ),
