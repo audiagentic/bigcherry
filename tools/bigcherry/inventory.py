@@ -196,18 +196,22 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
     cursor = None
     try:
         connection.executescript(schema.read_text(encoding="utf-8"))
+        build_columns = {row[1] for row in connection.execute("PRAGMA table_info(build)")}
+        if "build_descriptor_hash" not in build_columns:
+            connection.execute("ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT")
         header = record.header
 
         cursor = connection.execute(
             "INSERT INTO build (source_revision, source_dirty, manifest_hash, "
-            "signature_schema, hardware_schema, variant_set) "
-            "VALUES (?, 0, ?, ?, ?, ?)",
+            "signature_schema, hardware_schema, variant_set, build_descriptor_hash) "
+            "VALUES (?, 0, ?, ?, ?, ?, ?)",
             (
                 header.get("source_revision", ""),
                 header.get("manifest_hash", ""),
                 header.get("signature_schema", 1),
                 header.get("hardware_schema", 1),
                 header.get("variant_set", "inventory"),
+                header.get("build_descriptor_hash"),
             ),
         )
         build_id = cursor.lastrowid
@@ -396,16 +400,25 @@ def load_measurements(
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN run_id INTEGER")
             if "pool_peak_bytes" not in columns:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN pool_peak_bytes INTEGER")
+        build_columns = {row[1] for row in connection.execute("PRAGMA table_info(build)")}
+        if "build_descriptor_hash" not in build_columns:
+            connection.execute("ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT")
 
         # Find or create build row
         source_revision = header.get("source_revision", "")
         manifest_hash = header.get("manifest_hash", "")
+        variant_set = header.get("variant_set")
+        if not isinstance(variant_set, str) or not variant_set:
+            raise ValueError("measurements header requires variant_set")
+        build_descriptor_hash = header.get("build_descriptor_hash")
         artifact_version = header.get("artifact_version", 1)
 
         cursor = connection.execute(
             "SELECT build_id FROM build WHERE source_revision = ? "
-            "AND manifest_hash = ?",
-            (source_revision, manifest_hash),
+            "AND manifest_hash = ? AND variant_set = ? "
+            "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
+            (source_revision, manifest_hash, variant_set,
+             build_descriptor_hash, build_descriptor_hash),
         )
         build_row = cursor.fetchone()
         if build_row:
@@ -415,35 +428,31 @@ def load_measurements(
             # tuner started writing it in the header, which is exactly the
             # class of defect E6 exists to close.
             #
-            # KNOWN GAP (HI37/HI48, not fixed here): variant_set is still
-            # hardcoded to "tuning" rather than the real variant set, because
-            # the tuner's measurements header does not carry it yet. Do not
-            # rely on build.variant_set for anything that depends on it being
-            # accurate until that header field lands.
             cursor = connection.execute(
                 "INSERT INTO build (source_revision, source_dirty, "
                 "manifest_hash, signature_schema, hardware_schema, variant_set, "
-                "dispatch_abi, compiler, hip_version) VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?)",
+                "dispatch_abi, compiler, hip_version, build_descriptor_hash) "
+                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?)",
                 (
                     source_revision,
                     manifest_hash,
-                    header.get("variant_set", "tuning"),
+                    variant_set,
                     str(artifact_version),
                     header.get("compiler"),
                     header.get("hip_version"),
+                    build_descriptor_hash,
                 ),
             )
             build_id = cursor.lastrowid
 
-        dispatches = sorted({str(row.get("dispatch", "")) for row in results
-                             if isinstance(row.get("dispatch"), str)})
+        signatures = sorted({str(row.get("signature", "")) for row in results
+                             if isinstance(row.get("signature"), str)})
         workload_digest = hashlib.blake2b(
-            "\n".join(dispatches).encode("ascii", "ignore"), digest_size=16
+            "\n".join(signatures).encode("ascii", "ignore"), digest_size=16
         ).digest()
         run_material = json.dumps({
             "source_revision": source_revision,
             "manifest_hash": manifest_hash,
-            "measurements": str(measurements_path.resolve()),
             "workload_digest": workload_digest.hex(),
             "header": header,
         }, sort_keys=True, separators=(",", ":")).encode("utf-8")

@@ -1688,13 +1688,21 @@ void ggml_hip_tuner_flush() {
             "{\"kind\":\"header\",\"artifact_version\":%d,"
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"compiler\":\"%s\",\"hip_version\":\"%s\","
+            "\"variant_set\":\"%s\",\"build_descriptor_hash\":\"%s\","
             "\"host_sync_overhead_us\":%.3f,\"final_samples\":%d,"
+            "\"warmup_launches\":%d,\"screen_samples\":%d,"
+            "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
+            "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
             "\"alpha\":%.4f}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
+            GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
             g_host_sync_overhead_us, config.final_samples,
+            config.warmup_launches, config.screen_samples,
+            config.confirmation_samples, config.replacement_threshold_pct,
+            config.production_policy.c_str(), config.active_policies.c_str(),
             config.confidence_alpha);
 
     for (const auto & entry : g_results) {
