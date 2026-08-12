@@ -969,6 +969,116 @@ def build_parser() -> argparse.ArgumentParser:
         "--hypotheses", str(args.hypotheses), "--q", str(args.q), "--seed", str(args.seed),
     ]))
 
+    experiment_cmd = sub.add_parser(
+        "experiment", help="managed experiment bundle: run or validate (HI47)")
+    experiment_cmd.set_defaults(
+        func=lambda args: _experiment_main(args.experiment_args))
+    experiment_cmd.add_argument("experiment_args", nargs=argparse.REMAINDER)
+
+    from . import compare_tunes as _compare_tunes
+    compare = sub.add_parser("compare-tunes", help="compare two current tuning runs by signature")
+    compare.add_argument("before")
+    compare.add_argument("after")
+    compare.add_argument("--record", default=None, help="record JSONL for call-weighted impact")
+    compare.add_argument("--output", default=None, help="JSON report path")
+
+    def _run_compare(args):
+        try:
+            result = _compare_tunes.compare(
+                Path(args.before), Path(args.after),
+                record=Path(args.record) if args.record else None,
+            )
+        except (OSError, ValueError, _compare_tunes.CompareError) as exc:
+            print(f"invalid: {exc}", file=sys.stderr)
+            return 1
+        rendered = json.dumps(result, indent=2, sort_keys=True)
+        if args.output:
+            Path(args.output).write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
+        return 0
+    compare.set_defaults(func=_run_compare)
+
+    ab = sub.add_parser(
+        "ab-benchmark",
+        help="paired, interleaved native-versus-replay end-to-end benchmark",
+    )
+    ab.add_argument("--cache", required=True)
+    ab.add_argument("--output", required=True)
+    ab.add_argument("--pairs", type=int, default=3)
+    ab.add_argument("--schedule-seed", type=int, default=0)
+    ab.add_argument("--structured", action="store_true")
+    ab.add_argument("--practical-threshold-pct", type=float, default=1.0)
+    ab.add_argument("--decision-grade", action="store_true")
+    ab.add_argument("--settle-seconds", type=float, default=20.0)
+    ab.add_argument("--cwd", default=None)
+    ab.add_argument("--metric", action="append", default=[])
+    ab.add_argument("--lower-is-better", action="append", default=[])
+    ab.add_argument("--stock-binary", default=None)
+    ab.add_argument("--stock-cmake-cache", default=None)
+    ab.add_argument("--patched-cmake-cache", default=None)
+    ab.add_argument("command", nargs=argparse.REMAINDER)
+    ab.set_defaults(func=lambda args: _ab_benchmark_main([
+        "--cache", args.cache, "--output", args.output, "--pairs", str(args.pairs),
+        "--schedule-seed", str(args.schedule_seed),
+        "--practical-threshold-pct", str(args.practical_threshold_pct),
+        *(["--structured"] if args.structured else []),
+        *(["--decision-grade"] if args.decision_grade else []),
+        "--settle-seconds", str(args.settle_seconds),
+        *(["--cwd", args.cwd] if args.cwd else []),
+        *(item for spec in args.metric for item in ["--metric", spec]),
+        *(item for name in args.lower_is_better for item in ["--lower-is-better", name]),
+        *(["--stock-binary", args.stock_binary] if args.stock_binary else []),
+        *(["--stock-cmake-cache", args.stock_cmake_cache] if args.stock_cmake_cache else []),
+        *(["--patched-cmake-cache", args.patched_cmake_cache] if args.patched_cmake_cache else []),
+        "--", *args.command,
+    ]))
+
+    resource = sub.add_parser(
+        "resource-report", help="parse and policy-check a compiler resource stream"
+    )
+    resource.add_argument("raw")
+    resource.add_argument("--symbol-map", required=True)
+    resource.add_argument("--output", required=True)
+    resource.add_argument("--compiler-family", default="clang")
+    resource.add_argument("--compiler-major", type=int, required=True)
+    resource.add_argument("--compiler-version", required=True)
+    resource.add_argument("--architecture", required=True)
+    resource.add_argument("--source-revision", required=True)
+    resource.add_argument("--manifest-hash", required=True)
+    resource.add_argument("--reject-lds-gt", type=int, default=None)
+    resource.add_argument("--warn-occupancy-lt", type=float, default=None)
+    resource.set_defaults(func=lambda args: _resource_report_main([
+        args.raw, "--symbol-map", args.symbol_map, "--output", args.output,
+        "--compiler-family", args.compiler_family,
+        "--compiler-major", str(args.compiler_major),
+        "--compiler-version", args.compiler_version,
+        "--architecture", args.architecture,
+        "--source-revision", args.source_revision,
+        "--manifest-hash", args.manifest_hash,
+        *(["--reject-lds-gt", str(args.reject_lds_gt)] if args.reject_lds_gt is not None else []),
+        *(["--warn-occupancy-lt", str(args.warn_occupancy_lt)] if args.warn_occupancy_lt is not None else []),
+    ]))
+
+    binsize = sub.add_parser(
+        "candidate-binary-size",
+        help="per-candidate device .text size from a built HIP library")
+    binsize.add_argument("library")
+    binsize.add_argument("--manifest", required=True)
+    binsize.add_argument("--output", required=True)
+    binsize.add_argument("--workdir", default=None)
+    binsize.add_argument("--symbol-map-dir", default=None)
+    binsize.add_argument("--objdump", default=None)
+    binsize.add_argument("--readelf", default=None)
+    binsize.add_argument("--allow-unresolved", action="store_true")
+    binsize.set_defaults(func=lambda args: _candidate_binary_size_main([
+        args.library, "--manifest", args.manifest, "--output", args.output,
+        *(["--workdir", args.workdir] if args.workdir else []),
+        *(["--symbol-map-dir", args.symbol_map_dir] if args.symbol_map_dir else []),
+        *(["--objdump", args.objdump] if args.objdump else []),
+        *(["--readelf", args.readelf] if args.readelf else []),
+        *(["--allow-unresolved"] if args.allow_unresolved else []),
+    ]))
+
     from . import report as _report
 
     _report.build_parser(sub)
@@ -1115,6 +1225,26 @@ def _tune_promote_main(argv: list[str]) -> int:
 def _tune_null_fdr_main(argv: list[str]) -> int:
     from . import tune_promotion
     return tune_promotion.null_fdr_main(argv)
+
+
+def _experiment_main(argv: list[str]) -> int:
+    from . import experiment_bundle
+    return experiment_bundle.main(argv)
+
+
+def _ab_benchmark_main(argv: list[str]) -> int:
+    from . import ab_benchmark
+    return ab_benchmark.main(argv)
+
+
+def _resource_report_main(argv: list[str]) -> int:
+    from . import resource_report
+    return resource_report.main(argv)
+
+
+def _candidate_binary_size_main(argv: list[str]) -> int:
+    from . import candidate_binary_size
+    return candidate_binary_size.main(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
