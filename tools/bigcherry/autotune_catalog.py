@@ -637,7 +637,60 @@ def build_manifest(root: Path, *, variant_set: str,
     }
     manifest["summary"] = schema.validate_and_summarise(manifest)
     manifest["manifest_hash"] = manifest_hash(manifest)
+    manifest["build_descriptor"] = build_descriptor(manifest)
     return manifest
+
+
+def build_descriptor(manifest: dict[str, Any]) -> dict[str, Any]:
+    """The configured/generated/compiled catalog identity (HI43/RV30).
+
+    Deliberately timestamp-free and canonical, so the same object can be
+    written beside the manifest, embedded in the generated build header, and
+    later re-derived by a release probe scanning a compiled binary for it
+    (release_validate.py) -- all three must agree byte for byte.
+    """
+    summary = manifest["summary"]
+    descriptor: dict[str, Any] = {
+        "schema_version": 1,
+        "source_revision": manifest["source_revision"],
+        "variant_set": manifest["variant_set"],
+        "manifest_hash": manifest["manifest_hash"],
+        "candidate_count": summary["total"],
+        "by_family": summary["by_family"],
+        "by_source_class": summary["by_source_class"],
+        "target_architectures": manifest["architectures"],
+    }
+    canonical = json.dumps(descriptor, sort_keys=True, separators=(",", ":"))
+    descriptor["descriptor_hash"] = hashlib.blake2b(
+        canonical.encode("utf-8"), digest_size=16).hexdigest()
+    validate_profile_descriptor(descriptor, manifest["variant_set"])
+    return descriptor
+
+
+def validate_profile_descriptor(descriptor: dict[str, Any], expected_profile: str) -> None:
+    """Fail when a structurally present catalog cannot satisfy its profile."""
+    if descriptor.get("schema_version") != 1:
+        raise CatalogError("build descriptor schema is not version 1")
+    if descriptor.get("variant_set") != expected_profile:
+        raise CatalogError(
+            f"generated profile {descriptor.get('variant_set')!r} does not "
+            f"match requested profile {expected_profile!r}")
+    count = descriptor.get("candidate_count", 0)
+    by_family = descriptor.get("by_family", {})
+    by_source = descriptor.get("by_source_class", {})
+    native_count = by_source.get("native_wrapper", 0)
+    if set(by_family) != set(schema.FAMILIES) or native_count != len(schema.FAMILIES):
+        raise CatalogError("catalog must contain exactly one native wrapper per family")
+    if expected_profile == "inventory":
+        if count != len(schema.FAMILIES) or set(by_source) != {"native_wrapper"}:
+            raise CatalogError("inventory profile must contain only five native wrappers")
+    elif expected_profile in ("workload-max", "full-max", "replay-full"):
+        if count <= len(schema.FAMILIES):
+            raise CatalogError(
+                f"{expected_profile} profile has only native wrappers; "
+                "generation did not add any tunable candidates")
+    elif expected_profile == "replay-slim" and count < len(schema.FAMILIES):
+        raise CatalogError("replay-slim must retain every native family fallback")
 
 
 def manifest_hash(manifest: dict[str, Any]) -> str:
@@ -854,6 +907,8 @@ def render_arch_header() -> str:
 
 
 def render_build_hash(manifest: dict[str, Any]) -> str:
+    descriptor = manifest["build_descriptor"]
+    descriptor_json = json.dumps(descriptor, sort_keys=True, separators=(",", ":"))
     return "\n".join([
         GENERATED_BANNER,
         "",
@@ -867,6 +922,12 @@ def render_build_hash(manifest: dict[str, Any]) -> str:
         f"#define GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR \"{manifest['source_revision']}\"",
         f"#define GGML_HIP_AUTOTUNE_VARIANT_SET_STR     \"{manifest['variant_set']}\"",
         f"#define GGML_HIP_AUTOTUNE_ARTIFACT_VERSION    {manifest['artifact_version']}",
+        f"#define GGML_HIP_AUTOTUNE_CANDIDATE_COUNT     {descriptor['candidate_count']}",
+        # HI46: release_validate.py's binary scanner looks for both of these
+        # byte sequences in the compiled binary to prove the configured,
+        # generated and compiled catalog identity all agree.
+        f"#define GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR \"{descriptor['descriptor_hash']}\"",
+        f"#define GGML_HIP_AUTOTUNE_DESCRIPTOR_JSON     {json.dumps(descriptor_json)}",
         "",
     ])
 
@@ -982,6 +1043,7 @@ class EmitResult:
     registry_path: Path
     build_hash_path: Path
     arch_header_path: Path
+    descriptor_path: Path
     instance_paths: list[Path]
     removed_paths: list[Path]
 
@@ -1028,6 +1090,17 @@ def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
     (cuda / "hip-autotune-manifest.json").write_text(
         manifest_text, encoding="utf-8", newline="")
 
+    # Same object embedded in the build header (render_build_hash) above --
+    # written out separately, beside the manifest and into the tree, so a
+    # release probe (release_validate.py) can compare a compiled binary's
+    # embedded copy against the one this exact generation run produced.
+    descriptor_text = json.dumps(
+        manifest["build_descriptor"], sort_keys=True, indent=2) + "\n"
+    descriptor_path = artifacts / "hip-autotune-build-descriptor.json"
+    descriptor_path.write_text(descriptor_text, encoding="utf-8", newline="")
+    (cuda / "hip-autotune-build-descriptor.json").write_text(
+        descriptor_text, encoding="utf-8", newline="")
+
     # All MMVQ geometry instances go into one include, compiled inside
     # mmvq.cu's translation unit -- see render_mmvq_instances for why.
     instances_path = cuda / "hip-autotune-mmvq-instances.inc"
@@ -1045,7 +1118,7 @@ def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
     written = [instances_path]
 
     return EmitResult(manifest_path, registry_path, build_hash_path,
-                      arch_header_path, written, removed)
+                      arch_header_path, descriptor_path, written, removed)
 
 
 # ----------------------------------------------------------------------- main
@@ -1132,6 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  registry:   {result.registry_path}")
     print(f"  build hash: {result.build_hash_path}")
     print(f"  arch enum:  {result.arch_header_path}")
+    print(f"  descriptor: {result.descriptor_path}")
     print(f"  MMVQ instances: {len(result.instance_paths)} written, "
           f"{len(result.removed_paths)} removed")
     return 0

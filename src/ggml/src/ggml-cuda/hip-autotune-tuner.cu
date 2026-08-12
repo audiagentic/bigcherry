@@ -77,7 +77,37 @@ struct Measurement {
     double   sign_p                    = 1.0;
     int      sign_wins                 = 0;
     int      sign_rounds               = 0;
+
+    // HI24 step 4 / HI50: marks a same-kernel double-native measurement used
+    // as a noise canary when no MMQ J-best twin exists. Current tuner does
+    // not measure a double-native twin (that is HI24 step 4, not yet
+    // restored), so this is always false today -- present so
+    // select_latency_v1 below is byte-identical to the design that does.
+    bool     is_native_twin            = false;
 };
+
+// HI50: whether the noise canary (same-kernel pair, see below) confirmed
+// this signature's timings are trustworthy. NOT_AVAILABLE means no canary
+// pair existed to check (e.g. no MMQ J-best twin); UNRESOLVED means a pair
+// existed but never converged within noise_canary_retries -- a policy must
+// not promote a challenger over an unresolved canary, since the margin it
+// would be promoted on cannot be told apart from measurement noise.
+enum ggml_hip_canary_state_v1 {
+    GGML_HIP_CANARY_NOT_AVAILABLE = 0,
+    GGML_HIP_CANARY_PASS,
+    GGML_HIP_CANARY_RETRIED_PASS,
+    GGML_HIP_CANARY_UNRESOLVED,
+};
+
+const char * canary_state_name(ggml_hip_canary_state_v1 state) {
+    switch (state) {
+        case GGML_HIP_CANARY_NOT_AVAILABLE: return "not_available";
+        case GGML_HIP_CANARY_PASS:          return "pass";
+        case GGML_HIP_CANARY_RETRIED_PASS:  return "retried_pass";
+        case GGML_HIP_CANARY_UNRESOLVED:    return "unresolved";
+        default:                            return "?";
+    }
+}
 
 struct Result {
     const ggml_hip_candidate_descriptor * winner = nullptr;
@@ -124,6 +154,20 @@ struct Result {
     // could not resolve the device.
     std::string device_state_pre_json  = "{}";
     std::string device_state_post_json = "{}";
+
+    // HI50: every compiled-in policy's full verdict, for offline comparison
+    // (bigcherry rank-replay). Which one actually governed this signature's
+    // promotion.
+    ggml_hip_canary_state_v1 canary_state = GGML_HIP_CANARY_NOT_AVAILABLE;
+    std::string ranking_decisions_json    = "[]";
+    std::string production_policy_name    = "latency-v1";
+    int         production_policy_version = 1;
+
+    // HI50: the ranking-stage pick, fixed before the confirmation holdout
+    // (and any later promotion demotion) can change `winner` again -- the
+    // stable target for offline replay to validate a policy's ranking
+    // output against.
+    std::string provisional_winner;
 
     // HI34/promotion: "native" (native retained, nothing to confirm),
     // "confirmation_rejected" (a provisional winner failed fresh holdout,
@@ -640,9 +684,234 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
             c.confirmation_samples = atoi(v);
         }
+        if (const char * v = getenv("GGML_HIP_TUNE_PRODUCTION_POLICY")) {
+            c.production_policy = v;
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_ACTIVE_POLICIES")) {
+            c.active_policies = v;
+        }
         return c;
     }();
     return config;
+}
+
+// --- HI50: ranking-policy table -----------------------------------------
+//
+// Pure CPU-side ranking over already-measured finalists, no extra GPU
+// launches, no mutation beyond the per-candidate sign-test bookkeeping
+// every policy in this file has always recorded. That purity is what makes
+// shadow-evaluating several policies on every tuning pass safe -- it
+// changes nothing about what gets dispatched, confirmed, or promoted.
+// Exactly one policy (config.production_policy) is ever plugged into the
+// determinism recheck and confirmation holdout; every other active
+// policy's output is an unconfirmed prediction, recorded for offline
+// comparison and nothing else.
+
+// Per-candidate outcome under one policy's ranking, for the JSON report --
+// deliberately covers every finalist a policy considered, not only the one
+// it picked, so a rejected or near-tie candidate stays visible afterward.
+struct PolicyCandidateVerdict {
+    Measurement * m = nullptr;
+    std::string   verdict;            // winner|qualified|near_tie_below_threshold|outside_tie_band|not_attempted|rejected
+    std::string   rejection_reason;   // set for "rejected" (reason_name) and "not_attempted" (why ranking never ran)
+};
+
+struct PolicySelection {
+    // Empty means this policy retained native (no challenger qualified, or
+    // ranking never ran -- see any_short_rounds/ranked for why). front() is
+    // the pick, if any.
+    std::vector<Measurement *> qualified;
+    bool any_short_rounds = false;
+    std::vector<PolicyCandidateVerdict> ranked;
+};
+
+// Mirrors the winner-selection algorithm this file has always run
+// (standards 7.3, HI12 E1): rank finalists by effective_us, keep everything
+// within tie_pct of the best as a near-tie set (native included only if it
+// lands in that band), require replacement_threshold_pct improvement to
+// qualify, and break ties by (p95_us, workspace_bytes, native-preference,
+// stable_name). Selection only nominates by effect size; statistical
+// significance is a separate, disjoint question answered by the fresh
+// confirmation holdout below (HI34) -- not folded into selection, so the
+// same evidence never both picks a candidate and promotes it.
+static PolicySelection select_latency_v1(
+        const std::vector<Measurement *> & finalists,
+        Measurement *                      native_m,
+        ggml_hip_canary_state_v1           canary_state,
+        const ggml_hip_tuner_config &      config) {
+    PolicySelection out;
+
+    Measurement * best_m = native_m;
+    for (Measurement * m : finalists) {
+        if (!m->is_native_twin && m->measured && m->reason == GGML_HIP_REJECT_NONE &&
+                m->effective_us < best_m->effective_us) {
+            best_m = m;
+        }
+    }
+
+    if (best_m == native_m || canary_state == GGML_HIP_CANARY_UNRESOLVED) {
+        // Nothing beat native at all, or a beat is unconfirmed noise -- no
+        // tied/qualified set is built in this case, while still reporting a
+        // verdict per finalist.
+        const char * why = canary_state == GGML_HIP_CANARY_UNRESOLVED
+            ? "canary_unresolved" : "native_not_beaten";
+        for (Measurement * m : finalists) {
+            if (m->is_native_twin) continue;
+            if (m == native_m) {
+                out.ranked.push_back({m, "winner", ""});
+                continue;
+            }
+            if (!m->measured || m->reason != GGML_HIP_REJECT_NONE) {
+                out.ranked.push_back({m, "rejected", reason_name(m->reason)});
+            } else {
+                out.ranked.push_back({m, "not_attempted", why});
+            }
+        }
+        return out;
+    }
+
+    std::vector<Measurement *> tied;
+    for (Measurement * m : finalists) {
+        if (m->is_native_twin) continue;
+        if (!m->measured || m->reason != GGML_HIP_REJECT_NONE) {
+            out.ranked.push_back({m, "rejected", reason_name(m->reason)});
+            continue;
+        }
+        if (m->effective_us <= best_m->effective_us * (1.0 + config.tie_pct / 100.0)) {
+            tied.push_back(m);
+        } else {
+            out.ranked.push_back({m, "outside_tie_band", ""});
+        }
+    }
+
+    auto tie_order = [&](const Measurement * a, const Measurement * b) {
+        if (a->p95_us != b->p95_us) return a->p95_us < b->p95_us;
+        if (a->workspace_bytes != b->workspace_bytes) {
+            return a->workspace_bytes < b->workspace_bytes;
+        }
+        const bool an = a->candidate == native_m->candidate;
+        const bool bn = b->candidate == native_m->candidate;
+        if (an != bn) return an;   // native wins a genuine tie
+        return strcmp(a->candidate->stable_name,
+                      b->candidate->stable_name) < 0;
+    };
+
+    for (Measurement * m : tied) {
+        if (m == native_m) {
+            out.qualified.push_back(m);
+            out.ranked.push_back({m, "qualified", ""});
+            continue;
+        }
+        int wins = 0, rounds = 0;
+        m->sign_p = paired_sign_test(native_m->final_gpu_us, m->final_gpu_us,
+                                     config.min_paired_rounds, wins, rounds);
+        m->sign_wins   = wins;
+        m->sign_rounds = rounds;
+        if (rounds < config.min_paired_rounds) out.any_short_rounds = true;
+        const double impr = native_m->effective_us > 0.0
+            ? 100.0 * (native_m->effective_us - m->effective_us) / native_m->effective_us
+            : 0.0;
+        if (impr >= config.replacement_threshold_pct) {
+            out.qualified.push_back(m);
+            out.ranked.push_back({m, "qualified", ""});
+        } else {
+            out.ranked.push_back({m, "near_tie_below_threshold", ""});
+        }
+    }
+    std::sort(out.qualified.begin(), out.qualified.end(), tie_order);
+    if (!out.qualified.empty()) {
+        for (auto & rv : out.ranked) {
+            if (rv.m == out.qualified.front()) { rv.verdict = "winner"; break; }
+        }
+    }
+    return out;
+}
+
+struct PolicyTableEntry {
+    const char * name;
+    int          version;
+    PolicySelection (*fn)(const std::vector<Measurement *> &, Measurement *,
+                          ggml_hip_canary_state_v1, const ggml_hip_tuner_config &);
+};
+
+// Compiled-in policies. Adding a policy is adding one entry here; nothing
+// else in resolve()/flush() changes.
+const PolicyTableEntry g_policy_table[] = {
+    { "latency-v1", 1, select_latency_v1 },
+};
+constexpr size_t g_policy_table_size =
+    sizeof(g_policy_table) / sizeof(g_policy_table[0]);
+
+// Which table entry governs real dispatch. Falls back to entry 0 for an
+// unrecognized production_policy so a typo'd env var can only mis-scope
+// which policy's *name* gets reported as production, never silently stop
+// promotion -- promotion always runs against some resolved entry.
+static size_t resolve_production_policy_index(const ggml_hip_tuner_config & config) {
+    for (size_t i = 0; i < g_policy_table_size; ++i) {
+        if (config.production_policy == g_policy_table[i].name) return i;
+    }
+    return 0;
+}
+
+static bool policy_name_is_active(const std::string & name, const std::string & active_policies) {
+    if (active_policies.empty() || active_policies == "all") return true;
+    size_t start = 0;
+    while (start <= active_policies.size()) {
+        const size_t comma = active_policies.find(',', start);
+        const std::string tok = active_policies.substr(
+            start, comma == std::string::npos ? std::string::npos : comma - start);
+        if (tok == name) return true;
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return false;
+}
+
+static std::string policy_candidates_json(const std::vector<PolicyCandidateVerdict> & ranked) {
+    std::string out = "[";
+    bool first = true;
+    for (const auto & rv : ranked) {
+        if (rv.m == nullptr) continue;
+        if (!first) out += ",";
+        first = false;
+        const std::string emitted_name = rv.m->is_native_twin && rv.m->candidate
+            ? std::string(rv.m->candidate->stable_name) + "#twin"
+            : (rv.m->candidate ? rv.m->candidate->stable_name : "");
+        char eff_buf[32];
+        snprintf(eff_buf, sizeof(eff_buf), "%.3f", rv.m->effective_us);
+        out += "{\"name\":\"";
+        out += emitted_name;
+        out += "\",\"effective_us\":";
+        out += eff_buf;
+        out += ",\"verdict\":\"";
+        out += rv.verdict;
+        out += "\",\"rejection_reason\":\"";
+        out += rv.rejection_reason;
+        out += "\"}";
+    }
+    out += "]";
+    return out;
+}
+
+static std::string ranking_decision_json(const PolicyTableEntry & entry,
+                                  const PolicySelection & sel,
+                                  Measurement * native_m, bool is_production) {
+    Measurement * picked = sel.qualified.empty() ? native_m : sel.qualified.front();
+    const std::string predicted_name = picked->is_native_twin && picked->candidate
+        ? std::string(picked->candidate->stable_name) + "#twin"
+        : (picked->candidate ? picked->candidate->stable_name : "");
+    std::string out = "{\"policy_name\":\"";
+    out += entry.name;
+    out += "\",\"policy_version\":";
+    out += std::to_string(entry.version);
+    out += ",\"is_production\":";
+    out += is_production ? "true" : "false";
+    out += ",\"predicted_winner\":\"";
+    out += predicted_name;
+    out += "\",\"candidates\":";
+    out += policy_candidates_json(sel.ranked);
+    out += "}";
+    return out;
 }
 
 const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
@@ -1024,11 +1293,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                     // Report rather than discard. The winner may still be
                     // right; what is established is that this signature's
                     // margins are not resolvable at these sample counts.
+                    result.canary_state = GGML_HIP_CANARY_UNRESOLVED;
                     GGML_LOG_WARN("bigcherry: noise canary %.1f%% on this "
                                   "signature (native vs %s, identical "
                                   "kernels); timings are unreliable at these "
                                   "sample counts\n",
                                   result.canary_pct, result.canary_pair.c_str());
+                } else {
+                    result.canary_state = result.canary_retries > 0
+                        ? GGML_HIP_CANARY_RETRIED_PASS
+                        : GGML_HIP_CANARY_PASS;
                 }
                 break;
             }
@@ -1073,98 +1347,87 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
-    // --- winner selection (standards 7.3, HI12 E1) -----------------------
-    Measurement * best_m = native_m;
-    for (Measurement * m : finalists) {
-        if (m->measured && m->reason == GGML_HIP_REJECT_NONE &&
-                m->effective_us < best_m->effective_us) {
-            best_m = m;
+    // --- winner selection (standards 7.3, HI12 E1, HI50) ------------------
+    //
+    // HI50: every policy named in config.active_policies (default "all") is
+    // evaluated here against the same already-measured finalists -- pure
+    // CPU-side ranking, zero extra GPU launches -- and each one's full
+    // candidate verdict list is recorded so a rejected or near-tie
+    // candidate stays visible afterward, not just the winner. The
+    // production policy always evaluates regardless of active_policies, so
+    // a misconfigured allow-list can only shrink shadow reporting, never
+    // stop promotion. Only its pick continues below into the determinism
+    // recheck and confirmation holdout; every other policy's pick is an
+    // unconfirmed shadow prediction that never touches a GPU launch or a
+    // rejection reason on its own.
+    const size_t production_index = resolve_production_policy_index(config);
+    PolicySelection production_sel;
+    {
+        std::string decisions_json = "[";
+        bool first = true;
+        for (size_t i = 0; i < g_policy_table_size; ++i) {
+            const PolicyTableEntry & entry = g_policy_table[i];
+            const bool is_production = (i == production_index);
+            if (!is_production && !policy_name_is_active(entry.name, config.active_policies)) {
+                continue;
+            }
+            PolicySelection sel = entry.fn(finalists, native_m, result.canary_state, config);
+            if (!first) decisions_json += ",";
+            first = false;
+            decisions_json += ranking_decision_json(entry, sel, native_m, is_production);
+            if (is_production) {
+                production_sel = std::move(sel);
+            }
         }
+        decisions_json += "]";
+        result.ranking_decisions_json     = decisions_json;
+        result.production_policy_name     = g_policy_table[production_index].name;
+        result.production_policy_version  = g_policy_table[production_index].version;
     }
 
+    std::vector<Measurement *> qualified = production_sel.qualified;
+    bool any_short_rounds = production_sel.any_short_rounds;
     Measurement * winner_m = nullptr;
-    bool any_short_rounds = false;
 
-    if (best_m != native_m) {
-        // Near-tie resolution: everything within tie_pct of the best, ordered
-        // by p95, then workspace, then native-preferred, then name. Median
-        // alone is a coin flip inside the noise band; p95 is what a latency
-        // budget actually feels.
-        std::vector<Measurement *> tied;
-        for (Measurement * m : finalists) {
-            if (m->measured && m->reason == GGML_HIP_REJECT_NONE &&
-                    m->effective_us <= best_m->effective_us * (1.0 + config.tie_pct / 100.0)) {
-                tied.push_back(m);
-            }
-        }
-
-        auto tie_order = [&](const Measurement * a, const Measurement * b) {
-            if (a->p95_us != b->p95_us) return a->p95_us < b->p95_us;
-            if (a->workspace_bytes != b->workspace_bytes) {
-                return a->workspace_bytes < b->workspace_bytes;
-            }
-            const bool an = a->candidate == native.candidate;
-            const bool bn = b->candidate == native.candidate;
-            if (an != bn) return an;   // native wins a genuine tie
-            return strcmp(a->candidate->stable_name,
-                          b->candidate->stable_name) < 0;
-        };
-
-        // E1: effect size and consistency are different questions and both
-        // must answer yes. Effect without consistency is RV21: a 14% "win"
-        // between two runs of the same kernel. Consistency without effect is
-        // a reproducible 0.05% that is not worth a cache entry. The sign
-        // test runs over the raw paired GPU rounds (final_gpu_us); the
-        // effect-size gate runs over effective_us.
-        std::vector<Measurement *> qualified;
-        for (Measurement * m : tied) {
-            if (m == native_m) { qualified.push_back(m); continue; }
-            int wins = 0, rounds = 0;
-            m->sign_p = paired_sign_test(native_m->final_gpu_us, m->final_gpu_us,
-                                         config.min_paired_rounds, wins, rounds);
-            m->sign_wins   = wins;
-            m->sign_rounds = rounds;
-            if (rounds < config.min_paired_rounds) any_short_rounds = true;
-            const double impr = native_m->effective_us > 0.0
-                ? 100.0 * (native_m->effective_us - m->effective_us) / native_m->effective_us
-                : 0.0;
-            if (impr >= config.replacement_threshold_pct &&
-                    m->sign_p <= config.confidence_alpha) {
-                qualified.push_back(m);
-            }
-        }
-        std::sort(qualified.begin(), qualified.end(), tie_order);
-
-        // E4: winner-only determinism recheck. Bounded at two extra launches
-        // regardless of catalog size -- the winner is the only candidate
-        // whose determinism this run ends up asserting in a shipped cache.
-        for (;;) {
-            winner_m = qualified.empty() ? nullptr : qualified.front();
-            if (winner_m == nullptr || winner_m == native_m ||
-                    !config.verify_determinism || !winner_m->candidate->deterministic) {
-                break;
-            }
-            std::vector<float> first(dst_floats);
-            std::vector<float> second(dst_floats);
-            const bool launched =
-                launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                                 dst_bytes, first) &&
-                launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                                 dst_bytes, second);
-            if (!launched) {
-                winner_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
-                qualified.erase(qualified.begin());
-                continue;
-            }
-            if (std::memcmp(first.data(), second.data(),
-                            dst_floats * sizeof(float)) != 0) {
-                winner_m->reason = GGML_HIP_REJECT_UNSTABLE;
-                qualified.erase(qualified.begin());
-                continue;
-            }
+    // E4: winner-only determinism recheck. Bounded at two extra launches
+    // regardless of catalog size -- the winner is the only candidate whose
+    // determinism this run ends up asserting in a shipped cache. Operates
+    // only on the production policy's qualified set -- a shadow policy's
+    // pick is never GPU-retimed on its own.
+    for (;;) {
+        winner_m = qualified.empty() ? nullptr : qualified.front();
+        if (winner_m == nullptr || winner_m == native_m ||
+                !config.verify_determinism || !winner_m->candidate->deterministic) {
             break;
         }
+        std::vector<float> first(dst_floats);
+        std::vector<float> second(dst_floats);
+        const bool launched =
+            launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
+                             dst_bytes, first) &&
+            launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
+                             dst_bytes, second);
+        if (!launched) {
+            winner_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+            qualified.erase(qualified.begin());
+            continue;
+        }
+        if (std::memcmp(first.data(), second.data(),
+                        dst_floats * sizeof(float)) != 0) {
+            winner_m->reason = GGML_HIP_REJECT_UNSTABLE;
+            qualified.erase(qualified.begin());
+            continue;
+        }
+        break;
     }
+
+    // HI50: the ranking-stage pick, fixed before the confirmation holdout
+    // (and any later promotion demotion) can change `result.winner` again --
+    // the stable target for offline replay to validate a policy's ranking
+    // output against.
+    result.provisional_winner = (winner_m == nullptr || winner_m == native_m)
+        ? native.candidate->stable_name
+        : winner_m->candidate->stable_name;
 
     if (winner_m == nullptr || winner_m == native_m) {
         result.winner            = native.candidate;
@@ -1325,7 +1588,10 @@ void ggml_hip_tuner_flush() {
                 "\"canary_pair\":\"%s\","
                 "\"promotion_status\":\"%s\","
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
-                "\"device_state_pre\":%s,\"device_state_post\":%s",
+                "\"device_state_pre\":%s,\"device_state_post\":%s,"
+                "\"canary_state\":\"%s\",\"provisional_winner\":\"%s\","
+                "\"production_policy\":{\"name\":\"%s\",\"version\":%d},"
+                "\"ranking_decisions\":%s",
                 ggml_hip_digest_hex(entry.first).c_str(),
                 ggml_hip_digest_hex(r.signature_digest).c_str(),
                 ggml_hip_digest_hex(r.hardware_digest).c_str(),
@@ -1346,7 +1612,10 @@ void ggml_hip_tuner_flush() {
                 r.canary_pct, r.canary_retries, r.canary_pair.c_str(),
                 r.promotion_status.c_str(),
                 r.launches_per_sample, r.schedule_seed,
-                r.device_state_pre_json.c_str(), r.device_state_post_json.c_str());
+                r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
+                canary_state_name(r.canary_state), r.provisional_winner.c_str(),
+                r.production_policy_name.c_str(), r.production_policy_version,
+                r.ranking_decisions_json.c_str());
 
         // HI34: schedule + fresh confirmation evidence, only meaningful (and
         // only present) once a non-native winner was nominated and put
