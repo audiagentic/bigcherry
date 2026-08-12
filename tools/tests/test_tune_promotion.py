@@ -1,0 +1,110 @@
+"""Fresh-confirmation and experiment-wide promotion tests."""
+
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from bigcherry import tune_promotion  # noqa: E402
+
+
+def result(dispatch: str, p: float, winner: float) -> dict:
+    signature = dispatch
+    return {
+        "kind": "result", "dispatch": dispatch, "native": "native",
+        "signature": signature,
+        "winner": "candidate", "promotion_status": "pending_bh",
+        "schedule_seed": int.from_bytes(bytes.fromhex(signature)[:4], "little"),
+        "schedule": {
+            "schema_version": 1,
+            "selection_algorithm": "seeded-rotation-v1",
+            "confirmation_algorithm": "seeded-alternation-v1",
+            "candidates": ["candidate", "native", "native#twin"],
+        },
+        "improvement_pct": 100.0 * (100.0 - winner) / 100.0,
+        "confirmation": {
+            "p_value": p, "effect_pct": 100.0 * (100.0 - winner) / 100.0,
+            "native_us": [100.0] * 12, "winner_us": [winner] * 12,
+        },
+    }
+
+
+class PromotionTests(unittest.TestCase):
+
+    HEADER = {
+        "kind": "header", "artifact_version": 1,
+        "source_revision": "a" * 40, "manifest_hash": "a" * 32,
+    }
+
+    def test_nonpositive_event_durations_are_not_bootstrap_evidence(self):
+        low, high = tune_promotion.paired_bootstrap(
+            [10.0, 10.0, 10.0], [9.0, -100.0, 9.0], seed=7, resamples=1000,
+        )
+        self.assertAlmostEqual(low, 10.0)
+        self.assertAlmostEqual(high, 10.0)
+
+    def test_bh_and_bootstrap_promote_only_supported_winner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0), result("b" * 32, 0.9, 99.5),
+            ]
+            source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            report = tune_promotion.promote(source, output, resamples=1000)
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(report["promoted"], 1)
+            self.assertEqual(promoted[1]["promotion_status"], "promoted")
+            self.assertEqual(promoted[2]["promotion_status"], "rejected_bh")
+            self.assertEqual(promoted[2]["winner"], "native")
+            self.assertAlmostEqual(promoted[1]["promotion"]["q_value"], 0.002)
+            self.assertAlmostEqual(promoted[2]["promotion"]["q_value"], 0.9)
+
+    def test_bh_adjusted_values_are_exact_and_monotone(self):
+        adjusted = tune_promotion.benjamini_hochberg([
+            ("d", 0.04), ("a", 0.001), ("c", 0.03), ("b", 0.02),
+        ])
+        self.assertEqual(adjusted, {
+            "a": 0.004, "b": 0.04, "c": 0.04, "d": 0.04,
+        })
+
+    def test_null_fdr_simulation_is_reproducible_and_controlled(self):
+        first = tune_promotion.simulate_null_fdr(
+            experiments=2000, hypotheses=41, q=0.05, seed=340024,
+        )
+        second = tune_promotion.simulate_null_fdr(
+            experiments=2000, hypotheses=41, q=0.05, seed=340024,
+        )
+        self.assertEqual(first, second)
+        self.assertLess(first["empirical_fdr"], 0.07)
+        self.assertEqual(len(first["runs"]), 2000)
+
+    def test_non_current_pending_state_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row.pop("promotion_status")
+            source.write_text(json.dumps(self.HEADER) + "\n" + json.dumps(row) + "\n")
+            with self.assertRaisesRegex(tune_promotion.PromotionError, "pending_bh"):
+                tune_promotion.promote(source, root / "out")
+
+    def test_schedule_seed_and_position_drift_are_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule_seed"] += 1
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "seed drift"):
+            tune_promotion.validate_schedule(row)
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"]["candidates"] = ["native", "candidate", "native#twin"]
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "position drift"):
+            tune_promotion.validate_schedule(row)
+
+
+if __name__ == "__main__":
+    unittest.main()

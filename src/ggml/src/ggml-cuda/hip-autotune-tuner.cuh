@@ -54,7 +54,24 @@ struct ggml_hip_tuner_config {
     int    warmup_launches       = 15;   // 10-20 (standards 11.4)
     int    screen_samples        = 20;   // 15-30
     int    final_samples         = 100;  // standards 11.5
-    int    launches_per_sample   = 1;    // raised for kernels below event noise
+
+    // HI34: adaptive shared launch batching, superseding a static
+    // launches_per_sample. Native is piloted once per
+    // signature at one launch per sample; the batch size that would put its
+    // median above min_sample_us is derived from that pilot and then reused
+    // -- unchanged -- for native's real measurement and every candidate's,
+    // native and candidate alike, for this signature. Per-candidate
+    // calibration would bias the comparison by amortising fixed launch
+    // overhead differently across candidates of different true cost.
+    int    pilot_samples           = 3;
+    double min_sample_us           = 100.0;   // GGML_HIP_TUNE_MIN_SAMPLE_US
+    int    max_launches_per_sample = 32;      // GGML_HIP_TUNE_MAX_LPS
+
+    // HI34: fresh, disjoint confirmation holdout for a provisional winner
+    // (selection samples never participate, removing winner's-curse from
+    // promotion evidence). Rounds alternate first-measured by schedule_seed
+    // so neither side is systematically measured under worse thermal state.
+    int    confirmation_samples    = 100;     // GGML_HIP_TUNE_CONFIRM_SAMPLES
 
     // Screening retention (standards 11.4). Native is always kept.
     int    screen_keep_top       = 3;

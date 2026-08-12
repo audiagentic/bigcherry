@@ -943,6 +943,32 @@ def build_parser() -> argparse.ArgumentParser:
         func=lambda args: _tune_journal_main(args.tune_journal_args))
     tune_journal_cmd.add_argument("tune_journal_args", nargs=argparse.REMAINDER)
 
+    tune_promote_cmd = sub.add_parser(
+        "tune-promote",
+        help="apply experiment-wide BH promotion to fresh-confirmation evidence (HI34)")
+    tune_promote_cmd.add_argument("measurements")
+    tune_promote_cmd.add_argument("--output", required=True)
+    tune_promote_cmd.add_argument("--q", type=float, default=0.05)
+    tune_promote_cmd.add_argument("--threshold-pct", type=float, default=1.0)
+    tune_promote_cmd.add_argument("--resamples", type=int, default=10_000)
+    tune_promote_cmd.set_defaults(func=lambda args: _tune_promote_main([
+        args.measurements, "--output", args.output, "--q", str(args.q),
+        "--threshold-pct", str(args.threshold_pct), "--resamples", str(args.resamples),
+    ]))
+
+    tune_null_fdr_cmd = sub.add_parser(
+        "tune-null-fdr",
+        help="deterministic global-null BH simulation, for auditing the promotion gate")
+    tune_null_fdr_cmd.add_argument("--output", required=True)
+    tune_null_fdr_cmd.add_argument("--experiments", type=int, default=5000)
+    tune_null_fdr_cmd.add_argument("--hypotheses", type=int, required=True)
+    tune_null_fdr_cmd.add_argument("--q", type=float, default=0.05)
+    tune_null_fdr_cmd.add_argument("--seed", type=int, required=True)
+    tune_null_fdr_cmd.set_defaults(func=lambda args: _tune_null_fdr_main([
+        "--output", args.output, "--experiments", str(args.experiments),
+        "--hypotheses", str(args.hypotheses), "--q", str(args.q), "--seed", str(args.seed),
+    ]))
+
     from . import report as _report
 
     _report.build_parser(sub)
@@ -1079,6 +1105,16 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
 def _tune_journal_main(argv: list[str]) -> int:
     from . import tune_journal
     return tune_journal.main(argv)
+
+
+def _tune_promote_main(argv: list[str]) -> int:
+    from . import tune_promotion
+    return tune_promotion.main(argv)
+
+
+def _tune_null_fdr_main(argv: list[str]) -> int:
+    from . import tune_promotion
+    return tune_promotion.null_fdr_main(argv)
 
 
 def main(argv: list[str] | None = None) -> int:

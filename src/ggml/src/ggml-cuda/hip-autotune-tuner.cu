@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <limits>
@@ -78,6 +79,11 @@ struct Measurement {
 
 struct Result {
     const ggml_hip_candidate_descriptor * winner = nullptr;
+    std::string native_name;   // recorded once, up front -- promotion needs
+                                // "did this row change from native" without
+                                // relying on winner->stable_name still being
+                                // comparable after promotion_status demotes
+                                // winner back to native.candidate.
     std::vector<Measurement> measurements;
     int generated  = 0;   // candidates in the registry for this family/shape
     int applicable = 0;   // E5: right arch + right src0_type (varies; generated does not)
@@ -86,6 +92,38 @@ struct Result {
     double improvement_pct = 0.0;
     double confidence      = 0.0;   // E1: 1 - sign_p of the chosen winner
     std::string reason;
+
+    // HI34: shared batch size for this signature, derived once from a native
+    // pilot and reused for every subsequent launch (native and candidate
+    // alike) so the comparison is never biased by per-candidate calibration.
+    int launches_per_sample = 1;
+
+    // HI34: the seed that ordered the final-measurement rounds and (below)
+    // the confirmation holdout, plus the finalist set it was drawn over --
+    // together enough for an offline reader (tune_promotion.py) to verify
+    // the schedule this run actually used rather than trust a claim.
+    uint32_t schedule_seed = 0;
+    std::vector<std::string> schedule_candidates;
+
+    // HI34: fresh, disjoint confirmation holdout for the provisional winner.
+    // Populated only when selection nominates a non-native challenger.
+    std::vector<double> confirmation_native_us;
+    std::vector<double> confirmation_winner_us;
+    double p_value               = 1.0;
+    int    confirmation_wins     = 0;
+    int    confirmation_rounds   = 0;
+    double confirmation_effect_pct = 0.0;
+
+    // HI34/promotion: "native" (native retained, nothing to confirm),
+    // "confirmation_rejected" (a provisional winner failed fresh holdout,
+    // native retained), or "pending_bh" (fresh holdout passed; this result
+    // is a *candidate* for promotion, not yet safe to export to a replay
+    // cache -- experiment-wide Benjamini-Hochberg correction, run offline
+    // over every pending_bh result together via `bigcherry tune-promote`,
+    // decides that). A replay-cache exporter must treat anything other than
+    // "native" or "promoted" (a status this file never sets; tune_promotion.py
+    // sets it after BH) as unsafe to ship.
+    std::string promotion_status = "native";
 
     // The two halves the dispatch digest was built from.
     //
@@ -434,6 +472,17 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     return hipGetLastError() == hipSuccess;
 }
 
+// HI34: derive the shared launch batch from a one-launch-per-sample native
+// pilot. Below min_sample_us a kernel is not resolvable against HIP event
+// timer noise; batching several launches into one timed sample raises the
+// floor without changing what is being measured.
+int calibrated_launches_per_sample(double native_pilot_us,
+                                   const ggml_hip_tuner_config & config) {
+    if (!(native_pilot_us > 0.0) || !(config.min_sample_us > 0.0)) return 1;
+    const int needed = (int) std::ceil(config.min_sample_us / native_pilot_us);
+    return std::max(1, std::min(needed, config.max_launches_per_sample));
+}
+
 // E3: the floor cost of one timed sample with no work in it -- two event
 // records, a synchronize, and the two host clock reads. Subtracting it is
 // what makes a host-side number comparable with a GPU-side one. Measured
@@ -505,6 +554,19 @@ std::string samples_json(const std::vector<double> & v) {
     return out;
 }
 
+// HI34: the finalist-name schedule an offline reader (tune_promotion.py)
+// re-derives from schedule_seed to verify this run's confirmation rounds
+// actually used the seed it claims, rather than trusting the claim.
+std::string string_array_json(const std::vector<std::string> & v) {
+    std::string out = "[";
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i) out += ",";
+        out += "\"" + v[i] + "\"";
+    }
+    out += "]";
+    return out;
+}
+
 } // namespace
 
 const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
@@ -536,6 +598,18 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_EMIT_SAMPLES")) {
             c.emit_samples = atoi(v);
         }
+        if (const char * v = getenv("GGML_HIP_TUNE_PILOT_SAMPLES")) {
+            c.pilot_samples = atoi(v);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_MIN_SAMPLE_US")) {
+            c.min_sample_us = atof(v);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_MAX_LPS")) {
+            c.max_launches_per_sample = atoi(v);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
+            c.confirmation_samples = atoi(v);
+        }
         return c;
     }();
     return config;
@@ -559,6 +633,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
     Result result;
     result.winner = native.candidate;
+    result.native_name = native.candidate ? native.candidate->stable_name : "";
     // Recomputed rather than threaded down from the resolver: the two are the
     // same values, and recomputing here keeps this function's signature stable
     // for a field the caller has no other use for. Cold path, once per
@@ -685,13 +760,28 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     ggml_hip_launch_context lc = lc_in;
     lc.dst = &scratch_dst;
 
-    // --- native reference, and native's own timing ----------------------
+    // --- HI34: pilot native once, calibrate the shared batch size --------
     scratch_dst.data = reference_buf.get();
+    {
+        std::vector<double> pilot_gpu;
+        std::vector<double> pilot_host;
+        if (!time_candidate(native.candidate, lc, config.warmup_launches,
+                            config.pilot_samples, 1, pilot_gpu, pilot_host)) {
+            native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+            result.reason = "native pilot failed; run rejected";
+            record_result(dispatch_digest, result);
+            return native.candidate;
+        }
+        result.launches_per_sample = calibrated_launches_per_sample(
+            median_of(pilot_gpu), config);
+    }
+
+    // --- native reference, and native's own timing ----------------------
     {
         std::vector<double> gpu;
         std::vector<double> host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
-                            config.screen_samples, config.launches_per_sample,
+                            config.screen_samples, result.launches_per_sample,
                             gpu, host)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.reason = "native failed to launch; run rejected";
@@ -720,7 +810,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> gpu;
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
-                            config.screen_samples, config.launches_per_sample,
+                            config.screen_samples, result.launches_per_sample,
                             gpu, host)) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             continue;
@@ -785,6 +875,24 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // completion and then B lets thermal drift or a clock change across the
     // run masquerade as a difference between them.
     if (finalists.size() > 1) {
+        // HI34: deterministic order, then a per-signature seed (derived from
+        // the signature digest, so it is reproducible offline without
+        // storing anything extra) rotates which candidate starts each round.
+        // A fixed order would let whichever candidate is always measured
+        // first in a round absorb a systematic share of thermal drift; the
+        // rotation spreads that instead of cancelling it only in aggregate.
+        std::sort(finalists.begin(), finalists.end(),
+                  [](const Measurement * a, const Measurement * b) {
+                      return strcmp(a->candidate->stable_name,
+                                    b->candidate->stable_name) < 0;
+                  });
+        result.schedule_seed = (uint32_t) result.signature_digest.bytes[0]
+                             | ((uint32_t) result.signature_digest.bytes[1] << 8)
+                             | ((uint32_t) result.signature_digest.bytes[2] << 16)
+                             | ((uint32_t) result.signature_digest.bytes[3] << 24);
+        for (const Measurement * m : finalists) {
+            result.schedule_candidates.push_back(m->candidate->stable_name);
+        }
         for (Measurement * m : finalists) {
             m->final_gpu_us.assign(config.final_samples,
                                    std::numeric_limits<double>::quiet_NaN());
@@ -792,11 +900,13 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                                     std::numeric_limits<double>::quiet_NaN());
         }
         for (int round = 0; round < config.final_samples; ++round) {
-            for (Measurement * m : finalists) {
+            const size_t offset = (result.schedule_seed + (uint32_t) round) % finalists.size();
+            for (size_t position = 0; position < finalists.size(); ++position) {
+                Measurement * m = finalists[(offset + position) % finalists.size()];
                 std::vector<double> g1;
                 std::vector<double> h1;
                 if (time_candidate(m->candidate, lc, 0, 1,
-                                   config.launches_per_sample, g1, h1) && !g1.empty()) {
+                                   result.launches_per_sample, g1, h1) && !g1.empty()) {
                     m->final_gpu_us[round]  = g1[0];
                     m->final_host_us[round] = h1[0];
                 }
@@ -898,7 +1008,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 for (int i = 0; i < 2; ++i) {
                     std::vector<double> g1, h1;
                     if (time_candidate(pair[i]->candidate, lc, 0, 1,
-                                       config.launches_per_sample, g1, h1)) {
+                                       result.launches_per_sample, g1, h1)) {
                         g[i].insert(g[i].end(), g1.begin(), g1.end());
                         h[i].insert(h[i].end(), h1.begin(), h1.end());
                     }
@@ -1025,22 +1135,70 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     }
 
     if (winner_m == nullptr || winner_m == native_m) {
-        result.winner          = native.candidate;
-        result.improvement_pct = 0.0;
-        result.reason          = any_short_rounds
+        result.winner            = native.candidate;
+        result.improvement_pct   = 0.0;
+        result.promotion_status  = "native";
+        result.reason            = any_short_rounds
             ? "native retained (too few paired rounds to confirm any challenger)"
             : "native retained";
     } else {
-        result.winner          = winner_m->candidate;
-        result.improvement_pct = native_m->effective_us > 0.0
-            ? 100.0 * (native_m->effective_us - winner_m->effective_us) / native_m->effective_us
+        result.confidence = 1.0 - winner_m->sign_p;
+
+        // HI34: fresh, disjoint confirmation holdout. Only the provisional
+        // winner versus native, with new rounds in schedule-seeded
+        // alternating order -- the selection rounds above (which chose this
+        // candidate out of every finalist) cannot also be the evidence that
+        // promotes it. Reusing them would be winner's-curse: whichever
+        // candidate got lucky on the selection rounds is exactly the one
+        // most likely to look good again by chance.
+        const int rounds = std::max(config.confirmation_samples, config.min_paired_rounds);
+        result.confirmation_native_us.assign(
+            rounds, std::numeric_limits<double>::quiet_NaN());
+        result.confirmation_winner_us.assign(
+            rounds, std::numeric_limits<double>::quiet_NaN());
+        Measurement * pair[2] = { native_m, winner_m };
+        for (int round = 0; round < rounds; ++round) {
+            const int first = (int) ((result.schedule_seed + (uint32_t) round) & 1u);
+            for (int position = 0; position < 2; ++position) {
+                const int which = (first + position) & 1;
+                std::vector<double> gpu;
+                std::vector<double> host;
+                if (time_candidate(pair[which]->candidate, lc, 0, 1,
+                                   result.launches_per_sample, gpu, host) && !gpu.empty()) {
+                    if (which == 0) result.confirmation_native_us[round] = gpu[0];
+                    else            result.confirmation_winner_us[round] = gpu[0];
+                }
+            }
+        }
+        result.p_value = paired_sign_test(
+            result.confirmation_native_us, result.confirmation_winner_us,
+            config.min_paired_rounds, result.confirmation_wins,
+            result.confirmation_rounds);
+        const double confirmation_native = median_of(result.confirmation_native_us);
+        const double confirmation_winner = median_of(result.confirmation_winner_us);
+        result.confirmation_effect_pct = confirmation_native > 0.0
+            ? 100.0 * (confirmation_native - confirmation_winner) / confirmation_native
             : 0.0;
-        result.confidence      = 1.0 - winner_m->sign_p;
-        result.reason          = "measured winner, " +
-            std::to_string(winner_m->sign_wins) + "/" +
-            std::to_string(winner_m->sign_rounds) + " paired rounds" +
-            (winner_m->candidate->family == native.candidate->family
-                ? "" : " (different family from native)");
+        const bool confirmed =
+            result.confirmation_rounds >= config.min_paired_rounds &&
+            result.confirmation_effect_pct >= config.replacement_threshold_pct &&
+            result.p_value <= config.confidence_alpha;
+
+        if (!confirmed) {
+            result.winner            = native.candidate;
+            result.improvement_pct   = 0.0;
+            result.promotion_status  = "confirmation_rejected";
+            result.reason            = "native retained (fresh confirmation rejected provisional winner)";
+        } else {
+            result.winner            = winner_m->candidate;
+            result.improvement_pct   = result.confirmation_effect_pct;
+            result.promotion_status  = "pending_bh";
+            result.reason            = "fresh confirmation passed; experiment-wide BH pending, " +
+                std::to_string(result.confirmation_wins) + "/" +
+                std::to_string(result.confirmation_rounds) + " confirmation rounds" +
+                (winner_m->candidate->family == native.candidate->family
+                    ? "" : " (different family from native)");
+        }
     }
 
     {
@@ -1049,7 +1207,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         GGML_LOG_INFO("bigcherry: tuned %s -- gen/appl/elig/meas %d/%d/%d/%d, "
                       "rejects arch=%d inelig=%d ws=%d launch=%d nan=%d tol=%d "
                       "noisy=%d unstable=%d, winner %s (%.2f%% vs native, "
-                      "confidence=%.4f)\n",
+                      "confidence=%.4f, promotion_status=%s)\n",
                       ggml_hip_digest_hex(dispatch_digest).c_str(),
                       result.generated, result.applicable, result.eligible,
                       result.measured,
@@ -1062,7 +1220,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                       counts[GGML_HIP_REJECT_NOISY],
                       counts[GGML_HIP_REJECT_UNSTABLE],
                       result.winner->stable_name, result.improvement_pct,
-                      result.confidence);
+                      result.confidence, result.promotion_status.c_str());
     }
 
     record_result(dispatch_digest, result);
@@ -1118,7 +1276,7 @@ void ggml_hip_tuner_flush() {
         fprintf(file,
                 "{\"kind\":\"result\",\"dispatch\":\"%s\","
                 "\"signature\":\"%s\",\"hardware\":\"%s\","
-                "\"canonical\":%s,\"winner\":\"%s\","
+                "\"canonical\":%s,\"winner\":\"%s\",\"native\":\"%s\","
                 "\"improvement_pct\":%.3f,\"confidence\":%.4f,"
                 "\"generated\":%d,\"applicable\":%d,\"eligible\":%d,"
                 "\"measured\":%d,\"reason\":\"%s\","
@@ -1126,12 +1284,15 @@ void ggml_hip_tuner_flush() {
                 "\"workspace\":%d,\"launch_failed\":%d,\"nan_inf\":%d,"
                 "\"tolerance\":%d,\"noisy\":%d,\"unstable\":%d},"
                 "\"canary_pct\":%.3f,\"canary_retries\":%d,"
-                "\"canary_pair\":\"%s\",\"candidates\":[",
+                "\"canary_pair\":\"%s\","
+                "\"promotion_status\":\"%s\","
+                "\"launches_per_sample\":%d,\"schedule_seed\":%u",
                 ggml_hip_digest_hex(entry.first).c_str(),
                 ggml_hip_digest_hex(r.signature_digest).c_str(),
                 ggml_hip_digest_hex(r.hardware_digest).c_str(),
                 r.canonical_json.c_str(),
                 r.winner ? r.winner->stable_name : "",
+                r.native_name.c_str(),
                 r.improvement_pct, r.confidence,
                 r.generated, r.applicable, r.eligible, r.measured,
                 r.reason.c_str(),
@@ -1143,7 +1304,32 @@ void ggml_hip_tuner_flush() {
                 counts[GGML_HIP_REJECT_TOLERANCE],
                 counts[GGML_HIP_REJECT_NOISY],
                 counts[GGML_HIP_REJECT_UNSTABLE],
-                r.canary_pct, r.canary_retries, r.canary_pair.c_str());
+                r.canary_pct, r.canary_retries, r.canary_pair.c_str(),
+                r.promotion_status.c_str(),
+                r.launches_per_sample, r.schedule_seed);
+
+        // HI34: schedule + fresh confirmation evidence, only meaningful (and
+        // only present) once a non-native winner was nominated and put
+        // through the holdout above -- a "native" row has nothing to verify.
+        if (!r.schedule_candidates.empty()) {
+            fprintf(file,
+                    ",\"schedule\":{\"schema_version\":1,"
+                    "\"selection_algorithm\":\"seeded-rotation-v1\","
+                    "\"confirmation_algorithm\":\"seeded-alternation-v1\","
+                    "\"candidates\":%s}",
+                    string_array_json(r.schedule_candidates).c_str());
+        }
+        if (r.promotion_status == "pending_bh" || r.promotion_status == "confirmation_rejected") {
+            fprintf(file,
+                    ",\"confirmation\":{\"p_value\":%.4f,"
+                    "\"effect_pct\":%.3f,\"wins\":%d,\"rounds\":%d,"
+                    "\"native_us\":%s,\"winner_us\":%s}",
+                    r.p_value, r.confirmation_effect_pct,
+                    r.confirmation_wins, r.confirmation_rounds,
+                    samples_json(r.confirmation_native_us).c_str(),
+                    samples_json(r.confirmation_winner_us).c_str());
+        }
+        fprintf(file, ",\"candidates\":[");
 
         bool first = true;
         for (const Measurement & m : r.measurements) {

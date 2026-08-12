@@ -95,6 +95,43 @@ def read_results(path: Path) -> list[dict[str, Any]]:
     return results
 
 
+def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
+    """Fail closed (HI34/P0): a non-native winner ships only after fresh
+    confirmation *and* experiment-wide BH correction -- see tune_promotion.py.
+    A row whose winner differs from its recorded native and whose
+    promotion_status is not exactly "promoted" (raw pending_bh, an explicit
+    rejection, or a legacy/missing-provenance record with no promotion_status
+    at all) has never been through that gate and has no business on
+    production's hot path.
+
+    Aborts the whole export rather than silently dropping the offending
+    entries: a cache silently missing entries the operator expected to see
+    is a worse failure than a build that stops and says exactly why. Manual
+    `--seed` overrides are applied by the caller after this check and are
+    exempt by construction -- an explicit operator override carries its own
+    provenance, not the tuner's.
+    """
+    violations = []
+    for digest_hex, record in entries.items():
+        winner = record.get("winner")
+        native = record.get("native")
+        if winner == native:
+            continue  # native state; always safe
+        if record.get("promotion_status") != "promoted":
+            violations.append((digest_hex, winner, record.get("promotion_status")))
+    if violations:
+        shown = "\n".join(
+            f"  {digest[:16]}...: winner={winner!r} promotion_status={status!r}"
+            for digest, winner, status in violations[:20]
+        )
+        more = f"\n  ... and {len(violations) - 20} more" if len(violations) > 20 else ""
+        raise SystemExit(
+            f"refusing to export: {len(violations)} non-native winner(s) lack "
+            f"promotion_status=='promoted' (run `bigcherry tune-promote` first):\n"
+            f"{shown}{more}"
+        )
+
+
 def build(
     measurements: Path,
     manifest_path: Path,
@@ -115,6 +152,8 @@ def build(
     entries: dict[str, dict[str, Any]] = {}
     for record in results:
         entries[record["dispatch"]] = record
+
+    _validate_promotion_gate(entries)
 
     # Seed overrides: manual winner selection for specific dispatch digests.
     # Loaded from a JSON file mapping dispatch_hex → stable_name.

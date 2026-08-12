@@ -53,8 +53,8 @@ def read_measurements_sqlite(
     connection.row_factory = sqlite3.Row  # type: ignore[attr-defined]
     try:
         if dispatch_filter:
-            where = "WHERE m.dispatch_digest = X?"
-            params: tuple[str, ...] = (dispatch_filter,)
+            where = "WHERE m.dispatch_digest = ?"
+            params: tuple[bytes, ...] = (bytes.fromhex(dispatch_filter),)
         else:
             where = ""
             params = ()
@@ -112,7 +112,7 @@ def read_measurements_sqlite(
                     "status": "ok"
                     if row["accepted"]
                     else (
-                        row["reject_reason"].replace("GGML_HIP_REJECT_", "")
+                        row["reject_reason"].removeprefix("GGML_HIP_REJECT_").lower()
                         if row["reject_reason"]
                         else "unknown"
                     ),
