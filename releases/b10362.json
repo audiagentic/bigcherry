@@ -2,7 +2,7 @@
   "revision": "4801e3c567d5131dd41b387df5f2d4b1370d92be",
   "release_tag": "b10362",
   "stage": "generated",
-  "bigcherry_revision": "74fa32cd9e0004872e168cd1a0aa569a02985813",
+  "bigcherry_revision": "f83a6e70dcda45eac47a5b385a7ec5d3b91b528d",
   "artifact_version": 1,
   "audit": {
     "passed": true,
@@ -23,11 +23,12 @@
         "replay-diagnostics-option": "already-applied"
       },
       "ggml/src/ggml-hip/CMakeLists.txt": {
-        "replay-diagnostics-definition": "already-applied"
+        "hip-unsafe-math-opt-in": "already-applied"
       },
       "ggml/src/ggml-cuda/ggml-cuda.cu": {
-        "blas-coverage-include": "already-applied",
-        "blas-coverage-count": "already-applied"
+        "ggml-cuda-should-fuse-fn": "already-applied",
+        "ggml-cuda-can-fuse-block": "already-applied",
+        "ggml-cuda-try-fuse-block": "already-applied"
       },
       "ggml/src/ggml-cuda/mmq.cuh": {
         "mmq-helpers-and-switch": "already-applied",
@@ -76,12 +77,55 @@
         "set-result-canonical-json": "already-applied",
         "emit-result-canonical-json": "already-applied",
         "format-result-canonical-json": "already-applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "pool-workspace-members": "already-applied",
+        "pool-alloc-requested-size-member": "already-applied",
+        "pool-workspace-note-free": "already-applied",
+        "pool-workspace-note-alloc": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "q2k-mma-unroll-guard": "already-applied",
+        "q6k-mma-float-promotion": "already-applied"
+      },
+      "ggml/src/ggml-cuda/cpy.cu": {
+        "cpy-q8_0_to_q": "already-applied",
+        "cpy-q8_0_from_q": "already-applied",
+        "cpy-q4_0_to_q": "already-applied",
+        "cpy-q4_0_from_q": "already-applied",
+        "cpy-q4_1_to_q": "already-applied",
+        "cpy-q4_1_from_q": "already-applied",
+        "cpy-q5_0_to_q": "already-applied",
+        "cpy-q5_0_from_q": "already-applied",
+        "cpy-q5_1_to_q": "already-applied",
+        "cpy-q5_1_from_q": "already-applied",
+        "cpy-iq4_nl_to_q": "already-applied"
+      },
+      "ggml/src/ggml-cuda/rope.cuh": {
+        "rope-cuh-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/rope.cu": {
+        "rope-cu-fused-kernel": "already-applied"
+      },
+      "tools/server/server-context.cpp": {
+        "ctx-tgt-state-exact-and-checkpoint-adopt": "already-applied",
+        "create-checkpoint-pos-min-exact-clamp": "already-applied",
+        "create-checkpoint-log-level": "already-applied",
+        "remember-divergence-pos-next-lcp": "already-applied",
+        "checkpoint-search-exact-vs-range": "already-applied",
+        "checkpoint-restore-reset-log-level": "already-applied",
+        "checkpoint-erase-diverged-content": "already-applied"
+      },
+      "tools/server/server-task.cpp": {
+        "server-prompt-cache-n-reusable": "already-applied",
+        "server-prompt-cache-load-n-reuse-min": "already-applied",
+        "server-prompt-cache-load-selection-rule": "already-applied"
       }
     }
   },
-  "manifest_hash": "9f50920bc67ead41eb0822deb66d274e",
-  "tree_state": "f01e7ace6db1864a",
+  "manifest_hash": "1e04832c6327c7f06f63d1f45f2904e6",
+  "tree_state": "792b788743eb67f1",
   "notes": "",
   "first_seen": "2026-08-11T23:22:00.783822+00:00",
-  "updated_at": "2026-08-12T14:34:57.684141+00:00"
+  "updated_at": "2026-08-12T15:38:24.714621+00:00"
 }
