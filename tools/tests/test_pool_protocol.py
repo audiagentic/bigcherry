@@ -39,6 +39,35 @@ class TestPoolProtocol(unittest.TestCase):
                 "synchronize", "timed_sample_begin", "rebase_peak",
             ))
 
+    def test_isolated_trace_requires_a_complete_timed_sample(self):
+        base = _isolated(
+            "clear_cache", "warmup_begin", "warmup_complete", "synchronize",
+            "rebase_peak",
+        )
+        with self.assertRaisesRegex(PoolProtocolError, "no timed samples"):
+            validate_pool_protocol(base)
+        with self.assertRaisesRegex(PoolProtocolError, "without an end"):
+            validate_pool_protocol(base + [{"stage": "isolated_workspace",
+                                            "event": "timed_sample_begin"}])
+
+    def test_isolated_trace_rejects_duplicate_lifecycle_or_unpaired_timing(self):
+        base = _isolated(
+            "clear_cache", "warmup_begin", "warmup_complete", "synchronize",
+            "rebase_peak", "timed_sample_begin", "timed_sample_end",
+        )
+        with self.assertRaisesRegex(PoolProtocolError, "exactly one clear_cache"):
+            validate_pool_protocol(base[:1] + base)
+        with self.assertRaisesRegex(PoolProtocolError, "without a begin"):
+            validate_pool_protocol(base + [{"stage": "isolated_workspace",
+                                            "event": "timed_sample_end"}])
+
+    def test_isolated_trace_allows_multiple_non_overlapping_samples(self):
+        validate_pool_protocol(_isolated(
+            "clear_cache", "warmup_begin", "warmup_complete", "synchronize",
+            "rebase_peak", "timed_sample_begin", "timed_sample_end",
+            "timed_sample_begin", "timed_sample_end",
+        ))
+
     def test_final_and_confirmation_cannot_interleave_pool_isolation(self):
         events = [
             {"stage": "final", "event": "timed_sample_begin"},

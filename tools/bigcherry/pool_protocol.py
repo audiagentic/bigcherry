@@ -74,6 +74,10 @@ def validate_pool_protocol(events: Iterable[Mapping[str, Any]]) -> None:
     ]
     positions: dict[str, int] = {}
     for event in required:
+        if isolated.count(event) != 1:
+            raise PoolProtocolError(
+                f"isolated workspace trace must contain exactly one {event}"
+            )
         try:
             positions[event] = isolated.index(event)
         except ValueError as exc:
@@ -87,4 +91,28 @@ def validate_pool_protocol(events: Iterable[Mapping[str, Any]]) -> None:
     rebase = positions["rebase_peak"]
     if any(event == "timed_sample_begin" for event in isolated[:rebase + 1]):
         raise PoolProtocolError("timed sample begins before pool rebase")
-
+    timed = isolated[rebase + 1:]
+    if not timed:
+        raise PoolProtocolError(
+            "isolated workspace trace has no timed samples after pool rebase"
+        )
+    if any(event in required for event in timed):
+        raise PoolProtocolError(
+            "pool lifecycle event occurs after isolated workspace rebase"
+        )
+    timing_open = False
+    for event in timed:
+        if event == "timed_sample_begin":
+            if timing_open:
+                raise PoolProtocolError("timed samples overlap")
+            timing_open = True
+        elif event == "timed_sample_end":
+            if not timing_open:
+                raise PoolProtocolError("timed sample ends without a begin")
+            timing_open = False
+        else:
+            raise PoolProtocolError(
+                f"unexpected {event} event after isolated workspace rebase"
+            )
+    if timing_open:
+        raise PoolProtocolError("timed sample begins without an end")
