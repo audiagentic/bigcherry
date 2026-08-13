@@ -235,6 +235,15 @@ def compact(path: Path, output: Path, header: dict[str, Any]) -> dict[str, Any]:
     journal = read_current(path)
     if header.get("kind") != "header":
         raise JournalError("compaction requires a current measurements header")
+    # The durable start event is the authoritative provenance for C++-originated
+    # journals.  Preserve it when callers use the minimal CLI header, otherwise
+    # a compacted run cannot pass replay-cache provenance validation.
+    compacted_header = dict(header)
+    start_payload = journal["events"][0].get("payload")
+    if isinstance(start_payload, dict):
+        for field in ("source_revision", "manifest_hash", "hardware_digest"):
+            if field not in compacted_header and field in start_payload:
+                compacted_header[field] = start_payload[field]
     selected: dict[str, tuple[int, dict[str, Any]]] = {}
     for event in journal["events"]:
         if event["kind"] != "result":
@@ -261,7 +270,7 @@ def compact(path: Path, output: Path, header: dict[str, Any]) -> dict[str, Any]:
         rank = (generation, event["sequence"])
         if current is None or rank > (int(current[1].get("generation", 1)), current[0]):
             selected[dispatch] = (event["sequence"], record)
-    lines = [canonical(header)]
+    lines = [canonical(compacted_header)]
     lines.extend(canonical(selected[key][1]) for key in sorted(selected))
     data = b"\n".join(lines) + b"\n"
     atomic_write(output, data)
