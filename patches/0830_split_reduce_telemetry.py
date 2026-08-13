@@ -195,7 +195,7 @@ META = FilePatch(
                 '                    ggml_backend_get_device(simple_backends[0])),\n'
                 '                    "ggml_backend_comm_telemetry_fallback");'
             ),
-            guard=r'ggml_backend_comm_telemetry_fallback',
+            guard=r'comm_fallback = \(ggml_backend_comm_telemetry_fallback_t\)',
         ),
         Edit(
             id="meta-reduce-telemetry-node-declaration",
