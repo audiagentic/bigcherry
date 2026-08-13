@@ -59,6 +59,40 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertEqual(entry[32:36], b"\x00\x00\x00\x00")
         self.assertEqual(payload[replay_cache.ENT_SIZE:], b"mmvq:native:v1\x00")
 
+    def test_export_preflight_rejects_checksum_corruption_and_trailing_bytes(self):
+        _, manifest, ggml_h, measurements = self._fixture()
+        blob = replay_cache.build(measurements, manifest, ggml_h)
+        self.assertEqual(
+            replay_cache.validate_blob(blob, manifest_hash="a" * 32)["entry_count"], 1)
+
+        corrupted = bytearray(blob)
+        corrupted[-1] ^= 0x01
+        with self.assertRaisesRegex(SystemExit, "checksum"):
+            replay_cache.validate_blob(bytes(corrupted), manifest_hash="a" * 32)
+
+        with self.assertRaisesRegex(SystemExit, "trailing"):
+            replay_cache.validate_blob(blob + b"extra", manifest_hash="a" * 32)
+
+    def test_export_preflight_rejects_manifest_mismatch_and_duplicate_entries(self):
+        _, manifest, ggml_h, measurements = self._fixture()
+        blob = replay_cache.build(measurements, manifest, ggml_h)
+        with self.assertRaisesRegex(SystemExit, "manifest hash"):
+            replay_cache.validate_blob(blob, manifest_hash="b" * 32)
+
+        entry_start = replay_cache.REPLAY_HEADER_SIZE
+        entry_end = entry_start + replay_cache.ENT_SIZE
+        duplicate = bytearray(blob[:entry_start])
+        duplicate.extend(blob[entry_start:entry_end])
+        duplicate.extend(blob[entry_start:entry_end])
+        duplicate.extend(blob[entry_end:])
+        struct.pack_into("<I", duplicate, 16, 2)
+        # Recompute the content digest so this exercises duplicate detection,
+        # rather than stopping at the checksum boundary.
+        duplicate[40:56] = replay_cache.blake2b_digest(
+            bytes(duplicate[replay_cache.REPLAY_HEADER_SIZE:]))
+        with self.assertRaisesRegex(SystemExit, "duplicate dispatch"):
+            replay_cache.validate_blob(bytes(duplicate), manifest_hash="a" * 32)
+
     def test_v3_header_and_entry_sizes_are_explicit_wire_contract(self):
         self.assertEqual(replay_cache.REPLAY_HEADER_SIZE, 56)
         self.assertEqual(replay_cache.ENT_SIZE, 54)
