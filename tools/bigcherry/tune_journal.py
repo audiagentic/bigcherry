@@ -262,6 +262,16 @@ def compact(path: Path, output: Path, header: dict[str, Any]) -> dict[str, Any]:
             except json.JSONDecodeError as exc:
                 raise JournalError(
                     f"result payload at sequence {event['sequence']} is not valid JSON") from exc
+        # Early C++ journal summaries omitted the fields that identify an
+        # unchanged native outcome.  The stable native spelling is
+        # unambiguous; recover only that case.  Every other missing native or
+        # promotion state remains fail-closed in replay_cache.py.
+        winner = record.get("winner")
+        if (isinstance(winner, str) and winner.endswith(":native:v1") and
+                "native" not in record and "promotion_status" not in record):
+            record = dict(record)
+            record["native"] = winner
+            record["promotion_status"] = "native"
         dispatch = record.get("dispatch")
         if not isinstance(dispatch, str):
             raise JournalError("result event lacks dispatch identity")
