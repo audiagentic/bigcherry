@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -100,6 +101,48 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertGreaterEqual(source.count("std::isspace((unsigned char) *v)"), 3)
         self.assertGreaterEqual(source.count("*v == '\\0'"), 3)
         self.assertIn("*end != '\\0'", source)
+
+    def test_tuner_event_destruction_has_one_checked_cleanup_seam(self):
+        """Every created event must use the checked, non-short-circuit seam."""
+        source = TUNER.read_text(encoding="utf-8")
+        helper_start = source.index("static bool hip_event_destroy_checked(")
+        helper_end = source.index("bool time_candidate(", helper_start)
+        helper = source[helper_start:helper_end]
+        managed = source[:helper_start] + source[helper_end:]
+
+        raw_destroy = re.compile(r'''(?<!["'])\bhipEventDestroy\s*\(''')
+        self.assertEqual(len(raw_destroy.findall(helper)), 1)
+        self.assertEqual(raw_destroy.findall(managed), [])
+        self.assertRegex(
+            source,
+            r"const bool start_ok = hip_event_destroy_checked\(start,.*?;\s*"
+            r"const bool stop_ok = hip_event_destroy_checked\(stop,.*?;\s*"
+            r"return start_ok && stop_ok;",
+        )
+        self.assertRegex(
+            source,
+            r"const bool a_ok = hip_event_destroy_checked\(a,.*?;\s*"
+            r"const bool b_ok = hip_event_destroy_checked\(b,.*?;\s*"
+            r"return a_ok && b_ok;",
+        )
+        self.assertNotRegex(
+            source,
+            r"hip_event_destroy_checked\([^;]*\)\s*&&",
+        )
+
+    def test_host_sync_calibration_never_caches_incomplete_lifecycle(self):
+        source = TUNER.read_text(encoding="utf-8")
+        start = source.index("double host_sync_overhead_us(")
+        end = source.index("// E3: max()", start)
+        function = source[start:end]
+
+        self.assertIn("g_host_sync_overhead_valid = false;", function)
+        self.assertIn("if (!destroy_ok || samples.empty())", function)
+        self.assertIn("if (!std::isfinite(overhead) || overhead < 0.0)", function)
+        self.assertLess(
+            function.index("const bool destroy_ok = destroy_events();"),
+            function.index("g_host_sync_overhead_valid = true;"),
+        )
 
     def test_blas_observation_telemetry_uses_existing_workspace_hook(self):
         dispatch = DISPATCH.read_text(encoding="utf-8")
