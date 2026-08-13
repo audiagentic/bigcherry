@@ -37,6 +37,19 @@ class TuneJournalTests(unittest.TestCase):
             self.assertEqual(one["content_hash"], two["content_hash"])
             self.assertIn(b'"dispatch":"a"', first.read_bytes().splitlines()[1])
 
+    def test_compact_preserves_start_provenance_for_replay_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writer = self.writer(root / "events.jsonl")
+            writer.result({"kind": "result", "dispatch": "a", "winner": "native"})
+            writer.complete()
+            output = root / "measurements.jsonl"
+            tune_journal.compact(writer.path, output, {"kind": "header", "schema_version": 1})
+            header = json.loads(output.read_bytes().splitlines()[0])
+            self.assertEqual(header["source_revision"], "a" * 40)
+            self.assertEqual(header["manifest_hash"], "b" * 32)
+            self.assertEqual(header["hardware_digest"], "c" * 32)
+
     def test_truncated_and_corrupt_tail_recover_acknowledged_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "events.jsonl"
@@ -154,7 +167,9 @@ class TuneJournalTests(unittest.TestCase):
             self.assertTrue(recovered["can_compact"])
             output = root / "measurements.jsonl"
             tune_journal.compact(writer.path, output, {"kind": "header"})
-            self.assertEqual(output.read_bytes().splitlines(), [tune_journal.canonical({"kind": "header"})])
+            header = json.loads(output.read_bytes().splitlines()[0])
+            self.assertEqual(header["kind"], "header")
+            self.assertEqual(header["source_revision"], "a" * 40)
 
 
 if __name__ == "__main__":
