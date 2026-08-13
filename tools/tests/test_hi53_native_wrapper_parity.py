@@ -49,10 +49,13 @@ class HI53NativeWrapperParityTests(unittest.TestCase):
             "void ggml_hip_mmvq_launch(",
         )
         ids_guard = "(sig.flags & GGML_HIP_SIG_HAS_IDS) != 0"
-        oversized_guard = "sig.ned[2] > MMVQ_MAX_BATCH_SIZE"
+        oversized_guard = "sig.ned[2] > mmvq_mmid_max"
         native_return = "if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER)"
         self.assertIn(ids_guard, function)
         self.assertIn(oversized_guard, function)
+        self.assertIn("get_mmvq_mmid_max_batch(", function)
+        self.assertIn("sig.src0_type", function)
+        self.assertIn("ggml_cuda_info().devices[device].cc", function)
         self.assertIn(native_return, function)
         self.assertLess(function.index(oversized_guard), function.index(native_return))
         # `ned[1]` is the dense output width; using it here would not protect
