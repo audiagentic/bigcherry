@@ -72,7 +72,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('trace_workspace_event(stage, "clear_cache"', tuner)
         metrics = tuner[tuner.index('#ifdef GGML_HIP_WORKSPACE_METRICS'):]
         self.assertIn('trace_workspace_event(stage, "rebase_peak"', metrics)
-        self.assertIn('nullptr, false, nullptr, "confirmation")', tuner)
+        self.assertIn('run_counterbalanced_round(', tuner)
+        self.assertIn('result.launches_per_sample, "confirmation")', tuner)
 
     def test_mmvq_native_moe_guard_precedes_native_return(self):
         source = DISPATCH.read_text(encoding="utf-8")
@@ -226,6 +227,31 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         tuner = TUNER.read_text(encoding="utf-8")
         self.assertIn('if (!s.valid) return "{}";', tuner)
         self.assertIn('return "{\\"status\\":\\"unavailable\\"}";', tuner)
+
+    def test_hi60_counterbalanced_round_is_observation_only_and_fail_closed(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        helper_start = tuner.index("CounterbalancedRound run_counterbalanced_round(")
+        helper_end = tuner.index("void merge_retime_status(", helper_start)
+        helper = tuner[helper_start:helper_end]
+
+        self.assertIn("const bool reverse", tuner)
+        self.assertIn("(offset + candidates.size() - 1 - position) % candidates.size()", helper)
+        self.assertIn("const bool reverse_complete = run_order(!reverse", helper)
+        self.assertIn("out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN())", helper)
+        self.assertIn("out.status = RetimeStatus::unresolved", helper)
+        self.assertNotIn("sclk_mhz", helper[helper.index("run_order") :])
+        self.assertGreaterEqual(tuner.count("run_counterbalanced_round("), 4)
+
+    def test_hi60_retime_fields_are_serialized_but_not_identity_inputs(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn('\\"clock_drift_rounds\\"', tuner)
+        self.assertIn('\\"reverse_retime_attempts\\"', tuner)
+        self.assertIn('\\"reverse_retime_passed\\"', tuner)
+        self.assertIn('\\"retime_status\\"', tuner)
+        signature = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" /
+                     "hip-autotune-signature.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("retime_status", signature)
+        self.assertNotIn("clock_drift_rounds", signature)
 
     def test_tuner_first_encounters_are_single_flight_through_publish(self):
         """The source-level concurrency contract prevents duplicate winners."""
