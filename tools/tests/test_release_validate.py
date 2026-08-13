@@ -19,10 +19,20 @@ class SafeNameTests(unittest.TestCase):
 
 class ReleaseGateTests(unittest.TestCase):
     def _evidence(self) -> dict:
+        stages = {
+            name: {"state": "validated", "ok": True,
+                   "evidence": [f"{name}.json"]}
+            for name in release_validate.PRODUCTION_GATE_STAGES
+        }
         return {
             "claim": "validated",
             "architectures": ["gfx1201"],
             "required_architectures": ["gfx1201"],
+            "production_gate": {
+                "state": "validated",
+                "required_architectures": ["gfx1201"],
+                "stages": stages,
+            },
             "architecture_coverage": {
                 "required": ["gfx1201"],
                 "observed": ["gfx1201"],
@@ -73,6 +83,7 @@ class ReleaseGateTests(unittest.TestCase):
         record = self._evidence()
         record["architectures"] = ["gfx1100", "gfx1201"]
         record["required_architectures"] = ["gfx1100", "gfx1201"]
+        record["production_gate"]["required_architectures"] = ["gfx1100", "gfx1201"]
         record["architecture_coverage"]["required"] = ["gfx1100", "gfx1201"]
         with self.assertRaisesRegex(ValueError, "missing"):
             release_validate.validate_release_claim(record)
@@ -123,6 +134,19 @@ class ReleaseGateTests(unittest.TestCase):
         record = self._evidence()
         record["supported_coverage"] = {"schema_version": 2}
         with self.assertRaisesRegex(ValueError, "supported_coverage"):
+            release_validate.validate_release_claim(record)
+
+    def test_validated_claim_rejects_incomplete_production_stage(self):
+        record = self._evidence()
+        record["production_gate"]["stages"]["tune"] = {
+            "state": "prepared", "ok": False, "evidence": ["tune.json"]}
+        with self.assertRaisesRegex(ValueError, "incomplete stage"):
+            release_validate.validate_release_claim(record)
+
+    def test_validated_claim_rejects_missing_production_stage(self):
+        record = self._evidence()
+        del record["production_gate"]["stages"]["replay"]
+        with self.assertRaisesRegex(ValueError, "every required production stage"):
             release_validate.validate_release_claim(record)
 
 

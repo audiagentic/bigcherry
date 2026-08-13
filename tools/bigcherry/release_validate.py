@@ -38,6 +38,71 @@ class ReleaseGateError(ValueError):
     """A validated-release claim is missing or contradicts its evidence."""
 
 
+PRODUCTION_GATE_STAGES = (
+    "audit", "patch", "generate", "build_descriptor", "record", "tune",
+    "promote", "replay", "coverage",
+)
+PRODUCTION_GATE_STATES = frozenset(("prepared", "validated", "failed"))
+PRODUCTION_STAGE_STATES = frozenset(("pending", "prepared", "validated", "failed"))
+
+
+def validate_production_gate(record: dict[str, Any]) -> None:
+    """Validate the ordered, evidence-bearing production release state machine."""
+    gate = record.get("production_gate")
+    if not isinstance(gate, dict):
+        raise ReleaseGateError(
+            "validated release claim lacks production_gate evidence")
+    state = gate.get("state")
+    if state not in PRODUCTION_GATE_STATES:
+        raise ReleaseGateError(
+            "production_gate.state must be prepared, validated, or failed")
+    declared_architectures = gate.get("required_architectures")
+    required_architectures = record.get("required_architectures")
+    if (not isinstance(declared_architectures, list)
+            or declared_architectures != sorted(set(declared_architectures))
+            or (isinstance(required_architectures, list)
+                and declared_architectures != sorted(set(required_architectures)))):
+        raise ReleaseGateError(
+            "production_gate.required_architectures disagrees with the release claim")
+
+    stages = gate.get("stages")
+    if not isinstance(stages, dict) or set(stages) != set(PRODUCTION_GATE_STAGES):
+        raise ReleaseGateError(
+            "production_gate.stages must contain every required production stage")
+
+    unvalidated_seen = False
+    for name in PRODUCTION_GATE_STAGES:
+        evidence = stages[name]
+        if not isinstance(evidence, dict):
+            raise ReleaseGateError(f"production_gate stage {name!r} is invalid")
+        stage_state = evidence.get("state")
+        if stage_state not in PRODUCTION_STAGE_STATES:
+            raise ReleaseGateError(
+                f"production_gate stage {name!r} has an invalid state")
+        if stage_state != "validated":
+            unvalidated_seen = True
+        elif unvalidated_seen:
+            raise ReleaseGateError(
+                f"production_gate stage {name!r} is validated after an incomplete stage")
+        if stage_state == "validated":
+            if evidence.get("ok") is not True:
+                raise ReleaseGateError(
+                    f"production_gate stage {name!r} lacks ok=true evidence")
+            refs = evidence.get("evidence")
+            if (not isinstance(refs, list) or not refs
+                    or any(not isinstance(ref, str) or not ref.strip() for ref in refs)):
+                raise ReleaseGateError(
+                    f"production_gate stage {name!r} lacks evidence references")
+
+    if state == "validated" and unvalidated_seen:
+        raise ReleaseGateError(
+            "validated production_gate contains an incomplete stage")
+    if state == "failed" and not any(
+            stages[name].get("state") == "failed" for name in PRODUCTION_GATE_STAGES):
+        raise ReleaseGateError(
+            "failed production_gate must identify a failed stage")
+
+
 def _architecture_report(record: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
     """Return architecture evidence and the architectures required by a claim.
 
@@ -110,6 +175,8 @@ def validate_release_claim(record: dict[str, Any]) -> None:
         validate_device_state_report(record)
     if record.get("claim") != "validated" and record.get("stage") != "validated":
         return
+
+    validate_production_gate(record)
 
     candidates = record.get("candidate_coverage")
     if not isinstance(candidates, dict):
