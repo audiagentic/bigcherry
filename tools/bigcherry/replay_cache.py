@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import autotune_catalog
+from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
 REPLAY_VERSION = 3
@@ -214,6 +215,11 @@ def read_results(path: Path, *, require_header: bool = True) -> tuple[dict[str, 
                     raise SystemExit("duplicate measurements header")
                 header = record
             elif record.get("kind") == "result" and record.get("winner"):
+                try:
+                    validate_measurement_identity(record, header=header,
+                                                  where=f"result {len(results)}")
+                except IdentitySeparationError as exc:
+                    raise SystemExit(str(exc)) from exc
                 dispatch = record.get("dispatch")
                 dispatch = _digest_hex(dispatch, "result dispatch digest")
                 if dispatch in seen:

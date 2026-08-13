@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .tune_journal import atomic_write, canonical
+from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 SCHEMA_VERSION = 1
 MIN_PAIRED_ROUNDS = 8
@@ -181,6 +182,11 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 raise PromotionError("duplicate header")
             header = row
         elif row.get("kind") == "result":
+            try:
+                validate_measurement_identity(row, header=header,
+                                              where=f"measurements line {number}")
+            except IdentitySeparationError as exc:
+                raise PromotionError(str(exc)) from exc
             results.append(row)
         else:
             raise PromotionError(f"unknown current record kind at line {number}")
