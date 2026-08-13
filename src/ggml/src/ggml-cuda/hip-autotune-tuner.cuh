@@ -98,12 +98,10 @@ struct ggml_hip_tuner_config {
     // HI50: which compiled-in ranking policy actually governs promotion
     // (determinism recheck, confirmation holdout, replay cache) versus which
     // policies merely shadow-evaluate and get recorded for offline
-    // comparison. An unrecognized production_policy falls back to the first
-    // compiled-in policy rather than silently halting promotion. "all" is
-    // the standing default for active_policies -- every compiled-in policy
-    // shadow-evaluates unless explicitly narrowed; the production policy
-    // always evaluates regardless of this list, so a misconfigured allow-list
-    // can only shrink shadow reporting, never stop promotion.
+    // comparison. An unrecognized production_policy or malformed active list
+    // fails closed before measurement. "all" is the standing default for
+    // active_policies; explicit lists must contain known, unique names and
+    // include the production policy.
     std::string production_policy    = "latency-v1";
     std::string active_policies      = "all";
 
