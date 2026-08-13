@@ -88,6 +88,39 @@ void ggml_cuda_mul_mat_f_variant(
 
 """
 
+_MMF_CAPABILITY = """
+// Upstream-owned MMF capability predicate. This is deliberately separate from
+// should_use_mmf's performance policy so measured candidates and native routing
+// share the same hard launch preconditions.
+bool ggml_cuda_mmf_is_capable(
+        enum ggml_type type, int cc, int warp_size,
+        const int64_t * src0_ne, const size_t * src0_nb) {
+    if (ggml_is_quantized(type)) return false;
+
+    const size_t ts = ggml_type_size(type);
+    if (src0_ne[0] % (warp_size * (4/ts)) != 0) return false;
+    if (src0_nb[0] != ts) return false;
+    for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
+        if (src0_nb[i] % (2*ts) != 0) return false;
+    }
+    if (src0_ne[1] % mmf_get_rows_per_block(cc) != 0) return false;
+    if (GGML_CUDA_CC_IS_CDNA3(cc) && type == GGML_TYPE_BF16) return false;
+
+    switch (type) {
+        case GGML_TYPE_F32:
+            return ampere_mma_available(cc) || amd_mfma_available(cc);
+        case GGML_TYPE_F16:
+            return volta_mma_available(cc) || turing_mma_available(cc) ||
+                   amd_wmma_available(cc) || amd_mfma_available(cc);
+        case GGML_TYPE_BF16:
+            return ampere_mma_available(cc) || amd_wmma_available(cc) ||
+                   amd_mfma_available(cc);
+        default:
+            return false;
+    }
+}
+"""
+
 HEADER_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmf.cuh",
     description="MMF dispatchers take a forced nwarps and forward it",
@@ -160,6 +193,15 @@ HEADER_PATCH = FilePatch(
                  "    int forced_nwarps = 0);",
             guard=r"int forced_nwarps = 0\);",
         ),
+        Edit(
+            id="mmf-capability-declaration",
+            anchor=r"^bool ggml_cuda_should_use_mmf\(enum ggml_type type, int cc, int warp_size,",
+            rationale="declare the shared upstream-owned MMF hard capability predicate",
+            mode="insert_before",
+            text="bool ggml_cuda_mmf_is_capable(enum ggml_type type, int cc, int warp_size,\n"
+                 "        const int64_t * src0_ne, const size_t * src0_nb);\n\n",
+            guard=r"bool ggml_cuda_mmf_is_capable\(",
+        ),
     ),
 )
 
@@ -167,6 +209,28 @@ SOURCE_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmf.cu",
     description="MMF public entry accepts and forwards a forced nwarps",
     edits=(
+        Edit(
+            id="mmf-capability-helper",
+            anchor=r"^bool ggml_cuda_should_use_mmf\(enum ggml_type type, int cc, int warp_size,",
+            rationale="the upstream MMF selector opening, before its hard capability checks",
+            mode="insert_before",
+            text=_MMF_CAPABILITY,
+            guard=r"ggml_cuda_mmf_is_capable\(",
+        ),
+        Edit(
+            id="mmf-selector-uses-capability",
+            anchor=(r"    if \(ggml_is_quantized\(type\)\) \{[\s\S]*?"
+                    r"    if \(GGML_CUDA_CC_IS_CDNA3\(cc\) && type == GGML_TYPE_BF16\) \{\n"
+                    r"        return false;\n"
+                    r"    \}\n"),
+            rationale="replace duplicated hard capability checks with the shared helper",
+            mode="replace",
+            text="    if (!ggml_cuda_mmf_is_capable(type, cc, warp_size, src0_ne, src0_nb)) {\n"
+                 "        return false;\n"
+                 "    }\n\n",
+            guard=r"ggml_cuda_mmf_is_capable\(type, cc, warp_size, src0_ne, src0_nb\)",
+            max_span_lines=40,
+        ),
         Edit(
             id="mmf-public-param",
             anchor=r"^void ggml_cuda_mul_mat_f\(ggml_backend_cuda_context & ctx, "
