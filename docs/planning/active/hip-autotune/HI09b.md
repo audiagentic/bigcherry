@@ -2,7 +2,7 @@
 id: HI09b
 order: 0
 plan: hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-08-04T18:40:00+00:00'
 breadth: ''
 skill: intermediate
@@ -98,8 +98,8 @@ record/tune cycle.
 
 ## Ledger-events
 
-- chg_20260805_053447_validated-the-tuning-fixes-on_5741
-- 2026-08-05T05:34:47.710940+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260805_054935_kernel-variants-that-require-d_7547
+- 2026-08-05T05:49:35.668059+00:00 (updated-by): Updated: section:ledger-events
 
 ## Change Log
 
@@ -107,5 +107,6 @@ record/tune cycle.
 
 ## Ledger-events
 
-- chg_20260805_054935_kernel-variants-that-require-d_7547
-- 2026-08-05T05:49:35.668059+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260813_071005_hi09b-now-consumes-validated-c_1165
+- 2026-08-13T07:10:05.376070+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-13T07:10:32.375172+00:00 (state-transition): State: pending → in_progress
