@@ -176,6 +176,63 @@ def blake2b_digest(data: bytes) -> bytes:
     ).digest()
 
 
+def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str, int]:
+    """Preflight a v3 cache using the same bounds as the production reader.
+
+    This is deliberately a structural check only: candidate ABI validation
+    remains the C++ registry's responsibility.  Running it before publishing
+    an export catches accidental truncation, stale manifest binding, and
+    duplicate/unterminated entries while the producer still has a useful
+    error path.  It does not change or rewrite the wire bytes.
+    """
+    if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
+        raise SystemExit("replay cache is shorter than its header")
+    magic, version, artifact = struct.unpack_from("<III", blob)
+    if magic != MAGIC:
+        raise SystemExit("replay cache has bad magic")
+    if version != REPLAY_VERSION:
+        raise SystemExit("replay cache format version mismatch")
+    if artifact != ARTIFACT_VERSION:
+        raise SystemExit("replay cache artifact version mismatch")
+    sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
+        "<HHII", blob, 12)
+    if sig_schema != SIGNATURE_SCHEMA_VERSION:
+        raise SystemExit("replay cache signature schema version mismatch")
+    if hw_schema != HARDWARE_SCHEMA_VERSION:
+        raise SystemExit("replay cache hardware schema version mismatch")
+    stored_manifest = blob[24:40]
+    if manifest_hash is not None:
+        expected_manifest = bytes.fromhex(_digest_hex(manifest_hash, "manifest_hash"))
+        if stored_manifest != expected_manifest:
+            raise SystemExit("replay cache manifest hash differs from supplied manifest")
+    entries_bytes = entry_count * ENT_SIZE
+    strings_at = REPLAY_HEADER_SIZE + entries_bytes
+    expected = strings_at + string_bytes
+    if strings_at < REPLAY_HEADER_SIZE or expected < strings_at:
+        raise SystemExit("replay cache table size overflows")
+    if len(blob) != expected:
+        raise SystemExit("replay cache file is truncated or has trailing bytes")
+    payload = blob[REPLAY_HEADER_SIZE:]
+    if blob[40:56] != blake2b_digest(payload):
+        raise SystemExit("replay cache content checksum mismatch")
+
+    strings = blob[strings_at:expected]
+    seen: set[bytes] = set()
+    for index in range(entry_count):
+        entry = blob[REPLAY_HEADER_SIZE + index * ENT_SIZE:
+                     REPLAY_HEADER_SIZE + (index + 1) * ENT_SIZE]
+        dispatch = entry[:DIGEST_BYTES]
+        if dispatch in seen:
+            raise SystemExit("replay cache contains duplicate dispatch digest")
+        seen.add(dispatch)
+        name_offset = struct.unpack_from("<I", entry, 32)[0]
+        if name_offset >= string_bytes:
+            raise SystemExit("replay cache entry names a string outside the table")
+        if b"\0" not in strings[name_offset:]:
+            raise SystemExit("replay cache string table is not NUL-terminated")
+    return {"entry_count": entry_count, "string_bytes": string_bytes}
+
+
 def ggml_type_values(ggml_h: Path) -> dict[str, int]:
     """Numeric `ggml_type` values, parsed from upstream's own enum.
 
@@ -420,12 +477,15 @@ def build(
     if len(header) != REPLAY_HEADER_SIZE:
         raise AssertionError("replay header layout drifted from the v3 wire format")
 
+    blob = bytes(header) + payload
+    validate_blob(blob, manifest_hash=manifest_hash)
+
     print(
         f"  {entry_count} winner(s), {len(strings)} distinct candidate(s), "
         f"{len(string_blob)} string byte(s)"
     )
     print(f"  manifest {manifest['manifest_hash']}")
-    return bytes(header) + payload
+    return blob
 
 
 def _candidate_identity(candidate: dict[str, Any]) -> str:
