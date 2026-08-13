@@ -21,8 +21,9 @@ CUDA = FilePatch(
             id="reduce-telemetry-context-fields",
             anchor=r'^    try_allreduce_fn            try_allreduce = nullptr;$',
             rationale="retain the already-selected provider name for telemetry",
+            mode="replace",
             text=(
-                '\n    try_allreduce_fn            try_allreduce = nullptr;\n'
+                '    try_allreduce_fn            try_allreduce = nullptr;\n'
                 '    const char *                provider_name = "unknown";'
             ),
             guard=r'const char \*                provider_name',
@@ -31,8 +32,9 @@ CUDA = FilePatch(
             id="reduce-telemetry-provider-names",
             anchor=r'^static void ggml_backend_cuda_comm_init_none\(ggml_backend_cuda_comm_context \* ret\) \{$',
             rationale="name the existing selected providers without changing selection",
+            mode="replace",
             text=(
-                '\nstatic void ggml_backend_cuda_comm_init_none(ggml_backend_cuda_comm_context * ret) {\n'
+                'static void ggml_backend_cuda_comm_init_none(ggml_backend_cuda_comm_context * ret) {\n'
                 '    ret->provider_name = "meta";'
             ),
             guard=r'ret->provider_name = "meta"',
@@ -41,8 +43,9 @@ CUDA = FilePatch(
             id="reduce-telemetry-internal-name",
             anchor=r'^        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_internal;$',
             rationale="label the existing internal provider after successful init",
+            mode="replace",
             text=(
-                '\n        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_internal;\n'
+                '        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_internal;\n'
                 '        ret->provider_name = "internal";'
             ),
             guard=r'ret->provider_name = "internal"',
@@ -51,8 +54,9 @@ CUDA = FilePatch(
             id="reduce-telemetry-nccl-name",
             anchor=r'^        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_nccl;$',
             rationale="label the existing RCCL/NCCL provider after successful init",
+            mode="replace",
             text=(
-                '\n        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_nccl;\n'
+                '        ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_nccl;\n'
                 '        ret->provider_name = "rccl";'
             ),
             guard=r'ret->provider_name = "rccl"',
@@ -118,8 +122,9 @@ META = FilePatch(
             id="meta-reduce-telemetry-node-scope",
             anchor=r'^            bool backend_allreduce_success = false;$',
             rationale="keep the reduction tensors available through fallback completion",
+            mode="replace",
             text=(
-                '\n            std::vector<ggml_tensor *> nodes;\n'
+                '            std::vector<ggml_tensor *> nodes;\n'
                 '            bool backend_allreduce_success = false;'
             ),
             guard=r'^            std::vector<ggml_tensor \*> nodes;$',
@@ -137,8 +142,9 @@ META = FilePatch(
             anchor=r'^                const ggml_status status = allreduce_fallback\(i\);$'
                    r'\n^                if \(status != GGML_STATUS_SUCCESS\) \{$',
             rationale="the exact point where the generic fallback has been selected",
+            mode="replace",
             text=(
-                '\n                const ggml_status status = allreduce_fallback(i);\n'
+                '                const ggml_status status = allreduce_fallback(i);\n'
                 '#ifdef GGML_HIP_DISPATCH\n'
                 '                if (backend_ctx->comm_ctx) {\n'
                 '                    ggml_hip_reduce_telemetry_fallback_context(\n'

@@ -1,6 +1,10 @@
 """Source contracts for the telemetry-only HI58 reduction slice."""
 
+import importlib.util
 from pathlib import Path
+import shutil
+
+from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,3 +62,28 @@ def test_telemetry_does_not_claim_depth_without_handoff():
 
 def test_reduction_telemetry_is_linked_with_dispatch_only():
     assert '"../ggml-cuda/hip-autotune-reduce-telemetry.cpp"' in CMAME
+
+
+def test_pristine_apply_replaces_existing_control_flow_without_duplication(tmp_path):
+    """The HI58 edits must compile-shaped apply to untouched pinned sources."""
+    vendor = ROOT / "vendor" / "llama.cpp"
+    for relative in ("ggml/src/ggml-cuda/ggml-cuda.cu", "ggml/src/ggml-backend-meta.cpp"):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(vendor / relative, target)
+
+    spec = importlib.util.spec_from_file_location("hi58_patch", ROOT / "patches/0830_split_reduce_telemetry.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    results = apply_all(module.PATCHES, tmp_path)
+    assert all(result.ok for result in results)
+
+    cuda = (tmp_path / "ggml/src/ggml-cuda/ggml-cuda.cu").read_text(encoding="utf-8")
+    meta = (tmp_path / "ggml/src/ggml-backend-meta.cpp").read_text(encoding="utf-8")
+    assert cuda.count("try_allreduce_fn            try_allreduce = nullptr;") == 1
+    assert cuda.count("static void ggml_backend_cuda_comm_init_none") == 1
+    assert cuda.count("ggml_backend_cuda_comm_try_allreduce_internal;") == 1
+    assert cuda.count("ggml_backend_cuda_comm_try_allreduce_nccl;") == 1
+    assert meta.count("bool backend_allreduce_success = false;") == 1
+    assert meta.count("const ggml_status status = allreduce_fallback(i);") == 1
