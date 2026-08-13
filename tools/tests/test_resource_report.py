@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from bigcherry import resource_report
 
@@ -78,6 +81,26 @@ class ResourceReportTests(unittest.TestCase):
         changed = resource_report.build_report((_raw() + "\n").encode(), **kwargs)
         self.assertEqual(one, two)
         self.assertNotEqual(one["raw_report_hash"], changed["raw_report_hash"])
+
+    def test_blacklist_loader_requires_recognized_report_and_preserves_reason(self):
+        policy = resource_report.ResourcePolicyV1("p", "gfx1100")
+        report = resource_report.build_report(
+            _raw(scratch=16).encode(), compiler_family="clang", compiler_major=21,
+            compiler_version="21", architecture="gfx1100",
+            source_revision="a" * 40, manifest_hash="b" * 32,
+            symbol_map={"_Z6kernelv": ["mmvq:q8_0:w1:nw1:rpb1:sk0:v1"]},
+            policy=policy)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "resource-report.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            self.assertEqual(
+                resource_report.load_blacklist(path),
+                {("mmvq:q8_0:w1:nw1:rpb1:sk0:v1", "gfx1100"): ("scratch",)},
+            )
+            report["recognized_schema"] = False
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaises(resource_report.ResourceError):
+                resource_report.load_blacklist(path)
 
 
 if __name__ == "__main__":
