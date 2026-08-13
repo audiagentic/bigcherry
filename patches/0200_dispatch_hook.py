@@ -31,7 +31,17 @@ _INCLUDE = """
 #ifdef GGML_HIP_DISPATCH
 #include "ggml-cuda/hip-autotune-dispatch.cuh"
 #endif
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+#include "ggml-cuda/hip-autotune-record.h"
+#endif
 """
+
+def _record_api(name):
+    return (
+        "#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
+        f"        ggml_hip_record_effective_call_api(\"{name}\");\n"
+        "#endif\n"
+    )
 
 # A non-static forwarder rather than making the original non-static: upstream
 # keeps its own linkage, and the exported name is ours to keep stable.
@@ -104,6 +114,38 @@ PATCH = FilePatch(
             rationale="upstream's ggml-cuda include block",
             text=_INCLUDE,
             guard=r'#include "ggml-cuda/hip-autotune-dispatch\.cuh"',
+        ),
+        Edit(
+            id="blas-api-sgemm-telemetry",
+            anchor=r"^            cublasSgemm\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
+            rationale="the native single-matrix F32 BLAS branch",
+            mode="insert_before",
+            text=_record_api("cublasSgemm"),
+            guard=r"ggml_hip_record_effective_call_api\(\"cublasSgemm\"\)",
+        ),
+        Edit(
+            id="blas-api-gemmex-telemetry",
+            anchor=r"^            cublasGemmEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
+            rationale="the native single-matrix typed BLAS branch",
+            mode="insert_before",
+            text=_record_api("cublasGemmEx"),
+            guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmEx\"\)",
+        ),
+        Edit(
+            id="blas-api-strided-telemetry",
+            anchor=r"^        cublasGemmStridedBatchedEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
+            rationale="the native strided-batched BLAS branch",
+            mode="insert_before",
+            text=_record_api("cublasGemmStridedBatchedEx"),
+            guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmStridedBatchedEx\"\)",
+        ),
+        Edit(
+            id="blas-api-pointer-batched-telemetry",
+            anchor=r"^        cublasGemmBatchedEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
+            rationale="the native pointer-batched BLAS branch",
+            mode="insert_before",
+            text=_record_api("cublasGemmBatchedEx"),
+            guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmBatchedEx\"\)",
         ),
         Edit(
             id="cublas-forwarder",
