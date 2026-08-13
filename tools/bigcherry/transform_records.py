@@ -145,7 +145,13 @@ def _validate_gap(record: dict[str, Any], where: str) -> dict[str, Any]:
         "reason": _text(record.get("reason"), "reason", where),
         "evidence_references": _evidence(record.get("evidence_references"), where),
         "pattern": _text(record.get("pattern"), "pattern", where),
+        # Native-family was added after the initial JSONL schema.  Keep old
+        # records readable while making the grouping dimension explicit.
+        "native_family": "unknown",
     }
+    if "native_family" in record and record["native_family"] is not None:
+        normalized["native_family"] = _text(
+            record["native_family"], "native_family", where).casefold()
     provenance = _provenance(record, where)
     normalized["hardware_provenance"] = provenance["hardware"]
     normalized["build_provenance"] = provenance["build"]
