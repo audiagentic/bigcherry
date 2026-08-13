@@ -26,6 +26,28 @@ const char * json_type(const ggml_tensor * tensor) {
     return tensor == nullptr ? "unknown" : ggml_type_name(tensor->type);
 }
 
+const char * provider_label(const char * value) {
+    if (value == nullptr) {
+        return "unknown";
+    }
+    if (std::string(value) == "internal" || std::string(value) == "rccl" ||
+        std::string(value) == "meta" || std::string(value) == "unknown" ||
+        std::string(value) == "provider_declined") {
+        return value;
+    }
+    return "unknown";
+}
+
+const char * handoff_label(const char * value) {
+    if (value == nullptr || std::string(value) == "none") {
+        return "none";
+    }
+    if (std::string(value) == "provider_declined_handoff_meta") {
+        return value;
+    }
+    return "unknown";
+}
+
 void write_event(const int * devices,
                  size_t device_count,
                  ggml_tensor ** tensors,
@@ -37,6 +59,12 @@ void write_event(const int * devices,
     if (path == nullptr || tensors == nullptr || tensors[0] == nullptr) {
         return;
     }
+
+    // A null device array carries no topology evidence. Never manufacture a
+    // list of -1 ordinals, and never claim a fallback depth without a handoff.
+    const size_t normalized_device_count = devices == nullptr ? 0 : device_count;
+    const size_t normalized_fallback_depth =
+        handoff == nullptr || std::string(handoff) == "none" ? 0 : fallback_depth;
 
     // The context fields are intentionally observed, not changed. Keep this
     // JSONL channel independent from the tuning/replay artifacts.
@@ -54,12 +82,11 @@ void write_event(const int * devices,
         "\"handoff\":\"%s\",\"fallback_depth\":%zu,"
         "\"element_count\":%lld,\"element_type\":\"%s\","
         "\"device_count\":%zu,\"devices\":[",
-        timestamp, requested != nullptr ? requested : "unknown",
-        effective != nullptr ? effective : "unknown",
-        handoff != nullptr ? handoff : "none", fallback_depth,
+        timestamp, provider_label(requested), provider_label(effective),
+        handoff_label(handoff), normalized_fallback_depth,
         static_cast<long long>(ggml_nelements(tensors[0])), json_type(tensors[0]),
-        device_count);
-    for (size_t i = 0; i < device_count; ++i) {
+        normalized_device_count);
+    for (size_t i = 0; i < normalized_device_count; ++i) {
         std::fprintf(file, "%s%d", i == 0 ? "" : ",", devices != nullptr ? devices[i] : -1);
     }
     std::fprintf(file, "]}\n");
