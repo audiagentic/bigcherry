@@ -38,7 +38,7 @@ _INCLUDE = """
 
 def _record_api(name):
     return (
-        "#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
+        "\n#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
         f"        ggml_hip_record_effective_call_api(\"{name}\");\n"
         "#endif\n"
     )
@@ -117,33 +117,33 @@ PATCH = FilePatch(
         ),
         Edit(
             id="blas-api-sgemm-telemetry",
-            anchor=r"^            cublasSgemm\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
-            rationale="the native single-matrix F32 BLAS branch",
-            mode="insert_before",
+            anchor=r"^                    \(const float \*\) beta,  \(float       \*\)  dst_ptr, ne0\)\);$",
+            rationale="the completed native single-matrix F32 BLAS call",
             text=_record_api("cublasSgemm"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasSgemm\"\)",
         ),
         Edit(
             id="blas-api-gemmex-telemetry",
-            anchor=r"^            cublasGemmEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
-            rationale="the native single-matrix typed BLAS branch",
-            mode="insert_before",
+            anchor=r"^                    CUBLAS_GEMM_DEFAULT_TENSOR_OP\)\);$",
+            rationale="the completed native single-matrix typed BLAS call",
             text=_record_api("cublasGemmEx"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmEx\"\)",
         ),
         Edit(
             id="blas-api-strided-telemetry",
-            anchor=r"^        cublasGemmStridedBatchedEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
-            rationale="the native strided-batched BLAS branch",
-            mode="insert_before",
+            anchor=r"^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\)\);$",
+            rationale="the completed native strided-batched BLAS call",
+            expect_matches=2,
+            occurrence=0,
             text=_record_api("cublasGemmStridedBatchedEx"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmStridedBatchedEx\"\)",
         ),
         Edit(
             id="blas-api-pointer-batched-telemetry",
-            anchor=r"^        cublasGemmBatchedEx\(ctx\.cublas_handle\(\), CUBLAS_OP_T, CUBLAS_OP_N,$",
-            rationale="the native pointer-batched BLAS branch",
-            mode="insert_before",
+            anchor=r"^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\)\);$",
+            rationale="the completed native pointer-batched BLAS call",
+            expect_matches=2,
+            occurrence=1,
             text=_record_api("cublasGemmBatchedEx"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmBatchedEx\"\)",
         ),
