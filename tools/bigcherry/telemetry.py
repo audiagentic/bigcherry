@@ -44,6 +44,13 @@ def _nonnegative(value: Any, field: str, where: str) -> int:
     return value
 
 
+def _positive(value: Any, field: str, where: str) -> int:
+    value = _nonnegative(value, field, where)
+    if value == 0:
+        raise TelemetryError(f"{where}: {field} must be positive")
+    return value
+
+
 def _provenance(value: Any, where: str) -> dict[str, str]:
     if not isinstance(value, dict):
         raise TelemetryError(f"{where}: provenance must be an object")
@@ -94,6 +101,10 @@ def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]
 
 
 def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]]:
+    # SPLIT_REDUCE is a multi-device evidence channel.  A zero/one-device
+    # record cannot establish collective topology and must not enter later
+    # attribution or tuning analysis.
+    timestamp_us = _positive(row.get("timestamp_us"), "timestamp_us", where)
     requested = _text(row.get("requested_provider"), "requested_provider", where)
     effective = _text(row.get("effective_provider"), "effective_provider", where)
     handoff = _text(row.get("handoff"), "handoff", where)
@@ -108,7 +119,9 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
         raise TelemetryError(f"{where}: handoff requires positive fallback depth")
     _nonnegative(row.get("element_count"), "element_count", where)
     _text(row.get("element_type"), "element_type", where)
-    count = _nonnegative(row.get("device_count"), "device_count", where)
+    count = _positive(row.get("device_count"), "device_count", where)
+    if count < 2:
+        raise TelemetryError(f"{where}: device_count must be at least 2")
     devices = row.get("devices")
     if not isinstance(devices, list) or len(devices) != count:
         raise TelemetryError(f"{where}: device_count does not match devices")
@@ -117,8 +130,9 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     if len(set(devices)) != len(devices):
         raise TelemetryError(f"{where}: duplicate device ordinal")
     event_id = _text(row.get("event_id"), "event_id", where) if "event_id" in row else None
-    key = event_id or f"split:{row.get('timestamp_us')}:{requested}:{effective}:{devices}"
-    return key, {**row, "devices": list(devices), "event_id": event_id}
+    key = event_id or f"split:{timestamp_us}:{requested}:{effective}:{devices}"
+    return key, {**row, "timestamp_us": timestamp_us, "device_count": count,
+                 "devices": list(devices), "event_id": event_id}
 
 
 def load_telemetry(paths: str | Path | Iterable[str | Path], *,
