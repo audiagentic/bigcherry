@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
+from .multi_gpu_validate import validate_multi_gpu_claim
 
 
 class ReleaseGateError(ValueError):
@@ -44,6 +45,7 @@ def validate_release_claim(record: dict[str, Any]) -> None:
     architecture coverage and candidate coverage are mandatory and must agree
     with the identities they describe.
     """
+    validate_multi_gpu_claim(record)
     if record.get("claim") != "validated" and record.get("stage") != "validated":
         return
 
