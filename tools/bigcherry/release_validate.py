@@ -116,6 +116,15 @@ def validate_release_claim(record: dict[str, Any]) -> None:
         raise ReleaseGateError(
             "validated release claim lacks candidate_coverage evidence")
 
+    supported = record.get("supported_coverage")
+    if supported is not None:
+        try:
+            from .autotune_schema import validate_supported_coverage
+            validate_supported_coverage(supported)
+        except (ValueError, TypeError) as exc:
+            raise ReleaseGateError(
+                f"supported_coverage evidence is invalid: {exc}") from exc
+
     architecture, required_architectures = _architecture_report(record)
     variant_set = candidates.get("variant_set")
     if variant_set == "inventory" and "by_architecture" not in record["architecture_coverage"]:
