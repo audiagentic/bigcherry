@@ -30,6 +30,7 @@ from typing import Any
 
 from . import paths
 from .multi_gpu_validate import validate_multi_gpu_claim
+from .device_state_validate import validate_device_state_report
 
 
 class ReleaseGateError(ValueError):
@@ -46,6 +47,8 @@ def validate_release_claim(record: dict[str, Any]) -> None:
     with the identities they describe.
     """
     validate_multi_gpu_claim(record)
+    if any(key in record for key in ("device_state_pre", "device_state_post", "device_clock_drift")):
+        validate_device_state_report(record)
     if record.get("claim") != "validated" and record.get("stage") != "validated":
         return
 
