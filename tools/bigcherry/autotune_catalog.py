@@ -582,6 +582,36 @@ def read_winners(measurements: Path) -> set[str]:
     return winners
 
 
+def enumerate_supported_candidates(cuda_dir: Path,
+                                   architectures: list[str],
+                                   types: list[str]) -> list[Candidate]:
+    """Enumerate the architecture-valid candidate universe independently.
+
+    Workload profiles intentionally restrict candidates to observed types and
+    widths. Coverage must still answer whether an unobserved type is supported
+    by this source checkout, so this mirrors ``full-max`` without consulting a
+    record-mode inventory.
+    """
+    known = {t.removeprefix("GGML_TYPE_").lower() for t in types}
+    unrestricted = Inventory(
+        mmq_types=known,
+        mmvq_types=known,
+        mmvf_types=set(FLOAT_TYPES),
+        mmf_types=set(FLOAT_TYPES),
+        widths=set(range(1, max(MMF_WIDTHS) + 1)),
+    )
+    candidates = enumerate_natives(
+        architectures, ["mmq", "mmvq", "mmvf", "mmf", "blas"])
+    candidates += enumerate_mmq(cuda_dir, architectures, types, unrestricted,
+                                restrict=False)
+    candidates += enumerate_mmvf(architectures, unrestricted, restrict=False)
+    candidates += enumerate_mmf(architectures, unrestricted, restrict=False)
+    candidates += enumerate_mmvq(architectures, types, unrestricted,
+                                 restrict=False, staged=False)
+    candidates += enumerate_blas(architectures)
+    return candidates
+
+
 def build_manifest(root: Path, *, variant_set: str,
                    architectures: list[str],
                    inventory: Inventory | None,
@@ -601,6 +631,8 @@ def build_manifest(root: Path, *, variant_set: str,
             "candidate set cannot be derived from this checkout")
 
     inventory = inventory or Inventory()
+    supported_candidates = enumerate_supported_candidates(
+        cuda, architectures, types)
     # `inventory` builds carry native candidates only: they exist to discover
     # which signatures a workload actually executes (standards 6.2).
     native_only = variant_set == "inventory"
@@ -628,6 +660,8 @@ def build_manifest(root: Path, *, variant_set: str,
 
     if resource_blacklist:
         candidates = apply_resource_blacklist(candidates, resource_blacklist)
+        supported_candidates = apply_resource_blacklist(
+            supported_candidates, resource_blacklist)
 
     # `replay-slim` is the production profile: compile only the variants a
     # tuning run actually chose, so the binary carries the winners and nothing
@@ -666,6 +700,8 @@ def build_manifest(root: Path, *, variant_set: str,
     }
     manifest["coverage"] = candidate_coverage(
         manifest["candidates"], inventory, variant_set)
+    manifest["supported_coverage"] = supported_candidate_coverage(
+        [c.to_dict() for c in supported_candidates], inventory)
     manifest["summary"] = schema.validate_and_summarise(manifest)
     manifest["manifest_hash"] = manifest_hash(manifest)
     manifest["build_descriptor"] = build_descriptor(manifest)
@@ -710,6 +746,60 @@ def candidate_coverage(candidates: list[dict[str, Any]],
         "schema_version": 1,
         "variant_set": variant_set,
         "observed_types": observed,
+        "by_type": rows,
+    }
+
+
+def supported_candidate_coverage(candidates: list[dict[str, Any]],
+                                 inventory: Inventory) -> dict[str, Any]:
+    """Report supported candidates separately from observed workload types."""
+    observed = sorted(inventory.quant_types | inventory.float_types)
+    native_candidates = [c for c in candidates
+                         if c.get("source_class") == "native_wrapper"]
+    alternatives = [c for c in candidates
+                    if c.get("source_class") != "native_wrapper"
+                    and c.get("config", {}).get("type")]
+    supported_types = sorted({c["config"]["type"] for c in alternatives})
+    report_types = sorted(set(observed) | set(supported_types))
+    rows: dict[str, dict[str, Any]] = {}
+
+    for type_name in report_types:
+        type_alternatives = [c for c in alternatives
+                             if c.get("config", {}).get("type") == type_name]
+        type_candidates = native_candidates + type_alternatives
+        architectures = sorted({arch for c in type_candidates
+                                 for arch in c.get("architectures", [])})
+        by_architecture = {
+            arch: {
+                "native_count": sum(
+                    arch in c.get("architectures", [])
+                    for c in native_candidates),
+                "alternative_count": sum(
+                    arch in c.get("architectures", [])
+                    for c in type_alternatives),
+            }
+            for arch in architectures
+        }
+        is_supported = bool(type_alternatives)
+        row: dict[str, Any] = {
+            "observed": type_name in observed,
+            "supported": is_supported,
+            "candidate_count": len(type_candidates),
+            "native_count": len(native_candidates),
+            "alternative_count": len(type_alternatives),
+            "alternative_families": sorted({c["family"] for c in type_alternatives}),
+            "architectures": architectures,
+            "by_architecture": by_architecture,
+        }
+        if not is_supported:
+            row["zero_alternative_reason"] = (
+                "type is not present in the supported candidate universe")
+        rows[type_name] = row
+
+    return {
+        "schema_version": 1,
+        "observed_types": observed,
+        "supported_types": supported_types,
         "by_type": rows,
     }
 

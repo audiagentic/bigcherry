@@ -104,6 +104,20 @@ class HI09CatalogCompletenessTests(unittest.TestCase):
             self.assertNotEqual(candidate["architecture_mask"], 0)
             self.assertEqual(candidate["architecture_mask"] & ~target_mask, 0)
 
+    def test_supported_coverage_is_present_and_is_not_inventory_limited(self):
+        manifest = catalog.build_manifest(
+            paths.llama_root(None),
+            variant_set="workload-max",
+            architectures=schema.ARCHITECTURE_GROUPS["rdna3"],
+            inventory=catalog.Inventory(mmq_types={"q8_0"}, widths={1}),
+            source_revision="hi61-test",
+        )
+        coverage = manifest["supported_coverage"]
+        self.assertIn("q6_k", coverage["supported_types"])
+        self.assertIn("q6_k", coverage["by_type"])
+        self.assertFalse(coverage["by_type"]["q6_k"]["observed"])
+        self.assertGreater(coverage["by_type"]["q6_k"]["alternative_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

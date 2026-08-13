@@ -485,6 +485,73 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
                 f"native_wrapper. Without one there is no correctness "
                 f"reference and no baseline to beat.")
 
+    supported = manifest.get("supported_coverage")
+    if supported is not None:
+        validate_supported_coverage(supported)
+
+
+def validate_supported_coverage(report: dict[str, Any]) -> None:
+    """Validate optional supported-vs-observed candidate coverage evidence."""
+    if not isinstance(report, dict) or report.get("schema_version") != 1:
+        raise SchemaError("supported_coverage must use schema_version 1")
+    observed = report.get("observed_types")
+    supported = report.get("supported_types")
+    by_type = report.get("by_type")
+    for name, value in (("observed_types", observed),
+                        ("supported_types", supported)):
+        if (not isinstance(value, list)
+                or any(not isinstance(item, str) or not item for item in value)
+                or value != sorted(set(value))):
+            raise SchemaError(
+                f"supported_coverage.{name} must be a sorted unique list")
+    if (not isinstance(by_type, dict)
+            or set(by_type) != set(observed) | set(supported)):
+        raise SchemaError(
+            "supported_coverage.by_type must cover observed and supported types")
+
+    for type_name, row in by_type.items():
+        if not isinstance(row, dict):
+            raise SchemaError(f"supported_coverage.by_type.{type_name} is invalid")
+        if (not isinstance(row.get("observed"), bool)
+                or not isinstance(row.get("supported"), bool)):
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name} needs observed/supported booleans")
+        if (row["observed"] != (type_name in observed)
+                or row["supported"] != (type_name in supported)):
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name} contradicts its type sets")
+        for field in ("candidate_count", "native_count", "alternative_count"):
+            value = row.get(field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise SchemaError(
+                    f"supported_coverage.by_type.{type_name}.{field} must be non-negative int")
+        if row["candidate_count"] != row["native_count"] + row["alternative_count"]:
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name} candidate counts disagree")
+        families = row.get("alternative_families")
+        if (not isinstance(families, list)
+                or any(not isinstance(family, str) or not family for family in families)
+                or families != sorted(set(families))):
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name}.alternative_families is invalid")
+        architectures = row.get("architectures")
+        if (not isinstance(architectures, list)
+                or any(arch not in ARCHITECTURES for arch in architectures)
+                or architectures != sorted(set(architectures))):
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name}.architectures is invalid")
+        by_architecture = row.get("by_architecture")
+        if (not isinstance(by_architecture, dict)
+                or set(by_architecture) != set(architectures)):
+            raise SchemaError(
+                f"supported_coverage.by_type.{type_name}.by_architecture is incomplete")
+        if not row["supported"]:
+            reason = row.get("zero_alternative_reason")
+            if (row["alternative_count"] != 0
+                    or not isinstance(reason, str) or not reason):
+                raise SchemaError(
+                    f"unsupported type {type_name!r} lacks an explicit zero-alternative reason")
+
 
 def validate_and_summarise(manifest: dict[str, Any]) -> dict[str, Any]:
     """Validate, then return per-family and per-source-class counts."""

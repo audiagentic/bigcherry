@@ -119,6 +119,12 @@ class ReleaseGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "variant_set"):
             release_validate.validate_release_claim(record)
 
+    def test_validated_claim_rejects_malformed_supported_coverage(self):
+        record = self._evidence()
+        record["supported_coverage"] = {"schema_version": 2}
+        with self.assertRaisesRegex(ValueError, "supported_coverage"):
+            release_validate.validate_release_claim(record)
+
 
 class ProbeTests(unittest.TestCase):
     def test_run_already_exists_is_refused(self):
