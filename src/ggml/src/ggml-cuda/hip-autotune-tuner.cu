@@ -549,6 +549,24 @@ static bool hip_event_destroy_checked(hipEvent_t & event, const char * what) {
     return hip_ok(status, what);
 }
 
+// A failed HIP timing transaction can poison the context even after its
+// pending error is consumed. SMI capture calls ggml_cuda_get_device(), which
+// is deliberately fail-fast on that condition, so disable further SMI reads
+// for this process once any timing failure is observed. Measurements remain
+// valid as explicit unavailable evidence; timing failures themselves still
+// reject the affected round/signature.
+std::atomic<bool> g_smi_runtime_disabled{false};
+
+static void disable_smi_after_measurement_failure() {
+    g_smi_runtime_disabled.store(true, std::memory_order_relaxed);
+    (void) hipGetLastError();
+}
+
+static bool smi_capture_enabled() {
+    return ggml_hip_smi_enabled() &&
+        !g_smi_runtime_disabled.load(std::memory_order_relaxed);
+}
+
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     const ggml_hip_launch_context & lc,
                     int warmup, int samples, int launches_per_sample,
@@ -571,9 +589,13 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         const bool stop_ok = hip_event_destroy_checked(stop, "hipEventDestroy(stop)");
         return start_ok && stop_ok;
     };
-    if (!hip_ok(hipEventCreate(&start), "hipEventCreate(start)")) return false;
+    if (!hip_ok(hipEventCreate(&start), "hipEventCreate(start)")) {
+        disable_smi_after_measurement_failure();
+        return false;
+    }
     if (!hip_ok(hipEventCreate(&stop), "hipEventCreate(stop)")) {
         destroy_events();
+        disable_smi_after_measurement_failure();
         return false;
     }
 
@@ -599,10 +621,12 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
         destroy_events();
+        disable_smi_after_measurement_failure();
         return false;
     }
     if (hipGetLastError() != hipSuccess) {
         destroy_events();
+        disable_smi_after_measurement_failure();
         return false;
     }
     trace_workspace_event(stage, "synchronize", candidate->stable_name);
@@ -626,6 +650,7 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         const int64_t host_start = ggml_time_us();
         if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
             destroy_events();
+            disable_smi_after_measurement_failure();
             return false;
         }
         // Several launches per sample when one kernel is below event
@@ -635,10 +660,12 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         }
         if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
             destroy_events();
+            disable_smi_after_measurement_failure();
             return false;
         }
         if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
             destroy_events();
+            disable_smi_after_measurement_failure();
             return false;
         }
         const int64_t host_end = ggml_time_us();
@@ -647,11 +674,13 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")
                 || !std::isfinite(ms) || ms <= 0.0f) {
             destroy_events();
+            disable_smi_after_measurement_failure();
             return false;
         }
         const double us = (double) ms * 1000.0 / (double) launches_per_sample;
         if (!std::isfinite(us) || us <= 0.0) {
             destroy_events();
+            disable_smi_after_measurement_failure();
             return false;
         }
         gpu_us.push_back(us);
@@ -668,12 +697,18 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         if (current != workspace_baseline) {
             GGML_LOG_WARN("bigcherry: workspace did not return to baseline "
                           "(%zu != %zu)\n", current, workspace_baseline);
+            disable_smi_after_measurement_failure();
             return false;
         }
         *pool_peak_bytes = peak >= workspace_baseline ? peak - workspace_baseline : 0;
     }
 #endif
-    return destroy_ok && hipGetLastError() == hipSuccess;
+    const hipError_t last_status = hipGetLastError();
+    if (!destroy_ok || last_status != hipSuccess) {
+        disable_smi_after_measurement_failure();
+        return false;
+    }
+    return true;
 }
 
 // HI34: derive the shared launch batch from a one-launch-per-sample native
@@ -821,7 +856,7 @@ CounterbalancedRound run_counterbalanced_round(
         return out;
     }
 
-    const bool smi_enabled = ggml_hip_smi_enabled();
+    const bool smi_enabled = smi_capture_enabled();
     const int hip_device = smi_enabled ? ggml_cuda_get_device() : -1;
     auto run_order = [&](bool reverse_order, std::vector<double> & gpu,
                          std::vector<double> & host,
@@ -1518,12 +1553,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         return native.candidate;
     }
 
-    result.device_state_pre = ggml_hip_smi_enabled()
+    result.device_state_pre = smi_capture_enabled()
         ? ggml_hip_query_device_state(ggml_cuda_get_device())
         : ggml_hip_device_state{};
     result.device_state_pre_json = device_state_json(result.device_state_pre);
     auto capture_device_state_post = [&]() {
-        if (result.measurement_failure) {
+        if (result.measurement_failure || !smi_capture_enabled()) {
             // A failed HIP launch can poison the context even though the
             // timing transaction has rejected the sample. Do not call
             // ggml_cuda_get_device()/RSMI after that point; the post snapshot
@@ -1533,7 +1568,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             result.device_clock_drift_json = "{\"status\":\"unavailable\"}";
             return;
         }
-        result.device_state_post = ggml_hip_smi_enabled()
+        result.device_state_post = smi_capture_enabled()
             ? ggml_hip_query_device_state(ggml_cuda_get_device())
             : ggml_hip_device_state{};
         result.device_state_post_json = device_state_json(result.device_state_post);

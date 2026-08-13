@@ -243,7 +243,10 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("(void) hipGetLastError();", helper)
         self.assertIn("smi_enabled && complete", helper)
         self.assertIn("bool measurement_failure = false", tuner)
-        self.assertIn("if (result.measurement_failure)", tuner)
+        self.assertIn("if (result.measurement_failure || !smi_capture_enabled())", tuner)
+        self.assertIn("g_smi_runtime_disabled", tuner)
+        self.assertIn("disable_smi_after_measurement_failure();", tuner)
+        self.assertIn("const bool smi_enabled = smi_capture_enabled();", tuner)
         self.assertNotIn("sclk_mhz", helper[helper.index("run_order") :])
         self.assertGreaterEqual(tuner.count("run_counterbalanced_round("), 4)
 
