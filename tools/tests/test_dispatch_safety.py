@@ -16,6 +16,54 @@ SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
 
 
 class TestDispatchSafetyContracts(unittest.TestCase):
+    def test_workspace_accounting_uses_requested_size_and_preserves_pool_size(self):
+        patch = (ROOT / "patches" / "0900_pool_workspace_metrics.py").read_text(
+            encoding="utf-8"
+        )
+
+        requested_member = patch.index("size_t bc_requested_size = 0;")
+        requested_assignment = patch.index(
+            "this->bc_requested_size = size * sizeof(T);"
+        )
+        note_alloc = patch.index(
+            "pool->bc_workspace_note_alloc(this->bc_requested_size);"
+        )
+        note_free = patch.index(
+            "pool->bc_workspace_note_free(this->bc_requested_size);"
+        )
+        pool_free = patch.index(r"pool->free\(ptr, actual_size\);")
+
+        self.assertLess(requested_member, requested_assignment)
+        self.assertLess(requested_assignment, note_alloc)
+        # Accounting follows the request, while the real allocator continues
+        # to release the size returned by its best-fit allocation.
+        self.assertNotEqual(note_free, pool_free)
+        self.assertIn("bc_requested_size", patch)
+        self.assertIn("actual_size", patch)
+
+    def test_workspace_clear_rebase_isolated_before_warmup_only(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("bool time_candidate(")
+        end = tuner.index("// HI34:", start)
+        function = tuner[start:end]
+
+        clear = function.index("bc_workspace_clear_cache();")
+        warmup = function.index("for (int i = 0; i < warmup; ++i)")
+        sync = function.index("hipStreamSynchronize(lc.stream)")
+        rebase = function.index("bc_workspace_reset_peak();")
+        self.assertLess(clear, warmup)
+        self.assertLess(warmup, sync)
+        self.assertLess(sync, rebase)
+        self.assertIn("if (workspace_ctx != nullptr && isolate_workspace)", function)
+        self.assertIn("peak >= workspace_baseline", function)
+
+        # Final/confirmation timing is intentionally interleaved and must not
+        # opt into the isolated cache-clear/rebase protocol.
+        final_calls = tuner[tuner.index("for (int round = 0; round < config.final_samples;"):]
+        self.assertNotIn("&ctx, true", final_calls)
+        confirmation = tuner[tuner.index("const int rounds = std::max(config.confirmation_samples"):]
+        self.assertNotIn("&ctx, true", confirmation)
+
     def test_mmvq_native_moe_guard_precedes_native_return(self):
         source = DISPATCH.read_text(encoding="utf-8")
         start = source.index("bool ggml_hip_mmvq_can_execute(")
