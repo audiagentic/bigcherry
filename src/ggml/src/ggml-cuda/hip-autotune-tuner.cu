@@ -292,7 +292,9 @@ std::string journal_result_summary(
         ",\"reverse_retime_attempts\":" +
         std::to_string(result.reverse_retime_attempts) +
         ",\"reverse_retime_passed\":" +
-        std::to_string(result.reverse_retime_passed) + "}";
+        std::to_string(result.reverse_retime_passed) +
+        ",\"measurement_failure\":" +
+        (result.measurement_failure ? "true" : "false") + "}";
 }
 
 // Called from every g_results.emplace() site (there are several -- most are
@@ -2172,6 +2174,7 @@ void ggml_hip_tuner_flush() {
                 "\"device_clock_drift\":%s,"
                 "\"clock_drift_rounds\":%d,\"reverse_retime_attempts\":%d,"
                 "\"reverse_retime_passed\":%d,\"retime_status\":\"%s\","
+                "\"measurement_failure\":%s,"
                 "\"canary_state\":\"%s\",\"provisional_winner\":\"%s\","
                 "\"production_policy\":{\"name\":\"%s\",\"version\":%d},"
                 "\"ranking_decisions\":%s",
@@ -2199,6 +2202,7 @@ void ggml_hip_tuner_flush() {
                 r.device_clock_drift_json.c_str(),
                 r.clock_drift_rounds, r.reverse_retime_attempts,
                 r.reverse_retime_passed, r.retime_status.c_str(),
+                r.measurement_failure ? "true" : "false",
                 canary_state_name(r.canary_state), r.provisional_winner.c_str(),
                 r.production_policy_name.c_str(), r.production_policy_version,
                 r.ranking_decisions_json.c_str());
