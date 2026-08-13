@@ -59,6 +59,57 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertEqual(entry[32:36], b"\x00\x00\x00\x00")
         self.assertEqual(payload[replay_cache.ENT_SIZE:], b"mmvq:native:v1\x00")
 
+    def test_v3_header_and_entry_sizes_are_explicit_wire_contract(self):
+        self.assertEqual(replay_cache.REPLAY_HEADER_SIZE, 56)
+        self.assertEqual(replay_cache.ENT_SIZE, 54)
+        # Header: 3x u32, 2x u16, 2x u32, then two 16-byte digests.
+        self.assertEqual(struct.calcsize("<IIIHHII16s16s"), 56)
+        # Entry: two digests, name offset, implementation ABI, three i32
+        # variants, and four byte-sized variant fields.
+        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB"), 54)
+
+    def test_deterministic_round_trip_is_independent_of_measurement_order(self):
+        root, manifest, ggml_h, measurements = self._fixture()
+        records = [
+            {"kind": "header", "source_revision": "b" * 40,
+             "manifest_hash": "a" * 32},
+            {"kind": "result", "dispatch": "B" * 32,
+             "signature": "D" * 32, "winner": "mmvq:native:v1",
+             "native": "mmvq:native:v1"},
+            {"kind": "result", "dispatch": "A" * 32,
+             "signature": "C" * 32, "winner": "mmvq:native:v1",
+             "native": "mmvq:native:v1"},
+        ]
+        measurements.write_text("\n".join(json.dumps(row) for row in records) + "\n",
+                                encoding="utf-8")
+        forward = replay_cache.build(measurements, manifest, ggml_h)
+        measurements.write_text("\n".join(json.dumps(row) for row in [
+            records[0], records[2], records[1]]) + "\n", encoding="utf-8")
+        reverse = replay_cache.build(measurements, manifest, ggml_h)
+        self.assertEqual(forward, reverse)
+
+    def test_cpp_reader_rejects_partial_headers_and_records_before_offsets(self):
+        source = (Path(__file__).resolve().parents[2] /
+                  "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
+        self.assertIn("bytes.size() < HDR_SIZE", source)
+        self.assertIn("bytes.size() != expected", source)
+        self.assertIn("content checksum mismatch", source)
+        self.assertIn("Checksum before trusting any offset", source)
+
+    def test_cpp_reader_enforces_abi_and_version_namespace_before_loading(self):
+        source = (Path(__file__).resolve().parents[2] /
+                  "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
+        header = (Path(__file__).resolve().parents[2] /
+                  "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
+        for check in (
+                "GGML_HIP_REPLAY_VERSION 3",
+                "GGML_HIP_REPLAY_MAGIC   0x59484342u",
+                "signature schema version mismatch",
+                "hardware key schema version mismatch",
+                "artifact version mismatch",
+                "entry implementation version differs from candidate registry"):
+            self.assertTrue(check in source or check in header, check)
+
     def test_duplicate_dispatch_is_rejected_case_insensitively(self):
         root, _, _, measurements = self._fixture()
         measurements.write_text("\n".join([
