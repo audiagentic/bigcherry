@@ -229,7 +229,13 @@ std::mutex g_mutex;
 // GPU measurements are process-global device state.  Serialize the complete
 // cold-path experiment so concurrent first encounters cannot perturb one
 // another or publish different winners for the same dispatch key.
-std::mutex g_measure_mutex;
+// This is deliberately process-wide rather than per-key. HIP measurements
+// mutate process-global device/workspace state, so a per-key gate would still
+// allow two different first encounters to perturb each other. Holding this
+// gate from the cache lookup through record_result() gives every dispatch key
+// single-flight semantics: one measurement/publish, then all waiters observe
+// the committed winner.
+std::mutex g_single_flight_mutex;
 
 // UTC, second resolution, ISO-ish -- only used to name a journal experiment
 // uniquely per process, not parsed back by anything, so exact format is not
@@ -1087,7 +1093,10 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         const ggml_hip_digest & dispatch_digest,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc_in) {
-    std::unique_lock<std::mutex> measure_lock(g_measure_mutex);
+    // The lock must cover both the cache lookup and the complete cold path.
+    // Locking only around the measurement would let concurrent first
+    // encounters both miss the cache and publish conflicting results.
+    std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const auto found = g_results.find(dispatch_digest);
