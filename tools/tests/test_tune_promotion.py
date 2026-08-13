@@ -30,6 +30,7 @@ def result(dispatch: str, p: float, winner: float) -> dict:
         "improvement_pct": 100.0 * (100.0 - winner) / 100.0,
         "confirmation": {
             "p_value": p, "effect_pct": 100.0 * (100.0 - winner) / 100.0,
+            "wins": 12, "rounds": 12,
             "native_us": [100.0] * 12, "winner_us": [winner] * 12,
         },
     }
@@ -160,6 +161,31 @@ class PromotionTests(unittest.TestCase):
         row["schedule"]["candidates"] = ["native", "candidate", "native#twin"]
         with self.assertRaisesRegex(tune_promotion.PromotionError, "position drift"):
             tune_promotion.validate_schedule(row)
+
+    def test_adaptive_evidence_rejects_short_confirmation(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["confirmation"]["native_us"] = [100.0] * 7
+        row["confirmation"]["winner_us"] = [95.0] * 7
+        row["confirmation"]["rounds"] = 7
+        row["confirmation"]["wins"] = 7
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "insufficient"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_adaptive_evidence_rejects_inconsistent_final_samples(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["candidates"] = [{"name": "candidate", "samples": 3,
+                              "samples_us": [95.0, 95.0]}]
+        header = dict(self.HEADER, final_samples=2, screen_samples=4,
+                      confirmation_samples=8)
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "samples_us"):
+            tune_promotion.validate_adaptive_evidence(row, header)
+
+    def test_adaptive_evidence_rejects_unresolved_canary_challenger(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row.update({"canary_state": "unresolved", "canary_retries": 1,
+                    "canary_pair": "native#twin", "canary_pct": 4.0})
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "unresolved"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
 
 
 if __name__ == "__main__":
