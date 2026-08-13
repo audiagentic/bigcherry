@@ -13,6 +13,12 @@
 #include <mutex>
 #include <string>
 
+extern bool ggml_hip_reduce_telemetry_context_snapshot(
+        void * comm_ctx,
+        const int ** devices,
+        size_t * device_count,
+        const char ** requested_provider);
+
 namespace {
 
 std::mutex g_mutex;
@@ -120,6 +126,23 @@ void ggml_hip_reduce_telemetry_fallback(
     // implementation detail (butterfly) into provider identity.
     write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
                 fallback_depth);
+}
+
+void ggml_hip_reduce_telemetry_fallback_context(
+        void * comm_ctx,
+        ggml_tensor ** tensors,
+        const char * handoff,
+        size_t fallback_depth) {
+    const int * devices = nullptr;
+    size_t device_count = 0;
+    const char * requested_provider = nullptr;
+    if (!ggml_hip_reduce_telemetry_context_snapshot(
+            comm_ctx, &devices, &device_count, &requested_provider)) {
+        return;
+    }
+    ggml_hip_reduce_telemetry_fallback(
+            devices, device_count, tensors, requested_provider, handoff,
+            fallback_depth);
 }
 
 #endif

@@ -73,6 +73,31 @@ CUDA = FilePatch(
             ),
             guard=r'ggml_hip_reduce_telemetry_provider\(',
         ),
+        Edit(
+            id="reduce-telemetry-context-snapshot",
+            anchor=r'^\};$\n\n#ifdef GGML_USE_NCCL',
+            rationale="expose selected provider and real device ordinals to the opaque meta context",
+            text=(
+                '};\n\n'
+                '#ifdef GGML_HIP_DISPATCH\n'
+                'bool ggml_hip_reduce_telemetry_context_snapshot(\n'
+                '        void * comm_ctx, const int ** devices, size_t * device_count,\n'
+                '        const char ** requested_provider) {\n'
+                '    if (comm_ctx == nullptr || devices == nullptr || device_count == nullptr ||\n'
+                '            requested_provider == nullptr) {\n'
+                '        return false;\n'
+                '    }\n'
+                '    auto * ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx);\n'
+                '    *devices = ctx->dev_ids.data();\n'
+                '    *device_count = ctx->dev_ids.size();\n'
+                '    *requested_provider = ctx->provider_name;\n'
+                '    return *device_count >= 2 && *requested_provider != nullptr;\n'
+                '}\n'
+                '#endif\n\n'
+                '#ifdef GGML_USE_NCCL'
+            ),
+            guard=r'ggml_hip_reduce_telemetry_context_snapshot\(',
+        ),
     ),
 )
 
@@ -115,8 +140,8 @@ META = FilePatch(
                 '                const ggml_status status = allreduce_fallback(i);\n'
                 '#ifdef GGML_HIP_DISPATCH\n'
                 '                if (backend_ctx->comm_ctx) {\n'
-                '                    ggml_hip_reduce_telemetry_fallback(\n'
-                '                        nullptr, n_backends, nodes.data(), "unknown",\n'
+                '                    ggml_hip_reduce_telemetry_fallback_context(\n'
+                '                        backend_ctx->comm_ctx, nodes.data(),\n'
                 '                        "provider_declined_handoff_meta", 1);\n'
                 '                }\n'
                 '#endif\n'
