@@ -30,6 +30,13 @@ def _number(value: Any, name: str) -> None:
         raise DeviceStateEvidenceError(f"{name} must be non-negative")
 
 
+def _finite_number(value: Any, name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise DeviceStateEvidenceError(f"{name} must be numeric")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise DeviceStateEvidenceError(f"{name} must be finite")
+
+
 def _unavailable_reason(snapshot: dict[str, Any], metric: str) -> bool:
     states = snapshot.get("metric_status")
     if not isinstance(states, dict):
@@ -84,6 +91,8 @@ def validate_device_state_report(report: Any) -> None:
     present = [key for key in ("device_state_pre", "device_state_post") if key in report]
     if not present:
         raise DeviceStateEvidenceError("device-state report has no snapshots")
+    if len(present) != 2:
+        raise DeviceStateEvidenceError("device-state report must include pre and post snapshots")
     for key in present:
         validate_device_state_snapshot(report[key], name=key)
     drift = report.get("device_clock_drift")
@@ -93,19 +102,33 @@ def validate_device_state_report(report: Any) -> None:
     if drift_status not in {"captured", "unavailable", "identity_mismatch", "clock_unavailable"}:
         raise DeviceStateEvidenceError("device_clock_drift has an invalid status")
     if drift_status == "captured":
-        for key in ("sclk_delta_mhz", "mclk_delta_mhz", "max_abs_pct"):
+        for key in ("sclk_delta_mhz", "mclk_delta_mhz"):
+            if key not in drift:
+                raise DeviceStateEvidenceError(f"captured drift missing {key}")
+            _finite_number(drift[key], f"device_clock_drift.{key}")
+        for key in ("max_abs_pct", "threshold_pct"):
             if key not in drift:
                 raise DeviceStateEvidenceError(f"captured drift missing {key}")
             _number(drift[key], f"device_clock_drift.{key}")
-        if "drift" in drift and not isinstance(drift["drift"], bool):
+        if not isinstance(drift.get("drift"), bool):
             raise DeviceStateEvidenceError("device_clock_drift.drift must be boolean")
-        if "threshold_pct" in drift:
-            _number(drift["threshold_pct"], "device_clock_drift.threshold_pct")
-            if drift["threshold_pct"] <= 0:
-                raise DeviceStateEvidenceError("device_clock_drift.threshold_pct must be positive")
+        if drift["threshold_pct"] <= 0:
+            raise DeviceStateEvidenceError("device_clock_drift.threshold_pct must be positive")
+        if drift["drift"] != (drift["max_abs_pct"] > drift["threshold_pct"]):
+            raise DeviceStateEvidenceError("device_clock_drift.drift contradicts max_abs_pct")
+
+    snapshots_unavailable = any(
+        isinstance(report[key], dict) and report[key].get("status") == "unavailable"
+        for key in ("device_state_pre", "device_state_post")
+    )
+    if drift_status == "captured" and snapshots_unavailable:
+        raise DeviceStateEvidenceError("captured drift requires captured snapshots")
 
     status = report.get("retime_status")
     counters = ("clock_drift_rounds", "reverse_retime_attempts", "reverse_retime_passed")
+    has_counters = any(key in report for key in counters)
+    if has_counters and status is None:
+        raise DeviceStateEvidenceError("retime counters require retime_status")
     if status is not None:
         if status not in {"not_needed", "corrected", "unresolved", "unavailable"}:
             raise DeviceStateEvidenceError("retime_status has an invalid value")

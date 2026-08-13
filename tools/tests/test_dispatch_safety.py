@@ -237,6 +237,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("const bool reverse", tuner)
         self.assertIn("(offset + candidates.size() - 1 - position) % candidates.size()", helper)
         self.assertIn("const bool reverse_complete = run_order(!reverse", helper)
+        self.assertIn("first_observation.identity_mismatch", helper)
         self.assertIn("out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN())", helper)
         self.assertIn("out.status = RetimeStatus::unresolved", helper)
         self.assertNotIn("sclk_mhz", helper[helper.index("run_order") :])
@@ -248,6 +249,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('\\"reverse_retime_attempts\\"', tuner)
         self.assertIn('\\"reverse_retime_passed\\"', tuner)
         self.assertIn('\\"retime_status\\"', tuner)
+        self.assertIn('result.retime_status == "unresolved"', tuner)
+        self.assertIn('clock drift retime unresolved; run rejected', tuner)
         signature = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" /
                      "hip-autotune-signature.cpp").read_text(encoding="utf-8")
         self.assertNotIn("retime_status", signature)
