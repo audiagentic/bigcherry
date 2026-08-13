@@ -44,8 +44,20 @@ HARDWARE_SCHEMA_VERSION = 1
 DIGEST_BYTES = 16
 PERSON_DISPATCH = b"llama-dispatch"
 
+# Wire-format boundary shared with hip-autotune-replay.cpp.  Version 3 is the
+# first format that carries implementation_version, small_k, and src0_type;
+# version 2 caches are not readable because those fields were absent.
+REPLAY_HEADER_SIZE = 56
+
 # Entry layout, from the ENT_* constants in hip-autotune-replay.cpp.
 ENT_SIZE = 2 * DIGEST_BYTES + 4 + 2 + 4 + 4 + 4 + 1 + 1 + 1 + 1
+assert ENT_SIZE == 54
+
+
+def _digest_hex(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", value):
+        raise SystemExit(f"{label} must be a 16-byte hexadecimal digest")
+    return value.lower()
 
 
 def blake2b_digest(data: bytes) -> bytes:
@@ -100,12 +112,12 @@ def read_results(path: Path, *, require_header: bool = True) -> tuple[dict[str, 
                 header = record
             elif record.get("kind") == "result" and record.get("winner"):
                 dispatch = record.get("dispatch")
-                if (not isinstance(dispatch, str) or
-                        not re.fullmatch(r"[0-9a-fA-F]{32}", dispatch)):
-                    raise SystemExit("result has malformed dispatch digest")
+                dispatch = _digest_hex(dispatch, "result dispatch digest")
                 if dispatch in seen:
                     raise SystemExit(f"duplicate dispatch digest: {dispatch}")
                 seen.add(dispatch)
+                record = dict(record)
+                record["dispatch"] = dispatch
                 results.append(record)
             elif record:
                 raise SystemExit("unknown measurements record kind")
@@ -164,6 +176,8 @@ def build(
     by_name = {c["stable_name"]: c for c in manifest["candidates"]}
     type_values = ggml_type_values(ggml_h)
 
+    manifest_hash = _digest_hex(manifest.get("manifest_hash"), "manifest_hash")
+
     # A fully explicit seed file is an operator-authored provenance source and
     # may replace the measurements artifact entirely. Normal exports always
     # require the producer header.
@@ -172,7 +186,7 @@ def build(
         raise SystemExit(f"no winning results in {measurements}")
     if seed_file is None:
         expected_revision = manifest.get("source_revision")
-        expected_manifest = manifest.get("manifest_hash")
+        expected_manifest = manifest_hash
         if (not isinstance(expected_revision, str) or not expected_revision or
                 not isinstance(expected_manifest, str) or not expected_manifest):
             raise SystemExit(
@@ -207,8 +221,9 @@ def build(
         # Validate: every candidate must exist in the manifest
         normalized: dict[str, dict[str, str]] = {}
         for digest_hex, value in seed_overrides.items():
-            if not re.fullmatch(r"[0-9a-fA-F]{32}", digest_hex):
-                raise SystemExit(f"seed override has malformed dispatch digest: {digest_hex!r}")
+            digest_hex = _digest_hex(digest_hex, "seed override dispatch digest")
+            if digest_hex in normalized:
+                raise SystemExit(f"duplicate seed override dispatch digest: {digest_hex}")
             if isinstance(value, str):
                 value = {"winner": value}
             if not isinstance(value, dict) or not isinstance(value.get("winner"), str):
@@ -227,7 +242,7 @@ def build(
                 raise SystemExit(
                     f"seed override for unseen dispatch {digest_hex[:16]}... requires explicit signature"
                 )
-            normalized[digest_hex] = {"winner": stable_name, "signature": signature}
+            normalized[digest_hex] = {"winner": stable_name, "signature": signature.lower()}
         seed_overrides = normalized
 
     # The gate runs on every dispatch NOT covered by an explicit seed --
@@ -286,7 +301,7 @@ def build(
         if (not isinstance(signature_hex, str)
                 or not re.fullmatch(r"[0-9a-fA-F]{32}", signature_hex)):
             raise SystemExit(f"winner {digest_hex} has malformed signature digest")
-        signature = bytes.fromhex(signature_hex)
+        signature = bytes.fromhex(signature_hex.lower())
 
         packed += digest  # ENT_DISPATCH
         packed += signature  # ENT_SIGNATURE
@@ -306,8 +321,10 @@ def build(
     header += struct.pack("<III", MAGIC, REPLAY_VERSION, ARTIFACT_VERSION)
     header += struct.pack("<HH", SIGNATURE_SCHEMA_VERSION, HARDWARE_SCHEMA_VERSION)
     header += struct.pack("<II", entry_count, len(string_blob))
-    header += bytes.fromhex(manifest["manifest_hash"])
+    header += bytes.fromhex(manifest_hash)
     header += blake2b_digest(payload)
+    if len(header) != REPLAY_HEADER_SIZE:
+        raise AssertionError("replay header layout drifted from the v3 wire format")
 
     print(
         f"  {entry_count} winner(s), {len(strings)} distinct candidate(s), "
