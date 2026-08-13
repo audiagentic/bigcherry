@@ -578,11 +578,9 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // after the final synchronization below.
         workspace_baseline = workspace_ctx->pool().bc_workspace_bytes();
         workspace_ctx->pool().bc_workspace_reset_peak();
-    }
-#endif
-    if (workspace_ctx != nullptr && isolate_workspace) {
         trace_workspace_event(stage, "rebase_peak", candidate->stable_name);
     }
+#endif
 
     gpu_us.reserve(samples);
     host_us.reserve(samples);

@@ -448,11 +448,29 @@ def build(
         if len(digest) != DIGEST_BYTES:
             raise SystemExit(f"malformed dispatch digest: {digest_hex!r}")
 
-        signature_hex = record.get("signature") or digest_hex
-        if (not isinstance(signature_hex, str)
-                or not re.fullmatch(r"[0-9a-fA-F]{32}", signature_hex)):
-            raise SystemExit(f"winner {digest_hex} has malformed signature digest")
-        signature = bytes.fromhex(signature_hex.lower())
+        signature_value = record.get("signature")
+        if signature_value is None:
+            raise SystemExit(
+                f"winner {digest_hex} is missing an explicit signature digest")
+        signature_hex = _digest_hex(signature_value,
+                                   f"winner {digest_hex} signature digest")
+
+        # Current measurements also carry the hardware half of the portable
+        # dispatch identity.  If it is present, verify the composite rather
+        # than allowing a fixture or hand-edited journal to pair unrelated
+        # dispatch/signature/hardware values.  Older rows without hardware
+        # remain readable, but they still must carry an explicit signature.
+        hardware_value = record.get("hardware")
+        if hardware_value is not None:
+            hardware_hex = _digest_hex(hardware_value,
+                                       f"winner {digest_hex} hardware digest")
+            expected_dispatch = portable_tuning_key(
+                hardware_hex, signature_hex, record.get("objective", "latency"))
+            if expected_dispatch != digest_hex:
+                raise SystemExit(
+                    f"winner {digest_hex} does not match its hardware/signature "
+                    "dispatch identity")
+        signature = bytes.fromhex(signature_hex)
 
         packed += digest  # ENT_DISPATCH
         packed += signature  # ENT_SIGNATURE

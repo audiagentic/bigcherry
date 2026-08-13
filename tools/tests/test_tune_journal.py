@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry import tune_journal  # noqa: E402
+from bigcherry import replay_cache, tune_journal  # noqa: E402
 
 
 class TuneJournalTests(unittest.TestCase):
@@ -100,6 +100,41 @@ class TuneJournalTests(unittest.TestCase):
             self.assertEqual(result["winner"], "z")
             self.assertEqual(result["signature"], "d" * 32)
             self.assertEqual(result["hardware"], "e" * 32)
+
+    def test_cpp_compact_to_replay_cache_preserves_exact_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writer = self.writer(root / "events.jsonl")
+            hardware = "c" * 32
+            signature = "d" * 32
+            dispatch = replay_cache.portable_tuning_key(hardware, signature)
+            writer.append("result", json.dumps({
+                "kind": "result", "dispatch": dispatch, "generation": 1,
+                "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+                "promotion_status": "native", "signature": signature,
+                "hardware": hardware,
+            }))
+            writer.complete()
+            compacted = root / "measurements.jsonl"
+            tune_journal.compact(writer.path, compacted, {
+                "kind": "header", "source_revision": "a" * 40,
+                "manifest_hash": "b" * 32,
+            })
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "source_revision": "a" * 40, "manifest_hash": "b" * 32,
+                "candidates": [{
+                    "stable_name": "mmvq:native:v1", "family": "mmvq",
+                    "source_class": "native_wrapper", "implementation_version": 1,
+                    "config": {},
+                }],
+            }), encoding="utf-8")
+            ggml_h = root / "ggml.h"
+            ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+            blob = replay_cache.build(compacted, manifest, ggml_h)
+            entry = blob[replay_cache.REPLAY_HEADER_SIZE:]
+            self.assertEqual(entry[:16], bytes.fromhex(dispatch))
+            self.assertEqual(entry[16:32], bytes.fromhex(signature))
 
     def test_compact_recovers_unambiguous_legacy_native_result(self):
         with tempfile.TemporaryDirectory() as directory:
