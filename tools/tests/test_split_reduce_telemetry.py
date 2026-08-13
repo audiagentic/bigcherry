@@ -28,6 +28,8 @@ def test_meta_boundary_records_actual_handoff():
     assert "ggml_hip_reduce_telemetry_fallback_context" in PATCH
     assert "backend_ctx->comm_ctx" in PATCH
     assert "ggml_hip_reduce_telemetry_context_snapshot" in PATCH
+    assert "ggml_backend_comm_telemetry_fallback" in PATCH
+    assert "comm_fallback(backend_ctx->comm_ctx" in PATCH
     assert 'nullptr, n_backends, nodes.data(), "unknown"' not in PATCH
     assert "text='\\n#include" in PATCH
     assert 'mode="replace"' in PATCH
