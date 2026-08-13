@@ -81,9 +81,12 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         end = source.index("void ggml_hip_mmvq_launch(", start)
         function = source[start:end]
 
-        guard = "sig.ned[2] > MMVQ_MAX_BATCH_SIZE"
+        guard = "sig.ned[2] > mmvq_mmid_max"
         native_return = "if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER)"
         self.assertIn(guard, function)
+        self.assertIn("get_mmvq_mmid_max_batch(", function)
+        self.assertIn("(ggml_type) sig.src0_type", function)
+        self.assertIn("ggml_cuda_info().devices[device].cc", function)
         self.assertIn(native_return, function)
         self.assertLess(function.index(guard), function.index(native_return))
 
