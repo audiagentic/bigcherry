@@ -206,6 +206,49 @@ def apply_policy(
     return exclusions, advisories
 
 
+def load_blacklist(path: Path) -> dict[tuple[str, str], tuple[str, ...]]:
+    """Load the validated, architecture-specific exclusions from a report.
+
+    This is deliberately an offline boundary.  A report that was not produced
+    by a recognized parser, or that has malformed exclusion rows, cannot alter
+    a catalog.  The catalog uses the tuple key to remove an architecture from
+    a multi-architecture candidate without blacklisting the same geometry on
+    a target where it compiled cleanly.
+    """
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ResourceError(f"invalid resource report {path}: {exc}") from exc
+    if not isinstance(report, dict) or report.get("schema_version") != 1:
+        raise ResourceError(f"{path}: unsupported resource report schema")
+    if report.get("recognized_schema") is not True:
+        raise ResourceError(f"{path}: resource report schema is not recognized")
+    architecture = report.get("architecture")
+    if not isinstance(architecture, str) or not architecture:
+        raise ResourceError(f"{path}: missing report architecture")
+    exclusions = report.get("exclusions")
+    if not isinstance(exclusions, list):
+        raise ResourceError(f"{path}: exclusions must be a list")
+
+    result: dict[tuple[str, str], tuple[str, ...]] = {}
+    for row in exclusions:
+        if not isinstance(row, dict):
+            raise ResourceError(f"{path}: malformed blacklist row")
+        stable_name = row.get("stable_name")
+        row_arch = row.get("architecture", architecture)
+        reasons = row.get("reasons")
+        if (not isinstance(stable_name, str) or not stable_name or
+                row_arch != architecture or not isinstance(reasons, list) or
+                not reasons or any(not isinstance(reason, str) or not reason
+                                   for reason in reasons)):
+            raise ResourceError(f"{path}: malformed blacklist row")
+        key = (stable_name, architecture)
+        if key in result:
+            raise ResourceError(f"{path}: duplicate blacklist row for {stable_name}")
+        result[key] = tuple(sorted(set(reasons)))
+    return result
+
+
 def build_report(
     raw: bytes,
     *,

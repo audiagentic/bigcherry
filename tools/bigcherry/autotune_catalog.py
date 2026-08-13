@@ -39,6 +39,7 @@ from . import autotune_schema as schema
 from . import csource
 from . import paths
 from .source_audit import read_types_mmq, git_revision
+from .resource_report import ResourceError, load_blacklist
 
 # Architecture -> the MMQ config header that defines its table, derived from the
 # family map rather than restated, so adding an architecture in one place is
@@ -268,6 +269,30 @@ def _keep(observed: set[str], name: str, *, restrict: bool) -> bool:
 
 def _keep_width(observed: set[int], width: int, *, restrict: bool) -> bool:
     return not restrict or width in observed
+
+
+def apply_resource_blacklist(
+        candidates: list[Candidate],
+        blacklist: dict[tuple[str, str], tuple[str, ...]],
+    ) -> list[Candidate]:
+    """Remove compiler-proven generated candidates before manifest creation.
+
+    Resource reports are an architecture-specific compile audit.  Keep a
+    candidate on unaffected targets when a catalog row spans architectures;
+    drop it only when every target is blacklisted.  Runtime/native wrappers
+    are intentionally not affected by this HI09b input.
+    """
+    kept: list[Candidate] = []
+    for candidate in candidates:
+        if candidate.source_class != "new_generated_variant":
+            kept.append(candidate)
+            continue
+        remaining = [arch for arch in candidate.architectures
+                     if (candidate.stable_name, arch) not in blacklist]
+        if remaining:
+            candidate.architectures = remaining
+            kept.append(candidate)
+    return kept
 
 
 # ---------------------------------------------------------------- enumeration
@@ -561,7 +586,8 @@ def build_manifest(root: Path, *, variant_set: str,
                    architectures: list[str],
                    inventory: Inventory | None,
                    source_revision: str,
-                   winners: set[str] | None = None) -> dict[str, Any]:
+                   winners: set[str] | None = None,
+                   resource_blacklist: dict[tuple[str, str], tuple[str, ...]] | None = None) -> dict[str, Any]:
     if variant_set not in schema.VARIANT_SETS:
         raise CatalogError(
             f"unknown variant set {variant_set!r}; expected one of "
@@ -599,6 +625,9 @@ def build_manifest(root: Path, *, variant_set: str,
         # Gating on "was it observed" would mean BLAS can only win where it
         # already won.
         candidates += enumerate_blas(architectures)
+
+    if resource_blacklist:
+        candidates = apply_resource_blacklist(candidates, resource_blacklist)
 
     # `replay-slim` is the production profile: compile only the variants a
     # tuning run actually chose, so the binary carries the winners and nothing
@@ -1183,6 +1212,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--winners", default=None,
                         help="measurements JSONL from a tuning run "
                              "(required for replay-slim)")
+    parser.add_argument("--resource-report", action="append", default=[],
+                        help="validated compiler resource report; may be repeated")
     parser.add_argument("--dry-run", action="store_true",
                         help="build and validate the manifest, write nothing")
     args = parser.parse_args(argv)
@@ -1221,10 +1252,14 @@ def main(argv: list[str] | None = None) -> int:
     revision, _ = git_revision(root, check_dirty=False)
 
     try:
+        resource_blacklist: dict[tuple[str, str], tuple[str, ...]] = {}
+        for report_path in args.resource_report:
+            resource_blacklist.update(load_blacklist(Path(report_path)))
         manifest = build_manifest(
             root, variant_set=args.variant_set, architectures=architectures,
-            inventory=inventory, source_revision=revision, winners=winners)
-    except (CatalogError, schema.SchemaError) as exc:
+            inventory=inventory, source_revision=revision, winners=winners,
+            resource_blacklist=resource_blacklist)
+    except (CatalogError, ResourceError, schema.SchemaError) as exc:
         print(f"catalog generation failed: {exc}", file=sys.stderr)
         return 1
 
