@@ -122,16 +122,17 @@ CUDA = FilePatch(
         ),
         Edit(
             id="reduce-telemetry-fallback-proc",
-            anchor=r'^        return \(void \*\)ggml_backend_cuda_comm_allreduce_tensor;$',
+            anchor=r'^    if \(strcmp\(name,\s+\) == 0\) \{$',
             rationale="publish the optional fallback observer without changing the generic backend ABI",
             mode="insert_before",
+            expect_matches=6,
+            occurrence=3,
             text=(
                 '#ifdef GGML_HIP_DISPATCH\n'
                 '    if (strcmp(name, "ggml_backend_comm_telemetry_fallback") == 0) {\n'
                 '        return (void *)ggml_backend_cuda_comm_telemetry_fallback;\n'
                 '    }\n'
                 '#endif\n'
-                '    '
             ),
             guard=r'ggml_backend_comm_telemetry_fallback"',
         ),
@@ -188,6 +189,7 @@ META = FilePatch(
             id="meta-reduce-telemetry-hook-resolve",
             anchor=r'^            GGML_ASSERT\(comm_allreduce != nullptr\);$',
             rationale="resolve the optional observer through the same backend registry used for allreduce",
+            mode="replace",
             text=(
                 '            GGML_ASSERT(comm_allreduce != nullptr);\n'
                 '            comm_fallback = (ggml_backend_comm_telemetry_fallback_t)\n'
