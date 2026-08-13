@@ -20,6 +20,7 @@ class TelemetryError(ValueError):
 _HEX32 = set("0123456789abcdefABCDEF")
 _BLAS_APIS = {"cublasSgemm", "cublasGemmEx", "cublasGemmStridedBatchedEx",
               "cublasGemmBatchedEx"}
+_BLAS_WRAPPERS = {"ggml_cuda_mul_mat_cublas"}
 _PROVIDERS = {"internal", "rccl", "meta", "unknown", "provider_declined"}
 _HANDOFFS = {"none", "provider_declined_handoff_meta"}
 _UNAVAILABLE = {"unavailable", "unknown", "not_collected"}
@@ -83,12 +84,18 @@ def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]
     calls = _nonnegative(row.get("calls"), "calls", where)
     _nonnegative(row.get("est_bytes"), "est_bytes", where)
     _nonnegative(row.get("workspace_bytes"), "workspace_bytes", where)
+    # ``effective_api`` identifies the established upstream wrapper.  The
+    # exact hipBLAS branch is deliberately a separate observation recorded at
+    # the call site, because the wrapper can select one of several APIs.
     effective = _availability(row.get("effective_api"), "effective_api", where)
     call_api = _availability(row.get("effective_call_api"), "effective_call_api", where)
-    if effective not in _BLAS_APIS and effective not in _UNAVAILABLE:
+    if effective not in _BLAS_WRAPPERS and effective not in _UNAVAILABLE:
         raise TelemetryError(f"{where}: unsupported effective_api {effective!r}")
     if call_api not in _BLAS_APIS and call_api not in _UNAVAILABLE:
         raise TelemetryError(f"{where}: unsupported effective_call_api {call_api!r}")
+    if effective in _BLAS_WRAPPERS and call_api not in _BLAS_APIS:
+        raise TelemetryError(
+            f"{where}: BLAS wrapper observation requires an exact effective_call_api")
     devices = row.get("devices")
     if not isinstance(devices, list) or not devices or any(
             isinstance(device, bool) or not isinstance(device, int) or device < 0
@@ -177,6 +184,21 @@ def load_telemetry(paths: str | Path | Iterable[str | Path], *,
                 result["provenance"] = actual
                 continue
             if kind == "observation":
+                # Record mode writes a single inventory containing every
+                # dispatch family.  A pair of empty BLAS fields denotes a
+                # non-BLAS observation, which is outside this telemetry-only
+                # loader rather than malformed BLAS evidence.  A partial pair
+                # is never safe to ignore: it means the producer lost one half
+                # of the effective-path attribution.
+                effective_api = row.get("effective_api")
+                effective_call_api = row.get("effective_call_api")
+                empty_api = effective_api in (None, "")
+                empty_call_api = effective_call_api in (None, "")
+                if empty_api and empty_call_api:
+                    continue
+                if empty_api != empty_call_api:
+                    raise TelemetryError(
+                        f"{where}: partial BLAS effective-path telemetry")
                 key, normalized = _validate_blas(row, where)
                 result_kind = "blas"
             elif kind == "split_reduce_observation":

@@ -115,7 +115,10 @@ void ggml_hip_reduce_telemetry_fallback(
         const char * requested_provider,
         const char * handoff,
         size_t fallback_depth) {
-    write_event(devices, device_count, tensors, requested_provider, "meta_butterfly", handoff,
+    // The meta backend proves the fallback execution.  Keep its effective
+    // provider in the stable telemetry vocabulary rather than promoting an
+    // implementation detail (butterfly) into provider identity.
+    write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
                 fallback_depth);
 }
 

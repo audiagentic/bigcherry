@@ -17,7 +17,7 @@ def _write(tmp_path, rows, name="telemetry.jsonl"):
 def _blas():
     return {"kind": "observation", "signature": "c" * 32, "hardware": "d" * 32,
             "native": "native", "calls": 2, "est_bytes": 100,
-            "effective_api": "cublasGemmEx", "effective_call_api": "cublasGemmEx",
+            "effective_api": "ggml_cuda_mul_mat_cublas", "effective_call_api": "cublasGemmEx",
             "workspace_bytes": 4096, "devices": [0], "canonical": {}, "hardware_key": {}}
 
 
@@ -34,6 +34,22 @@ def test_loads_blas_header_and_inherits_provenance(tmp_path):
     result = load_telemetry(path)
     assert result["provenance"] == P
     assert len(result["blas"]) == 1
+
+
+def test_ignores_non_blas_inventory_rows_but_rejects_partial_attribution(tmp_path):
+    non_blas = {"kind": "observation", "effective_api": "", "effective_call_api": ""}
+    result = load_telemetry(_write(tmp_path, [{"kind": "header", **P}, non_blas, _blas()]))
+    assert len(result["blas"]) == 1
+
+    partial = dict(_blas(), effective_call_api="")
+    with pytest.raises(TelemetryError, match="partial BLAS"):
+        load_telemetry(_write(tmp_path, [{"kind": "header", **P}, partial]))
+
+
+def test_blas_wrapper_requires_exact_native_call_api(tmp_path):
+    row = dict(_blas(), effective_call_api="not_collected")
+    with pytest.raises(TelemetryError, match="requires an exact"):
+        load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
 
 
 def test_loads_split_with_explicit_provenance(tmp_path):
