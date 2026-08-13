@@ -28,6 +28,17 @@ _BLAS_CONVERSIONS = {"direct", "contiguous", "non_contiguous"}
 _BLAS_OUTPUT_CONVERSIONS = {"direct", "temporary_to_f32"}
 _BLAS_PROVIDERS = {"hipblas", "unknown"}
 _BLAS_BACKENDS = {"unknown", "rocblas", "hipblaslt"}
+_REDUCTION_ALGORITHM_ALIASES = {
+    # The runtime telemetry calls the RCCL-backed implementation "rccl";
+    # HI18's candidate identity names the algorithm "nccl" after the
+    # upstream entry point.  Keep that translation in the offline evidence
+    # layer instead of changing the producer's source vocabulary.
+    "rccl": "nccl",
+    "meta": "meta",
+    "internal": "internal",
+    "unknown": "unknown",
+    "provider_declined": "provider_declined",
+}
 
 
 def _text(value: Any, field: str, where: str) -> str:
@@ -148,6 +159,39 @@ def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]
                                              "blas_metadata": blas_metadata}
 
 
+def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[str, Any]:
+    """Attach the HI18 candidate identity implied by validated telemetry.
+
+    This is evidence normalization, not runtime selection.  A handoff is
+    classified as ``upstream_default`` and is explicitly non-promotable for
+    algorithm-level conclusions because the requested provider did not own the
+    complete path.  No reduction signature or topology key is invented here.
+    """
+    requested = row["requested_provider"]
+    effective = row["effective_provider"]
+    handoff = row["handoff"]
+    if handoff == "none" and effective != requested:
+        raise TelemetryError(
+            f"{where}: none fallback policy requires requested/effective provider match")
+
+    preferred_algorithm = _REDUCTION_ALGORITHM_ALIASES[requested]
+    effective_algorithm = _REDUCTION_ALGORITHM_ALIASES[effective]
+    fallback_policy = "none" if handoff == "none" else "upstream_default"
+    promotable = (
+        fallback_policy == "none"
+        and effective == requested
+        and preferred_algorithm not in {"unknown", "provider_declined"}
+    )
+    return {
+        "preferred_algorithm": preferred_algorithm,
+        "effective_algorithm": effective_algorithm,
+        "fallback_policy": fallback_policy,
+        "candidate_identity": (
+            f"split_reduce:{preferred_algorithm}:{fallback_policy}:v1"),
+        "promotable": promotable,
+    }
+
+
 def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]]:
     # SPLIT_REDUCE is a multi-device evidence channel.  A zero/one-device
     # record cannot establish collective topology and must not enter later
@@ -179,8 +223,10 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
         raise TelemetryError(f"{where}: duplicate device ordinal")
     event_id = _text(row.get("event_id"), "event_id", where) if "event_id" in row else None
     key = event_id or f"split:{timestamp_us}:{requested}:{effective}:{devices}"
-    return key, {**row, "timestamp_us": timestamp_us, "device_count": count,
-                 "devices": list(devices), "event_id": event_id}
+    normalized = {**row, "timestamp_us": timestamp_us, "device_count": count,
+                  "devices": list(devices), "event_id": event_id}
+    normalized.update(normalize_split_reduce_observation(normalized, where))
+    return key, normalized
 
 
 def load_telemetry(paths: str | Path | Iterable[str | Path], *,
