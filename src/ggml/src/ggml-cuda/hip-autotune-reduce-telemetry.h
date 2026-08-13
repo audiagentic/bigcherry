@@ -6,10 +6,26 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_DISPATCH)
 
 struct ggml_tensor;
+
+// Observation-only reduction identity.  This is deliberately separate from
+// the matmul signature and is not part of the replay ABI.  Device ordinals are
+// retained as raw evidence, while topology_key is derived from peer
+// accessibility so later hardware grouping does not depend on ordinal names.
+struct ggml_hip_reduce_signature_v1 {
+    int64_t     element_count;
+    int64_t     slice_shape[4];
+    size_t      device_count;
+    const int * devices;
+    const char * element_type;
+    const char * topology_key;
+    const char * peer_access;
+};
+
 void ggml_hip_reduce_telemetry_provider(
         const int * devices,
         size_t device_count,

@@ -51,6 +51,11 @@ def test_observation_is_telemetry_only_and_has_shape_and_topology():
     assert '"devices\\":["' in TELEMETRY
     assert "GGML_HIP_REDUCE_TELEMETRY" in TELEMETRY
     assert "dispatch_digest" not in TELEMETRY
+    assert "ggml_hip_reduce_signature_v1" in HEADER
+    assert '"\\"reduction_signature\\":{"' in TELEMETRY
+    assert '"\\"slice_shape\\":[%lld,%lld,%lld,%lld]' in TELEMETRY
+    assert "hipDeviceCanAccessPeer" in TELEMETRY
+    assert "topology_key" in TELEMETRY
 
 
 def test_telemetry_normalizes_labels_and_null_topology():
