@@ -112,6 +112,7 @@ RECORD_OBS_BLAS = {
         "source_b_conversion": "direct",
         "output_conversion": "direct",
         "requested_precision": "0",
+        "effective_call_api": "cublasGemmEx",
         "effective_provider": "hipblas",
         "effective_backend": "unknown",
         "source_a_temp_bytes": 0,
