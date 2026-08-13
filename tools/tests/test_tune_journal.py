@@ -88,7 +88,9 @@ class TuneJournalTests(unittest.TestCase):
             root = Path(directory)
             writer = self.writer(root / "events.jsonl")
             payload_str = json.dumps({"kind": "result", "dispatch": "cpp-a",
-                                      "generation": 1, "winner": "z"})
+                                      "generation": 1, "winner": "z",
+                                      "signature": "d" * 32,
+                                      "hardware": "e" * 32})
             writer.append("result", payload_str)
             writer.complete()
             output = root / "measurements.jsonl"
@@ -96,6 +98,8 @@ class TuneJournalTests(unittest.TestCase):
             result = json.loads(output.read_bytes().splitlines()[1])
             self.assertEqual(result["dispatch"], "cpp-a")
             self.assertEqual(result["winner"], "z")
+            self.assertEqual(result["signature"], "d" * 32)
+            self.assertEqual(result["hardware"], "e" * 32)
 
     def test_compact_recovers_unambiguous_legacy_native_result(self):
         with tempfile.TemporaryDirectory() as directory:
