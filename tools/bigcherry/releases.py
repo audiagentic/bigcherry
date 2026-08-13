@@ -94,6 +94,24 @@ STAGE_ORDER: tuple[Stage, ...] = (
     "pulled", "audited", "patched", "generated", "built",
     "tested", "tuned", "validated",
 )
+VALID_STAGES = frozenset((*STAGE_ORDER, "broken"))
+
+
+def _validate_stage(stage: str) -> None:
+    if stage not in VALID_STAGES:
+        raise ValueError(f"unknown release stage: {stage!r}")
+
+
+def _validate_transition(current: str, proposed: str) -> None:
+    _validate_stage(current)
+    _validate_stage(proposed)
+    if current == proposed or current == "broken":
+        return
+    if proposed == "broken":
+        return
+    if STAGE_ORDER.index(proposed) < STAGE_ORDER.index(current):
+        raise ValueError(
+            f"release stage cannot move backwards: {current!r} -> {proposed!r}")
 
 
 @dataclass
@@ -132,22 +150,29 @@ class ReleaseRecord:
         A record that has been `validated` should not be demoted to `built`
         because someone re-ran `apply`. Only an explicit `broken` moves down.
         """
-        if stage == "broken" or self.stage == "broken":
-            self.stage = stage
+        _validate_transition(self.stage, stage)
+        if stage == self.stage:
             return
-        current = STAGE_ORDER.index(self.stage) if self.stage in STAGE_ORDER else -1
-        proposed = STAGE_ORDER.index(stage) if stage in STAGE_ORDER else -1
-        if proposed > current:
-            self.stage = stage
+        self.stage = stage
+
+    def validate(self) -> None:
+        """Reject malformed persisted records before they become evidence."""
+        _validate_stage(self.stage)
+        if not isinstance(self.revision, str) or not self.revision.strip():
+            raise ValueError("release record has no source revision")
+        if not isinstance(self.release_tag, str):
+            raise ValueError("release record has an invalid release tag")
 
     def save(self) -> Path:
         now = _dt.datetime.now(_dt.timezone.utc).isoformat()
         self.first_seen = self.first_seen or now
         self.updated_at = now
         RELEASES_DIR.mkdir(parents=True, exist_ok=True)
+        self.validate()
         target = self.path()
         _atomic_write_json(target, asdict(self))
         _rebuild_index()
+        validate_index_consistency()
         return target
 
 
@@ -158,7 +183,9 @@ def load(revision: str, release_tag: str = "") -> ReleaseRecord:
     if path.is_file():
         data = json.loads(path.read_text(encoding="utf-8"))
         known = {f for f in ReleaseRecord.__dataclass_fields__}
-        return ReleaseRecord(**{k: v for k, v in data.items() if k in known})
+        record = ReleaseRecord(**{k: v for k, v in data.items() if k in known})
+        record.validate()
+        return record
     return ReleaseRecord(revision=revision, release_tag=release_tag)
 
 
@@ -171,7 +198,11 @@ def all_records() -> list[ReleaseRecord]:
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
         known = {f for f in ReleaseRecord.__dataclass_fields__}
-        records.append(ReleaseRecord(**{k: v for k, v in data.items() if k in known}))
+        record = ReleaseRecord(**{k: v for k, v in data.items() if k in known})
+        record.validate()
+        if record.slug() != path.stem:
+            raise ValueError(f"release filename does not match slug: {path.name}")
+        records.append(record)
     return sorted(records, key=lambda r: r.updated_at, reverse=True)
 
 
@@ -200,6 +231,45 @@ def _rebuild_index() -> None:
     }
     INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(INDEX_PATH, index)
+
+
+def validate_index_consistency(
+    *, index_path: Path | None = None,
+    records: list[ReleaseRecord] | None = None,
+) -> None:
+    """Fail closed when the tracked index disagrees with source records."""
+    index_path = INDEX_PATH if index_path is None else index_path
+    if not index_path.is_file():
+        return
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid release index: {index_path}") from exc
+    if not isinstance(index, dict) or not isinstance(index.get("releases"), list):
+        raise ValueError("release index has no releases list")
+    records = all_records() if records is None else records
+    expected = {r.slug(): {
+        "slug": r.slug(), "revision": r.revision,
+        "release_tag": r.release_tag, "stage": r.stage,
+        "manifest_hash": r.manifest_hash,
+        "audit_passed": bool(r.audit.get("passed")),
+        "updated_at": r.updated_at,
+    } for r in records}
+    actual: dict[str, dict[str, Any]] = {}
+    for entry in index["releases"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str):
+            raise ValueError("release index contains an invalid entry")
+        slug = entry["slug"]
+        if slug in actual:
+            raise ValueError(f"release index contains duplicate slug: {slug}")
+        actual[slug] = entry
+    if set(actual) != set(expected):
+        raise ValueError("release index does not match source records")
+    fields = ("slug", "revision", "release_tag", "stage", "manifest_hash",
+              "audit_passed", "updated_at")
+    for slug, source in expected.items():
+        if any(actual[slug].get(field) != source[field] for field in fields):
+            raise ValueError(f"release index disagrees with source record: {slug}")
 
 
 def summarise_audit(report: dict[str, Any], *, strict: bool) -> dict[str, Any]:
