@@ -19,6 +19,106 @@ from typing import Any
 # Standards 1: a kernel family is a major algorithmic path.
 FAMILIES = ("mmvq", "mmq", "mmvf", "mmf", "blas")
 
+# HI17 BLAS-1 starts with the resolved native path.  These values describe a
+# plan, not an observation: the latter uses the exact native API/provider
+# fields captured by HI57.  Keeping the two namespaces separate prevents a
+# telemetry value from becoming a candidate identity by accident.
+BLAS_OPERAND_TYPES = ("native", "f32", "f16", "bf16")
+BLAS_ACCUMULATION_TYPES = ("native", "f16", "f32")
+BLAS_OUTPUT_TYPES = ("native", "f16", "bf16", "f32")
+BLAS_SOURCE_CONVERSIONS = ("none", "contiguous", "non_contiguous")
+BLAS_OUTPUT_CONVERSIONS = ("none", "temporary_to_f32")
+BLAS_NUMERICAL_CLASSES = (
+    "exact_baseline",
+    "equivalent_within_backend_tolerance",
+    "reduced_precision",
+)
+
+# ggml_prec is an upstream enum: GGML_PREC_DEFAULT == 0 and
+# GGML_PREC_F32 == 10.  The schema deliberately stores this as an integer at
+# the boundary so it can validate catalog plans without importing C headers.
+GGML_PREC_F32 = 10
+
+BLAS_PLAN_FIELDS = (
+    "operand_type",
+    "accumulation_type",
+    "output_type",
+    "source_a_conversion",
+    "source_b_conversion",
+    "output_conversion",
+    "numerical_class",
+)
+
+
+def validate_blas_plan(plan: dict[str, Any], where: str, *, prec: int | None = None) -> None:
+    """Validate a structured BLAS candidate plan before catalog emission.
+
+    The native/forced-native slice intentionally has no provider or API
+    choice.  Those are effective-call observations today and become candidate
+    dimensions only after a runtime seam proves they can be applied.
+
+    ``prec`` is optional because catalog validation has no operation signature.
+    When supplied, it applies the correctness gate before a plan can enter a
+    strict-precision measurement set.
+    """
+    if not isinstance(plan, dict):
+        raise SchemaError(f"{where}: BLAS plan must be an object")
+
+    missing = [field for field in BLAS_PLAN_FIELDS if field not in plan]
+    if missing:
+        raise SchemaError(
+            f"{where}: BLAS plan is missing {', '.join(repr(field) for field in missing)}")
+    unexpected = sorted(set(plan) - set(BLAS_PLAN_FIELDS))
+    if unexpected:
+        raise SchemaError(
+            f"{where}: BLAS plan has unexpected fields {', '.join(unexpected)}")
+
+    allowed = {
+        "operand_type": BLAS_OPERAND_TYPES,
+        "accumulation_type": BLAS_ACCUMULATION_TYPES,
+        "output_type": BLAS_OUTPUT_TYPES,
+        "source_a_conversion": BLAS_SOURCE_CONVERSIONS,
+        "source_b_conversion": BLAS_SOURCE_CONVERSIONS,
+        "output_conversion": BLAS_OUTPUT_CONVERSIONS,
+        "numerical_class": BLAS_NUMERICAL_CLASSES,
+    }
+    for field, values in allowed.items():
+        value = plan[field]
+        if not isinstance(value, str) or value not in values:
+            raise SchemaError(
+                f"{where}: BLAS plan {field} must be one of {values}, got {value!r}")
+
+    if prec is not None:
+        if isinstance(prec, bool) or not isinstance(prec, int):
+            raise SchemaError(f"{where}: BLAS precision must be an integer")
+        if prec == GGML_PREC_F32 and plan["numerical_class"] == "reduced_precision":
+            raise SchemaError(
+                f"{where}: reduced_precision BLAS plan is not eligible for "
+                "GGML_PREC_F32")
+
+
+def blas_plan_name(mode: str, plan: dict[str, str], version: int) -> str:
+    """Return the durable name for a resolved BLAS plan.
+
+    Each plan field is present in the name so a stored winner cannot silently
+    refer to a different configuration when the catalog evolves.
+    """
+    if not isinstance(mode, str) or not mode:
+        raise SchemaError("BLAS plan mode must be a non-empty string")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise SchemaError("BLAS plan version must be a positive integer")
+    validate_blas_plan(plan, "BLAS plan")
+    tokens = [
+        f"operand-{plan['operand_type']}",
+        f"accumulation-{plan['accumulation_type']}",
+        f"output-{plan['output_type']}",
+        f"source-a-{plan['source_a_conversion']}",
+        f"source-b-{plan['source_b_conversion']}",
+        f"output-conversion-{plan['output_conversion']}",
+        f"numerical-{plan['numerical_class']}",
+    ]
+    return f"blas:{mode}:" + ":".join(tokens) + f":v{version}"
+
 # Standards 2.3. Exactly one per candidate.
 SOURCE_CLASSES = (
     "native_wrapper",
@@ -440,6 +540,8 @@ def validate_candidate(candidate: dict[str, Any], where: str) -> None:
             f"implementation_version {candidate['implementation_version']}")
 
     validate_custom_candidate_enablement(candidate, where)
+    if candidate["family"] == "blas" and "blas_plan" in candidate["config"]:
+        validate_blas_plan(candidate["config"]["blas_plan"], f"{where}.config.blas_plan")
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:

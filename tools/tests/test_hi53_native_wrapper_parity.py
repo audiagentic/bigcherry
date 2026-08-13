@@ -18,7 +18,9 @@ UPSTREAM_MMVQ = (
 )
 UPSTREAM_MMVQ_HEADER = UPSTREAM_MMVQ.with_suffix(".cuh")
 DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.cu"
-PLAN = ROOT / "docs" / "planning" / "active" / "hip-autotune" / "HI53.md"
+# HI53 is closed; keep the acceptance contract attached to its completed
+# evidence rather than a path that disappears when the item transitions.
+PLAN = ROOT / "docs" / "planning" / "completed" / "hip-autotune" / "HI53.md"
 
 
 def _function(source: str, signature: str, end_marker: str) -> str:
@@ -96,9 +98,9 @@ class HI53NativeWrapperParityTests(unittest.TestCase):
         plan = PLAN.read_text(encoding="utf-8")
         for architecture in ("gfx1030", "gfx1100", "gfx1201"):
             self.assertIn(architecture, plan)
-        for shape in ("ne12=1", "ne12", "MMVQ_MAX_BATCH_SIZE", "above that boundary"):
+        for shape in ("ned[2]=8", "ned[2]=9", "MMVQ_MAX_BATCH_SIZE", "above the MMVQ boundary"):
             self.assertIn(shape, plan)
-        for evidence in ("selected family", "native/forced", "eligibility result", "assertion"):
+        for evidence in ("selected family", "forced eligibility", "measurement status", "assertion"):
             self.assertIn(evidence, plan)
 
 
