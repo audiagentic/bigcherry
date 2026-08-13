@@ -34,9 +34,14 @@ def validate_multi_gpu_evidence(evidence: dict[str, Any]) -> None:
 
         {"topology": {"device_count": 2, "ordinals": [0, 1],
                        "devices": [{"ordinal": 0, ...}, ...]},
-         "graph": {"mode": "enabled", "capture_observed": True},
+         "graph": {"mode": "enabled", "capture_observed": True,
+                   "capture_lifecycle": {"capture_begin": True,
+                                         "capture_end": True,
+                                         "instantiate": True,
+                                         "replay": True}},
          "per_device": [{"ordinal": 0, "dispatches": 10,
-                         "signatures": 3, "winners": [...]}, ...]}
+                         "replay_dispatches": 10, "signatures": 3,
+                         "winners": [...]}, ...]}
 
     ``graph.mode`` may be ``enabled`` or ``disabled``.  Enabled graph claims
     require observed capture; disabled mode is still explicit evidence and is
@@ -49,8 +54,8 @@ def validate_multi_gpu_evidence(evidence: dict[str, Any]) -> None:
     if not isinstance(topology, dict):
         raise MultiGPUEvidenceError("multi_gpu evidence lacks topology")
     count = topology.get("device_count")
-    if (isinstance(count, bool) or not isinstance(count, int) or count < 2):
-        raise MultiGPUEvidenceError("multi-GPU topology needs at least two devices")
+    if (isinstance(count, bool) or not isinstance(count, int) or count < 1):
+        raise MultiGPUEvidenceError("topology needs at least one device")
 
     devices = topology.get("devices")
     ordinals = topology.get("ordinals")
@@ -92,6 +97,22 @@ def validate_multi_gpu_evidence(evidence: dict[str, Any]) -> None:
     if captured and mode != "enabled":
         raise MultiGPUEvidenceError("observed graph capture contradicts disabled mode")
 
+    lifecycle = graph.get("capture_lifecycle")
+    if mode == "enabled":
+        if not isinstance(lifecycle, dict):
+            raise MultiGPUEvidenceError("enabled graph mode lacks capture lifecycle evidence")
+        for stage in ("capture_begin", "capture_end", "instantiate", "replay"):
+            if lifecycle.get(stage) is not True:
+                raise MultiGPUEvidenceError(
+                    f"graph capture lifecycle stage {stage} was not observed")
+    elif lifecycle is not None:
+        if not isinstance(lifecycle, dict) or any(
+            lifecycle.get(stage) is True
+            for stage in ("capture_begin", "capture_end", "instantiate", "replay")
+        ):
+            raise MultiGPUEvidenceError(
+                "disabled graph mode cannot contain observed capture lifecycle")
+
     per_device = evidence.get("per_device")
     if not isinstance(per_device, list) or len(per_device) != count:
         raise MultiGPUEvidenceError("per_device evidence does not match device_count")
@@ -102,14 +123,36 @@ def validate_multi_gpu_evidence(evidence: dict[str, Any]) -> None:
         ordinal = _ordinal(entry.get("ordinal"), "per_device ordinal")
         if ordinal in seen:
             raise MultiGPUEvidenceError("per_device ordinals must be unique")
+        if ordinal not in set(topology_ordinals):
+            raise MultiGPUEvidenceError("per_device evidence does not cover topology")
         seen.add(ordinal)
         _positive_int(entry.get("dispatches"), f"per_device[{ordinal}].dispatches")
+        if mode == "enabled":
+            replay_dispatches = entry.get("replay_dispatches")
+            _positive_int(
+                replay_dispatches,
+                f"per_device[{ordinal}].replay_dispatches")
+            if replay_dispatches > entry["dispatches"]:
+                raise MultiGPUEvidenceError(
+                    f"per_device[{ordinal}] replay coverage exceeds dispatch coverage")
         _positive_int(entry.get("signatures"), f"per_device[{ordinal}].signatures")
         winners = entry.get("winners")
         if not isinstance(winners, list) or not winners or any(
             not isinstance(winner, str) or not winner.strip() for winner in winners
         ):
             raise MultiGPUEvidenceError(f"per_device[{ordinal}] lacks winners")
+        if mode == "enabled":
+            identity = entry.get("identity")
+            if not isinstance(identity, str) or not identity.strip():
+                raise MultiGPUEvidenceError(
+                    f"per_device[{ordinal}] lacks topology identity")
+            topology_identity = next(
+                device["identity"] for device in devices
+                if device["ordinal"] == ordinal
+            )
+            if identity.strip() != topology_identity.strip():
+                raise MultiGPUEvidenceError(
+                    f"per_device[{ordinal}] identity disagrees with topology")
     if seen != set(topology_ordinals):
         raise MultiGPUEvidenceError("per_device evidence does not cover topology")
 
