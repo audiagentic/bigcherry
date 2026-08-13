@@ -186,17 +186,55 @@ def validate(root: Path, *, required_capabilities: set[str] | None = None) -> di
     validate_provenance_document(
         document, require_evidence=document.get("role") == "generalised-winner"
     )
-    if document.get("state") not in {"completed", "failed", "interrupted", "intent"}:
+    state = document.get("state")
+    if state not in {"completed", "failed", "interrupted", "intent"}:
         raise BundleError("invalid lifecycle state")
+    artifacts = document.get("artifacts")
+    intended = document.get("intended_artifacts")
+    if not isinstance(artifacts, list) or not isinstance(intended, list):
+        raise BundleError("lifecycle artifact lists are malformed")
+    if any(not isinstance(item, str) or not item.strip() for item in intended):
+        raise BundleError("intended artifact names are malformed")
+    if len(set(intended)) != len(intended):
+        raise BundleError("intended artifact names must be unique")
+
+    terminal = state in {"completed", "failed", "interrupted"}
+    if state == "intent":
+        if artifacts or document.get("capabilities"):
+            raise BundleError("intent bundle contains terminal evidence")
+        if any(field in document for field in ("returncode", "host_finished_ns", "monotonic_duration_ns")):
+            raise BundleError("intent bundle contains terminal lifecycle fields")
+    else:
+        for field in ("returncode", "host_finished_ns", "monotonic_duration_ns"):
+            if not isinstance(document.get(field), int) or document[field] < 0:
+                raise BundleError(f"terminal lifecycle field is invalid: {field}")
+        if state == "completed" and document["returncode"] != 0:
+            raise BundleError("completed bundle must have zero returncode")
+        if state in {"failed", "interrupted"} and document["returncode"] == 0:
+            raise BundleError("non-completed bundle must have nonzero returncode")
+        if document.get("capabilities", []) != ["process_evidence"]:
+            raise BundleError("terminal bundle lacks canonical process evidence")
+        if sorted(intended) != sorted(["stdout.log", "stderr.log"]):
+            raise BundleError("terminal bundle has unsupported intended artifacts")
+        if sorted(artifact.get("path") for artifact in artifacts if isinstance(artifact, dict)) != sorted(intended):
+            raise BundleError("terminal evidence does not match intended artifacts")
     roles: set[str] = set()
-    for artifact in document.get("artifacts", []):
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise BundleError("artifact record is malformed")
         role = artifact.get("role")
+        if not isinstance(role, str) or not role.strip():
+            raise BundleError("artifact role is malformed")
         if role in roles:
             raise BundleError(f"duplicate artifact role: {role}")
         roles.add(role)
         raw_path = artifact.get("path", "")
-        if Path(raw_path).is_absolute() or ".." in Path(raw_path).parts:
+        if not isinstance(raw_path, str) or Path(raw_path).is_absolute() or ".." in Path(raw_path).parts:
             raise BundleError("absolute/path-escaping artifact")
+        if not isinstance(artifact.get("bytes"), int) or artifact["bytes"] < 0:
+            raise BundleError("artifact byte count is invalid")
+        if not isinstance(artifact.get("hash"), str) or not re.fullmatch(r"[0-9a-f]{32}", artifact["hash"]):
+            raise BundleError("artifact hash is invalid")
         target = root / raw_path
         if (not target.is_file() or target.stat().st_size != artifact.get("bytes") or
                 file_hash(target) != artifact.get("hash")):
@@ -205,7 +243,7 @@ def validate(root: Path, *, required_capabilities: set[str] | None = None) -> di
     missing = required - set(document.get("capabilities", []))
     if missing:
         raise BundleError("capability-incomplete: " + ", ".join(sorted(missing)))
-    promotable = document["state"] == "completed" and document.get("returncode") == 0 and not missing
+    promotable = terminal and document["state"] == "completed" and document.get("returncode") == 0 and not missing
     return {
         "schema_version": SCHEMA_VERSION,
         "experiment_id": document["experiment_id"],
