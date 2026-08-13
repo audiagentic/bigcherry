@@ -107,6 +107,7 @@ CUDA = FilePatch(
             id="reduce-telemetry-fallback-hook",
             anchor=r'^static void \* ggml_backend_cuda_reg_get_proc_address\(ggml_backend_reg_t reg, const char \* name\) \{$',
             rationale="expose the provider-owned fallback observer through the existing backend registry",
+            mode="insert_before",
             text=(
                 '#ifdef GGML_HIP_DISPATCH\n'
                 'static void ggml_backend_cuda_comm_telemetry_fallback(\n'
