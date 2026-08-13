@@ -167,5 +167,33 @@ class TestGeneratedInstancesMatchRegistry(unittest.TestCase):
                 f"back, so this is fatal at runtime")
 
 
+class TestRenderedRegistryAgreesWithManifest(unittest.TestCase):
+    """The generated registry must be a lossless projection of the catalog."""
+
+    def test_registry_rows_match_manifest_candidates_and_native_coverage(self):
+        manifest = manifest_for_tests()
+        rendered = catalog.render_registry(manifest)
+        rows = re.findall(r'\{\s+(\d+)u, "([^"]+)"', rendered)
+
+        expected = [(str(index), candidate["stable_name"])
+                    for index, candidate in enumerate(manifest["candidates"])]
+        self.assertEqual(
+            rows,
+            expected,
+            "generated registry rows must preserve manifest order, stable "
+            "names, and runtime ids",
+        )
+        self.assertIn(
+            f"#define GGML_HIP_AUTOTUNE_CANDIDATE_COUNT {len(expected)}",
+            rendered,
+        )
+
+        native_by_family = {family: 0 for family in schema.FAMILIES}
+        for candidate in manifest["candidates"]:
+            if candidate["source_class"] == "native_wrapper":
+                native_by_family[candidate["family"]] += 1
+        self.assertEqual(native_by_family, {family: 1 for family in schema.FAMILIES})
+
+
 if __name__ == "__main__":
     unittest.main()
