@@ -21,6 +21,7 @@ from typing import Any
 from .tune_journal import atomic_write, canonical
 
 SCHEMA_VERSION = 1
+MIN_PAIRED_ROUNDS = 8
 
 
 class PromotionError(RuntimeError):
@@ -35,11 +36,10 @@ def _median(values: list[float]) -> float:
 
 
 def _validated_effect(confirmation: dict[str, Any]) -> float:
-    native = [float(value) for value in confirmation.get("native_us", [])
-              if value is not None and math.isfinite(float(value)) and float(value) > 0]
-    winner = [float(value) for value in confirmation.get("winner_us", [])
-              if value is not None and math.isfinite(float(value)) and float(value) > 0]
-    if not native or len(native) != len(winner):
+    native, winner = _paired_rounds(confirmation)
+    if len(native) < MIN_PAIRED_ROUNDS:
+        raise PromotionError("confirmation has insufficient paired rounds")
+    if len(native) != len(winner):
         raise PromotionError("confirmation paired samples are missing or misaligned")
     observed = 100.0 * (_median(native) - _median(winner)) / _median(native)
     persisted = confirmation.get("effect_pct")
@@ -48,6 +48,124 @@ def _validated_effect(confirmation: dict[str, Any]) -> float:
     if not math.isclose(observed, float(persisted), rel_tol=1e-6, abs_tol=1e-5):
         raise PromotionError("confirmation effect_pct does not match paired samples")
     return observed
+
+
+def _paired_rounds(confirmation: dict[str, Any]) -> tuple[list[float], list[float]]:
+    """Return strict, round-aligned confirmation samples.
+
+    The tuner preserves failed rounds as non-finite sentinels.  Those are not
+    evidence, but silently dropping malformed values would let an artifact
+    claim more usable rounds than it actually contains.  Promotion therefore
+    validates the persisted count and only then computes from the usable
+    pairs.
+    """
+    native_raw = confirmation.get("native_us")
+    winner_raw = confirmation.get("winner_us")
+    if not isinstance(native_raw, list) or not isinstance(winner_raw, list):
+        raise PromotionError("confirmation paired samples are missing")
+    if len(native_raw) != len(winner_raw) or not native_raw:
+        raise PromotionError("confirmation paired samples are missing or misaligned")
+    native: list[float] = []
+    winner: list[float] = []
+    for left, right in zip(native_raw, winner_raw):
+        if (not isinstance(left, (int, float)) or
+                not isinstance(right, (int, float)) or
+                not math.isfinite(float(left)) or not math.isfinite(float(right))):
+            continue
+        if float(left) <= 0.0 or float(right) <= 0.0:
+            raise PromotionError("confirmation contains non-positive timing evidence")
+        native.append(float(left))
+        winner.append(float(right))
+    declared = confirmation.get("rounds")
+    if not isinstance(declared, int) or declared != len(native):
+        raise PromotionError("confirmation rounds do not match paired samples")
+    wins = sum(b < a for a, b in zip(native, winner))
+    declared_wins = confirmation.get("wins")
+    if not isinstance(declared_wins, int) or declared_wins != wins:
+        raise PromotionError("confirmation wins do not match paired samples")
+    return native, winner
+
+
+def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
+                               min_paired_rounds: int = MIN_PAIRED_ROUNDS) -> None:
+    """Validate screen/final/confirmation and HI24 canary evidence.
+
+    This is deliberately an offline artifact check.  It does not alter the
+    live tuner or ranking policy; it only prevents promotion from trusting a
+    partial or internally contradictory adaptive run.
+    """
+    if min_paired_rounds < 1:
+        raise PromotionError("invalid minimum paired-round policy")
+    for field in ("screen_samples", "final_samples", "confirmation_samples"):
+        value = header.get(field)
+        if value is not None and (not isinstance(value, int) or value < 1):
+            raise PromotionError(f"invalid {field} evidence count")
+
+    stage_counts = [row.get(field) for field in
+                    ("generated", "applicable", "eligible", "measured")]
+    if any(value is not None and (not isinstance(value, int) or value < 0)
+           for value in stage_counts):
+        raise PromotionError("invalid adaptive stage counts")
+    present_counts = [value for value in stage_counts if value is not None]
+    if present_counts != sorted(present_counts, reverse=True):
+        raise PromotionError("adaptive stage counts are inconsistent")
+
+    canary_state = row.get("canary_state")
+    if canary_state is not None:
+        if canary_state not in {"not_available", "pass", "retried_pass", "unresolved"}:
+            raise PromotionError("unknown noise-canary state")
+        retries = row.get("canary_retries", 0)
+        if not isinstance(retries, int) or retries < 0:
+            raise PromotionError("invalid noise-canary retry count")
+        pair = row.get("canary_pair", "")
+        pct = row.get("canary_pct", -1.0)
+        if not isinstance(pair, str) or not isinstance(pct, (int, float)) or not math.isfinite(float(pct)):
+            raise PromotionError("invalid noise-canary evidence")
+        if canary_state == "not_available" and (pair or float(pct) >= 0.0):
+            raise PromotionError("noise-canary not_available evidence is inconsistent")
+        if canary_state != "not_available" and (not pair or float(pct) < 0.0):
+            raise PromotionError("noise-canary evidence is incomplete")
+        if canary_state == "unresolved" and retries < 1:
+            raise PromotionError("unresolved noise-canary lacks retry evidence")
+        if canary_state == "unresolved" and row.get("provisional_winner") not in (None, row.get("native")):
+            raise PromotionError("unresolved noise-canary cannot claim a challenger winner")
+
+    candidates = row.get("candidates")
+    if candidates is not None:
+        if not isinstance(candidates, list):
+            raise PromotionError("candidate evidence must be a list")
+        final_limit = header.get("final_samples")
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not isinstance(candidate, dict) or not isinstance(candidate.get("name"), str):
+                raise PromotionError("malformed candidate evidence")
+            name = candidate["name"]
+            if name in seen:
+                raise PromotionError("duplicate candidate evidence")
+            seen.add(name)
+            samples = candidate.get("samples")
+            if not isinstance(samples, int) or samples < 0:
+                raise PromotionError("invalid candidate final sample count")
+            samples_us = candidate.get("samples_us")
+            if samples_us is not None:
+                if not isinstance(samples_us, list):
+                    raise PromotionError("candidate final samples must be a list")
+                usable = [v for v in samples_us if isinstance(v, (int, float)) and math.isfinite(float(v)) and float(v) > 0]
+                if samples != len(usable):
+                    raise PromotionError("candidate final samples do not match samples_us")
+            if final_limit is not None and samples > final_limit:
+                raise PromotionError("candidate final samples exceed final_samples")
+
+    confirmation = row.get("confirmation")
+    if confirmation is not None:
+        if not isinstance(confirmation, dict):
+            raise PromotionError("malformed confirmation evidence")
+        native, _ = _paired_rounds(confirmation)
+        if len(native) < min_paired_rounds:
+            raise PromotionError("confirmation has insufficient paired rounds")
+        configured = header.get("confirmation_samples")
+        if configured is not None and len(confirmation["native_us"]) < max(configured, min_paired_rounds):
+            raise PromotionError("confirmation round payload is shorter than configured evidence")
 
 
 def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -175,6 +293,7 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
         raise PromotionError("invalid current measurements header; rerun")
     hypotheses: list[tuple[str, float]] = []
     for row in results:
+        validate_adaptive_evidence(row, header)
         provisional = row.get("provisional_winner")
         if not isinstance(provisional, str) or provisional == row.get("native"):
             continue
