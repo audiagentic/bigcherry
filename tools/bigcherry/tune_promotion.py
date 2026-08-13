@@ -20,6 +20,7 @@ from typing import Any
 
 from .tune_journal import atomic_write, canonical
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
+from . import ranking_policy
 
 SCHEMA_VERSION = 1
 MIN_PAIRED_ROUNDS = 8
@@ -27,6 +28,99 @@ MIN_PAIRED_ROUNDS = 8
 
 class PromotionError(RuntimeError):
     pass
+
+
+def production_policy_hash(name: str, version: int) -> str:
+    """Return the stable identity hash for the production ranking policy."""
+    spec = {
+        "schema_version": ranking_policy.POLICY_SCHEMA_VERSION,
+        "name": name,
+        "version": version,
+    }
+    return ranking_policy.policy_hash(spec)
+
+
+def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> None:
+    """Validate policy identity and ranking coverage when HI50 data is present.
+
+    Pre-HI50 artifacts omit these fields and remain valid.  Once an artifact
+    claims ranking evidence, every decision must be attributable to the same
+    production policy and cover every non-twin scheduled finalist.
+    """
+    row_policy = row.get("production_policy")
+    header_policy = header.get("production_policy")
+    if row_policy is not None:
+        if (not isinstance(row_policy, dict) or
+                not isinstance(row_policy.get("name"), str) or
+                not row_policy["name"] or
+                isinstance(row_policy.get("version"), bool) or
+                not isinstance(row_policy.get("version"), int) or
+                row_policy["version"] < 1):
+            raise PromotionError("invalid production policy identity")
+        if not isinstance(header_policy, str) or header_policy != row_policy["name"]:
+            raise PromotionError("production policy identity does not match header")
+        expected_hash = production_policy_hash(row_policy["name"], row_policy["version"])
+        supplied_hash = row_policy.get("policy_hash")
+        if supplied_hash is not None and supplied_hash != expected_hash:
+            raise PromotionError("production policy hash mismatch")
+
+    if "ranking_decisions" not in row:
+        return
+    try:
+        decisions = ranking_policy.parse_ranking_decisions(row)
+    except ranking_policy.RankingPolicyError as exc:
+        raise PromotionError(str(exc)) from exc
+    if not decisions:
+        raise PromotionError("ranking decision coverage is empty")
+    production = [decision for decision in decisions if decision.is_production]
+    if len(production) != 1:
+        raise PromotionError("ranking decision production policy coverage is invalid")
+    if row_policy is None:
+        raise PromotionError("ranking decision production policy identity is missing")
+    prod = production[0]
+    if (prod.policy_name != row_policy["name"] or
+            prod.policy_version != row_policy["version"]):
+        raise PromotionError("ranking decision production policy identity does not match")
+    expected_names = {
+        name for name in row.get("schedule", {}).get("candidates", [])
+        if isinstance(name, str) and not name.endswith("#twin")
+    }
+    if not expected_names:
+        raise PromotionError("ranking decision coverage has no scheduled finalists")
+    for decision in decisions:
+        names = [candidate.name for candidate in decision.candidates]
+        if set(names) != expected_names or len(names) != len(set(names)):
+            raise PromotionError("ranking decision candidate coverage is incomplete")
+        if decision.predicted_winner not in expected_names:
+            raise PromotionError("ranking decision winner is outside candidate coverage")
+        if any(candidate.verdict not in ranking_policy.VERDICTS
+               for candidate in decision.candidates):
+            raise PromotionError("ranking decision has unknown candidate verdict")
+        winners = [candidate.name for candidate in decision.candidates
+                   if candidate.verdict == "winner"]
+        if winners != [decision.predicted_winner]:
+            raise PromotionError("ranking decision winner verdict is inconsistent")
+    if prod.predicted_winner != row.get("provisional_winner"):
+        raise PromotionError("production ranking decision does not match provisional winner")
+
+
+def _validate_provisional_status(row: dict[str, Any]) -> None:
+    provisional = row.get("provisional_winner")
+    status = row.get("promotion_status")
+    native = row.get("native")
+    if not isinstance(provisional, str) or not provisional:
+        raise PromotionError("provisional winner identity is missing")
+    # Keep the legacy promotion-stage diagnostic for artifacts that predate
+    # the persisted status field; the caller applies the current-state gate.
+    if status is None:
+        return
+    if status not in {"native", "pending_bh", "confirmation_rejected", "promoted",
+                      "rejected_effect", "rejected_ci", "rejected_bh"}:
+        raise PromotionError("unknown promotion status")
+    if provisional == native and status != "native":
+        raise PromotionError("native provisional winner has inconsistent promotion status")
+    if provisional != native and status == "native":
+        raise PromotionError("challenger provisional winner has native promotion status")
 
 
 def _median(values: list[float]) -> float:
@@ -192,6 +286,8 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             raise PromotionError(f"unknown current record kind at line {number}")
     if header is None or not results:
         raise PromotionError("current measurements header/results required")
+    if "production_policy" in header and not isinstance(header["production_policy"], str):
+        raise PromotionError("invalid production policy header identity")
     return header, results
 
 
@@ -299,6 +395,9 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
         raise PromotionError("invalid current measurements header; rerun")
     hypotheses: list[tuple[str, float]] = []
     for row in results:
+        _validate_policy_identity(row, header)
+        if "provisional_winner" in row or "promotion_status" in row:
+            _validate_provisional_status(row)
         validate_adaptive_evidence(row, header)
         provisional = row.get("provisional_winner")
         if not isinstance(provisional, str) or provisional == row.get("native"):
@@ -369,6 +468,10 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
         "q": q, "threshold_pct": threshold_pct,
         "bootstrap_resamples": resamples, "hypotheses": len(hypotheses),
     }
+    promoted_header["promotion_policy"]["policy_hash"] = hashlib.blake2b(
+        canonical(promoted_header["promotion_policy"]), digest_size=16,
+        person=b"bc-promotion-v1",
+    ).hexdigest()
     data = b"\n".join([canonical(promoted_header), *(canonical(row) for row in results)]) + b"\n"
     atomic_write(output, data)
     return {

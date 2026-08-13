@@ -187,6 +187,45 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaisesRegex(tune_promotion.PromotionError, "unresolved"):
             tune_promotion.validate_adaptive_evidence(row, self.HEADER)
 
+    def test_production_policy_hash_is_deterministic(self):
+        first = tune_promotion.production_policy_hash("latency-v1", 1)
+        second = tune_promotion.production_policy_hash("latency-v1", 1)
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, tune_promotion.production_policy_hash("latency-v1", 2))
+
+    def test_ranking_coverage_requires_policy_identity_and_all_finalists(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"] = {"candidates": ["native", "candidate"]}
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [{
+            "policy_name": "latency-v1", "policy_version": 1,
+            "is_production": True, "predicted_winner": "candidate",
+            "candidates": [
+                {"name": "native", "verdict": "qualified"},
+                {"name": "candidate", "verdict": "winner"},
+            ],
+        }]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+        row["ranking_decisions"][0]["candidates"].pop()
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "coverage"):
+            tune_promotion._validate_policy_identity(row, header)
+
+    def test_ranking_provisional_winner_and_status_are_consistent(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["provisional_winner"] = "native"
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "status"):
+            tune_promotion._validate_provisional_status(row)
+
+    def test_policy_hash_tampering_is_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["production_policy"] = {
+            "name": "latency-v1", "version": 1, "policy_hash": "0" * 32,
+        }
+        header = dict(self.HEADER, production_policy="latency-v1")
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "hash"):
+            tune_promotion._validate_policy_identity(row, header)
+
 
 if __name__ == "__main__":
     unittest.main()
