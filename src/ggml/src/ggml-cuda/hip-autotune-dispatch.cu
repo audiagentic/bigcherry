@@ -1140,7 +1140,7 @@ uint8_t ggml_hip_blas_scalar_type(ggml_type type) {
     }
 }
 
-uint8_t ggml_hip_blas_accumulation_type(ggml_type type) {
+uint8_t ggml_hip_blas_resolve_accumulation_enum(ggml_type type) {
     switch (type) {
         case GGML_TYPE_F16:  return GGML_HIP_BLAS_ACCUMULATION_F16;
         case GGML_TYPE_BF16:
@@ -1149,7 +1149,7 @@ uint8_t ggml_hip_blas_accumulation_type(ggml_type type) {
     }
 }
 
-uint8_t ggml_hip_blas_output_type(ggml_type type) {
+uint8_t ggml_hip_blas_resolve_output_enum(ggml_type type) {
     switch (type) {
         case GGML_TYPE_F16:  return GGML_HIP_BLAS_OUTPUT_F16;
         case GGML_TYPE_BF16: return GGML_HIP_BLAS_OUTPUT_BF16;
@@ -1247,7 +1247,7 @@ bool ggml_hip_resolve_native_blas_call(
 
     const ggml_type compute_type = ggml_hip_blas_resolve_compute_type(ctx, src0, dst);
     call->operand_type = ggml_hip_blas_scalar_type(compute_type);
-    call->accumulation_type = ggml_hip_blas_accumulation_type(compute_type);
+    call->accumulation_type = ggml_hip_blas_resolve_accumulation_enum(compute_type);
 
     call->source_a_conversion = ggml_hip_blas_source_conversion(
         src0, compute_type, &call->source_a_temp_bytes);
@@ -1264,7 +1264,7 @@ bool ggml_hip_resolve_native_blas_call(
             !GGML_CUDA_CC_IS_CDNA(cc);
     }
     call->output_type = (compute_type == GGML_TYPE_F32 || prefer_f32_output)
-        ? GGML_HIP_BLAS_OUTPUT_F32 : ggml_hip_blas_output_type(compute_type);
+        ? GGML_HIP_BLAS_OUTPUT_F32 : ggml_hip_blas_resolve_output_enum(compute_type);
     call->output_conversion =
         (call->output_type == GGML_HIP_BLAS_OUTPUT_F32)
         ? GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE
