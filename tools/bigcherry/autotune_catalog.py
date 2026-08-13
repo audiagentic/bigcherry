@@ -540,21 +540,34 @@ def enumerate_natives(architectures: list[str],
 
 
 def enumerate_blas(architectures: list[str]) -> list[Candidate]:
-    """Standards 16.1: hipBLAS is one opaque candidate to begin with.
+    """Enumerate the first structured BLAS-1 plan.
 
-    Enumerating internal hipBLAS solutions would have to namespace results by
-    the exact ROCm/hipBLASLt version (16.2), which is deliberately out of scope.
+    The native wrapper is emitted by :func:`enumerate_natives`.  This adds one
+    forced-native identity whose resolved plan is explicit, while deliberately
+    leaving provider and API choices as HI57 observations.  The runtime seam
+    that applies this plan is a later HI17 slice; this catalog change must not
+    imply that an unimplemented provider/API candidate is executable.
     """
+    plan = {
+        "operand_type": "native",
+        "accumulation_type": "native",
+        "output_type": "native",
+        "source_a_conversion": "none",
+        "source_b_conversion": "none",
+        "output_conversion": "none",
+        "numerical_class": "exact_baseline",
+    }
     return [Candidate(
-        stable_name=f"blas:hipblas-auto:v{IMPLEMENTATION_VERSION}",
+        stable_name=schema.blas_plan_name(
+            "forced-native", plan, IMPLEMENTATION_VERSION),
         family="blas",
-        source_class="vendor_auto",
+        source_class="existing_runtime",
         architectures=list(architectures),
         graph_safe=False,
-        # hipBLAS may pick a different internal kernel from run to run, so
+        # The forced-native seam still delegates to the vendor library, so
         # bitwise determinism is not something we can assert without measuring.
         deterministic=False,
-        config={"library": "hipblas", "algorithm": "auto"},
+        config={"mode": "forced-native", "blas_plan": plan},
     )]
 
 
