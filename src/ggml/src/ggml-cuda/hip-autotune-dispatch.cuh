@@ -93,12 +93,70 @@ void ggml_cuda_mul_mat_vec_q_variant(
     const ggml_cuda_mm_fusion_args_host * fusion,
     int forced_nwarps, int forced_rows_per_block, bool forced_small_k);
 
-// BLAS has no forced variant -- hipBLAS is one opaque candidate (standards
-// 16.1). It needs only a way in, since upstream keeps its dense cuBLAS entry
-// point file-local; the HI04 patch adds this forwarder to ggml-cuda.cu.
+// BLAS-1 carries a structured native-only plan through a generated side table.
+// The resolve/apply/execute seam records the complete native call facts while
+// the final vendor launcher remains the authority for exact cuBLAS arguments.
+// The HI04 patch still exposes that file-local entry point through a forwarder.
 void ggml_cuda_mul_mat_cublas_dispatch(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
     const ggml_tensor * src1, ggml_tensor * dst);
+
+enum ggml_hip_blas_api_kind {
+    GGML_HIP_BLAS_API_SGEMM = 0,
+    GGML_HIP_BLAS_API_GEMMEX,
+    GGML_HIP_BLAS_API_STRIDED_BATCHED,
+    GGML_HIP_BLAS_API_POINTER_BATCHED,
+};
+
+struct ggml_hip_launch_context;
+
+// Resolved native BLAS facts are intentionally observation/runtime state, not
+// candidate or replay identity. They let the first BLAS-1 seam validate the
+// plan and keep setup, output conversion, and final vendor launch together.
+struct ggml_hip_blas_call_v1 {
+    const ggml_hip_blas_plan_v1 * plan;
+    uint8_t operand_type;
+    uint8_t accumulation_type;
+    uint8_t output_type;
+    uint8_t api;
+    uint8_t source_a_conversion;
+    uint8_t source_b_conversion;
+    uint8_t output_conversion;
+    uint8_t numerical_class;
+    uint8_t strict_precision;
+    uint8_t has_ids;
+    int64_t m;
+    int64_t n;
+    int64_t k;
+    int64_t batch_count;
+    int64_t lda;
+    int64_t ldb;
+    int64_t ldc;
+    int64_t stride_a;
+    int64_t stride_b;
+    int64_t stride_c;
+    size_t source_a_temp_bytes;
+    size_t source_b_temp_bytes;
+    size_t output_temp_bytes;
+    size_t workspace_bytes;
+};
+
+bool ggml_hip_resolve_native_blas_call(
+    ggml_backend_cuda_context & ctx,
+    const ggml_tensor * src0,
+    const ggml_tensor * src1,
+    const ggml_tensor * ids,
+    ggml_tensor * dst,
+    ggml_hip_blas_call_v1 * call);
+
+bool ggml_hip_apply_blas_plan(
+    const ggml_hip_blas_plan_v1 * plan,
+    ggml_hip_blas_call_v1 * call);
+
+void ggml_hip_execute_blas_call(
+    ggml_backend_cuda_context & ctx,
+    const ggml_hip_blas_call_v1 & call,
+    const ggml_hip_launch_context & lc);
 
 // Hard eligibility, evaluated before any launch (standards 12.4). Each answers
 // "could this variant run at all", never "would it be fast".

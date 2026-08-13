@@ -19,7 +19,8 @@ That shape buys three things:
 * the fallback is the real upstream code, so declining is always safe.
 
 The cuBLAS entry point also needs exposing: it is ``static`` upstream, and the
-BLAS candidate has to be able to call it.
+BLAS candidate's shared HI17 executor has to terminate at the same vendor path
+as the native upstream call.
 """
 
 GROUP = "core"

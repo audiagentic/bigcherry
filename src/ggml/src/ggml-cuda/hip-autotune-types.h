@@ -200,6 +200,58 @@ struct ggml_hip_variant_params {
     uint8_t src0_type;
 };
 
+// HI17 BLAS-1 plan identity. These fields live beside the registry rather than
+// in ggml_hip_variant_params: replay v3 serializes the latter's exact payload,
+// while a structured BLAS plan is runtime metadata until a later slice adds a
+// genuinely different launcher. The generated registry carries a side-table
+// pointer indexed by runtime_id.
+enum ggml_hip_blas_operand_type {
+    GGML_HIP_BLAS_OPERAND_NATIVE = 0,
+    GGML_HIP_BLAS_OPERAND_F32    = 1,
+    GGML_HIP_BLAS_OPERAND_F16    = 2,
+    GGML_HIP_BLAS_OPERAND_BF16   = 3,
+};
+
+enum ggml_hip_blas_accumulation_type {
+    GGML_HIP_BLAS_ACCUMULATION_NATIVE = 0,
+    GGML_HIP_BLAS_ACCUMULATION_F16    = 1,
+    GGML_HIP_BLAS_ACCUMULATION_F32    = 2,
+};
+
+enum ggml_hip_blas_output_type {
+    GGML_HIP_BLAS_OUTPUT_NATIVE = 0,
+    GGML_HIP_BLAS_OUTPUT_F16    = 1,
+    GGML_HIP_BLAS_OUTPUT_BF16   = 2,
+    GGML_HIP_BLAS_OUTPUT_F32    = 3,
+};
+
+enum ggml_hip_blas_conversion_route {
+    GGML_HIP_BLAS_CONVERSION_NONE           = 0,
+    GGML_HIP_BLAS_CONVERSION_CONTIGUOUS     = 1,
+    GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS = 2,
+};
+
+enum ggml_hip_blas_output_conversion {
+    GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE            = 0,
+    GGML_HIP_BLAS_OUTPUT_CONVERSION_TEMPORARY_TO_F32 = 1,
+};
+
+enum ggml_hip_blas_numerical_class {
+    GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE = 0,
+    GGML_HIP_BLAS_NUMERICAL_EQUIVALENT     = 1,
+    GGML_HIP_BLAS_NUMERICAL_REDUCED        = 2,
+};
+
+struct ggml_hip_blas_plan_v1 {
+    uint8_t operand_type;
+    uint8_t accumulation_type;
+    uint8_t output_type;
+    uint8_t source_a_conversion;
+    uint8_t source_b_conversion;
+    uint8_t output_conversion;
+    uint8_t numerical_class;
+};
+
 // Everything a launch needs that is not in the signature. Mirrors the arguments
 // upstream's family entry points already take, so a native_wrapper candidate is
 // a direct forward with no marshalling.

@@ -19,6 +19,7 @@
 #include "mmf.cuh"
 
 #include <mutex>
+#include <cctype>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
@@ -1119,21 +1120,271 @@ size_t ggml_hip_mmvq_workspace(const ggml_hip_candidate_descriptor * self,
          * sizeof(block_q8_1) / QK8_1;
 }
 
+namespace {
+
+const ggml_hip_blas_plan_v1 * ggml_hip_blas_plan_for_candidate(
+        const ggml_hip_candidate_descriptor * candidate) {
+    if (candidate == nullptr || candidate->runtime_id >=
+            GGML_HIP_AUTOTUNE_CANDIDATE_COUNT) {
+        return nullptr;
+    }
+    return ggml_hip_blas_plan_registry[candidate->runtime_id];
+}
+
+uint8_t ggml_hip_blas_scalar_type(ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_F32:  return GGML_HIP_BLAS_OPERAND_F32;
+        case GGML_TYPE_F16:  return GGML_HIP_BLAS_OPERAND_F16;
+        case GGML_TYPE_BF16: return GGML_HIP_BLAS_OPERAND_BF16;
+        default:             return GGML_HIP_BLAS_OPERAND_NATIVE;
+    }
+}
+
+uint8_t ggml_hip_blas_accumulation_type(ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_F16:  return GGML_HIP_BLAS_ACCUMULATION_F16;
+        case GGML_TYPE_BF16:
+        case GGML_TYPE_F32:  return GGML_HIP_BLAS_ACCUMULATION_F32;
+        default:             return GGML_HIP_BLAS_ACCUMULATION_NATIVE;
+    }
+}
+
+uint8_t ggml_hip_blas_output_type(ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_F16:  return GGML_HIP_BLAS_OUTPUT_F16;
+        case GGML_TYPE_BF16: return GGML_HIP_BLAS_OUTPUT_BF16;
+        case GGML_TYPE_F32:  return GGML_HIP_BLAS_OUTPUT_F32;
+        default:             return GGML_HIP_BLAS_OUTPUT_NATIVE;
+    }
+}
+
+ggml_type ggml_hip_blas_resolve_compute_type(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+        const ggml_tensor * dst) {
+    ggml_type compute_type = src0->type;
+    if (ggml_is_quantized(compute_type)) {
+        compute_type = fast_fp16_hardware_available(
+            ggml_cuda_info().devices[ctx.device].cc)
+            ? GGML_TYPE_F16 : GGML_TYPE_F32;
+    } else if (compute_type == GGML_TYPE_F16 &&
+               !fast_fp16_hardware_available(
+                   ggml_cuda_info().devices[ctx.device].cc)) {
+        compute_type = GGML_TYPE_F32;
+    }
+    if (dst->op_params[0] == GGML_PREC_F32) {
+        compute_type = GGML_TYPE_F32;
+    }
+
+    const char * env_c = getenv("GGML_CUDA_CUBLAS_COMPUTE_TYPE");
+    if (env_c != nullptr) {
+        std::string env_cpp = env_c;
+        for (char & c : env_cpp) {
+            c = (char) std::tolower((unsigned char) c);
+        }
+        if (env_cpp == "f32" || env_cpp == "fp32") {
+            compute_type = GGML_TYPE_F32;
+        } else if (env_cpp == "f16" || env_cpp == "fp16") {
+            compute_type = GGML_TYPE_F16;
+        } else if (env_cpp == "bf16") {
+            compute_type = GGML_TYPE_BF16;
+        }
+    }
+    return compute_type;
+}
+
+uint8_t ggml_hip_blas_source_conversion(
+        const ggml_tensor * src, ggml_type compute_type, size_t * temp_bytes) {
+    *temp_bytes = 0;
+    if (src->type == compute_type) {
+        return GGML_HIP_BLAS_CONVERSION_NONE;
+    }
+    *temp_bytes = ggml_nelements(src) * ggml_type_size(compute_type);
+    return ggml_is_contiguously_allocated(src)
+        ? GGML_HIP_BLAS_CONVERSION_CONTIGUOUS
+        : GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS;
+}
+
+bool ggml_hip_blas_source_strides(
+        const ggml_tensor * src, ggml_type compute_type,
+        uint8_t conversion, int64_t * s1, int64_t * s2, int64_t * s3) {
+    const size_t source_type_size = ggml_type_size(src->type);
+    if (source_type_size == 0 || src->nb[0] != source_type_size) {
+        return false;
+    }
+    *s1 = src->nb[1] / source_type_size;
+    *s2 = src->nb[2] / source_type_size;
+    *s3 = src->nb[3] / source_type_size;
+    if (conversion == GGML_HIP_BLAS_CONVERSION_NONE) {
+        return true;
+    }
+    if (conversion == GGML_HIP_BLAS_CONVERSION_CONTIGUOUS) {
+        const int64_t block_size = ggml_blck_size(src->type);
+        *s1 *= block_size;
+        *s2 *= block_size;
+        *s3 *= block_size;
+        return true;
+    }
+    *s1 = src->ne[0];
+    *s2 = src->ne[1] * *s1;
+    *s3 = src->ne[2] * *s2;
+    GGML_UNUSED(compute_type);
+    return true;
+}
+
+} // namespace
+
+bool ggml_hip_resolve_native_blas_call(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+        const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+        ggml_hip_blas_call_v1 * call) {
+    if (src0 == nullptr || src1 == nullptr || dst == nullptr || call == nullptr) {
+        return false;
+    }
+    *call = {};
+    call->has_ids = ids != nullptr;
+    call->strict_precision = dst->op_params[0] == GGML_PREC_F32;
+    call->numerical_class = GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE;
+
+    const ggml_type compute_type = ggml_hip_blas_resolve_compute_type(ctx, src0, dst);
+    call->operand_type = ggml_hip_blas_scalar_type(compute_type);
+    call->accumulation_type = ggml_hip_blas_accumulation_type(compute_type);
+
+    call->source_a_conversion = ggml_hip_blas_source_conversion(
+        src0, compute_type, &call->source_a_temp_bytes);
+    call->source_b_conversion = ggml_hip_blas_source_conversion(
+        src1, compute_type, &call->source_b_temp_bytes);
+
+    bool prefer_f32_output = false;
+    const int cc = ggml_cuda_info().devices[ctx.device].cc;
+    if (compute_type == GGML_TYPE_F16) {
+        prefer_f32_output = cc == GGML_CUDA_CC_VOLTA ||
+            GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_CDNA(cc);
+    } else if (compute_type == GGML_TYPE_BF16) {
+        prefer_f32_output = !GGML_CUDA_CC_IS_RDNA3(cc) &&
+            !GGML_CUDA_CC_IS_CDNA(cc);
+    }
+    call->output_type = (compute_type == GGML_TYPE_F32 || prefer_f32_output)
+        ? GGML_HIP_BLAS_OUTPUT_F32 : ggml_hip_blas_output_type(compute_type);
+    call->output_conversion =
+        (call->output_type == GGML_HIP_BLAS_OUTPUT_F32)
+        ? GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE
+        : GGML_HIP_BLAS_OUTPUT_CONVERSION_TEMPORARY_TO_F32;
+    if (call->output_conversion != GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE) {
+        call->output_temp_bytes = ggml_nelements(dst) * ggml_type_size(compute_type);
+    }
+
+    int64_t s01 = 0, s02 = 0, s03 = 0;
+    int64_t s11 = 0, s12 = 0, s13 = 0;
+    if (!ggml_hip_blas_source_strides(src0, compute_type,
+                                      call->source_a_conversion,
+                                      &s01, &s02, &s03) ||
+        !ggml_hip_blas_source_strides(src1, compute_type,
+                                      call->source_b_conversion,
+                                      &s11, &s12, &s13)) {
+        return false;
+    }
+    call->m = src0->ne[1];
+    call->n = src1->ne[1];
+    call->k = src1->ne[0];
+    call->batch_count = src1->ne[2] * src1->ne[3];
+    call->lda = s01;
+    call->ldb = s11;
+    call->ldc = dst->ne[0];
+    call->stride_a = src0->ne[2] == 1 ? s03 : s02;
+    call->stride_b = src1->ne[2] == 1 ? s13 : s12;
+    call->stride_c = dst->ne[1] * dst->ne[0];
+
+    const int64_t r2 = src1->ne[2] / src0->ne[2];
+    const int64_t r3 = src1->ne[3] / src0->ne[3];
+    const bool src0_contiguous_2 = ggml_is_contiguous_2(src0) ||
+        call->source_a_conversion == GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS;
+    const bool src1_contiguous_2 = ggml_is_contiguous_2(src1) ||
+        call->source_b_conversion == GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS;
+    if (compute_type == GGML_TYPE_F32 && src1->ne[2] == 1 && src1->ne[3] == 1) {
+        call->api = GGML_HIP_BLAS_API_SGEMM;
+    } else if (src1->ne[2] == 1 && src1->ne[3] == 1) {
+        call->api = GGML_HIP_BLAS_API_GEMMEX;
+    } else if (r2 == 1 && r3 == 1 && src0_contiguous_2 && src1_contiguous_2) {
+        call->api = GGML_HIP_BLAS_API_STRIDED_BATCHED;
+    } else {
+        call->api = GGML_HIP_BLAS_API_POINTER_BATCHED;
+    }
+    call->workspace_bytes = call->source_a_temp_bytes +
+        call->source_b_temp_bytes + call->output_temp_bytes;
+    if (call->api == GGML_HIP_BLAS_API_POINTER_BATCHED) {
+        const size_t pointer_count = (size_t) call->batch_count;
+        call->workspace_bytes += pointer_count * 3 * sizeof(void *);
+    }
+    return true;
+}
+
+bool ggml_hip_apply_blas_plan(
+        const ggml_hip_blas_plan_v1 * plan, ggml_hip_blas_call_v1 * call) {
+    if (call == nullptr) {
+        return false;
+    }
+    call->plan = plan;
+    if (plan == nullptr) {
+        return true;
+    }
+    // The first runtime slice is deliberately a native-only plan. It proves
+    // the transport and shared launcher without adding a faster BLAS variant.
+    if (call->has_ids ||
+        plan->operand_type != GGML_HIP_BLAS_OPERAND_NATIVE ||
+        plan->accumulation_type != GGML_HIP_BLAS_ACCUMULATION_NATIVE ||
+        plan->output_type != GGML_HIP_BLAS_OUTPUT_NATIVE ||
+        plan->source_a_conversion != GGML_HIP_BLAS_CONVERSION_NONE ||
+        plan->source_b_conversion != GGML_HIP_BLAS_CONVERSION_NONE ||
+        plan->output_conversion != GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE ||
+        plan->numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE) {
+        call->plan = nullptr;
+        return false;
+    }
+    if (call->strict_precision &&
+        plan->numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE) {
+        call->plan = nullptr;
+        return false;
+    }
+    return true;
+}
+
+void ggml_hip_execute_blas_call(
+        ggml_backend_cuda_context & ctx, const ggml_hip_blas_call_v1 & call,
+        const ggml_hip_launch_context & lc) {
+    GGML_UNUSED(call);
+    // Native fallback and forced-native both terminate here. The vendor
+    // launcher remains the authority for exact cuBLAS arguments and its four
+    // Sgemm/GemmEx/batched branches; the resolved call above records those
+    // same dimensions, routes, and workspace requirements for validation.
+    ggml_cuda_mul_mat_cublas_dispatch(ctx, lc.src0, lc.src1, lc.dst);
+}
+
 bool ggml_hip_blas_can_execute(const ggml_hip_candidate_descriptor * self,
                                const ggml_hip_dispatch_signature_v1 & sig,
                                const ggml_hip_hardware_key_v1 & hw) {
     if (!ggml_hip_family_can_serve(GGML_HIP_FAMILY_BLAS, sig)) {
         return false;
     }
-    GGML_UNUSED(self);
+    const ggml_hip_blas_plan_v1 * plan = ggml_hip_blas_plan_for_candidate(self);
+    if (plan != nullptr && (sig.flags & GGML_HIP_SIG_HAS_IDS)) {
+        return false;
+    }
+    if (plan != nullptr && sig.prec == GGML_PREC_F32 &&
+        plan->numerical_class == GGML_HIP_BLAS_NUMERICAL_REDUCED) {
+        return false;
+    }
     GGML_UNUSED(hw);
     return true;   // the capability predicate above is the whole check
 }
 
 void ggml_hip_blas_launch(const ggml_hip_candidate_descriptor * self,
                           const ggml_hip_launch_context & lc) {
-    GGML_UNUSED(self);
-    ggml_cuda_mul_mat_cublas_dispatch(*lc.ctx, lc.src0, lc.src1, lc.dst);
+    ggml_hip_blas_call_v1 call = {};
+    GGML_ASSERT(ggml_hip_resolve_native_blas_call(
+        *lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst, &call));
+    const ggml_hip_blas_plan_v1 * plan = ggml_hip_blas_plan_for_candidate(self);
+    GGML_ASSERT(ggml_hip_apply_blas_plan(plan, &call));
+    ggml_hip_execute_blas_call(*lc.ctx, call, lc);
 }
 
 size_t ggml_hip_blas_workspace(const ggml_hip_candidate_descriptor * self,
