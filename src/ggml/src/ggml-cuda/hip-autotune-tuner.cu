@@ -162,6 +162,14 @@ struct Result {
     ggml_hip_device_state device_state_post;
     std::string device_clock_drift_json = "{\"status\":\"unavailable\"}";
 
+    // HI60: observation-only evidence for per-round clock counterbalancing.
+    // These fields deliberately do not participate in any identity, ranking,
+    // or replay key.
+    int clock_drift_rounds = 0;
+    int reverse_retime_attempts = 0;
+    int reverse_retime_passed = 0;
+    std::string retime_status = "not_needed";
+
     // HI50: every compiled-in policy's full verdict, for offline comparison
     // (bigcherry rank-replay). Which one actually governed this signature's
     // promotion.
@@ -277,7 +285,13 @@ std::string journal_result_summary(
         ",\"eligible\":" + std::to_string(result.eligible) +
         ",\"measured\":" + std::to_string(result.measured) +
         ",\"improvement_pct\":" + std::to_string(result.improvement_pct) +
-        ",\"confidence\":" + std::to_string(result.confidence) + "}";
+        ",\"confidence\":" + std::to_string(result.confidence) +
+        ",\"retime_status\":\"" + result.retime_status +
+        "\",\"clock_drift_rounds\":" + std::to_string(result.clock_drift_rounds) +
+        ",\"reverse_retime_attempts\":" +
+        std::to_string(result.reverse_retime_attempts) +
+        ",\"reverse_retime_passed\":" +
+        std::to_string(result.reverse_retime_passed) + "}";
 }
 
 // Called from every g_results.emplace() site (there are several -- most are
@@ -693,6 +707,8 @@ std::string device_state_json(const ggml_hip_device_state & s) {
     return std::string(buf);
 }
 
+constexpr double k_clock_drift_threshold_pct = 5.0;
+
 std::string device_clock_drift_json(const ggml_hip_device_state & pre,
                                     const ggml_hip_device_state & post) {
     if (!pre.valid || !post.valid || !pre.identity_valid || !post.identity_valid) {
@@ -715,11 +731,194 @@ std::string device_clock_drift_json(const ggml_hip_device_state & pre,
     char buf[256];
     snprintf(buf, sizeof(buf),
              "{\"status\":\"captured\",\"sclk_delta_mhz\":%lld,"
-             "\"mclk_delta_mhz\":%lld,\"max_abs_pct\":%.3f}",
+             "\"mclk_delta_mhz\":%lld,\"max_abs_pct\":%.3f,"
+             "\"drift\":%s,\"threshold_pct\":%.3f}",
              (long long) post.sclk_mhz - (long long) pre.sclk_mhz,
              (long long) post.mclk_mhz - (long long) pre.mclk_mhz,
-             std::max(sclk_pct, mclk_pct));
+             std::max(sclk_pct, mclk_pct),
+             std::max(sclk_pct, mclk_pct) > k_clock_drift_threshold_pct ? "true" : "false",
+             k_clock_drift_threshold_pct);
     return std::string(buf);
+}
+
+enum class RetimeStatus {
+    not_needed,
+    corrected,
+    unresolved,
+    unavailable,
+};
+
+const char * retime_status_name(RetimeStatus status) {
+    switch (status) {
+        case RetimeStatus::not_needed:  return "not_needed";
+        case RetimeStatus::corrected:   return "corrected";
+        case RetimeStatus::unresolved:  return "unresolved";
+        case RetimeStatus::unavailable: return "unavailable";
+    }
+    return "unresolved";
+}
+
+struct ClockDriftObservation {
+    bool comparable = false;
+    bool identity_mismatch = false;
+    bool drift = false;
+    double max_abs_pct = 0.0;
+};
+
+ClockDriftObservation observe_clock_drift(const ggml_hip_device_state & pre,
+                                          const ggml_hip_device_state & post) {
+    ClockDriftObservation out;
+    if (!pre.valid || !post.valid || !pre.identity_valid || !post.identity_valid) {
+        return out;
+    }
+    if (pre.hip_device != post.hip_device || pre.pci_domain != post.pci_domain ||
+            pre.pci_bus != post.pci_bus || pre.pci_device != post.pci_device) {
+        out.identity_mismatch = true;
+        return out;
+    }
+    if (pre.sclk_mhz == 0 || post.sclk_mhz == 0 || pre.mclk_mhz == 0 ||
+            post.mclk_mhz == 0) {
+        return out;
+    }
+    const double sclk_pct = 100.0 * std::abs((double) post.sclk_mhz -
+                                             (double) pre.sclk_mhz) /
+                            (double) pre.sclk_mhz;
+    const double mclk_pct = 100.0 * std::abs((double) post.mclk_mhz -
+                                             (double) pre.mclk_mhz) /
+                            (double) pre.mclk_mhz;
+    out.comparable = true;
+    out.max_abs_pct = std::max(sclk_pct, mclk_pct);
+    out.drift = out.max_abs_pct > k_clock_drift_threshold_pct;
+    return out;
+}
+
+struct CounterbalancedRound {
+    std::vector<double> gpu_us;
+    std::vector<double> host_us;
+    RetimeStatus status = RetimeStatus::not_needed;
+    bool complete = false;
+    bool clock_drift = false;
+    bool reverse_attempted = false;
+    bool reverse_passed = false;
+};
+
+// Measure one round in a deterministic order. When a comparable clock drift
+// is observed, throw away the first order and retry the exact same candidates
+// once in reverse order. Historical timings are never rescaled by a clock
+// ratio: only a stable reverse retry can replace a drifted round.
+CounterbalancedRound run_counterbalanced_round(
+        const std::vector<Measurement *> & candidates,
+        size_t offset, bool reverse,
+        const ggml_hip_launch_context & lc,
+        int launches_per_sample,
+        const char * protocol_stage) {
+    CounterbalancedRound out;
+    out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+    out.host_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+    if (candidates.empty()) {
+        out.complete = true;
+        return out;
+    }
+
+    const bool smi_enabled = ggml_hip_smi_enabled();
+    const int hip_device = smi_enabled ? ggml_cuda_get_device() : -1;
+    auto run_order = [&](bool reverse_order, std::vector<double> & gpu,
+                         std::vector<double> & host,
+                         ggml_hip_device_state & pre,
+                         ggml_hip_device_state & post) {
+        gpu.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+        host.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+        pre = smi_enabled ? ggml_hip_query_device_state(hip_device)
+                          : ggml_hip_device_state{};
+        bool complete = true;
+        for (size_t position = 0; position < candidates.size(); ++position) {
+            const size_t index = reverse_order
+                ? (offset + candidates.size() - 1 - position) % candidates.size()
+                : (offset + position) % candidates.size();
+            std::vector<double> one_gpu;
+            std::vector<double> one_host;
+            if (!time_candidate(candidates[index]->candidate, lc, 0, 1,
+                                launches_per_sample, one_gpu, one_host,
+                                nullptr, false, nullptr, protocol_stage) ||
+                    one_gpu.empty() || one_host.empty()) {
+                complete = false;
+                continue;
+            }
+            gpu[index] = one_gpu[0];
+            host[index] = one_host[0];
+        }
+        post = smi_enabled ? ggml_hip_query_device_state(hip_device)
+                           : ggml_hip_device_state{};
+        return complete;
+    };
+
+    ggml_hip_device_state pre;
+    ggml_hip_device_state post;
+    const bool first_complete = run_order(reverse, out.gpu_us, out.host_us, pre, post);
+    const ClockDriftObservation first_observation = observe_clock_drift(pre, post);
+    if (!smi_enabled) {
+        out.status = RetimeStatus::unavailable;
+        out.complete = first_complete;
+        return out;
+    }
+    if (first_observation.identity_mismatch) {
+        out.status = RetimeStatus::unresolved;
+        out.complete = false;
+        return out;
+    }
+    if (!first_observation.comparable) {
+        out.status = first_complete ? RetimeStatus::unavailable
+                                    : RetimeStatus::not_needed;
+        out.complete = first_complete;
+        return out;
+    }
+    if (!first_observation.drift) {
+        out.complete = first_complete;
+        return out;
+    }
+
+    out.clock_drift = true;
+    out.reverse_attempted = true;
+    std::vector<double> reverse_gpu;
+    std::vector<double> reverse_host;
+    ggml_hip_device_state reverse_pre;
+    ggml_hip_device_state reverse_post;
+    const bool reverse_complete = run_order(!reverse, reverse_gpu, reverse_host,
+                                             reverse_pre, reverse_post);
+    const ClockDriftObservation reverse_observation =
+        observe_clock_drift(reverse_pre, reverse_post);
+    if (reverse_complete && reverse_observation.comparable &&
+            !reverse_observation.drift && !reverse_observation.identity_mismatch) {
+        out.gpu_us = std::move(reverse_gpu);
+        out.host_us = std::move(reverse_host);
+        out.status = RetimeStatus::corrected;
+        out.complete = true;
+        out.reverse_passed = true;
+        return out;
+    }
+    out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+    out.host_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
+    out.status = RetimeStatus::unresolved;
+    out.complete = false;
+    return out;
+}
+
+void merge_retime_status(Result & result, RetimeStatus status) {
+    if (status == RetimeStatus::unresolved) {
+        result.retime_status = "unresolved";
+    } else if (status == RetimeStatus::corrected && result.retime_status != "unresolved") {
+        result.retime_status = "corrected";
+    } else if (status == RetimeStatus::unavailable &&
+            result.retime_status == "not_needed") {
+        result.retime_status = "unavailable";
+    }
+}
+
+void record_retime_observation(Result & result, const CounterbalancedRound & round) {
+    if (round.clock_drift) ++result.clock_drift_rounds;
+    if (round.reverse_attempted) ++result.reverse_retime_attempts;
+    if (round.reverse_passed) ++result.reverse_retime_passed;
+    merge_retime_status(result, round.status);
 }
 
 // E3: the floor cost of one timed sample with no work in it -- two event
@@ -1482,19 +1681,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
         for (int round = 0; round < config.final_samples; ++round) {
             const size_t offset = (result.schedule_seed + (uint32_t) round) % finalists.size();
-            for (size_t position = 0; position < finalists.size(); ++position) {
-                Measurement * m = finalists[(offset + position) % finalists.size()];
-                std::vector<double> g1;
-                std::vector<double> h1;
-                if (time_candidate(m->candidate, lc, 0, 1,
-                                   result.launches_per_sample, g1, h1) && !g1.empty()) {
-                    m->final_gpu_us[round]  = g1[0];
-                    m->final_host_us[round] = h1[0];
+            const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
+            const CounterbalancedRound measured = run_counterbalanced_round(
+                finalists, offset, reverse, lc, result.launches_per_sample, "final");
+            record_retime_observation(result, measured);
+            if (measured.complete) {
+                for (size_t index = 0; index < finalists.size(); ++index) {
+                    finalists[index]->final_gpu_us[round]  = measured.gpu_us[index];
+                    finalists[index]->final_host_us[round] = measured.host_us[index];
                 }
-                // else leave NaN: position must equal round, or E1's paired
-                // sign test would silently compare round 7 of one candidate
-                // against round 8 of another. Medians never noticed; the sign
-                // test would be quietly wrong instead of loudly so.
             }
         }
         for (Measurement * m : finalists) {
@@ -1611,12 +1806,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             Measurement * pair[2] = { native_m, twin };
             std::vector<std::vector<double>> g(2), h(2);
             for (int round = 0; round < config.final_samples; ++round) {
-                for (int i = 0; i < 2; ++i) {
-                    std::vector<double> g1, h1;
-                    if (time_candidate(pair[i]->candidate, lc, 0, 1,
-                                       result.launches_per_sample, g1, h1)) {
-                        g[i].insert(g[i].end(), g1.begin(), g1.end());
-                        h[i].insert(h[i].end(), h1.begin(), h1.end());
+                const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
+                const CounterbalancedRound measured = run_counterbalanced_round(
+                    {pair[0], pair[1]}, 0, reverse, lc,
+                    result.launches_per_sample, "final");
+                record_retime_observation(result, measured);
+                if (measured.complete) {
+                    for (int i = 0; i < 2; ++i) {
+                        g[i].push_back(measured.gpu_us[(size_t) i]);
+                        h[i].push_back(measured.host_us[(size_t) i]);
                     }
                 }
             }
@@ -1753,17 +1951,14 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             rounds, std::numeric_limits<double>::quiet_NaN());
         Measurement * pair[2] = { native_m, winner_m };
         for (int round = 0; round < rounds; ++round) {
-            const int first = (int) ((result.schedule_seed + (uint32_t) round) & 1u);
-            for (int position = 0; position < 2; ++position) {
-                const int which = (first + position) & 1;
-                std::vector<double> gpu;
-                std::vector<double> host;
-                if (time_candidate(pair[which]->candidate, lc, 0, 1,
-                                   result.launches_per_sample, gpu, host,
-                                   nullptr, false, nullptr, "confirmation") && !gpu.empty()) {
-                    if (which == 0) result.confirmation_native_us[round] = gpu[0];
-                    else            result.confirmation_winner_us[round] = gpu[0];
-                }
+            const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
+            const CounterbalancedRound measured = run_counterbalanced_round(
+                {pair[0], pair[1]}, 0, reverse, lc,
+                result.launches_per_sample, "confirmation");
+            record_retime_observation(result, measured);
+            if (measured.complete) {
+                result.confirmation_native_us[round] = measured.gpu_us[0];
+                result.confirmation_winner_us[round] = measured.gpu_us[1];
             }
         }
         result.p_value = paired_sign_test(
@@ -1904,6 +2099,8 @@ void ggml_hip_tuner_flush() {
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
                 "\"device_state_pre\":%s,\"device_state_post\":%s,"
                 "\"device_clock_drift\":%s,"
+                "\"clock_drift_rounds\":%d,\"reverse_retime_attempts\":%d,"
+                "\"reverse_retime_passed\":%d,\"retime_status\":\"%s\","
                 "\"canary_state\":\"%s\",\"provisional_winner\":\"%s\","
                 "\"production_policy\":{\"name\":\"%s\",\"version\":%d},"
                 "\"ranking_decisions\":%s",
@@ -1929,6 +2126,8 @@ void ggml_hip_tuner_flush() {
                 r.launches_per_sample, r.schedule_seed,
                 r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
                 r.device_clock_drift_json.c_str(),
+                r.clock_drift_rounds, r.reverse_retime_attempts,
+                r.reverse_retime_passed, r.retime_status.c_str(),
                 canary_state_name(r.canary_state), r.provisional_winner.c_str(),
                 r.production_policy_name.c_str(), r.production_policy_version,
                 r.ranking_decisions_json.c_str());
@@ -1941,6 +2140,7 @@ void ggml_hip_tuner_flush() {
                     ",\"schedule\":{\"schema_version\":1,"
                     "\"selection_algorithm\":\"seeded-rotation-v1\","
                     "\"confirmation_algorithm\":\"seeded-alternation-v1\","
+                    "\"counterbalance_algorithm\":\"seeded-reverse-v1\","
                     "\"candidates\":%s}",
                     string_array_json(r.schedule_candidates).c_str());
         }

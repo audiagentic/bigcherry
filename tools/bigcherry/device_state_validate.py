@@ -97,4 +97,28 @@ def validate_device_state_report(report: Any) -> None:
             if key not in drift:
                 raise DeviceStateEvidenceError(f"captured drift missing {key}")
             _number(drift[key], f"device_clock_drift.{key}")
+        if "drift" in drift and not isinstance(drift["drift"], bool):
+            raise DeviceStateEvidenceError("device_clock_drift.drift must be boolean")
+        if "threshold_pct" in drift:
+            _number(drift["threshold_pct"], "device_clock_drift.threshold_pct")
+            if drift["threshold_pct"] <= 0:
+                raise DeviceStateEvidenceError("device_clock_drift.threshold_pct must be positive")
 
+    status = report.get("retime_status")
+    counters = ("clock_drift_rounds", "reverse_retime_attempts", "reverse_retime_passed")
+    if status is not None:
+        if status not in {"not_needed", "corrected", "unresolved", "unavailable"}:
+            raise DeviceStateEvidenceError("retime_status has an invalid value")
+        values = {}
+        for key in counters:
+            value = report.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise DeviceStateEvidenceError(f"{key} must be a non-negative integer")
+            values[key] = value
+        if values["reverse_retime_passed"] > values["reverse_retime_attempts"]:
+            raise DeviceStateEvidenceError("reverse_retime_passed exceeds attempts")
+        if status == "corrected" and not (
+                values["clock_drift_rounds"] >= 1 and
+                values["reverse_retime_attempts"] >= 1 and
+                values["reverse_retime_passed"] >= 1):
+            raise DeviceStateEvidenceError("corrected retime lacks complete reverse evidence")

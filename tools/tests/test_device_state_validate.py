@@ -24,6 +24,9 @@ def report(**overrides):
             "status": "captured", "sclk_delta_mhz": 0,
             "mclk_delta_mhz": 0, "max_abs_pct": 0.0,
         },
+        "retime_status": "not_needed",
+        "clock_drift_rounds": 0, "reverse_retime_attempts": 0,
+        "reverse_retime_passed": 0,
     }
     value.update(overrides)
     return value
@@ -61,3 +64,23 @@ def test_captured_drift_requires_all_metrics():
     drift = {"status": "captured", "sclk_delta_mhz": 0}
     with pytest.raises(DeviceStateEvidenceError, match="mclk_delta_mhz"):
         validate_device_state_report(report(device_clock_drift=drift))
+
+
+def test_corrected_retime_requires_reverse_evidence():
+    with pytest.raises(DeviceStateEvidenceError, match="complete reverse evidence"):
+        validate_device_state_report(report(retime_status="corrected"))
+
+
+def test_corrected_retime_accepts_complete_evidence():
+    validate_device_state_report(report(
+        retime_status="corrected", clock_drift_rounds=1,
+        reverse_retime_attempts=1, reverse_retime_passed=1,
+    ))
+
+
+def test_retime_counters_are_bounded():
+    with pytest.raises(DeviceStateEvidenceError, match="exceeds attempts"):
+        validate_device_state_report(report(
+            retime_status="unresolved", clock_drift_rounds=1,
+            reverse_retime_attempts=1, reverse_retime_passed=2,
+        ))
