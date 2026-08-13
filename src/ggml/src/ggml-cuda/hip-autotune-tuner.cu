@@ -523,6 +523,17 @@ static bool hip_ok(hipError_t status, const char * what) {
     return false;
 }
 
+// HIP event destruction is part of the measurement transaction.  Keep it in
+// one checked seam so every event is attempted exactly once, even when an
+// earlier cleanup fails.  Clearing the handle makes accidental double cleanup
+// harmless for callers that need to report a primary measurement failure.
+static bool hip_event_destroy_checked(hipEvent_t & event, const char * what) {
+    if (event == nullptr) return true;
+    const hipError_t status = hipEventDestroy(event);
+    event = nullptr;
+    return hip_ok(status, what);
+}
+
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     const ggml_hip_launch_context & lc,
                     int warmup, int samples, int launches_per_sample,
@@ -536,10 +547,20 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     const char * stage = protocol_stage != nullptr
         ? protocol_stage : (isolate_workspace ? "isolated_workspace" : "final");
 
-    hipEvent_t start;
-    hipEvent_t stop;
-    if (hipEventCreate(&start) != hipSuccess) return false;
-    if (hipEventCreate(&stop)  != hipSuccess) { hipEventDestroy(start); return false; }
+    hipEvent_t start = nullptr;
+    hipEvent_t stop = nullptr;
+    auto destroy_events = [&]() {
+        // Do not short-circuit: both event handles must have a checked,
+        // exactly-once destruction attempt.
+        const bool start_ok = hip_event_destroy_checked(start, "hipEventDestroy(start)");
+        const bool stop_ok = hip_event_destroy_checked(stop, "hipEventDestroy(stop)");
+        return start_ok && stop_ok;
+    };
+    if (!hip_ok(hipEventCreate(&start), "hipEventCreate(start)")) return false;
+    if (!hip_ok(hipEventCreate(&stop), "hipEventCreate(stop)")) {
+        destroy_events();
+        return false;
+    }
 
     ggml_hip_candidate_descriptor effective = *candidate;
 
@@ -562,11 +583,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     }
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
-        hipEventDestroy(start); hipEventDestroy(stop);
+        destroy_events();
         return false;
     }
     if (hipGetLastError() != hipSuccess) {
-        hipEventDestroy(start); hipEventDestroy(stop);
+        destroy_events();
         return false;
     }
     trace_workspace_event(stage, "synchronize", candidate->stable_name);
@@ -589,7 +610,8 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
         const int64_t host_start = ggml_time_us();
         if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
-            hipEventDestroy(start); hipEventDestroy(stop); return false;
+            destroy_events();
+            return false;
         }
         // Several launches per sample when one kernel is below event
         // resolution; the mean of the batch is the sample.
@@ -597,10 +619,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
             effective.launch(&effective, lc);
         }
         if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
-            hipEventDestroy(start); hipEventDestroy(stop); return false;
+            destroy_events();
+            return false;
         }
         if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
-            hipEventDestroy(start); hipEventDestroy(stop);
+            destroy_events();
             return false;
         }
         const int64_t host_end = ggml_time_us();
@@ -608,11 +631,13 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         float ms = 0.0f;
         if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")
                 || !std::isfinite(ms) || ms <= 0.0f) {
-            hipEventDestroy(start); hipEventDestroy(stop); return false;
+            destroy_events();
+            return false;
         }
         const double us = (double) ms * 1000.0 / (double) launches_per_sample;
         if (!std::isfinite(us) || us <= 0.0) {
-            hipEventDestroy(start); hipEventDestroy(stop); return false;
+            destroy_events();
+            return false;
         }
         gpu_us.push_back(us);
         host_us.push_back((double) (host_end - host_start)
@@ -620,8 +645,7 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         trace_workspace_event(stage, "timed_sample_end", candidate->stable_name);
     }
 
-    const bool destroy_ok = hipEventDestroy(start) == hipSuccess
-        && hipEventDestroy(stop) == hipSuccess;
+    const bool destroy_ok = destroy_events();
 #ifdef GGML_HIP_WORKSPACE_METRICS
     if (pool_peak_bytes != nullptr && workspace_ctx != nullptr && isolate_workspace) {
         const size_t peak = workspace_ctx->pool().bc_workspace_peak_bytes();
@@ -709,14 +733,24 @@ double g_host_sync_overhead_us = -1.0;
 bool g_host_sync_overhead_valid = false;
 
 double host_sync_overhead_us(cudaStream_t stream) {
-    if (g_host_sync_overhead_us >= 0.0) return g_host_sync_overhead_us;
+    if (g_host_sync_overhead_valid && g_host_sync_overhead_us >= 0.0) {
+        return g_host_sync_overhead_us;
+    }
+    g_host_sync_overhead_us = -1.0;
+    g_host_sync_overhead_valid = false;
 
-    hipEvent_t a, b;
+    hipEvent_t a = nullptr;
+    hipEvent_t b = nullptr;
+    auto destroy_events = [&]() {
+        const bool a_ok = hip_event_destroy_checked(a, "hipEventDestroy(overhead start)");
+        const bool b_ok = hip_event_destroy_checked(b, "hipEventDestroy(overhead stop)");
+        return a_ok && b_ok;
+    };
     if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
         return 0.0;
     }
     if (!hip_ok(hipEventCreate(&b), "hipEventCreate(overhead stop)")) {
-        hipEventDestroy(a);
+        destroy_events();
         return 0.0;
     }
     std::vector<double> samples;
@@ -725,13 +759,25 @@ double host_sync_overhead_us(cudaStream_t stream) {
         if (!hip_ok(hipEventRecord(a, stream), "hipEventRecord(overhead start)")
                 || !hip_ok(hipEventRecord(b, stream), "hipEventRecord(overhead stop)")
                 || !hip_ok(hipEventSynchronize(b), "hipEventSynchronize(overhead)")) {
-            hipEventDestroy(a); hipEventDestroy(b); return 0.0;
+            destroy_events();
+            return 0.0;
         }
         samples.push_back((double) (ggml_time_us() - t0));
     }
-    hipEventDestroy(a); hipEventDestroy(b);
-    g_host_sync_overhead_us = median_of(samples);
-    g_host_sync_overhead_valid = !samples.empty();
+    const bool destroy_ok = destroy_events();
+    if (!destroy_ok || samples.empty()) {
+        g_host_sync_overhead_us = -1.0;
+        g_host_sync_overhead_valid = false;
+        return 0.0;
+    }
+    const double overhead = median_of(samples);
+    if (!std::isfinite(overhead) || overhead < 0.0) {
+        g_host_sync_overhead_us = -1.0;
+        g_host_sync_overhead_valid = false;
+        return 0.0;
+    }
+    g_host_sync_overhead_us = overhead;
+    g_host_sync_overhead_valid = true;
     return g_host_sync_overhead_us;
 }
 
