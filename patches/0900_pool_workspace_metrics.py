@@ -79,6 +79,13 @@ _LEG_CLEAR_CACHE = """
 #endif
 """
 
+# The pool counters and isolated measurement protocol are required by the
+# release tune build whenever GGML_HIP_WORKSPACE_METRICS is enabled.  This
+# patch has been source- and hardware-validated; leaving the default state as
+# ``untested`` silently omits it from recipes whose state filter is
+# ``validated`` and makes only some architecture builds fail.
+STATE = "validated"
+
 
 _MEMBERS = """
 #ifdef GGML_HIP_WORKSPACE_METRICS
