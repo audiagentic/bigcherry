@@ -634,7 +634,21 @@ def validate_candidate(candidate: dict[str, Any], where: str) -> None:
 
     validate_custom_candidate_enablement(candidate, where)
     if candidate["family"] == "blas" and "blas_plan" in candidate["config"]:
-        validate_blas_plan(candidate["config"]["blas_plan"], f"{where}.config.blas_plan")
+        plan = candidate["config"]["blas_plan"]
+        validate_blas_plan(plan, f"{where}.config.blas_plan")
+
+        # A structured BLAS plan is a candidate identity, not merely metadata.
+        # Recompute the durable name at validation time so a malformed manifest
+        # cannot advertise one plan while carrying another.
+        expected_name = blas_plan_name(
+            candidate["config"].get("mode"),
+            plan,
+            candidate["implementation_version"],
+        )
+        if candidate["stable_name"] != expected_name:
+            raise SchemaError(
+                f"{where}: stable_name {candidate['stable_name']!r} disagrees "
+                f"with resolved BLAS plan identity {expected_name!r}")
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:

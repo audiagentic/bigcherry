@@ -37,6 +37,7 @@ def _signature(**overrides) -> dict:
 def test_forced_native_name_contains_every_resolved_plan_field():
     candidate = _forced_native()
     plan = candidate["config"]["blas_plan"]
+    schema.validate_candidate(candidate, "candidate.forced_native")
     schema.validate_blas_plan(plan, "candidate.config.blas_plan")
 
     expected_tokens = {
@@ -51,6 +52,35 @@ def test_forced_native_name_contains_every_resolved_plan_field():
     assert candidate["stable_name"].startswith("blas:forced-native:")
     for token in expected_tokens.values():
         assert token in candidate["stable_name"]
+
+
+def test_structured_blas_plan_must_match_stable_identity():
+    candidate = _forced_native()
+    candidate["config"]["blas_plan"]["operand_type"] = "f32"
+
+    with pytest.raises(schema.SchemaError, match="resolved BLAS plan identity"):
+        schema.validate_candidate(candidate, "candidate.mutated_plan")
+
+    candidate = _forced_native()
+    candidate["stable_name"] = candidate["stable_name"].replace(
+        "operand-native", "operand-f32")
+
+    with pytest.raises(schema.SchemaError, match="resolved BLAS plan identity"):
+        schema.validate_candidate(candidate, "candidate.mutated_name")
+
+
+def test_structured_blas_plan_requires_a_valid_mode():
+    candidate = _forced_native()
+    del candidate["config"]["mode"]
+
+    with pytest.raises(schema.SchemaError, match="BLAS plan mode"):
+        schema.validate_candidate(candidate, "candidate.missing_mode")
+
+
+def test_native_blas_fallback_without_structured_plan_remains_valid():
+    candidate = catalog.enumerate_natives(["gfx1100"], ["blas"])[0].to_dict()
+    schema.validate_candidate(candidate, "candidate.native_fallback")
+    assert candidate["stable_name"] == "blas:native:v1"
 
 
 def test_strict_f32_rejects_reduced_precision_plans():
