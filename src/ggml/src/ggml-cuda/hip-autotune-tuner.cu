@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // E6: compiler identity, so a measurements file that outlives a ROCm upgrade
@@ -940,10 +941,8 @@ const PolicyTableEntry g_policy_table[] = {
 constexpr size_t g_policy_table_size =
     sizeof(g_policy_table) / sizeof(g_policy_table[0]);
 
-// Which table entry governs real dispatch. Falls back to entry 0 for an
-// unrecognized production_policy so a typo'd env var can only mis-scope
-// which policy's *name* gets reported as production, never silently stop
-// promotion -- promotion always runs against some resolved entry.
+// Which table entry governs real dispatch. An unrecognized production_policy
+// is invalid and must fail closed before any measurement is performed.
 static size_t resolve_production_policy_index(const ggml_hip_tuner_config & config) {
     for (size_t i = 0; i < g_policy_table_size; ++i) {
         if (config.production_policy == g_policy_table[i].name) return i;
@@ -952,7 +951,7 @@ static size_t resolve_production_policy_index(const ggml_hip_tuner_config & conf
 }
 
 static bool policy_name_is_active(const std::string & name, const std::string & active_policies) {
-    if (active_policies.empty() || active_policies == "all") return true;
+    if (active_policies == "all") return true;
     size_t start = 0;
     while (start <= active_policies.size()) {
         const size_t comma = active_policies.find(',', start);
@@ -966,17 +965,21 @@ static bool policy_name_is_active(const std::string & name, const std::string & 
 }
 
 static bool policy_list_is_valid(const std::string & active_policies) {
-    if (active_policies.empty() || active_policies == "all") return true;
+    if (active_policies == "all") return true;
+    if (active_policies.empty()) return false;
+    std::unordered_set<std::string> seen;
     size_t start = 0;
     while (start <= active_policies.size()) {
         const size_t comma = active_policies.find(',', start);
         const std::string tok = active_policies.substr(
             start, comma == std::string::npos ? std::string::npos : comma - start);
+        if (tok.empty()) return false;
         bool known = false;
         for (size_t i = 0; i < g_policy_table_size; ++i) {
             if (tok == g_policy_table[i].name) { known = true; break; }
         }
         if (!known) return false;
+        if (!seen.insert(tok).second) return false;
         if (comma == std::string::npos) break;
         start = comma + 1;
     }
