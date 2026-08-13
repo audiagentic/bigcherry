@@ -133,6 +133,25 @@ def test_native_fallback_covers_every_requested_architecture():
     assert set(natives[0].architectures) == set(architectures)
 
 
+def test_registry_carries_structured_plans_in_a_replay_independent_side_table():
+    candidates = (
+        catalog.enumerate_natives(["gfx1100"], list(schema.FAMILIES)) +
+        catalog.enumerate_blas(["gfx1100"])
+    )
+    manifest = {"candidates": [candidate.to_dict() for candidate in candidates]}
+    rendered = catalog.render_registry(manifest)
+
+    forced_index = len(candidates) - 1
+    assert "ggml_hip_blas_plan_registry[]" in rendered
+    assert f"ggml_hip_blas_plan_{forced_index}" in rendered
+    assert rendered.count("nullptr,") == len(candidates) - 1
+    assert "GGML_HIP_BLAS_OPERAND_NATIVE" in rendered
+    assert "GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE" in rendered
+    # The fixed replay variant remains seven scalar fields; the plan is not
+    # smuggled into the serialized variant initializer.
+    assert "{ 0, 0, 0, 0, 0, 0, 0 }" in rendered
+
+
 def test_resolver_normalizes_a_valid_native_plan_stably():
     plan = _forced_native()["config"]["blas_plan"]
     first = schema.resolve_blas_plan(plan, _signature())
