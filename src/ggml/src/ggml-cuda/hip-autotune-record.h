@@ -40,7 +40,9 @@ void ggml_hip_record_observation(
     const ggml_hip_hardware_key_v1 & hw,
     const ggml_hip_digest & signature_digest,
     const ggml_hip_digest & hardware_digest,
-    const ggml_hip_native_selection & native);
+    const ggml_hip_native_selection & native,
+    const char * effective_api,
+    size_t workspace_bytes);
 
 // Count a repeat encounter of an already-recorded signature.
 //

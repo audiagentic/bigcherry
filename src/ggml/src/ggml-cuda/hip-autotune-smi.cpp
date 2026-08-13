@@ -143,6 +143,16 @@ ggml_hip_device_state ggml_hip_query_device_state(int hip_device) {
     }
     const uint32_t dv = (uint32_t) index;
 
+    hipDeviceProp_t prop{};
+    if (hipGetDeviceProperties(&prop, hip_device) != hipSuccess) {
+        return out;
+    }
+    out.hip_device = hip_device;
+    out.pci_domain = (uint32_t) prop.pciDomainID;
+    out.pci_bus = (uint32_t) prop.pciBusID;
+    out.pci_device = (uint32_t) prop.pciDeviceID;
+    out.identity_valid = true;
+
     out.sclk_mhz = current_clock_mhz(dv, RSMI_CLK_TYPE_SYS_);
     out.mclk_mhz = current_clock_mhz(dv, RSMI_CLK_TYPE_MEM_);
 

@@ -27,6 +27,10 @@ struct Observation {
     std::string     canonical_json;
     std::string     hardware_json;
     std::string     native_stable_name;
+    // Telemetry only: these describe the established BLAS wrapper hook and
+    // never participate in signature or dispatch identity.
+    std::string     effective_api;
+    uint64_t        workspace_bytes;
     uint64_t        calls;
     uint64_t        est_bytes;
     // Device *ordinals* seen, which is diagnostic only -- never part of the
@@ -91,7 +95,9 @@ void ggml_hip_record_observation(
         const ggml_hip_hardware_key_v1 & hw,
         const ggml_hip_digest & signature_digest,
         const ggml_hip_digest & hardware_digest,
-        const ggml_hip_native_selection & native) {
+        const ggml_hip_native_selection & native,
+        const char * effective_api,
+        size_t workspace_bytes) {
     PairKey key;
     key.signature = signature_digest;
     key.hardware  = hardware_digest;
@@ -117,6 +123,8 @@ void ggml_hip_record_observation(
     observation.hardware_json      = ggml_hip_hardware_json(hw);
     observation.native_stable_name = native.candidate != nullptr
         ? native.candidate->stable_name : "";
+    observation.effective_api     = effective_api != nullptr ? effective_api : "";
+    observation.workspace_bytes   = (uint64_t) workspace_bytes;
     observation.calls              = 1;
     observation.est_bytes          = (uint64_t) estimate_bytes(sig);
     observation.devices.push_back(ctx.device);
@@ -192,12 +200,15 @@ void ggml_hip_record_flush() {
         fprintf(file,
                 "{\"kind\":\"observation\",\"signature\":\"%s\","
                 "\"hardware\":\"%s\",\"native\":\"%s\",\"calls\":%llu,"
-                "\"est_bytes\":%llu,\"devices\":[",
+                "\"est_bytes\":%llu,\"effective_api\":\"%s\","
+                "\"workspace_bytes\":%llu,\"devices\":[",
                 ggml_hip_digest_hex(o.signature_digest).c_str(),
                 ggml_hip_digest_hex(o.hardware_digest).c_str(),
                 o.native_stable_name.c_str(),
                 (unsigned long long) o.calls,
-                (unsigned long long) o.est_bytes);
+                (unsigned long long) o.est_bytes,
+                o.effective_api.c_str(),
+                (unsigned long long) o.workspace_bytes);
         for (size_t i = 0; i < o.devices.size(); ++i) {
             fprintf(file, "%s%d", i ? "," : "", o.devices[i]);
         }

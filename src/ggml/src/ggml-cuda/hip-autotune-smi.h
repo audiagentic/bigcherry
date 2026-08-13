@@ -18,6 +18,11 @@
 
 struct ggml_hip_device_state {
     bool     valid            = false;
+    bool     identity_valid   = false;
+    int      hip_device       = -1;
+    uint32_t pci_domain       = 0;
+    uint32_t pci_bus          = 0;
+    uint32_t pci_device       = 0;
     uint64_t sclk_mhz         = 0;   // shader/system clock, current
     uint64_t mclk_mhz         = 0;   // memory clock, current
     uint64_t edge_temp_mc     = 0;   // millidegrees C
@@ -28,7 +33,8 @@ struct ggml_hip_device_state {
 
 // Returns valid == false on: non-Linux, library absent, any symbol missing,
 // rsmi_init failure, an RSMI error, or -- critically -- no PCI-BDF match for
-// the requested HIP device. Never guesses a device index.
+// the requested HIP device. Never guesses a device index. `identity_valid` is
+// separate from `valid`: telemetry must not be compared across unknown GPUs.
 ggml_hip_device_state ggml_hip_query_device_state(int hip_device);
 
 // True when the capture is both compiled in and enabled by the environment.

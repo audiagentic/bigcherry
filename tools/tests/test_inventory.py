@@ -602,8 +602,8 @@ class TestLoadMeasurements(unittest.TestCase):
 
         os.unlink(path)
 
-    def test_invalid_dispatch_digest_skipped(self):
-        """Dispatch digests that aren't 32 hex chars should be skipped."""
+    def test_invalid_dispatch_digest_rejected(self):
+        """A malformed result must not be silently treated as no result."""
         bad_result = TUNING_RESULT_NATIVE.copy()
         bad_result["dispatch"] = "dead"  # too short
 
@@ -611,14 +611,41 @@ class TestLoadMeasurements(unittest.TestCase):
         schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
-            counts = inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
-            )
-
-            # No results should be inserted (no valid dispatch digests)
-            self.assertEqual(counts["results"], 0)
+            with self.assertRaisesRegex(RecordError, "invalid dispatch digest"):
+                inventory.load_measurements(
+                    path, db.db_path, schema_path, manifest_path=None,
+                )
 
         os.unlink(path)
+
+    def test_malformed_json_and_unknown_record_kind_are_rejected(self):
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        for tail, message in (("{", "malformed JSON"),
+                              (json.dumps({"kind": "future"}), "unknown record kind")):
+            path = make_jsonl_file(TUNING_HEADER)
+            path.write_text(path.read_text(encoding="utf-8") + tail + "\n", encoding="utf-8")
+            try:
+                with TempDB() as db:
+                    with self.assertRaisesRegex(RecordError, message):
+                        inventory.load_measurements(
+                            path, db.db_path, schema_path, manifest_path=None,
+                        )
+            finally:
+                os.unlink(path)
+
+    def test_invalid_measurement_numeric_record_is_rejected(self):
+        bad_result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        bad_result["candidates"][0]["median_us"] = "fast"
+        path = make_jsonl_file(TUNING_HEADER, bad_result)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "median_us.*numeric"):
+                    inventory.load_measurements(
+                        path, db.db_path, schema_path, manifest_path=None,
+                    )
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":
