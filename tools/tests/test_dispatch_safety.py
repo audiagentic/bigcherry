@@ -12,6 +12,7 @@ DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.
 RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
 RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
 SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
 
@@ -163,6 +164,24 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             record_block.index("ggml_hip_blas_workspace"),
             record_block.index("ggml_hip_record_observation"),
         )
+
+    def test_blas_observation_payload_is_additive_and_observation_only(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        record = RECORD.read_text(encoding="utf-8")
+        header = RECORD_HEADER.read_text(encoding="utf-8")
+        patch = DISPATCH_PATCH.read_text(encoding="utf-8")
+        for field in (
+            "operand_a_type", "operand_b_type", "output_type", "accumulation_type",
+            "source_a_conversion", "source_b_conversion", "output_conversion",
+            "requested_precision", "effective_provider", "effective_backend",
+            "source_a_temp_bytes", "source_b_temp_bytes", "output_temp_bytes",
+        ):
+            self.assertIn(field, header)
+            self.assertIn(field, record)
+        self.assertIn("ggml_hip_record_blas_metadata", record)
+        self.assertIn("ggml_hip_record_blas_metadata", patch)
+        self.assertNotIn("blas_metadata", dispatch[:dispatch.index("// --------------------------------------------------------------------- mode")])
+        self.assertNotIn("bigcherry_blas_metadata", dispatch)
 
     def test_blas_effective_call_api_covers_native_branches_without_dispatch_changes(self):
         patch = (ROOT / "patches" / "0200_dispatch_hook.py").read_text(encoding="utf-8")

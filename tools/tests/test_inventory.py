@@ -84,6 +84,8 @@ RECORD_OBS_BLAS = {
     "hardware": "a" * 32,
     "signature": "d" * 32,
     "native": "blas:native:v1",
+    "effective_api": "ggml_cuda_mul_mat_cublas",
+    "effective_call_api": "cublasGemmEx",
     "canonical": {
         "op": "MUL_MAT",
         "src0_type": 1,      # f16
@@ -101,6 +103,21 @@ RECORD_OBS_BLAS = {
     "calls": 1,
     "est_bytes": 8192,
     "devices": [0],
+    "blas_metadata": {
+        "operand_a_type": "f16",
+        "operand_b_type": "f16",
+        "output_type": "f16",
+        "accumulation_type": "f16",
+        "source_a_conversion": "direct",
+        "source_b_conversion": "direct",
+        "output_conversion": "direct",
+        "requested_precision": "0",
+        "effective_provider": "hipblas",
+        "effective_backend": "unknown",
+        "source_a_temp_bytes": 0,
+        "source_b_temp_bytes": 0,
+        "output_temp_bytes": 0,
+    },
 }
 
 TUNING_HEADER = {
@@ -448,13 +465,25 @@ class TestBuildDatabase(unittest.TestCase):
             self.assertEqual(counts["signatures"], 2)
             self.assertEqual(counts["observations"], 2)
 
+    def test_record_to_db_preserves_blas_diagnostics(self):
+        rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_BLAS])
+        with TempDB() as db:
+            inventory.build_database(
+                rec, db.db_path,
+                Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
+            )
+            row = db.query("SELECT diagnostics_json FROM observation")[0]
+            diagnostics = json.loads(row[0])
+            self.assertEqual(diagnostics["blas"]["effective_provider"], "hipblas")
+            self.assertEqual(diagnostics["blas"]["output_conversion"], "direct")
+
             # Verify build row exists (query inside context so DB is open)
             builds = db.query("SELECT source_revision FROM build")
             self.assertEqual(builds[0][0], "abcdef1234567890")
 
             # Verify observations
             obs_count = db.query("SELECT COUNT(*) FROM observation")[0][0]
-            self.assertEqual(obs_count, 2)
+            self.assertEqual(obs_count, 1)
 
 
 class TestLoadMeasurements(unittest.TestCase):

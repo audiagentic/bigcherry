@@ -67,6 +67,28 @@ void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
 // selected upstream BLAS API. It never reaches dispatch identity.
 void ggml_hip_record_effective_call_api(const char * api);
 
+// BLAS-0 observation diagnostics. These fields describe the effective native
+// call and never participate in signature, hardware, or dispatch identity.
+// Strings are copied by the recorder; the caller may provide short-lived
+// literals or local buffers.
+struct ggml_hip_blas_observation_v1 {
+    const char * operand_a_type;
+    const char * operand_b_type;
+    const char * output_type;
+    const char * accumulation_type;
+    const char * source_a_conversion;
+    const char * source_b_conversion;
+    const char * output_conversion;
+    const char * requested_precision;
+    const char * effective_provider;
+    const char * effective_backend;
+    uint64_t     source_a_temp_bytes;
+    uint64_t     source_b_temp_bytes;
+    uint64_t     output_temp_bytes;
+};
+
+void ggml_hip_record_blas_metadata(const ggml_hip_blas_observation_v1 & metadata);
+
 // Write everything observed so far to GGML_HIP_DISPATCH_DB (JSONL). Called at
 // backend teardown and safe to call repeatedly -- it rewrites the file rather
 // than appending, so a checkpoint mid-run leaves a complete, valid document.
