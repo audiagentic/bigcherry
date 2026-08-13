@@ -264,6 +264,8 @@ std::string journal_result_summary(
         ggml_hip_digest_hex(dispatch_digest) +
         "\",\"winner\":\"" +
         (result.winner != nullptr ? result.winner->stable_name : "(none)") +
+        "\",\"native\":\"" + result.native_name +
+        "\",\"promotion_status\":\"" + result.promotion_status +
         "\",\"reason\":\"" + result.reason +
         "\",\"generation\":1" +
         ",\"generated\":" + std::to_string(result.generated) +

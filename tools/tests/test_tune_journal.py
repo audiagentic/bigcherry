@@ -97,6 +97,21 @@ class TuneJournalTests(unittest.TestCase):
             self.assertEqual(result["dispatch"], "cpp-a")
             self.assertEqual(result["winner"], "z")
 
+    def test_compact_recovers_unambiguous_legacy_native_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            writer = self.writer(root / "events.jsonl")
+            writer.append("result", json.dumps({
+                "kind": "result", "dispatch": "native-a",
+                "winner": "mmvq:native:v1",
+            }))
+            writer.complete()
+            output = root / "measurements.jsonl"
+            tune_journal.compact(writer.path, output, {"kind": "header"})
+            result = json.loads(output.read_bytes().splitlines()[1])
+            self.assertEqual(result["native"], "mmvq:native:v1")
+            self.assertEqual(result["promotion_status"], "native")
+
     def test_compact_rejects_malformed_string_payload(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
