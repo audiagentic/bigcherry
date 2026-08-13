@@ -38,6 +38,64 @@ class ReleaseGateError(ValueError):
     """A validated-release claim is missing or contradicts its evidence."""
 
 
+def _architecture_report(record: dict[str, Any]) -> tuple[dict[str, Any], set[str]]:
+    """Return architecture evidence and the architectures required by a claim.
+
+    New records use an explicit report with ``required``, ``observed``,
+    ``validated`` and ``by_architecture`` fields.  The older flat mapping is
+    still accepted for inventory diagnostics, where it is evidence about the
+    observed machine rather than an optimized release-support claim.
+    """
+    raw = record.get("architecture_coverage")
+    if not isinstance(raw, dict) or not raw:
+        raise ReleaseGateError(
+            "validated release claim lacks architecture_coverage evidence")
+
+    if "by_architecture" in raw:
+        by_architecture = raw.get("by_architecture")
+        required = raw.get("required")
+        observed = raw.get("observed")
+        validated = raw.get("validated")
+        for name, value in (("required", required), ("observed", observed),
+                            ("validated", validated)):
+            if not isinstance(value, list) or any(
+                not isinstance(item, str) or not item.strip() for item in value
+            ) or len(set(value)) != len(value):
+                raise ReleaseGateError(
+                    f"architecture_coverage.{name} must be a unique list")
+        if not isinstance(by_architecture, dict) or not by_architecture:
+            raise ReleaseGateError(
+                "architecture_coverage.by_architecture must be a non-empty object")
+        declared_required = record.get("required_architectures", required)
+        if (not isinstance(declared_required, list)
+                or set(required) != set(declared_required)):
+            raise ReleaseGateError(
+                "architecture_coverage required set disagrees with claim")
+        observed_by_entry = {
+            name for name, evidence in by_architecture.items()
+            if isinstance(evidence, dict) and evidence.get("observed") is True
+        }
+        validated_by_entry = {
+            name for name, evidence in by_architecture.items()
+            if isinstance(evidence, dict) and evidence.get("validated") is True
+        }
+        if (set(observed) != observed_by_entry
+                or set(validated) != validated_by_entry):
+            raise ReleaseGateError(
+                "architecture_coverage observed/validated set disagrees with evidence")
+        return by_architecture, set(required)
+
+    # Legacy flat map: retain this path for inventory-only diagnostic claims.
+    expected = record.get("required_architectures", record.get("architectures"))
+    if expected is None:
+        expected = list(raw)
+    if (not isinstance(expected, list) or not expected
+            or any(not isinstance(item, str) or not item.strip() for item in expected)):
+        raise ReleaseGateError(
+            "architecture_coverage lacks required architecture reporting")
+    return raw, set(expected)
+
+
 def validate_release_claim(record: dict[str, Any]) -> None:
     """Fail closed when a record claims validation without coverage evidence.
 
@@ -53,32 +111,58 @@ def validate_release_claim(record: dict[str, Any]) -> None:
     if record.get("claim") != "validated" and record.get("stage") != "validated":
         return
 
-    architecture = record.get("architecture_coverage")
     candidates = record.get("candidate_coverage")
-    if not isinstance(architecture, dict) or not architecture:
-        raise ReleaseGateError(
-            "validated release claim lacks architecture_coverage evidence")
     if not isinstance(candidates, dict):
         raise ReleaseGateError(
             "validated release claim lacks candidate_coverage evidence")
+
+    architecture, required_architectures = _architecture_report(record)
+    variant_set = candidates.get("variant_set")
+    if variant_set == "inventory" and "by_architecture" not in record["architecture_coverage"]:
+        # Inventory is diagnostic evidence.  A legacy flat map may describe
+        # what was observed without pretending that every target was tested.
+        required_architectures = set()
 
     expected_architectures = record.get("architectures")
     if expected_architectures is not None:
         if (not isinstance(expected_architectures, list)
                 or not expected_architectures
-                or set(expected_architectures) != set(architecture)):
+                or (variant_set != "inventory"
+                    and set(expected_architectures) != required_architectures)):
             raise ReleaseGateError(
-                "architecture_coverage does not match declared architectures")
+                "architecture_coverage required set does not match declared architectures")
 
     for arch, evidence in architecture.items():
         if not isinstance(arch, str) or not arch.strip():
             raise ReleaseGateError("architecture coverage contains an invalid key")
-        if not isinstance(evidence, dict) or evidence.get("status") != "validated":
+        if not isinstance(evidence, dict):
+            raise ReleaseGateError(f"architecture coverage for {arch!r} is invalid")
+        validated = evidence.get("validated", evidence.get("status") == "validated")
+        observed = evidence.get(
+            "observed", evidence.get("status") in {"observed", "validated"})
+        if not isinstance(observed, bool) or not isinstance(validated, bool):
             raise ReleaseGateError(
-                f"architecture coverage for {arch!r} is not validated")
+                f"architecture coverage for {arch!r} lacks boolean observed/validated fields")
+        if validated and not observed:
+            raise ReleaseGateError(
+                f"architecture coverage for {arch!r} is validated without observation")
+        if arch in required_architectures and (not observed or not validated):
+            raise ReleaseGateError(
+                f"required architecture {arch!r} lacks observed and validated evidence")
         if evidence.get("candidate_coverage") is not True:
             raise ReleaseGateError(
                 f"architecture coverage for {arch!r} lacks candidate coverage")
+
+    missing = required_architectures - set(architecture)
+    if missing:
+        raise ReleaseGateError(
+            f"required architecture coverage is missing: {sorted(missing)}")
+
+    # Optimized claims must use the explicit report so a partial flat map
+    # cannot accidentally be interpreted as complete architecture support.
+    if variant_set != "inventory" and "by_architecture" not in record["architecture_coverage"]:
+        raise ReleaseGateError(
+            "optimized release claim requires explicit per-architecture coverage report")
 
     observed_types = candidates.get("observed_types")
     by_type = candidates.get("by_type")
