@@ -72,3 +72,24 @@ def test_rejects_invalid_handoff_topology(tmp_path):
     row.update(device_count=2, devices=[0])
     with pytest.raises(TelemetryError, match="device_count"):
         load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("timestamp_us", 0, "timestamp_us must be positive"),
+    ("timestamp_us", -1, "timestamp_us must be a non-negative integer"),
+    ("device_count", 1, "device_count must be at least 2"),
+    ("devices", [], "device_count does not match devices"),
+])
+def test_rejects_non_collective_split_evidence(tmp_path, field, value, message):
+    row = _split("evt-invalid")
+    row[field] = value
+    with pytest.raises(TelemetryError, match=message):
+        load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+
+
+def test_normalizes_split_timestamp_and_device_count(tmp_path):
+    row = _split()
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+    assert observation["timestamp_us"] == 1
+    assert observation["device_count"] == 2
