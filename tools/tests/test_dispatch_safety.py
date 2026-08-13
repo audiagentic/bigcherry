@@ -256,6 +256,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('\\"reverse_retime_attempts\\"', tuner)
         self.assertIn('\\"reverse_retime_passed\\"', tuner)
         self.assertIn('\\"retime_status\\"', tuner)
+        self.assertIn('\\"measurement_failure\\"', tuner)
+        self.assertIn('result.measurement_failure ? "true" : "false"', tuner)
         self.assertIn('result.retime_status == "unresolved"', tuner)
         self.assertIn('clock drift retime unresolved; run rejected', tuner)
         signature = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" /
