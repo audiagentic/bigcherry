@@ -12,6 +12,7 @@ little and the error messages are better for it.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # Standards 1: a kernel family is a major algorithmic path.
@@ -176,9 +177,151 @@ REQUIRED_CANDIDATE_FIELDS = {
     "config": dict,
 }
 
+PRODUCTION_VARIANT_SETS = frozenset(("replay-full", "replay-slim"))
+
+
+def _require_evidence_object(candidate: dict[str, Any], field: str,
+                             where: str) -> dict[str, Any]:
+    value = candidate.get(field)
+    if not isinstance(value, dict):
+        raise SchemaError(
+            f"{where}: experimental fused candidate requires explicit {field}")
+    if value.get("status") != "validated":
+        raise SchemaError(
+            f"{where}: {field}.status must be 'validated' for production")
+    return value
+
+
+def validate_production_candidate_safety(candidate: dict[str, Any],
+                                         where: str) -> None:
+    """Gate experimental fused candidates at the offline catalog boundary.
+
+    HI26 planning describes fused/activation-reuse work, but no runtime launch
+    path is allowed to treat an experimental candidate as production-ready by
+    accident.  The marker is deliberately explicit; ordinary generated
+    candidates retain the existing schema and behaviour.
+    """
+    if not (candidate.get("experimental_fused") is True or
+            candidate.get("experimental") is True and
+            candidate.get("fusion") is not None):
+        return
+
+    graph = _require_evidence_object(candidate, "graph_safety_evidence", where)
+    if graph.get("capture_observed") is not True:
+        raise SchemaError(
+            f"{where}: graph_safety_evidence.capture_observed must be true")
+    correctness = _require_evidence_object(candidate, "correctness_evidence", where)
+    if not correctness.get("reference") or not correctness.get("comparison"):
+        raise SchemaError(
+            f"{where}: correctness_evidence needs reference and comparison")
+    workspace = _require_evidence_object(candidate, "workspace_evidence", where)
+    peak = workspace.get("peak_bytes")
+    if isinstance(peak, bool) or not isinstance(peak, int) or peak < 0:
+        raise SchemaError(
+            f"{where}: workspace_evidence.peak_bytes must be a non-negative int")
+    provenance = _require_evidence_object(candidate, "provenance_evidence", where)
+    if not isinstance(provenance.get("source_revision"), str) or not provenance["source_revision"]:
+        raise SchemaError(
+            f"{where}: provenance_evidence.source_revision is required")
+    refs = provenance.get("evidence_references")
+    if (not isinstance(refs, list) or not refs or
+            any(not isinstance(ref, str) or not ref for ref in refs) or
+            len(set(refs)) != len(refs)):
+        raise SchemaError(
+            f"{where}: provenance_evidence.evidence_references must be unique")
+
 
 class SchemaError(ValueError):
     """The manifest does not satisfy the candidate schema."""
+
+
+_SHA256_RE = r"^[0-9a-fA-F]{64}$"
+
+
+def _require_evidence_record(config: dict[str, Any], field: str,
+                             where: str, *, require_digest: bool = True) -> dict[str, Any]:
+    value = config.get(field)
+    if not isinstance(value, dict):
+        raise SchemaError(
+            f"{where}: custom kernel requires a {field} evidence record")
+    path = value.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise SchemaError(f"{where}: {field}.path must be a non-empty path")
+    if require_digest:
+        digest = value.get("sha256")
+        if not isinstance(digest, str) or re.fullmatch(_SHA256_RE, digest) is None:
+            raise SchemaError(
+                f"{where}: {field}.sha256 must be a 64-character hex digest")
+    return value
+
+
+def validate_custom_candidate_enablement(candidate: dict[str, Any], where: str) -> None:
+    """Fail closed when an explicitly enabled custom kernel lacks proof.
+
+    The normal catalog contains existing/native alternatives and is unchanged
+    by this contract.  A future custom MMQ/MMVQ entry opts in with
+    ``config.custom_kernel: true`` and must carry immutable evidence links for
+    architecture coverage, identity, correctness, compiler resources, and
+    benchmark performance before the registry can be rendered.
+    """
+    config = candidate["config"]
+    if config.get("custom_kernel") is not True:
+        return
+
+    if candidate["source_class"] != "new_generated_variant":
+        raise SchemaError(
+            f"{where}: custom kernels must use source_class "
+            "'new_generated_variant'")
+    if candidate["family"] not in ("mmq", "mmvq"):
+        raise SchemaError(
+            f"{where}: HI25 custom kernels must belong to the MMQ or MMVQ family")
+    architectures = candidate["architectures"]
+    mask = candidate.get("architecture_mask")
+    expected_mask = architecture_mask(architectures)
+    if isinstance(mask, bool) or not isinstance(mask, int) or mask != expected_mask:
+        raise SchemaError(
+            f"{where}: custom kernel architecture_mask must equal its "
+            "architecture set")
+
+    if config.get("candidate_identity") != candidate["stable_name"]:
+        raise SchemaError(
+            f"{where}: custom kernel candidate_identity must equal stable_name")
+
+    reference = _require_evidence_record(
+        config, "correctness_reference", where, require_digest=False)
+    reference_candidate = reference.get("candidate")
+    if not isinstance(reference_candidate, str) or not reference_candidate.strip():
+        raise SchemaError(
+            f"{where}: correctness_reference.candidate must identify a reference")
+    if reference_candidate == candidate["stable_name"]:
+        raise SchemaError(
+            f"{where}: correctness reference must be distinct from the custom kernel")
+
+    resource = _require_evidence_record(config, "resource_report", where)
+    resource_architectures = resource.get("architectures")
+    if not isinstance(resource_architectures, list) or not resource_architectures:
+        raise SchemaError(
+            f"{where}: resource_report.architectures must be a non-empty list")
+    try:
+        resource_mask = architecture_mask(resource_architectures)
+    except (SchemaError, TypeError) as exc:
+        raise SchemaError(f"{where}: resource_report has invalid architectures") from exc
+    if resource_mask != expected_mask:
+        raise SchemaError(
+            f"{where}: resource report architecture coverage must match the custom kernel")
+
+    benchmark = _require_evidence_record(config, "benchmark_evidence", where)
+    if benchmark.get("status") != "passed":
+        raise SchemaError(
+            f"{where}: benchmark_evidence.status must be 'passed'")
+    metric = benchmark.get("metric")
+    if not isinstance(metric, str) or not metric.strip():
+        raise SchemaError(
+            f"{where}: benchmark_evidence.metric must name a measured metric")
+    baseline = benchmark.get("baseline")
+    if not isinstance(baseline, str) or not baseline.strip():
+        raise SchemaError(
+            f"{where}: benchmark_evidence.baseline must identify the reference")
 
 
 def architecture_code(name: str) -> int:
@@ -235,6 +378,8 @@ def validate_candidate(candidate: dict[str, Any], where: str) -> None:
             f"{where}: stable_name suffix {suffix!r} disagrees with "
             f"implementation_version {candidate['implementation_version']}")
 
+    validate_custom_candidate_enablement(candidate, where)
+
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
     for field in ("artifact_version", "variant_set", "source_revision",
@@ -252,6 +397,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     for index, candidate in enumerate(manifest["candidates"]):
         where = f"candidate[{index}]"
         validate_candidate(candidate, where)
+        if manifest["variant_set"] in PRODUCTION_VARIANT_SETS:
+            validate_production_candidate_safety(candidate, where)
 
         name = candidate["stable_name"]
         if name in seen:
