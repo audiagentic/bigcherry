@@ -21,6 +21,10 @@ def test_meta_boundary_records_actual_handoff():
     assert "allreduce_fallback(i)" in PATCH
     assert "provider_declined_handoff_meta" in PATCH
     assert 'requested_provider, "meta", handoff' in TELEMETRY
+    assert "ggml_hip_reduce_telemetry_fallback_context" in PATCH
+    assert "backend_ctx->comm_ctx" in PATCH
+    assert "ggml_hip_reduce_telemetry_context_snapshot" in PATCH
+    assert 'nullptr, n_backends, nodes.data(), "unknown"' not in PATCH
     assert '"meta_butterfly"' not in TELEMETRY
     assert "fallback_depth" in HEADER
 
@@ -42,6 +46,7 @@ def test_telemetry_normalizes_labels_and_null_topology():
     assert 'std::string(value) == "provider_declined_handoff_meta"' in TELEMETRY
     assert "devices == nullptr ? 0 : device_count" in TELEMETRY
     assert "normalized_device_count" in TELEMETRY
+    assert "device_count >= 2" in PATCH
 
 
 def test_telemetry_does_not_claim_depth_without_handoff():

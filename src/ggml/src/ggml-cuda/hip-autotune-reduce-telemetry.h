@@ -25,4 +25,18 @@ void ggml_hip_reduce_telemetry_fallback(
         const char * handoff,
         size_t fallback_depth);
 
+// Resolve the selected CUDA communication provider and device topology from
+// the opaque communication context before recording a meta fallback.
+bool ggml_hip_reduce_telemetry_context_snapshot(
+        void * comm_ctx,
+        const int ** devices,
+        size_t * device_count,
+        const char ** requested_provider);
+
+void ggml_hip_reduce_telemetry_fallback_context(
+        void * comm_ctx,
+        ggml_tensor ** tensors,
+        const char * handoff,
+        size_t fallback_depth);
+
 #endif
