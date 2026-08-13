@@ -1053,8 +1053,17 @@ bool ggml_hip_mmvq_can_execute(const ggml_hip_candidate_descriptor * self,
     // expert-token batches above its bounded MMVQ geometry.  The old early
     // return made the forced-path guard below ineffective for the native
     // candidate and caused HI53's first-request crash.
+    // The global bound is only the compile-time ceiling.  Upstream also has
+    // an architecture/type-specific limit (for example q8_0 is limited to 7
+    // on RDNA4), and the native selector uses that stricter value.  Reuse the
+    // same selector here so tune-mode measurement cannot admit a native MMVQ
+    // launch that native execution would avoid.
+    const int device = ggml_cuda_get_device();
+    const int cc = ggml_cuda_info().devices[device].cc;
+    const int mmvq_mmid_max = get_mmvq_mmid_max_batch(
+        (ggml_type) sig.src0_type, cc);
     if ((sig.flags & GGML_HIP_SIG_HAS_IDS) != 0
-            && sig.ned[2] > MMVQ_MAX_BATCH_SIZE) {
+            && sig.ned[2] > mmvq_mmid_max) {
         return false;
     }
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {
