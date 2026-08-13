@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
+from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 
 class RecordError(RuntimeError):
@@ -71,6 +72,10 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
     """
     if not isinstance(row, dict):
         raise RecordError(f"measurements line {line}: result must be an object")
+    try:
+        validate_measurement_identity(row, where=f"measurements line {line}")
+    except IdentitySeparationError as exc:
+        raise RecordError(str(exc)) from exc
     dispatch = row.get("dispatch")
     if (not isinstance(dispatch, str) or len(dispatch) != 32 or
             any(c not in "0123456789abcdefABCDEF" for c in dispatch)):
