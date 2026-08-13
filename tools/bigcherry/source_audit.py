@@ -59,6 +59,14 @@ MMQ_CONFIG_REQUIRED = {
 }
 MMQ_CONFIG_OPTIONAL: dict[str, str] = {}
 
+# The two structs below are separate identity namespaces.  Keep this check
+# source-level and deliberately narrow: it protects the current ABI boundary
+# without trying to infer future fields from their spelling or changing the
+# ABI as part of the audit.
+AUTOTUNE_TYPES_HEADER = "hip-autotune-types.h"
+SIGNATURE_STRUCT = "ggml_hip_dispatch_signature_v1"
+CANDIDATE_STRUCT = "ggml_hip_candidate_descriptor"
+
 # Entry points the dispatch refactor (HI04) rewires. If one disappears or is
 # renamed, the anchored patches will fail -- better to say so up front.
 REQUIRED_ENTRY_POINTS = {
@@ -402,6 +410,86 @@ def check_mmvq(ctx: AuditContext) -> None:
                  expected=MMVQ_MAX_BATCH_SIZE, actual=actual)
 
 
+# ---------------------------------------------------------- identity namespaces
+
+def _struct_fields(source: str, name: str) -> list[str] | None:
+    """Return direct field names from one C/C++ struct declaration.
+
+    This is intentionally not a general C++ parser.  The declarations being
+    audited are flat ABI records; callbacks, arrays, pointers, and typedefs
+    all end in a field identifier, while nested records remain represented by
+    their containing field (for example ``variant``).  Comments and literals
+    are removed before locating the brace-balanced declaration so a stale
+    example cannot satisfy the audit.
+    """
+    stripped = csource.strip_noise(source)
+    declaration = re.search(
+        r"\bstruct\s+" + re.escape(name) + r"\s*\{", stripped)
+    if declaration is None:
+        return None
+    block = csource.find_braced_block(stripped, declaration.end() - 1)
+    if block is None:
+        return None
+    start, end = block
+    body = stripped[start + 1:end - 1]
+
+    fields: list[str] = []
+    statement_start = 0
+    depth = 0
+    for index, char in enumerate(body):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            statement = body[statement_start:index]
+            statement_start = index + 1
+            # A declaration's final identifier is its field name.  Array
+            # extents are numeric and therefore do not become a match.
+            names = re.findall(r"\b[A-Za-z_]\w*\b", statement)
+            if names:
+                fields.append(names[-1])
+    return fields
+
+
+def check_identity_namespace_separation(ctx: AuditContext) -> None:
+    """Ensure signature and candidate ABI fields stay in separate records."""
+    source = ctx.read(AUTOTUNE_TYPES_HEADER)
+    if source is None:
+        return
+    signature = _struct_fields(source, SIGNATURE_STRUCT)
+    candidate = _struct_fields(source, CANDIDATE_STRUCT)
+    if signature is None:
+        ctx.fail("identity.signature_struct_present",
+                 f"{SIGNATURE_STRUCT} declaration not found in "
+                 f"{AUTOTUNE_TYPES_HEADER}")
+        return
+    if candidate is None:
+        ctx.fail("identity.candidate_struct_present",
+                 f"{CANDIDATE_STRUCT} declaration not found in "
+                 f"{AUTOTUNE_TYPES_HEADER}")
+        return
+
+    overlap = sorted(set(signature) & set(candidate))
+    if overlap:
+        ctx.fail(
+            "identity.signature_candidate_separation",
+            "signature and candidate declarations share field(s): "
+            + ", ".join(overlap),
+            expected={"signature_only": sorted(set(signature)),
+                      "candidate_only": sorted(set(candidate))},
+            actual={"overlap": overlap},
+        )
+    else:
+        ctx.ok(
+            "identity.signature_candidate_separation",
+            "signature and candidate declarations have disjoint direct fields",
+            expected={"signature_only": sorted(set(signature)),
+                      "candidate_only": sorted(set(candidate))},
+            actual={"overlap": []},
+        )
+
+
 # ----------------------------------------------------------------- build files
 
 def check_build(ctx: AuditContext) -> None:
@@ -515,6 +603,7 @@ ALL_CHECKS: tuple[Callable[[AuditContext], None], ...] = (
     check_mmvf,
     check_mmf,
     check_mmvq,
+    check_identity_namespace_separation,
     check_build,
     check_entry_points,
 )
