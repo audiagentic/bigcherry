@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry import patchset  # noqa: E402
+from bigcherry import patchset, replay_build_audit  # noqa: E402
 
 
 class TestPatchSelection(unittest.TestCase):
@@ -57,6 +57,35 @@ class TestPatchSelection(unittest.TestCase):
         self.assertIn(
             "GGML_HIP_AUTOTUNE_RECORD until transform recording and dispatch",
             text,
+        )
+
+    def test_replay_source_partition_excludes_tuner_record_and_sqlite(self):
+        source = Path(__file__).resolve().parents[2] / "patches" / "0100_cmake_options.py"
+        audit = replay_build_audit.audit_replay_source_partition(
+            source.read_text(encoding="utf-8")
+        )
+        self.assertIn("hip-autotune-replay.cpp", audit.replay_only)
+        self.assertNotIn("hip-autotune-record.cpp", audit.replay_sources)
+        self.assertNotIn("hip-autotune-tuner.cu", audit.replay_sources)
+        self.assertNotIn("hip-autotune-journal.cpp", audit.replay_sources)
+        self.assertNotIn("hip-autotune-smi.cpp", audit.replay_sources)
+
+    def test_replay_partition_retains_strict_loader_and_coverage(self):
+        source = Path(__file__).resolve().parents[2] / "patches" / "0100_cmake_options.py"
+        audit = replay_build_audit.audit_replay_source_partition(
+            source.read_text(encoding="utf-8")
+        )
+        self.assertTrue(
+            replay_build_audit.REPLAY_REQUIRED <= audit.replay_sources
+        )
+        self.assertTrue(any("No SQLite anywhere" in line for line in audit.sqlite_mentions))
+
+    def test_replay_build_option_is_exclusive_from_tuning(self):
+        source = (Path(__file__).resolve().parents[2] / "patches" /
+                  "0100_cmake_options.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "GGML_HIP_DISPATCH_REPLAY and GGML_HIP_AUTOTUNE are mutually",
+            source,
         )
 
 
