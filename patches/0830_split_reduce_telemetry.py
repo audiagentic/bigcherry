@@ -215,7 +215,8 @@ META = FilePatch(
             mode="replace",
             text=(
                 '                const ggml_status status = allreduce_fallback(i);\n'
-                '                if (backend_ctx->comm_ctx && backend_ctx->comm_fallback) {\n'
+                '                if (status == GGML_STATUS_SUCCESS && backend_ctx->comm_ctx &&\n'
+                '                        backend_ctx->comm_fallback) {\n'
                 '                    backend_ctx->comm_fallback(backend_ctx->comm_ctx, nodes.data(),\n'
                 '                        "provider_declined_handoff_meta", 1);\n'
                 '                }\n'

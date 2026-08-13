@@ -68,7 +68,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         tuner = TUNER.read_text(encoding="utf-8")
         self.assertIn('GGML_HIP_WORKSPACE_TRACE', tuner)
         self.assertIn('trace_workspace_event(stage, "clear_cache"', tuner)
-        self.assertIn('trace_workspace_event(stage, "rebase_peak"', tuner)
+        metrics = tuner[tuner.index('#ifdef GGML_HIP_WORKSPACE_METRICS'):]
+        self.assertIn('trace_workspace_event(stage, "rebase_peak"', metrics)
         self.assertIn('nullptr, false, nullptr, "confirmation")', tuner)
 
     def test_mmvq_native_moe_guard_precedes_native_return(self):

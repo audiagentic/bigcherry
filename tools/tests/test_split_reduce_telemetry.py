@@ -30,6 +30,7 @@ def test_meta_boundary_records_actual_handoff():
     assert "ggml_hip_reduce_telemetry_context_snapshot" in PATCH
     assert "ggml_backend_comm_telemetry_fallback" in PATCH
     assert "comm_fallback(backend_ctx->comm_ctx" in PATCH
+    assert "status == GGML_STATUS_SUCCESS && backend_ctx->comm_ctx" in PATCH
     assert "comm_fallback = (ggml_backend_comm_telemetry_fallback_t)" in PATCH
     assert "expect_matches=6" in PATCH
     assert "occurrence=3" in PATCH

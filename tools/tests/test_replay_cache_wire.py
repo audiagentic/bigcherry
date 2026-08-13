@@ -164,6 +164,28 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertEqual(key, replay_cache.portable_tuning_key("A" * 32, "B" * 32))
         self.assertNotEqual(key, replay_cache.portable_tuning_key("a" * 32, "b" * 32, "throughput"))
 
+    def test_export_rejects_missing_signature_instead_of_substituting_dispatch(self):
+        root, manifest, ggml_h, measurements = self._fixture()
+        rows = measurements.read_text(encoding="utf-8").replace(
+            ', "signature": "' + "C" * 32 + '"', "")
+        measurements.write_text(rows, encoding="utf-8")
+        with self.assertRaisesRegex(SystemExit, "missing an explicit signature"):
+            replay_cache.build(measurements, manifest, ggml_h)
+
+    def test_export_rejects_inconsistent_hardware_signature_dispatch(self):
+        root, manifest, ggml_h, measurements = self._fixture()
+        rows = [
+            {"kind": "header", "source_revision": "b" * 40,
+             "manifest_hash": "a" * 32},
+            {"kind": "result", "dispatch": "A" * 32,
+             "signature": "C" * 32, "hardware": "D" * 32,
+             "winner": "mmvq:native:v1", "native": "mmvq:native:v1"},
+        ]
+        measurements.write_text("\n".join(json.dumps(row) for row in rows) + "\n",
+                                encoding="utf-8")
+        with self.assertRaisesRegex(SystemExit, "does not match its hardware/signature"):
+            replay_cache.build(measurements, manifest, ggml_h)
+
     def test_provenance_namespace_is_strict_and_normalized(self):
         value = replay_cache.validate_provenance_namespace({
             "source_revision": "A" * 40,
