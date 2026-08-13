@@ -1,6 +1,10 @@
 import json
+import sys
+from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry.telemetry import TelemetryError, load_telemetry
 
@@ -138,3 +142,52 @@ def test_normalizes_split_timestamp_and_device_count(tmp_path):
     observation = result["split_reduce"][0]
     assert observation["timestamp_us"] == 1
     assert observation["device_count"] == 2
+
+
+def test_normalizes_successful_rccl_as_promotable_nccl_identity(tmp_path):
+    result = load_telemetry(_write(tmp_path, [_split()]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+
+    assert observation["preferred_algorithm"] == "nccl"
+    assert observation["effective_algorithm"] == "nccl"
+    assert observation["fallback_policy"] == "none"
+    assert observation["candidate_identity"] == "split_reduce:nccl:none:v1"
+    assert observation["promotable"] is True
+
+
+def test_normalizes_meta_fallback_as_non_promotable_upstream_default(tmp_path):
+    row = _split()
+    row.update(
+        effective_provider="meta",
+        handoff="provider_declined_handoff_meta",
+        fallback_depth=1,
+    )
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+
+    assert observation["preferred_algorithm"] == "nccl"
+    assert observation["effective_algorithm"] == "meta"
+    assert observation["fallback_policy"] == "upstream_default"
+    assert observation["candidate_identity"] == "split_reduce:nccl:upstream_default:v1"
+    assert observation["promotable"] is False
+
+
+def test_provider_declined_handoff_is_non_promotable(tmp_path):
+    row = _split()
+    row.update(
+        effective_provider="provider_declined",
+        handoff="provider_declined_handoff_meta",
+        fallback_depth=1,
+    )
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+
+    assert observation["effective_algorithm"] == "provider_declined"
+    assert observation["promotable"] is False
+
+
+def test_none_policy_rejects_requested_effective_provider_mismatch(tmp_path):
+    row = _split()
+    row["effective_provider"] = "meta"
+    with pytest.raises(TelemetryError, match="requested/effective provider match"):
+        load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
