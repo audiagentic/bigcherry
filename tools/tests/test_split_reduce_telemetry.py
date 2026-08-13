@@ -33,5 +33,20 @@ def test_observation_is_telemetry_only_and_has_shape_and_topology():
     assert "dispatch_digest" not in TELEMETRY
 
 
+def test_telemetry_normalizes_labels_and_null_topology():
+    assert "const char * provider_label(const char * value)" in TELEMETRY
+    assert 'std::string(value) == "internal"' in TELEMETRY
+    assert 'return "unknown";' in TELEMETRY
+    assert "const char * handoff_label(const char * value)" in TELEMETRY
+    assert 'std::string(value) == "provider_declined_handoff_meta"' in TELEMETRY
+    assert "devices == nullptr ? 0 : device_count" in TELEMETRY
+    assert "normalized_device_count" in TELEMETRY
+
+
+def test_telemetry_does_not_claim_depth_without_handoff():
+    assert "normalized_fallback_depth" in TELEMETRY
+    assert 'handoff == nullptr || std::string(handoff) == "none" ? 0 : fallback_depth' in TELEMETRY
+
+
 def test_reduction_telemetry_is_linked_with_dispatch_only():
     assert '"../ggml-cuda/hip-autotune-reduce-telemetry.cpp"' in CMAME
