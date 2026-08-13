@@ -19,6 +19,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,76 @@ class RecordError(RuntimeError):
 
 
 CURRENT_DB_SCHEMA_VERSION = "2"
+
+_RESULT_STATUSES = {
+    "ok", "architecture", "ineligible", "workspace", "launch_failed",
+    "nan_inf", "tolerance", "unstable", "noisy",
+}
+
+
+def _finite_number(value: Any, field: str, *, nonnegative: bool = True) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RecordError(f"measurement result field {field!r} must be numeric")
+    number = float(value)
+    if not math.isfinite(number) or (nonnegative and number < 0):
+        raise RecordError(f"measurement result field {field!r} is invalid")
+    return number
+
+
+def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
+    """Validate one complete tuner result before it can affect the DB.
+
+    The C++ tuner emits one result per dispatch.  Treating malformed rows as
+    absent makes a partial run look like a smaller successful run, so this
+    boundary is deliberately fail-closed.
+    """
+    if not isinstance(row, dict):
+        raise RecordError(f"measurements line {line}: result must be an object")
+    dispatch = row.get("dispatch")
+    if (not isinstance(dispatch, str) or len(dispatch) != 32 or
+            any(c not in "0123456789abcdefABCDEF" for c in dispatch)):
+        raise RecordError(f"measurements line {line}: invalid dispatch digest")
+    winner = row.get("winner")
+    if not isinstance(winner, str) or not winner:
+        raise RecordError(f"measurements line {line}: result requires winner")
+    candidates = row.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise RecordError(f"measurements line {line}: result requires candidates")
+    names: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise RecordError(f"measurements line {line}: candidate must be an object")
+        name = candidate.get("name")
+        status = candidate.get("status", "ok")
+        if not isinstance(name, str) or not name or name in names:
+            raise RecordError(f"measurements line {line}: invalid candidate name")
+        if status not in _RESULT_STATUSES:
+            raise RecordError(f"measurements line {line}: unknown candidate status {status!r}")
+        names.add(name)
+        for field in ("median_us", "mad_us", "p95_us", "host_median_us",
+                      "nmse", "max_abs", "workspace", "samples"):
+            if field in candidate:
+                _finite_number(candidate[field], field)
+        samples = candidate.get("samples", 0)
+        if int(samples) != samples:
+            raise RecordError(f"measurements line {line}: samples must be an integer")
+        if "samples_us" in candidate:
+            samples_us = candidate["samples_us"]
+            if not isinstance(samples_us, list):
+                raise RecordError(f"measurements line {line}: samples_us must be an array")
+            for sample in samples_us:
+                _finite_number(sample, "samples_us")
+    if winner not in names:
+        raise RecordError(f"measurements line {line}: winner is not a candidate")
+    for field in ("improvement_pct", "confidence"):
+        if field in row:
+            _finite_number(row[field], field, nonnegative=False)
+    for field in ("generated", "applicable", "eligible", "measured"):
+        if field in row:
+            value = row[field]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise RecordError(f"measurements line {line}: {field} must be non-negative integer")
+    return row
 
 
 def _require_current_schema(connection: sqlite3.Connection) -> None:
@@ -354,18 +425,23 @@ def load_measurements(
                 continue
             try:
                 row = json.loads(line)
-            except json.JSONDecodeError:
-                print(
-                    f"warning: {measurements_path.name} line {number} is "
-                    f"truncated or malformed; ignoring it",
-                    file=sys.stderr,
-                )
-                break
+            except json.JSONDecodeError as exc:
+                raise RecordError(
+                    f"{measurements_path}: line {number} is malformed JSON"
+                ) from exc
+            if not isinstance(row, dict):
+                raise RecordError(f"{measurements_path}: line {number} must be an object")
             kind = row.get("kind")
             if kind == "header":
+                if header is not None:
+                    raise RecordError(f"{measurements_path}: duplicate header at line {number}")
                 header = row
             elif kind == "result":
-                results.append(row)
+                results.append(_validate_measurement_result(row, number))
+            else:
+                raise RecordError(
+                    f"{measurements_path}: line {number} has unknown record kind {kind!r}"
+                )
 
     if header is None:
         raise RecordError(
@@ -658,7 +734,13 @@ def load_measurements(
             hardware_id = _resolve_hardware(result)
             dispatch_hex = result.get("dispatch", "")
             if not dispatch_hex or len(dispatch_hex) != 32:
-                continue
+                raise RecordError("invalid tuning dispatch digest")
+            try:
+                dispatch_bytes = bytes.fromhex(dispatch_hex)
+            except ValueError as exc:
+                raise RecordError(f"invalid tuning dispatch digest: {dispatch_hex!r}") from exc
+            if len(dispatch_bytes) != 16:
+                raise RecordError("tuning dispatch digest must be 16 bytes")
 
             winner_name = result.get("winner", "")
             improvement_pct = result.get("improvement_pct", 0.0)
@@ -716,8 +798,6 @@ def load_measurements(
                 # Convert hex string to bytes for BLOB column.
                 # SQLite's X? syntax is not supported by the Python bindings;
                 # pass raw bytes through a regular ? parameter instead.
-                dispatch_bytes = bytes.fromhex(dispatch_hex)
-
                 connection.execute(
                     "INSERT OR REPLACE INTO measurement (build_id, hardware_id, "
                     "signature_id, dispatch_digest, candidate_id, run_id, objective, stage, "

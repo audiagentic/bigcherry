@@ -1383,9 +1383,25 @@ def _candidate_binary_size_main(argv: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args))
+
+
+def _configure_output() -> None:
+    """Keep diagnostic output printable on Windows' legacy code pages.
+
+    Reports intentionally use a few Unicode layout glyphs.  Preserve the
+    console's selected encoding, but replace characters it cannot represent
+    instead of allowing a diagnostic command to fail while printing it.
+    Captured/test streams may not implement ``reconfigure``; those are left
+    untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
 
 
 if __name__ == "__main__":

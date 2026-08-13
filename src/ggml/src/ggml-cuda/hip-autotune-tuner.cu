@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -157,6 +158,9 @@ struct Result {
     // could not resolve the device.
     std::string device_state_pre_json  = "{}";
     std::string device_state_post_json = "{}";
+    ggml_hip_device_state device_state_pre;
+    ggml_hip_device_state device_state_post;
+    std::string device_clock_drift_json = "{\"status\":\"unavailable\"}";
 
     // HI50: every compiled-in policy's full verdict, for offline comparison
     // (bigcherry rank-replay). Which one actually governed this signature's
@@ -602,19 +606,50 @@ int calibrated_launches_per_sample(double native_pilot_us,
 // HI52 part 2: serialise a device-state snapshot. Emits "{}" when the capture
 // is off, unavailable, or could not resolve the device -- never a row of zeros,
 // which would be indistinguishable from a genuinely idle, cold GPU.
-std::string device_state_json(int device) {
-    if (!ggml_hip_smi_enabled()) return "{}";
-    const ggml_hip_device_state s = ggml_hip_query_device_state(device);
+std::string device_state_json(const ggml_hip_device_state & s) {
     if (!s.valid) return "{}";
-    char buf[320];
+    char buf[512];
     snprintf(buf, sizeof(buf),
-             "{\"sclk_mhz\":%llu,\"mclk_mhz\":%llu,\"edge_temp_mc\":%llu,"
+             "{\"identity_valid\":%s,\"hip_device\":%d,"
+             "\"pci_bdf\":\"%04x:%02x:%02x\","
+             "\"sclk_mhz\":%llu,\"mclk_mhz\":%llu,\"edge_temp_mc\":%llu,"
              "\"junction_temp_mc\":%llu,\"socket_power_uw\":%llu,"
              "\"busy_percent\":%u}",
+             s.identity_valid ? "true" : "false", s.hip_device,
+             s.pci_domain, s.pci_bus, s.pci_device,
              (unsigned long long) s.sclk_mhz, (unsigned long long) s.mclk_mhz,
              (unsigned long long) s.edge_temp_mc,
              (unsigned long long) s.junction_temp_mc,
              (unsigned long long) s.socket_power_uw, s.busy_percent);
+    return std::string(buf);
+}
+
+std::string device_clock_drift_json(const ggml_hip_device_state & pre,
+                                    const ggml_hip_device_state & post) {
+    if (!pre.valid || !post.valid || !pre.identity_valid || !post.identity_valid) {
+        return "{\"status\":\"unavailable\"}";
+    }
+    if (pre.hip_device != post.hip_device || pre.pci_domain != post.pci_domain ||
+            pre.pci_bus != post.pci_bus || pre.pci_device != post.pci_device) {
+        return "{\"status\":\"identity_mismatch\"}";
+    }
+    if (pre.sclk_mhz == 0 || post.sclk_mhz == 0 || pre.mclk_mhz == 0 ||
+            post.mclk_mhz == 0) {
+        return "{\"status\":\"clock_unavailable\"}";
+    }
+    const double sclk_pct = 100.0 * std::abs((double) post.sclk_mhz -
+                                             (double) pre.sclk_mhz) /
+                            (double) pre.sclk_mhz;
+    const double mclk_pct = 100.0 * std::abs((double) post.mclk_mhz -
+                                             (double) pre.mclk_mhz) /
+                            (double) pre.mclk_mhz;
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "{\"status\":\"captured\",\"sclk_delta_mhz\":%lld,"
+             "\"mclk_delta_mhz\":%lld,\"max_abs_pct\":%.3f}",
+             (long long) post.sclk_mhz - (long long) pre.sclk_mhz,
+             (long long) post.mclk_mhz - (long long) pre.mclk_mhz,
+             std::max(sclk_pct, mclk_pct));
     return std::string(buf);
 }
 
@@ -719,6 +754,10 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         ggml_hip_tuner_config c;
         auto int_env = [&](const char * name, int min_v, int max_v, int & out) {
             const char * v = getenv(name); if (!v) return;
+            if (*v == '\0' || std::isspace((unsigned char) *v)) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s (whitespace/empty value)\n", name, v);
+                c.valid = false; return;
+            }
             errno = 0; char * end = nullptr; const long parsed = strtol(v, &end, 10);
             if (errno || end == v || *end != '\0' || parsed < min_v || parsed > max_v) {
                 GGML_LOG_WARN("bigcherry: invalid %s=%s (expected %d..%d)\n", name, v, min_v, max_v);
@@ -728,6 +767,10 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         };
         auto size_env = [&](const char * name, size_t & out) {
             const char * v = getenv(name); if (!v) return;
+            if (*v == '\0' || std::isspace((unsigned char) *v)) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s (whitespace/empty value)\n", name, v);
+                c.valid = false; return;
+            }
             errno = 0; char * end = nullptr; const unsigned long long parsed = strtoull(v, &end, 10);
             if (errno || end == v || *end != '\0' || v[0] == '-'
                     || parsed > (unsigned long long) std::numeric_limits<size_t>::max()) {
@@ -737,6 +780,10 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         };
         auto double_env = [&](const char * name, double min_v, double max_v, double & out) {
             const char * v = getenv(name); if (!v) return;
+            if (*v == '\0' || std::isspace((unsigned char) *v)) {
+                GGML_LOG_WARN("bigcherry: invalid %s=%s (whitespace/empty value)\n", name, v);
+                c.valid = false; return;
+            }
             errno = 0; char * end = nullptr; const double parsed = strtod(v, &end);
             if (errno || end == v || *end != '\0' || !std::isfinite(parsed)
                     || parsed <= min_v || parsed >= max_v) {
@@ -1175,7 +1222,10 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         return native.candidate;
     }
 
-    result.device_state_pre_json = device_state_json(ggml_cuda_get_device());
+    result.device_state_pre = ggml_hip_smi_enabled()
+        ? ggml_hip_query_device_state(ggml_cuda_get_device())
+        : ggml_hip_device_state{};
+    result.device_state_pre_json = device_state_json(result.device_state_pre);
 
     // --- scratch destinations -------------------------------------------
     //
@@ -1633,7 +1683,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
-    result.device_state_post_json = device_state_json(ggml_cuda_get_device());
+    result.device_state_post = ggml_hip_smi_enabled()
+        ? ggml_hip_query_device_state(ggml_cuda_get_device())
+        : ggml_hip_device_state{};
+    result.device_state_post_json = device_state_json(result.device_state_post);
+    result.device_clock_drift_json = device_clock_drift_json(
+        result.device_state_pre, result.device_state_post);
 
     {
         int counts[GGML_HIP_REJECT_COUNT];
@@ -1734,6 +1789,7 @@ void ggml_hip_tuner_flush() {
                 "\"promotion_status\":\"%s\","
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
                 "\"device_state_pre\":%s,\"device_state_post\":%s,"
+                "\"device_clock_drift\":%s,"
                 "\"canary_state\":\"%s\",\"provisional_winner\":\"%s\","
                 "\"production_policy\":{\"name\":\"%s\",\"version\":%d},"
                 "\"ranking_decisions\":%s",
@@ -1758,6 +1814,7 @@ void ggml_hip_tuner_flush() {
                 r.promotion_status.c_str(),
                 r.launches_per_sample, r.schedule_seed,
                 r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
+                r.device_clock_drift_json.c_str(),
                 canary_state_name(r.canary_state), r.provisional_winner.c_str(),
                 r.production_policy_name.c_str(), r.production_policy_version,
                 r.ranking_decisions_json.c_str());

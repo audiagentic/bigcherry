@@ -466,8 +466,18 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         // Record mode observes and changes nothing. The binding it installs is
         // the native one, so the run behaves identically to native mode while
         // the signature is captured.
+        // Observation metadata only. These values come from the established
+        // opaque BLAS forwarder and candidate workspace hook; neither reaches
+        // a digest or changes the selected binding.
+        const bool is_blas = native.candidate != nullptr
+            && native.candidate->family == GGML_HIP_FAMILY_BLAS;
+        const char * effective_api = is_blas
+            ? "ggml_cuda_mul_mat_cublas" : nullptr;
+        const size_t workspace_bytes = is_blas
+            ? ggml_hip_blas_workspace(native.candidate, sig) : 0;
         ggml_hip_record_observation(ctx, sig, hw, signature_digest,
-                                    hardware_digest, native);
+                                    hardware_digest, native, effective_api,
+                                    workspace_bytes);
     }
 #endif
 #ifdef GGML_HIP_AUTOTUNE

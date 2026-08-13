@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Literal
@@ -36,6 +38,53 @@ from . import paths
 
 RELEASES_DIR = paths.REPO_ROOT / "releases"
 INDEX_PATH = RELEASES_DIR / "index.json"
+
+
+def _atomic_write_json(path: Path, document: dict[str, Any]) -> None:
+    """Validate and atomically publish one JSON document.
+
+    The temporary file is created beside the destination so ``os.replace`` is
+    atomic on the target filesystem.  Flushes make the file durable before it
+    becomes visible; the directory flush is best-effort for platforms which
+    do not allow directory handles to be opened (notably Windows).
+    """
+    try:
+        encoded = json.dumps(document, indent=2, sort_keys=True,
+                             allow_nan=False) + "\n"
+        parsed = json.loads(encoded)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"refusing to publish invalid JSON for {path}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"refusing to publish non-object JSON for {path}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            temporary = handle.name
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        temporary = None
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
 
 # How far a release has been taken. Each stage implies the ones before it.
 Stage = Literal["pulled", "audited", "patched", "generated", "built",
@@ -97,8 +146,7 @@ class ReleaseRecord:
         self.updated_at = now
         RELEASES_DIR.mkdir(parents=True, exist_ok=True)
         target = self.path()
-        target.write_text(json.dumps(asdict(self), indent=2) + "\n",
-                          encoding="utf-8")
+        _atomic_write_json(target, asdict(self))
         _rebuild_index()
         return target
 
@@ -151,7 +199,7 @@ def _rebuild_index() -> None:
         ],
     }
     INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    INDEX_PATH.write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+    _atomic_write_json(INDEX_PATH, index)
 
 
 def summarise_audit(report: dict[str, Any], *, strict: bool) -> dict[str, Any]:

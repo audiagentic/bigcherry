@@ -635,10 +635,54 @@ def build_manifest(root: Path, *, variant_set: str,
         "candidates": sorted((c.to_dict() for c in candidates),
                              key=lambda c: (c["family"], c["stable_name"])),
     }
+    manifest["coverage"] = candidate_coverage(
+        manifest["candidates"], inventory, variant_set)
     manifest["summary"] = schema.validate_and_summarise(manifest)
     manifest["manifest_hash"] = manifest_hash(manifest)
     manifest["build_descriptor"] = build_descriptor(manifest)
     return manifest
+
+
+def candidate_coverage(candidates: list[dict[str, Any]],
+                       inventory: Inventory,
+                       variant_set: str) -> dict[str, Any]:
+    """Describe observed workload coverage separately from catalog support.
+
+    A workload-derived profile may intentionally contain no alternative for an
+    observed type. That is useful evidence, not an implicit claim of complete
+    support, so the report records native and alternative counts explicitly.
+    """
+    observed = sorted(inventory.quant_types | inventory.float_types)
+    rows: dict[str, dict[str, Any]] = {}
+    native_candidates = [c for c in candidates
+                         if c.get("source_class") == "native_wrapper"]
+    for type_name in observed:
+        alternatives = [c for c in candidates
+                        if c.get("source_class") != "native_wrapper"
+                        and c.get("config", {}).get("type") == type_name]
+        # Native wrappers are intentionally type-agnostic: their runtime
+        # selector handles every supported type, so they have no config.type.
+        native = native_candidates
+        families = sorted({c["family"] for c in alternatives})
+        row: dict[str, Any] = {
+            "observed": True,
+            "candidate_count": len(native) + len(alternatives),
+            "native_count": len(native),
+            "alternative_count": len(alternatives),
+            "alternative_families": families,
+        }
+        if not alternatives:
+            row["zero_alternative_reason"] = (
+                "inventory profile contains native wrappers only"
+                if variant_set == "inventory"
+                else "no supported alternative was generated for this type")
+        rows[type_name] = row
+    return {
+        "schema_version": 1,
+        "variant_set": variant_set,
+        "observed_types": observed,
+        "by_type": rows,
+    }
 
 
 def build_descriptor(manifest: dict[str, Any]) -> dict[str, Any]:
