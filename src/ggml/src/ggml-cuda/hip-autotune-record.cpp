@@ -30,6 +30,7 @@ struct Observation {
     // Telemetry only: these describe the established BLAS wrapper hook and
     // never participate in signature or dispatch identity.
     std::string     effective_api;
+    std::string     effective_call_api;
     uint64_t        workspace_bytes;
     uint64_t        calls;
     uint64_t        est_bytes;
@@ -78,6 +79,8 @@ struct PairEqual {
 
 std::unordered_map<PairKey, Observation, PairHash, PairEqual> g_observations;
 std::mutex g_mutex;
+thread_local PairKey g_active_key = {};
+thread_local bool g_has_active_key = false;
 
 int64_t estimate_bytes(const ggml_hip_dispatch_signature_v1 & sig) {
     // Rough traffic estimate, used only to rank hot signatures for tuning
@@ -113,6 +116,8 @@ void ggml_hip_record_observation(
                       ctx.device) == found->second.devices.end()) {
             found->second.devices.push_back(ctx.device);
         }
+        g_active_key = key;
+        g_has_active_key = true;
         return;
     }
 
@@ -130,6 +135,8 @@ void ggml_hip_record_observation(
     observation.devices.push_back(ctx.device);
 
     g_observations.emplace(key, observation);
+    g_active_key = key;
+    g_has_active_key = true;
 }
 
 void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
@@ -151,6 +158,19 @@ void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
     if (std::find(found->second.devices.begin(), found->second.devices.end(),
                   device) == found->second.devices.end()) {
         found->second.devices.push_back(device);
+    }
+    g_active_key = key;
+    g_has_active_key = true;
+}
+
+void ggml_hip_record_effective_call_api(const char * api) {
+    if (api == nullptr || !g_has_active_key) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto found = g_observations.find(g_active_key);
+    if (found != g_observations.end()) {
+        found->second.effective_call_api = api;
     }
 }
 
@@ -201,6 +221,7 @@ void ggml_hip_record_flush() {
                 "{\"kind\":\"observation\",\"signature\":\"%s\","
                 "\"hardware\":\"%s\",\"native\":\"%s\",\"calls\":%llu,"
                 "\"est_bytes\":%llu,\"effective_api\":\"%s\","
+                "\"effective_call_api\":\"%s\","
                 "\"workspace_bytes\":%llu,\"devices\":[",
                 ggml_hip_digest_hex(o.signature_digest).c_str(),
                 ggml_hip_digest_hex(o.hardware_digest).c_str(),
@@ -208,6 +229,7 @@ void ggml_hip_record_flush() {
                 (unsigned long long) o.calls,
                 (unsigned long long) o.est_bytes,
                 o.effective_api.c_str(),
+                o.effective_call_api.c_str(),
                 (unsigned long long) o.workspace_bytes);
         for (size_t i = 0; i < o.devices.size(); ++i) {
             fprintf(file, "%s%d", i ? "," : "", o.devices[i]);

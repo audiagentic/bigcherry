@@ -102,6 +102,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("ggml_hip_blas_workspace(native.candidate, sig)", dispatch)
         self.assertIn('"ggml_cuda_mul_mat_cublas"', dispatch)
         self.assertIn('effective_api', record)
+        self.assertIn('effective_call_api', record)
         self.assertIn('workspace_bytes', record)
         self.assertIn("const char * effective_api", header)
         self.assertIn("size_t workspace_bytes", header)
@@ -111,6 +112,22 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             record_block.index("ggml_hip_blas_workspace"),
             record_block.index("ggml_hip_record_observation"),
         )
+
+    def test_blas_effective_call_api_covers_native_branches_without_dispatch_changes(self):
+        patch = (ROOT / "patches" / "0200_dispatch_hook.py").read_text(encoding="utf-8")
+        record = RECORD.read_text(encoding="utf-8")
+
+        for api in (
+            "cublasSgemm",
+            "cublasGemmEx",
+            "cublasGemmStridedBatchedEx",
+            "cublasGemmBatchedEx",
+        ):
+            self.assertIn(f'_record_api("{api}")', patch)
+        self.assertIn("thread_local PairKey g_active_key", record)
+        self.assertIn("effective_call_api = api", record)
+        # This field is observation-only; it must not appear in the resolver.
+        self.assertNotIn("effective_call_api", DISPATCH.read_text(encoding="utf-8"))
 
     def test_blas_telemetry_is_not_part_of_dispatch_identity(self):
         dispatch = DISPATCH.read_text(encoding="utf-8")

@@ -63,6 +63,10 @@ void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
                            const ggml_hip_digest & hardware_digest,
                            int device);
 
+// Record-only effective execution telemetry, called immediately before the
+// selected upstream BLAS API. It never reaches dispatch identity.
+void ggml_hip_record_effective_call_api(const char * api);
+
 // Write everything observed so far to GGML_HIP_DISPATCH_DB (JSONL). Called at
 // backend teardown and safe to call repeatedly -- it rewrites the file rather
 // than appending, so a checkpoint mid-run leaves a complete, valid document.
