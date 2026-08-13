@@ -74,6 +74,44 @@ class ExperimentBundleTests(unittest.TestCase):
             self.assertEqual(result["state"], "failed")
             self.assertFalse(result["promotable"])
 
+    def test_interrupted_bundle_requires_complete_terminal_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = self.run_bundle(Path(directory))
+            path = bundle / "experiment.json"
+            document = json.loads(path.read_text(encoding="ascii"))
+            document["state"] = "interrupted"
+            document["returncode"] = 130
+            document["capabilities"] = []
+            experiment_bundle.write_document(path, document)
+            with self.assertRaisesRegex(experiment_bundle.BundleError, "canonical process evidence"):
+                experiment_bundle.validate(bundle)
+
+    def test_intent_cannot_claim_terminal_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = self.run_bundle(Path(directory))
+            path = bundle / "experiment.json"
+            document = json.loads(path.read_text(encoding="ascii"))
+            document["state"] = "intent"
+            document["returncode"] = 0
+            experiment_bundle.write_document(path, document)
+            with self.assertRaisesRegex(experiment_bundle.BundleError, "terminal evidence"):
+                experiment_bundle.validate(bundle)
+
+    def test_atomic_bundle_hash_and_artifact_hash_are_verified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = self.run_bundle(Path(directory))
+            path = bundle / "experiment.json"
+            document = json.loads(path.read_text(encoding="ascii"))
+            document["bundle_hash"] = "0" * 32
+            path.write_text(json.dumps(document), encoding="ascii")
+            with self.assertRaisesRegex(experiment_bundle.BundleError, "document hash"):
+                experiment_bundle.validate(bundle)
+            document["bundle_hash"] = experiment_bundle.bundle_hash(document)
+            document["artifacts"][0]["hash"] = "0" * 32
+            experiment_bundle.write_document(path, document)
+            with self.assertRaisesRegex(experiment_bundle.BundleError, "modified"):
+                experiment_bundle.validate(bundle)
+
     def test_unknown_schema_absolute_artifact_and_missing_capability_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             bundle = self.run_bundle(Path(directory))
