@@ -42,6 +42,23 @@ class TestPatchSelection(unittest.TestCase):
             "if (GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)", text
         )
 
+    def test_transforms_fail_closed_without_recording_and_dispatch(self):
+        source = Path(__file__).resolve().parents[2] / "patches" / "0100_cmake_options.py"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn(
+            "if (GGML_HIP_ROUTING_TRANSFORM AND\n"
+            "        (NOT GGML_HIP_AUTOTUNE OR NOT GGML_HIP_AUTOTUNE_RECORD))",
+            text,
+        )
+        self.assertIn(
+            "GGML_HIP_ROUTING_TRANSFORM requires both GGML_HIP_AUTOTUNE and",
+            text,
+        )
+        self.assertIn(
+            "GGML_HIP_AUTOTUNE_RECORD until transform recording and dispatch",
+            text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

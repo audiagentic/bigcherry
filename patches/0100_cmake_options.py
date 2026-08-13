@@ -82,15 +82,19 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     endif()
 endif()
 
-# HI27: routing transformations are a dispatch-layer feature, so the flag is
-# meaningless without the layer. Failing here rather than silently ignoring it
-# matters because the failure mode is invisible: the build would succeed, the
-# tune would run, and transforms.jsonl would simply never be written -- which
-# reads identically to "no signature had a gap".
-if (GGML_HIP_ROUTING_TRANSFORM AND NOT (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY))
+# HI29-HI31: the transform registry and launch helper are present, but the
+# transform identity is not yet part of the record/replay ABI and the normal
+# dispatcher does not yet select transformed bindings.  Do not let a partial
+# build advertise the feature: it could tune a transformed path without being
+# able to persist or replay the same decision.  Requiring the tuning dispatch
+# and the record capability is the safe offline boundary until that ABI is
+# wired end-to-end.
+if (GGML_HIP_ROUTING_TRANSFORM AND
+        (NOT GGML_HIP_AUTOTUNE OR NOT GGML_HIP_AUTOTUNE_RECORD))
     message(FATAL_ERROR
-        "GGML_HIP_ROUTING_TRANSFORM requires GGML_HIP_AUTOTUNE or "
-        "GGML_HIP_DISPATCH_REPLAY: there is no dispatch layer to transform in.")
+        "GGML_HIP_ROUTING_TRANSFORM requires both GGML_HIP_AUTOTUNE and "
+        "GGML_HIP_AUTOTUNE_RECORD until transform recording and dispatch "
+        "integration is complete.")
 endif()
 
 if (GGML_HIP_WORKSPACE_METRICS AND NOT GGML_HIP_AUTOTUNE)
