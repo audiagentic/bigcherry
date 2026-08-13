@@ -31,11 +31,74 @@ from typing import Any
 from . import paths
 
 
+class ReleaseGateError(ValueError):
+    """A validated-release claim is missing or contradicts its evidence."""
+
+
+def validate_release_claim(record: dict[str, Any]) -> None:
+    """Fail closed when a record claims validation without coverage evidence.
+
+    ``probe`` records compatibility only and therefore does not need hardware
+    evidence.  A separate producer may add ``claim: validated`` once the full
+    record/tune/promote/replay pipeline has run.  At that boundary both
+    architecture coverage and candidate coverage are mandatory and must agree
+    with the identities they describe.
+    """
+    if record.get("claim") != "validated" and record.get("stage") != "validated":
+        return
+
+    architecture = record.get("architecture_coverage")
+    candidates = record.get("candidate_coverage")
+    if not isinstance(architecture, dict) or not architecture:
+        raise ReleaseGateError(
+            "validated release claim lacks architecture_coverage evidence")
+    if not isinstance(candidates, dict):
+        raise ReleaseGateError(
+            "validated release claim lacks candidate_coverage evidence")
+
+    expected_architectures = record.get("architectures")
+    if expected_architectures is not None:
+        if (not isinstance(expected_architectures, list)
+                or not expected_architectures
+                or set(expected_architectures) != set(architecture)):
+            raise ReleaseGateError(
+                "architecture_coverage does not match declared architectures")
+
+    for arch, evidence in architecture.items():
+        if not isinstance(arch, str) or not arch.strip():
+            raise ReleaseGateError("architecture coverage contains an invalid key")
+        if not isinstance(evidence, dict) or evidence.get("status") != "validated":
+            raise ReleaseGateError(
+                f"architecture coverage for {arch!r} is not validated")
+        if evidence.get("candidate_coverage") is not True:
+            raise ReleaseGateError(
+                f"architecture coverage for {arch!r} lacks candidate coverage")
+
+    observed_types = candidates.get("observed_types")
+    by_type = candidates.get("by_type")
+    if (not isinstance(observed_types, list) or not observed_types
+            or not isinstance(by_type, dict)
+            or set(observed_types) != set(by_type)):
+        raise ReleaseGateError(
+            "candidate coverage observed_types and by_type are inconsistent")
+    for type_name, evidence in by_type.items():
+        if not isinstance(type_name, str) or not type_name.strip():
+            raise ReleaseGateError("candidate coverage contains an invalid type")
+        if not isinstance(evidence, dict) or evidence.get("observed") is not True:
+            raise ReleaseGateError(
+                f"candidate coverage for {type_name!r} is not observed")
+        count = evidence.get("candidate_count")
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            raise ReleaseGateError(
+                f"candidate coverage for {type_name!r} has no candidates")
+
+
 def safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-") or "upstream"
 
 
 def _write(run: Path, record: dict[str, Any]) -> Path:
+    validate_release_claim(record)
     record["finished_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
     path = run / "run.json"
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")

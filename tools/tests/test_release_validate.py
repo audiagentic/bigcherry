@@ -17,6 +17,49 @@ class SafeNameTests(unittest.TestCase):
         self.assertEqual(release_validate.safe_name("..."), "upstream")
 
 
+class ReleaseGateTests(unittest.TestCase):
+    def _evidence(self) -> dict:
+        return {
+            "claim": "validated",
+            "architectures": ["gfx1201"],
+            "architecture_coverage": {
+                "gfx1201": {
+                    "status": "validated", "candidate_coverage": True,
+                },
+            },
+            "candidate_coverage": {
+                "observed_types": ["q8_0"],
+                "by_type": {
+                    "q8_0": {"observed": True, "candidate_count": 2},
+                },
+            },
+        }
+
+    def test_compatibility_record_does_not_need_hardware_evidence(self):
+        release_validate.validate_release_claim({"outcome": "compatible"})
+
+    def test_validated_claim_requires_and_accepts_consistent_evidence(self):
+        release_validate.validate_release_claim(self._evidence())
+
+    def test_validated_claim_rejects_missing_architecture_evidence(self):
+        record = self._evidence()
+        del record["architecture_coverage"]
+        with self.assertRaisesRegex(ValueError, "architecture_coverage"):
+            release_validate.validate_release_claim(record)
+
+    def test_validated_claim_rejects_mismatched_candidate_coverage(self):
+        record = self._evidence()
+        record["candidate_coverage"]["observed_types"].append("q6_k")
+        with self.assertRaisesRegex(ValueError, "inconsistent"):
+            release_validate.validate_release_claim(record)
+
+    def test_validated_claim_rejects_unvalidated_architecture(self):
+        record = self._evidence()
+        record["architecture_coverage"]["gfx1201"]["status"] = "observed"
+        with self.assertRaisesRegex(ValueError, "gfx1201"):
+            release_validate.validate_release_claim(record)
+
+
 class ProbeTests(unittest.TestCase):
     def test_run_already_exists_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
