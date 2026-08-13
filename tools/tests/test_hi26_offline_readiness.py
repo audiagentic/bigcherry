@@ -22,6 +22,17 @@ def _candidate(**overrides):
         "correctness_evidence": {
             "status": "validated", "reference": "native",
             "comparison": "bitwise",
+            "reference_path": "evidence/hi26/correctness.json",
+            "error_metrics": {"max_abs": 0.0},
+            "tolerances": {"max_abs": 0.0},
+            "signature_namespace": {
+                "signature_schema_version": 1,
+                "hardware_schema_version": 1,
+            },
+            "build_namespace": {
+                "source_revision": "a" * 40,
+                "manifest_hash": "b" * 32,
+            },
         },
         "workspace_evidence": {
             "status": "validated", "peak_bytes": 4096,
@@ -50,6 +61,9 @@ def _manifest(variant_set, candidate):
         "artifact_version": 1,
         "variant_set": variant_set,
         "source_revision": "a" * 40,
+        "manifest_hash": "b" * 32,
+        "signature_schema_version": 1,
+        "hardware_schema_version": 1,
         "architectures": ["gfx1100"],
         "candidates": [native, candidate],
     }

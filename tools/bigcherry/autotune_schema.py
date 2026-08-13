@@ -13,6 +13,7 @@ little and the error messages are better for it.
 from __future__ import annotations
 
 import re
+import math
 from typing import Any
 
 # Standards 1: a kernel family is a major algorithmic path.
@@ -324,6 +325,66 @@ def validate_custom_candidate_enablement(candidate: dict[str, Any], where: str) 
             f"{where}: benchmark_evidence.baseline must identify the reference")
 
 
+def _validate_correctness_reference(candidate: dict[str, Any], manifest: dict[str, Any],
+                                    where: str) -> None:
+    """Require namespace-bound correctness evidence for production variants.
+
+    Native wrappers are the diagnostic reference themselves.  Every other
+    candidate needs an immutable reference artifact, explicit error metrics
+    and tolerances, and evidence captured in the exact signature/build
+    namespace represented by the manifest.
+    """
+    if candidate["source_class"] == "native_wrapper":
+        return
+
+    evidence = candidate.get("correctness_evidence")
+    if not isinstance(evidence, dict):
+        evidence = candidate.get("config", {}).get("correctness_reference")
+    if not isinstance(evidence, dict):
+        raise SchemaError(
+            f"{where}: non-native candidate requires correctness evidence")
+
+    path = evidence.get("reference_path", evidence.get("path"))
+    if not isinstance(path, str) or not path.strip():
+        raise SchemaError(
+            f"{where}: correctness evidence requires a reference path")
+
+    metrics = evidence.get("error_metrics", evidence.get("metrics"))
+    if not isinstance(metrics, dict) or not metrics:
+        raise SchemaError(
+            f"{where}: correctness evidence requires error metrics")
+    tolerances = evidence.get("tolerances", evidence.get("tolerance"))
+    if not isinstance(tolerances, dict) or not tolerances:
+        raise SchemaError(
+            f"{where}: correctness evidence requires tolerances")
+    for label, values in (("error metrics", metrics), ("tolerances", tolerances)):
+        for name, value in values.items():
+            if (not isinstance(name, str) or not name.strip() or
+                    isinstance(value, bool) or not isinstance(value, (int, float)) or
+                    not math.isfinite(value) or value < 0):
+                raise SchemaError(
+                    f"{where}: correctness {label} must contain non-negative finite numbers")
+
+    signature = evidence.get("signature_namespace")
+    if not isinstance(signature, dict):
+        raise SchemaError(
+            f"{where}: correctness evidence requires signature_namespace")
+    for field in ("signature_schema_version", "hardware_schema_version"):
+        if signature.get(field) != manifest.get(field):
+            raise SchemaError(
+                f"{where}: correctness signature_namespace does not match manifest")
+
+    build = evidence.get("build_namespace")
+    if not isinstance(build, dict):
+        raise SchemaError(
+            f"{where}: correctness evidence requires build_namespace")
+    for field in ("source_revision", "manifest_hash", "build_descriptor_hash"):
+        expected = manifest.get(field)
+        if expected is not None and build.get(field) != expected:
+            raise SchemaError(
+                f"{where}: correctness build_namespace does not match manifest")
+
+
 def architecture_code(name: str) -> int:
     try:
         return ARCHITECTURES.index(name)
@@ -399,6 +460,7 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         validate_candidate(candidate, where)
         if manifest["variant_set"] in PRODUCTION_VARIANT_SETS:
             validate_production_candidate_safety(candidate, where)
+            _validate_correctness_reference(candidate, manifest, where)
 
         name = candidate["stable_name"]
         if name in seen:
