@@ -55,5 +55,42 @@ class ReleasePublicationTests(unittest.TestCase):
                 encoding="utf-8"))["releases"]), 1)
 
 
+class ReleaseLifecycleTests(unittest.TestCase):
+    def test_stage_transitions_are_monotonic(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        with self.assertRaisesRegex(ValueError, "move backwards"):
+            record.advance_to("patched")
+        self.assertEqual(record.stage, "tested")
+
+    def test_broken_state_can_be_explicitly_recovered(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="broken")
+        record.advance_to("pulled")
+        record.advance_to("audited")
+        self.assertEqual(record.stage, "audited")
+
+    def test_invalid_stage_is_fail_closed(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="mystery")
+        with self.assertRaisesRegex(ValueError, "unknown release stage"):
+            record.validate()
+
+    def test_index_must_match_source_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = releases.ReleaseRecord(
+                revision="abc123", stage="tested", updated_at="now")
+            record_path = root / "abc123.json"
+            record_path.write_text(json.dumps({**releases.asdict(record)}),
+                                   encoding="utf-8")
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps({"releases": [{
+                "slug": "abc123", "revision": "wrong", "release_tag": "",
+                "stage": "tested", "manifest_hash": "",
+                "audit_passed": False, "updated_at": "now",
+            }]}), encoding="utf-8")
+            with mock.patch.object(releases, "RELEASES_DIR", root):
+                with self.assertRaisesRegex(ValueError, "disagrees"):
+                    releases.validate_index_consistency(index_path=index_path)
+
+
 if __name__ == "__main__":
     unittest.main()
