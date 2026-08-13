@@ -351,9 +351,14 @@ The first encounter of a dispatch key performs DB lookup. The result is cached i
 
 ## 16. BLAS integration
 
-### 16.1 hipBLAS is initially one opaque candidate
+### 16.1 hipBLAS begins with a staged native plan
 
-Treat `blas:hipblas-auto:v1` as a single candidate (source class `vendor_auto`). Do not enumerate internal hipBLAS solutions at first.
+The initial BLAS-1 catalog carries the `blas:native:v1` correctness fallback
+and one structured forced-native plan. Its durable identity names only the
+statically resolved operand, accumulation, output, conversion, and numerical
+class fields. Provider and effective API values remain observations until a
+runtime apply/execute seam proves they can be selected safely. Do not enumerate
+internal hipBLAS solutions at this stage.
 
 ### 16.2 Vendor solutions require exact library namespace
 

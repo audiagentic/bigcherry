@@ -53,7 +53,7 @@ recorded name — standards 2.1).
 
 ---
 
-## BLAS decomposition — what's hidden behind one opaque candidate
+## BLAS decomposition — the staged plan behind the native path
 
 `ggml_cuda_mul_mat_cublas_impl` is up to three operations, not one
 ([ggml-cuda.cu:1414-1624](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1414-L1624)):
@@ -65,8 +65,13 @@ recorded name — standards 2.1).
 3. **Output conversion** — `if (cu_data_type != CUDA_R_32F)` then
    `to_fp32_cuda(dst_temp, dst_ddf, ...)`.
 
-Reporting all of that as one opaque `blas:hipblas-auto:v1` hides a significant
-portion of the workload's distinct operations behind a single unmeasured token.
+Historically, reporting all of that as one opaque `blas:hipblas-auto:v1` hid a
+significant portion of the workload's distinct operations behind a single
+unmeasured token. The first HI17 BLAS-1 slice now preserves the
+`blas:native:v1` correctness fallback and adds one structured forced-native
+plan. Its identity names operand, accumulation, output, conversion, and
+numerical-class fields; effective API/provider values remain observations until
+the runtime apply/execute seam is proven.
 
 ### DQ_BLAS and BLAS are not two entry points
 

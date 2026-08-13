@@ -557,6 +557,25 @@ def enumerate_blas(architectures: list[str]) -> list[Candidate]:
         "output_conversion": "none",
         "numerical_class": "exact_baseline",
     }
+    resolution = schema.resolve_blas_plan(
+        plan,
+        {
+            "src0_type": "native",
+            "src1_type": "native",
+            "dst_type": "native",
+            "prec": 0,
+            "has_ids": False,
+            "source_a_contiguous": True,
+            "source_b_contiguous": True,
+            "batched": False,
+        },
+        where="catalog.forced_native",
+    )
+    if resolution.rejection_reason is not None or resolution.plan is None:
+        raise CatalogError(
+            "forced-native BLAS plan failed offline resolution: "
+            f"{resolution.rejection_reason}")
+    plan = resolution.plan
     return [Candidate(
         stable_name=schema.blas_plan_name(
             "forced-native", plan, IMPLEMENTATION_VERSION),

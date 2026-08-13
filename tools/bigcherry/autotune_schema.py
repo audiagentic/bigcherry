@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import math
+from dataclasses import dataclass
 from typing import Any
 
 # Standards 1: a kernel family is a major algorithmic path.
@@ -48,6 +49,25 @@ BLAS_PLAN_FIELDS = (
     "output_conversion",
     "numerical_class",
 )
+
+BLAS_SIGNATURE_FIELDS = (
+    "src0_type",
+    "src1_type",
+    "dst_type",
+    "prec",
+    "has_ids",
+    "source_a_contiguous",
+    "source_b_contiguous",
+    "batched",
+)
+
+
+@dataclass(frozen=True)
+class BlasPlanResolution:
+    """Deterministic offline result for one plan/signature eligibility check."""
+
+    plan: dict[str, str] | None
+    rejection_reason: str | None = None
 
 
 def validate_blas_plan(plan: dict[str, Any], where: str, *, prec: int | None = None) -> None:
@@ -118,6 +138,79 @@ def blas_plan_name(mode: str, plan: dict[str, str], version: int) -> str:
         f"numerical-{plan['numerical_class']}",
     ]
     return f"blas:{mode}:" + ":".join(tokens) + f":v{version}"
+
+
+def resolve_blas_plan(plan: dict[str, Any], signature: dict[str, Any],
+                      where: str = "BLAS plan") -> BlasPlanResolution:
+    """Resolve statically provable BLAS eligibility without choosing a backend.
+
+    This is deliberately smaller than the eventual HIP call resolver.  It
+    only handles constraints visible in the dispatch signature: precision,
+    MUL_MAT_ID, source layout, and whether an explicit output conversion is
+    structurally meaningful.  Provider, effective API, and HIP datatype
+    selection remain runtime observations until the HI17 apply/execute seam is
+    implemented.
+    """
+    if not isinstance(signature, dict):
+        raise SchemaError(f"{where}: BLAS signature context must be an object")
+    missing = [field for field in BLAS_SIGNATURE_FIELDS if field not in signature]
+    if missing:
+        raise SchemaError(
+            f"{where}: BLAS signature context is missing "
+            f"{', '.join(repr(field) for field in missing)}")
+
+    for field in ("src0_type", "src1_type", "dst_type"):
+        if not isinstance(signature[field], str) or not signature[field].strip():
+            raise SchemaError(f"{where}: signature {field} must be a non-empty string")
+    if isinstance(signature["prec"], bool) or not isinstance(signature["prec"], int):
+        raise SchemaError(f"{where}: signature prec must be an integer")
+    for field in ("has_ids", "source_a_contiguous", "source_b_contiguous", "batched"):
+        if not isinstance(signature[field], bool):
+            raise SchemaError(f"{where}: signature {field} must be boolean")
+
+    try:
+        validate_blas_plan(plan, f"{where}.plan")
+    except SchemaError:
+        return BlasPlanResolution(None, "invalid_plan")
+
+    normalized = {field: plan[field] for field in BLAS_PLAN_FIELDS}
+    if (signature["prec"] == GGML_PREC_F32 and
+            normalized["numerical_class"] == "reduced_precision"):
+        return BlasPlanResolution(None, "strict_precision_rejects_reduced_precision")
+    if signature["has_ids"]:
+        return BlasPlanResolution(None, "mul_mat_id_unsupported")
+
+    source_routes = (
+        ("source_a_conversion", "source_a_contiguous", "src0_type"),
+        ("source_b_conversion", "source_b_contiguous", "src1_type"),
+    )
+    for route_field, layout_field, type_field in source_routes:
+        route = normalized[route_field]
+        contiguous = signature[layout_field]
+        if route == "contiguous" and not contiguous:
+            return BlasPlanResolution(None, f"{route_field}_requires_contiguous_layout")
+        if route == "non_contiguous" and contiguous:
+            return BlasPlanResolution(None, f"{route_field}_requires_strided_layout")
+
+        # `none` is only a no-op for an explicitly typed operand.  The native
+        # plan intentionally defers the actual source type to the runtime.
+        if (route == "none" and normalized["operand_type"] != "native" and
+                signature[type_field] != normalized["operand_type"]):
+            return BlasPlanResolution(None, f"{route_field}_requires_conversion")
+
+    output_type = normalized["output_type"]
+    destination = signature["dst_type"]
+    output_route = normalized["output_conversion"]
+    if output_route == "none" and output_type != "native" and destination != output_type:
+        return BlasPlanResolution(None, "output_conversion_required")
+    if output_route == "temporary_to_f32" and (destination != "f32" or
+                                                output_type not in ("f16", "bf16")):
+        return BlasPlanResolution(None, "temporary_to_f32_requires_f16_or_bf16_output")
+
+    # Batch structure is intentionally accepted here.  The native BLAS path
+    # chooses among its APIs at runtime; rejecting a batched shape offline
+    # would accidentally turn an API observation into candidate identity.
+    return BlasPlanResolution(normalized)
 
 # Standards 2.3. Exactly one per candidate.
 SOURCE_CLASSES = (
