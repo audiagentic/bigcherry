@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
     ('schema_version',    '2'),
     ('signature_schema',  '1'),
-    ('hardware_schema',   '1');
+    ('hardware_schema',   '1'),
+    ('transform_schema',  '1');
 
 -- --------------------------------------------------------------------- build
 -- One row per (upstream revision + candidate manifest + ABI) namespace.
@@ -315,3 +316,54 @@ CREATE TABLE IF NOT EXISTS ranking_decision_candidate (
     rejection_reason TEXT,
     PRIMARY KEY (decision_id, candidate_id)
 );
+
+-- ----------------------------------------------------------- transform_attempt
+-- HI33 offline evidence.  These tables are additive: runtime transforms,
+-- replay builds, and existing measurement/release formats do not depend on
+-- them.  Provenance is bound to the existing build/hardware/signature rows.
+
+CREATE TABLE IF NOT EXISTS transform_attempt (
+    attempt_id             INTEGER PRIMARY KEY,
+    build_id               INTEGER NOT NULL REFERENCES build(build_id),
+    hardware_id            INTEGER NOT NULL REFERENCES hardware(hardware_id),
+    signature_digest       BLOB    NOT NULL REFERENCES signature(signature_digest),
+    dispatch_digest        BLOB,
+    transformation_id      INTEGER NOT NULL,
+    transformation_name    TEXT    NOT NULL,
+    source                  TEXT    NOT NULL CHECK (source IN ('predefined', 'discovered')),
+    result                  TEXT    NOT NULL CHECK (result IN ('success', 'rejected')),
+    reason                  TEXT    NOT NULL,
+    transformed_sig_digest  BLOB,
+    evidence_references     TEXT    NOT NULL,
+    attempted_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, hardware_id, signature_digest, transformation_id)
+);
+
+CREATE INDEX IF NOT EXISTS transform_attempt_sig_idx
+    ON transform_attempt(build_id, signature_digest);
+CREATE INDEX IF NOT EXISTS transform_attempt_result_idx
+    ON transform_attempt(result, transformation_name);
+
+-- --------------------------------------------------------------- transform_gap
+-- One validated gap per build/hardware/source signature.  calls and est_bytes
+-- are copied from observation at load time for stable offline prioritisation.
+
+CREATE TABLE IF NOT EXISTS transform_gap (
+    gap_id                  INTEGER PRIMARY KEY,
+    build_id                INTEGER NOT NULL REFERENCES build(build_id),
+    hardware_id             INTEGER NOT NULL REFERENCES hardware(hardware_id),
+    signature_digest        BLOB    NOT NULL REFERENCES signature(signature_digest),
+    pattern_description     TEXT    NOT NULL,
+    native_family           TEXT    NOT NULL,
+    transformations_tried  TEXT    NOT NULL,
+    calls                   INTEGER NOT NULL DEFAULT 0,
+    est_bytes               INTEGER NOT NULL DEFAULT 0,
+    evidence_references     TEXT    NOT NULL,
+    created_at              TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, hardware_id, signature_digest)
+);
+
+CREATE INDEX IF NOT EXISTS transform_gap_sig_idx
+    ON transform_gap(build_id, signature_digest);
+CREATE INDEX IF NOT EXISTS transform_gap_pattern_idx
+    ON transform_gap(native_family, pattern_description);
