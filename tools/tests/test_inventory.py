@@ -666,6 +666,62 @@ class TestLoadMeasurements(unittest.TestCase):
                 {"kind": "header", "final_samples": -1}, 1
             )
 
+    def test_workspace_evidence_keeps_request_allocation_peak_and_rebase_distinct(self):
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        candidate = result["candidates"][0]
+        candidate["workspace"] = 4096
+        candidate["pool_peak_bytes"] = 2048
+        candidate["workspace_evidence"] = {
+            "requested_bytes": 4096,
+            "actual_bytes": 8192,
+            "peak_bytes": 12288,
+            "rebase_baseline_bytes": 10240,
+            "rebase_current_bytes": 10240,
+        }
+        inventory._validate_measurement_result(result, 2)
+
+    def test_workspace_evidence_rejects_request_mismatch(self):
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        candidate = result["candidates"][0]
+        candidate["workspace_evidence"] = {
+            "requested_bytes": 1,
+            "actual_bytes": 1,
+            "peak_bytes": 1,
+            "rebase_baseline_bytes": 0,
+            "rebase_current_bytes": 0,
+        }
+        with self.assertRaisesRegex(RecordError, "does not match candidate workspace"):
+            inventory._validate_measurement_result(result, 2)
+
+    def test_workspace_evidence_rejects_allocator_and_rebase_inconsistency(self):
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        candidate = result["candidates"][0]
+        candidate["workspace"] = 4096
+        candidate["workspace_evidence"] = {
+            "requested_bytes": 4096,
+            "actual_bytes": 2048,
+            "peak_bytes": 1024,
+            "rebase_baseline_bytes": 2048,
+            "rebase_current_bytes": 4096,
+        }
+        with self.assertRaisesRegex(RecordError, "actual allocation"):
+            inventory._validate_measurement_result(result, 2)
+
+    def test_workspace_evidence_rejects_peak_and_pool_peak_mismatch(self):
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        candidate = result["candidates"][0]
+        candidate["workspace"] = 4096
+        candidate["pool_peak_bytes"] = 99
+        candidate["workspace_evidence"] = {
+            "requested_bytes": 4096,
+            "actual_bytes": 4096,
+            "peak_bytes": 8192,
+            "rebase_baseline_bytes": 4096,
+            "rebase_current_bytes": 4096,
+        }
+        with self.assertRaisesRegex(RecordError, "pool_peak_bytes"):
+            inventory._validate_measurement_result(result, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

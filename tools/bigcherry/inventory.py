@@ -63,6 +63,77 @@ def _finite_number(value: Any, field: str, *, nonnegative: bool = True) -> float
     return number
 
 
+def _nonnegative_integer(value: Any, field: str, line: int) -> int:
+    """Validate a byte counter without accepting bools or lossy floats."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RecordError(
+            f"measurements line {line}: workspace evidence {field!r} "
+            "must be a non-negative integer"
+        )
+    return value
+
+
+def _validate_workspace_evidence(candidate: dict[str, Any], line: int) -> None:
+    """Validate separable pool-accounting evidence for one candidate.
+
+    ``workspace`` is the candidate's requested size.  The optional evidence
+    object keeps that request distinct from the allocator's actual size and
+    the pool's rebased high-water mark. Older artifacts remain compatible;
+    artifacts carrying the object must provide the complete proof.
+    """
+    evidence = candidate.get("workspace_evidence")
+    if evidence is None:
+        return
+    if not isinstance(evidence, dict):
+        raise RecordError(
+            f"measurements line {line}: workspace_evidence must be an object"
+        )
+    required = (
+        "requested_bytes",
+        "actual_bytes",
+        "peak_bytes",
+        "rebase_baseline_bytes",
+        "rebase_current_bytes",
+    )
+    missing = [field for field in required if field not in evidence]
+    if missing:
+        raise RecordError(
+            f"measurements line {line}: workspace_evidence missing "
+            + ", ".join(missing)
+        )
+    values = {
+        field: _nonnegative_integer(evidence[field], field, line)
+        for field in required
+    }
+    requested = _nonnegative_integer(candidate.get("workspace", 0), "requested_bytes", line)
+    if values["requested_bytes"] != requested:
+        raise RecordError(
+            f"measurements line {line}: workspace evidence request does not "
+            "match candidate workspace"
+        )
+    if values["actual_bytes"] < values["requested_bytes"]:
+        raise RecordError(
+            f"measurements line {line}: actual allocation is smaller than request"
+        )
+    if values["peak_bytes"] < values["rebase_baseline_bytes"]:
+        raise RecordError(
+            f"measurements line {line}: peak is below the rebased baseline"
+        )
+    if values["rebase_current_bytes"] != values["rebase_baseline_bytes"]:
+        raise RecordError(
+            f"measurements line {line}: workspace did not return to rebased baseline"
+        )
+    pool_peak = candidate.get("pool_peak_bytes")
+    if pool_peak is not None:
+        pool_peak = _nonnegative_integer(pool_peak, "pool_peak_bytes", line)
+        measured_peak = values["peak_bytes"] - values["rebase_baseline_bytes"]
+        if pool_peak != measured_peak:
+            raise RecordError(
+                f"measurements line {line}: pool_peak_bytes does not match "
+                "rebased peak evidence"
+            )
+
+
 def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
     """Validate one complete tuner result before it can affect the DB.
 
@@ -117,6 +188,7 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
                 raise RecordError(
                     f"measurements line {line}: samples does not match samples_us"
                 )
+        _validate_workspace_evidence(candidate, line)
     if winner not in names:
         raise RecordError(f"measurements line {line}: winner is not a candidate")
     for field in ("improvement_pct", "confidence"):
