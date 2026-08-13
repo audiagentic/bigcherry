@@ -262,6 +262,10 @@ std::string journal_result_summary(
         const ggml_hip_digest & dispatch_digest, const Result & result) {
     return std::string("{\"kind\":\"result\",\"dispatch\":\"") +
         ggml_hip_digest_hex(dispatch_digest) +
+        "\",\"signature\":\"" +
+        ggml_hip_digest_hex(result.signature_digest) +
+        "\",\"hardware\":\"" +
+        ggml_hip_digest_hex(result.hardware_digest) +
         "\",\"winner\":\"" +
         (result.winner != nullptr ? result.winner->stable_name : "(none)") +
         "\",\"native\":\"" + result.native_name +

@@ -198,6 +198,13 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("native final measurement failed; run rejected", final_text)
         self.assertIn("!native_m->measured", final_text)
 
+    def test_tune_journal_result_keeps_replay_identity_digests(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        summary = tuner[tuner.index("std::string journal_result_summary("):]
+        self.assertIn('signature_digest', summary)
+        self.assertIn('hardware_digest', summary)
+        self.assertLess(summary.index("signature_digest"), summary.index("winner"))
+
 
 if __name__ == "__main__":
     unittest.main()
