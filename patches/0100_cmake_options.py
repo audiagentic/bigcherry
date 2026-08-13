@@ -175,7 +175,11 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     # profile (DISPATCH_REPLAY=ON, AUTOTUNE=OFF, MODE=record) silently record
     # nothing -- and the whole pipeline would then start from an empty
     # inventory without any error.
-    if (GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)
+    # Record support is a separate capability.  Tune builds must not define
+    # this macro: they deliberately omit hip-autotune-record.cpp from the
+    # link graph, and defining it makes the dispatcher reference the absent
+    # ggml_hip_record_flush symbol at runtime.
+    if (GGML_HIP_AUTOTUNE_RECORD)
         add_compile_definitions(GGML_HIP_AUTOTUNE_RECORD)
     endif()
 

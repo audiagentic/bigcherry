@@ -42,6 +42,7 @@ binary.
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "upstream-fixes"
+STATE = "validated"
 
 PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmq-vec-dot.cuh",
