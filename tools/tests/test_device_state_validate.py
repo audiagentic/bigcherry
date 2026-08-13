@@ -23,6 +23,7 @@ def report(**overrides):
         "device_clock_drift": {
             "status": "captured", "sclk_delta_mhz": 0,
             "mclk_delta_mhz": 0, "max_abs_pct": 0.0,
+            "drift": False, "threshold_pct": 5.0,
         },
         "retime_status": "not_needed",
         "clock_drift_rounds": 0, "reverse_retime_attempts": 0,
@@ -64,6 +65,27 @@ def test_captured_drift_requires_all_metrics():
     drift = {"status": "captured", "sclk_delta_mhz": 0}
     with pytest.raises(DeviceStateEvidenceError, match="mclk_delta_mhz"):
         validate_device_state_report(report(device_clock_drift=drift))
+
+
+def test_captured_drift_rejects_contradictory_decision():
+    drift = report()["device_clock_drift"] | {"max_abs_pct": 20.0}
+    with pytest.raises(DeviceStateEvidenceError, match="contradicts"):
+        validate_device_state_report(report(device_clock_drift=drift))
+
+
+def test_retime_counters_require_status():
+    value = report()
+    value.pop("retime_status")
+    value["clock_drift_rounds"] = 1
+    with pytest.raises(DeviceStateEvidenceError, match="require retime_status"):
+        validate_device_state_report(value)
+
+
+def test_asymmetric_snapshots_are_rejected():
+    value = report()
+    value.pop("device_state_post")
+    with pytest.raises(DeviceStateEvidenceError, match="pre and post"):
+        validate_device_state_report(value)
 
 
 def test_corrected_retime_requires_reverse_evidence():

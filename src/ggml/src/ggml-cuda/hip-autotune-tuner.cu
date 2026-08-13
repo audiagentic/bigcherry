@@ -861,18 +861,13 @@ CounterbalancedRound run_counterbalanced_round(
         out.complete = first_complete;
         return out;
     }
-    if (first_observation.identity_mismatch) {
-        out.status = RetimeStatus::unresolved;
-        out.complete = false;
-        return out;
-    }
-    if (!first_observation.comparable) {
+    if (!first_observation.comparable && !first_observation.identity_mismatch) {
         out.status = first_complete ? RetimeStatus::unavailable
                                     : RetimeStatus::not_needed;
         out.complete = first_complete;
         return out;
     }
-    if (!first_observation.drift) {
+    if (!first_observation.drift && !first_observation.identity_mismatch) {
         out.complete = first_complete;
         return out;
     }
@@ -1519,6 +1514,14 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         ? ggml_hip_query_device_state(ggml_cuda_get_device())
         : ggml_hip_device_state{};
     result.device_state_pre_json = device_state_json(result.device_state_pre);
+    auto capture_device_state_post = [&]() {
+        result.device_state_post = ggml_hip_smi_enabled()
+            ? ggml_hip_query_device_state(ggml_cuda_get_device())
+            : ggml_hip_device_state{};
+        result.device_state_post_json = device_state_json(result.device_state_post);
+        result.device_clock_drift_json = device_clock_drift_json(
+            result.device_state_pre, result.device_state_post);
+    };
 
     // --- scratch destinations -------------------------------------------
     //
@@ -1709,6 +1712,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             m->host_median_us = median_of(m->final_host_us);
             m->samples        = (int) finite_gpu.size();
         }
+    }
+
+    if (result.retime_status == "unresolved") {
+        result.winner = native.candidate;
+        result.improvement_pct = 0.0;
+        result.promotion_status = "native";
+        result.reason = "clock drift retime unresolved; run rejected";
+        capture_device_state_post();
+        record_result(dispatch_digest, result);
+        return native.candidate;
     }
 
     // A native baseline is only valid when it survived every measurement
@@ -1992,12 +2005,17 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
-    result.device_state_post = ggml_hip_smi_enabled()
-        ? ggml_hip_query_device_state(ggml_cuda_get_device())
-        : ggml_hip_device_state{};
-    result.device_state_post_json = device_state_json(result.device_state_post);
-    result.device_clock_drift_json = device_clock_drift_json(
-        result.device_state_pre, result.device_state_post);
+    // Confirmation is also a promotion gate. A drifted confirmation round
+    // that cannot be stabilized must never leave the provisional winner in a
+    // promotable state merely because earlier ranking rounds were clean.
+    if (result.retime_status == "unresolved") {
+        result.winner = native.candidate;
+        result.improvement_pct = 0.0;
+        result.promotion_status = "native";
+        result.reason = "clock drift retime unresolved; run rejected";
+    }
+
+    capture_device_state_post();
 
     {
         int counts[GGML_HIP_REJECT_COUNT];
