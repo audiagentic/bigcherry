@@ -213,6 +213,8 @@ void ggml_hip_record_blas_metadata(const ggml_hip_blas_observation_v1 & metadata
         ? metadata.output_conversion : "unknown";
     observation.blas_requested_precision = metadata.requested_precision != nullptr
         ? metadata.requested_precision : "unknown";
+    observation.effective_call_api = metadata.effective_call_api != nullptr
+        ? metadata.effective_call_api : "unknown";
     observation.blas_effective_provider = metadata.effective_provider != nullptr
         ? metadata.effective_provider : "unknown";
     observation.blas_effective_backend = metadata.effective_backend != nullptr
@@ -275,6 +277,7 @@ void ggml_hip_record_flush() {
                 "\"output_type\":\"%s\",\"accumulation_type\":\"%s\","
                 "\"source_a_conversion\":\"%s\",\"source_b_conversion\":\"%s\","
                 "\"output_conversion\":\"%s\",\"requested_precision\":\"%s\","
+                "\"effective_call_api\":\"%s\","
                 "\"effective_provider\":\"%s\",\"effective_backend\":\"%s\","
                 "\"source_a_temp_bytes\":%llu,\"source_b_temp_bytes\":%llu,"
                 "\"output_temp_bytes\":%llu},\"devices\":[",
@@ -290,6 +293,7 @@ void ggml_hip_record_flush() {
                 o.blas_output_type.c_str(), o.blas_accumulation_type.c_str(),
                 o.blas_source_a_conversion.c_str(), o.blas_source_b_conversion.c_str(),
                 o.blas_output_conversion.c_str(), o.blas_requested_precision.c_str(),
+                o.effective_call_api.c_str(),
                 o.blas_effective_provider.c_str(), o.blas_effective_backend.c_str(),
                 (unsigned long long) o.blas_source_a_temp_bytes,
                 (unsigned long long) o.blas_source_b_temp_bytes,

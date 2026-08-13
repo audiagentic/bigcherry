@@ -94,6 +94,7 @@ def _validate_blas_metadata(row: dict[str, Any], where: str) -> dict[str, Any]:
         "source_b_conversion": _text(metadata.get("source_b_conversion"), "source_b_conversion", where),
         "output_conversion": _text(metadata.get("output_conversion"), "output_conversion", where),
         "requested_precision": _text(metadata.get("requested_precision"), "requested_precision", where),
+        "effective_call_api": _text(metadata.get("effective_call_api"), "effective_call_api", where),
         "effective_provider": _text(metadata.get("effective_provider"), "effective_provider", where),
         "effective_backend": _text(metadata.get("effective_backend"), "effective_backend", where),
         "source_a_temp_bytes": _nonnegative(metadata.get("source_a_temp_bytes"), "source_a_temp_bytes", where),
@@ -106,6 +107,8 @@ def _validate_blas_metadata(row: dict[str, Any], where: str) -> dict[str, Any]:
         raise TelemetryError(f"{where}: unsupported source_b_conversion")
     if normalized["output_conversion"] not in _BLAS_OUTPUT_CONVERSIONS:
         raise TelemetryError(f"{where}: unsupported output_conversion")
+    if normalized["effective_call_api"] not in _BLAS_APIS:
+        raise TelemetryError(f"{where}: unsupported effective_call_api")
     if normalized["effective_provider"] not in _BLAS_PROVIDERS:
         raise TelemetryError(f"{where}: unsupported effective_provider")
     if normalized["effective_backend"] not in _BLAS_BACKENDS:

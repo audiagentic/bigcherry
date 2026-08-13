@@ -52,6 +52,7 @@ static const char * bigcherry_cublas_compute_type_name(cublasComputeType_t type)
 def _record_api(name):
     return (
         "\n#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
+        f"        bigcherry_effective_call_api = \"{name}\";\n"
         f"        ggml_hip_record_effective_call_api(\"{name}\");\n"
         "#endif\n"
     )
@@ -85,6 +86,7 @@ _BLAS_METADATA_STATE = """
     const char * bigcherry_source_a_conversion = "direct";
     const char * bigcherry_source_b_conversion = "direct";
     const char * bigcherry_output_conversion = "direct";
+    const char * bigcherry_effective_call_api = "unknown";
     size_t bigcherry_source_a_temp_bytes = 0;
     size_t bigcherry_source_b_temp_bytes = 0;
     size_t bigcherry_output_temp_bytes = 0;
@@ -104,6 +106,7 @@ _BLAS_METADATA_HOOK = """
         bigcherry_source_b_conversion,
         bigcherry_output_conversion,
         bigcherry_requested_precision.c_str(),
+        bigcherry_effective_call_api,
         "hipblas",
         "unknown",
         (uint64_t) bigcherry_source_a_temp_bytes,

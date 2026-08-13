@@ -23,7 +23,8 @@ def _blas():
                 "operand_a_type": "f16", "operand_b_type": "f16", "output_type": "f16",
                 "accumulation_type": "f16", "source_a_conversion": "direct",
                 "source_b_conversion": "contiguous", "output_conversion": "direct",
-                "requested_precision": "0", "effective_provider": "hipblas",
+                "requested_precision": "0", "effective_call_api": "cublasGemmEx",
+                "effective_provider": "hipblas",
                 "effective_backend": "unknown", "source_a_temp_bytes": 0,
                 "source_b_temp_bytes": 4096, "output_temp_bytes": 0,
             }}
