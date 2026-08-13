@@ -32,7 +32,7 @@ import re
 import struct
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from . import autotune_catalog
 
@@ -43,6 +43,109 @@ SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
 DIGEST_BYTES = 16
 PERSON_DISPATCH = b"llama-dispatch"
+_REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
+
+
+def validate_provenance_namespace(value: dict[str, Any], *, where: str = "provenance") -> dict[str, Any]:
+    """Validate the identity namespace carried by a tuning result.
+
+    Provenance is intentionally metadata, not part of the portable replay
+    digest.  It must nevertheless be complete and canonical before results
+    from different builds can be compared or selected.  Return a normalized
+    copy so callers cannot accidentally compare mixed-case digests.
+    """
+    if not isinstance(value, dict):
+        raise SystemExit(f"{where} must be an object")
+    revision = value.get("source_revision")
+    if not isinstance(revision, str) or not _REVISION_RE.fullmatch(revision):
+        raise SystemExit(f"{where}.source_revision must be a 20-byte hexadecimal revision")
+    manifest = _digest_hex(value.get("manifest_hash"), f"{where}.manifest_hash")
+    normalized: dict[str, Any] = {
+        "source_revision": revision.lower(),
+        "manifest_hash": manifest,
+    }
+    descriptor = value.get("build_descriptor_hash")
+    if descriptor is not None:
+        normalized["build_descriptor_hash"] = _digest_hex(
+            descriptor, f"{where}.build_descriptor_hash")
+    variant_set = value.get("variant_set")
+    if variant_set is not None:
+        if not isinstance(variant_set, str) or not variant_set.strip():
+            raise SystemExit(f"{where}.variant_set must be a non-empty string")
+        normalized["variant_set"] = variant_set
+    return normalized
+
+
+def portable_tuning_key(hardware: Any, signature: Any, objective: Any = "latency") -> str:
+    """Return the Python equivalent of the runtime portable dispatch digest.
+
+    The canonical object and personalization match ``ggml_hip_dispatch_digest``
+    exactly.  Build/source identity is deliberately excluded; callers should
+    retain it separately through :func:`validate_provenance_namespace`.
+    """
+    hardware = _digest_hex(hardware, "hardware digest")
+    signature = _digest_hex(signature, "signature digest")
+    if not isinstance(objective, str) or not objective:
+        raise SystemExit("objective must be a non-empty string")
+    payload = json.dumps(
+        {"hardware": hardware, "objective": objective, "signature": signature},
+        sort_keys=True, separators=(",", ":"))
+    return blake2b_digest(payload.encode("utf-8")).hex()
+
+
+def select_newest_winners(records: Iterable[dict[str, Any]], *, keep_generations: int = 1) -> list[dict[str, Any]]:
+    """Select deterministic newest winners without changing replay bytes.
+
+    Records are grouped by their portable hardware/signature/objective key.
+    ``generation`` is the only ordering field; source and manifest identities
+    are tie-break identity, never an accidental ordering surrogate.  A
+    conflicting winner for the same key and generation is rejected rather than
+    making selection depend on input order.
+    """
+    if isinstance(keep_generations, bool) or not isinstance(keep_generations, int) or keep_generations < 1:
+        raise SystemExit("keep_generations must be a positive integer")
+    grouped: dict[str, dict[int, dict[tuple[str, str], dict[str, Any]]] ] = {}
+    for index, original in enumerate(records):
+        if not isinstance(original, dict):
+            raise SystemExit(f"winner record {index} must be an object")
+        record = dict(original)
+        provenance = record.get("provenance")
+        if provenance is None:
+            provenance = {key: record.get(key) for key in
+                          ("source_revision", "manifest_hash", "build_descriptor_hash", "variant_set")
+                          if key in record}
+        provenance = validate_provenance_namespace(provenance, where=f"winner record {index}.provenance")
+        generation = record.get("generation", 0)
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+            raise SystemExit(f"winner record {index}.generation must be a non-negative integer")
+        key = record.get("portable_key")
+        if key is None:
+            key = portable_tuning_key(record.get("hardware"), record.get("signature"),
+                                      record.get("objective", "latency"))
+        key = _digest_hex(key, f"winner record {index}.portable_key")
+        winner = record.get("winner")
+        if not isinstance(winner, str) or not winner:
+            raise SystemExit(f"winner record {index}.winner must be a non-empty string")
+        record["portable_key"] = key
+        record["provenance"] = provenance
+        record["generation"] = generation
+        bucket = grouped.setdefault(key, {})
+        identity = (provenance["source_revision"], provenance["manifest_hash"])
+        existing = bucket.setdefault(generation, {})
+        prior = existing.get(identity)
+        if prior is not None and prior.get("winner") != winner:
+            raise SystemExit(f"conflicting winners for portable key {key} generation {generation}")
+        existing[identity] = record
+
+    selected: list[dict[str, Any]] = []
+    for key in sorted(grouped):
+        generations = sorted(grouped[key], reverse=True)[:keep_generations]
+        for generation in generations:
+            # A single generation may have multiple provenance identities;
+            # retain all of them in stable order for a future exact match.
+            selected.extend(grouped[key][generation][identity]
+                            for identity in sorted(grouped[key][generation]))
+    return selected
 
 # Wire-format boundary shared with hip-autotune-replay.cpp.  Version 3 is the
 # first format that carries implementation_version, small_k, and src0_type;
@@ -186,16 +289,19 @@ def build(
         raise SystemExit(f"no winning results in {measurements}")
     if seed_file is None:
         expected_revision = manifest.get("source_revision")
-        expected_manifest = manifest_hash
-        if (not isinstance(expected_revision, str) or not expected_revision or
-                not isinstance(expected_manifest, str) or not expected_manifest):
+        if not isinstance(expected_revision, str) or not expected_revision:
             raise SystemExit(
                 "refusing to export: supplied manifest lacks producer provenance "
                 "(source_revision/manifest_hash)"
             )
+        manifest_provenance = validate_provenance_namespace(
+            {"source_revision": expected_revision, "manifest_hash": manifest_hash},
+            where="manifest provenance")
+        expected_revision = manifest_provenance["source_revision"]
+        expected_manifest = manifest_provenance["manifest_hash"]
         if (producer_header is None or
-                producer_header.get("source_revision") != expected_revision or
-                producer_header.get("manifest_hash") != expected_manifest):
+                producer_header.get("source_revision", "").lower() != expected_revision or
+                producer_header.get("manifest_hash", "").lower() != expected_manifest):
             raise SystemExit(
                 "refusing to export: measurements producer provenance does not "
                 "match the supplied manifest (source_revision/manifest_hash)"
