@@ -151,6 +151,52 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
             blob = replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
             self.assertTrue(blob)  # exported without raising
 
+    def test_envelope_requires_manifest_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            document = {
+                "version": 1,
+                "provenance": {"source_revision": "a" * 40,
+                                "manifest_hash": "f" * 32},
+                "overrides": {"b" * 32: {"winner": "mmvq:seeded:v1",
+                                          "signature": "c" * 32}},
+            }
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "provenance"):
+                replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+
+    def test_candidate_identity_digest_is_manifest_bound(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps({"b" * 32: {
+                "winner": "mmvq:seeded:v1", "signature": "c" * 32,
+                "candidate_digest": "d" * 32,
+            }}), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "candidate identity"):
+                replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+
+    def test_override_winner_precedes_measurement_but_measurement_signature_wins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            measurements.write_text(json.dumps({
+                "kind": "result", "dispatch": "b" * 32,
+                "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+                "signature": "e" * 32,
+            }) + "\n", encoding="utf-8")
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps({"b" * 32: {
+                "winner": "mmvq:seeded:v1", "signature": "c" * 32,
+            }}), encoding="utf-8")
+            blob = replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+            self.assertEqual(blob[replay_cache.REPLAY_HEADER_SIZE + 16:
+                                  replay_cache.REPLAY_HEADER_SIZE + 32], bytes.fromhex("e" * 32))
+            self.assertIn(b"mmvq:seeded:v1\0", blob)
+
 
 class ProducerProvenanceTests(unittest.TestCase):
 

@@ -314,42 +314,24 @@ def build(
     for record in results:
         entries[record["dispatch"]] = record
 
-    # Seed overrides: manual winner selection for specific dispatch digests.
-    # Loaded from a JSON file mapping dispatch_hex → stable_name.
-    # These override any measured winner (HI22).
+    # Seed overrides: explicit operator choices take precedence over measured
+    # winners, but only after their digest, candidate identity, and namespace
+    # have been validated against this manifest (HI22).
     seed_overrides: dict[str, dict[str, str]] = {}
     if seed_file and seed_file.is_file():
-        try:
-            seed_overrides = json.loads(seed_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            raise SystemExit(f"seed file {seed_file} is not valid JSON: {e}") from e
-
-        # Validate: every candidate must exist in the manifest
-        normalized: dict[str, dict[str, str]] = {}
-        for digest_hex, value in seed_overrides.items():
-            digest_hex = _digest_hex(digest_hex, "seed override dispatch digest")
-            if digest_hex in normalized:
-                raise SystemExit(f"duplicate seed override dispatch digest: {digest_hex}")
-            if isinstance(value, str):
-                value = {"winner": value}
-            if not isinstance(value, dict) or not isinstance(value.get("winner"), str):
-                raise SystemExit("seed override must be a candidate name or object with winner")
-            stable_name = value["winner"]
-            if stable_name not in by_name:
-                raise SystemExit(
-                    f"seed override '{stable_name}' for dispatch {digest_hex[:16]}... "
-                    f"is not in {manifest_path.name}"
-                )
+        seed_overrides = _load_seed_overrides(
+            seed_file, by_name=by_name, manifest=manifest, manifest_hash=manifest_hash)
+        for digest_hex, override in seed_overrides.items():
             existing = entries.get(digest_hex)
-            signature = value.get("signature") if isinstance(value, dict) else None
-            if existing is not None:
-                signature = existing.get("signature")
+            signature = existing.get("signature") if existing is not None else override.get("signature")
             if not isinstance(signature, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", signature):
                 raise SystemExit(
                     f"seed override for unseen dispatch {digest_hex[:16]}... requires explicit signature"
                 )
-            normalized[digest_hex] = {"winner": stable_name, "signature": signature.lower()}
-        seed_overrides = normalized
+            # An explicit operator override remains authoritative for the
+            # winner, while a measured row remains authoritative for its
+            # dispatch signature.  This makes precedence deterministic.
+            override["signature"] = signature.lower()
 
     # The gate runs on every dispatch NOT covered by an explicit seed --
     # a seed is a separate operator decision carrying its own provenance
@@ -439,6 +421,92 @@ def build(
     print(f"  manifest {manifest['manifest_hash']}")
     return bytes(header) + payload
 
+
+def _candidate_identity(candidate: dict[str, Any]) -> str:
+    """Return the manifest-bound identity of a candidate descriptor."""
+    payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    return blake2b_digest(payload).hex()
+
+
+def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
+                         manifest: dict[str, Any], manifest_hash: str
+                         ) -> dict[str, dict[str, str]]:
+    """Load operator seeds with a manifest-bound, deterministic precedence.
+
+    The original flat ``{dispatch: stable_name}`` format remains accepted for
+    operators using an existing seed file.  The envelope form adds explicit
+    provenance and candidate identities, and is required to match the
+    manifest supplied to this export.  In both forms the manifest is the
+    authority for candidate identity; a seed cannot smuggle in a descriptor.
+    """
+    try:
+        document = json.loads(seed_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"seed file {seed_file} is not valid JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise SystemExit("seed file must be a JSON object")
+
+    if "overrides" in document:
+        unknown = set(document) - {"version", "provenance", "overrides"}
+        if unknown:
+            raise SystemExit(f"seed file has unknown top-level fields: {sorted(unknown)}")
+        if document.get("version", 1) != 1:
+            raise SystemExit("unsupported seed file version")
+        provenance = validate_provenance_namespace(
+            document.get("provenance"), where="seed provenance")
+        expected_revision = manifest.get("source_revision")
+        if (not isinstance(expected_revision, str) or
+                provenance["source_revision"] != expected_revision.lower() or
+                provenance["manifest_hash"] != manifest_hash):
+            raise SystemExit("seed provenance does not match supplied manifest")
+        raw_overrides = document["overrides"]
+    else:
+        # Backward-compatible operator format.  It is still bound to the
+        # manifest hash and, when present, to its source revision.
+        raw_overrides = document
+
+    if not isinstance(raw_overrides, dict):
+        raise SystemExit("seed overrides must be an object")
+    normalized: dict[str, dict[str, str]] = {}
+    for raw_digest, raw_value in sorted(raw_overrides.items(), key=lambda item: item[0].lower()):
+        digest_hex = _digest_hex(raw_digest, "seed override dispatch digest")
+        if digest_hex in normalized:
+            raise SystemExit(f"duplicate seed override dispatch digest: {digest_hex}")
+        value = {"winner": raw_value} if isinstance(raw_value, str) else raw_value
+        if not isinstance(value, dict) or not isinstance(value.get("winner"), str):
+            raise SystemExit("seed override must be a candidate name or object with winner")
+        allowed = {"winner", "signature", "candidate_digest", "provenance"}
+        unknown = set(value) - allowed
+        if unknown:
+            raise SystemExit(f"seed override has unknown fields: {sorted(unknown)}")
+        stable_name = value["winner"]
+        candidate = by_name.get(stable_name)
+        if candidate is None:
+            raise SystemExit(
+                f"seed override '{stable_name}' for dispatch {digest_hex[:16]}... "
+                f"is not in the manifest")
+        candidate_digest = _candidate_identity(candidate)
+        supplied_candidate_digest = value.get("candidate_digest", candidate_digest)
+        if _digest_hex(supplied_candidate_digest, "seed override candidate digest") != candidate_digest:
+            raise SystemExit(f"seed override candidate identity does not match manifest for '{stable_name}'")
+        if "provenance" in value:
+            provenance = validate_provenance_namespace(
+                value["provenance"], where="seed override provenance")
+            if (provenance["manifest_hash"] != manifest_hash or
+                    (isinstance(manifest.get("source_revision"), str) and
+                     provenance["source_revision"] != manifest["source_revision"].lower())):
+                raise SystemExit("seed override provenance does not match supplied manifest")
+        existing = None
+        # The caller supplies measurements separately; signature is checked
+        # against that row below.  Unseen dispatches must carry one explicitly.
+        signature = value.get("signature")
+        if signature is not None:
+            signature = _digest_hex(signature, "seed override signature digest")
+        normalized[digest_hex] = {"winner": stable_name,
+                                  "candidate_digest": candidate_digest,
+                                  **({"signature": signature} if signature else {})}
+    return normalized
 
 def main(argv: list[str] | None = None) -> None:
     root = Path(__file__).resolve().parent.parent.parent
