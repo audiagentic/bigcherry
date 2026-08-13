@@ -64,6 +64,13 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         confirmation = tuner[tuner.index("const int rounds = std::max(config.confirmation_samples"):]
         self.assertNotIn("&ctx, true", confirmation)
 
+    def test_workspace_protocol_trace_is_gated_and_labels_confirmation(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn('GGML_HIP_WORKSPACE_TRACE', tuner)
+        self.assertIn('trace_workspace_event(stage, "clear_cache"', tuner)
+        self.assertIn('trace_workspace_event(stage, "rebase_peak"', tuner)
+        self.assertIn('nullptr, false, nullptr, "confirmation")', tuner)
+
     def test_mmvq_native_moe_guard_precedes_native_return(self):
         source = DISPATCH.read_text(encoding="utf-8")
         start = source.index("bool ggml_hip_mmvq_can_execute(")

@@ -87,6 +87,10 @@ class TestPoolProtocol(unittest.TestCase):
             validate_pool_protocol([{
                 "stage": "isolated_workspace", "event": "allocator_reset",
             }])
+        with self.assertRaisesRegex(PoolProtocolError, "unknown pool protocol stage"):
+            validate_pool_protocol([{
+                "stage": "bogus", "event": "timed_sample_begin",
+            }])
 
 
 if __name__ == "__main__":

@@ -51,6 +51,8 @@ def validate_pool_protocol(events: Iterable[Mapping[str, Any]]) -> None:
             raise PoolProtocolError(f"event {index} has no stage")
         if event not in _EVENTS:
             raise PoolProtocolError(f"event {index} has unknown event")
+        if stage not in {_ISOLATED, *_INTERLEAVED}:
+            raise PoolProtocolError(f"event {index} has unknown pool protocol stage")
         if stage in _INTERLEAVED and event in {"clear_cache", "rebase_peak"}:
             raise PoolProtocolError(
                 f"{stage} stage may not {event.replace('_', ' ')}"

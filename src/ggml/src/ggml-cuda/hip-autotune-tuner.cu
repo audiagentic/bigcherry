@@ -485,6 +485,29 @@ void trace_launch_attempt(const char * stable_name) {
     ggml_hip_journal_append_attempt(payload);
 }
 
+// HI40/HI54: emit the actual workspace lifecycle when explicitly requested.
+// This is diagnostic-only and completely dormant in normal tuning and
+// production dispatch. Opening per event keeps the trace durable enough for a
+// killed tuning process without adding a persistent file descriptor to the
+// hot path when tracing is disabled.
+void trace_workspace_event(const char * stage, const char * event,
+                           const char * stable_name) {
+    const char * path = getenv("GGML_HIP_WORKSPACE_TRACE");
+    if (path == nullptr || path[0] == '\0') return;
+    static std::mutex trace_mutex;
+    std::lock_guard<std::mutex> lock(trace_mutex);
+    FILE * file = fopen(path, "ab");
+    if (file == nullptr) return;
+    fprintf(file,
+            "{\"stage\":\"%s\",\"event\":\"%s\","
+            "\"candidate\":\"%s\",\"t_us\":%lld}\n",
+            stage ? stage : "unknown", event ? event : "unknown",
+            stable_name ? stable_name : "(null)",
+            (long long) ggml_time_us());
+    fflush(file);
+    fclose(file);
+}
+
 // Launch one candidate into scratch and time the complete path.
 //
 // `lc` already points at scratch, so the caller's real destination is never
@@ -503,8 +526,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     std::vector<double> & host_us,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
                     bool isolate_workspace = false,
-                    size_t * pool_peak_bytes = nullptr) {
+                    size_t * pool_peak_bytes = nullptr,
+                    const char * protocol_stage = nullptr) {
     trace_launch_attempt(candidate ? candidate->stable_name : nullptr);
+    const char * stage = protocol_stage != nullptr
+        ? protocol_stage : (isolate_workspace ? "isolated_workspace" : "final");
 
     hipEvent_t start;
     hipEvent_t stop;
@@ -516,6 +542,7 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 #ifdef GGML_HIP_WORKSPACE_METRICS
     size_t workspace_baseline = 0;
     if (workspace_ctx != nullptr && isolate_workspace) {
+        trace_workspace_event(stage, "clear_cache", candidate->stable_name);
         workspace_ctx->pool().bc_workspace_clear_cache();
         workspace_baseline = workspace_ctx->pool().bc_workspace_bytes();
     }
@@ -525,9 +552,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     (void) pool_peak_bytes;
 #endif
 
+    trace_workspace_event(stage, "warmup_begin", candidate->stable_name);
     for (int i = 0; i < warmup; ++i) {
         effective.launch(&effective, lc);
     }
+    trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
         hipEventDestroy(start); hipEventDestroy(stop);
         return false;
@@ -536,6 +565,7 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         hipEventDestroy(start); hipEventDestroy(stop);
         return false;
     }
+    trace_workspace_event(stage, "synchronize", candidate->stable_name);
 
 #ifdef GGML_HIP_WORKSPACE_METRICS
     if (workspace_ctx != nullptr && isolate_workspace) {
@@ -546,11 +576,15 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         workspace_ctx->pool().bc_workspace_reset_peak();
     }
 #endif
+    if (workspace_ctx != nullptr && isolate_workspace) {
+        trace_workspace_event(stage, "rebase_peak", candidate->stable_name);
+    }
 
     gpu_us.reserve(samples);
     host_us.reserve(samples);
 
     for (int s = 0; s < samples; ++s) {
+        trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
         const int64_t host_start = ggml_time_us();
         if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
             hipEventDestroy(start); hipEventDestroy(stop); return false;
@@ -581,6 +615,7 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         gpu_us.push_back(us);
         host_us.push_back((double) (host_end - host_start)
                           / (double) launches_per_sample);
+        trace_workspace_event(stage, "timed_sample_end", candidate->stable_name);
     }
 
     const bool destroy_ok = hipEventDestroy(start) == hipSuccess
@@ -1676,7 +1711,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 std::vector<double> gpu;
                 std::vector<double> host;
                 if (time_candidate(pair[which]->candidate, lc, 0, 1,
-                                   result.launches_per_sample, gpu, host) && !gpu.empty()) {
+                                   result.launches_per_sample, gpu, host,
+                                   nullptr, false, nullptr, "confirmation") && !gpu.empty()) {
                     if (which == 0) result.confirmation_native_us[round] = gpu[0];
                     else            result.confirmation_winner_us[round] = gpu[0];
                 }
