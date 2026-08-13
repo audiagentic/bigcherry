@@ -31,6 +31,33 @@ class BundleError(RuntimeError):
     pass
 
 
+def validate_provenance_document(document: dict[str, Any], *, require_evidence: bool = False) -> dict[str, Any]:
+    """Validate identity and evidence fields consumed by downstream claims."""
+    if not isinstance(document, dict):
+        raise BundleError("provenance document must be an object")
+    source_revision = document.get("source_revision")
+    if not isinstance(source_revision, str) or not re.fullmatch(r"[0-9a-f]{40}", source_revision.lower()):
+        raise BundleError("provenance source_revision is invalid")
+    for field in ("manifest_hash", "build_descriptor_hash"):
+        value = document.get(field)
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{32}", value.lower()):
+            raise BundleError(f"provenance {field} is invalid")
+    refs = document.get("evidence_references", [])
+    if require_evidence and (not isinstance(refs, list) or not refs):
+        raise BundleError("provenance evidence_references are required")
+    if not isinstance(refs, list):
+        raise BundleError("provenance evidence_references must be a list")
+    seen: set[tuple[str, str]] = set()
+    for ref in refs:
+        if not isinstance(ref, dict) or not isinstance(ref.get("kind"), str) or not isinstance(ref.get("ref"), str):
+            raise BundleError("provenance evidence reference is malformed")
+        key = (ref["kind"], ref["ref"])
+        if not all(part.strip() for part in key) or key in seen:
+            raise BundleError("provenance evidence references must be unique and non-empty")
+        seen.add(key)
+    return document
+
+
 def file_hash(path: Path) -> str:
     state = hashlib.blake2b(digest_size=16)
     with path.open("rb") as handle:
@@ -156,6 +183,9 @@ def validate(root: Path, *, required_capabilities: set[str] | None = None) -> di
         raise BundleError("rerun_or_external_conversion_required: experiment schema")
     if document.get("bundle_hash") != bundle_hash(document):
         raise BundleError("experiment document hash mismatch")
+    validate_provenance_document(
+        document, require_evidence=document.get("role") == "generalised-winner"
+    )
     if document.get("state") not in {"completed", "failed", "interrupted", "intent"}:
         raise BundleError("invalid lifecycle state")
     roles: set[str] = set()

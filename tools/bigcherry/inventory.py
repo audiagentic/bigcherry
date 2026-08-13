@@ -40,6 +40,19 @@ _RESULT_STATUSES = {
 }
 
 
+def _validate_measurement_header(header: dict[str, Any], line: int) -> None:
+    """Require the sampling policy needed to interpret timing results."""
+    for field in ("final_samples", "warmup_launches", "screen_samples",
+                  "confirmation_samples"):
+        if field not in header:
+            continue  # retain compatibility with pre-HI34 artifacts
+        value = header[field]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RecordError(
+                f"measurements line {line}: {field} must be a non-negative integer"
+            )
+
+
 def _finite_number(value: Any, field: str, *, nonnegative: bool = True) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise RecordError(f"measurement result field {field!r} must be numeric")
@@ -91,7 +104,14 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
             if not isinstance(samples_us, list):
                 raise RecordError(f"measurements line {line}: samples_us must be an array")
             for sample in samples_us:
-                _finite_number(sample, "samples_us")
+                if sample is not None:
+                    _finite_number(sample, "samples_us")
+            reported = candidate.get("samples", 0)
+            usable = sum(sample is not None for sample in samples_us)
+            if reported != usable:
+                raise RecordError(
+                    f"measurements line {line}: samples does not match samples_us"
+                )
     if winner not in names:
         raise RecordError(f"measurements line {line}: winner is not a candidate")
     for field in ("improvement_pct", "confidence"):
@@ -102,6 +122,12 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
             value = row[field]
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise RecordError(f"measurements line {line}: {field} must be non-negative integer")
+    if "launches_per_sample" in row:
+        value = row["launches_per_sample"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise RecordError(
+                f"measurements line {line}: launches_per_sample must be positive integer"
+            )
     return row
 
 
@@ -436,6 +462,7 @@ def load_measurements(
                 if header is not None:
                     raise RecordError(f"{measurements_path}: duplicate header at line {number}")
                 header = row
+                _validate_measurement_header(row, number)
             elif kind == "result":
                 results.append(_validate_measurement_result(row, number))
             else:

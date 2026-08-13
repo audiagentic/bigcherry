@@ -14,6 +14,29 @@ from bigcherry import experiment_bundle  # noqa: E402
 
 
 class ExperimentBundleTests(unittest.TestCase):
+    def test_provenance_document_requires_identity_and_unique_evidence(self):
+        document = {
+            "source_revision": "a" * 40,
+            "manifest_hash": "b" * 32,
+            "build_descriptor_hash": "c" * 32,
+            "evidence_references": [{"kind": "generalisation", "ref": "report.json"}],
+        }
+        self.assertIs(experiment_bundle.validate_provenance_document(document, require_evidence=True), document)
+        document["evidence_references"].append({"kind": "generalisation", "ref": "report.json"})
+        with self.assertRaisesRegex(experiment_bundle.BundleError, "unique"):
+            experiment_bundle.validate_provenance_document(document, require_evidence=True)
+
+    def test_generalised_winner_bundle_requires_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = self.run_bundle(root)
+            document_path = bundle / "experiment.json"
+            document = json.loads(document_path.read_text(encoding="ascii"))
+            document["role"] = "generalised-winner"
+            experiment_bundle.write_document(document_path, document)
+            with self.assertRaisesRegex(experiment_bundle.BundleError, "evidence"):
+                experiment_bundle.validate(bundle)
+
     def run_bundle(self, root: Path, command: list[str] | None = None) -> Path:
         model = root / "model.gguf"
         model.write_bytes(b"model")

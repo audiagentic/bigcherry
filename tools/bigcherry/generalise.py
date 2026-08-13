@@ -38,6 +38,102 @@ class GeneralisationError(RuntimeError):
     pass
 
 
+_DIGEST = re.compile(r"^[0-9a-f]{32}$")
+_REVISION = re.compile(r"^[0-9a-f]{40}$")
+_WINNER_REQUIRED = {
+    "source_signature", "coverage_delta", "manifest_identity",
+    "evidence_references",
+}
+
+
+def _require_digest(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not _DIGEST.fullmatch(value.lower()):
+        raise GeneralisationError(f"generalized winner has invalid {name}")
+    return value.lower()
+
+
+def _require_percent(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise GeneralisationError(f"generalized winner has invalid {name}")
+    value = float(value)
+    if not math.isfinite(value) or not 0.0 <= value <= 100.0:
+        raise GeneralisationError(f"generalized winner has invalid {name}")
+    return value
+
+
+def validate_generalised_winner(winner: dict[str, Any]) -> dict[str, Any]:
+    """Validate the portable evidence attached to one generalized winner.
+
+    This is intentionally independent of replay-cache publication.  A caller
+    may construct or inspect a generalized winner offline, but it cannot call
+    it complete evidence unless the exact source and coverage claim can be
+    traced to a build and to durable evidence artifacts.
+    """
+    if not isinstance(winner, dict) or winner.get("kind") != "generalised_winner":
+        raise GeneralisationError("generalized winner record kind is required")
+    missing = _WINNER_REQUIRED - winner.keys()
+    if missing:
+        raise GeneralisationError(
+            "generalized winner provenance is incomplete: " + ", ".join(sorted(missing))
+        )
+    _require_digest(winner["source_signature"], "source_signature")
+
+    delta = winner["coverage_delta"]
+    if not isinstance(delta, dict):
+        raise GeneralisationError("generalized winner coverage_delta must be an object")
+    for field in ("baseline_coverage_pct", "generalised_coverage_pct", "added_coverage_pct"):
+        if field not in delta:
+            raise GeneralisationError(f"generalized winner coverage_delta lacks {field}")
+        _require_percent(delta[field], f"coverage_delta.{field}")
+    if delta["generalised_coverage_pct"] < delta["baseline_coverage_pct"]:
+        raise GeneralisationError("generalized winner coverage delta goes backwards")
+    expected = delta["generalised_coverage_pct"] - delta["baseline_coverage_pct"]
+    if not math.isclose(float(delta["added_coverage_pct"]), expected, abs_tol=1e-9):
+        raise GeneralisationError("generalized winner coverage delta is inconsistent")
+    if isinstance(delta.get("added_calls", 0), bool) or not isinstance(delta.get("added_calls", 0), int) or delta.get("added_calls", 0) < 0:
+        raise GeneralisationError("generalized winner has invalid coverage_delta.added_calls")
+
+    identity = winner["manifest_identity"]
+    if not isinstance(identity, dict):
+        raise GeneralisationError("generalized winner manifest_identity must be an object")
+    if not isinstance(identity.get("source_revision"), str) or not _REVISION.fullmatch(identity["source_revision"].lower()):
+        raise GeneralisationError("generalized winner has invalid source_revision")
+    _require_digest(identity.get("manifest_hash"), "manifest_hash")
+    _require_digest(identity.get("build_descriptor_hash"), "build_descriptor_hash")
+
+    refs = winner["evidence_references"]
+    if not isinstance(refs, list) or not refs:
+        raise GeneralisationError("generalized winner requires evidence_references")
+    seen: set[str] = set()
+    for ref in refs:
+        if not isinstance(ref, dict) or not isinstance(ref.get("kind"), str) or not isinstance(ref.get("ref"), str):
+            raise GeneralisationError("generalized winner evidence reference is malformed")
+        key = ref["kind"] + "\0" + ref["ref"]
+        if not ref["kind"].strip() or not ref["ref"].strip() or key in seen:
+            raise GeneralisationError("generalized winner evidence references must be unique and non-empty")
+        seen.add(key)
+    return winner
+
+
+def build_generalised_winner(
+    *, source_signature: str, coverage_delta: dict[str, Any],
+    source_revision: str, manifest_hash: str, build_descriptor_hash: str,
+    evidence_references: list[dict[str, str]], **winner: Any,
+) -> dict[str, Any]:
+    """Construct and validate a generalized winner evidence record."""
+    record = dict(winner)
+    record.update(
+        kind="generalised_winner", source_signature=source_signature,
+        coverage_delta=copy.deepcopy(coverage_delta),
+        manifest_identity={
+            "source_revision": source_revision,
+            "manifest_hash": manifest_hash,
+            "build_descriptor_hash": build_descriptor_hash,
+        }, evidence_references=copy.deepcopy(evidence_references),
+    )
+    return validate_generalised_winner(record)
+
+
 def policy_hash(policy: dict[str, Any]) -> str:
     value = copy.deepcopy(policy)
     value.pop("policy_hash", None)
