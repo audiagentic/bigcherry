@@ -124,6 +124,9 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             "cublasGemmBatchedEx",
         ):
             self.assertIn(f'_record_api("{api}")', patch)
+        self.assertNotIn('mode="insert_before",\n            text=_record_api', patch)
+        self.assertIn('rationale="the completed native single-matrix F32 BLAS call"', patch)
+        self.assertIn('rationale="the completed native strided-batched BLAS call"', patch)
         self.assertIn("thread_local PairKey g_active_key", record)
         self.assertIn("effective_call_api = api", record)
         # This field is observation-only; it must not appear in the resolver.
