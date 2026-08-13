@@ -169,6 +169,7 @@ struct Result {
     int reverse_retime_attempts = 0;
     int reverse_retime_passed = 0;
     std::string retime_status = "not_needed";
+    bool measurement_failure = false;
 
     // HI50: every compiled-in policy's full verdict, for offline comparison
     // (bigcherry rank-replay). Which one actually governed this signature's
@@ -916,6 +917,7 @@ void merge_retime_status(Result & result, RetimeStatus status) {
 }
 
 void record_retime_observation(Result & result, const CounterbalancedRound & round) {
+    if (!round.complete) result.measurement_failure = true;
     if (round.clock_drift) ++result.clock_drift_rounds;
     if (round.reverse_attempted) ++result.reverse_retime_attempts;
     if (round.reverse_passed) ++result.reverse_retime_passed;
@@ -1521,6 +1523,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         : ggml_hip_device_state{};
     result.device_state_pre_json = device_state_json(result.device_state_pre);
     auto capture_device_state_post = [&]() {
+        if (result.measurement_failure) {
+            // A failed HIP launch can poison the context even though the
+            // timing transaction has rejected the sample. Do not call
+            // ggml_cuda_get_device()/RSMI after that point; the post snapshot
+            // is explicitly unavailable for this result.
+            result.device_state_post = ggml_hip_device_state{};
+            result.device_state_post_json = "{}";
+            result.device_clock_drift_json = "{\"status\":\"unavailable\"}";
+            return;
+        }
         result.device_state_post = ggml_hip_smi_enabled()
             ? ggml_hip_query_device_state(ggml_cuda_get_device())
             : ggml_hip_device_state{};
