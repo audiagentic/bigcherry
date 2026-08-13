@@ -1413,13 +1413,32 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             }
         }
         for (Measurement * m : finalists) {
-            if (finite_only(m->final_gpu_us).empty()) continue;
-            m->median_us      = median_of(m->final_gpu_us);
-            m->mad_us         = mad_of(m->final_gpu_us, m->median_us);
-            m->p95_us         = percentile_of(m->final_gpu_us, 0.95);
+            const std::vector<double> finite_gpu = finite_only(m->final_gpu_us);
+            if (finite_gpu.empty()) {
+                // Never let a screening median survive a completely failed
+                // final stage.  That stale value could still be ranked and
+                // promoted as if the candidate had completed the paired
+                // measurement protocol.
+                m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+                m->measured = false;
+                continue;
+            }
+            m->median_us      = median_of(finite_gpu);
+            m->mad_us         = mad_of(finite_gpu, m->median_us);
+            m->p95_us         = percentile_of(finite_gpu, 0.95);
             m->host_median_us = median_of(m->final_host_us);
-            m->samples        = (int) finite_only(m->final_gpu_us).size();
+            m->samples        = (int) finite_gpu.size();
         }
+    }
+
+    // A native baseline is only valid when it survived every measurement
+    // stage.  In particular, a finalist can have a valid screening median
+    // and then fail every final interleaved launch; retaining that stale
+    // median would make the ranking stage non-conservative.
+    if (native_m->reason == GGML_HIP_REJECT_LAUNCH_FAILED || !native_m->measured) {
+        result.reason = "native final measurement failed; run rejected";
+        record_result(dispatch_digest, result);
+        return native.candidate;
     }
 
     // E4: dispersion rejection, after the final stage. A candidate whose own

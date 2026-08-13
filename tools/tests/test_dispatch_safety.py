@@ -177,6 +177,17 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertNotIn("single_flight_lock.unlock()", resolve)
         self.assertIn("g_results.emplace(dispatch_digest, result);", tuner)
 
+    def test_final_measurement_failures_cannot_reuse_screening_medians(self):
+        """A failed final stage must reject stale screening evidence."""
+        tuner = TUNER.read_text(encoding="utf-8")
+        final_stage = tuner.index("// --- final measurement")
+        ranking = tuner.index("// --- noise canary", final_stage)
+        final_text = tuner[final_stage:ranking]
+        self.assertIn("m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;", final_text)
+        self.assertIn("m->measured = false;", final_text)
+        self.assertIn("native final measurement failed; run rejected", final_text)
+        self.assertIn("!native_m->measured", final_text)
+
 
 if __name__ == "__main__":
     unittest.main()
