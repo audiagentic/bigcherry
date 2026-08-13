@@ -31,6 +31,29 @@ class RecordError(RuntimeError):
     pass
 
 
+CURRENT_DB_SCHEMA_VERSION = "2"
+
+
+def _require_current_schema(connection: sqlite3.Connection) -> None:
+    """Reject databases whose shape this reader has not explicitly audited."""
+    try:
+        row = connection.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise RecordError(
+            "dispatch database is missing schema metadata; refusing to infer "
+            "an unverified schema"
+        ) from exc
+
+    actual = row[0] if row is not None else None
+    if actual != CURRENT_DB_SCHEMA_VERSION:
+        raise RecordError(
+            "unsupported dispatch database schema_version "
+            f"{actual!r}; expected {CURRENT_DB_SCHEMA_VERSION!r}"
+        )
+
+
 @dataclass
 class Record:
     header: dict[str, Any]
@@ -196,6 +219,7 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
     cursor = None
     try:
         connection.executescript(schema.read_text(encoding="utf-8"))
+        _require_current_schema(connection)
         build_columns = {row[1] for row in connection.execute("PRAGMA table_info(build)")}
         if "build_descriptor_hash" not in build_columns:
             connection.execute("ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT")
@@ -393,6 +417,7 @@ def load_measurements(
         connection.executescript(schema_path.read_text(encoding="utf-8"))
 
     try:
+        _require_current_schema(connection)
         connection.execute("PRAGMA foreign_keys = ON")
         for table in ("measurement", "winner"):
             columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}

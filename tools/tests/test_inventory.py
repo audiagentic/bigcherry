@@ -460,6 +460,31 @@ class TestBuildDatabase(unittest.TestCase):
 class TestLoadMeasurements(unittest.TestCase):
     """Load tuning JSONL into SQLite (HI20)."""
 
+    def test_rejects_unknown_database_schema_version(self):
+        path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+
+        try:
+            with TempDB() as db:
+                connection = sqlite3.connect(str(db.db_path))
+                try:
+                    connection.execute(
+                        "UPDATE schema_meta SET value = '99' "
+                        "WHERE key = 'schema_version'"
+                    )
+                    connection.commit()
+                finally:
+                    connection.close()
+
+                with self.assertRaisesRegex(
+                    RecordError, "unsupported dispatch database schema_version"
+                ):
+                    inventory.load_measurements(
+                        path, db.db_path, schema_path, manifest_path=None,
+                    )
+        finally:
+            os.unlink(path)
+
     def test_basic_load(self):
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
         schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
