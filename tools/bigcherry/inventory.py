@@ -467,7 +467,7 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
             connection.execute(
                 "INSERT OR REPLACE INTO observation (build_id, hardware_id, "
                 "signature_id, native_stable_name, calls, est_bytes, "
-                "sites_json) VALUES (?,?,?,?,?,?,?)",
+                "sites_json, diagnostics_json) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     build_id,
                     hardware_ids[hardware_hex],
@@ -476,6 +476,13 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                     observation.get("calls", 0),
                     observation.get("est_bytes", 0),
                     json.dumps(observation.get("devices", [])),
+                    json.dumps(
+                        {"blas": observation["blas_metadata"]}
+                        if observation.get("effective_api")
+                        and observation.get("blas_metadata") else {},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
                 ),
             )
 

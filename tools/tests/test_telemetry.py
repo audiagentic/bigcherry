@@ -18,7 +18,15 @@ def _blas():
     return {"kind": "observation", "signature": "c" * 32, "hardware": "d" * 32,
             "native": "native", "calls": 2, "est_bytes": 100,
             "effective_api": "ggml_cuda_mul_mat_cublas", "effective_call_api": "cublasGemmEx",
-            "workspace_bytes": 4096, "devices": [0], "canonical": {}, "hardware_key": {}}
+            "workspace_bytes": 4096, "devices": [0], "canonical": {}, "hardware_key": {},
+            "blas_metadata": {
+                "operand_a_type": "f16", "operand_b_type": "f16", "output_type": "f16",
+                "accumulation_type": "f16", "source_a_conversion": "direct",
+                "source_b_conversion": "contiguous", "output_conversion": "direct",
+                "requested_precision": "0", "effective_provider": "hipblas",
+                "effective_backend": "unknown", "source_a_temp_bytes": 0,
+                "source_b_temp_bytes": 4096, "output_temp_bytes": 0,
+            }}
 
 
 def _split(event_id="evt-1"):
@@ -52,6 +60,13 @@ def test_blas_wrapper_requires_exact_native_call_api(tmp_path):
         load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
 
 
+def test_blas_requires_complete_effective_payload(tmp_path):
+    row = dict(_blas(), blas_metadata={**_blas()["blas_metadata"]})
+    del row["blas_metadata"]["accumulation_type"]
+    with pytest.raises(TelemetryError, match="accumulation_type"):
+        load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
+
+
 def test_loads_split_with_explicit_provenance(tmp_path):
     result = load_telemetry(_write(tmp_path, [_split()]), expected_provenance=P)
     assert result["provenance"] == P
@@ -67,6 +82,19 @@ def test_rejects_malformed_blas_telemetry(tmp_path, mutate, message):
     row = _blas()
     mutate(row)
     with pytest.raises(TelemetryError, match=message):
+        load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
+
+
+@pytest.mark.parametrize("field, value", [
+    ("source_a_conversion", "bogus"),
+    ("output_conversion", "bogus"),
+    ("effective_provider", "rocblas"),
+    ("source_a_temp_bytes", -1),
+])
+def test_rejects_malformed_blas_effective_payload(tmp_path, field, value):
+    row = _blas()
+    row["blas_metadata"][field] = value
+    with pytest.raises(TelemetryError, match=field):
         load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
 
 

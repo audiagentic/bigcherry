@@ -33,6 +33,19 @@ _INCLUDE = """
 #endif
 #ifdef GGML_HIP_AUTOTUNE_RECORD
 #include "ggml-cuda/hip-autotune-record.h"
+
+static const char * bigcherry_cuda_data_type_name(cudaDataType_t type) {
+    if (type == CUDA_R_32F) return "f32";
+    if (type == CUDA_R_16F) return "f16";
+    if (type == CUDA_R_16BF) return "bf16";
+    return "unknown";
+}
+
+static const char * bigcherry_cublas_compute_type_name(cublasComputeType_t type) {
+    if (type == CUBLAS_COMPUTE_32F) return "f32";
+    if (type == CUBLAS_COMPUTE_16F) return "f16";
+    return "unknown";
+}
 #endif
 """
 
@@ -65,6 +78,40 @@ void ggml_cuda_mul_mat_cublas_dispatch(
 }
 #endif
 
+"""
+
+_BLAS_METADATA_STATE = """
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+    const char * bigcherry_source_a_conversion = "direct";
+    const char * bigcherry_source_b_conversion = "direct";
+    const char * bigcherry_output_conversion = "direct";
+    size_t bigcherry_source_a_temp_bytes = 0;
+    size_t bigcherry_source_b_temp_bytes = 0;
+    size_t bigcherry_output_temp_bytes = 0;
+#endif
+"""
+
+_BLAS_METADATA_HOOK = """
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+    const std::string bigcherry_requested_precision =
+        std::to_string(dst->op_params[0]);
+    const ggml_hip_blas_observation_v1 bigcherry_blas_metadata = {
+        bigcherry_cuda_data_type_name(cu_data_type_a),
+        bigcherry_cuda_data_type_name(cu_data_type_b),
+        bigcherry_cuda_data_type_name(cu_data_type),
+        bigcherry_cublas_compute_type_name(cu_compute_type),
+        bigcherry_source_a_conversion,
+        bigcherry_source_b_conversion,
+        bigcherry_output_conversion,
+        bigcherry_requested_precision.c_str(),
+        "hipblas",
+        "unknown",
+        (uint64_t) bigcherry_source_a_temp_bytes,
+        (uint64_t) bigcherry_source_b_temp_bytes,
+        (uint64_t) bigcherry_output_temp_bytes,
+    };
+    ggml_hip_record_blas_metadata(bigcherry_blas_metadata);
+#endif
 """
 
 _MUL_MAT_HOOK = """
@@ -116,6 +163,14 @@ PATCH = FilePatch(
             guard=r'#include "ggml-cuda/hip-autotune-dispatch\.cuh"',
         ),
         Edit(
+            id="record-include-and-blas-type-helpers",
+            anchor=r'^#include "ggml-cuda/hip-autotune-dispatch\.cuh"$',
+            rationale="record-mode BLAS observation helpers beside dispatch includes",
+            mode="insert_after",
+            text="\n" + _INCLUDE.split('#ifdef GGML_HIP_DISPATCH\n#include "ggml-cuda/hip-autotune-dispatch.cuh"\n#endif\n', 1)[1],
+            guard=r'#include "ggml-cuda/hip-autotune-record\.h"',
+        ),
+        Edit(
             id="blas-api-sgemm-telemetry",
             anchor=r"^                    \(const float \*\) beta,  \(float       \*\)  dst_ptr, ne0\)\);$",
             rationale="the completed native single-matrix F32 BLAS call",
@@ -134,7 +189,6 @@ PATCH = FilePatch(
             anchor=r"^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\)\);$",
             rationale="the completed native strided-batched BLAS call",
             expect_matches=2,
-            occurrence=0,
             text=_record_api("cublasGemmStridedBatchedEx"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmStridedBatchedEx\"\)",
         ),
@@ -143,7 +197,6 @@ PATCH = FilePatch(
             anchor=r"^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\)\);$",
             rationale="the completed native pointer-batched BLAS call",
             expect_matches=2,
-            occurrence=1,
             text=_record_api("cublasGemmBatchedEx"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmBatchedEx\"\)",
         ),
@@ -157,6 +210,89 @@ PATCH = FilePatch(
             mode="insert_before",
             text=_CUBLAS_FORWARDER,
             guard=r"void ggml_cuda_mul_mat_cublas_dispatch\(",
+        ),
+        Edit(
+            id="blas-metadata-state",
+            anchor=r"^    GGML_ASSERT\(ggml_is_contiguous\(dst\)\);$",
+            rationale="the native BLAS implementation entry point",
+            mode="insert_after",
+            text=_BLAS_METADATA_STATE,
+            guard=r"bigcherry_source_a_conversion",
+        ),
+        Edit(
+            id="blas-source-a-contiguous-metadata",
+            anchor=r"^        if \(ggml_is_contiguously_allocated\(src0\)\) \{$",
+            rationale="the native BLAS source-A conversion branch",
+            mode="insert_after",
+            text="""
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_source_a_conversion = "contiguous";
+            bigcherry_source_a_temp_bytes = ggml_nelements(src0) * sizeof(cuda_t);
+#endif
+""",
+            guard=r"bigcherry_source_a_conversion = \"contiguous\"",
+        ),
+        Edit(
+            id="blas-source-a-noncontiguous-metadata",
+            anchor=r"^        \} else \{\n            const auto convert_func = traits::convert_nc\(src0->type\);$",
+            expect_matches=1,
+            rationale="the native BLAS non-contiguous source-A conversion branch",
+            mode="insert_after",
+            text="""
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_source_a_conversion = "non_contiguous";
+            bigcherry_source_a_temp_bytes = ggml_nelements(src0) * sizeof(cuda_t);
+#endif
+""",
+            guard=r"bigcherry_source_a_conversion = \"non_contiguous\"",
+        ),
+        Edit(
+            id="blas-source-b-contiguous-metadata",
+            anchor=r"^        if \(ggml_is_contiguously_allocated\(src1\)\) \{$",
+            rationale="the native BLAS source-B conversion branch",
+            mode="insert_after",
+            text="""
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_source_b_conversion = "contiguous";
+            bigcherry_source_b_temp_bytes = ggml_nelements(src1) * sizeof(cuda_t);
+#endif
+""",
+            guard=r"bigcherry_source_b_conversion = \"contiguous\"",
+        ),
+        Edit(
+            id="blas-source-b-noncontiguous-metadata",
+            anchor=r"^        \} else \{\n            const auto convert_func = traits::convert_nc\(src1->type\);$",
+            expect_matches=1,
+            rationale="the native BLAS non-contiguous source-B conversion branch",
+            mode="insert_after",
+            text="""
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_source_b_conversion = "non_contiguous";
+            bigcherry_source_b_temp_bytes = ggml_nelements(src1) * sizeof(cuda_t);
+#endif
+""",
+            guard=r"bigcherry_source_b_conversion = \"non_contiguous\"",
+        ),
+        Edit(
+            id="blas-output-temporary-metadata",
+            anchor=r"^            dst_ptr = \(char \*\) dst_temp\.alloc\(ne_dst\);$",
+            rationale="the native BLAS temporary output conversion branch",
+            mode="insert_after",
+            text="""
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_output_conversion = "temporary_to_f32";
+            bigcherry_output_temp_bytes = ne_dst * sizeof(cuda_t);
+#endif
+""",
+            guard=r"bigcherry_output_conversion = \"temporary_to_f32\"",
+        ),
+        Edit(
+            id="blas-metadata-emission",
+            anchor=r"^    if \(cu_data_type != CUDA_R_32F\) \{$",
+            rationale="the completed native BLAS call, before output conversion",
+            mode="insert_before",
+            text=_BLAS_METADATA_HOOK,
+            guard=r"ggml_hip_record_blas_metadata\(",
         ),
         Edit(
             id="mul-mat-hook",

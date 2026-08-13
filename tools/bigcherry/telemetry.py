@@ -24,6 +24,10 @@ _BLAS_WRAPPERS = {"ggml_cuda_mul_mat_cublas"}
 _PROVIDERS = {"internal", "rccl", "meta", "unknown", "provider_declined"}
 _HANDOFFS = {"none", "provider_declined_handoff_meta"}
 _UNAVAILABLE = {"unavailable", "unknown", "not_collected"}
+_BLAS_CONVERSIONS = {"direct", "contiguous", "non_contiguous"}
+_BLAS_OUTPUT_CONVERSIONS = {"direct", "temporary_to_f32"}
+_BLAS_PROVIDERS = {"hipblas", "unknown"}
+_BLAS_BACKENDS = {"unknown", "rocblas", "hipblaslt"}
 
 
 def _text(value: Any, field: str, where: str) -> str:
@@ -77,6 +81,38 @@ def _availability(value: Any, field: str, where: str) -> str:
     return value
 
 
+def _validate_blas_metadata(row: dict[str, Any], where: str) -> dict[str, Any]:
+    metadata = row.get("blas_metadata")
+    if not isinstance(metadata, dict):
+        raise TelemetryError(f"{where}: BLAS observation requires blas_metadata")
+    normalized = {
+        "operand_a_type": _text(metadata.get("operand_a_type"), "operand_a_type", where),
+        "operand_b_type": _text(metadata.get("operand_b_type"), "operand_b_type", where),
+        "output_type": _text(metadata.get("output_type"), "output_type", where),
+        "accumulation_type": _text(metadata.get("accumulation_type"), "accumulation_type", where),
+        "source_a_conversion": _text(metadata.get("source_a_conversion"), "source_a_conversion", where),
+        "source_b_conversion": _text(metadata.get("source_b_conversion"), "source_b_conversion", where),
+        "output_conversion": _text(metadata.get("output_conversion"), "output_conversion", where),
+        "requested_precision": _text(metadata.get("requested_precision"), "requested_precision", where),
+        "effective_provider": _text(metadata.get("effective_provider"), "effective_provider", where),
+        "effective_backend": _text(metadata.get("effective_backend"), "effective_backend", where),
+        "source_a_temp_bytes": _nonnegative(metadata.get("source_a_temp_bytes"), "source_a_temp_bytes", where),
+        "source_b_temp_bytes": _nonnegative(metadata.get("source_b_temp_bytes"), "source_b_temp_bytes", where),
+        "output_temp_bytes": _nonnegative(metadata.get("output_temp_bytes"), "output_temp_bytes", where),
+    }
+    if normalized["source_a_conversion"] not in _BLAS_CONVERSIONS:
+        raise TelemetryError(f"{where}: unsupported source_a_conversion")
+    if normalized["source_b_conversion"] not in _BLAS_CONVERSIONS:
+        raise TelemetryError(f"{where}: unsupported source_b_conversion")
+    if normalized["output_conversion"] not in _BLAS_OUTPUT_CONVERSIONS:
+        raise TelemetryError(f"{where}: unsupported output_conversion")
+    if normalized["effective_provider"] not in _BLAS_PROVIDERS:
+        raise TelemetryError(f"{where}: unsupported effective_provider")
+    if normalized["effective_backend"] not in _BLAS_BACKENDS:
+        raise TelemetryError(f"{where}: unsupported effective_backend")
+    return normalized
+
+
 def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]]:
     signature = _digest(row.get("signature"), "signature", where)
     hardware = _digest(row.get("hardware"), "hardware", where)
@@ -96,6 +132,7 @@ def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]
     if effective in _BLAS_WRAPPERS and call_api not in _BLAS_APIS:
         raise TelemetryError(
             f"{where}: BLAS wrapper observation requires an exact effective_call_api")
+    blas_metadata = _validate_blas_metadata(row, where)
     devices = row.get("devices")
     if not isinstance(devices, list) or not devices or any(
             isinstance(device, bool) or not isinstance(device, int) or device < 0
@@ -104,7 +141,8 @@ def _validate_blas(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]
     if len(set(devices)) != len(devices):
         raise TelemetryError(f"{where}: duplicate device ordinal")
     return f"blas:{signature}:{hardware}", {**row, "signature": signature, "hardware": hardware,
-                                             "devices": list(devices), "calls": calls}
+                                             "devices": list(devices), "calls": calls,
+                                             "blas_metadata": blas_metadata}
 
 
 def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any]]:

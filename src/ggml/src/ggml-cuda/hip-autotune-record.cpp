@@ -31,6 +31,19 @@ struct Observation {
     // never participate in signature or dispatch identity.
     std::string     effective_api;
     std::string     effective_call_api;
+    std::string     blas_operand_a_type;
+    std::string     blas_operand_b_type;
+    std::string     blas_output_type;
+    std::string     blas_accumulation_type;
+    std::string     blas_source_a_conversion;
+    std::string     blas_source_b_conversion;
+    std::string     blas_output_conversion;
+    std::string     blas_requested_precision;
+    std::string     blas_effective_provider;
+    std::string     blas_effective_backend;
+    uint64_t        blas_source_a_temp_bytes = 0;
+    uint64_t        blas_source_b_temp_bytes = 0;
+    uint64_t        blas_output_temp_bytes = 0;
     uint64_t        workspace_bytes;
     uint64_t        calls;
     uint64_t        est_bytes;
@@ -174,6 +187,41 @@ void ggml_hip_record_effective_call_api(const char * api) {
     }
 }
 
+void ggml_hip_record_blas_metadata(const ggml_hip_blas_observation_v1 & metadata) {
+    if (!g_has_active_key) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto found = g_observations.find(g_active_key);
+    if (found == g_observations.end()) {
+        return;
+    }
+    Observation & observation = found->second;
+    observation.blas_operand_a_type = metadata.operand_a_type != nullptr
+        ? metadata.operand_a_type : "unknown";
+    observation.blas_operand_b_type = metadata.operand_b_type != nullptr
+        ? metadata.operand_b_type : "unknown";
+    observation.blas_output_type = metadata.output_type != nullptr
+        ? metadata.output_type : "unknown";
+    observation.blas_accumulation_type = metadata.accumulation_type != nullptr
+        ? metadata.accumulation_type : "unknown";
+    observation.blas_source_a_conversion = metadata.source_a_conversion != nullptr
+        ? metadata.source_a_conversion : "unknown";
+    observation.blas_source_b_conversion = metadata.source_b_conversion != nullptr
+        ? metadata.source_b_conversion : "unknown";
+    observation.blas_output_conversion = metadata.output_conversion != nullptr
+        ? metadata.output_conversion : "unknown";
+    observation.blas_requested_precision = metadata.requested_precision != nullptr
+        ? metadata.requested_precision : "unknown";
+    observation.blas_effective_provider = metadata.effective_provider != nullptr
+        ? metadata.effective_provider : "unknown";
+    observation.blas_effective_backend = metadata.effective_backend != nullptr
+        ? metadata.effective_backend : "unknown";
+    observation.blas_source_a_temp_bytes = metadata.source_a_temp_bytes;
+    observation.blas_source_b_temp_bytes = metadata.source_b_temp_bytes;
+    observation.blas_output_temp_bytes = metadata.output_temp_bytes;
+}
+
 void ggml_hip_record_flush() {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_observations.empty()) {
@@ -222,7 +270,14 @@ void ggml_hip_record_flush() {
                 "\"hardware\":\"%s\",\"native\":\"%s\",\"calls\":%llu,"
                 "\"est_bytes\":%llu,\"effective_api\":\"%s\","
                 "\"effective_call_api\":\"%s\","
-                "\"workspace_bytes\":%llu,\"devices\":[",
+                "\"workspace_bytes\":%llu,\"blas_metadata\":{"
+                "\"operand_a_type\":\"%s\",\"operand_b_type\":\"%s\","
+                "\"output_type\":\"%s\",\"accumulation_type\":\"%s\","
+                "\"source_a_conversion\":\"%s\",\"source_b_conversion\":\"%s\","
+                "\"output_conversion\":\"%s\",\"requested_precision\":\"%s\","
+                "\"effective_provider\":\"%s\",\"effective_backend\":\"%s\","
+                "\"source_a_temp_bytes\":%llu,\"source_b_temp_bytes\":%llu,"
+                "\"output_temp_bytes\":%llu},\"devices\":[",
                 ggml_hip_digest_hex(o.signature_digest).c_str(),
                 ggml_hip_digest_hex(o.hardware_digest).c_str(),
                 o.native_stable_name.c_str(),
@@ -230,7 +285,15 @@ void ggml_hip_record_flush() {
                 (unsigned long long) o.est_bytes,
                 o.effective_api.c_str(),
                 o.effective_call_api.c_str(),
-                (unsigned long long) o.workspace_bytes);
+                (unsigned long long) o.workspace_bytes,
+                o.blas_operand_a_type.c_str(), o.blas_operand_b_type.c_str(),
+                o.blas_output_type.c_str(), o.blas_accumulation_type.c_str(),
+                o.blas_source_a_conversion.c_str(), o.blas_source_b_conversion.c_str(),
+                o.blas_output_conversion.c_str(), o.blas_requested_precision.c_str(),
+                o.blas_effective_provider.c_str(), o.blas_effective_backend.c_str(),
+                (unsigned long long) o.blas_source_a_temp_bytes,
+                (unsigned long long) o.blas_source_b_temp_bytes,
+                (unsigned long long) o.blas_output_temp_bytes);
         for (size_t i = 0; i < o.devices.size(); ++i) {
             fprintf(file, "%s%d", i ? "," : "", o.devices[i]);
         }
