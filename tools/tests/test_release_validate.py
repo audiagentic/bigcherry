@@ -22,9 +22,16 @@ class ReleaseGateTests(unittest.TestCase):
         return {
             "claim": "validated",
             "architectures": ["gfx1201"],
+            "required_architectures": ["gfx1201"],
             "architecture_coverage": {
-                "gfx1201": {
-                    "status": "validated", "candidate_coverage": True,
+                "required": ["gfx1201"],
+                "observed": ["gfx1201"],
+                "validated": ["gfx1201"],
+                "by_architecture": {
+                    "gfx1201": {
+                        "observed": True, "validated": True,
+                        "candidate_coverage": True,
+                    },
                 },
             },
             "candidate_coverage": {
@@ -57,8 +64,34 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_validated_claim_rejects_unvalidated_architecture(self):
         record = self._evidence()
-        record["architecture_coverage"]["gfx1201"]["status"] = "observed"
+        record["architecture_coverage"]["validated"] = []
+        record["architecture_coverage"]["by_architecture"]["gfx1201"]["validated"] = False
         with self.assertRaisesRegex(ValueError, "gfx1201"):
+            release_validate.validate_release_claim(record)
+
+    def test_optimized_claim_rejects_missing_required_architecture(self):
+        record = self._evidence()
+        record["architectures"] = ["gfx1100", "gfx1201"]
+        record["required_architectures"] = ["gfx1100", "gfx1201"]
+        record["architecture_coverage"]["required"] = ["gfx1100", "gfx1201"]
+        with self.assertRaisesRegex(ValueError, "missing"):
+            release_validate.validate_release_claim(record)
+
+    def test_inventory_legacy_flat_architecture_map_remains_diagnostic(self):
+        record = self._evidence()
+        record["candidate_coverage"]["variant_set"] = "inventory"
+        record["architecture_coverage"] = {
+            "gfx1201": {"status": "observed", "candidate_coverage": True},
+        }
+        del record["required_architectures"]
+        release_validate.validate_release_claim(record)
+
+    def test_optimized_claim_rejects_legacy_flat_architecture_map(self):
+        record = self._evidence()
+        record["architecture_coverage"] = {
+            "gfx1201": {"status": "validated", "candidate_coverage": True},
+        }
+        with self.assertRaisesRegex(ValueError, "explicit"):
             release_validate.validate_release_claim(record)
 
     def test_optimized_claim_rejects_zero_alternatives(self):
