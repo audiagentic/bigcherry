@@ -647,6 +647,25 @@ class TestLoadMeasurements(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_batching_and_raw_sample_count_must_be_consistent(self):
+        bad_result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        bad_result["launches_per_sample"] = 0
+        with self.assertRaisesRegex(RecordError, "launches_per_sample"):
+            inventory._validate_measurement_result(bad_result, 2)
+
+        bad_result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        candidate = bad_result["candidates"][0]
+        candidate["samples"] = 1
+        candidate["samples_us"] = [1.0, None, 2.0]
+        with self.assertRaisesRegex(RecordError, "samples does not match"):
+            inventory._validate_measurement_result(bad_result, 2)
+
+    def test_sampling_policy_header_rejects_invalid_counts(self):
+        with self.assertRaisesRegex(RecordError, "final_samples"):
+            inventory._validate_measurement_header(
+                {"kind": "header", "final_samples": -1}, 1
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

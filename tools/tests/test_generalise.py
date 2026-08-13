@@ -37,6 +37,39 @@ def signature(m: int) -> dict:
 
 
 class GeneraliseTests(unittest.TestCase):
+    def _winner(self):
+        return generalise.build_generalised_winner(
+            source_signature="a" * 32,
+            coverage_delta={
+                "baseline_coverage_pct": 20.0,
+                "generalised_coverage_pct": 35.0,
+                "added_coverage_pct": 15.0,
+                "added_calls": 42,
+            },
+            source_revision="b" * 40, manifest_hash="c" * 32,
+            build_descriptor_hash="d" * 32,
+            evidence_references=[{"kind": "experiment", "ref": "bundle/experiment.json"}],
+            winner="candidate:v1",
+        )
+
+    def test_generalised_winner_requires_complete_traceable_provenance(self):
+        winner = self._winner()
+        self.assertIs(generalise.validate_generalised_winner(winner), winner)
+
+    def test_generalised_winner_rejects_missing_or_inconsistent_evidence(self):
+        winner = self._winner()
+        del winner["source_signature"]
+        with self.assertRaisesRegex(generalise.GeneralisationError, "source_signature"):
+            generalise.validate_generalised_winner(winner)
+        winner = self._winner()
+        winner["coverage_delta"]["added_coverage_pct"] = 14.0
+        with self.assertRaisesRegex(generalise.GeneralisationError, "inconsistent"):
+            generalise.validate_generalised_winner(winner)
+        winner = self._winner()
+        winner["evidence_references"] = []
+        with self.assertRaisesRegex(generalise.GeneralisationError, "evidence"):
+            generalise.validate_generalised_winner(winner)
+
     def test_masked_dimension_groups_but_hard_field_does_not(self):
         spec = policy()
         self.assertEqual(
