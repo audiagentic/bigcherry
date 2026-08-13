@@ -19,6 +19,21 @@ def _forced_native() -> dict:
     return candidates[0].to_dict()
 
 
+def _signature(**overrides) -> dict:
+    signature = {
+        "src0_type": "q8_0",
+        "src1_type": "f32",
+        "dst_type": "f32",
+        "prec": 0,
+        "has_ids": False,
+        "source_a_contiguous": True,
+        "source_b_contiguous": True,
+        "batched": False,
+    }
+    signature.update(overrides)
+    return signature
+
+
 def test_forced_native_name_contains_every_resolved_plan_field():
     candidate = _forced_native()
     plan = candidate["config"]["blas_plan"]
@@ -86,3 +101,60 @@ def test_native_fallback_covers_every_requested_architecture():
     assert len(natives) == 1
     assert natives[0].stable_name == "blas:native:v1"
     assert set(natives[0].architectures) == set(architectures)
+
+
+def test_resolver_normalizes_a_valid_native_plan_stably():
+    plan = _forced_native()["config"]["blas_plan"]
+    first = schema.resolve_blas_plan(plan, _signature())
+    second = schema.resolve_blas_plan(dict(reversed(list(plan.items()))), _signature())
+
+    assert first.rejection_reason is None
+    assert second.rejection_reason is None
+    assert first.plan == second.plan == plan
+    assert list(first.plan) == list(schema.BLAS_PLAN_FIELDS)
+
+
+def test_resolver_applies_strict_precision_before_runtime_selection():
+    plan = dict(_forced_native()["config"]["blas_plan"])
+    plan["numerical_class"] = "reduced_precision"
+
+    strict = schema.resolve_blas_plan(plan, _signature(prec=schema.GGML_PREC_F32))
+    default = schema.resolve_blas_plan(plan, _signature(prec=0))
+
+    assert strict.plan is None
+    assert strict.rejection_reason == "strict_precision_rejects_reduced_precision"
+    assert default.plan == plan
+
+
+def test_resolver_rejects_ids_but_accepts_batched_layout_for_native_auto():
+    plan = _forced_native()["config"]["blas_plan"]
+    ids = schema.resolve_blas_plan(plan, _signature(has_ids=True))
+    batched = schema.resolve_blas_plan(plan, _signature(batched=True))
+
+    assert ids.rejection_reason == "mul_mat_id_unsupported"
+    assert batched.rejection_reason is None
+
+
+def test_resolver_checks_source_and_output_conversion_routes():
+    plan = {
+        "operand_type": "f16",
+        "accumulation_type": "f32",
+        "output_type": "f16",
+        "source_a_conversion": "contiguous",
+        "source_b_conversion": "none",
+        "output_conversion": "temporary_to_f32",
+        "numerical_class": "equivalent_within_backend_tolerance",
+    }
+    valid = schema.resolve_blas_plan(
+        plan, _signature(src0_type="f16", src1_type="f16",
+                         source_a_contiguous=True, dst_type="f32"))
+    bad_source = schema.resolve_blas_plan(
+        plan, _signature(src0_type="f16", src1_type="f16",
+                         source_a_contiguous=False, dst_type="f32"))
+    bad_output = schema.resolve_blas_plan(
+        plan, _signature(src0_type="f16", src1_type="f16",
+                         source_a_contiguous=True, dst_type="f16"))
+
+    assert valid.plan == plan
+    assert bad_source.rejection_reason == "source_a_conversion_requires_contiguous_layout"
+    assert bad_output.rejection_reason == "temporary_to_f32_requires_f16_or_bf16_output"

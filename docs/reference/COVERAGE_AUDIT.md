@@ -12,7 +12,7 @@ What the tuner can actually choose between, what it cannot, and why. See [FAMILY
 | MMVF | `(kernel_type, width, block_size, accumulator)` | block sizes 32..256 step 32; accumulator F32/F16 for F16 sources only |
 | MMF | `(kernel_type, width, nwarps)` | widths 1..16, nwarps 1..8 |
 | MMVQ | `(kernel_type, width, nwarps, rows_per_block, small_k)` | generated instances, bounded matrix |
-| BLAS | one opaque `hipblas-auto` (decomposed by [HI17](FAMILY_MODEL.md#blas-decomposition)) | standards 16.1 |
+| BLAS | native fallback plus one structured forced-native plan; provider/API remain observations | HI17 BLAS-1 |
 | **family itself** | MMQ vs MMVQ vs MMVF vs MMF vs BLAS | **unfused signatures only** — see below |
 
 The per-type token in these names is legitimate: these kernels are compile-time
@@ -45,10 +45,13 @@ compiled instance serves both. It belongs to the signature, not the candidate.
 
 ## NOT collected — real gaps, each with a reason
 
-**hipBLAS internal algorithms.** One opaque candidate by design (standards
-16.1); enumerating hipBLASLt solutions requires namespacing results by exact
-library version (16.2). Three of its four hidden choices are llama.cpp's own
-heuristics, not library internals — see [FAMILY_MODEL.md](FAMILY_MODEL.md#blas-decomposition):
+**hipBLAS internal algorithms and additional BLAS arms.** The initial BLAS-1
+catalog carries only the native fallback and one structured forced-native plan.
+Provider/API alternatives remain unenumerated until a runtime apply/execute
+seam proves they are executable; enumerating hipBLASLt solutions will also
+require namespacing results by exact library version (standards 16.2). Three
+of the hidden choices are llama.cpp's own heuristics, not library internals —
+see [FAMILY_MODEL.md](FAMILY_MODEL.md#blas-decomposition):
 
 - **`compute_type`** (F32/F16/BF16) chosen by `fast_fp16_hardware_available`
   and gated by `GGML_PREC_F32`. Upstream already ships a global env override.
