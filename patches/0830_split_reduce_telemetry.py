@@ -103,6 +103,38 @@ CUDA = FilePatch(
             ),
             guard=r'ggml_hip_reduce_telemetry_context_snapshot\(',
         ),
+        Edit(
+            id="reduce-telemetry-fallback-hook",
+            anchor=r'^static void \* ggml_backend_cuda_reg_get_proc_address\(ggml_backend_reg_t reg, const char \* name\) \{$',
+            rationale="expose the provider-owned fallback observer through the existing backend registry",
+            text=(
+                '#ifdef GGML_HIP_DISPATCH\n'
+                'static void ggml_backend_cuda_comm_telemetry_fallback(\n'
+                '        void * comm_ctx, ggml_tensor ** tensors, const char * handoff,\n'
+                '        size_t fallback_depth) {\n'
+                '    ggml_hip_reduce_telemetry_fallback_context(\n'
+                '        comm_ctx, tensors, handoff, fallback_depth);\n'
+                '}\n'
+                '#endif\n\n'
+                'static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {'
+            ),
+            guard=r'ggml_backend_cuda_comm_telemetry_fallback\(',
+        ),
+        Edit(
+            id="reduce-telemetry-fallback-proc",
+            anchor=r'^        return \(void \*\)ggml_backend_cuda_comm_allreduce_tensor;$',
+            rationale="publish the optional fallback observer without changing the generic backend ABI",
+            mode="insert_before",
+            text=(
+                '#ifdef GGML_HIP_DISPATCH\n'
+                '    if (strcmp(name, "ggml_backend_comm_telemetry_fallback") == 0) {\n'
+                '        return (void *)ggml_backend_cuda_comm_telemetry_fallback;\n'
+                '    }\n'
+                '#endif\n'
+                '    '
+            ),
+            guard=r'ggml_backend_comm_telemetry_fallback"',
+        ),
     ),
 )
 
@@ -130,6 +162,42 @@ META = FilePatch(
             guard=r'^            std::vector<ggml_tensor \*> nodes;$',
         ),
         Edit(
+            id="meta-reduce-telemetry-hook-type",
+            anchor=r'^struct ggml_backend_meta_context \{$',
+            rationale="bridge optional HIP fallback telemetry through the backend registry instead of requiring HIP macros in ggml-base",
+            mode="replace",
+            text=(
+                'using ggml_backend_comm_telemetry_fallback_t = void (*)('
+                'void *, ggml_tensor **, const char *, size_t);\n\n'
+                'struct ggml_backend_meta_context {'
+            ),
+            guard=r'ggml_backend_comm_telemetry_fallback_t',
+        ),
+        Edit(
+            id="meta-reduce-telemetry-hook-field",
+            anchor=r'^    ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;$',
+            rationale="retain the optional provider-owned fallback observer beside the existing communication callbacks",
+            mode="replace",
+            text=(
+                '    ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;\n'
+                '    ggml_backend_comm_telemetry_fallback_t comm_fallback = nullptr;'
+            ),
+            guard=r'comm_fallback = nullptr',
+        ),
+        Edit(
+            id="meta-reduce-telemetry-hook-resolve",
+            anchor=r'^            GGML_ASSERT\(comm_allreduce != nullptr\);$',
+            rationale="resolve the optional observer through the same backend registry used for allreduce",
+            text=(
+                '            GGML_ASSERT(comm_allreduce != nullptr);\n'
+                '            comm_fallback = (ggml_backend_comm_telemetry_fallback_t)\n'
+                '                ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(\n'
+                '                    ggml_backend_get_device(simple_backends[0])),\n'
+                '                    "ggml_backend_comm_telemetry_fallback");'
+            ),
+            guard=r'ggml_backend_comm_telemetry_fallback',
+        ),
+        Edit(
             id="meta-reduce-telemetry-node-declaration",
             anchor=r'^                std::vector<ggml_tensor \*> nodes;$',
             rationale="use the shared node vector for provider and fallback telemetry",
@@ -145,16 +213,13 @@ META = FilePatch(
             mode="replace",
             text=(
                 '                const ggml_status status = allreduce_fallback(i);\n'
-                '#ifdef GGML_HIP_DISPATCH\n'
-                '                if (backend_ctx->comm_ctx) {\n'
-                '                    ggml_hip_reduce_telemetry_fallback_context(\n'
-                '                        backend_ctx->comm_ctx, nodes.data(),\n'
+                '                if (backend_ctx->comm_ctx && backend_ctx->comm_fallback) {\n'
+                '                    backend_ctx->comm_fallback(backend_ctx->comm_ctx, nodes.data(),\n'
                 '                        "provider_declined_handoff_meta", 1);\n'
                 '                }\n'
-                '#endif\n'
                 '                if (status != GGML_STATUS_SUCCESS) {'
             ),
-            guard=r'ggml_hip_reduce_telemetry_fallback\(',
+            guard=r'comm_fallback\(backend_ctx->comm_ctx',
         ),
     ),
 )
