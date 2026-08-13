@@ -28,9 +28,11 @@ class ReleaseGateTests(unittest.TestCase):
                 },
             },
             "candidate_coverage": {
+                "variant_set": "workload-max",
                 "observed_types": ["q8_0"],
                 "by_type": {
-                    "q8_0": {"observed": True, "candidate_count": 2},
+                    "q8_0": {"observed": True, "candidate_count": 2,
+                              "alternative_count": 1},
                 },
             },
         }
@@ -57,6 +59,31 @@ class ReleaseGateTests(unittest.TestCase):
         record = self._evidence()
         record["architecture_coverage"]["gfx1201"]["status"] = "observed"
         with self.assertRaisesRegex(ValueError, "gfx1201"):
+            release_validate.validate_release_claim(record)
+
+    def test_optimized_claim_rejects_zero_alternatives(self):
+        record = self._evidence()
+        coverage = record["candidate_coverage"]
+        coverage["by_type"]["q8_0"]["alternative_count"] = 0
+        coverage["by_type"]["q8_0"]["zero_alternative_reason"] = (
+            "no supported alternative was generated for this type")
+        with self.assertRaisesRegex(ValueError, "zero alternatives"):
+            release_validate.validate_release_claim(record)
+
+    def test_inventory_native_only_profile_remains_diagnostic(self):
+        record = self._evidence()
+        coverage = record["candidate_coverage"]
+        coverage["variant_set"] = "inventory"
+        coverage["by_type"]["q8_0"]["alternative_count"] = 0
+        coverage["by_type"]["q8_0"]["native_count"] = 1
+        coverage["by_type"]["q8_0"]["zero_alternative_reason"] = (
+            "inventory profile contains native wrappers only")
+        release_validate.validate_release_claim(record)
+
+    def test_validated_claim_rejects_missing_variant_set(self):
+        record = self._evidence()
+        del record["candidate_coverage"]["variant_set"]
+        with self.assertRaisesRegex(ValueError, "variant_set"):
             release_validate.validate_release_claim(record)
 
 

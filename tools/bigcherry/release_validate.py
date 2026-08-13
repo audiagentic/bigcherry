@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
+from .autotune_schema import VARIANT_SETS
 from .multi_gpu_validate import validate_multi_gpu_claim
 from .device_state_validate import validate_device_state_report
 
@@ -81,6 +82,10 @@ def validate_release_claim(record: dict[str, Any]) -> None:
 
     observed_types = candidates.get("observed_types")
     by_type = candidates.get("by_type")
+    variant_set = candidates.get("variant_set")
+    if variant_set not in VARIANT_SETS:
+        raise ReleaseGateError(
+            "candidate coverage has an invalid or missing variant_set")
     if (not isinstance(observed_types, list) or not observed_types
             or not isinstance(by_type, dict)
             or set(observed_types) != set(by_type)):
@@ -96,6 +101,20 @@ def validate_release_claim(record: dict[str, Any]) -> None:
         if not isinstance(count, int) or isinstance(count, bool) or count < 1:
             raise ReleaseGateError(
                 f"candidate coverage for {type_name!r} has no candidates")
+        alternatives = evidence.get("alternative_count")
+        if not isinstance(alternatives, int) or isinstance(alternatives, bool) \
+                or alternatives < 0:
+            raise ReleaseGateError(
+                f"candidate coverage for {type_name!r} has an invalid "
+                "alternative count")
+        # Inventory is deliberately native-only: it is a diagnostic profile
+        # used to establish observed signatures and must not be treated as an
+        # optimization claim. Every optimized release profile, however, must
+        # have at least one non-native candidate for every observed type.
+        if variant_set != "inventory" and alternatives < 1:
+            raise ReleaseGateError(
+                f"optimized candidate coverage for {type_name!r} has zero "
+                "alternatives")
 
 
 def safe_name(value: str) -> str:
