@@ -194,6 +194,46 @@ class TestRenderedRegistryAgreesWithManifest(unittest.TestCase):
                 native_by_family[candidate["family"]] += 1
         self.assertEqual(native_by_family, {family: 1 for family in schema.FAMILIES})
 
+    def test_registry_architecture_masks_and_native_fallbacks_match(self):
+        """The compiled registry must preserve eligibility and fallback coverage.
+
+        A stable name/ID agreement is not enough: the architecture mask is the
+        runtime gate which decides whether a candidate can even be considered.
+        A stale mask can silently remove a valid candidate, or make it appear
+        valid on a GPU for which it was never generated.  Native wrappers are
+        the fail-safe path, so each family must cover every target architecture
+        in the manifest.
+        """
+        manifest = manifest_for_tests()
+        rendered = catalog.render_registry(manifest)
+        rows = re.findall(
+            r'\{\s+(\d+)u, "([^"]+)",\s+'
+            r'(GGML_HIP_FAMILY_\w+),\s+(GGML_HIP_SOURCE_\w+),\s+(\d+),\n'
+            r'\s+UINT64_C\((\d+)\),\s+\d+,\s+\d+,\s+(\d+),',
+            rendered,
+        )
+        self.assertEqual(len(rows), len(manifest["candidates"]))
+
+        target_mask = schema.architecture_mask(manifest["architectures"])
+        native_families: dict[str, int] = {}
+        for row, candidate in zip(rows, manifest["candidates"]):
+            runtime_id, stable_name, family_enum, source_enum, version, mask, native = row
+            self.assertEqual(int(runtime_id), manifest["candidates"].index(candidate))
+            self.assertEqual(stable_name, candidate["stable_name"])
+            self.assertEqual(int(version), candidate["implementation_version"])
+            self.assertEqual(int(mask), schema.architecture_mask(candidate["architectures"]))
+            self.assertNotEqual(int(mask), 0)
+            self.assertEqual(int(mask) & ~target_mask, 0)
+            self.assertEqual(int(native), int(candidate["source_class"] == "native_wrapper"))
+            expected_family = "GGML_HIP_FAMILY_" + candidate["family"].upper()
+            self.assertEqual(family_enum, expected_family)
+            if candidate["source_class"] == "native_wrapper":
+                self.assertEqual(source_enum, "GGML_HIP_SOURCE_NATIVE_WRAPPER")
+                self.assertEqual(int(mask), target_mask)
+                native_families[candidate["family"]] = native_families.get(candidate["family"], 0) + 1
+
+        self.assertEqual(native_families, {family: 1 for family in schema.FAMILIES})
+
 
 if __name__ == "__main__":
     unittest.main()
