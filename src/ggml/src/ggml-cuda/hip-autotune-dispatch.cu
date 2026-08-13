@@ -996,26 +996,9 @@ bool ggml_hip_mmf_can_execute(const ggml_hip_candidate_descriptor * self,
 
         const int id = ggml_cuda_get_device();
         const int cc = ggml_cuda_info().devices[id].cc;
-        const int rows_per_block = GGML_CUDA_CC_IS_CDNA(cc)
-            ? MMF_ROWS_PER_BLOCK_CDNA : MMF_ROWS_PER_BLOCK;
-
-        if (ggml_is_quantized(type) ||
-                ne[0] % (hw.wave_size * (4 / ts)) != 0 ||
-                nb[0] != ts) {
+        if (!ggml_cuda_mmf_is_capable(type, cc, hw.wave_size, ne, nb)) {
             return false;
         }
-        for (int i = 1; i < GGML_MAX_DIMS; ++i) {
-            if (nb[i] % (2 * ts) != 0) return false;
-        }
-        if (ne[1] % rows_per_block != 0) return false;
-        if (GGML_CUDA_CC_IS_CDNA3(cc) && type == GGML_TYPE_BF16) return false;
-        const bool capable =
-            (type == GGML_TYPE_F32 && (ampere_mma_available(cc) || amd_mfma_available(cc))) ||
-            (type == GGML_TYPE_F16 && (volta_mma_available(cc) || turing_mma_available(cc) ||
-                                       amd_wmma_available(cc) || amd_mfma_available(cc))) ||
-            (type == GGML_TYPE_BF16 && (ampere_mma_available(cc) || amd_wmma_available(cc) ||
-                                        amd_mfma_available(cc)));
-        if (!capable) return false;
     }
 
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {
