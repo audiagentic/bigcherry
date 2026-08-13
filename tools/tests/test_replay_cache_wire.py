@@ -74,6 +74,46 @@ class ReplayCacheWireTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "manifest_hash"):
             replay_cache.build(measurements, manifest, ggml_h)
 
+    def test_portable_key_is_stable_across_build_provenance(self):
+        key = replay_cache.portable_tuning_key("a" * 32, "b" * 32)
+        self.assertEqual(key, replay_cache.portable_tuning_key("A" * 32, "B" * 32))
+        self.assertNotEqual(key, replay_cache.portable_tuning_key("a" * 32, "b" * 32, "throughput"))
+
+    def test_provenance_namespace_is_strict_and_normalized(self):
+        value = replay_cache.validate_provenance_namespace({
+            "source_revision": "A" * 40,
+            "manifest_hash": "B" * 32,
+            "build_descriptor_hash": "C" * 32,
+        })
+        self.assertEqual(value["source_revision"], "a" * 40)
+        self.assertEqual(value["manifest_hash"], "b" * 32)
+        with self.assertRaisesRegex(SystemExit, "source_revision"):
+            replay_cache.validate_provenance_namespace({
+                "source_revision": "not-a-revision", "manifest_hash": "a" * 32})
+
+    def test_newest_winner_selection_is_order_independent_and_bounded(self):
+        def row(generation, winner, revision):
+            return {"hardware": "a" * 32, "signature": "b" * 32,
+                    "winner": winner, "generation": generation,
+                    "source_revision": revision, "manifest_hash": "c" * 32}
+
+        records = [row(1, "old", "1" * 40), row(3, "new", "3" * 40),
+                   row(2, "middle", "2" * 40)]
+        forward = replay_cache.select_newest_winners(records)
+        reverse = replay_cache.select_newest_winners(reversed(records))
+        self.assertEqual([(r["generation"], r["winner"]) for r in forward], [(3, "new")])
+        self.assertEqual([(r["generation"], r["winner"]) for r in reverse], [(3, "new")])
+        kept = replay_cache.select_newest_winners(records, keep_generations=2)
+        self.assertEqual([r["generation"] for r in kept], [3, 2])
+
+    def test_same_generation_conflict_fails_closed(self):
+        common = {"hardware": "a" * 32, "signature": "b" * 32,
+                  "generation": 4, "source_revision": "4" * 40,
+                  "manifest_hash": "c" * 32}
+        with self.assertRaisesRegex(SystemExit, "conflicting winners"):
+            replay_cache.select_newest_winners([
+                {**common, "winner": "a"}, {**common, "winner": "b"}])
+
     def test_cpp_reader_has_the_same_v3_boundary_and_fail_closed_checks(self):
         source = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
