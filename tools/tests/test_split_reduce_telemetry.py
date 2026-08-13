@@ -20,7 +20,8 @@ def test_provider_boundary_observes_result_without_reselecting():
 def test_meta_boundary_records_actual_handoff():
     assert "allreduce_fallback(i)" in PATCH
     assert "provider_declined_handoff_meta" in PATCH
-    assert '"meta_butterfly"' in TELEMETRY
+    assert 'requested_provider, "meta", handoff' in TELEMETRY
+    assert '"meta_butterfly"' not in TELEMETRY
     assert "fallback_depth" in HEADER
 
 
