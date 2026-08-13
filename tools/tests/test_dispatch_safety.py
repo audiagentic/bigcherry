@@ -154,6 +154,29 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('if (!s.valid) return "{}";', tuner)
         self.assertIn('return "{\\"status\\":\\"unavailable\\"}";', tuner)
 
+    def test_tuner_first_encounters_are_single_flight_through_publish(self):
+        """The source-level concurrency contract prevents duplicate winners."""
+        tuner = TUNER.read_text(encoding="utf-8")
+        resolve_start = tuner.index("const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(")
+        resolve_end = tuner.index("void ggml_hip_tuner_flush(", resolve_start)
+        resolve = tuner[resolve_start:resolve_end]
+
+        self.assertIn("std::mutex g_single_flight_mutex;", tuner)
+        self.assertIn("std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);", resolve)
+        lock = resolve.index("single_flight_lock(g_single_flight_mutex)")
+        lookup = resolve.index("g_results.find(dispatch_digest)")
+        first_measurement = resolve.index("const ggml_hip_tuner_config & config")
+        final_publish = resolve.rindex("record_result(dispatch_digest, result);")
+        final_return = resolve.index("return result.winner;", final_publish)
+
+        # Every waiter is serialized before it can miss the cache; the lock is
+        # still held through the only final publish and winner return.
+        self.assertLess(lock, lookup)
+        self.assertLess(lookup, first_measurement)
+        self.assertLess(final_publish, final_return)
+        self.assertNotIn("single_flight_lock.unlock()", resolve)
+        self.assertIn("g_results.emplace(dispatch_digest, result);", tuner)
+
 
 if __name__ == "__main__":
     unittest.main()
