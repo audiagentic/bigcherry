@@ -23,6 +23,7 @@ _BLAS_APIS = {"cublasSgemm", "cublasGemmEx", "cublasGemmStridedBatchedEx",
 _BLAS_WRAPPERS = {"ggml_cuda_mul_mat_cublas"}
 _PROVIDERS = {"internal", "rccl", "meta", "unknown", "provider_declined"}
 _HANDOFFS = {"none", "provider_declined_handoff_meta"}
+_REDUCTION_PEER_ACCESS = {"complete", "partial", "unknown"}
 _UNAVAILABLE = {"unavailable", "unknown", "not_collected"}
 _BLAS_CONVERSIONS = {"direct", "contiguous", "non_contiguous"}
 _BLAS_OUTPUT_CONVERSIONS = {"direct", "temporary_to_f32"}
@@ -177,10 +178,17 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
     preferred_algorithm = _REDUCTION_ALGORITHM_ALIASES[requested]
     effective_algorithm = _REDUCTION_ALGORITHM_ALIASES[effective]
     fallback_policy = "none" if handoff == "none" else "upstream_default"
+    signature = row["reduction_signature"]
     promotable = (
         fallback_policy == "none"
         and effective == requested
         and preferred_algorithm not in {"unknown", "provider_declined"}
+        and signature["peer_access"] != "unknown"
+    )
+    signature_key = (
+        f"split_reduce:v1:{signature['element_type']}:{signature['element_count']}:"
+        f"{','.join(str(value) for value in signature['slice_shape'])}:"
+        f"{signature['topology_key']}"
     )
     return {
         "preferred_algorithm": preferred_algorithm,
@@ -188,6 +196,7 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
         "fallback_policy": fallback_policy,
         "candidate_identity": (
             f"split_reduce:{preferred_algorithm}:{fallback_policy}:v1"),
+        "reduction_signature_key": signature_key,
         "promotable": promotable,
     }
 
@@ -209,8 +218,26 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
         raise TelemetryError(f"{where}: fallback depth requires a handoff")
     if handoff != "none" and depth == 0:
         raise TelemetryError(f"{where}: handoff requires positive fallback depth")
-    _nonnegative(row.get("element_count"), "element_count", where)
-    _text(row.get("element_type"), "element_type", where)
+    element_count = _nonnegative(row.get("element_count"), "element_count", where)
+    element_type = _text(row.get("element_type"), "element_type", where)
+    signature = row.get("reduction_signature")
+    if not isinstance(signature, dict):
+        raise TelemetryError(f"{where}: reduction_signature is required")
+    if signature.get("version") != 1:
+        raise TelemetryError(f"{where}: unsupported reduction_signature version")
+    if signature.get("element_count") != element_count:
+        raise TelemetryError(f"{where}: reduction signature element_count mismatch")
+    if signature.get("element_type") != element_type:
+        raise TelemetryError(f"{where}: reduction signature element_type mismatch")
+    shape = signature.get("slice_shape")
+    if not isinstance(shape, list) or len(shape) != 4 or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in shape):
+        raise TelemetryError(f"{where}: reduction signature slice_shape is malformed")
+    topology_key = _text(signature.get("topology_key"), "topology_key", where)
+    peer_access = _text(signature.get("peer_access"), "peer_access", where)
+    if peer_access not in _REDUCTION_PEER_ACCESS:
+        raise TelemetryError(f"{where}: unsupported peer_access")
     count = _positive(row.get("device_count"), "device_count", where)
     if count < 2:
         raise TelemetryError(f"{where}: device_count must be at least 2")
@@ -225,6 +252,11 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     key = event_id or f"split:{timestamp_us}:{requested}:{effective}:{devices}"
     normalized = {**row, "timestamp_us": timestamp_us, "device_count": count,
                   "devices": list(devices), "event_id": event_id}
+    normalized["reduction_signature"] = {
+        "version": 1, "element_count": element_count, "element_type": element_type,
+        "slice_shape": list(shape), "topology_key": topology_key,
+        "peer_access": peer_access,
+    }
     normalized.update(normalize_split_reduce_observation(normalized, where))
     return key, normalized
 

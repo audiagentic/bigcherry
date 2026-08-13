@@ -39,7 +39,12 @@ def _split(event_id="evt-1"):
             "timestamp_us": 1, "requested_provider": "rccl",
             "effective_provider": "rccl", "handoff": "none", "fallback_depth": 0,
             "element_count": 64, "element_type": "F32", "device_count": 2,
-            "devices": [0, 1]}
+            "devices": [0, 1],
+            "reduction_signature": {
+                "version": 1, "element_count": 64, "element_type": "F32",
+                "slice_shape": [64, 1, 1, 1], "topology_key": "n2:peer1111",
+                "peer_access": "complete",
+            }}
 
 
 def test_loads_blas_header_and_inherits_provenance(tmp_path):
@@ -142,6 +147,8 @@ def test_normalizes_split_timestamp_and_device_count(tmp_path):
     observation = result["split_reduce"][0]
     assert observation["timestamp_us"] == 1
     assert observation["device_count"] == 2
+    assert observation["reduction_signature_key"] == (
+        "split_reduce:v1:F32:64:64,1,1,1:n2:peer1111")
 
 
 def test_normalizes_successful_rccl_as_promotable_nccl_identity(tmp_path):
@@ -191,3 +198,23 @@ def test_none_policy_rejects_requested_effective_provider_mismatch(tmp_path):
     row["effective_provider"] = "meta"
     with pytest.raises(TelemetryError, match="requested/effective provider match"):
         load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (lambda row: row.pop("reduction_signature"), "reduction_signature is required"),
+    (lambda row: row["reduction_signature"].update(slice_shape=[1]), "slice_shape is malformed"),
+    (lambda row: row["reduction_signature"].update(peer_access="bogus"), "peer_access"),
+    (lambda row: row["reduction_signature"].update(element_count=65), "element_count mismatch"),
+])
+def test_rejects_incomplete_reduction_signature(tmp_path, mutate, message):
+    row = _split("evt-signature")
+    mutate(row)
+    with pytest.raises(TelemetryError, match=message):
+        load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+
+
+def test_unknown_peer_access_is_not_promotable(tmp_path):
+    row = _split("evt-unknown-peer")
+    row["reduction_signature"]["peer_access"] = "unknown"
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    assert result["split_reduce"][0]["promotable"] is False
