@@ -148,6 +148,7 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     set(_BC_DISPATCH_SOURCES
         "../ggml-cuda/hip-autotune-dispatch.cu"
         "../ggml-cuda/hip-autotune-transform.cu"
+        "../ggml-cuda/hip-autotune-reduce-telemetry.cpp"
         "../ggml-cuda/hip-autotune-signature.cpp"
         "../ggml-cuda/hip-autotune-blake2b.cpp"
         "../ggml-cuda/hip-autotune-coverage.cpp")
