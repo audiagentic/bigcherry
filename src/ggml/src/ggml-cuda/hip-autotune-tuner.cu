@@ -842,13 +842,19 @@ CounterbalancedRound run_counterbalanced_round(
                                 nullptr, false, nullptr, protocol_stage) ||
                     one_gpu.empty() || one_host.empty()) {
                 complete = false;
-                continue;
+                // A failed HIP launch may leave an asynchronous error pending
+                // even after the timing transaction has rejected the sample.
+                // Do not query SMI through ggml_cuda_get_device() while that
+                // error is live, and do not launch another candidate in this
+                // round. The round is discarded below.
+                (void) hipGetLastError();
+                break;
             }
             gpu[index] = one_gpu[0];
             host[index] = one_host[0];
         }
-        post = smi_enabled ? ggml_hip_query_device_state(hip_device)
-                           : ggml_hip_device_state{};
+        post = (smi_enabled && complete) ? ggml_hip_query_device_state(hip_device)
+                                         : ggml_hip_device_state{};
         return complete;
     };
 

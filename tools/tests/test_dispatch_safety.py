@@ -240,6 +240,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("first_observation.identity_mismatch", helper)
         self.assertIn("out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN())", helper)
         self.assertIn("out.status = RetimeStatus::unresolved", helper)
+        self.assertIn("(void) hipGetLastError();", helper)
+        self.assertIn("smi_enabled && complete", helper)
         self.assertNotIn("sclk_mhz", helper[helper.index("run_order") :])
         self.assertGreaterEqual(tuner.count("run_counterbalanced_round("), 4)
 
