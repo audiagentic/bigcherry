@@ -21,7 +21,7 @@ _HEX32 = set("0123456789abcdefABCDEF")
 _BLAS_APIS = {"cublasSgemm", "cublasGemmEx", "cublasGemmStridedBatchedEx",
               "cublasGemmBatchedEx"}
 _BLAS_WRAPPERS = {"ggml_cuda_mul_mat_cublas"}
-_PROVIDERS = {"internal", "rccl", "meta", "unknown", "provider_declined"}
+_PROVIDERS = {"auto", "internal", "rccl", "meta", "unknown", "provider_declined"}
 _HANDOFFS = {"none", "provider_declined_handoff_meta"}
 _REDUCTION_PEER_ACCESS = {"complete", "partial", "unknown"}
 _UNAVAILABLE = {"unavailable", "unknown", "not_collected"}
@@ -34,6 +34,7 @@ _REDUCTION_ALGORITHM_ALIASES = {
     # HI18's candidate identity names the algorithm "nccl" after the
     # upstream entry point.  Keep that translation in the offline evidence
     # layer instead of changing the producer's source vocabulary.
+    "auto": "auto",
     "rccl": "nccl",
     "meta": "meta",
     "internal": "internal",
@@ -171,7 +172,7 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
     requested = row["requested_provider"]
     effective = row["effective_provider"]
     handoff = row["handoff"]
-    if handoff == "none" and effective != requested:
+    if handoff == "none" and requested != "auto" and effective != requested:
         raise TelemetryError(
             f"{where}: none fallback policy requires requested/effective provider match")
 
@@ -181,7 +182,7 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
     signature = row["reduction_signature"]
     promotable = (
         fallback_policy == "none"
-        and effective == requested
+        and (requested == "auto" or effective == requested)
         and preferred_algorithm not in {"unknown", "provider_declined"}
         and signature["peer_access"] != "unknown"
     )

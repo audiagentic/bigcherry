@@ -22,6 +22,10 @@ def test_provider_boundary_observes_result_without_reselecting():
     assert "ggml_hip_reduce_telemetry_provider" in PATCH
     assert "return provider_succeeded;" in PATCH
     assert "provider_name" in PATCH
+    assert "GGML_HIP_REDUCE_PLAN" in PATCH
+    assert "ggml_backend_cuda_comm_try_reduce_plan" in PATCH
+    assert "ggml_hip_reduce_telemetry_set_requested_provider" in PATCH
+    assert 'strcmp(requested_provider, "meta")' in PATCH
 
 
 def test_meta_boundary_records_actual_handoff():

@@ -62,20 +62,105 @@ CUDA = FilePatch(
             guard=r'ret->provider_name = "rccl"',
         ),
         Edit(
+            id="reduce-telemetry-plan-helper",
+            anchor=r'^static bool ggml_backend_cuda_comm_allreduce_tensor\(void \* comm_ctx_v, struct ggml_tensor \*\* tensors\) \{$',
+            rationale="select an explicit reduction plan per call without mutating the shared communication context",
+            mode="insert_before",
+            text=(
+                '#ifdef GGML_HIP_DISPATCH\n'
+                'static const char * ggml_backend_cuda_comm_reduce_plan() {\n'
+                '    const char * env = getenv("GGML_HIP_REDUCE_PLAN");\n'
+                '    if (env == nullptr || strcmp(env, "auto") == 0 ||\n'
+                '            strcmp(env, "rccl") == 0 || strcmp(env, "meta") == 0) {\n'
+                '        return env == nullptr ? "auto" : env;\n'
+                '    }\n'
+                '    GGML_LOG_WARN("unknown GGML_HIP_REDUCE_PLAN value: %s; using auto\\n", env);\n'
+                '    return "auto";\n'
+                '}\n\n'
+                'static bool ggml_backend_cuda_comm_try_reduce_plan(\n'
+                '        ggml_backend_cuda_comm_context * comm_ctx,\n'
+                '        struct ggml_tensor ** tensors, const char * plan) {\n'
+                '    if (strcmp(plan, "auto") == 0) {\n'
+                '        return comm_ctx->try_allreduce(comm_ctx, tensors);\n'
+                '    }\n'
+                '    if (strcmp(plan, "meta") == 0) {\n'
+                '        return false;\n'
+                '    }\n'
+                '    if (strcmp(plan, "rccl") == 0) {\n'
+                '#ifdef GGML_USE_NCCL\n'
+                '        if (comm_ctx->comms.size() == comm_ctx->backends.size()) {\n'
+                '            return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n'
+                '        }\n'
+                '#endif\n'
+                '    }\n'
+                '    return false;\n'
+                '}\n\n'
+                '#endif\n'
+            ),
+            guard=r'ggml_backend_cuda_comm_reduce_plan\(',
+        ),
+        Edit(
             id="reduce-telemetry-call",
             anchor=r'^    return comm_ctx->try_allreduce\(comm_ctx, tensors\);$',
             rationale="observe provider success or decline without changing the return value",
             mode="replace",
             text=(
-                '    const bool provider_succeeded = comm_ctx->try_allreduce(comm_ctx, tensors);\n'
                 '#ifdef GGML_HIP_DISPATCH\n'
+                '    const char * requested_provider = ggml_backend_cuda_comm_reduce_plan();\n'
+                '    ggml_hip_reduce_telemetry_set_requested_provider(\n'
+                '        comm_ctx, requested_provider);\n'
+                '    if (strcmp(requested_provider, "meta") == 0) {\n'
+                '        return false;\n'
+                '    }\n'
+                '    const bool provider_succeeded = ggml_backend_cuda_comm_try_reduce_plan(\n'
+                '        comm_ctx, tensors, requested_provider);\n'
                 '    ggml_hip_reduce_telemetry_provider(comm_ctx->dev_ids.data(),\n'
-                '        comm_ctx->dev_ids.size(), tensors, comm_ctx->provider_name,\n'
+                '        comm_ctx->dev_ids.size(), tensors, requested_provider,\n'
+                '        provider_succeeded ? comm_ctx->provider_name : "provider_declined",\n'
                 '        provider_succeeded);\n'
+                '    return provider_succeeded;\n'
+                '#else\n'
+                '    return comm_ctx->try_allreduce(comm_ctx, tensors);\n'
                 '#endif\n'
-                '    return provider_succeeded;'
             ),
-            guard=r'ggml_hip_reduce_telemetry_provider\(',
+            guard=r'ggml_hip_reduce_telemetry_set_requested_provider\(',
+            applies_if=(r'^(?![\s\S]*ggml_hip_reduce_telemetry_provider\()'
+                        r'    auto \* comm_ctx = static_cast<ggml_backend_cuda_comm_context \*>'
+                        r'\(comm_ctx_v\);$\n'
+                        r'^    return comm_ctx->try_allreduce\(comm_ctx, tensors\);$'),
+        ),
+        Edit(
+            id="reduce-telemetry-call-migrate",
+            anchor=(r'^    const bool provider_succeeded = comm_ctx->try_allreduce\(comm_ctx, tensors\);$'
+                    r'\n^#ifdef GGML_HIP_DISPATCH$'
+                    r'\n^    ggml_hip_reduce_telemetry_provider\(comm_ctx->dev_ids.data\(\),$'
+                    r'\n^        comm_ctx->dev_ids.size\(\), tensors, comm_ctx->provider_name,$'
+                    r'\n^        provider_succeeded\);$'
+                    r'\n^#endif$'
+                    r'\n^    return provider_succeeded;$'),
+            rationale="migrate an already-applied HI58 tree to the explicit per-call plan seam",
+            mode="replace",
+            text=(
+                '#ifdef GGML_HIP_DISPATCH\n'
+                '    const char * requested_provider = ggml_backend_cuda_comm_reduce_plan();\n'
+                '    ggml_hip_reduce_telemetry_set_requested_provider(\n'
+                '        comm_ctx, requested_provider);\n'
+                '    if (strcmp(requested_provider, "meta") == 0) {\n'
+                '        return false;\n'
+                '    }\n'
+                '    const bool provider_succeeded = ggml_backend_cuda_comm_try_reduce_plan(\n'
+                '        comm_ctx, tensors, requested_provider);\n'
+                '    ggml_hip_reduce_telemetry_provider(comm_ctx->dev_ids.data(),\n'
+                '        comm_ctx->dev_ids.size(), tensors, requested_provider,\n'
+                '        provider_succeeded ? comm_ctx->provider_name : "provider_declined",\n'
+                '        provider_succeeded);\n'
+                '    return provider_succeeded;\n'
+                '#else\n'
+                '    return comm_ctx->try_allreduce(comm_ctx, tensors);\n'
+                '#endif'
+            ),
+            guard=r'ggml_hip_reduce_telemetry_set_requested_provider\(',
+            applies_if=r'ggml_hip_reduce_telemetry_provider\(',
         ),
         Edit(
             id="reduce-telemetry-context-snapshot",
@@ -95,7 +180,8 @@ CUDA = FilePatch(
                 '    auto * ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx);\n'
                 '    *devices = ctx->dev_ids.data();\n'
                 '    *device_count = ctx->dev_ids.size();\n'
-                '    *requested_provider = ctx->provider_name;\n'
+                '    *requested_provider = ggml_hip_reduce_telemetry_requested_provider(\n'
+                '        comm_ctx, ctx->provider_name);\n'
                 '    return *device_count >= 2 && *requested_provider != nullptr;\n'
                 '}\n'
                 '#endif\n\n'

@@ -25,6 +25,8 @@ extern bool ggml_hip_reduce_telemetry_context_snapshot(
 namespace {
 
 std::mutex g_mutex;
+thread_local void * g_last_comm_ctx = nullptr;
+thread_local std::string g_last_requested_provider;
 
 const char * telemetry_path() {
     const char * path = std::getenv("GGML_HIP_REDUCE_TELEMETRY");
@@ -39,7 +41,8 @@ const char * provider_label(const char * value) {
     if (value == nullptr) {
         return "unknown";
     }
-    if (std::string(value) == "internal" || std::string(value) == "rccl" ||
+    if (std::string(value) == "auto" || std::string(value) == "internal" ||
+        std::string(value) == "rccl" ||
         std::string(value) == "meta" || std::string(value) == "unknown" ||
         std::string(value) == "provider_declined") {
         return value;
@@ -184,11 +187,27 @@ void ggml_hip_reduce_telemetry_provider(
         size_t device_count,
         ggml_tensor ** tensors,
         const char * requested_provider,
+        const char * effective_provider,
         bool provider_succeeded) {
     write_event(devices, device_count, tensors, requested_provider,
-                provider_succeeded ? requested_provider : "provider_declined",
+                provider_succeeded ? effective_provider : "provider_declined",
                 provider_succeeded ? "none" : "provider_declined_handoff_meta",
                 provider_succeeded ? 0 : 1);
+}
+
+void ggml_hip_reduce_telemetry_set_requested_provider(
+        void * comm_ctx, const char * requested_provider) {
+    g_last_comm_ctx = comm_ctx;
+    g_last_requested_provider = requested_provider != nullptr
+        ? requested_provider : "auto";
+}
+
+const char * ggml_hip_reduce_telemetry_requested_provider(
+        void * comm_ctx, const char * fallback_provider) {
+    if (g_last_comm_ctx == comm_ctx && !g_last_requested_provider.empty()) {
+        return g_last_requested_provider.c_str();
+    }
+    return fallback_provider;
 }
 
 void ggml_hip_reduce_telemetry_fallback(
@@ -217,9 +236,12 @@ void ggml_hip_reduce_telemetry_fallback_context(
             comm_ctx, &devices, &device_count, &requested_provider)) {
         return;
     }
+    const bool explicitly_requested_meta =
+        g_last_comm_ctx == comm_ctx && g_last_requested_provider == "meta";
     ggml_hip_reduce_telemetry_fallback(
-            devices, device_count, tensors, requested_provider, handoff,
-            fallback_depth);
+            devices, device_count, tensors, requested_provider,
+            explicitly_requested_meta ? "none" : handoff,
+            explicitly_requested_meta ? 0 : fallback_depth);
 }
 
 #endif
