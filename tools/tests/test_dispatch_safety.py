@@ -353,6 +353,14 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertLess(attempt, injection)
         self.assertIn("disable_smi_after_measurement_failure();", contract)
 
+    def test_ex02_quarantine_bypass_is_explicitly_opt_in(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        quarantine = dispatch[dispatch.index("// EX02 quarantine"):dispatch.index("return ggml_cuda_mmq_variant_is_eligible(")]
+        self.assertIn("GGML_HIP_TUNE_TEST_DISABLE_EX02_QUARANTINE", quarantine)
+        self.assertIn('std::strcmp(ex02_bypass, "1") == 0', quarantine)
+        self.assertIn("ex02_candidate && !ex02_test_bypass", quarantine)
+        self.assertIn("EX02 quarantine bypass enabled for diagnostic testing", quarantine)
+
     def test_first_candidate_attempt_is_durable_and_identified(self):
         tuner = TUNER.read_text(encoding="utf-8")
         resolve = tuner[tuner.index("const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("):]

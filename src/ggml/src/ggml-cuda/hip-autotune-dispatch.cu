@@ -18,10 +18,12 @@
 #include "mmvf.cuh"
 #include "mmf.cuh"
 
+#include <atomic>
 #include <mutex>
 #include <cctype>
 #include <stdlib.h>
 #include <string.h>
+#include <cstring>
 #include <string>
 #include <limits>
 #include <unordered_map>
@@ -885,11 +887,21 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     // tables define the same (type, J, I, sram_layout) -- excluding it
     // everywhere would quarantine hardware this was never proven to crash
     // on. Remove this block once EX02 lands a real fix; do not widen it.
-    if (self->variant.src0_type == GGML_TYPE_Q6_K &&
+    const bool ex02_candidate = self->variant.src0_type == GGML_TYPE_Q6_K &&
             self->variant.primary == 112 &&
             self->variant.fallback == 0 &&
-            hw.architecture_code == GGML_HIP_ARCH_GFX1100) {
+            hw.architecture_code == GGML_HIP_ARCH_GFX1100;
+    const char * ex02_bypass = getenv("GGML_HIP_TUNE_TEST_DISABLE_EX02_QUARANTINE");
+    const bool ex02_test_bypass = ex02_bypass != nullptr
+            && std::strcmp(ex02_bypass, "1") == 0;
+    if (ex02_candidate && !ex02_test_bypass) {
         return false;
+    }
+    if (ex02_candidate && ex02_test_bypass) {
+        static std::atomic<bool> ex02_bypass_reported{false};
+        if (!ex02_bypass_reported.exchange(true, std::memory_order_relaxed)) {
+            GGML_LOG_WARN("bigcherry: EX02 quarantine bypass enabled for diagnostic testing\n");
+        }
     }
 
     return ggml_cuda_mmq_variant_is_eligible(
