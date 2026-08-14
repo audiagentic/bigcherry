@@ -261,7 +261,7 @@ bool ggml_hip_replay_init() {
         const uint32_t entry_count  = read_u32(data + HDR_ENTRY_COUNT);
         const uint32_t string_bytes = read_u32(data + HDR_STRING_BYTES);
         const size_t   entries_at   = HDR_SIZE;
-        if (entry_count > (SIZE_MAX - entries_at) / ENT_SIZE) {
+        if ((size_t) entry_count > (SIZE_MAX - entries_at) / ENT_SIZE) {
             reject(path, "entry table size overflows");
             return;
         }
