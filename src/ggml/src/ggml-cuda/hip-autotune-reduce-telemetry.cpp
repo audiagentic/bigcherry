@@ -27,6 +27,8 @@ namespace {
 std::mutex g_mutex;
 thread_local void * g_last_comm_ctx = nullptr;
 thread_local std::string g_last_requested_provider;
+thread_local std::chrono::steady_clock::time_point g_reduce_start;
+thread_local bool g_reduce_timer_active = false;
 
 const char * telemetry_path() {
     const char * path = std::getenv("GGML_HIP_REDUCE_TELEMETRY");
@@ -97,6 +99,15 @@ topology_observation observe_topology(const int * devices, size_t device_count) 
     return result;
 }
 
+int64_t reduce_elapsed_us() {
+    if (!g_reduce_timer_active) {
+        return 0;
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - g_reduce_start).count();
+    return std::max<int64_t>(0, elapsed);
+}
+
 ggml_hip_reduce_signature_v1 make_signature(
         const int * devices, size_t device_count, ggml_tensor ** tensors) {
     static thread_local std::string topology_key;
@@ -128,7 +139,8 @@ void write_event(const int * devices,
                  const char * requested,
                  const char * effective,
                  const char * handoff,
-                 size_t fallback_depth) {
+                 size_t fallback_depth,
+                 int64_t elapsed_us) {
     const char * path = telemetry_path();
     if (path == nullptr || tensors == nullptr || tensors[0] == nullptr) {
         return;
@@ -155,6 +167,7 @@ void write_event(const int * devices,
             std::chrono::system_clock::now().time_since_epoch()).count());
     std::fprintf(file,
         "{\"kind\":\"split_reduce_observation\",\"timestamp_us\":%lld,"
+        "\"elapsed_us\":%lld,"
         "\"requested_provider\":\"%s\",\"effective_provider\":\"%s\","
         "\"handoff\":\"%s\",\"fallback_depth\":%zu,"
         "\"element_count\":%lld,\"element_type\":\"%s\","
@@ -163,7 +176,8 @@ void write_event(const int * devices,
         "\"slice_shape\":[%lld,%lld,%lld,%lld],\"topology_key\":\"%s\","
         "\"peer_access\":\"%s\"},"
         "\"device_count\":%zu,\"devices\":[",
-        timestamp, provider_label(requested), provider_label(effective),
+        timestamp, static_cast<long long>(std::max<int64_t>(0, elapsed_us)),
+        provider_label(requested), provider_label(effective),
         handoff_label(handoff), normalized_fallback_depth,
         static_cast<long long>(signature.element_count), signature.element_type,
         static_cast<long long>(signature.element_count), signature.element_type,
@@ -189,10 +203,14 @@ void ggml_hip_reduce_telemetry_provider(
         const char * requested_provider,
         const char * effective_provider,
         bool provider_succeeded) {
+    const int64_t elapsed_us = reduce_elapsed_us();
     write_event(devices, device_count, tensors, requested_provider,
                 provider_succeeded ? effective_provider : "provider_declined",
                 provider_succeeded ? "none" : "provider_declined_handoff_meta",
-                provider_succeeded ? 0 : 1);
+                provider_succeeded ? 0 : 1, elapsed_us);
+    if (provider_succeeded) {
+        g_reduce_timer_active = false;
+    }
 }
 
 void ggml_hip_reduce_telemetry_set_requested_provider(
@@ -200,6 +218,8 @@ void ggml_hip_reduce_telemetry_set_requested_provider(
     g_last_comm_ctx = comm_ctx;
     g_last_requested_provider = requested_provider != nullptr
         ? requested_provider : "auto";
+    g_reduce_start = std::chrono::steady_clock::now();
+    g_reduce_timer_active = true;
 }
 
 const char * ggml_hip_reduce_telemetry_requested_provider(
@@ -220,8 +240,9 @@ void ggml_hip_reduce_telemetry_fallback(
     // The meta backend proves the fallback execution.  Keep its effective
     // provider in the stable telemetry vocabulary rather than promoting an
     // implementation detail (butterfly) into provider identity.
+    const int64_t elapsed_us = reduce_elapsed_us();
     write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
-                fallback_depth);
+                fallback_depth, elapsed_us);
 }
 
 void ggml_hip_reduce_telemetry_fallback_context(
@@ -242,6 +263,7 @@ void ggml_hip_reduce_telemetry_fallback_context(
             devices, device_count, tensors, requested_provider,
             explicitly_requested_meta ? "none" : handoff,
             explicitly_requested_meta ? 0 : fallback_depth);
+    g_reduce_timer_active = false;
 }
 
 #endif

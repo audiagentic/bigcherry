@@ -36,7 +36,7 @@ def _blas():
 
 def _split(event_id="evt-1"):
     return {"kind": "split_reduce_observation", "event_id": event_id,
-            "timestamp_us": 1, "requested_provider": "rccl",
+            "timestamp_us": 1, "elapsed_us": 1, "requested_provider": "rccl",
             "effective_provider": "rccl", "handoff": "none", "fallback_depth": 0,
             "element_count": 64, "element_type": "F32", "device_count": 2,
             "devices": [0, 1],
@@ -131,6 +131,7 @@ def test_rejects_invalid_handoff_topology(tmp_path):
 @pytest.mark.parametrize("field, value, message", [
     ("timestamp_us", 0, "timestamp_us must be positive"),
     ("timestamp_us", -1, "timestamp_us must be a non-negative integer"),
+    ("elapsed_us", -1, "elapsed_us must be a non-negative integer"),
     ("device_count", 1, "device_count must be at least 2"),
     ("devices", [], "device_count does not match devices"),
 ])
@@ -146,6 +147,7 @@ def test_normalizes_split_timestamp_and_device_count(tmp_path):
     result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
     observation = result["split_reduce"][0]
     assert observation["timestamp_us"] == 1
+    assert observation["elapsed_us"] == 1
     assert observation["device_count"] == 2
     assert observation["reduction_signature_key"] == (
         "split_reduce:v1:F32:64:64,1,1,1:n2:peer1111")

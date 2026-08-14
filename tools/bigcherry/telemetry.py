@@ -207,6 +207,9 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     # record cannot establish collective topology and must not enter later
     # attribution or tuning analysis.
     timestamp_us = _positive(row.get("timestamp_us"), "timestamp_us", where)
+    elapsed_us = None
+    if "elapsed_us" in row:
+        elapsed_us = _nonnegative(row.get("elapsed_us"), "elapsed_us", where)
     requested = _text(row.get("requested_provider"), "requested_provider", where)
     effective = _text(row.get("effective_provider"), "effective_provider", where)
     handoff = _text(row.get("handoff"), "handoff", where)
@@ -253,6 +256,8 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     key = event_id or f"split:{timestamp_us}:{requested}:{effective}:{devices}"
     normalized = {**row, "timestamp_us": timestamp_us, "device_count": count,
                   "devices": list(devices), "event_id": event_id}
+    if elapsed_us is not None:
+        normalized["elapsed_us"] = elapsed_us
     normalized["reduction_signature"] = {
         "version": 1, "element_count": element_count, "element_type": element_type,
         "slice_shape": list(shape), "topology_key": topology_key,

@@ -51,6 +51,7 @@ def test_meta_boundary_records_actual_handoff():
 def test_observation_is_telemetry_only_and_has_shape_and_topology():
     assert '"kind\\":\\"split_reduce_observation' in TELEMETRY
     assert '"element_count\\":%lld' in TELEMETRY
+    assert '"elapsed_us\\":%lld' in TELEMETRY
     assert '"device_count\\":%zu' in TELEMETRY
     assert '"devices\\":["' in TELEMETRY
     assert "GGML_HIP_REDUCE_TELEMETRY" in TELEMETRY
@@ -60,6 +61,7 @@ def test_observation_is_telemetry_only_and_has_shape_and_topology():
     assert '"\\"slice_shape\\":[%lld,%lld,%lld,%lld]' in TELEMETRY
     assert "hipDeviceCanAccessPeer" in TELEMETRY
     assert "topology_key" in TELEMETRY
+    assert "steady_clock" in TELEMETRY
 
 
 def test_telemetry_normalizes_labels_and_null_topology():
