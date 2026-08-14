@@ -409,8 +409,9 @@ PATCH = FilePatch(
             mode="replace",
             text=('    const char * bigcherry_effective_call_api = "unknown";\n'
                   '    const char * bigcherry_execution_options = "native";'),
-            guard=r"bigcherry_effective_call_api\s+const char \* bigcherry_execution_options",
-            applies_if=r"bigcherry_effective_call_api",
+            guard=(r'const char \* bigcherry_effective_call_api = "unknown";\n'
+                    r'\s+const char \* bigcherry_execution_options = "native";'),
+            applies_if=r"bigcherry_effective_call_api\s+const char \* bigcherry_execution_options",
         ),
         Edit(
             id="blas-metadata-state-migrate-execution-options",

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
+from dataclasses import replace
 from pathlib import Path
+
+from bigcherry.patcher import apply_patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -149,3 +153,41 @@ def test_already_applied_vendor_hooks_have_idempotent_migrations():
     assert "options_valid" in PATCH
     assert 'bigcherry_execution_options = "native"' in PATCH
     assert "bigcherry_execution_options = \"f16_temp\"" in PATCH
+
+
+def test_metadata_state_migrations_handle_old_malformed_and_repeat_shapes():
+    spec = importlib.util.spec_from_file_location(
+        "bigcherry_hi17_patch", ROOT / "patches/0200_dispatch_hook.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    edit_ids = {
+        "blas-metadata-state-migrate-malformed-execution-options",
+        "blas-metadata-state-migrate-execution-options",
+    }
+    state_patch = replace(
+        module.PATCH,
+        edits=tuple(edit for edit in module.PATCH.edits if edit.id in edit_ids),
+    )
+    old = (
+        "#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
+        "    const char * bigcherry_effective_call_api = \"unknown\";\n"
+        "#endif\n"
+    )
+    repaired = (
+        "#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
+        "    const char * bigcherry_effective_call_api    const char * "
+        "bigcherry_execution_options = \"native\";\n"
+        " = \"unknown\";\n"
+        "#endif\n"
+    )
+    for source in (old, repaired):
+        view = {state_patch.path: source}
+        result = apply_patch(state_patch, ROOT, dry_run=True, texts=view)
+        assert result.ok
+        assert view[state_patch.path].count(
+            'const char * bigcherry_execution_options = "native";') == 1
+        before = view[state_patch.path]
+        repeated = apply_patch(state_patch, ROOT, dry_run=True, texts=view)
+        assert repeated.ok
+        assert view[state_patch.path] == before
