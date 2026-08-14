@@ -99,13 +99,55 @@ topology_observation observe_topology(const int * devices, size_t device_count) 
     return result;
 }
 
-int64_t reduce_elapsed_us() {
+bool reduce_sync_requested() {
+    const char * value = std::getenv("GGML_HIP_REDUCE_TIMING");
+    if (value == nullptr) {
+        return false;
+    }
+    const std::string mode(value);
+    return mode == "sync" || mode == "synchronized" || mode == "1" || mode == "true";
+}
+
+bool synchronize_reduce_devices(const int * devices, size_t device_count) {
+    if (devices == nullptr || device_count == 0) {
+        return false;
+    }
+    int previous_device = -1;
+    if (hipGetDevice(&previous_device) != hipSuccess) {
+        return false;
+    }
+    bool ok = true;
+    for (size_t i = 0; i < device_count; ++i) {
+        if (hipSetDevice(devices[i]) != hipSuccess || hipDeviceSynchronize() != hipSuccess) {
+            ok = false;
+            break;
+        }
+    }
+    if (previous_device >= 0 && hipSetDevice(previous_device) != hipSuccess) {
+        ok = false;
+    }
+    return ok;
+}
+
+struct reduce_timing {
+    int64_t elapsed_us = 0;
+    const char * mode = "host_control";
+};
+
+reduce_timing reduce_elapsed_us(const int * devices, size_t device_count,
+                                bool synchronize) {
+    reduce_timing result;
+    if (synchronize && reduce_sync_requested()) {
+        result.mode = synchronize_reduce_devices(devices, device_count)
+            ? "device_synchronized" : "sync_failed";
+    }
     if (!g_reduce_timer_active) {
-        return 0;
+        return result;
     }
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - g_reduce_start).count();
-    return std::max<int64_t>(0, elapsed);
+    result.elapsed_us = std::max<int64_t>(0, elapsed);
+    return result;
 }
 
 ggml_hip_reduce_signature_v1 make_signature(
@@ -140,7 +182,7 @@ void write_event(const int * devices,
                  const char * effective,
                  const char * handoff,
                  size_t fallback_depth,
-                 int64_t elapsed_us) {
+                 const reduce_timing & timing) {
     const char * path = telemetry_path();
     if (path == nullptr || tensors == nullptr || tensors[0] == nullptr) {
         return;
@@ -168,6 +210,7 @@ void write_event(const int * devices,
     std::fprintf(file,
         "{\"kind\":\"split_reduce_observation\",\"timestamp_us\":%lld,"
         "\"elapsed_us\":%lld,"
+        "\"timing_mode\":\"%s\","
         "\"requested_provider\":\"%s\",\"effective_provider\":\"%s\","
         "\"handoff\":\"%s\",\"fallback_depth\":%zu,"
         "\"element_count\":%lld,\"element_type\":\"%s\","
@@ -176,7 +219,7 @@ void write_event(const int * devices,
         "\"slice_shape\":[%lld,%lld,%lld,%lld],\"topology_key\":\"%s\","
         "\"peer_access\":\"%s\"},"
         "\"device_count\":%zu,\"devices\":[",
-        timestamp, static_cast<long long>(std::max<int64_t>(0, elapsed_us)),
+        timestamp, static_cast<long long>(timing.elapsed_us), timing.mode,
         provider_label(requested), provider_label(effective),
         handoff_label(handoff), normalized_fallback_depth,
         static_cast<long long>(signature.element_count), signature.element_type,
@@ -203,11 +246,12 @@ void ggml_hip_reduce_telemetry_provider(
         const char * requested_provider,
         const char * effective_provider,
         bool provider_succeeded) {
-    const int64_t elapsed_us = reduce_elapsed_us();
+    const reduce_timing timing = reduce_elapsed_us(
+        devices, device_count, provider_succeeded);
     write_event(devices, device_count, tensors, requested_provider,
                 provider_succeeded ? effective_provider : "provider_declined",
                 provider_succeeded ? "none" : "provider_declined_handoff_meta",
-                provider_succeeded ? 0 : 1, elapsed_us);
+                provider_succeeded ? 0 : 1, timing);
     if (provider_succeeded) {
         g_reduce_timer_active = false;
     }
@@ -240,9 +284,9 @@ void ggml_hip_reduce_telemetry_fallback(
     // The meta backend proves the fallback execution.  Keep its effective
     // provider in the stable telemetry vocabulary rather than promoting an
     // implementation detail (butterfly) into provider identity.
-    const int64_t elapsed_us = reduce_elapsed_us();
+    const reduce_timing timing = reduce_elapsed_us(devices, device_count, true);
     write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
-                fallback_depth, elapsed_us);
+                fallback_depth, timing);
 }
 
 void ggml_hip_reduce_telemetry_fallback_context(

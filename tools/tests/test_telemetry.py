@@ -37,7 +37,8 @@ def _blas():
 
 def _split(event_id="evt-1"):
     return {"kind": "split_reduce_observation", "event_id": event_id,
-            "timestamp_us": 1, "elapsed_us": 1, "requested_provider": "rccl",
+            "timestamp_us": 1, "elapsed_us": 1, "timing_mode": "device_synchronized",
+            "requested_provider": "rccl",
             "effective_provider": "rccl", "handoff": "none", "fallback_depth": 0,
             "element_count": 64, "element_type": "F32", "device_count": 2,
             "devices": [0, 1],
@@ -178,6 +179,7 @@ def test_normalizes_successful_rccl_as_promotable_nccl_identity(tmp_path):
     assert observation["effective_algorithm"] == "nccl"
     assert observation["fallback_policy"] == "none"
     assert observation["candidate_identity"] == "split_reduce:nccl:none:v1"
+    assert observation["timing_mode"] == "device_synchronized"
     assert observation["promotable"] is True
 
 
@@ -189,6 +191,22 @@ def test_normalizes_auto_plan_against_effective_rccl(tmp_path):
     assert observation["preferred_algorithm"] == "auto"
     assert observation["effective_algorithm"] == "nccl"
     assert observation["promotable"] is True
+
+
+def test_host_control_timing_is_not_promotable(tmp_path):
+    row = _split("evt-host-control")
+    row["timing_mode"] = "host_control"
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+    assert observation["timing_mode"] == "host_control"
+    assert observation["promotable"] is False
+
+
+def test_rejects_unknown_reduction_timing_mode(tmp_path):
+    row = _split("evt-bad-timing")
+    row["timing_mode"] = "device_event"
+    with pytest.raises(TelemetryError, match="timing_mode"):
+        load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
 
 
 def test_normalizes_explicit_meta_plan_as_successful_none_policy(tmp_path):
