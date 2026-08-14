@@ -301,6 +301,10 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
     at all) has never been through that gate and has no business on
     production's hot path.
 
+    A measurement_failure row is never exportable, including when its
+    recorded winner is native: it is terminal evidence that the tuning
+    experiment did not produce a trustworthy replay decision.
+
     Aborts the whole export rather than silently dropping the offending
     entries: a cache silently missing entries the operator expected to see
     is a worse failure than a build that stops and says exactly why. The
@@ -312,6 +316,10 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
     """
     violations = []
     for digest_hex, record in entries.items():
+        if record.get("measurement_failure") is True:
+            violations.append((digest_hex, record.get("winner"),
+                               "measurement_failure"))
+            continue
         winner = record.get("winner")
         native = record.get("native")
         if winner == native:
@@ -325,8 +333,9 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
         )
         more = f"\n  ... and {len(violations) - 20} more" if len(violations) > 20 else ""
         raise SystemExit(
-            f"refusing to export: {len(violations)} non-native winner(s) lack "
-            f"promotion_status=='promoted' (run `bigcherry tune-promote` first):\n"
+            f"refusing to export: {len(violations)} unsafe measurement result(s) "
+            f"lack a valid replay promotion gate (failed measurements are never "
+            f"exportable):\n"
             f"{shown}{more}"
         )
 
