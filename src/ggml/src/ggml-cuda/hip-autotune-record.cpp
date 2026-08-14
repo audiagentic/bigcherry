@@ -27,6 +27,8 @@ struct Observation {
     std::string     canonical_json;
     std::string     hardware_json;
     std::string     native_stable_name;
+    std::string     resolved_stable_name;
+    std::string     resolution_source;
     // Telemetry only: these describe the established BLAS wrapper hook and
     // never participate in signature or dispatch identity.
     std::string     effective_api;
@@ -113,6 +115,8 @@ void ggml_hip_record_observation(
         const ggml_hip_digest & signature_digest,
         const ggml_hip_digest & hardware_digest,
         const ggml_hip_native_selection & native,
+        const ggml_hip_candidate_descriptor * resolved_candidate,
+        const char * resolution_source,
         const char * effective_api,
         size_t workspace_bytes) {
     PairKey key;
@@ -130,6 +134,18 @@ void ggml_hip_record_observation(
                       ctx.device) == found->second.devices.end()) {
             found->second.devices.push_back(ctx.device);
         }
+        if (found->second.resolved_stable_name.empty() &&
+                resolved_candidate != nullptr) {
+            found->second.resolved_stable_name =
+                resolved_candidate->stable_name;
+        }
+        const char * source = resolution_source != nullptr
+            ? resolution_source : "unknown";
+        if (found->second.resolution_source.empty()) {
+            found->second.resolution_source = source;
+        } else if (found->second.resolution_source != source) {
+            found->second.resolution_source = "mixed";
+        }
         g_active_key = key;
         g_has_active_key = true;
         return;
@@ -142,6 +158,10 @@ void ggml_hip_record_observation(
     observation.hardware_json      = ggml_hip_hardware_json(hw);
     observation.native_stable_name = native.candidate != nullptr
         ? native.candidate->stable_name : "";
+    observation.resolved_stable_name = resolved_candidate != nullptr
+        ? resolved_candidate->stable_name : "";
+    observation.resolution_source = resolution_source != nullptr
+        ? resolution_source : "unknown";
     observation.effective_api     = effective_api != nullptr ? effective_api : "";
     observation.workspace_bytes   = (uint64_t) workspace_bytes;
     observation.calls              = 1;
@@ -186,6 +206,11 @@ void ggml_hip_record_effective_call_api(const char * api) {
     if (found != g_observations.end()) {
         found->second.effective_call_api = api;
     }
+}
+
+void ggml_hip_record_end_observation() {
+    g_active_key = {};
+    g_has_active_key = false;
 }
 
 void ggml_hip_record_blas_metadata(const ggml_hip_blas_observation_v1 & metadata) {
@@ -272,7 +297,11 @@ void ggml_hip_record_flush() {
         const Observation & o = entry.second;
         fprintf(file,
                 "{\"kind\":\"observation\",\"signature\":\"%s\","
-                "\"hardware\":\"%s\",\"native\":\"%s\",\"calls\":%llu,"
+                "\"hardware\":\"%s\",\"native\":\"%s\","
+                "\"native_candidate\":\"%s\","
+                "\"resolved\":\"%s\","
+                "\"resolved_candidate\":\"%s\","
+                "\"resolution_source\":\"%s\",\"calls\":%llu,"
                 "\"est_bytes\":%llu,\"effective_api\":\"%s\","
                 "\"effective_call_api\":\"%s\","
                 "\"workspace_bytes\":%llu,\"blas_metadata\":{"
@@ -288,6 +317,10 @@ void ggml_hip_record_flush() {
                 ggml_hip_digest_hex(o.signature_digest).c_str(),
                 ggml_hip_digest_hex(o.hardware_digest).c_str(),
                 o.native_stable_name.c_str(),
+                o.native_stable_name.c_str(),
+                o.resolved_stable_name.c_str(),
+                o.resolved_stable_name.c_str(),
+                o.resolution_source.c_str(),
                 (unsigned long long) o.calls,
                 (unsigned long long) o.est_bytes,
                 o.effective_api.c_str(),

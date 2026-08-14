@@ -41,6 +41,8 @@ void ggml_hip_record_observation(
     const ggml_hip_digest & signature_digest,
     const ggml_hip_digest & hardware_digest,
     const ggml_hip_native_selection & native,
+    const ggml_hip_candidate_descriptor * resolved_candidate,
+    const char * resolution_source,
     const char * effective_api,
     size_t workspace_bytes);
 
@@ -66,6 +68,12 @@ void ggml_hip_record_touch(const ggml_hip_digest & signature_digest,
 // Record-only effective execution telemetry, called immediately before the
 // selected upstream BLAS API. It never reaches dispatch identity.
 void ggml_hip_record_effective_call_api(const char * api);
+
+// End the short-lived metadata binding for the dispatch currently being
+// launched.  The binding is thread-local because the vendor BLAS callbacks
+// run synchronously on the dispatching host thread; it must still be cleared
+// after every launch so a later callback cannot update an earlier signature.
+void ggml_hip_record_end_observation();
 
 // BLAS-0 observation diagnostics. These fields describe the effective native
 // call and never participate in signature, hardware, or dispatch identity.

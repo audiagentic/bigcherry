@@ -12,6 +12,8 @@ from bigcherry.patcher import apply_patch
 ROOT = Path(__file__).resolve().parents[2]
 DISPATCH = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-dispatch.cu").read_text(
     encoding="utf-8")
+RECORD = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-record.cpp").read_text(
+    encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-dispatch.cuh").read_text(
     encoding="utf-8")
 TYPES = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-types.h").read_text(
@@ -111,6 +113,31 @@ def test_shared_executor_terminates_at_the_existing_vendor_forwarder():
     assert "ggml_cuda_mul_mat_cublas_dispatch" in execute
     assert "ggml_hip_execute_blas_call" in DISPATCH
     assert "ggml_cuda_mul_mat_cublas_dispatch" in PATCH
+
+
+def test_forced_record_binds_resolved_candidate_and_clears_metadata_tls():
+    resolve = _between(
+        DISPATCH,
+        "ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(",
+        "void ggml_hip_dispatch_launch(",
+    )
+    launch = _between(
+        DISPATCH,
+        "void ggml_hip_dispatch_launch(",
+        "// ------------------------------------------------------------- entry point",
+    )
+    assert "bool forced_selected = false;" in resolve
+    assert "if (mode != GGML_HIP_DISPATCH_MODE_RECORD)" in resolve
+    assert "resolved.candidate, effective_api" in resolve
+    assert "const ggml_hip_candidate_descriptor * resolved_candidate" in RECORD
+    assert '\\"resolved_candidate\\":\\"%s\\"' in RECORD
+    assert '\\"resolution_source\\":\\"%s\\"' in RECORD
+    assert '"forced"' in resolve
+    assert "resolved.from_cache = false;" in resolve
+    assert "ggml_hip_record_end_observation();" in launch
+    assert launch.index("effective.launch(&effective, lc);") < launch.index(
+        "ggml_hip_record_end_observation();")
+    assert "g_has_active_key = false;" in RECORD
 
 
 def test_runtime_experiment_options_are_per_call_and_non_persistent():
