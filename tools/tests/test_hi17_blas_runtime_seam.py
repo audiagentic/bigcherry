@@ -82,6 +82,25 @@ def test_plan_application_validates_resolved_call_facts_before_execution():
     assert "GGML_UNUSED(call)" not in execute
 
 
+def test_release_build_guards_do_not_reach_vendor_launcher_after_resolution_failure():
+    launch = _between(DISPATCH, "void ggml_hip_blas_launch(",
+                      "size_t ggml_hip_blas_workspace(")
+    execute = _between(DISPATCH, "void ggml_hip_execute_blas_call(",
+                       "bool ggml_hip_blas_can_execute(")
+    assert "const bool resolved = ggml_hip_resolve_native_blas_call" in launch
+    assert "if (!resolved)" in launch
+    assert "const bool applied = ggml_hip_apply_blas_plan" in launch
+    assert "if (!applied)" in launch
+    assert "const bool call_is_valid = ggml_hip_blas_plan_matches_call" in execute
+    assert "if (!call_is_valid)" in execute
+    assert launch.index("if (!resolved)") < launch.index(
+        "const ggml_hip_blas_plan_v1 * plan")
+    assert launch.index("if (!applied)") < launch.index(
+        "ggml_hip_execute_blas_call(*lc.ctx, call, lc)")
+    assert execute.index("if (!call_is_valid)") < execute.index(
+        "ggml_cuda_mul_mat_cublas_dispatch(")
+
+
 def test_shared_executor_terminates_at_the_existing_vendor_forwarder():
     execute = _between(DISPATCH, "void ggml_hip_execute_blas_call(",
                        "bool ggml_hip_blas_can_execute(")
