@@ -41,6 +41,7 @@ struct Observation {
     std::string     blas_requested_precision;
     std::string     blas_effective_provider;
     std::string     blas_effective_backend;
+    std::string     blas_execution_options;
     uint64_t        blas_source_a_temp_bytes = 0;
     uint64_t        blas_source_b_temp_bytes = 0;
     uint64_t        blas_output_temp_bytes = 0;
@@ -219,6 +220,8 @@ void ggml_hip_record_blas_metadata(const ggml_hip_blas_observation_v1 & metadata
         ? metadata.effective_provider : "unknown";
     observation.blas_effective_backend = metadata.effective_backend != nullptr
         ? metadata.effective_backend : "unknown";
+    observation.blas_execution_options = metadata.execution_options != nullptr
+        ? metadata.execution_options : "unknown";
     observation.blas_source_a_temp_bytes = metadata.source_a_temp_bytes;
     observation.blas_source_b_temp_bytes = metadata.source_b_temp_bytes;
     observation.blas_output_temp_bytes = metadata.output_temp_bytes;
@@ -279,6 +282,7 @@ void ggml_hip_record_flush() {
                 "\"output_conversion\":\"%s\",\"requested_precision\":\"%s\","
                 "\"effective_call_api\":\"%s\","
                 "\"effective_provider\":\"%s\",\"effective_backend\":\"%s\","
+                "\"execution_options\":\"%s\","
                 "\"source_a_temp_bytes\":%llu,\"source_b_temp_bytes\":%llu,"
                 "\"output_temp_bytes\":%llu},\"devices\":[",
                 ggml_hip_digest_hex(o.signature_digest).c_str(),
@@ -295,6 +299,7 @@ void ggml_hip_record_flush() {
                 o.blas_output_conversion.c_str(), o.blas_requested_precision.c_str(),
                 o.effective_call_api.c_str(),
                 o.blas_effective_provider.c_str(), o.blas_effective_backend.c_str(),
+                o.blas_execution_options.c_str(),
                 (unsigned long long) o.blas_source_a_temp_bytes,
                 (unsigned long long) o.blas_source_b_temp_bytes,
                 (unsigned long long) o.blas_output_temp_bytes);

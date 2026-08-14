@@ -107,6 +107,7 @@ _BLAS_METADATA_STATE = """
     const char * bigcherry_source_b_conversion = "direct";
     const char * bigcherry_output_conversion = "direct";
     const char * bigcherry_effective_call_api = "unknown";
+    const char * bigcherry_execution_options = "native";
     size_t bigcherry_source_a_temp_bytes = 0;
     size_t bigcherry_source_b_temp_bytes = 0;
     size_t bigcherry_output_temp_bytes = 0;
@@ -129,6 +130,7 @@ _BLAS_METADATA_HOOK = """
         bigcherry_effective_call_api,
         "hipblas",
         "unknown",
+        bigcherry_execution_options,
         (uint64_t) bigcherry_source_a_temp_bytes,
         (uint64_t) bigcherry_source_b_temp_bytes,
         (uint64_t) bigcherry_output_temp_bytes,
@@ -304,11 +306,25 @@ PATCH = FilePatch(
 #ifdef GGML_HIP_DISPATCH
     if (execution_options != nullptr) {
         const auto * options = static_cast<const ggml_hip_blas_execution_options_v1 *>(execution_options);
-        GGML_ASSERT(options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16);
-        GGML_ASSERT(options->output_type == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16);
-        GGML_ASSERT(options->output_conversion == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32);
-        GGML_ASSERT(options->output_temp_bytes == ne_dst * sizeof(half));
-        prefer_f32_output = false;
+        const bool options_valid =
+            options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16 &&
+            options->output_type == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16 &&
+            options->output_conversion == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32 &&
+            options->output_temp_bytes == ne_dst * sizeof(half);
+        GGML_ASSERT(options_valid);
+        if (options_valid) {
+            prefer_f32_output = false;
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_execution_options = "f16_temp";
+#endif
+        } else {
+            // Release builds must not silently execute a malformed option
+            // payload as if the experiment had been applied.
+            execution_options = nullptr;
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_execution_options = "rejected";
+#endif
+        }
     }
 #else
     GGML_UNUSED(execution_options);

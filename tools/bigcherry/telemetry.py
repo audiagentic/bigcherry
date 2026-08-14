@@ -29,6 +29,7 @@ _BLAS_CONVERSIONS = {"direct", "contiguous", "non_contiguous"}
 _BLAS_OUTPUT_CONVERSIONS = {"direct", "temporary_to_f32"}
 _BLAS_PROVIDERS = {"hipblas", "unknown"}
 _BLAS_BACKENDS = {"unknown", "rocblas", "hipblaslt"}
+_BLAS_EXECUTION_OPTIONS = {"native", "f16_temp", "rejected", "unknown"}
 _REDUCTION_ALGORITHM_ALIASES = {
     # The runtime telemetry calls the RCCL-backed implementation "rccl";
     # HI18's candidate identity names the algorithm "nccl" after the
@@ -110,6 +111,8 @@ def _validate_blas_metadata(row: dict[str, Any], where: str) -> dict[str, Any]:
         "effective_call_api": _text(metadata.get("effective_call_api"), "effective_call_api", where),
         "effective_provider": _text(metadata.get("effective_provider"), "effective_provider", where),
         "effective_backend": _text(metadata.get("effective_backend"), "effective_backend", where),
+        "execution_options": _text(metadata.get("execution_options", "unknown"),
+                                    "execution_options", where),
         "source_a_temp_bytes": _nonnegative(metadata.get("source_a_temp_bytes"), "source_a_temp_bytes", where),
         "source_b_temp_bytes": _nonnegative(metadata.get("source_b_temp_bytes"), "source_b_temp_bytes", where),
         "output_temp_bytes": _nonnegative(metadata.get("output_temp_bytes"), "output_temp_bytes", where),
@@ -126,6 +129,8 @@ def _validate_blas_metadata(row: dict[str, Any], where: str) -> dict[str, Any]:
         raise TelemetryError(f"{where}: unsupported effective_provider")
     if normalized["effective_backend"] not in _BLAS_BACKENDS:
         raise TelemetryError(f"{where}: unsupported effective_backend")
+    if normalized["execution_options"] not in _BLAS_EXECUTION_OPTIONS:
+        raise TelemetryError(f"{where}: unsupported execution_options")
     return normalized
 
 
