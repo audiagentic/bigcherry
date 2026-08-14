@@ -153,6 +153,13 @@ bool ggml_hip_apply_blas_plan(
     const ggml_hip_blas_plan_v1 * plan,
     ggml_hip_blas_call_v1 * call);
 
+// Validate the resolved call and, when present, the native-only plan before
+// the shared vendor forwarder is entered.  A null plan is the ordinary native
+// fallback; it still requires a well-formed resolved call.
+bool ggml_hip_blas_plan_matches_call(
+    const ggml_hip_blas_plan_v1 * plan,
+    const ggml_hip_blas_call_v1 * call);
+
 void ggml_hip_execute_blas_call(
     ggml_backend_cuda_context & ctx,
     const ggml_hip_blas_call_v1 & call,

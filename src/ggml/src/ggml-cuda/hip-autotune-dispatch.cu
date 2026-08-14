@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <limits>
 #include <unordered_map>
 
 #ifdef GGML_HIP_AUTOTUNE_RECORD
@@ -1318,40 +1319,108 @@ bool ggml_hip_resolve_native_blas_call(
     return true;
 }
 
+namespace {
+
+bool ggml_hip_blas_call_is_well_formed(
+        const ggml_hip_blas_call_v1 & call) {
+    if (call.operand_type > GGML_HIP_BLAS_OPERAND_BF16 ||
+        call.accumulation_type > GGML_HIP_BLAS_ACCUMULATION_F32 ||
+        call.output_type > GGML_HIP_BLAS_OUTPUT_F32 ||
+        call.source_a_conversion > GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS ||
+        call.source_b_conversion > GGML_HIP_BLAS_CONVERSION_NON_CONTIGUOUS ||
+        call.output_conversion > GGML_HIP_BLAS_OUTPUT_CONVERSION_TEMPORARY_TO_F32 ||
+        call.numerical_class > GGML_HIP_BLAS_NUMERICAL_REDUCED ||
+        call.api > GGML_HIP_BLAS_API_POINTER_BATCHED ||
+        call.m <= 0 || call.n <= 0 || call.k <= 0 || call.batch_count <= 0 ||
+        call.lda <= 0 || call.ldb <= 0 || call.ldc <= 0 ||
+        call.stride_a < 0 || call.stride_b < 0 || call.stride_c < 0) {
+        return false;
+    }
+    if (call.strict_precision &&
+        call.numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE) {
+        return false;
+    }
+    if ((call.source_a_conversion == GGML_HIP_BLAS_CONVERSION_NONE &&
+            call.source_a_temp_bytes != 0) ||
+        (call.source_b_conversion == GGML_HIP_BLAS_CONVERSION_NONE &&
+            call.source_b_temp_bytes != 0) ||
+        (call.output_conversion == GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE &&
+            call.output_temp_bytes != 0)) {
+        return false;
+    }
+
+    size_t expected_workspace = call.source_a_temp_bytes;
+    if (expected_workspace > std::numeric_limits<size_t>::max() -
+            call.source_b_temp_bytes) {
+        return false;
+    }
+    expected_workspace += call.source_b_temp_bytes;
+    if (expected_workspace > std::numeric_limits<size_t>::max() -
+            call.output_temp_bytes) {
+        return false;
+    }
+    expected_workspace += call.output_temp_bytes;
+    if (call.api == GGML_HIP_BLAS_API_POINTER_BATCHED) {
+        const size_t batch_count = static_cast<size_t>(call.batch_count);
+        constexpr size_t pointer_bytes = 3 * sizeof(void *);
+        if (batch_count > std::numeric_limits<size_t>::max() / pointer_bytes) {
+            return false;
+        }
+        const size_t pointer_workspace = batch_count * pointer_bytes;
+        if (expected_workspace > std::numeric_limits<size_t>::max() -
+                pointer_workspace) {
+            return false;
+        }
+        expected_workspace += pointer_workspace;
+    }
+    return call.workspace_bytes == expected_workspace;
+}
+
+} // namespace
+
+bool ggml_hip_blas_plan_matches_call(
+        const ggml_hip_blas_plan_v1 * plan,
+        const ggml_hip_blas_call_v1 * call) {
+    if (call == nullptr || !ggml_hip_blas_call_is_well_formed(*call)) {
+        return false;
+    }
+    if (plan == nullptr) {
+        return true;
+    }
+
+    // The first runtime plan is native-only. Native/none fields deliberately
+    // defer the actual datatype and conversion route to the vendor resolver;
+    // they do not authorize an invented alternative launcher. The numerical
+    // class is not deferred because strict precision must remain fail-closed.
+    const bool native_only =
+        plan->operand_type == GGML_HIP_BLAS_OPERAND_NATIVE &&
+        plan->accumulation_type == GGML_HIP_BLAS_ACCUMULATION_NATIVE &&
+        plan->output_type == GGML_HIP_BLAS_OUTPUT_NATIVE &&
+        plan->source_a_conversion == GGML_HIP_BLAS_CONVERSION_NONE &&
+        plan->source_b_conversion == GGML_HIP_BLAS_CONVERSION_NONE &&
+        plan->output_conversion == GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE &&
+        plan->numerical_class == GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE;
+    return native_only && !call->has_ids &&
+        call->numerical_class == GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE;
+}
+
 bool ggml_hip_apply_blas_plan(
         const ggml_hip_blas_plan_v1 * plan, ggml_hip_blas_call_v1 * call) {
     if (call == nullptr) {
         return false;
     }
+    if (!ggml_hip_blas_plan_matches_call(plan, call)) {
+        call->plan = nullptr;
+        return false;
+    }
     call->plan = plan;
-    if (plan == nullptr) {
-        return true;
-    }
-    // The first runtime slice is deliberately a native-only plan. It proves
-    // the transport and shared launcher without adding a faster BLAS variant.
-    if (call->has_ids ||
-        plan->operand_type != GGML_HIP_BLAS_OPERAND_NATIVE ||
-        plan->accumulation_type != GGML_HIP_BLAS_ACCUMULATION_NATIVE ||
-        plan->output_type != GGML_HIP_BLAS_OUTPUT_NATIVE ||
-        plan->source_a_conversion != GGML_HIP_BLAS_CONVERSION_NONE ||
-        plan->source_b_conversion != GGML_HIP_BLAS_CONVERSION_NONE ||
-        plan->output_conversion != GGML_HIP_BLAS_OUTPUT_CONVERSION_NONE ||
-        plan->numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE) {
-        call->plan = nullptr;
-        return false;
-    }
-    if (call->strict_precision &&
-        plan->numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE) {
-        call->plan = nullptr;
-        return false;
-    }
     return true;
 }
 
 void ggml_hip_execute_blas_call(
         ggml_backend_cuda_context & ctx, const ggml_hip_blas_call_v1 & call,
         const ggml_hip_launch_context & lc) {
-    GGML_UNUSED(call);
+    GGML_ASSERT(ggml_hip_blas_plan_matches_call(call.plan, &call));
     // Native fallback and forced-native both terminate here. The vendor
     // launcher remains the authority for exact cuBLAS arguments and its four
     // Sgemm/GemmEx/batched branches; the resolved call above records those
