@@ -33,6 +33,12 @@ class PromotionGateTests(unittest.TestCase):
         entries = {"a" * 32: entry("a" * 32, "native", "native")}
         replay_cache._validate_promotion_gate(entries)  # must not raise
 
+    def test_failed_native_measurement_cannot_export(self):
+        entries = {"a" * 32: entry("a" * 32, "native", "native",
+                                   measurement_failure=True)}
+        with self.assertRaisesRegex(SystemExit, "measurement_failure"):
+            replay_cache._validate_promotion_gate(entries)
+
     def test_promoted_non_native_exports(self):
         entries = {"a" * 32: entry("a" * 32, "candidate", "native",
                                    promotion_status="promoted")}
@@ -74,7 +80,7 @@ class PromotionGateTests(unittest.TestCase):
             "d" * 32: entry("d" * 32, "candidate", "native",
                             promotion_status="rejected_bh"),
         }
-        with self.assertRaisesRegex(SystemExit, "2 non-native winner"):
+        with self.assertRaisesRegex(SystemExit, "2 unsafe measurement result"):
             replay_cache._validate_promotion_gate(entries)
 
 

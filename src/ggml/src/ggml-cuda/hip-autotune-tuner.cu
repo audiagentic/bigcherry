@@ -986,6 +986,9 @@ double g_host_sync_overhead_us = -1.0;
 bool g_host_sync_overhead_valid = false;
 
 double host_sync_overhead_us(cudaStream_t stream) {
+    if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        return 0.0;
+    }
     if (g_host_sync_overhead_valid && g_host_sync_overhead_us >= 0.0) {
         return g_host_sync_overhead_us;
     }
@@ -999,12 +1002,18 @@ double host_sync_overhead_us(cudaStream_t stream) {
         const bool b_ok = hip_event_destroy_checked(b, "hipEventDestroy(overhead stop)");
         return a_ok && b_ok;
     };
-    if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
+    auto fail_measurement = [&]() {
+        disable_smi_after_measurement_failure();
+        g_host_sync_overhead_us = -1.0;
+        g_host_sync_overhead_valid = false;
         return 0.0;
+    };
+    if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
+        return fail_measurement();
     }
     if (!hip_ok(hipEventCreate(&b), "hipEventCreate(overhead stop)")) {
-        destroy_events();
-        return 0.0;
+        (void) destroy_events();
+        return fail_measurement();
     }
     std::vector<double> samples;
     for (int i = 0; i < 20; ++i) {
@@ -1012,22 +1021,18 @@ double host_sync_overhead_us(cudaStream_t stream) {
         if (!hip_ok(hipEventRecord(a, stream), "hipEventRecord(overhead start)")
                 || !hip_ok(hipEventRecord(b, stream), "hipEventRecord(overhead stop)")
                 || !hip_ok(hipEventSynchronize(b), "hipEventSynchronize(overhead)")) {
-            destroy_events();
-            return 0.0;
+            (void) destroy_events();
+            return fail_measurement();
         }
         samples.push_back((double) (ggml_time_us() - t0));
     }
     const bool destroy_ok = destroy_events();
     if (!destroy_ok || samples.empty()) {
-        g_host_sync_overhead_us = -1.0;
-        g_host_sync_overhead_valid = false;
-        return 0.0;
+        return fail_measurement();
     }
     const double overhead = median_of(samples);
     if (!std::isfinite(overhead) || overhead < 0.0) {
-        g_host_sync_overhead_us = -1.0;
-        g_host_sync_overhead_valid = false;
-        return 0.0;
+        return fail_measurement();
     }
     g_host_sync_overhead_us = overhead;
     g_host_sync_overhead_valid = true;
@@ -1619,6 +1624,19 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         result.device_clock_drift_json = device_clock_drift_json(
             result.device_state_pre, result.device_state_post);
     };
+    auto record_measurement_failure = [&](Measurement * measurement,
+                                          const char * reason) {
+        if (measurement != nullptr) {
+            measurement->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+        }
+        result.measurement_failure = true;
+        result.winner = native.candidate;
+        result.improvement_pct = 0.0;
+        result.promotion_status = "native";
+        result.reason = reason;
+        capture_device_state_post();
+        record_result(dispatch_digest, result);
+    };
 
     // --- scratch destinations -------------------------------------------
     //
@@ -1678,9 +1696,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         native_m->measured       = true;
         ++result.measured;
 
-        CUDA_CHECK(hipMemcpyAsync(reference_host.data(), reference_buf.get(),
-                                  dst_bytes, hipMemcpyDeviceToHost, lc.stream));
-        CUDA_CHECK(hipStreamSynchronize(lc.stream));
+        if (!hip_ok(hipMemcpyAsync(reference_host.data(), reference_buf.get(),
+                                   dst_bytes, hipMemcpyDeviceToHost, lc.stream),
+                    "hipMemcpyAsync(reference)")
+                || !hip_ok(hipStreamSynchronize(lc.stream),
+                           "hipStreamSynchronize(reference)")) {
+            disable_smi_after_measurement_failure();
+            record_measurement_failure(native_m,
+                "native correctness copy failed; tuning experiment poisoned");
+            return native.candidate;
+        }
     }
 
     // --- screening (standards 11.4) -------------------------------------
@@ -1701,9 +1726,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             return native.candidate;
         }
 
-        CUDA_CHECK(hipMemcpyAsync(candidate_host.data(), candidate_buf.get(),
-                                  dst_bytes, hipMemcpyDeviceToHost, lc.stream));
-        CUDA_CHECK(hipStreamSynchronize(lc.stream));
+        if (!hip_ok(hipMemcpyAsync(candidate_host.data(), candidate_buf.get(),
+                                   dst_bytes, hipMemcpyDeviceToHost, lc.stream),
+                    "hipMemcpyAsync(candidate)")
+                || !hip_ok(hipStreamSynchronize(lc.stream),
+                           "hipStreamSynchronize(candidate)")) {
+            disable_smi_after_measurement_failure();
+            record_measurement_failure(m,
+                "candidate correctness copy failed; tuning experiment poisoned");
+            return native.candidate;
+        }
 
         double nmse = 0.0;
         double max_abs = 0.0;
@@ -1975,6 +2007,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // signatures).
     {
         const double sync_overhead = host_sync_overhead_us(lc.stream);
+        if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
+            record_measurement_failure(nullptr,
+                "host synchronization overhead failed; tuning experiment poisoned");
+            return native.candidate;
+        }
         for (Measurement * m : finalists) {
             if (!m->measured) continue;
             m->effective_us = effective_us_of(m->median_us, m->host_median_us,

@@ -323,6 +323,22 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         confirmation = tuner[tuner.index("const int rounds ="):tuner.index("// Confirmation is also a promotion gate")]
         self.assertIn("confirmation measurement failed; tuning experiment poisoned", confirmation)
 
+    def test_overhead_and_correctness_copy_failures_share_terminal_poison(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        overhead = tuner.index("double host_sync_overhead_us(")
+        overhead_end = tuner.index("double effective_us_of(", overhead)
+        self.assertIn("if (g_tuner_poisoned.load(std::memory_order_relaxed))", tuner[overhead:overhead_end])
+        self.assertIn("disable_smi_after_measurement_failure();", tuner[overhead:overhead_end])
+        for operation in (
+            '"hipMemcpyAsync(reference)"',
+            '"hipStreamSynchronize(reference)"',
+            '"hipMemcpyAsync(candidate)"',
+            '"hipStreamSynchronize(candidate)"',
+        ):
+            self.assertIn(operation, tuner)
+        self.assertIn("record_measurement_failure(native_m", tuner)
+        self.assertIn("record_measurement_failure(m", tuner)
+
     def test_first_candidate_attempt_is_durable_and_identified(self):
         tuner = TUNER.read_text(encoding="utf-8")
         resolve = tuner[tuner.index("const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("):]
