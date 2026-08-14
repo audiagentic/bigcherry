@@ -333,6 +333,42 @@ PATCH = FilePatch(
             guard=r"GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16",
         ),
         Edit(
+            id="blas-experiment-f16-output-route-migrate",
+            anchor=(r"(?s)^#ifdef GGML_HIP_DISPATCH\s+"
+                     r"if \(execution_options != nullptr\) \{.*?"
+                     r"#endif"),
+            rationale="migrate an already-applied HI17 vendor hook to explicit option validation and telemetry",
+            mode="replace",
+            text="""
+#ifdef GGML_HIP_DISPATCH
+    if (execution_options != nullptr) {
+        const auto * options = static_cast<const ggml_hip_blas_execution_options_v1 *>(execution_options);
+        const bool options_valid =
+            options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16 &&
+            options->output_type == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16 &&
+            options->output_conversion == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32 &&
+            options->output_temp_bytes == ne_dst * sizeof(half);
+        GGML_ASSERT(options_valid);
+        if (options_valid) {
+            prefer_f32_output = false;
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_execution_options = "f16_temp";
+#endif
+        } else {
+            execution_options = nullptr;
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+            bigcherry_execution_options = "rejected";
+#endif
+        }
+    }
+#else
+    GGML_UNUSED(execution_options);
+#endif
+""",
+            guard=r"bigcherry_execution_options = \"f16_temp\"",
+            applies_if=r"GGML_ASSERT\(options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16\)",
+        ),
+        Edit(
             id="blas-experiment-f16-impl-argument-f32",
             anchor=r"^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>\(ctx, src0, src1, dst\);$",
             rationale="carry the runtime-only option through the F32 native branch",
@@ -438,6 +474,15 @@ PATCH = FilePatch(
             mode="insert_before",
             text=_BLAS_METADATA_HOOK,
             guard=r"ggml_hip_record_blas_metadata\(",
+        ),
+        Edit(
+            id="blas-metadata-emission-migrate-execution-options",
+            anchor=r'^        \(uint64_t\) bigcherry_source_a_temp_bytes,',
+            rationale="migrate an already-applied BLAS metadata initializer to include runtime option state",
+            mode="insert_before",
+            text="        bigcherry_execution_options,\n",
+            guard=r"bigcherry_execution_options,\n        \(uint64_t\) bigcherry_source_a_temp_bytes",
+            applies_if=r'bigcherry_blas_metadata = \{[\s\S]*\(uint64_t\) bigcherry_source_a_temp_bytes',
         ),
         Edit(
             id="mul-mat-hook",

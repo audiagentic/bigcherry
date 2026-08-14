@@ -139,3 +139,10 @@ def test_runtime_experiment_options_are_per_call_and_non_persistent():
     assert "GGML_HIP_BLAS_EXPERIMENT" not in REPLAY
     assert "const ggml_hip_blas_execution_options_v1 * options" in PATCH
     assert "const void * execution_options" in PATCH
+
+
+def test_already_applied_vendor_hooks_have_idempotent_migrations():
+    assert "blas-experiment-f16-output-route-migrate" in PATCH
+    assert "blas-metadata-emission-migrate-execution-options" in PATCH
+    assert "options_valid" in PATCH
+    assert "bigcherry_execution_options = \"f16_temp\"" in PATCH
