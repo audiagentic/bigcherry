@@ -245,6 +245,10 @@ std::mutex g_mutex;
 // single-flight semantics: one measurement/publish, then all waiters observe
 // the committed winner.
 std::mutex g_single_flight_mutex;
+// A failed HIP measurement can leave the context poisoned. Once that happens,
+// no later candidate, correctness copy, final round, determinism check, or
+// device query may be treated as valid in this process.
+std::atomic<bool> g_tuner_poisoned{false};
 
 // UTC, second resolution, ISO-ish -- only used to name a journal experiment
 // uniquely per process, not parsed back by anything, so exact format is not
@@ -305,31 +309,36 @@ std::string journal_result_summary(
 // (inside hip-autotune-journal.cpp) guards the file handle -- holding
 // g_mutex across a filesystem fsync would serialise every concurrent
 // dispatch behind disk I/O for no reason.
+void open_tuning_journal_once(const ggml_hip_digest & hardware_digest) {
+    static std::atomic<bool> journal_open_attempted{false};
+    if (journal_open_attempted.exchange(true)) {
+        return;
+    }
+    const char * db_path = getenv("GGML_HIP_DISPATCH_DB");
+    if (db_path != nullptr && db_path[0] != '\0') {
+        const std::string journal_path = std::string(db_path) + ".journal.jsonl";
+        const std::string experiment_id = "tune-" + utc_timestamp();
+        if (!ggml_hip_journal_open(
+                journal_path.c_str(), experiment_id,
+                GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
+                GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR, hardware_digest)) {
+            GGML_LOG_WARN("bigcherry: cannot open tuning journal '%s'; "
+                          "a killed run will not be incrementally recoverable\n",
+                          journal_path.c_str());
+        }
+    }
+}
+
 void record_result(const ggml_hip_digest & dispatch_digest, const Result & result) {
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_results.emplace(dispatch_digest, result);
     }
 
-    // Lazy, attempt-once open: the common case (no GGML_HIP_DISPATCH_DB, or
-    // a tune run with journaling not requested) must cost nothing beyond
-    // this one atomic check on every subsequent call.
-    static std::atomic<bool> journal_open_attempted{false};
-    if (!journal_open_attempted.exchange(true)) {
-        const char * db_path = getenv("GGML_HIP_DISPATCH_DB");
-        if (db_path != nullptr && db_path[0] != '\0') {
-            const std::string journal_path = std::string(db_path) + ".journal.jsonl";
-            const std::string experiment_id = "tune-" + utc_timestamp();
-            if (!ggml_hip_journal_open(
-                    journal_path.c_str(), experiment_id,
-                    GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
-                    GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR, result.hardware_digest)) {
-                GGML_LOG_WARN("bigcherry: cannot open tuning journal '%s'; "
-                              "a killed run will not be incrementally recoverable\n",
-                              journal_path.c_str());
-            }
-        }
-    }
+    // The journal is opened at cold-path entry when the signature and hardware
+    // digests are first known, so this call is only a fallback for early result
+    // paths and remains attempt-once.
+    open_tuning_journal_once(result.hardware_digest);
     if (ggml_hip_journal_is_open()) {
         ggml_hip_journal_append_result(journal_result_summary(dispatch_digest, result));
     }
@@ -480,19 +489,18 @@ bool compare_outputs(const std::vector<float> & reference,
 // last line even when the process never executes another line of C++
 // afterward.
 //
-// Only writes once the journal is already open -- opening it here would need
-// a hardware digest that does not exist until a candidate has completed at
-// least once (see record_result), and plumbing that into this hot path for
-// a diagnostic-only feature is not worth it. Practical effect: the very
-// first candidate of a run has no attempt coverage; every candidate after
-// the first completed result does. Off by default (one getenv + atomic
-// check when unset) -- do not enable for a real tuning run, fsync-per-launch
+// The journal is opened at cold-path entry after the resolver computes the
+// signature and hardware digests, so the first candidate is traceable too.
+// Off by default (one getenv + atomic check when unset) -- do not enable for a
+// real tuning run, fsync-per-launch
 // is the wrong trade when nothing is crashing. Correlate against
 // `HIP_LAUNCH_BLOCKING=1`: without it, several launches can be in-flight on
 // the device ahead of the one that actually faults, and the last logged
 // attempt would name an innocent candidate that merely happened to be
 // dispatched most recently, not the one whose kernel corrupted memory.
-void trace_launch_attempt(const char * stable_name) {
+thread_local ggml_hip_digest g_trace_signature_digest = {};
+
+void trace_launch_attempt(const char * stable_name, const char * protocol_stage) {
     static std::atomic<bool> enabled{false};
     static std::atomic<bool> checked{false};
     if (!checked.exchange(true)) {
@@ -502,6 +510,8 @@ void trace_launch_attempt(const char * stable_name) {
     if (!enabled || !ggml_hip_journal_is_open()) return;
     const std::string payload =
         "{\"candidate\":\"" + std::string(stable_name ? stable_name : "(null)") +
+        "\",\"signature\":\"" + ggml_hip_digest_hex(g_trace_signature_digest) +
+        "\",\"stage\":\"" + std::string(protocol_stage ? protocol_stage : "unknown") +
         "\",\"t_us\":" + std::to_string(ggml_time_us()) + "}";
     ggml_hip_journal_append_attempt(payload);
 }
@@ -560,6 +570,7 @@ static bool hip_event_destroy_checked(hipEvent_t & event, const char * what) {
 std::atomic<bool> g_smi_runtime_disabled{false};
 
 static void disable_smi_after_measurement_failure() {
+    g_tuner_poisoned.store(true, std::memory_order_relaxed);
     g_smi_runtime_disabled.store(true, std::memory_order_relaxed);
     (void) hipGetLastError();
 }
@@ -575,12 +586,15 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     std::vector<double> & gpu_us,
                     std::vector<double> & host_us,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
-                    bool isolate_workspace = false,
-                    size_t * pool_peak_bytes = nullptr,
-                    const char * protocol_stage = nullptr) {
-    trace_launch_attempt(candidate ? candidate->stable_name : nullptr);
+                     bool isolate_workspace = false,
+                     size_t * pool_peak_bytes = nullptr,
+                     const char * protocol_stage = nullptr) {
     const char * stage = protocol_stage != nullptr
         ? protocol_stage : (isolate_workspace ? "isolated_workspace" : "final");
+    if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    trace_launch_attempt(candidate ? candidate->stable_name : nullptr, stage);
 
     hipEvent_t start = nullptr;
     hipEvent_t stop = nullptr;
@@ -1036,12 +1050,25 @@ bool launch_and_fetch(const ggml_hip_candidate_descriptor * candidate,
                       const ggml_hip_launch_context & lc,
                       void * dst_device, size_t dst_bytes,
                       std::vector<float> & out_host) {
+    if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        return false;
+    }
     ggml_hip_candidate_descriptor effective = *candidate;
     effective.launch(&effective, lc);
-    if (hipStreamSynchronize(lc.stream) != hipSuccess) return false;
-    if (hipGetLastError() != hipSuccess) return false;
-    return hipMemcpy(out_host.data(), dst_device, dst_bytes,
-                     hipMemcpyDeviceToHost) == hipSuccess;
+    if (hipStreamSynchronize(lc.stream) != hipSuccess) {
+        disable_smi_after_measurement_failure();
+        return false;
+    }
+    if (hipGetLastError() != hipSuccess) {
+        disable_smi_after_measurement_failure();
+        return false;
+    }
+    if (hipMemcpy(out_host.data(), dst_device, dst_bytes,
+                  hipMemcpyDeviceToHost) != hipSuccess) {
+        disable_smi_after_measurement_failure();
+        return false;
+    }
+    return true;
 }
 
 // E2: raw finalist samples as a JSON array, so a winner is recomputable
@@ -1429,6 +1456,19 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
+    if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        Result poisoned;
+        poisoned.winner = native.candidate;
+        poisoned.native_name = native.candidate ? native.candidate->stable_name : "";
+        poisoned.signature_digest = ggml_hip_signature_digest(sig);
+        poisoned.hardware_digest = ggml_hip_hardware_digest(hw);
+        poisoned.reason = "tuning disabled after fatal measurement failure";
+        poisoned.measurement_failure = true;
+        open_tuning_journal_once(poisoned.hardware_digest);
+        record_result(dispatch_digest, poisoned);
+        return native.candidate;
+    }
+
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
     const size_t resolved_production_index = resolve_production_policy_index(config);
     const bool active_policies_valid =
@@ -1455,6 +1495,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     result.signature_digest = ggml_hip_signature_digest(sig);
     result.hardware_digest  = ggml_hip_hardware_digest(hw);
     result.canonical_json   = ggml_hip_signature_json(sig, true);
+    g_trace_signature_digest = result.signature_digest;
+    open_tuning_journal_once(result.hardware_digest);
 
     // Held for the whole run, not just around each launch.
     //
@@ -1606,6 +1648,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                             config.pilot_samples, 1, pilot_gpu, pilot_host,
                             &ctx, true, nullptr)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+            result.measurement_failure = true;
             result.reason = "native pilot failed; run rejected";
             record_result(dispatch_digest, result);
             return native.candidate;
@@ -1622,6 +1665,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                             config.screen_samples, result.launches_per_sample,
                             gpu, host, &ctx, true, &native_m->pool_peak_bytes)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
+            result.measurement_failure = true;
             result.reason = "native failed to launch; run rejected";
             record_result(dispatch_digest, result);
             return native.candidate;
@@ -1651,7 +1695,10 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                             config.screen_samples, result.launches_per_sample,
                             gpu, host, &ctx, true, &m->pool_peak_bytes)) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
-            continue;
+            result.measurement_failure = true;
+            result.reason = "screening measurement failed; tuning experiment poisoned";
+            record_result(dispatch_digest, result);
+            return native.candidate;
         }
 
         CUDA_CHECK(hipMemcpyAsync(candidate_host.data(), candidate_buf.get(),
@@ -1743,11 +1790,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             const CounterbalancedRound measured = run_counterbalanced_round(
                 finalists, offset, reverse, lc, result.launches_per_sample, "final");
             record_retime_observation(result, measured);
-            if (measured.complete) {
-                for (size_t index = 0; index < finalists.size(); ++index) {
-                    finalists[index]->final_gpu_us[round]  = measured.gpu_us[index];
-                    finalists[index]->final_host_us[round] = measured.host_us[index];
-                }
+            if (!measured.complete) {
+                break;
+            }
+            for (size_t index = 0; index < finalists.size(); ++index) {
+                finalists[index]->final_gpu_us[round]  = measured.gpu_us[index];
+                finalists[index]->final_host_us[round] = measured.host_us[index];
             }
         }
         for (Measurement * m : finalists) {
@@ -1767,6 +1815,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             m->host_median_us = median_of(m->final_host_us);
             m->samples        = (int) finite_gpu.size();
         }
+    }
+
+    if (result.measurement_failure || g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        result.winner = native.candidate;
+        result.improvement_pct = 0.0;
+        result.promotion_status = "native";
+        result.reason = "tuning experiment poisoned; later measurements suppressed";
+        capture_device_state_post();
+        record_result(dispatch_digest, result);
+        return native.candidate;
     }
 
     if (result.retime_status == "unresolved") {
@@ -1879,11 +1937,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                     {pair[0], pair[1]}, 0, reverse, lc,
                     result.launches_per_sample, "final");
                 record_retime_observation(result, measured);
-                if (measured.complete) {
-                    for (int i = 0; i < 2; ++i) {
-                        g[i].push_back(measured.gpu_us[(size_t) i]);
-                        h[i].push_back(measured.host_us[(size_t) i]);
-                    }
+                if (!measured.complete) {
+                    break;
+                }
+                for (int i = 0; i < 2; ++i) {
+                    g[i].push_back(measured.gpu_us[(size_t) i]);
+                    h[i].push_back(measured.host_us[(size_t) i]);
                 }
             }
             for (int i = 0; i < 2; ++i) {
@@ -1895,6 +1954,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 pair[i]->samples        = (int) g[i].size();
             }
         }
+    }
+
+    if (result.measurement_failure || g_tuner_poisoned.load(std::memory_order_relaxed)) {
+        result.winner = native.candidate;
+        result.improvement_pct = 0.0;
+        result.promotion_status = "native";
+        result.reason = "tuning experiment poisoned; later measurements suppressed";
+        capture_device_state_post();
+        record_result(dispatch_digest, result);
+        return native.candidate;
     }
 
     // E3: rank on whichever resource is actually binding, computed after the
@@ -1975,8 +2044,14 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                              dst_bytes, second);
         if (!launched) {
             winner_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
-            qualified.erase(qualified.begin());
-            continue;
+            result.measurement_failure = true;
+            result.winner = native.candidate;
+            result.improvement_pct = 0.0;
+            result.promotion_status = "native";
+            result.reason = "determinism measurement failed; tuning experiment poisoned";
+            capture_device_state_post();
+            record_result(dispatch_digest, result);
+            return native.candidate;
         }
         if (std::memcmp(first.data(), second.data(),
                         dst_floats * sizeof(float)) != 0) {
@@ -2024,10 +2099,17 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 {pair[0], pair[1]}, 0, reverse, lc,
                 result.launches_per_sample, "confirmation");
             record_retime_observation(result, measured);
-            if (measured.complete) {
-                result.confirmation_native_us[round] = measured.gpu_us[0];
-                result.confirmation_winner_us[round] = measured.gpu_us[1];
+            if (!measured.complete) {
+                result.winner = native.candidate;
+                result.improvement_pct = 0.0;
+                result.promotion_status = "native";
+                result.reason = "confirmation measurement failed; tuning experiment poisoned";
+                capture_device_state_post();
+                record_result(dispatch_digest, result);
+                return native.candidate;
             }
+            result.confirmation_native_us[round] = measured.gpu_us[0];
+            result.confirmation_winner_us[round] = measured.gpu_us[1];
         }
         result.p_value = paired_sign_test(
             result.confirmation_native_us, result.confirmation_winner_us,
