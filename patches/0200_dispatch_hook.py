@@ -401,6 +401,15 @@ PATCH = FilePatch(
             guard=r"bigcherry_source_a_conversion",
         ),
         Edit(
+            id="blas-metadata-state-migrate-execution-options",
+            anchor=r'^    const char \* bigcherry_effective_call_api = "unknown";$',
+            rationale="migrate an already-applied BLAS metadata state block to include runtime option state",
+            mode="insert_after",
+            text='    const char * bigcherry_execution_options = "native";\n',
+            guard=r'bigcherry_execution_options = "native";',
+            applies_if=r'bigcherry_effective_call_api = "unknown";',
+        ),
+        Edit(
             id="blas-source-a-contiguous-metadata",
             anchor=r"^        if \(ggml_is_contiguously_allocated\(src0\)\) \{$",
             rationale="the native BLAS source-A conversion branch",
