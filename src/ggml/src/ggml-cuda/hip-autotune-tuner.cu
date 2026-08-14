@@ -575,6 +575,31 @@ static void disable_smi_after_measurement_failure() {
     (void) hipGetLastError();
 }
 
+// Test-only fault injection. Both selectors are required, and the one-shot
+// guard makes the failure deterministic without turning a normal production
+// process into a poisoned tuner. The attempt is traced before this hook so a
+// failed candidate remains attributable in the durable journal.
+static bool inject_test_measurement_failure(const char * candidate,
+                                             const char * stage) {
+    const char * requested_candidate = getenv("GGML_HIP_TUNE_TEST_FAIL_CANDIDATE");
+    const char * requested_stage = getenv("GGML_HIP_TUNE_TEST_FAIL_STAGE");
+    if (requested_candidate == nullptr || requested_candidate[0] == '\0'
+            || requested_stage == nullptr || requested_stage[0] == '\0'
+            || candidate == nullptr || stage == nullptr
+            || std::strcmp(requested_candidate, candidate) != 0
+            || std::strcmp(requested_stage, stage) != 0) {
+        return false;
+    }
+    static std::atomic<bool> consumed{false};
+    if (consumed.exchange(true, std::memory_order_relaxed)) {
+        return false;
+    }
+    GGML_LOG_WARN("bigcherry: injected test measurement failure for %s at %s\n",
+                  candidate, stage);
+    disable_smi_after_measurement_failure();
+    return true;
+}
+
 static bool smi_capture_enabled() {
     return ggml_hip_smi_enabled() &&
         !g_smi_runtime_disabled.load(std::memory_order_relaxed);
@@ -595,6 +620,10 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         return false;
     }
     trace_launch_attempt(candidate ? candidate->stable_name : nullptr, stage);
+    if (inject_test_measurement_failure(candidate ? candidate->stable_name : nullptr,
+                                        stage)) {
+        return false;
+    }
 
     hipEvent_t start = nullptr;
     hipEvent_t stop = nullptr;
