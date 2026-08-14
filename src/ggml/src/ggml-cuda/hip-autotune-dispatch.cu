@@ -1459,7 +1459,14 @@ bool ggml_hip_blas_experiment_options(
 void ggml_hip_execute_blas_call(
         ggml_backend_cuda_context & ctx, const ggml_hip_blas_call_v1 & call,
         const ggml_hip_launch_context & lc) {
-    GGML_ASSERT(ggml_hip_blas_plan_matches_call(call.plan, &call));
+    const bool call_is_valid = ggml_hip_blas_plan_matches_call(call.plan, &call);
+    GGML_ASSERT(call_is_valid);
+    if (!call_is_valid) {
+        // Assertions are disabled in production builds; never let malformed
+        // resolved facts reach the vendor launcher in that configuration.
+        GGML_LOG_WARN("bigcherry: rejecting malformed BLAS call before launch\n");
+        return;
+    }
     ggml_hip_blas_execution_options_v1 options = {};
     const ggml_hip_blas_execution_options_v1 * options_ptr =
         ggml_hip_blas_experiment_options(call, &options) ? &options : nullptr;
@@ -1492,10 +1499,20 @@ bool ggml_hip_blas_can_execute(const ggml_hip_candidate_descriptor * self,
 void ggml_hip_blas_launch(const ggml_hip_candidate_descriptor * self,
                           const ggml_hip_launch_context & lc) {
     ggml_hip_blas_call_v1 call = {};
-    GGML_ASSERT(ggml_hip_resolve_native_blas_call(
-        *lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst, &call));
+    const bool resolved = ggml_hip_resolve_native_blas_call(
+        *lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst, &call);
+    GGML_ASSERT(resolved);
+    if (!resolved) {
+        GGML_LOG_WARN("bigcherry: rejecting unresolved BLAS call before launch\n");
+        return;
+    }
     const ggml_hip_blas_plan_v1 * plan = ggml_hip_blas_plan_for_candidate(self);
-    GGML_ASSERT(ggml_hip_apply_blas_plan(plan, &call));
+    const bool applied = ggml_hip_apply_blas_plan(plan, &call);
+    GGML_ASSERT(applied);
+    if (!applied) {
+        GGML_LOG_WARN("bigcherry: rejecting ineligible BLAS plan before launch\n");
+        return;
+    }
     ggml_hip_execute_blas_call(*lc.ctx, call, lc);
 }
 
