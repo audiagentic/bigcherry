@@ -1417,15 +1417,58 @@ bool ggml_hip_apply_blas_plan(
     return true;
 }
 
+namespace {
+
+bool ggml_hip_blas_experiment_options(
+        const ggml_hip_blas_call_v1 & call,
+        ggml_hip_blas_execution_options_v1 * options) {
+    if (options == nullptr) {
+        return false;
+    }
+    const char * experiment = getenv("GGML_HIP_BLAS_EXPERIMENT");
+    if (experiment == nullptr || strcmp(experiment, "f16_temp") != 0) {
+        return false;
+    }
+
+    // This is an opt-in, non-persistent experiment only.  F16 temporary
+    // output is not a valid strict-precision route, and Sgemm cannot express
+    // the requested typed F16 path through the existing launcher contract.
+    if (call.has_ids || call.strict_precision ||
+            call.api == GGML_HIP_BLAS_API_SGEMM ||
+            call.numerical_class != GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE ||
+            call.accumulation_type != GGML_HIP_BLAS_ACCUMULATION_F16 ||
+            call.output_type != GGML_HIP_BLAS_OUTPUT_F16 ||
+            call.output_conversion !=
+                GGML_HIP_BLAS_OUTPUT_CONVERSION_TEMPORARY_TO_F32 ||
+            call.output_temp_bytes == 0) {
+        return false;
+    }
+
+    *options = {};
+    options->compute_type = GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16;
+    options->output_type = GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16;
+    options->output_conversion =
+        GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32;
+    options->output_temp_bytes = call.output_temp_bytes;
+    options->workspace_bytes = call.workspace_bytes;
+    return true;
+}
+
+} // namespace
+
 void ggml_hip_execute_blas_call(
         ggml_backend_cuda_context & ctx, const ggml_hip_blas_call_v1 & call,
         const ggml_hip_launch_context & lc) {
     GGML_ASSERT(ggml_hip_blas_plan_matches_call(call.plan, &call));
+    ggml_hip_blas_execution_options_v1 options = {};
+    const ggml_hip_blas_execution_options_v1 * options_ptr =
+        ggml_hip_blas_experiment_options(call, &options) ? &options : nullptr;
     // Native fallback and forced-native both terminate here. The vendor
     // launcher remains the authority for exact cuBLAS arguments and its four
     // Sgemm/GemmEx/batched branches; the resolved call above records those
     // same dimensions, routes, and workspace requirements for validation.
-    ggml_cuda_mul_mat_cublas_dispatch(ctx, lc.src0, lc.src1, lc.dst);
+    ggml_cuda_mul_mat_cublas_dispatch(
+        ctx, lc.src0, lc.src1, lc.dst, options_ptr);
 }
 
 bool ggml_hip_blas_can_execute(const ggml_hip_candidate_descriptor * self,

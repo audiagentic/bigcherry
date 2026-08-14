@@ -71,14 +71,33 @@ _CUBLAS_FORWARDER = """
 // file-local. A forwarder leaves upstream's own linkage untouched.
 static void ggml_cuda_mul_mat_cublas(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
-    const ggml_tensor * src1, ggml_tensor * dst);
+    const ggml_tensor * src1, ggml_tensor * dst,
+    const void * execution_options = nullptr);
 
 void ggml_cuda_mul_mat_cublas_dispatch(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
-        const ggml_tensor * src1, ggml_tensor * dst) {
-    ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst);
+        const ggml_tensor * src1, ggml_tensor * dst,
+        const ggml_hip_blas_execution_options_v1 * options) {
+    ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst, options);
 }
 #endif
+
+"""
+
+_CUBLAS_FORWARDER_MIGRATION = """
+// bigcherry: the BLAS candidate needs to reach this path, which upstream keeps
+// file-local. A forwarder leaves upstream's own linkage untouched.
+static void ggml_cuda_mul_mat_cublas(
+    ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+    const ggml_tensor * src1, ggml_tensor * dst,
+    const void * execution_options = nullptr);
+
+void ggml_cuda_mul_mat_cublas_dispatch(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+        const ggml_tensor * src1, ggml_tensor * dst,
+        const ggml_hip_blas_execution_options_v1 * options) {
+    ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst, options);
+}
 
 """
 
@@ -207,6 +226,22 @@ PATCH = FilePatch(
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmBatchedEx\"\)",
         ),
         Edit(
+            id="cublas-forwarder-options-migrate",
+            anchor=r"^static void ggml_cuda_mul_mat_cublas\(\n"
+                   r"    ggml_backend_cuda_context & ctx, const ggml_tensor \* src0,\n"
+                   r"    const ggml_tensor \* src1, ggml_tensor \* dst\);\n\n"
+                   r"void ggml_cuda_mul_mat_cublas_dispatch\(\n"
+                   r"        ggml_backend_cuda_context & ctx, const ggml_tensor \* src0,\n"
+                   r"        const ggml_tensor \* src1, ggml_tensor \* dst\) \{\n"
+                   r"    ggml_cuda_mul_mat_cublas\(ctx, src0, src1, dst\);\n"
+                   r"\}$",
+            rationale="migrate an already-applied four-argument BLAS forwarder to the runtime-options ABI",
+            mode="replace",
+            text=_CUBLAS_FORWARDER_MIGRATION,
+            guard=r"const ggml_hip_blas_execution_options_v1 \* options",
+            applies_if=r"void ggml_cuda_mul_mat_cublas_dispatch\(",
+        ),
+        Edit(
             id="cublas-forwarder",
             # Placed immediately after the definition it forwards to, which is
             # located by its opening line rather than by offset.
@@ -215,7 +250,68 @@ PATCH = FilePatch(
             rationale="the cuBLAS dense entry point, which is file-local upstream",
             mode="insert_before",
             text=_CUBLAS_FORWARDER,
-            guard=r"void ggml_cuda_mul_mat_cublas_dispatch\(",
+            guard=r"const ggml_hip_blas_execution_options_v1 \* options",
+        ),
+        Edit(
+            id="blas-experiment-impl-options",
+            anchor=r"^static void ggml_cuda_mul_mat_cublas_impl\(ggml_backend_cuda_context & ctx, const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst\) \{$",
+            rationale="thread a runtime-only BLAS experiment option through the existing templated launcher",
+            mode="replace",
+            text="static void ggml_cuda_mul_mat_cublas_impl(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const void * execution_options = nullptr) {",
+            guard=r"ggml_cuda_mul_mat_cublas_impl\(ggml_backend_cuda_context.*execution_options",
+        ),
+        Edit(
+            id="blas-experiment-static-options",
+            anchor=r"^static void ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context & ctx, const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst\) \{$",
+            rationale="accept runtime-only options without changing native call sites",
+            mode="replace",
+            text="static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const void * execution_options) {",
+            guard=r"ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context.*execution_options\)",
+        ),
+        Edit(
+            id="blas-experiment-f16-output-route",
+            anchor=r"^    if \(prefer_f32_output\) \{$",
+            rationale="make the supported F16 temporary-output experiment explicit and fail-closed",
+            mode="insert_before",
+            text="""
+#ifdef GGML_HIP_DISPATCH
+    if (execution_options != nullptr) {
+        const auto * options = static_cast<const ggml_hip_blas_execution_options_v1 *>(execution_options);
+        GGML_ASSERT(options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16);
+        GGML_ASSERT(options->output_type == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16);
+        GGML_ASSERT(options->output_conversion == GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32);
+        GGML_ASSERT(options->output_temp_bytes == ne_dst * sizeof(half));
+        prefer_f32_output = false;
+    }
+#else
+    GGML_UNUSED(execution_options);
+#endif
+""",
+            guard=r"GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16",
+        ),
+        Edit(
+            id="blas-experiment-f16-impl-argument-f32",
+            anchor=r"^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>\(ctx, src0, src1, dst\);$",
+            rationale="carry the runtime-only option through the F32 native branch",
+            mode="replace",
+            text="            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>(ctx, src0, src1, dst, execution_options);",
+            guard=r"ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>\(ctx, src0, src1, dst, execution_options\)",
+        ),
+        Edit(
+            id="blas-experiment-f16-impl-argument-bf16",
+            anchor=r"^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_BF16>\(ctx, src0, src1, dst\);$",
+            rationale="carry the runtime-only option through the BF16 native branch",
+            mode="replace",
+            text="            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_BF16>(ctx, src0, src1, dst, execution_options);",
+            guard=r"ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_BF16>\(ctx, src0, src1, dst, execution_options\)",
+        ),
+        Edit(
+            id="blas-experiment-f16-impl-argument-f16",
+            anchor=r"^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F16>\(ctx, src0, src1, dst\);$",
+            rationale="carry the runtime-only option through the F16 native branch",
+            mode="replace",
+            text="            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F16>(ctx, src0, src1, dst, execution_options);",
+            guard=r"ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F16>\(ctx, src0, src1, dst, execution_options\)",
         ),
         Edit(
             id="blas-metadata-state",

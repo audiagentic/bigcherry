@@ -88,3 +88,35 @@ def test_shared_executor_terminates_at_the_existing_vendor_forwarder():
     assert "ggml_cuda_mul_mat_cublas_dispatch" in execute
     assert "ggml_hip_execute_blas_call" in DISPATCH
     assert "ggml_cuda_mul_mat_cublas_dispatch" in PATCH
+
+
+def test_runtime_experiment_options_are_per_call_and_non_persistent():
+    options = _between(
+        HEADER,
+        "enum ggml_hip_blas_experiment_compute_v1",
+        "struct ggml_hip_blas_call_v1",
+    )
+    assert "ggml_hip_blas_execution_options_v1" in options
+    assert "GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16" in options
+    assert "GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32" in options
+
+    execute = _between(DISPATCH, "void ggml_hip_execute_blas_call(",
+                       "bool ggml_hip_blas_can_execute(")
+    experiment = _between(DISPATCH, "bool ggml_hip_blas_experiment_options(",
+                          "void ggml_hip_execute_blas_call(")
+    assert "GGML_HIP_BLAS_EXPERIMENT" in experiment
+    assert "options_ptr" in execute
+    assert "ggml_cuda_mul_mat_cublas_dispatch(" in execute
+    assert "call.has_ids" in experiment
+    assert "call.strict_precision" in experiment
+    assert "GGML_HIP_BLAS_API_SGEMM" in experiment
+    assert "call.workspace_bytes" in experiment
+
+    # Runtime experiment controls must not leak into the serialized plan or
+    # replay identity.
+    plan = TYPES[TYPES.index("struct ggml_hip_blas_plan_v1"):TYPES.index(
+        "struct ggml_hip_launch_context")]
+    assert "execution_options" not in plan
+    assert "GGML_HIP_BLAS_EXPERIMENT" not in REPLAY
+    assert "const ggml_hip_blas_execution_options_v1 * options" in PATCH
+    assert "const void * execution_options" in PATCH
