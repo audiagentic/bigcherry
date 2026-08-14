@@ -10,8 +10,9 @@
 // checksum, and turned into a hash map in one pass is the right shape for that.
 //
 // Everything about the loader is written to fail *safe*: a cache from another
-// build, a truncated file, a corrupted entry, or a winner whose candidate no
-// longer exists all resolve to "use native selection", never to a wrong launch.
+// build, a truncated file, a corrupted entry, or a winner whose provenance or
+// candidate no longer matches all resolve to "use native selection", never to
+// a wrong launch.
 // A production binary that silently ran the wrong kernel would be far worse
 // than one that quietly ran the upstream default.
 
@@ -28,7 +29,7 @@
 // payload's compatibility is checked separately against the manifest hash and
 // the ABI schema versions.
 #define GGML_HIP_REPLAY_MAGIC   0x59484342u
-#define GGML_HIP_REPLAY_VERSION 3
+#define GGML_HIP_REPLAY_VERSION 4
 
 // Header of the on-disk cache. Fixed size, little-endian, no padding assumed --
 // fields are read individually rather than by struct overlay, so the file is
@@ -58,6 +59,9 @@ struct ggml_hip_replay_entry {
     uint8_t  variant_fallback;
     uint8_t  variant_small_k;
     uint8_t  variant_src0_type;
+    uint8_t  manifest_hash[GGML_HIP_DIGEST_BYTES];
+    uint8_t  source_revision_digest[GGML_HIP_DIGEST_BYTES];
+    uint32_t generation;
 };
 
 // Load the cache named by GGML_HIP_DISPATCH_CACHE, if any. Safe to call more
@@ -101,8 +105,9 @@ void ggml_hip_replay_flush_hits();
 size_t ggml_hip_replay_entry_count();
 size_t ggml_hip_replay_miss_count();
 
-// True when a cache was rejected because its producer manifest differs from
-// this build. Rejected caches never expose winners to the resolver.
+// True when the loaded cache contains one or more retained generations whose
+// provenance does not match this build. Such entries remain available to a
+// matching older binary but never become a stale production decision here.
 bool ggml_hip_replay_is_stale();
 
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

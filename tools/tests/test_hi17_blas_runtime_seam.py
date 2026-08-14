@@ -68,7 +68,7 @@ def test_native_only_plan_is_fail_closed_without_changing_variant_or_replay():
     assert "ggml_hip_variant_params" not in TYPES[TYPES.index(
         "struct ggml_hip_blas_plan_v1"):TYPES.index(
         "struct ggml_hip_launch_context")]
-    assert "constexpr size_t ENT_SIZE      = ENT_SRC0_TYPE + 1" in REPLAY
+    assert "constexpr size_t ENT_SIZE      = ENT_GENERATION + 4" in REPLAY
     assert "ggml_hip_blas_plan_matches_call" in DISPATCH
     assert "call->plan = nullptr" in apply
     assert "call->numerical_class" in matcher

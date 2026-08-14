@@ -28,6 +28,10 @@ struct Winner {
     const ggml_hip_candidate_descriptor * candidate;
     ggml_hip_variant_params               variant;
     ggml_hip_digest                       signature_digest;
+    ggml_hip_digest                       manifest_hash;
+    ggml_hip_digest                       source_revision_digest;
+    uint32_t                              generation;
+    bool                                  fresh;
 };
 
 // A recorded miss.
@@ -73,7 +77,7 @@ struct DigestEqual {
     }
 };
 
-std::unordered_map<ggml_hip_digest, Winner, DigestHash, DigestEqual> g_winners;
+std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
 std::unordered_map<ggml_hip_digest, Miss, DigestHash, DigestEqual>   g_misses;
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
 std::unordered_map<ggml_hip_digest, Hit, DigestHash, DigestEqual>     g_hits;
@@ -123,7 +127,7 @@ constexpr size_t ENT_SECONDARY = ENT_PRIMARY + 4;
 constexpr size_t ENT_WIDTH     = ENT_SECONDARY + 4;
 constexpr size_t ENT_ACC_F16   = ENT_WIDTH + 4;
 constexpr size_t ENT_FALLBACK  = ENT_ACC_F16 + 1;
-// These two bytes were reserved in the v2 layout; v3 adds implementation
+// These two bytes were reserved in the v2 layout; v3 added implementation
 // version before the variant fields so the loader can verify the manifest's
 // candidate ABI rather than trusting the stable-name suffix alone. The two
 // most recently added members of ggml_hip_variant_params could not round-trip
@@ -140,7 +144,10 @@ constexpr size_t ENT_FALLBACK  = ENT_ACC_F16 + 1;
 //
 constexpr size_t ENT_SMALL_K   = ENT_FALLBACK + 1;
 constexpr size_t ENT_SRC0_TYPE = ENT_SMALL_K + 1;
-constexpr size_t ENT_SIZE      = ENT_SRC0_TYPE + 1;
+constexpr size_t ENT_MANIFEST  = ENT_SRC0_TYPE + 1;
+constexpr size_t ENT_REVISION  = ENT_MANIFEST + GGML_HIP_DIGEST_BYTES;
+constexpr size_t ENT_GENERATION = ENT_REVISION + GGML_HIP_DIGEST_BYTES;
+constexpr size_t ENT_SIZE      = ENT_GENERATION + 4;
 
 std::vector<uint8_t> read_file(const char * path) {
     std::vector<uint8_t> bytes;
@@ -178,6 +185,23 @@ bool manifest_hash_matches(const uint8_t * stored) {
         }
     }
     return true;
+}
+
+bool source_revision_matches(const uint8_t * stored) {
+    const char * revision = GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR;
+    if (strlen(revision) != 40) {
+        return false;
+    }
+    char normalized[41];
+    for (size_t i = 0; i < 40; ++i) {
+        const char ch = revision[i];
+        normalized[i] = ch >= 'A' && ch <= 'F' ? (char) (ch - 'A' + 'a') : ch;
+    }
+    normalized[40] = '\0';
+    ggml_hip_digest digest;
+    ggml_hip_blake2b(digest.bytes, GGML_HIP_DIGEST_BYTES,
+                     normalized, 40, GGML_HIP_PERSON_DISPATCH);
+    return memcmp(digest.bytes, stored, GGML_HIP_DIGEST_BYTES) == 0;
 }
 
 void reject(const char * path, const char * why) {
@@ -228,17 +252,11 @@ bool ggml_hip_replay_init() {
             reject(path, "hardware key schema version mismatch");
             return;
         }
-        // Producer provenance is part of the replay safety contract. A cache
-        // made from a different candidate manifest may name a valid-looking
-        // kernel but was never measured for this binary's candidate set.
-        // Fail closed before loading any winner; do not silently run a stale
-        // production policy.
+        // v4 moves producer identity to each entry. A global mismatch is no
+        // longer a reason to discard the file: a single cache may retain
+        // several generations. Only an entry whose own manifest and source
+        // revision match this binary is eligible for production replay.
         stale = !manifest_hash_matches(data + HDR_MANIFEST);
-        if (stale) {
-            g_stale = true;
-            reject(path, "producer manifest hash differs from this build");
-            return;
-        }
 
         const uint32_t entry_count  = read_u32(data + HDR_ENTRY_COUNT);
         const uint32_t string_bytes = read_u32(data + HDR_STRING_BYTES);
@@ -293,19 +311,12 @@ bool ggml_hip_replay_init() {
             const ggml_hip_candidate_descriptor * candidate =
                 ggml_hip_registry_find(strings + name_offset);
             if (candidate == nullptr) {
-                reject(path, "entry names an unknown candidate");
-                g_winners.clear();
-                return;
+                ++unknown;
+                continue;
             }
 
             ggml_hip_digest key;
             memcpy(key.bytes, entry + ENT_DISPATCH, GGML_HIP_DIGEST_BYTES);
-
-            if (g_winners.find(key) != g_winners.end()) {
-                reject(path, "duplicate dispatch digest");
-                g_winners.clear();
-                return;
-            }
 
             Winner winner = {};
             winner.candidate = candidate;
@@ -323,14 +334,41 @@ bool ggml_hip_replay_init() {
             winner.variant.fallback  = entry[ENT_FALLBACK];
             winner.variant.small_k   = entry[ENT_SMALL_K];
             winner.variant.src0_type = entry[ENT_SRC0_TYPE];
+            memcpy(winner.manifest_hash.bytes, entry + ENT_MANIFEST,
+                   GGML_HIP_DIGEST_BYTES);
+            memcpy(winner.source_revision_digest.bytes, entry + ENT_REVISION,
+                   GGML_HIP_DIGEST_BYTES);
+            winner.generation = read_u32(entry + ENT_GENERATION);
 
-            g_winners.emplace(key, winner);
+            auto & generations = g_winners[key];
+            for (const Winner & prior : generations) {
+                if (prior.generation == winner.generation &&
+                    ggml_hip_digest_equal(prior.manifest_hash, winner.manifest_hash) &&
+                    ggml_hip_digest_equal(prior.source_revision_digest,
+                                          winner.source_revision_digest)) {
+                    reject(path, "duplicate generation identity");
+                    g_winners.clear();
+                    return;
+                }
+            }
+            winner.fresh = manifest_hash_matches(winner.manifest_hash.bytes) &&
+                           source_revision_matches(winner.source_revision_digest.bytes);
+            if (!winner.fresh) {
+                stale = true;
+            }
+            generations.push_back(winner);
         }
 
         g_loaded = true;
         g_stale  = stale;
+        size_t winner_count = 0;
+        for (const auto & [digest, generations] : g_winners) {
+            GGML_UNUSED(digest);
+            winner_count += generations.size();
+        }
         GGML_LOG_INFO("bigcherry: replay cache '%s' loaded, %zu winner(s)"
-                      "%s\n", path, g_winners.size(),
+                      " across %zu key(s)%s\n", path, winner_count,
+                      g_winners.size(),
                       unknown ? " (some entries name candidates absent from "
                                 "this build and were skipped)" : "");
         if (unknown) {
@@ -352,12 +390,16 @@ bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
     if (found == g_winners.end()) {
         return false;
     }
-    if (!ggml_hip_digest_equal(found->second.signature_digest, signature_digest)) {
-        return false;
+    for (const Winner & winner : found->second) {
+        if (!ggml_hip_digest_equal(winner.signature_digest, signature_digest) ||
+            !winner.fresh) {
+            continue;
+        }
+        *out_candidate = winner.candidate;
+        *out_variant   = winner.variant;
+        return true;
     }
-    *out_candidate = found->second.candidate;
-    *out_variant   = found->second.variant;
-    return true;
+    return false;
 }
 
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
@@ -478,7 +520,12 @@ void ggml_hip_replay_flush_misses() {
 }
 
 size_t ggml_hip_replay_entry_count() {
-    return g_winners.size();
+    size_t count = 0;
+    for (const auto & [digest, generations] : g_winners) {
+        GGML_UNUSED(digest);
+        count += generations.size();
+    }
+    return count;
 }
 
 size_t ggml_hip_replay_miss_count() {
