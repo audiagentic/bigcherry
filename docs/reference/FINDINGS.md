@@ -156,6 +156,13 @@ the actual faulting instruction/address inside the MMA vec_dot kernel
 (`ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma` in `mmq-vec-dot.cuh`). No quarantine
 change or speculative kernel fix is justified by clean generic runs.
 
+The mechanism was validated on the rebuilt Brutus vendor overlay with one real
+Qwen3.5-0.8B completion: 1,395/1,395 durable attempt events contained a
+parsed object-valued `signature_json`, including the complete extents, strides,
+types, flags, operation, and refinement fields. The journal SHA-256 is
+`d0eb2dc70bbe2ac1d0de1627ae09755d06fd05b749704d98ec80dcf0079ef9d3`. This is
+instrumentation evidence, not a reproduction of the historical EX02 fault.
+
 ---
 
 ## Exceptional tunes
