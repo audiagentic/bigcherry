@@ -370,8 +370,13 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             resolve.index("const ggml_hip_dispatch_scope no_reentry;"),
         )
         self.assertIn("thread_local ggml_hip_digest g_trace_signature_digest", tuner)
+        self.assertIn("thread_local std::string g_trace_signature_json", tuner)
         self.assertIn('\\\"signature\\\":\\\"', tuner)
         self.assertIn("ggml_hip_digest_hex(g_trace_signature_digest)", tuner)
+        self.assertIn('\\\"signature_json\\\":', tuner)
+        self.assertIn("g_trace_signature_json.empty()", tuner)
+        self.assertIn("g_trace_signature_json = result.canonical_json", tuner)
+        self.assertIn('signature_json +\n        ",\\\"stage\\\":\\\""', tuner)
         self.assertIn('\\\"stage\\\":\\\"', tuner)
         self.assertIn("std::string(protocol_stage", tuner)
         self.assertIn("trace_launch_attempt(candidate ? candidate->stable_name : nullptr, stage);", tuner)
