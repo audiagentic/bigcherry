@@ -54,13 +54,32 @@ def test_call_contract_carries_api_shapes_precision_conversion_and_workspace():
 def test_native_only_plan_is_fail_closed_without_changing_variant_or_replay():
     apply = _between(DISPATCH, "bool ggml_hip_apply_blas_plan(",
                      "void ggml_hip_execute_blas_call(")
-    assert "GGML_HIP_BLAS_OPERAND_NATIVE" in apply
-    assert "GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE" in apply
-    assert "call->has_ids" in apply
+    matcher = _between(DISPATCH, "bool ggml_hip_blas_plan_matches_call(",
+                       "bool ggml_hip_apply_blas_plan(")
+    assert "GGML_HIP_BLAS_OPERAND_NATIVE" in matcher
+    assert "GGML_HIP_BLAS_NUMERICAL_EXACT_BASELINE" in matcher
+    assert "call->has_ids" in matcher
     assert "ggml_hip_variant_params" not in TYPES[TYPES.index(
         "struct ggml_hip_blas_plan_v1"):TYPES.index(
         "struct ggml_hip_launch_context")]
     assert "constexpr size_t ENT_SIZE      = ENT_SRC0_TYPE + 1" in REPLAY
+    assert "ggml_hip_blas_plan_matches_call" in DISPATCH
+    assert "call->plan = nullptr" in apply
+    assert "call->numerical_class" in matcher
+    assert "call->workspace_bytes" in DISPATCH
+
+
+def test_plan_application_validates_resolved_call_facts_before_execution():
+    matcher = _between(DISPATCH, "bool ggml_hip_blas_plan_matches_call(",
+                       "bool ggml_hip_apply_blas_plan(")
+    assert "ggml_hip_blas_call_is_well_formed" in matcher
+    assert "call->has_ids" in matcher
+    assert "call->numerical_class" in matcher
+    assert "call.workspace_bytes == expected_workspace" in DISPATCH
+    execute = _between(DISPATCH, "void ggml_hip_execute_blas_call(",
+                       "bool ggml_hip_blas_can_execute(")
+    assert "ggml_hip_blas_plan_matches_call(call.plan, &call)" in execute
+    assert "GGML_UNUSED(call)" not in execute
 
 
 def test_shared_executor_terminates_at_the_existing_vendor_forwarder():
