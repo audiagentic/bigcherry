@@ -406,13 +406,23 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     }
 
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
+    // Record mode deliberately continues through the recorder below so the
+    // forced launch gets a resolved-candidate binding and BLAS metadata. Other
+    // modes retain the original fast bypass semantics.
+    bool forced_selected = false;
     if (const auto & forced = ForcedCandidate::instance(); forced.candidate != nullptr) {
         const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
         if (forced.candidate->can_execute(forced.candidate, sig, hw)) {
             resolved.candidate  = forced.candidate;
             resolved.variant    = forced.candidate->variant;
-            resolved.from_cache = true;
-            return resolved;
+            // A forced candidate is an ephemeral diagnostic override, not a
+            // cache/replay/tune result.  Marking it cached misstates the
+            // provenance and can make later callers treat it as persistent.
+            resolved.from_cache = false;
+            forced_selected = true;
+            if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+                return resolved;
+            }
         }
         // Not eligible — fall through to normal resolution with a one-shot warning
         static std::once_flag once;
@@ -435,6 +445,23 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
     const ggml_hip_digest dispatch_digest =
         ggml_hip_dispatch_digest(hardware_digest, signature_digest, "latency");
+
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+    if (forced_selected && mode == GGML_HIP_DISPATCH_MODE_RECORD) {
+        const bool is_blas = resolved.candidate != nullptr
+            && resolved.candidate->family == GGML_HIP_FAMILY_BLAS;
+        const char * effective_api = is_blas
+            ? "ggml_cuda_mul_mat_cublas" : nullptr;
+        const size_t workspace_bytes = is_blas
+            ? ggml_hip_blas_workspace(resolved.candidate, sig) : 0;
+        ggml_hip_record_observation(ctx, sig, hw, signature_digest,
+                                    hardware_digest, native,
+                                    resolved.candidate, effective_api,
+                                    "forced",
+                                    workspace_bytes);
+        return resolved;
+    }
+#endif
 
     {
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
@@ -478,7 +505,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         const size_t workspace_bytes = is_blas
             ? ggml_hip_blas_workspace(native.candidate, sig) : 0;
         ggml_hip_record_observation(ctx, sig, hw, signature_digest,
-                                    hardware_digest, native, effective_api,
+                                    hardware_digest, native,
+                                    resolved.candidate, effective_api,
+                                    "native",
                                     workspace_bytes);
     }
 #endif
@@ -557,6 +586,11 @@ void ggml_hip_dispatch_launch(const ggml_hip_resolved_dispatch & bound,
     ggml_hip_candidate_descriptor effective = *bound.candidate;
     effective.variant = bound.variant;
     effective.launch(&effective, lc);
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+    if (ggml_hip_dispatch_mode() == GGML_HIP_DISPATCH_MODE_RECORD) {
+        ggml_hip_record_end_observation();
+    }
+#endif
 }
 
 // ------------------------------------------------------------- entry point
