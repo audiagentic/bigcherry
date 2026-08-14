@@ -72,7 +72,7 @@ _CUBLAS_FORWARDER = """
 static void ggml_cuda_mul_mat_cublas(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
     const ggml_tensor * src1, ggml_tensor * dst,
-    const void * execution_options = nullptr);
+    const void * execution_options);
 
 void ggml_cuda_mul_mat_cublas_dispatch(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
@@ -90,7 +90,7 @@ _CUBLAS_FORWARDER_MIGRATION = """
 static void ggml_cuda_mul_mat_cublas(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
     const ggml_tensor * src1, ggml_tensor * dst,
-    const void * execution_options = nullptr);
+    const void * execution_options);
 
 void ggml_cuda_mul_mat_cublas_dispatch(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
@@ -226,6 +226,24 @@ PATCH = FilePatch(
             guard=r"ggml_hip_record_effective_call_api\(\"cublasGemmBatchedEx\"\)",
         ),
         Edit(
+            id="cublas-forwarder-default-migrate",
+            anchor=r"^static void ggml_cuda_mul_mat_cublas\(\n"
+                   r"    ggml_backend_cuda_context & ctx, const ggml_tensor \* src0,\n"
+                   r"    const ggml_tensor \* src1, ggml_tensor \* dst,\n"
+                   r"    const void \* execution_options = nullptr\);\n\n"
+                   r"void ggml_cuda_mul_mat_cublas_dispatch\(\n"
+                   r"        ggml_backend_cuda_context & ctx, const ggml_tensor \* src0,\n"
+                   r"        const ggml_tensor \* src1, ggml_tensor \* dst,\n"
+                   r"        const ggml_hip_blas_execution_options_v1 \* options\) \{\n"
+                   r"    ggml_cuda_mul_mat_cublas\(ctx, src0, src1, dst, options\);\n"
+                   r"\}$",
+            rationale="keep the forward declaration portable when dispatch is compiled out",
+            mode="replace",
+            text=_CUBLAS_FORWARDER_MIGRATION,
+            guard=r"const void \* execution_options\);\n\nvoid ggml_cuda_mul_mat_cublas_dispatch",
+            applies_if=r"const void \* execution_options = nullptr\);\n\nvoid ggml_cuda_mul_mat_cublas_dispatch",
+        ),
+        Edit(
             id="cublas-forwarder-options-migrate",
             anchor=r"^static void ggml_cuda_mul_mat_cublas\(\n"
                    r"    ggml_backend_cuda_context & ctx, const ggml_tensor \* src0,\n"
@@ -261,12 +279,21 @@ PATCH = FilePatch(
             guard=r"ggml_cuda_mul_mat_cublas_impl\(ggml_backend_cuda_context.*execution_options",
         ),
         Edit(
+            id="blas-experiment-static-default-migrate",
+            anchor=r"^static void ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context & ctx, const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst, const void \* execution_options\) \{$",
+            rationale="add the default only at the definition so non-dispatch upstream call sites remain source-compatible",
+            mode="replace",
+            text="static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const void * execution_options = nullptr) {",
+            guard=r"ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context.*execution_options = nullptr\)",
+            applies_if=r"static void ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context.*const void \* execution_options\)",
+        ),
+        Edit(
             id="blas-experiment-static-options",
             anchor=r"^static void ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context & ctx, const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst\) \{$",
             rationale="accept runtime-only options without changing native call sites",
             mode="replace",
-            text="static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const void * execution_options) {",
-            guard=r"ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context.*execution_options\)",
+            text="static void ggml_cuda_mul_mat_cublas(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst, const void * execution_options = nullptr) {",
+            guard=r"ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context.*execution_options(?: = nullptr)?\)",
         ),
         Edit(
             id="blas-experiment-f16-output-route",
