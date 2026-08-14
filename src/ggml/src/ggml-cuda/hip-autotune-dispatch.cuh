@@ -99,13 +99,37 @@ void ggml_cuda_mul_mat_vec_q_variant(
 // The HI04 patch still exposes that file-local entry point through a forwarder.
 void ggml_cuda_mul_mat_cublas_dispatch(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
-    const ggml_tensor * src1, ggml_tensor * dst);
+    const ggml_tensor * src1, ggml_tensor * dst,
+    const struct ggml_hip_blas_execution_options_v1 * options);
 
 enum ggml_hip_blas_api_kind {
     GGML_HIP_BLAS_API_SGEMM = 0,
     GGML_HIP_BLAS_API_GEMMEX,
     GGML_HIP_BLAS_API_STRIDED_BATCHED,
     GGML_HIP_BLAS_API_POINTER_BATCHED,
+};
+
+// Runtime-only experiment controls. These are deliberately separate from
+// ggml_hip_blas_plan_v1: they are never serialized, ranked, or replayed.
+// The first supported route is the measured gfx1100 F16 temporary-output path.
+enum ggml_hip_blas_experiment_compute_v1 {
+    GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16 = 0,
+};
+
+enum ggml_hip_blas_experiment_output_v1 {
+    GGML_HIP_BLAS_EXPERIMENT_OUTPUT_F16 = 0,
+};
+
+enum ggml_hip_blas_experiment_conversion_v1 {
+    GGML_HIP_BLAS_EXPERIMENT_OUTPUT_TEMPORARY_TO_F32 = 0,
+};
+
+struct ggml_hip_blas_execution_options_v1 {
+    uint8_t compute_type;
+    uint8_t output_type;
+    uint8_t output_conversion;
+    size_t output_temp_bytes;
+    size_t workspace_bytes;
 };
 
 struct ggml_hip_launch_context;
