@@ -128,12 +128,14 @@ def test_forced_record_binds_resolved_candidate_and_clears_metadata_tls():
     )
     assert "bool forced_selected = false;" in resolve
     assert "if (mode != GGML_HIP_DISPATCH_MODE_RECORD)" in resolve
-    assert "resolved.candidate, effective_api" in resolve
+    assert 'resolved.candidate, "forced"' in resolve
+    assert 'resolved.candidate, "native"' in resolve
     assert "const ggml_hip_candidate_descriptor * resolved_candidate" in RECORD
     assert '\\"resolved_candidate\\":\\"%s\\"' in RECORD
     assert '\\"resolution_source\\":\\"%s\\"' in RECORD
     assert '"forced"' in resolve
     assert "resolved.from_cache = false;" in resolve
+    assert "} else {" in resolve
     assert "ggml_hip_record_end_observation();" in launch
     assert launch.index("effective.launch(&effective, lc);") < launch.index(
         "ggml_hip_record_end_observation();")
