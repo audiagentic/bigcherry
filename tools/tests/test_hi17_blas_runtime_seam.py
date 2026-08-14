@@ -143,6 +143,7 @@ def test_runtime_experiment_options_are_per_call_and_non_persistent():
 
 def test_already_applied_vendor_hooks_have_idempotent_migrations():
     assert "blas-experiment-f16-output-route-migrate" in PATCH
+    assert "blas-metadata-state-migrate-malformed-execution-options" in PATCH
     assert "blas-metadata-state-migrate-execution-options" in PATCH
     assert "blas-metadata-emission-migrate-execution-options" in PATCH
     assert "options_valid" in PATCH

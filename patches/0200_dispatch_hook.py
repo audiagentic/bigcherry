@@ -401,8 +401,20 @@ PATCH = FilePatch(
             guard=r"bigcherry_source_a_conversion",
         ),
         Edit(
+            id="blas-metadata-state-migrate-malformed-execution-options",
+            anchor=(r"^    const char \* bigcherry_effective_call_api\s+"
+                    r"const char \* bigcherry_execution_options.*\n"
+                    r"\s*=.*$"),
+            rationale="repair an earlier prefix-anchor migration before applying the stable state migration",
+            mode="replace",
+            text=('    const char * bigcherry_effective_call_api = "unknown";\n'
+                  '    const char * bigcherry_execution_options = "native";'),
+            guard=r"bigcherry_effective_call_api\s+const char \* bigcherry_execution_options",
+            applies_if=r"bigcherry_effective_call_api",
+        ),
+        Edit(
             id="blas-metadata-state-migrate-execution-options",
-            anchor=r"^    const char \* bigcherry_effective_call_api",
+            anchor=r"^    const char \* bigcherry_effective_call_api.*$",
             rationale="migrate an already-applied BLAS metadata state block to include runtime option state",
             mode="insert_after",
             text='    const char * bigcherry_execution_options = "native";\n',
