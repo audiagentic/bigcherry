@@ -402,12 +402,12 @@ PATCH = FilePatch(
         ),
         Edit(
             id="blas-metadata-state-migrate-execution-options",
-            anchor=r'^    const char \* bigcherry_effective_call_api = "unknown";$',
+            anchor=r"^    const char \* bigcherry_effective_call_api",
             rationale="migrate an already-applied BLAS metadata state block to include runtime option state",
             mode="insert_after",
             text='    const char * bigcherry_execution_options = "native";\n',
-            guard=r'bigcherry_execution_options = "native";',
-            applies_if=r'bigcherry_effective_call_api = "unknown";',
+            guard=r"const char \* bigcherry_execution_options",
+            applies_if=r"bigcherry_effective_call_api",
         ),
         Edit(
             id="blas-source-a-contiguous-metadata",
