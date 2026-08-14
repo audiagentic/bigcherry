@@ -339,6 +339,20 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("record_measurement_failure(native_m", tuner)
         self.assertIn("record_measurement_failure(m", tuner)
 
+    def test_fault_injection_is_opt_in_and_traced_before_poisoning(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        helper = tuner.index("static bool inject_test_measurement_failure(")
+        helper_end = tuner.index("static bool smi_capture_enabled()", helper)
+        contract = tuner[helper:helper_end]
+        self.assertIn("GGML_HIP_TUNE_TEST_FAIL_CANDIDATE", contract)
+        self.assertIn("GGML_HIP_TUNE_TEST_FAIL_STAGE", contract)
+        self.assertIn("std::strcmp", contract)
+        self.assertIn("consumed.exchange", contract)
+        attempt = tuner.index("trace_launch_attempt(candidate ? candidate->stable_name : nullptr, stage);")
+        injection = tuner.index("inject_test_measurement_failure", attempt)
+        self.assertLess(attempt, injection)
+        self.assertIn("disable_smi_after_measurement_failure();", contract)
+
     def test_first_candidate_attempt_is_durable_and_identified(self):
         tuner = TUNER.read_text(encoding="utf-8")
         resolve = tuner[tuner.index("const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("):]
