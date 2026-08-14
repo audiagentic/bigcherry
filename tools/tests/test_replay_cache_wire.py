@@ -40,14 +40,14 @@ class ReplayCacheWireTests(unittest.TestCase):
         ]) + "\n", encoding="utf-8")
         return root, manifest, ggml_h, measurements
 
-    def test_v3_output_round_trips_wire_fields_and_digest(self):
+    def test_v4_output_round_trips_wire_fields_and_digest(self):
         _, manifest, ggml_h, measurements = self._fixture()
         blob = replay_cache.build(measurements, manifest, ggml_h)
 
         self.assertEqual(len(blob), replay_cache.REPLAY_HEADER_SIZE + replay_cache.ENT_SIZE + 15)
         magic, version, artifact = struct.unpack_from("<III", blob)
         self.assertEqual((magic, version, artifact),
-                         (replay_cache.MAGIC, 3, replay_cache.ARTIFACT_VERSION))
+                         (replay_cache.MAGIC, 4, replay_cache.ARTIFACT_VERSION))
         self.assertEqual(struct.unpack_from("<HHII", blob, 12), (1, 1, 1, 15))
         payload = blob[replay_cache.REPLAY_HEADER_SIZE:]
         expected = hashlib.blake2b(
@@ -57,6 +57,11 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertEqual(entry[:16], bytes.fromhex("a" * 32))
         self.assertEqual(entry[16:32], bytes.fromhex("c" * 32))
         self.assertEqual(entry[32:36], b"\x00\x00\x00\x00")
+        self.assertEqual(entry[54:70], bytes.fromhex("a" * 32))
+        self.assertEqual(
+            entry[70:86],
+            bytes.fromhex(replay_cache.source_revision_digest("b" * 40)))
+        self.assertEqual(entry[86:90], b"\x00\x00\x00\x00")
         self.assertEqual(payload[replay_cache.ENT_SIZE:], b"mmvq:native:v1\x00")
 
     def test_export_preflight_rejects_checksum_corruption_and_trailing_bytes(self):
@@ -90,17 +95,17 @@ class ReplayCacheWireTests(unittest.TestCase):
         # rather than stopping at the checksum boundary.
         duplicate[40:56] = replay_cache.blake2b_digest(
             bytes(duplicate[replay_cache.REPLAY_HEADER_SIZE:]))
-        with self.assertRaisesRegex(SystemExit, "duplicate dispatch"):
+        with self.assertRaisesRegex(SystemExit, "duplicate generation identity"):
             replay_cache.validate_blob(bytes(duplicate), manifest_hash="a" * 32)
 
-    def test_v3_header_and_entry_sizes_are_explicit_wire_contract(self):
+    def test_v4_header_and_entry_sizes_are_explicit_wire_contract(self):
         self.assertEqual(replay_cache.REPLAY_HEADER_SIZE, 56)
-        self.assertEqual(replay_cache.ENT_SIZE, 54)
+        self.assertEqual(replay_cache.ENT_SIZE, 90)
         # Header: 3x u32, 2x u16, 2x u32, then two 16-byte digests.
         self.assertEqual(struct.calcsize("<IIIHHII16s16s"), 56)
         # Entry: two digests, name offset, implementation ABI, three i32
         # variants, and four byte-sized variant fields.
-        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB"), 54)
+        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB16s16sI"), 90)
 
     def test_deterministic_round_trip_is_independent_of_measurement_order(self):
         root, manifest, ggml_h, measurements = self._fixture()
@@ -122,6 +127,50 @@ class ReplayCacheWireTests(unittest.TestCase):
         reverse = replay_cache.build(measurements, manifest, ggml_h)
         self.assertEqual(forward, reverse)
 
+    def test_v4_merge_retains_bounded_generations_and_exact_provenance(self):
+        root, manifest, ggml_h, measurements = self._fixture()
+        first = root / "first.cache"
+        first.write_bytes(replay_cache.build(
+            measurements, manifest, ggml_h, generation=1))
+
+        second_manifest = root / "manifest-second.json"
+        second_manifest.write_text(json.dumps({
+            "source_revision": "c" * 40,
+            "manifest_hash": "d" * 32,
+            "candidates": [{
+                "stable_name": "mmvq:native:v1", "family": "mmvq",
+                "source_class": "native_wrapper", "implementation_version": 1,
+                "config": {},
+            }],
+        }), encoding="utf-8")
+        second_measurements = root / "second.jsonl"
+        second_measurements.write_text("\n".join([
+            json.dumps({"kind": "header", "source_revision": "c" * 40,
+                        "manifest_hash": "d" * 32}),
+            json.dumps({"kind": "result", "dispatch": "A" * 32,
+                        "signature": "C" * 32, "winner": "mmvq:native:v1",
+                        "native": "mmvq:native:v1"}),
+        ]) + "\n", encoding="utf-8")
+        merged = replay_cache.build(
+            second_measurements, second_manifest, ggml_h,
+            merge_into=first, generation=2, keep_generations=2)
+        _, entries = replay_cache.read_cache(merged)
+        self.assertEqual([entry["generation"] for entry in entries], [2, 1])
+        self.assertEqual([entry["manifest_hash"] for entry in entries],
+                         ["d" * 32, "a" * 32])
+
+    def test_v4_merge_replaces_same_generation_and_bounds_old_history(self):
+        root, manifest, ggml_h, measurements = self._fixture()
+        cache = root / "cache"
+        cache.write_bytes(replay_cache.build(
+            measurements, manifest, ggml_h, generation=1))
+        for generation in (2, 3):
+            cache.write_bytes(replay_cache.build(
+                measurements, manifest, ggml_h, merge_into=cache,
+                generation=generation, keep_generations=2))
+        _, entries = replay_cache.read_cache(cache.read_bytes())
+        self.assertEqual([entry["generation"] for entry in entries], [3, 2])
+
     def test_cpp_reader_rejects_partial_headers_and_records_before_offsets(self):
         source = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
@@ -136,7 +185,7 @@ class ReplayCacheWireTests(unittest.TestCase):
         header = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
         for check in (
-                "GGML_HIP_REPLAY_VERSION 3",
+                "GGML_HIP_REPLAY_VERSION 4",
                 "GGML_HIP_REPLAY_MAGIC   0x59484342u",
                 "signature schema version mismatch",
                 "hardware key schema version mismatch",
@@ -221,15 +270,15 @@ class ReplayCacheWireTests(unittest.TestCase):
             replay_cache.select_newest_winners([
                 {**common, "winner": "a"}, {**common, "winner": "b"}])
 
-    def test_cpp_reader_has_the_same_v3_boundary_and_fail_closed_checks(self):
+    def test_cpp_reader_has_the_same_v4_boundary_and_fail_closed_checks(self):
         source = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
         header = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
-        self.assertIn("#define GGML_HIP_REPLAY_VERSION 3", header)
+        self.assertIn("#define GGML_HIP_REPLAY_VERSION 4", header)
         self.assertIn("constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES", source)
-        self.assertIn("constexpr size_t ENT_SIZE      = ENT_SRC0_TYPE + 1", source)
-        for check in ("file is truncated", "content checksum mismatch", "duplicate dispatch digest",
+        self.assertIn("constexpr size_t ENT_SIZE      = ENT_GENERATION + 4", source)
+        for check in ("file is truncated", "content checksum mismatch", "duplicate generation identity",
                       "entry implementation version differs from candidate registry"):
             self.assertIn(check, source)
 
