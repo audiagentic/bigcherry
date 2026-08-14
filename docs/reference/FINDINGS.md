@@ -140,12 +140,21 @@ Both are genuine platform/behavior facts worth knowing even though they are
 not this bug's cause — the HIP no-op macro in particular is real and could
 matter for a different, larger config that does exceed the default limit.
 
-**Next step, not yet done:** attach `rocgdb` to a live reproduction to get the
-actual faulting instruction/address inside the MMA vec_dot kernel
-(`ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma` in `mmq-vec-dot.cuh`), rather than
-continuing to guess from source reading — two plausible-looking hypotheses
-have already been wrong, and a third guess isn't worth proposing as a "fix"
-without proof.
+**Current status, 2026-08-14:** two exact-model Brutus runs with the quarantine
+disabled only through the opt-in diagnostic switch completed cleanly. The
+candidate was measured 39 times in each run and the Q6_K MMQ family 526 times
+in the full sweep; the second run was under `rocgdb`, with no device fault.
+This is strong clean non-reproduction evidence, not proof that the historical
+canonical dispatch signature was exercised. The separate historical
+`/tmp/bc-tune-*` artifact is a Qwen3.5-0.8B run and contains no EX02 fault.
+
+The attempt trace now persists the complete canonical signature JSON alongside
+the digest when `GGML_HIP_TUNE_TRACE_ATTEMPTS` is enabled. The next diagnostic
+step is therefore to recover/replay the historical full signature through the
+tuner measurement path under `HIP_LAUNCH_BLOCKING=1` and `rocgdb`, then capture
+the actual faulting instruction/address inside the MMA vec_dot kernel
+(`ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma` in `mmq-vec-dot.cuh`). No quarantine
+change or speculative kernel fix is justified by clean generic runs.
 
 ---
 
