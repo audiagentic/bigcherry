@@ -178,7 +178,8 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             "operand_a_type", "operand_b_type", "output_type", "accumulation_type",
             "source_a_conversion", "source_b_conversion", "output_conversion",
             "requested_precision", "effective_call_api", "effective_provider", "effective_backend",
-            "source_a_temp_bytes", "source_b_temp_bytes", "output_temp_bytes",
+        "source_a_temp_bytes", "source_b_temp_bytes", "output_temp_bytes",
+        "execution_options",
         ):
             self.assertIn(field, header)
             self.assertIn(field, record)

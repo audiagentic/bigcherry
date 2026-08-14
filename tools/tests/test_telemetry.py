@@ -30,7 +30,8 @@ def _blas():
                 "requested_precision": "0", "effective_call_api": "cublasGemmEx",
                 "effective_provider": "hipblas",
                 "effective_backend": "unknown", "source_a_temp_bytes": 0,
-                "source_b_temp_bytes": 4096, "output_temp_bytes": 0,
+                "execution_options": "native", "source_b_temp_bytes": 4096,
+                "output_temp_bytes": 0,
             }}
 
 
@@ -75,6 +76,22 @@ def test_blas_requires_complete_effective_payload(tmp_path):
     del row["blas_metadata"]["accumulation_type"]
     with pytest.raises(TelemetryError, match="accumulation_type"):
         load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
+
+
+def test_blas_execution_options_are_observation_only_and_strict(tmp_path):
+    result = load_telemetry(_write(tmp_path, [{"kind": "header", **P}, _blas()]))
+    assert result["blas"][0]["blas_metadata"]["execution_options"] == "native"
+    row = _blas()
+    row["blas_metadata"]["execution_options"] = "bogus"
+    with pytest.raises(TelemetryError, match="execution_options"):
+        load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
+
+
+def test_legacy_blas_artifact_without_execution_options_is_unknown(tmp_path):
+    row = _blas()
+    del row["blas_metadata"]["execution_options"]
+    result = load_telemetry(_write(tmp_path, [{"kind": "header", **P}, row]))
+    assert result["blas"][0]["blas_metadata"]["execution_options"] == "unknown"
 
 
 def test_loads_split_with_explicit_provenance(tmp_path):

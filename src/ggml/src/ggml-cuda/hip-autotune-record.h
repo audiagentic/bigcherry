@@ -83,6 +83,7 @@ struct ggml_hip_blas_observation_v1 {
     const char * effective_call_api;
     const char * effective_provider;
     const char * effective_backend;
+    const char * execution_options;
     uint64_t     source_a_temp_bytes;
     uint64_t     source_b_temp_bytes;
     uint64_t     output_temp_bytes;
