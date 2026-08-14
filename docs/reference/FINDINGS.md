@@ -53,15 +53,18 @@ Update **Status** in place as it moves — don't duplicate the entry.
 
 ## Kernel / upstream bugs
 
-### Illegal memory access in generated MMQ candidate (q6_K, gfx1100) — 2026-08-11
+### Historical illegal-memory-access report for generated MMQ candidate (q6_K, gfx1100) — 2026-08-11
 
 **Status:** internal-only
 
-**Summary:** A specific MMQ kernel configuration for q6_K-quantized inputs
-crashes with `an illegal memory access was encountered` on an AMD RX 7900 XTX
-(gfx1100) under real MTP speculative-decoding draft widths. Reproduced
-deterministically three times across two independent instrumentation
-approaches — same candidate, same failure, every time. Not observed under
+**Summary:** A historical run recorded a specific MMQ kernel configuration for
+q6_K-quantized inputs failing with `an illegal memory access was encountered`
+on an AMD RX 7900 XTX (gfx1100) under real MTP speculative-decoding draft
+widths. The incident was reproduced deterministically three times across two
+independent instrumentation approaches — same candidate, same failure, every
+time. It has not been reproduced in the subsequent diagnostic runs, and the
+surviving artifacts do not contain the complete canonical signature needed to
+replay the original shape. Not observed under
 narrower (non-speculative-decoding) workloads, which only exercise a smaller
 range of matmul widths.
 
@@ -75,7 +78,7 @@ ROCm error: an illegal memory access was encountered
   current device: -1, in function ggml_cuda_get_device at ggml-cuda.cu:142
   hipGetDevice(&id)
 ```
-Crashes ~10-16s into generation, after dozens of other candidates measure
+The historical run failed ~10-16s into generation, after dozens of other candidates measure
 successfully — narrows the fault to one specific kernel launch, not general
 device/driver instability (confirmed: identical hardware/model/context runs
 cleanly moments before and after under a build that doesn't exercise this
