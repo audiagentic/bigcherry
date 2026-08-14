@@ -161,13 +161,20 @@ def test_metadata_state_migrations_handle_old_malformed_and_repeat_shapes():
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    edit_ids = {
+    migration_ids = {
         "blas-metadata-state-migrate-malformed-execution-options",
         "blas-metadata-state-migrate-execution-options",
     }
-    state_patch = replace(
+    migration_patch = replace(
         module.PATCH,
-        edits=tuple(edit for edit in module.PATCH.edits if edit.id in edit_ids),
+        edits=tuple(edit for edit in module.PATCH.edits if edit.id in migration_ids),
+    )
+    fresh_patch = replace(
+        module.PATCH,
+        edits=tuple(edit for edit in module.PATCH.edits if edit.id in {
+            "blas-metadata-state",
+            *migration_ids,
+        }),
     )
     old = (
         "#ifdef GGML_HIP_AUTOTUNE_RECORD\n"
@@ -182,12 +189,29 @@ def test_metadata_state_migrations_handle_old_malformed_and_repeat_shapes():
         "#endif\n"
     )
     for source in (old, repaired):
-        view = {state_patch.path: source}
-        result = apply_patch(state_patch, ROOT, dry_run=True, texts=view)
+        view = {migration_patch.path: source}
+        result = apply_patch(migration_patch, ROOT, dry_run=True, texts=view)
         assert result.ok
-        assert view[state_patch.path].count(
+        assert view[migration_patch.path].count(
             'const char * bigcherry_execution_options = "native";') == 1
-        before = view[state_patch.path]
-        repeated = apply_patch(state_patch, ROOT, dry_run=True, texts=view)
+        assert view[migration_patch.path].index(
+            'bigcherry_effective_call_api = "unknown";') < view[
+                migration_patch.path].index(
+                    'bigcherry_execution_options = "native";')
+        before = view[migration_patch.path]
+        repeated = apply_patch(migration_patch, ROOT, dry_run=True, texts=view)
         assert repeated.ok
-        assert view[state_patch.path] == before
+        assert view[migration_patch.path] == before
+
+    fresh = (
+        "    GGML_ASSERT(ggml_is_contiguous(dst));\n"
+    )
+    view = {fresh_patch.path: fresh}
+    result = apply_patch(fresh_patch, ROOT, dry_run=True, texts=view)
+    assert result.ok
+    assert view[fresh_patch.path].count(
+        'const char * bigcherry_execution_options = "native";') == 1
+    before = view[fresh_patch.path]
+    repeated = apply_patch(fresh_patch, ROOT, dry_run=True, texts=view)
+    assert repeated.ok
+    assert view[fresh_patch.path] == before
