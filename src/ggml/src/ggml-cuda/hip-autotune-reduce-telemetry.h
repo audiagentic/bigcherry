@@ -31,7 +31,17 @@ void ggml_hip_reduce_telemetry_provider(
         size_t device_count,
         ggml_tensor ** tensors,
         const char * requested_provider,
+        const char * effective_provider,
         bool provider_succeeded);
+
+// Bind the per-call reduction plan to the current host thread so a later
+// generic meta fallback can retain the requested plan without mutating the
+// shared communication context.
+void ggml_hip_reduce_telemetry_set_requested_provider(
+        void * comm_ctx, const char * requested_provider);
+
+const char * ggml_hip_reduce_telemetry_requested_provider(
+        void * comm_ctx, const char * fallback_provider);
 
 void ggml_hip_reduce_telemetry_fallback(
         const int * devices,

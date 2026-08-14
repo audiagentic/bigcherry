@@ -162,6 +162,27 @@ def test_normalizes_successful_rccl_as_promotable_nccl_identity(tmp_path):
     assert observation["promotable"] is True
 
 
+def test_normalizes_auto_plan_against_effective_rccl(tmp_path):
+    row = _split()
+    row["requested_provider"] = "auto"
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+    assert observation["preferred_algorithm"] == "auto"
+    assert observation["effective_algorithm"] == "nccl"
+    assert observation["promotable"] is True
+
+
+def test_normalizes_explicit_meta_plan_as_successful_none_policy(tmp_path):
+    row = _split()
+    row["requested_provider"] = "meta"
+    row["effective_provider"] = "meta"
+    result = load_telemetry(_write(tmp_path, [row]), expected_provenance=P)
+    observation = result["split_reduce"][0]
+    assert observation["preferred_algorithm"] == "meta"
+    assert observation["fallback_policy"] == "none"
+    assert observation["promotable"] is True
+
+
 def test_normalizes_meta_fallback_as_non_promotable_upstream_default(tmp_path):
     row = _split()
     row.update(
