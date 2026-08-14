@@ -499,11 +499,12 @@ bool compare_outputs(const std::vector<float> & reference,
 // attempt would name an innocent candidate that merely happened to be
 // dispatched most recently, not the one whose kernel corrupted memory.
 thread_local ggml_hip_digest g_trace_signature_digest = {};
-// Keep the complete canonical identity beside the compact digest while the
-// cold-path signature is being measured.  This is only serialized when
-// GGML_HIP_TUNE_TRACE_ATTEMPTS is enabled; normal tuning and production
-// dispatch do not retain or write this diagnostic payload.
-thread_local std::string g_trace_signature_json;
+// Keep the complete device-local identity beside the compact digest while the
+// cold-path signature is being measured. Re-serializing this POD value at the
+// trace seam avoids depending on Result's later journal/measurements-file
+// lifetime. This is only serialized when GGML_HIP_TUNE_TRACE_ATTEMPTS is
+// enabled; normal tuning and production dispatch do not write this payload.
+thread_local ggml_hip_dispatch_signature_v1 g_trace_signature = {};
 
 void trace_launch_attempt(const char * stable_name, const char * protocol_stage) {
     static std::atomic<bool> enabled{false};
@@ -513,8 +514,7 @@ void trace_launch_attempt(const char * stable_name, const char * protocol_stage)
         enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
     }
     if (!enabled || !ggml_hip_journal_is_open()) return;
-    const std::string signature_json = g_trace_signature_json.empty()
-        ? "null" : g_trace_signature_json;
+    const std::string signature_json = ggml_hip_signature_json(g_trace_signature, true);
     const std::string payload =
         "{\"candidate\":\"" + std::string(stable_name ? stable_name : "(null)") +
         "\",\"signature\":\"" + ggml_hip_digest_hex(g_trace_signature_digest) +
@@ -1538,7 +1538,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     result.hardware_digest  = ggml_hip_hardware_digest(hw);
     result.canonical_json   = ggml_hip_signature_json(sig, true);
     g_trace_signature_digest = result.signature_digest;
-    g_trace_signature_json = result.canonical_json;
+    g_trace_signature = sig;
     open_tuning_journal_once(result.hardware_digest);
 
     // Held for the whole run, not just around each launch.
