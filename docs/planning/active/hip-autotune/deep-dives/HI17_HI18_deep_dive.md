@@ -5,6 +5,11 @@
 **Audience:** Developer or implementation agent modifying the project's pinned llama.cpp HIP/ROCm path  
 **Status:** Design and implementation guidance. No proposed optimization is considered faster until the validation in this document passes.
 
+> HI17 is completed at `4732f47`. The HI17 sections below are historical
+> design and implementation guidance retained for audit; current
+> implementation work applies only to HI18. Do not reopen HI17 or treat its
+> future-tense recommendations as pending acceptance.
+
 ---
 
 ## 1. Purpose
@@ -77,7 +82,10 @@ All three are versioned realities.
 
 ## 3. Main conclusion
 
-HI17 is technically sound and worth implementing, but its plan schema should be corrected **before durable candidate identities are introduced**.
+The original HI17 design was technically sound, but its plan schema required
+correction before durable candidate identities were introduced. That work and
+the required parity evidence are complete at `4732f47`; the material below is
+retained as historical rationale and is not an open implementation gate.
 
 The current high-level fields:
 

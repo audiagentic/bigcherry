@@ -303,6 +303,41 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("native final measurement failed; run rejected", final_text)
         self.assertIn("!native_m->measured", final_text)
 
+    def test_measurement_failure_poison_suppresses_later_gpu_work(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn("std::atomic<bool> g_tuner_poisoned{false};", tuner)
+        failure_helper = tuner.index("static void disable_smi_after_measurement_failure()")
+        failure_end = tuner.index("static bool smi_capture_enabled()", failure_helper)
+        self.assertIn("g_tuner_poisoned.store(true", tuner[failure_helper:failure_end])
+        time_start = tuner.index("bool time_candidate(")
+        time_end = tuner.index("// HI34: derive", time_start)
+        self.assertIn("g_tuner_poisoned.load", tuner[time_start:time_end])
+        screening = tuner[tuner.index("// --- screening"):tuner.index("// --- final measurement")]
+        self.assertIn("screening measurement failed; tuning experiment poisoned", screening)
+        final_stage = tuner[tuner.index("// --- final measurement"):tuner.index("if (result.retime_status", tuner.index("// --- final measurement"))]
+        self.assertIn("if (!measured.complete)", final_stage)
+        self.assertIn("break;", final_stage)
+        self.assertIn("tuning experiment poisoned; later measurements suppressed", tuner)
+        canary = tuner[tuner.index("// --- noise canary"):tuner.index("// E3: rank")]
+        self.assertIn("if (!measured.complete)", canary)
+        confirmation = tuner[tuner.index("const int rounds ="):tuner.index("// Confirmation is also a promotion gate")]
+        self.assertIn("confirmation measurement failed; tuning experiment poisoned", confirmation)
+
+    def test_first_candidate_attempt_is_durable_and_identified(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        resolve = tuner[tuner.index("const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("):]
+        self.assertIn("open_tuning_journal_once(result.hardware_digest);", resolve)
+        self.assertLess(
+            resolve.index("open_tuning_journal_once(result.hardware_digest);"),
+            resolve.index("const ggml_hip_dispatch_scope no_reentry;"),
+        )
+        self.assertIn("thread_local ggml_hip_digest g_trace_signature_digest", tuner)
+        self.assertIn('\\\"signature\\\":\\\"', tuner)
+        self.assertIn("ggml_hip_digest_hex(g_trace_signature_digest)", tuner)
+        self.assertIn('\\\"stage\\\":\\\"', tuner)
+        self.assertIn("std::string(protocol_stage", tuner)
+        self.assertIn("trace_launch_attempt(candidate ? candidate->stable_name : nullptr, stage);", tuner)
+
     def test_tune_journal_result_keeps_replay_identity_digests(self):
         tuner = TUNER.read_text(encoding="utf-8")
         summary = tuner[tuner.index("std::string journal_result_summary("):]
