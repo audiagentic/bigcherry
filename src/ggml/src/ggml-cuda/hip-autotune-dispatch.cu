@@ -423,21 +423,23 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
                 return resolved;
             }
+        } else {
+            // Not eligible — fall through to normal resolution with a
+            // one-shot warning.
+            static std::once_flag once;
+            std::call_once(once, [&forced, &sig]() {
+                GGML_LOG_WARN("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s is not eligible "
+                              "for this signature (%s %s %s m=%lld n=%lld k=%lld) — "
+                              "using normal resolution instead\n",
+                              forced.stable_name,
+                              sig.src0_type ? "t" : "?",
+                              sig.src1_type ? "t" : "?",
+                              sig.dst_type ? "t" : "?",
+                              (long long)sig.ne1[1],
+                              (long long)sig.ned[1],
+                              (long long)sig.ne0[0]);
+            });
         }
-        // Not eligible — fall through to normal resolution with a one-shot warning
-        static std::once_flag once;
-        std::call_once(once, [&forced, &sig]() {
-            GGML_LOG_WARN("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s is not eligible "
-                          "for this signature (%s %s %s m=%lld n=%lld k=%lld) — "
-                          "using normal resolution instead\n",
-                          forced.stable_name,
-                          sig.src0_type ? "t" : "?",
-                          sig.src1_type ? "t" : "?",
-                          sig.dst_type ? "t" : "?",
-                          (long long)sig.ne1[1],
-                          (long long)sig.ned[1],
-                          (long long)sig.ne0[0]);
-        });
     }
 
     const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
@@ -456,8 +458,8 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             ? ggml_hip_blas_workspace(resolved.candidate, sig) : 0;
         ggml_hip_record_observation(ctx, sig, hw, signature_digest,
                                     hardware_digest, native,
-                                    resolved.candidate, effective_api,
-                                    "forced",
+                                    resolved.candidate, "forced",
+                                    effective_api,
                                     workspace_bytes);
         return resolved;
     }
@@ -506,8 +508,8 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             ? ggml_hip_blas_workspace(native.candidate, sig) : 0;
         ggml_hip_record_observation(ctx, sig, hw, signature_digest,
                                     hardware_digest, native,
-                                    resolved.candidate, effective_api,
-                                    "native",
+                                    resolved.candidate, "native",
+                                    effective_api,
                                     workspace_bytes);
     }
 #endif
