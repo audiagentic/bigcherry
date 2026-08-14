@@ -24,6 +24,7 @@ _BLAS_WRAPPERS = {"ggml_cuda_mul_mat_cublas"}
 _PROVIDERS = {"auto", "internal", "rccl", "meta", "unknown", "provider_declined"}
 _HANDOFFS = {"none", "provider_declined_handoff_meta"}
 _REDUCTION_PEER_ACCESS = {"complete", "partial", "unknown"}
+_REDUCTION_TIMING_MODES = {"host_control", "device_synchronized", "sync_failed"}
 _UNAVAILABLE = {"unavailable", "unknown", "not_collected"}
 _BLAS_CONVERSIONS = {"direct", "contiguous", "non_contiguous"}
 _BLAS_OUTPUT_CONVERSIONS = {"direct", "temporary_to_f32"}
@@ -177,6 +178,11 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
     requested = row["requested_provider"]
     effective = row["effective_provider"]
     handoff = row["handoff"]
+    observation_timing_mode = row.get("timing_mode", "host_control")
+    if (not isinstance(observation_timing_mode, str)
+            or observation_timing_mode not in _REDUCTION_TIMING_MODES):
+        raise TelemetryError(
+            f"{where}: unsupported timing_mode {observation_timing_mode!r}")
     if handoff == "none" and requested != "auto" and effective != requested:
         raise TelemetryError(
             f"{where}: none fallback policy requires requested/effective provider match")
@@ -190,6 +196,7 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
         and (requested == "auto" or effective == requested)
         and preferred_algorithm not in {"unknown", "provider_declined"}
         and signature["peer_access"] != "unknown"
+        and observation_timing_mode == "device_synchronized"
     )
     signature_key = (
         f"split_reduce:v1:{signature['element_type']}:{signature['element_count']}:"
@@ -203,6 +210,7 @@ def normalize_split_reduce_observation(row: dict[str, Any], where: str) -> dict[
         "candidate_identity": (
             f"split_reduce:{preferred_algorithm}:{fallback_policy}:v1"),
         "reduction_signature_key": signature_key,
+        "timing_mode": observation_timing_mode,
         "promotable": promotable,
     }
 
@@ -215,6 +223,9 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     elapsed_us = None
     if "elapsed_us" in row:
         elapsed_us = _nonnegative(row.get("elapsed_us"), "elapsed_us", where)
+    timing_mode = row.get("timing_mode", "host_control")
+    if not isinstance(timing_mode, str) or timing_mode not in _REDUCTION_TIMING_MODES:
+        raise TelemetryError(f"{where}: unsupported timing_mode {timing_mode!r}")
     requested = _text(row.get("requested_provider"), "requested_provider", where)
     effective = _text(row.get("effective_provider"), "effective_provider", where)
     handoff = _text(row.get("handoff"), "handoff", where)
@@ -260,7 +271,8 @@ def _validate_split(row: dict[str, Any], where: str) -> tuple[str, dict[str, Any
     event_id = _text(row.get("event_id"), "event_id", where) if "event_id" in row else None
     key = event_id or f"split:{timestamp_us}:{requested}:{effective}:{devices}"
     normalized = {**row, "timestamp_us": timestamp_us, "device_count": count,
-                  "devices": list(devices), "event_id": event_id}
+                  "devices": list(devices), "event_id": event_id,
+                  "timing_mode": timing_mode}
     if elapsed_us is not None:
         normalized["elapsed_us"] = elapsed_us
     normalized["reduction_signature"] = {

@@ -52,6 +52,10 @@ def test_observation_is_telemetry_only_and_has_shape_and_topology():
     assert '"kind\\":\\"split_reduce_observation' in TELEMETRY
     assert '"element_count\\":%lld' in TELEMETRY
     assert '"elapsed_us\\":%lld' in TELEMETRY
+    assert '"timing_mode\\":\\"%s\\"' in TELEMETRY
+    assert "GGML_HIP_REDUCE_TIMING" in TELEMETRY
+    assert "device_synchronized" in TELEMETRY
+    assert "sync_failed" in TELEMETRY
     assert '"device_count\\":%zu' in TELEMETRY
     assert '"devices\\":["' in TELEMETRY
     assert "GGML_HIP_REDUCE_TELEMETRY" in TELEMETRY
@@ -78,6 +82,12 @@ def test_telemetry_normalizes_labels_and_null_topology():
 def test_telemetry_does_not_claim_depth_without_handoff():
     assert "normalized_fallback_depth" in TELEMETRY
     assert 'handoff == nullptr || std::string(handoff) == "none" ? 0 : fallback_depth' in TELEMETRY
+
+
+def test_sync_timing_restores_the_previous_device():
+    assert "hipGetDevice(&previous_device)" in TELEMETRY
+    assert "hipSetDevice(previous_device)" in TELEMETRY
+    assert "hipDeviceSynchronize()" in TELEMETRY
 
 
 def test_reduction_telemetry_is_linked_with_dispatch_only():
