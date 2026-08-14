@@ -114,6 +114,31 @@ def _validate_transition(current: str, proposed: str) -> None:
             f"release stage cannot move backwards: {current!r} -> {proposed!r}")
 
 
+def record_apply_result(
+        record: "ReleaseRecord", succeeded: bool, *, mutated: bool = False) -> None:
+    """Record an apply result while respecting evidence invalidation.
+
+    Applying an unchanged tree is idempotent and preserves later evidence. A
+    successful apply that writes an overlay, changes a patch, or selects a
+    different tree invalidates later evidence and returns the record to
+    ``patched``. A failed apply remains an explicit transition to ``broken``.
+    """
+    if not succeeded:
+        record.advance_to("broken")
+        return
+    if record.stage == "broken":
+        record.advance_to("patched")
+    elif mutated and STAGE_ORDER.index(record.stage) >= STAGE_ORDER.index("patched"):
+        # This is an intentional evidence invalidation, not a general
+        # relaxation of the monotonic lifecycle transition rule. The caller
+        # has observed a real tree mutation, so generated/build/test evidence
+        # no longer describes the checkout.
+        record.stage = "patched"
+        record.manifest_hash = ""
+    elif STAGE_ORDER.index(record.stage) < STAGE_ORDER.index("patched"):
+        record.advance_to("patched")
+
+
 @dataclass
 class ReleaseRecord:
     """Everything known about one llama.cpp revision."""

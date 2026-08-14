@@ -224,6 +224,10 @@ def _apply_selection(
     patches = patchset.load_patches(groups=groups, states=states)
     results = patcher.apply_all(patches, root, dry_run=dry_run)
     ok = all(r.ok for r in results)
+    intended_tree_state = recipes.tree_state_key(
+        record.release_tag or record.revision, groups, states)
+    selection_changed = record.tree_state != intended_tree_state
+    tree_mutated = bool(written) or any(result.changed for result in results)
 
     if ok:
         verb = "would write" if dry_run else "wrote"
@@ -236,7 +240,8 @@ def _apply_selection(
     if not dry_run:
         record = _record_for(root)
         record.patches = releases.summarise_patches(results)
-        record.advance_to("patched" if ok else "broken")
+        releases.record_apply_result(
+            record, ok, mutated=selection_changed or tree_mutated)
         if not ok:
             record.notes = "patches failed: " + ", ".join(
                 record.patches["failed_edits"])
@@ -244,8 +249,7 @@ def _apply_selection(
             record.notes = ""
         # Key what the tree now carries, so `build` can tell whether it needs
         # a reset or can compile against this selection as-is.
-        record.tree_state = recipes.tree_state_key(
-            record.release_tag or record.revision, groups, states) if ok else ""
+        record.tree_state = intended_tree_state if ok else ""
         record.save()
     return ok
 
