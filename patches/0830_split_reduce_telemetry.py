@@ -190,6 +190,18 @@ CUDA = FilePatch(
             guard=r'ggml_hip_reduce_telemetry_context_snapshot\(',
         ),
         Edit(
+            id="reduce-telemetry-context-snapshot-migrate",
+            anchor=r'^    \*requested_provider = ctx->provider_name;$',
+            rationale="migrate an already-applied HI58 context snapshot to the per-call requested-plan seam",
+            mode="replace",
+            text=(
+                '    *requested_provider = ggml_hip_reduce_telemetry_requested_provider(\n'
+                '        comm_ctx, ctx->provider_name);'
+            ),
+            guard=r'ggml_hip_reduce_telemetry_requested_provider\(',
+            applies_if=r'ggml_hip_reduce_telemetry_context_snapshot\(',
+        ),
+        Edit(
             id="reduce-telemetry-fallback-hook",
             anchor=r'^static void \* ggml_backend_cuda_reg_get_proc_address\(ggml_backend_reg_t reg, const char \* name\) \{$',
             rationale="expose the provider-owned fallback observer through the existing backend registry",
