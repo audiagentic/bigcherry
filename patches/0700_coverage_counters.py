@@ -186,9 +186,15 @@ BLAS_PATCH = FilePatch(
             # forwarder would report zero executed against non-zero dispatched
             # -- which is what the first coverage run actually did, and it made
             # the total silently undercount.
+            # Patch 0200 threads the optional runtime execution-options
+            # pointer through this entry point before coverage is applied.
+            # Accept both the upstream three-argument shape and that already
+            # transformed four-argument shape; the exact one-match contract
+            # still rejects any other signature.
             anchor=r"^static void ggml_cuda_mul_mat_cublas\(ggml_backend_cuda_context & ctx, "
-                   r"const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst\) \{$",
-            rationale="the definition of the cuBLAS dense entry point",
+                   r"const ggml_tensor \* src0, const ggml_tensor \* src1, ggml_tensor \* dst"
+                   r"(?:, const void \* execution_options(?: = nullptr)?)?\) \{$",
+            rationale="the definition of the cuBLAS dense entry point, before or after the dispatch ABI edit",
             text=_count("GGML_HIP_FAMILY_BLAS"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_BLAS\)",
         ),
