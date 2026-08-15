@@ -33,7 +33,7 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "2"
+CURRENT_DB_SCHEMA_VERSION = "3"
 
 _RESULT_STATUSES = {
     "ok", "architecture", "ineligible", "workspace", "launch_failed",
