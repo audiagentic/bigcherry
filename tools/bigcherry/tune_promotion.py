@@ -178,6 +178,11 @@ def _paired_rounds(confirmation: dict[str, Any]) -> tuple[list[float], list[floa
             continue
         if float(left) <= 0.0 or float(right) <= 0.0:
             raise PromotionError("confirmation contains non-positive timing evidence")
+        # The C++ paired sign test excludes exact ties from its declared
+        # round count. Mirror that rule while reducing the aligned arrays;
+        # persisted arrays retain the tie for positional auditability.
+        if float(left) == float(right):
+            continue
         native.append(float(left))
         winner.append(float(right))
     declared = confirmation.get("rounds")
