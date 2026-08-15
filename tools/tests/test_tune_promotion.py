@@ -251,6 +251,15 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(native, [100.0, 100.0])
         self.assertEqual(winner, [90.0, 80.0])
 
+    def test_effect_keeps_tied_samples_like_cpp_median(self):
+        confirmation = {
+            "rounds": 8, "wins": 8,
+            "native_us": [100.0] * 9,
+            "winner_us": [90.0] * 8 + [100.0],
+            "effect_pct": 10.0,
+        }
+        self.assertAlmostEqual(tune_promotion._validated_effect(confirmation), 10.0)
+
     def test_native_retention_can_have_no_challenger_winner_verdict(self):
         row = result("b" * 32, 0.001, 100.0)
         row["provisional_winner"] = "native"

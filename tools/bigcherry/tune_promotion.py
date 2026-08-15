@@ -153,7 +153,22 @@ def _validated_effect(confirmation: dict[str, Any]) -> float:
         raise PromotionError("confirmation has insufficient paired rounds")
     if len(native) != len(winner):
         raise PromotionError("confirmation paired samples are missing or misaligned")
-    observed = 100.0 * (_median(native) - _median(winner)) / _median(native)
+    # The producer's effect is the median over every finite paired sample,
+    # including exact ties; only the sign-test round/win counts exclude ties.
+    raw_native = confirmation.get("native_us")
+    raw_winner = confirmation.get("winner_us")
+    finite_pairs = [
+        (float(left), float(right))
+        for left, right in zip(raw_native or [], raw_winner or [])
+        if isinstance(left, (int, float)) and isinstance(right, (int, float))
+        and math.isfinite(float(left)) and math.isfinite(float(right))
+        and float(left) > 0.0 and float(right) > 0.0
+    ]
+    if not finite_pairs:
+        raise PromotionError("confirmation has no usable paired rounds")
+    all_native = [left for left, _ in finite_pairs]
+    all_winner = [right for _, right in finite_pairs]
+    observed = 100.0 * (_median(all_native) - _median(all_winner)) / _median(all_native)
     persisted = confirmation.get("effect_pct")
     if not isinstance(persisted, (int, float)) or not math.isfinite(float(persisted)):
         raise PromotionError("confirmation effect_pct is missing or non-finite")
