@@ -166,7 +166,13 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     record = _record_for(root)
     record.audit = releases.summarise_audit(report, strict=args.strict)
-    record.advance_to("audited" if good else "broken")
+    if not good:
+        record.advance_to("broken")
+    elif record.stage == "pulled":
+        record.advance_to("audited")
+    # A repeated audit is observational.  If later evidence already exists,
+    # do not attempt to move its monotonic release stage backwards to
+    # ``audited``; preserve the later stage while refreshing the audit report.
     if not good:
         record.notes = "source audit failed: " + ", ".join(
             record.audit["failed_checks"]
