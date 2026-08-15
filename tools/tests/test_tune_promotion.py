@@ -241,5 +241,16 @@ class PromotionTests(unittest.TestCase):
             tune_promotion._validate_policy_identity(row, header)
 
 
+    def test_confirmation_reduction_excludes_aligned_ties(self):
+        confirmation = {
+            "rounds": 2, "wins": 2,
+            "native_us": [100.0, 100.0, 100.0],
+            "winner_us": [90.0, 100.0, 80.0],
+        }
+        native, winner = tune_promotion._paired_rounds(confirmation)
+        self.assertEqual(native, [100.0, 100.0])
+        self.assertEqual(winner, [90.0, 80.0])
+
+
 if __name__ == "__main__":
     unittest.main()
