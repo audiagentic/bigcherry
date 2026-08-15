@@ -614,6 +614,57 @@ def read_winners(measurements: Path) -> set[str]:
     return winners
 
 
+def read_correctness_evidence(measurements: Path) -> dict[str, dict[str, Any]]:
+    """Reduce successful candidate checks into production manifest evidence.
+
+    Replay candidates must carry evidence from the exact tune artifact that
+    selected them.  The tuner records per-signature error metrics; retain the
+    worst observed finite metrics for each candidate and bind them to the
+    producer's signature/build namespace.
+    """
+    evidence: dict[str, dict[str, Any]] = {}
+    header: dict[str, Any] = {}
+    with measurements.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("kind") == "header":
+                header = row
+                continue
+            if row.get("kind") != "result":
+                continue
+            for candidate in row.get("candidates", []):
+                name = candidate.get("name")
+                if (not isinstance(name, str) or candidate.get("status") != "ok" or
+                        not isinstance(candidate.get("nmse"), (int, float)) or
+                        not isinstance(candidate.get("max_abs"), (int, float))):
+                    continue
+                current = evidence.get(name)
+                nmse = float(candidate["nmse"])
+                max_abs = float(candidate["max_abs"])
+                if current is None:
+                    evidence[name] = {
+                        "reference_path": str(measurements.resolve()),
+                        "error_metrics": {"nmse": nmse, "max_abs": max_abs},
+                        "tolerances": {"nmse": 1e-6, "max_abs": 1e-2},
+                        "signature_namespace": {
+                            "signature_schema_version": header.get("signature_schema", 1),
+                            "hardware_schema_version": header.get("hardware_schema", 1),
+                        },
+                        "build_namespace": {
+                            "source_revision": header.get("source_revision", ""),
+                        },
+                    }
+                else:
+                    current["error_metrics"]["nmse"] = max(
+                        current["error_metrics"]["nmse"], nmse)
+                    current["error_metrics"]["max_abs"] = max(
+                        current["error_metrics"]["max_abs"], max_abs)
+    return evidence
+
+
 def enumerate_supported_candidates(cuda_dir: Path,
                                    architectures: list[str],
                                    types: list[str]) -> list[Candidate]:
@@ -649,6 +700,7 @@ def build_manifest(root: Path, *, variant_set: str,
                    inventory: Inventory | None,
                    source_revision: str,
                    winners: set[str] | None = None,
+                   correctness_source: Path | None = None,
                    resource_blacklist: dict[tuple[str, str], tuple[str, ...]] | None = None) -> dict[str, Any]:
     if variant_set not in schema.VARIANT_SETS:
         raise CatalogError(
@@ -718,6 +770,18 @@ def build_manifest(root: Path, *, variant_set: str,
                 f"e.g. {sorted(unknown)[0]}. The measurements came from a "
                 f"different inventory or architecture set than this build.")
         candidates = kept
+
+    if variant_set in schema.PRODUCTION_VARIANT_SETS and correctness_source is not None:
+        evidence = read_correctness_evidence(correctness_source)
+        for candidate in candidates:
+            if candidate.source_class == "native_wrapper":
+                continue
+            proof = evidence.get(candidate.stable_name)
+            if proof is None:
+                raise CatalogError(
+                    f"{variant_set} candidate {candidate.stable_name!r} has no "
+                    "successful correctness evidence in the supplied tune artifact")
+            candidate.config["correctness_reference"] = proof
 
     manifest = {
         "artifact_version": ARTIFACT_VERSION,
@@ -1477,6 +1541,7 @@ def main(argv: list[str] | None = None) -> int:
         manifest = build_manifest(
             root, variant_set=args.variant_set, architectures=architectures,
             inventory=inventory, source_revision=revision, winners=winners,
+            correctness_source=Path(args.winners) if args.winners else None,
             resource_blacklist=resource_blacklist)
     except (CatalogError, ResourceError, schema.SchemaError) as exc:
         print(f"catalog generation failed: {exc}", file=sys.stderr)
