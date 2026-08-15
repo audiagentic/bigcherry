@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import doctor
 from . import paths
 from . import patcher
 from . import patchset
@@ -860,6 +861,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Report migration assumptions without modifying source or build state."""
+    return doctor.main(as_json=args.json)
+
+
 # --------------------------------------------------------------------- main
 
 
@@ -1015,6 +1021,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="show checkout and release status")
     status.set_defaults(func=cmd_status)
+
+    doctor_cmd = sub.add_parser(
+        "doctor", help="audit migration assumptions and identity inputs"
+    )
+    doctor_cmd.add_argument("--json", action="store_true")
+    doctor_cmd.set_defaults(func=cmd_doctor)
 
     tune_journal_cmd = sub.add_parser(
         "tune-journal", help="crash-safe tuning journal status/compaction (HI48)")
