@@ -86,7 +86,16 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
         if isinstance(name, str) and not name.endswith("#twin")
     }
     if not expected_names:
-        raise PromotionError("ranking decision coverage has no scheduled finalists")
+        # Native-only results have no selection schedule: there was no
+        # challenger eligible for the signature.  They still carry a
+        # one-candidate ranking decision for provenance, so validate that
+        # decision against the native identity instead of treating the absent
+        # schedule as malformed evidence.
+        native = row.get("native")
+        if (not isinstance(native, str) or
+                row.get("provisional_winner") != native):
+            raise PromotionError("ranking decision coverage has no scheduled finalists")
+        expected_names = {native}
     for decision in decisions:
         names = [candidate.name for candidate in decision.candidates]
         if set(names) != expected_names or len(names) != len(set(names)):

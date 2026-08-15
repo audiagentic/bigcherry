@@ -211,6 +211,20 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaisesRegex(tune_promotion.PromotionError, "coverage"):
             tune_promotion._validate_policy_identity(row, header)
 
+    def test_native_only_ranking_decision_has_no_selection_schedule(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["native"] = "native"
+        row["provisional_winner"] = "native"
+        row.pop("schedule")
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [{
+            "policy_name": "latency-v1", "policy_version": 1,
+            "is_production": True, "predicted_winner": "native",
+            "candidates": [{"name": "native", "verdict": "winner"}],
+        }]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
     def test_ranking_provisional_winner_and_status_are_consistent(self):
         row = result("a" * 32, 0.001, 95.0)
         row["provisional_winner"] = "native"
