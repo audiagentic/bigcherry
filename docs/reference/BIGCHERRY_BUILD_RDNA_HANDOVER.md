@@ -3,7 +3,7 @@
 Date: 2026-08-15
 Repository: `https://github.com/audiagentic/bigcherry`
 Branch: `tuning-code-rebase`
-Latest pushed commit: `48b0325d2ff45746055dce919fade3b8c319098f`
+Latest pushed commit: `84185e4`
 
 ## Scope
 
@@ -25,7 +25,7 @@ Governing repository references:
 
 ## Repository state and commits
 
-The branch is clean and synchronized with origin. The implementation work is at `386f959`; the planning checkpoint is `5b716e2`; the latest correction is `48b0325`.
+The branch is clean and synchronized with origin. The implementation work is at `386f959`; the planning checkpoint is `5b716e2`; the latest correction is `48b0325`; the handover is `8d501b2` with campaign-ledger synchronization at `84185e4`.
 
 Implementation history:
 
