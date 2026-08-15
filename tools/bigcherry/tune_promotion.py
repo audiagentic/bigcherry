@@ -107,7 +107,15 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
             raise PromotionError("ranking decision has unknown candidate verdict")
         winners = [candidate.name for candidate in decision.candidates
                    if candidate.verdict == "winner"]
-        if winners != [decision.predicted_winner]:
+        # When native is retained because no challenger clears the effect
+        # threshold, latency-v1 can report native as the prediction while no
+        # finalist receives the challenger-only ``winner`` verdict. This is
+        # valid native-retention evidence, not a contradictory winner.
+        native_retained = (
+            not winners and
+            decision.predicted_winner == row.get("native") == row.get("provisional_winner")
+        )
+        if winners != [decision.predicted_winner] and not native_retained:
             raise PromotionError("ranking decision winner verdict is inconsistent")
     if prod.predicted_winner != row.get("provisional_winner"):
         raise PromotionError("production ranking decision does not match provisional winner")

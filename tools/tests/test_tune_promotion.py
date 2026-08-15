@@ -251,6 +251,23 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(native, [100.0, 100.0])
         self.assertEqual(winner, [90.0, 80.0])
 
+    def test_native_retention_can_have_no_challenger_winner_verdict(self):
+        row = result("b" * 32, 0.001, 100.0)
+        row["provisional_winner"] = "native"
+        row["winner"] = "native"
+        row["promotion_status"] = "native"
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [{
+            "policy_name": "latency-v1", "policy_version": 1,
+            "is_production": True, "predicted_winner": "native",
+            "candidates": [
+                {"name": "native", "verdict": "outside_tie_band"},
+                {"name": "candidate", "verdict": "near_tie_below_threshold"},
+            ],
+        }]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
 
 if __name__ == "__main__":
     unittest.main()
