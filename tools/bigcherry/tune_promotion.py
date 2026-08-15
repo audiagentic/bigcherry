@@ -172,7 +172,11 @@ def _validated_effect(confirmation: dict[str, Any]) -> float:
     persisted = confirmation.get("effect_pct")
     if not isinstance(persisted, (int, float)) or not math.isfinite(float(persisted)):
         raise PromotionError("confirmation effect_pct is missing or non-finite")
-    if not math.isclose(observed, float(persisted), rel_tol=1e-6, abs_tol=1e-5):
+    # Timing arrays are serialized to three decimal microseconds while the
+    # producer computes effect_pct from the higher-precision device values.
+    # Permit the resulting sub-centipercent rounding drift, but not a
+    # material effect mismatch.
+    if not math.isclose(observed, float(persisted), rel_tol=1e-6, abs_tol=1e-2):
         raise PromotionError("confirmation effect_pct does not match paired samples")
     return observed
 
