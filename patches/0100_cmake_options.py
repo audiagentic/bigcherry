@@ -33,6 +33,8 @@ set_property(CACHE GGML_HIP_AUTOTUNE_VARIANT_SET PROPERTY STRINGS
              "inventory;workload-max;full-max;replay-full;replay-slim")
 set   (GGML_HIP_AUTOTUNE_SIGNATURE_FILE "" CACHE STRING
                                             "ggml: inventory JSON driving workload-max")
+set   (GGML_HIP_AUTOTUNE_GENERATED_DIR "" CACHE PATH
+                                            "bigcherry: build-local generated compile inputs")
 option(GGML_HIP_AUTOTUNE_SQLITE             "ggml: link SQLite for record/tune modes"          ON)
 option(GGML_HIP_AUTOTUNE_RECORD             "ggml: build signature record mode"                OFF)
 option(GGML_HIP_WORKSPACE_METRICS            "ggml: collect tune-only pool workspace metrics"   OFF)
@@ -132,15 +134,21 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
         endif()
         add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
     endif()
-    # The generated registry, manifest hash header and MMVQ instances are
-    # written into the tree by `bigcherry generate` before configure.
-    if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../ggml-cuda/hip-autotune-registry.inc")
+    # Campaign builds use an out-of-tree generated directory.  The empty
+    # value remains a legacy compatibility path for the interactive command;
+    # campaign/build services always pass the explicit directory.
+    set(_BC_GENERATED_DIR "${GGML_HIP_AUTOTUNE_GENERATED_DIR}")
+    if (_BC_GENERATED_DIR STREQUAL "")
+        set(_BC_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ggml-cuda")
+    endif()
+    if (NOT EXISTS "${_BC_GENERATED_DIR}/hip-autotune-registry.inc")
         message(FATAL_ERROR
             "HIP dispatch is enabled but hip-autotune-registry.inc is missing. "
             "Run `python -m bigcherry generate` before configuring.")
     endif()
+    include_directories("${_BC_GENERATED_DIR}")
 
-    file(GLOB   SRCS "../ggml-cuda/template-instances/mmvq-autotune-instance-*.cu")
+    file(GLOB   SRCS "${_BC_GENERATED_DIR}/template-instances/mmvq-autotune-instance-*.cu")
     list(APPEND GGML_SOURCES_ROCM ${SRCS})
 
     # Upstream globs only *.cu from ggml-cuda/. Standards 12.1 names the host

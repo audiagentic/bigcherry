@@ -431,6 +431,7 @@ def _generate_for(
         variant_set: str | None,
         inventory: str | None,
         winners: str | None,
+        generated_root: Path | None,
         dry_run: bool,
 ) -> list[str]:
     """The `generate` invocation this build needs, as a command.
@@ -450,6 +451,8 @@ def _generate_for(
         cmd += ["--inventory", inventory]
     if winners:
         cmd += ["--winners", winners]
+    if generated_root is not None:
+        cmd += ["--generated-root", str(generated_root)]
     if dry_run:
         cmd += ["--dry-run"]
     return cmd
@@ -466,6 +469,7 @@ def _cmake_configure_args(
         inventory: str | None = None,
         c_compiler: str | None = None,
         cxx_compiler: str | None = None,
+        generated_root: Path | None = None,
 ) -> list[str]:
     options = {
         "CMAKE_BUILD_TYPE": "Release",
@@ -478,6 +482,8 @@ def _cmake_configure_args(
     chosen = variant_set or build.variant_set
     if chosen:
         options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = chosen
+        if generated_root is not None:
+            options["GGML_HIP_AUTOTUNE_GENERATED_DIR"] = str(generated_root.resolve())
         # Only meaningful alongside a variant set. A stock build has no
         # dispatch layer, and handing it autotune options would describe a
         # binary that cannot use them.
@@ -549,11 +555,13 @@ def _build_one_recipe(
         generate = _generate_for(
             build, root, variant_set=args.variant_set,
             inventory=args.inventory, winners=args.winners,
+            generated_root=build_dir / "generated" if (args.variant_set or build.variant_set) else None,
             dry_run=args.dry_run)
         configure = _cmake_configure_args(
             recipe, build, platform, root, build_dir,
             variant_set=args.variant_set, inventory=args.inventory,
-            c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler)
+            c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
+            generated_root=build_dir / "generated" if (args.variant_set or build.variant_set) else None)
         compile_cmd = ["cmake", "--build", str(build_dir), "-j"]
         if args.target:
             compile_cmd += ["--target", *args.target]
@@ -818,6 +826,8 @@ def cmd_generate(args: argparse.Namespace) -> int:
         forwarded += ["--inventory", args.inventory]
     if args.winners:
         forwarded += ["--winners", args.winners]
+    if args.generated_root:
+        forwarded += ["--generated-root", args.generated_root]
     if args.dry_run:
         forwarded += ["--dry-run"]
 
@@ -1012,6 +1022,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--winners",
         default=None,
         help="measurements JSONL from a tuning run (required for replay-slim)",
+    )
+    generate.add_argument(
+        "--generated-root", default=None,
+        help="build-local directory for generated compile inputs",
     )
     generate.add_argument("--dry-run", action="store_true")
     generate.add_argument(

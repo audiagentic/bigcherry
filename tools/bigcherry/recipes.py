@@ -131,6 +131,9 @@ def load_config(path=None) -> Config:
     except tomllib.TOMLDecodeError as exc:
         raise RecipeError(f"{path}: {exc}") from None
 
+    if raw.get("version") == 2:
+        return _load_v2_compat(path, raw)
+
     pinned = raw.get("pinned")
     if not isinstance(pinned, str) or not pinned:
         raise RecipeError(f"{path}: top-level 'pinned' must be a non-empty string")
@@ -207,6 +210,95 @@ def load_config(path=None) -> Config:
     if not recipes:
         raise RecipeError(f"{path}: defines no recipes")
 
+    return Config(pinned=pinned, recipes=recipes, builds=builds,
+                  platforms=platforms, path=path)
+
+
+def _load_v2_compat(path: Path, raw: dict) -> Config:
+    """Expose v2 builds to the legacy CLI through an explicit adapter.
+
+    Campaign code uses :mod:`bigcherry.config` directly.  This adapter exists
+    only so old pull/audit/build commands can continue operating while the
+    campaign path migrates.  It accepts only the explicit ``compat.recipe``
+    aliases shipped in the v2 file; it never converts selectors into v2 source
+    plans implicitly.
+    """
+    pinned = raw.get("pinned")
+    if not isinstance(pinned, str) or not pinned:
+        raise RecipeError(f"{path}: top-level 'pinned' must be a non-empty string")
+
+    builds: dict[str, Build] = {}
+    raw_builds = raw.get("build") or {}
+    if not isinstance(raw_builds, dict):
+        raise RecipeError("build must be a table")
+    for name, body in raw_builds.items():
+        if not isinstance(body, dict):
+            raise RecipeError(f"build {name!r} must be a table")
+        raw_needs = body.get("needs", [])
+        if not isinstance(raw_needs, list) or not all(isinstance(v, str) for v in raw_needs):
+            raise RecipeError(f"build {name!r}: v2 needs must be a list of strings")
+        needs = "none"
+        for candidate in ("winners", "inventory"):
+            if candidate in raw_needs:
+                needs = candidate
+                break
+        builds[name] = Build(
+            name=name,
+            description=str(body.get("description", "")),
+            options=_options(body.get("options"), f"build {name!r}"),
+            variant_set=body.get("variant-set"),
+            needs=needs,
+        )
+    # The old CLI name is a compatibility alias for the v2 control role.
+    if "control" in builds and "native" not in builds:
+        control = builds["control"]
+        builds["native"] = Build(
+            name="native", description=control.description,
+            options=control.options, variant_set=control.variant_set,
+            needs=control.needs)
+
+    platforms: dict[str, Platform] = {}
+    raw_platforms = raw.get("platform") or {}
+    for name, body in raw_platforms.items():
+        if not isinstance(body, dict):
+            raise RecipeError(f"platform {name!r} must be a table")
+        targets = body.get("targets")
+        if isinstance(targets, list) and all(isinstance(v, str) for v in targets):
+            targets = ";".join(targets)
+        if not isinstance(targets, str) or not targets:
+            raise RecipeError(f"platform {name!r}: targets must be a non-empty string or list")
+        platforms[name] = Platform(
+            name=name, description=str(body.get("description", "")),
+            targets=targets, options=_options(body.get("options"), f"platform {name!r}"),
+            c_compiler=body.get("c-compiler"), cxx_compiler=body.get("cxx-compiler"))
+
+    compat = raw.get("compat") or {}
+    if not isinstance(compat, dict) or not isinstance(compat.get("recipe", {}), dict):
+        raise RecipeError(f"{path}: v2 requires explicit [compat.recipe.*] aliases for legacy commands")
+    recipes: dict[str, Recipe] = {}
+    for name, body in compat["recipe"].items():
+        if not isinstance(body, dict):
+            raise RecipeError(f"compat.recipe.{name!r} must be a table")
+        ref = body.get("ref", "pinned")
+        if not isinstance(ref, str) or not ref:
+            raise RecipeError(f"compat.recipe.{name!r}: ref must be a non-empty string")
+        builds_list = body.get("builds", [])
+        if not isinstance(builds_list, list) or not all(isinstance(v, str) for v in builds_list):
+            raise RecipeError(f"compat.recipe.{name!r}: builds must be a list of strings")
+        unknown = [value for value in builds_list if value not in builds]
+        if unknown:
+            raise RecipeError(f"compat.recipe.{name!r} names unknown build(s): {', '.join(unknown)}")
+        platform = body.get("platform")
+        if platform is not None and platform not in platforms:
+            raise RecipeError(f"compat.recipe.{name!r} names unknown platform {platform!r}")
+        recipes[name] = Recipe(
+            name=name, ref=pinned if ref == FOLLOW_PIN else ref,
+            groups=_as_filter(body.get("groups"), "groups", name),
+            states=_as_filter(body.get("states"), "states", name),
+            follows_pin=ref == FOLLOW_PIN, builds=tuple(builds_list),
+            platform=platform, default=bool(body.get("default", False)))
+    if not recipes:
+        raise RecipeError(f"{path}: v2 defines no compat recipes")
     return Config(pinned=pinned, recipes=recipes, builds=builds,
                   platforms=platforms, path=path)
 

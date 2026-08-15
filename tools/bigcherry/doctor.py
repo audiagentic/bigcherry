@@ -7,6 +7,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from . import config as campaign_config
 from . import patchset, paths, recipes
 from .context import ProjectContext
 
@@ -49,7 +50,20 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         for item in catalog
     ]
     recipes_report: list[dict[str, object]] = []
-    if version == 1:
+    if version == 2:
+        loaded = campaign_config.load(context.config_path)
+        for name, source in sorted(loaded.sources.items()):
+            recipes_report.append(
+                {
+                    "name": name,
+                    "schema": "v2",
+                    "ref": source.ref,
+                    "overlay": source.overlay,
+                    "patch_sets": list(source.patch_sets),
+                    "source_plan_status": "exact-patch-sets",
+                }
+            )
+    else:
         legacy = recipes.load_config(context.config_path)
         for name, recipe in sorted(legacy.recipes.items()):
             recipes_report.append(
@@ -79,7 +93,9 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         },
         "patch_catalog": patch_rows,
         "classification": {
-            "framework_candidates": [item.patch_id for item in catalog if item.group == "core" and item.state == "validated"],
+            "framework_candidates": [item.patch_id for item in catalog if item.state == "validated"],
+            "validated_core_group": [item.patch_id for item in catalog if item.group == "core" and item.state == "validated"],
+            "validated_noncore_group": [item.patch_id for item in catalog if item.group != "core" and item.state == "validated"],
             "promoted_enhancements": [],
             "classification_status": "owner-review-required",
             "reason": "validated state/group alone does not establish enhancement promotion",

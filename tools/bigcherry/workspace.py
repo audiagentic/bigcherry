@@ -84,9 +84,9 @@ def materialize(
     repository.add_detached_worktree(plan.upstream_revision, destination)
     allowed_untracked: set[str] = set()
     if plan.overlay_enabled:
-            for source in sorted(context.overlay_root.rglob("*")):
-                if not source.is_file():
-                    continue
+        for source in sorted(context.overlay_root.rglob("*")):
+            if not source.is_file():
+                continue
             relative = source.relative_to(context.overlay_root)
             target = destination / relative
             was_present = target.exists()
