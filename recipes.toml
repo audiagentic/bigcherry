@@ -1,99 +1,144 @@
-# Named build definitions: which upstream revision, which patches, and which
-# binaries to produce.
-version = 1
-pinned = "b10362"  # bump via `bigcherry repin`; recipes with ref="pinned" follow, others stay frozen
+# BigCherry campaign configuration v2.
+# Legacy pull/audit/build commands use only the explicit compat.recipe aliases
+# below; campaign code consumes source/build/patch-set objects directly.
+version = 2
+pinned = "b10362"
+
+[patch-set.framework]
+patches = [
+  "0100_cmake_options",
+  "0200_dispatch_hook",
+  "0300_mmq_forced_j",
+  "0400_mmvf_forced_block",
+  "0500_mmf_forced_nwarps",
+  "0600_mmvq_geometry",
+  "0650_mmvq_native_variant",
+  "0700_coverage_counters",
+  "0800_server_shutdown_endpoint",
+  "0810_replay_hit_diagnostics",
+  "0820_measurement_signature_shapes",
+  "0830_split_reduce_telemetry",
+  "0900_pool_workspace_metrics",
+  "1000_rdna4_mmq_q2k_q6k_fix",
+]
+required-state = "validated"
+
+[patch-set.validated-enhancements]
+patches = []
+required-state = "validated"
+
+[source.llama-native]
+ref = "pinned"
+overlay = false
+patch-sets = []
+
+[source.bigcherry-native]
+ref = "pinned"
+overlay = true
+patch-sets = ["framework"]
+
+[source.bigcherry]
+ref = "pinned"
+overlay = true
+patch-sets = ["framework", "validated-enhancements"]
 
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."
 options = {}
+needs = []
 
-[build.native]
+[build.control]
 description = "Dispatch layer compiled in, native candidates only."
 options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "inventory"
+needs = []
 
 [build.record]
 description = "Discovers which signatures a workload actually issues."
 options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_AUTOTUNE_RECORD = "ON" }
 variant-set = "inventory"
+needs = []
 
 [build.tune]
 description = "Measures candidates and writes results. The tuning workhorse."
 options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_WORKSPACE_METRICS = "ON" }
 variant-set = "workload-max"
-needs = "inventory"
+needs = ["inventory"]
 
 [build.replay]
 description = "Applies stored winners without measuring. What ships."
 options = { GGML_HIP_DISPATCH_REPLAY = "ON" }
 variant-set = "replay-full"
-needs = "inventory"
+needs = ["inventory", "promoted-winners"]
 
 [build.audit]
 description = "Compile-audit only: every candidate, ignoring the workload."
 options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "full-max"
+needs = []
 
 [platform.linux-multi]
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
-targets = "gfx1100;gfx1201;gfx1030"
+targets = ["gfx1100", "gfx1201", "gfx1030"]
 options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON" }
 c-compiler = "/opt/rocm/llvm/bin/clang"
 cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 
 [platform.windows-gfx1100]
 description = "Local workstation, single card."
-targets = "gfx1100"
+targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
 
-[recipe.dev]
+# Explicit compatibility aliases for the legacy CLI. These selectors are not
+# production source composition; the v2 source definitions above are.
+[compat.recipe.dev]
 ref = "pinned"
 states = ["validated", "untested"]
 builds = ["tune", "replay", "record"]
 platform = "linux-multi"
 
-[recipe.release]
+[compat.recipe.release]
 ref = "pinned"
 states = ["validated"]
 builds = ["record", "tune", "replay"]
 platform = "linux-multi"
 
-[recipe.core]
+[compat.recipe.core]
 ref = "pinned"
 groups = ["core"]
 states = ["validated"]
 builds = ["tune"]
 platform = "linux-multi"
 
-[recipe.upstream]
+[compat.recipe.upstream]
 ref = "pinned"
-groups = []   # empty list = select nothing; omitting the key entirely would mean "all groups" instead
+groups = []
 builds = ["stock"]
 platform = "linux-multi"
 default = true
 
-[recipe.bigcherry-native]
+[compat.recipe.bigcherry-native]
 ref = "pinned"
 states = ["validated"]
 builds = ["native"]
 platform = "linux-multi"
 default = true
 
-[recipe.bigcherry]
+[compat.recipe.bigcherry]
 ref = "pinned"
 states = ["validated"]
 builds = ["record", "tune", "replay"]
 platform = "linux-multi"
 default = true
 
-[recipe.workstation]
+[compat.recipe.workstation]
 ref = "pinned"
 states = ["validated", "untested"]
 builds = ["tune"]
 platform = "windows-gfx1100"
 
-[recipe.b10257]
-ref = "b10257"   # frozen historical recipe -- does not move when `pinned` changes
+[compat.recipe.b10257]
+ref = "b10257"
 states = ["validated"]
 builds = ["tune", "replay"]
 platform = "linux-multi"

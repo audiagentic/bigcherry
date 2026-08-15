@@ -87,6 +87,21 @@ states = ["validated"]
         with self.assertRaisesRegex(config.ConfigError, "exact patch-sets"):
             config.load(path)
 
+    def test_unknown_top_level_field_fails(self):
+        path = _write('version = 2\npinned = "b10362"\nfuture = true\n')
+        with self.assertRaisesRegex(config.ConfigError, "unknown top-level"):
+            config.load(path)
+
+    def test_shipped_v2_preserves_legacy_execution_properties(self):
+        loaded = config.load(Path(__file__).resolve().parents[2] / "recipes.toml")
+        self.assertEqual(loaded.pinned, "b10362")
+        self.assertEqual(loaded.sources["llama-native"].patch_sets, ())
+        self.assertEqual(loaded.sources["bigcherry-native"].patch_sets, ("framework",))
+        self.assertEqual(loaded.sources["bigcherry"].patch_sets, ("framework", "validated-enhancements"))
+        self.assertEqual(loaded.builds["control"].options, (("GGML_HIP_AUTOTUNE", "ON"),))
+        self.assertEqual(loaded.builds["tune"].needs, frozenset({"inventory"}))
+        self.assertEqual(loaded.builds["replay"].needs, frozenset({"inventory", "promoted-winners"}))
+
 
 if __name__ == "__main__":
     unittest.main()

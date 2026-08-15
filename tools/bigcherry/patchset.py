@@ -96,6 +96,7 @@ class PatchModule:
     content_hash: str
     requires: tuple[str, ...] = ()
     conflicts: tuple[str, ...] = ()
+    group_explicit: bool = True
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,7 @@ def catalog(directory=None) -> list[PatchModule]:
                 content_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
                 requires=_constant_strings(path, "REQUIRES"),
                 conflicts=_constant_strings(path, "CONFLICTS"),
+                group_explicit=_literal_constant(path, "GROUP") is not None,
             )
         )
     return sorted(result, key=lambda module: (module.order, module.patch_id))

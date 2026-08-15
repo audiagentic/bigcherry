@@ -115,6 +115,13 @@ def load(path: str | Path) -> Config:
         raise ConfigError(
             f"{path}: expected explicit version = 2; v1 requires conversion"
         )
+    unknown_top_level = sorted(
+        set(raw) - {"version", "pinned", "patch-set", "source", "build", "platform", "experiment", "compat"}
+    )
+    if unknown_top_level:
+        raise ConfigError(
+            f"{path}: unknown top-level field(s): {', '.join(unknown_top_level)}"
+        )
     pinned = raw.get("pinned")
     if not isinstance(pinned, str) or not pinned:
         raise ConfigError(f"{path}: pinned must be a non-empty string")

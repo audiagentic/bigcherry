@@ -1327,7 +1327,13 @@ class EmitResult:
     removed_paths: list[Path]
 
 
-def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
+def emit(
+    manifest: dict[str, Any],
+    root: Path,
+    artifacts: Path,
+    *,
+    generated_root: Path | None = None,
+) -> EmitResult:
     """Write every artifact.
 
     Generated files that are no longer in the manifest are deleted. A shrinking
@@ -1336,8 +1342,10 @@ def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
     catalog record, which is exactly what standards 2.5 forbids.
     """
     cuda = paths.cuda_dir(root)
-    instances = paths.template_instances_dir(root)
+    generated = generated_root or cuda
+    instances = generated / "template-instances"
     artifacts.mkdir(parents=True, exist_ok=True)
+    generated.mkdir(parents=True, exist_ok=True)
     instances.mkdir(parents=True, exist_ok=True)
 
     manifest_text = json.dumps(manifest, indent=2) + "\n"
@@ -1352,21 +1360,22 @@ def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
         json.dumps(mmq_table_coverage(cuda), indent=2) + "\n",
         encoding="utf-8", newline="")
 
-    registry_path = cuda / "hip-autotune-registry.inc"
+    registry_path = generated / "hip-autotune-registry.inc"
     registry_path.write_text(render_registry(manifest), encoding="utf-8",
                              newline="")
 
-    build_hash_path = cuda / "hip-autotune-build-hash.h"
+    build_hash_path = generated / "hip-autotune-build-hash.h"
     build_hash_path.write_text(render_build_hash(manifest), encoding="utf-8",
                                newline="")
 
-    arch_header_path = cuda / "hip-autotune-arch.h"
+    arch_header_path = generated / "hip-autotune-arch.h"
     arch_header_path.write_text(render_arch_header(), encoding="utf-8",
                                 newline="")
 
-    # The manifest is also copied into the tree so a build carries the catalog
-    # it was generated from, not merely its hash.
-    (cuda / "hip-autotune-manifest.json").write_text(
+    # The generated manifest belongs beside the generated headers.  In legacy
+    # mode that is still the source tree; campaign callers pass a build-local
+    # directory and therefore leave the source worktree unchanged.
+    (generated / "hip-autotune-manifest.json").write_text(
         manifest_text, encoding="utf-8", newline="")
 
     # Same object embedded in the build header (render_build_hash) above --
@@ -1377,12 +1386,12 @@ def emit(manifest: dict[str, Any], root: Path, artifacts: Path) -> EmitResult:
         manifest["build_descriptor"], sort_keys=True, indent=2) + "\n"
     descriptor_path = artifacts / "hip-autotune-build-descriptor.json"
     descriptor_path.write_text(descriptor_text, encoding="utf-8", newline="")
-    (cuda / "hip-autotune-build-descriptor.json").write_text(
+    (generated / "hip-autotune-build-descriptor.json").write_text(
         descriptor_text, encoding="utf-8", newline="")
 
     # All MMVQ geometry instances go into one include, compiled inside
     # mmvq.cu's translation unit -- see render_mmvq_instances for why.
-    instances_path = cuda / "hip-autotune-mmvq-instances.inc"
+    instances_path = generated / "hip-autotune-mmvq-instances.inc"
     instances_path.write_text(render_mmvq_instances(manifest), encoding="utf-8",
                               newline="")
 
@@ -1418,6 +1427,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--winners", default=None,
                         help="measurements JSONL from a tuning run "
                              "(required for replay-slim)")
+    parser.add_argument(
+        "--generated-root", default=None,
+        help="build-local directory for generated compile inputs; omit for legacy in-tree output",
+    )
     parser.add_argument("--resource-report", action="append", default=[],
                         help="validated compiler resource report; may be repeated")
     parser.add_argument("--dry-run", action="store_true",
@@ -1485,7 +1498,12 @@ def main(argv: list[str] | None = None) -> int:
         print("  (dry run -- nothing written)")
         return 0
 
-    result = emit(manifest, root, paths.artifact_dir(revision))
+    result = emit(
+        manifest,
+        root,
+        paths.artifact_dir(revision),
+        generated_root=Path(args.generated_root) if args.generated_root else None,
+    )
     print(f"  manifest:   {result.manifest_path}")
     print(f"  registry:   {result.registry_path}")
     print(f"  build hash: {result.build_hash_path}")
