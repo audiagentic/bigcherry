@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     value TEXT NOT NULL
 );
 
--- Schema 2 (HI48): adds the columns/tables below, matching a real recovered
+-- Schema 3 (campaign identity): adds the columns/tables below, matching a real recovered
 -- pre-reset schema (schema_version 9 there; renumbered here since the
 -- intermediate 2-8 DDL was never recovered -- see
 -- docs/recovery/schema9-recovered-ddl.sql for the exact source and
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- (standards: current-only, no silent migration) rather than guess at an
 -- unlisted intermediate shape.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '2'),
+    ('schema_version',    '3'),
     ('signature_schema',  '1'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS build (
     hip_version         TEXT,               -- HIP runtime version string (HI37)
     compiler            TEXT,               -- e.g. clang-18 (B3)
     build_descriptor_hash TEXT,             -- complete compiler/config identity
+    source_slice_id      TEXT,
+    build_plan_id        TEXT,
+    effective_build_id   TEXT,
+    campaign_run_id      TEXT,
+    workload_id          TEXT,
     dispatch_abi        TEXT,               -- artifact version string (B3)
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (source_revision, manifest_hash, signature_schema,
@@ -135,6 +140,9 @@ CREATE TABLE IF NOT EXISTS observation (
     est_flops           INTEGER NOT NULL DEFAULT 0,
     sites_json          TEXT    NOT NULL DEFAULT '[]',
     diagnostics_json    TEXT    NOT NULL DEFAULT '{}',
+    source_slice_id     TEXT,
+    workload_id         TEXT,
+    campaign_run_id     TEXT,
     first_seen          TEXT    NOT NULL DEFAULT (datetime('now')),
     last_seen           TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (build_id, hardware_id, signature_id)
@@ -192,6 +200,11 @@ CREATE TABLE IF NOT EXISTS measurement (
     max_rel_err      REAL,
     samples_json     TEXT,                      -- raw sample array
     effective_us     REAL,                      -- HI50: ranking metric (max(gpu, host-sync-adjusted))
+    source_slice_id   TEXT,
+    build_plan_id     TEXT,
+    effective_build_id TEXT,
+    workload_id       TEXT,
+    campaign_run_id   TEXT,
     measured_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (build_id, hardware_id, candidate_id, objective, stage, dispatch_digest)
 );
@@ -230,6 +243,11 @@ CREATE TABLE IF NOT EXISTS winner (
     validated           INTEGER NOT NULL DEFAULT 0,  -- set by HI14
     promotion_status    TEXT,                      -- HI34/HI50: native|pending_bh|confirmation_rejected|promoted|rejected_bh
     q_value             REAL,                      -- HI34: BH-adjusted q-value, set only after tune-promote
+    source_slice_id    TEXT,
+    build_plan_id      TEXT,
+    effective_build_id TEXT,
+    workload_id        TEXT,
+    campaign_run_id    TEXT,
     decided_at          TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE (build_id, hardware_id, objective, dispatch_digest)
 );
@@ -251,6 +269,9 @@ CREATE TABLE IF NOT EXISTS replay_miss (
     dispatch_digest  BLOB    NOT NULL,
     canonical_json   TEXT    NOT NULL,
     fallback_name    TEXT    NOT NULL,
+    source_slice_id  TEXT,
+    workload_id      TEXT,
+    campaign_run_id  TEXT,
     calls            INTEGER NOT NULL DEFAULT 1,
     first_seen       TEXT    NOT NULL DEFAULT (datetime('now')),
     last_seen        TEXT    NOT NULL DEFAULT (datetime('now')),
