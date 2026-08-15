@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -75,6 +77,26 @@ class InventoryIdentityTests(unittest.TestCase):
         forward = catalog.build_descriptor(_manifest("inventory", candidates))
         backward = catalog.build_descriptor(_manifest("inventory", list(reversed(candidates))))
         self.assertEqual(forward["descriptor_hash"], backward["descriptor_hash"])
+
+    def test_correctness_evidence_reduces_successful_tune_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tune.measurements.jsonl"
+            path.write_text("\n".join([
+                json.dumps({"kind": "header", "source_revision": "a" * 40,
+                            "signature_schema": 1, "hardware_schema": 1}),
+                json.dumps({"kind": "result", "candidates": [
+                    {"name": "mmq:test:v1", "status": "ok", "nmse": 1e-8,
+                     "max_abs": 1e-5},
+                    {"name": "mmq:bad:v1", "status": "tolerance", "nmse": 2.0,
+                     "max_abs": 1.0},
+                ]}),
+            ]) + "\n", encoding="utf-8")
+            evidence = catalog.read_correctness_evidence(path)
+        self.assertIn("mmq:test:v1", evidence)
+        self.assertNotIn("mmq:bad:v1", evidence)
+        self.assertEqual(evidence["mmq:test:v1"]["signature_namespace"], {
+            "signature_schema_version": 1, "hardware_schema_version": 1,
+        })
 
 
 if __name__ == "__main__":
