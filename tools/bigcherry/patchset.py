@@ -14,6 +14,8 @@ Python identifier.
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import importlib.util
 import re
 import subprocess
@@ -81,6 +83,64 @@ class PatchInfo:
         return self.state in STATES
 
 
+@dataclass(frozen=True)
+class PatchModule:
+    """Canonical, content-identified patch module metadata."""
+
+    patch_id: str
+    path: Path
+    order: int
+    group: str
+    state: str
+    upstream: str | None
+    content_hash: str
+    requires: tuple[str, ...] = ()
+    conflicts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResolvedPatchSet:
+    """The exact named modules selected for an operation."""
+
+    modules: tuple[PatchModule, ...]
+    required_state: str | None = None
+
+
+def _literal_constant(path: Path, name: str) -> object | None:
+    """Read a literal module constant without importing executable code."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name for target in node.targets
+        ):
+            try:
+                return ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
+def _constant_strings(path: Path, name: str) -> tuple[str, ...]:
+    value = _literal_constant(path, name)
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, (tuple, list)) and all(
+        isinstance(item, str) and item for item in value
+    ):
+        return tuple(value)
+    raise ValueError(f"{path.name}: {name} must be a string or list/tuple of strings")
+
+
+def _module_order(stem: str) -> int:
+    match = re.match(r"^(\d+)_", stem)
+    return int(match.group(1)) if match else 2**31
+
+
 def describe(directory=None) -> list[PatchInfo]:
     """Describe every patch module (name, group, state, upstream) without importing."""
     directory = directory or paths.PATCHES
@@ -100,6 +160,89 @@ def describe(directory=None) -> list[PatchInfo]:
         )
         result.append(info)
     return result
+
+
+def catalog(directory=None) -> list[PatchModule]:
+    """Return every patch as a canonical, hashed module descriptor."""
+    directory = directory or paths.PATCHES
+    if not directory.is_dir():
+        return []
+    result: list[PatchModule] = []
+    for path in sorted(directory.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        result.append(
+            PatchModule(
+                patch_id=path.stem,
+                path=path,
+                order=_module_order(path.stem),
+                group=module_group(path),
+                state=module_state(path),
+                upstream=module_upstream(path),
+                content_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
+                requires=_constant_strings(path, "REQUIRES"),
+                conflicts=_constant_strings(path, "CONFLICTS"),
+            )
+        )
+    return sorted(result, key=lambda module: (module.order, module.patch_id))
+
+
+def resolve_exact(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    directory: Path | None = None,
+    required_state: str | None = None,
+    allow_rejected: bool = False,
+) -> ResolvedPatchSet:
+    """Resolve a complete explicit module set without adding dependencies."""
+    modules = {module.patch_id: module for module in catalog(directory)}
+    ids = tuple(patch_ids)
+    if len(set(ids)) != len(ids):
+        raise ValueError("patch selection contains duplicate canonical IDs")
+    unknown = sorted(set(ids) - set(modules))
+    if unknown:
+        raise ValueError(f"unknown patch module(s): {', '.join(unknown)}")
+    selected = tuple(sorted((modules[item] for item in ids), key=lambda m: (m.order, m.patch_id)))
+    for module in selected:
+        if module.state not in STATES:
+            raise ValueError(f"{module.patch_id}: invalid STATE={module.state!r}")
+        if module.state == "rejected" and not allow_rejected:
+            raise ValueError(f"{module.patch_id}: rejected patch requires --allow-rejected")
+        if required_state is not None and module.state != required_state:
+            raise ValueError(
+                f"{module.patch_id}: state {module.state!r} does not satisfy "
+                f"required state {required_state!r}"
+            )
+    selected_ids = {module.patch_id for module in selected}
+    for module in selected:
+        missing = sorted(set(module.requires) - selected_ids)
+        if missing:
+            raise ValueError(
+                f"{module.patch_id} requires explicitly selected module(s): {', '.join(missing)}"
+            )
+        conflicts = sorted(set(module.conflicts) & selected_ids)
+        if conflicts:
+            raise ValueError(
+                f"{module.patch_id} conflicts with selected module(s): {', '.join(conflicts)}"
+            )
+    return ResolvedPatchSet(selected, required_state)
+
+
+def load_resolved(selection: ResolvedPatchSet) -> list[FilePatch]:
+    """Load only the already-resolved canonical modules, in catalog order."""
+    patches: list[FilePatch] = []
+    for descriptor in selection.modules:
+        module = _load_module(descriptor.path)
+        found = getattr(module, "PATCHES", None)
+        if found is None:
+            single = getattr(module, "PATCH", None)
+            found = [single] if single is not None else []
+        if not found:
+            raise ImportError(
+                f"{descriptor.patch_id} defines neither PATCH nor PATCHES"
+            )
+        patches.extend(found)
+    return patches
 
 
 def upstream_landed(commit: str, root: Path) -> bool | None:
