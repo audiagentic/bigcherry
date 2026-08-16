@@ -70,7 +70,7 @@ class _Harness:
                 needs=frozenset({"inventory"}))},
             platforms={"linux-multi": campaign_config.Platform(
                 name="linux-multi", targets=("gfx1100",), options=())},
-            experiments={}, path=directory / "recipes.toml",
+            experiments={}, campaigns={}, path=directory / "recipes.toml",
         )
         self.calls: list[str] = []
 

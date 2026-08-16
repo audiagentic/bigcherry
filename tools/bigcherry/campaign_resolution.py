@@ -109,7 +109,8 @@ def resolve_lane(
         temporary = config.PatchSet("__merged__", merged, first.required_state)
         patched = dict(cfg.patch_sets)
         patched[temporary.name] = temporary
-        cfg = config.Config(cfg.pinned, patched, cfg.sources, cfg.builds, cfg.platforms, cfg.experiments, cfg.path)
+        cfg = config.Config(cfg.pinned, patched, cfg.sources, cfg.builds, cfg.platforms,
+                           cfg.experiments, cfg.campaigns, cfg.path)
         base_name = temporary.name
     else:
         base_name = source.patch_sets[0]

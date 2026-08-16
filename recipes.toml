@@ -89,6 +89,26 @@ description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
 
+# RE14/RE19: the canonical replacement for legacy `build --all`, expressed
+# directly in v2 source/build/platform identities -- NOT derived from
+# compat.recipe.* below, which are legacy-only labels with their own
+# separate groups/states selection philosophy (compat.recipe.bigcherry-native
+# even aliases the legacy-only build name "native" to this file's real v2
+# "control" build; see recipes.py's _load_v2_compat). This profile's lane
+# set was confirmed to match today's actual default=true recipe/build
+# coverage (upstream/stock, bigcherry-native/native->control,
+# bigcherry/{record,tune,replay}) before being written down here, so
+# `build --all` under the new campaign engine means the same production
+# build roles it always has, not a silently narrower set.
+[campaign.standard]
+lanes = [
+    { source = "llama-native", build = "stock", platform = "linux-multi" },
+    { source = "bigcherry-native", build = "control", platform = "linux-multi" },
+    { source = "bigcherry", build = "record", platform = "linux-multi" },
+    { source = "bigcherry", build = "tune", platform = "linux-multi" },
+    { source = "bigcherry", build = "replay", platform = "linux-multi" },
+]
+
 # Explicit compatibility aliases for the legacy CLI. These selectors are not
 # production source composition; the v2 source definitions above are.
 [compat.recipe.dev]
