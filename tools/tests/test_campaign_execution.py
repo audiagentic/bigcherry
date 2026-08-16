@@ -72,7 +72,11 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
 
             def fake_generate(inputs):
                 self.assertEqual(len(inputs), 1)
-                return {"manifest": {"candidates": []}, "workload_id": "w1"}
+                return {
+                    "manifest": {"candidates": []}, "workload_id": "w1",
+                    "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
+                                       "compile_inputs_hash": "h"},
+                }
 
             executor = CampaignStageExecutor(
                 graph=graph, store=store, run_id="run1",
@@ -81,7 +85,7 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
                 inventory_ref=inventory,
             )
             hashes = executor("gen")
-            self.assertEqual(len(hashes), 1)
+            self.assertEqual(len(hashes), 2)  # manifest + generated-tree
             output = executor.outputs["gen"][0]
             self.assertEqual(output.provenance["workload"]["workload_id"], "w1")
 
@@ -323,8 +327,8 @@ class FullChainTests(unittest.TestCase):
             ))
 
             def fake_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-                self.assertEqual(len(inputs), 1)
-                self.assertEqual(inputs[0].kind, "manifest")
+                # generate now publishes two outputs (manifest, generated-tree).
+                self.assertEqual({ref.kind for ref in inputs}, {"manifest", "generated-tree"})
                 doc = provenance.make(
                     project={}, source={"source_slice_id": source_slice_id_holder[0]},
                     build={"build_plan_id": build_plan_id}, workload={"workload_id": "w1"},
@@ -361,7 +365,12 @@ class FullChainTests(unittest.TestCase):
 
             build_executor = CampaignStageExecutor(
                 graph=build_graph, store=store, run_id="run1",
-                materialize=lambda: {}, generate=lambda inputs: {"manifest": {}, "workload_id": "w1"},
+                materialize=lambda: {},
+                generate=lambda inputs: {
+                    "manifest": {}, "workload_id": "w1",
+                    "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
+                                       "compile_inputs_hash": "h"},
+                },
                 source_slice_id_holder=source_slice_id_holder,
                 build_plan_id=build_plan_id, inventory_ref=inventory,
                 workload_id="w1", build=fake_build, smoke=fake_smoke,

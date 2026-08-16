@@ -1389,6 +1389,15 @@ class EmitResult:
     descriptor_path: Path
     instance_paths: list[Path]
     removed_paths: list[Path]
+    # The subset of generated_root's files a compile actually reads --
+    # registry/build-hash/arch headers and the MMVQ instance include, NOT
+    # the manifest/descriptor JSON also written beside them (those are
+    # evidence, and the manifest in particular carries a real-time
+    # generated_at that would otherwise poison a compile-input identity
+    # that should only change when the actual candidate set changes).
+    # Defaults to () so the existing single, positional call site in
+    # emit() below doesn't need every caller to already know this field.
+    compile_input_paths: tuple[Path, ...] = ()
 
 
 def emit(
@@ -1469,8 +1478,11 @@ def emit(
 
     written = [instances_path]
 
-    return EmitResult(manifest_path, registry_path, build_hash_path,
-                      arch_header_path, descriptor_path, written, removed)
+    return EmitResult(
+        manifest_path, registry_path, build_hash_path, arch_header_path,
+        descriptor_path, written, removed,
+        compile_input_paths=(registry_path, build_hash_path, arch_header_path, instances_path),
+    )
 
 
 # ----------------------------------------------------------------------- main

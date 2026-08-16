@@ -8,24 +8,27 @@ runtime smoke. This is deliberately kept separate from
 provenance contract; this module supplies the real work behind it, so the
 contract can be (and was) unit-tested without needing a compiler or a GPU.
 
-Known simplification, not yet hardened: the real generate worker writes
-the full generated/ directory (registry.inc, build-hash.h, etc, not only
-the manifest) to a run-scoped filesystem path that the build worker then
-reads directly by convention (same run_id), rather than fully
-reconstructing those files from ArtifactStore-verified bytes before every
-configure. The manifest itself is published and verified through
-ArtifactStore as usual; the generated/ directory beside it is not. Treat
-that directory as trusted only within one run, not as portable evidence.
+The generate worker writes the full generated/ directory (registry.inc,
+build-hash.h, etc, not only the manifest) to a run-scoped filesystem path
+that the build worker then reads by convention (same run_id). That
+filesystem convention is not itself the trust boundary, though: generate
+also hashes every file under generated/ (see generated_tree.py) and
+publishes that hash manifest as its own verified ArtifactRef, and build
+re-verifies the real directory against it -- once before configure, once
+again after compiling -- before either configuring or publishing a binary.
+A file that changed on disk between generate and build, or during the
+compile itself, is a hard failure, not a silent pass-through.
 """
 
 from __future__ import annotations
 
+import json
 import stat
 import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import autotune_catalog, campaign_build, provenance, runtime_smoke
+from . import autotune_catalog, campaign_build, generated_tree, provenance, runtime_smoke
 from .artifacts import ArtifactStore
 from .builds import BuildPlan, binary_hash, build_directory
 from .context import ProjectContext
@@ -66,9 +69,17 @@ def make_generate_worker(
         stage_root = context.work_root / "runs" / run_id / "generate"
         artifact_root = stage_root / "catalog"
         generated_root = stage_root / "generated"
-        autotune_catalog.emit(manifest, source_root, artifact_root, generated_root=generated_root)
+        emit_result = autotune_catalog.emit(
+            manifest, source_root, artifact_root, generated_root=generated_root)
 
-        return {"manifest": manifest, "workload_id": inventory_ref.content_hash}
+        tree_manifest = generated_tree.build_manifest(
+            generated_root, compile_inputs=emit_result.compile_input_paths)
+
+        return {
+            "manifest": manifest,
+            "generated_tree": tree_manifest,
+            "workload_id": inventory_ref.content_hash,
+        }
 
     return generate
 
@@ -94,11 +105,15 @@ def make_build_worker(
     """
 
     def run_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-        if len(inputs) != 1 or inputs[0].kind != "manifest":
+        by_kind = {ref.kind: ref for ref in inputs}
+        if len(inputs) != 2 or set(by_kind) != {"manifest", "generated-tree"}:
             raise campaign_build.CampaignBuildError(
-                f"build worker expects exactly one 'manifest' input from "
-                f"the generate stage, got {[ref.kind for ref in inputs]}"
+                f"build worker expects exactly one 'manifest' and one "
+                f"'generated-tree' input from the generate stage, got "
+                f"{[ref.kind for ref in inputs]}"
             )
+        generated_tree_document = json.loads(
+            by_kind["generated-tree"].path.read_text(encoding="utf-8"))
 
         generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
         if not generated_root.is_dir():
@@ -106,6 +121,12 @@ def make_build_worker(
                 f"expected generate stage's generated/ directory at "
                 f"{generated_root}, but it does not exist"
             )
+        # Prove the compile inputs on disk are still exactly what generate
+        # published, BEFORE trusting them to configure/compile -- this is
+        # the actual gap that made generated/ an unverified side-channel:
+        # build previously read this directory by run_id convention alone,
+        # with nothing checking it hadn't been modified since generate ran.
+        generated_tree.verify_tree(generated_root, generated_tree_document)
 
         build_dir = build_directory(context, source_slice_id, build_plan)
         build_dir.mkdir(parents=True, exist_ok=True)
@@ -126,6 +147,10 @@ def make_build_worker(
             raise campaign_build.CampaignBuildError(
                 f"build did not produce the expected binary: {binary}"
             )
+        # Verify again, after compiling: a pass before configure alone
+        # would still miss a modification that happened WHILE the compiler
+        # was running, between the pre-configure check and publication.
+        generated_tree.verify_tree(generated_root, generated_tree_document)
 
         doc = provenance.make(
             project={}, source={"source_slice_id": source_slice_id},
