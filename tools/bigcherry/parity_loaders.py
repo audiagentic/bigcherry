@@ -21,6 +21,7 @@ from .parity import CampaignArm
 
 def load_legacy_arm(
     name: str, *, manifest_path: Path, descriptor_path: Path, binary_path: Path,
+    toolchain: dict[str, str] | None = None,
 ) -> CampaignArm:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
@@ -28,12 +29,14 @@ def load_legacy_arm(
     return CampaignArm(
         name=name, manifest=manifest, descriptor=descriptor,
         candidate_names=candidate_names, binary_hash=binary_hash(binary_path),
+        toolchain=toolchain if toolchain is not None else {},
     )
 
 
 def load_new_arm(
     name: str, *, store: ArtifactStore, manifest_relative: str | Path,
     binary_relative: str | Path, manifest_content_hash: str | None = None,
+    toolchain: dict[str, str] | None = None,
 ) -> CampaignArm:
     """Reads through ``ArtifactStore.resolve``, which raises if the artifact
     is missing -- the loader cannot silently succeed against a partially
@@ -64,4 +67,5 @@ def load_new_arm(
     return CampaignArm(
         name=name, manifest=manifest, descriptor=descriptor,
         candidate_names=candidate_names, binary_hash=binary_hash(binary_path),
+        toolchain=toolchain if toolchain is not None else {},
     )

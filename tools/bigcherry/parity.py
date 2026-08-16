@@ -16,7 +16,7 @@ alongside an unexpected one), which a bare count comparison would not catch.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -33,6 +33,18 @@ class CampaignArm:
     descriptor: dict[str, Any]
     candidate_names: frozenset[str]
     binary_hash: str
+    #: Real, content-level toolchain identity (see
+    #: campaign_build.resolve_toolchain_versions) -- deliberately independent
+    #: of binary_hash, which round 9 established will legitimately differ
+    #: between the two arms (embedded build-tree paths) even when the
+    #: compiler/toolchain used is identical. Comparing this instead of
+    #: blanket-allowing every binary_hash difference is what lets the gate
+    #: still catch a REAL divergence (different compiler, different ROCm
+    #: version) that binary_hash alone cannot distinguish from the expected
+    #: benign difference. Empty by default (not every caller populates it)
+    #: so two empty dicts compare equal rather than forcing every caller to
+    #: opt in.
+    toolchain: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,14 +80,16 @@ def check_parity(
     """
     differences: set[str] = set()
 
-    for field in _MANIFEST_FIELDS:
-        if left.manifest.get(field) != right.manifest.get(field):
-            differences.add(f"manifest.{field}")
-    for field in _DESCRIPTOR_FIELDS:
-        if left.descriptor.get(field) != right.descriptor.get(field):
-            differences.add(f"descriptor.{field}")
+    for manifest_field in _MANIFEST_FIELDS:
+        if left.manifest.get(manifest_field) != right.manifest.get(manifest_field):
+            differences.add(f"manifest.{manifest_field}")
+    for descriptor_field in _DESCRIPTOR_FIELDS:
+        if left.descriptor.get(descriptor_field) != right.descriptor.get(descriptor_field):
+            differences.add(f"descriptor.{descriptor_field}")
     if left.binary_hash != right.binary_hash:
         differences.add("binary_hash")
+    if left.toolchain != right.toolchain:
+        differences.add("toolchain")
 
     missing = left.candidate_names - right.candidate_names
     extra = right.candidate_names - left.candidate_names
