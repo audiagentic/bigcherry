@@ -163,7 +163,8 @@ class DoubleNativeContractTests(unittest.TestCase):
         self.assertIn(
             "if (m == native_m || m->is_native_twin ||\n"
             "                            !m->measured || m->candidate == nullptr) {",
-            self.tuner)
+            self.tuner,
+        )
 
 
 if __name__ == "__main__":

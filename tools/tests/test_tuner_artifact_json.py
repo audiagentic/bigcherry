@@ -30,21 +30,21 @@ class TunerArtifactJsonContractTests(unittest.TestCase):
         # canonical_json from the in-scope signature or every row written
         # after a fatal failure is invalid JSON.
         self.assertIn(
-            "poisoned.canonical_json = ggml_hip_signature_json(sig, true);",
-            self.tuner)
+            "poisoned.canonical_json = ggml_hip_signature_json(sig, true);", self.tuner
+        )
 
     def test_invalid_config_stub_sets_canonical_json(self):
         self.assertIn(
-            "invalid.canonical_json = ggml_hip_signature_json(sig, true);",
-            self.tuner)
+            "invalid.canonical_json = ggml_hip_signature_json(sig, true);", self.tuner
+        )
 
     def test_flush_emits_null_for_empty_canonical(self):
         # Fail closed at the single sink: no future stub path may be able to
         # emit `"canonical":,` -- the only flush field without a valid JSON
         # default.
         self.assertIn(
-            'r.canonical_json.empty() ? "null" : r.canonical_json.c_str(),',
-            self.tuner)
+            'r.canonical_json.empty() ? "null" : r.canonical_json.c_str(),', self.tuner
+        )
 
 
 if __name__ == "__main__":

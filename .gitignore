@@ -24,6 +24,8 @@ CMakeFiles/
 *.ii
 *.spt
 *.tlog/
+.tmp/
+tmp/
 
 # -- ROCm / HIP compilation artifacts --
 hipBC/
