@@ -17,7 +17,7 @@ legacy always does; the new arm never touches that checkout):
       is never the recipe's real build/<recipe>-<build> directory.
 
   new: python -m bigcherry.re14_real_run, the already-proven real
-      materialize -> generate -> build -> runtime-smoke -> reuse path,
+      materialize -> generate -> build -> runtime-smoke path,
       invoked as a subprocess so this script and that proof harness cannot
       drift into two different definitions of "the new path".
 
