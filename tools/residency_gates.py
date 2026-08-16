@@ -30,6 +30,15 @@ run rejected/disabled) in any arm are excluded from that arm's pool — a
 failure invalidates only its own arm's observation, per the locked B1
 acceptance list.
 
+Arm provenance check (HI65 pre-run requirement): when declared arm specs are
+supplied (--arm NAME=MODE[@MB]), each arm's header must match its declaration
+before its analysis may be interpreted. EVICT and EVICT_REWARM both carry the
+legacy flush_l2=1 wire mirror, so only the resolved pre_sample_mode string can
+distinguish them; artifacts that predate that field cannot be attributed and
+fail closed. source_revision and manifest_hash must also agree across arms.
+On any mismatch evaluate() still returns the full report (for diagnosis) but
+header_check.status is 'fail' and main() exits non-zero.
+
 Stdlib only, mirroring tools/compare_tunes.py and tools/verify_slice_a.py.
 """
 
@@ -43,6 +52,7 @@ from pathlib import Path
 from typing import Any
 
 INCOMPLETE_REASON_MARKERS = ("poisoned", "fatal", "failed", "run rejected", "disabled")
+VALID_PRE_SAMPLE_MODES = ("none", "evict", "evict_rewarm")
 
 
 class ResidencyGateError(RuntimeError):
@@ -81,6 +91,76 @@ def load_artifact(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]
     if header is None or not results:
         raise ResidencyGateError(f"{path}: current header and results required")
     return header, results
+
+
+def parse_arm_spec(value: str) -> tuple[str, dict[str, Any]]:
+    """Parse NAME=MODE[@MB] into (arm name, declared provenance spec).
+
+    MODE must be one of VALID_PRE_SAMPLE_MODES; MB is optional and must be a
+    positive integer. Fails closed with ValueError on anything else.
+    """
+    name, sep, rest = value.partition("=")
+    if not sep or not name:
+        raise ValueError(f"arm spec must be NAME=MODE[@MB], got {value!r}")
+    mode, at, mb_text = rest.partition("@")
+    if mode not in VALID_PRE_SAMPLE_MODES:
+        raise ValueError(
+            f"arm mode must be one of {VALID_PRE_SAMPLE_MODES}, got {mode!r}"
+        )
+    mb: int | None = None
+    if at:
+        try:
+            mb = int(mb_text)
+        except ValueError as exc:
+            raise ValueError(
+                f"arm flush size must be an integer MB, got {mb_text!r}"
+            ) from exc
+        if mb <= 0:
+            raise ValueError("arm flush size must be positive")
+    return name, {"pre_sample_mode": mode, "flush_evict_mb": mb}
+
+
+def check_arm_provenance(
+    headers: dict[str, dict[str, Any]], expected_arms: dict[str, dict[str, Any]]
+) -> list[str]:
+    """Fail-closed provenance check of declared arms against artifact headers.
+
+    Returns the list of mismatches (empty when every declared arm matches).
+    An arm whose header lacks pre_sample_mode cannot be attributed to a mode
+    and always fails, regardless of its legacy flush_l2 mirror.
+    """
+    mismatches: list[str] = []
+    for arm, spec in expected_arms.items():
+        h = headers.get(arm)
+        if h is None:
+            mismatches.append(f"{arm}: declared arm has no header")
+            continue
+        actual_mode = h.get("pre_sample_mode")
+        want_mode = spec["pre_sample_mode"]
+        if actual_mode is None:
+            mismatches.append(
+                f"{arm}: header lacks pre_sample_mode (artifact predates HI65 "
+                "provenance; mode cannot be attributed)"
+            )
+        elif actual_mode != want_mode:
+            mismatches.append(
+                f"{arm}: pre_sample_mode {actual_mode!r} != declared {want_mode!r}"
+            )
+        want_mb = spec.get("flush_evict_mb")
+        if want_mb is not None and h.get("flush_evict_mb") != want_mb:
+            mismatches.append(
+                f"{arm}: flush_evict_mb {h.get('flush_evict_mb')!r} != "
+                f"declared {want_mb}"
+            )
+    for field in ("source_revision", "manifest_hash"):
+        values = [h.get(field) for h in headers.values()]
+        if any(v is None for v in values):
+            mismatches.append(f"{field}: missing in one or more arm headers")
+        elif len({str(v) for v in values}) > 1:
+            mismatches.append(
+                f"{field}: differs across arms: {sorted(str(v) for v in values)}"
+            )
+    return mismatches
 
 
 def is_completed(result: dict[str, Any]) -> bool:
@@ -252,7 +332,11 @@ def gate2_material_reversals(
 
 
 def evaluate(
-    h1_path: Path, cold_path: Path, h2_path: Path, material_pct: float = 0.05
+    h1_path: Path,
+    cold_path: Path,
+    h2_path: Path,
+    material_pct: float = 0.05,
+    expected_arms: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     headers = {}
     arms = {}
@@ -263,11 +347,20 @@ def evaluate(
             for key in (
                 "flush_l2",
                 "flush_evict_mb",
+                "pre_sample_mode",
                 "source_revision",
                 "manifest_hash",
             )
         }
         arms[name] = results
+    if expected_arms is None:
+        header_check: dict[str, Any] = {"status": "skipped", "mismatches": []}
+    else:
+        mismatches = check_arm_provenance(headers, expected_arms)
+        header_check = {
+            "status": "fail" if mismatches else "ok",
+            "mismatches": mismatches,
+        }
     gate1 = gate1_hot_repeatability(arms["h1"], arms["h2"])
     details = gate2_material_reversals(
         arms["h1"], arms["cold"], arms["h2"], material_pct
@@ -317,7 +410,11 @@ def evaluate(
                 for d in diagnostics
             ],
         },
+        "header_check": header_check,
         "verdict": {
+            # When the provenance check fails, the gates below are diagnostic
+            # only; the run must not be interpreted until headers match.
+            "header_check_pass": header_check["status"] != "fail",
             "gate1_pass": gate1.pairs > 0,  # stability judged by caller
             "gate2_hard_pass": not survivors,
         },
@@ -330,11 +427,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("cold", type=Path, help="flushed arm measurements.jsonl")
     parser.add_argument("h2", type=Path, help="hot arm 2 measurements.jsonl")
     parser.add_argument("--material-pct", type=float, default=0.05)
+    parser.add_argument(
+        "--arm",
+        action="append",
+        default=[],
+        metavar="NAME=MODE[@MB]",
+        help=(
+            "declared arm provenance (repeatable), e.g. --arm cold=evict@256; "
+            "arms whose headers do not match fail the report (exit 2)"
+        ),
+    )
     args = parser.parse_args(argv)
-    report = evaluate(args.h1, args.cold, args.h2, args.material_pct)
+    expected: dict[str, dict[str, Any]] = {}
+    for value in args.arm:
+        try:
+            name, spec = parse_arm_spec(value)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if name not in ("h1", "cold", "h2"):
+            parser.error(f"arm name must be h1/cold/h2, got {name!r}")
+        expected[name] = spec
+    report = evaluate(
+        args.h1, args.cold, args.h2, args.material_pct, expected_arms=expected or None
+    )
     json.dump(report, sys.stdout, indent=2, default=str)
     print()
-    return 0
+    # Exit 0: analysis acceptable (check ok or skipped). Exit 2: declared-arm
+    # provenance mismatch — the run failed closed and must not be interpreted.
+    return 2 if report["header_check"]["status"] == "fail" else 0
 
 
 if __name__ == "__main__":

@@ -55,22 +55,21 @@ class PreSampleModeContractTests(unittest.TestCase):
         # config: the tuner core must branch on exactly one mode.
         self.assertIn("int flush_l2_req = 0;", self.tuner)
         self.assertIn("int flush_rewarm_req = 0;", self.tuner)
-        self.assertNotIn("c.flush_l2 =", self.tuner.replace(
-            "c.flush_l2 = (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE) ? 1 : 0;",
-            "",
-        ))
+        self.assertNotIn(
+            "c.flush_l2 =",
+            self.tuner.replace(
+                "c.flush_l2 = (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE) ? 1 : 0;",
+                "",
+            ),
+        )
         self.assertIn(
             "c.pre_sample_mode = GGML_HIP_PRE_SAMPLE_EVICT_REWARM;", self.tuner
         )
-        self.assertIn(
-            "c.pre_sample_mode = GGML_HIP_PRE_SAMPLE_EVICT;", self.tuner
-        )
+        self.assertIn("c.pre_sample_mode = GGML_HIP_PRE_SAMPLE_EVICT;", self.tuner)
 
     def test_both_flags_set_fails_closed_at_parse_time(self):
         # Two different post-eviction states cannot both be the state.
-        both = self.tuner.find(
-            "if (flush_l2_req != 0 && flush_rewarm_req != 0)"
-        )
+        both = self.tuner.find("if (flush_l2_req != 0 && flush_rewarm_req != 0)")
         self.assertGreater(both, 0)
         block = self.tuner[both : both + 500]
         self.assertIn("c.valid = false;", block)
@@ -101,9 +100,7 @@ class PreSampleModeContractTests(unittest.TestCase):
         # final hipEventSynchronize(stop).
         loop = self.tuner.find("for (int s = 0; s < samples; ++s)")
         evict = self.tuner.find("&& !launch_cache_evict(lc))")
-        rewarm = self.tuner.find(
-            "if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM)"
-        )
+        rewarm = self.tuner.find("if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM)")
         host_start = self.tuner.find("const int64_t host_start = ggml_time_us();")
         record_start = self.tuner.find("hipEventRecord(start, lc.stream)")
         for pos in (loop, evict, rewarm, host_start, record_start):
@@ -126,9 +123,7 @@ class PreSampleModeContractTests(unittest.TestCase):
     def test_resolved_mode_string_is_in_the_artifact_header(self):
         header = self.tuner.find('\\"pre_sample_mode\\":\\"%s\\"}')
         self.assertGreater(header, 0)
-        self.assertIn(
-            "pre_sample_mode_name(config.pre_sample_mode)", self.tuner
-        )
+        self.assertIn("pre_sample_mode_name(config.pre_sample_mode)", self.tuner)
 
     def test_mode_names_are_stable_strings(self):
         # The provenance values are a fixed vocabulary; the evaluator side
