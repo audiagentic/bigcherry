@@ -93,6 +93,33 @@ def lane_id(lane: CampaignLane) -> str:
     return f"{lane.source_name}:{lane.build_name}:{lane.platform_name}"
 
 
+def _resolve_architectures(
+    request_architectures: tuple[str, ...], platform: campaign_config.Platform,
+) -> tuple[str, ...]:
+    """GPT review (round 20 check-in): empty/unspecified
+    CampaignRequest.architectures means "use this lane's Platform.targets",
+    not "generate for nothing". architectures flows straight into
+    make_generate_worker's candidate-universe enumeration independently of
+    platform.targets (which only drives AMDGPU_TARGETS at compile time) --
+    an empty tuple here is not a harmless default, it is the exact
+    pre-existing legacy _generate_for() bug (omits --arch, silently falls
+    back to the separate generate CLI's own --arch all) that RE14's parity
+    harness already had to route around. An explicit override must be a
+    non-empty subset of the platform's declared targets -- never a
+    superset, and never empty (that would just be the default spelled out
+    redundantly, or a typo).
+    """
+    if not request_architectures:
+        return platform.targets
+    unknown = sorted(set(request_architectures) - set(platform.targets))
+    if unknown:
+        raise CampaignPlannerError(
+            f"architecture(s) {unknown} are not in platform {platform.name!r}'s "
+            f"targets {list(platform.targets)}"
+        )
+    return request_architectures
+
+
 def plan(
     request: CampaignRequest, cfg: campaign_config.Config,
 ) -> tuple[CampaignLane, ...]:
@@ -117,6 +144,7 @@ def plan(
         selectors = request.selectors
 
     lanes: list[CampaignLane] = []
+    seen_lane_ids: set[str] = set()
     for selector in selectors:
         if selector.source not in cfg.sources:
             raise CampaignPlannerError(f"unknown source {selector.source!r}")
@@ -124,9 +152,22 @@ def plan(
             raise CampaignPlannerError(f"unknown build {selector.build!r}")
         if selector.platform not in cfg.platforms:
             raise CampaignPlannerError(f"unknown platform {selector.platform!r}")
+        # GPT review (round 20 check-in): _lane_run_id()/run_campaign()'s
+        # result dict are both keyed on source:build:platform alone -- a
+        # duplicate selector (a hand-built request, or a campaign profile
+        # that happens to repeat one) would silently overwrite an earlier
+        # lane's result rather than erroring. Fail closed here, once, for
+        # every caller rather than leaving it a fail-open edge in the
+        # production planner.
+        selector_id = f"{selector.source}:{selector.build}:{selector.platform}"
+        if selector_id in seen_lane_ids:
+            raise CampaignPlannerError(f"duplicate lane {selector_id!r} in request")
+        seen_lane_ids.add(selector_id)
+        platform_cfg = cfg.platforms[selector.platform]
         lanes.append(CampaignLane(
             source_name=selector.source, build_name=selector.build,
-            platform_name=selector.platform, architectures=request.architectures,
+            platform_name=selector.platform,
+            architectures=_resolve_architectures(request.architectures, platform_cfg),
             inputs=request.inputs_by_build.get(selector.build, ()),
             validation=request.validation_by_build.get(selector.build),
             binary_relative_path=request.binary_relative_path,
@@ -167,7 +208,19 @@ def run_campaign(
     """Execute every lane sequentially, isolating faults per lane: one
     lane raising must not affect any other lane's own result, matching
     legacy cmd_build's own per-recipe failure aggregation behavior.
+
+    Defensively rejects duplicate lane identities even though plan()
+    already does (GPT review, round 20 check-in): callers can construct
+    CampaignLanes directly without going through plan(), and a duplicate
+    here would silently overwrite an earlier lane's result in ``results``
+    (both keyed on the same lane_id) rather than erroring.
     """
+    duplicate_ids = sorted({
+        lid for lid in (lane_id(lane) for lane in lanes)
+        if sum(1 for other in lanes if lane_id(other) == lid) > 1
+    })
+    if duplicate_ids:
+        raise CampaignPlannerError(f"duplicate lane(s) in run_campaign(): {duplicate_ids}")
     campaign_run_id = run_id or uuid.uuid4().hex[:12]
     results: dict[str, CampaignLaneResult | Exception] = {}
     for lane in lanes:
