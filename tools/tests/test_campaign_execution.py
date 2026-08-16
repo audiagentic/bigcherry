@@ -29,11 +29,11 @@ class ExpectedDictTests(unittest.TestCase):
             build_expected("s1", "b1"),
             {"source.source_slice_id": "s1", "build.build_plan_id": "b1"})
 
-    def test_workload_expected_adds_workload_id(self):
+    def test_workload_expected_adds_workload_id_and_run_id(self):
         self.assertEqual(
-            workload_expected("s1", "b1", "w1"),
+            workload_expected("s1", "b1", "w1", "r1"),
             {"source.source_slice_id": "s1", "build.build_plan_id": "b1",
-             "workload.workload_id": "w1"})
+             "workload.workload_id": "w1", "campaign.run_id": "r1"})
 
 
 def _inventory_artifact(
@@ -165,6 +165,103 @@ class MaterializeStageTests(unittest.TestCase):
                 executor("mat")
 
 
+class NodeIdentityAgreementTests(unittest.TestCase):
+    """gpt-auto-agent review finding, verified real before fixing: a
+    StageNode built with a placeholder identity (e.g. workload_id="pending"
+    before generate has actually run) that is never rebuilt once the real
+    identity is known produces a split-brain -- CampaignRun's spec_hash
+    would key off the placeholder while every artifact this executor
+    actually produces carries the real identity.
+    """
+
+    def test_build_stage_rejects_node_source_slice_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            graph = CampaignGraph(nodes=(
+                StageNode("build", "build", "wrong-slice", "b1", "w1", (), ()),
+            ))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=["real-slice"], build_plan_id="b1",
+                workload_id="w1", build=lambda inputs: (),
+            )
+            with self.assertRaises(CampaignExecutionError) as ctx:
+                executor("build")
+            self.assertIn("source_slice_id", str(ctx.exception))
+
+    def test_build_stage_rejects_node_build_plan_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            graph = CampaignGraph(nodes=(
+                StageNode("build", "build", "s1", "wrong-plan", "w1", (), ()),
+            ))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=["s1"], build_plan_id="real-plan",
+                workload_id="w1", build=lambda inputs: (),
+            )
+            with self.assertRaises(CampaignExecutionError) as ctx:
+                executor("build")
+            self.assertIn("build_plan_id", str(ctx.exception))
+
+    def test_build_stage_rejects_node_workload_id_mismatch(self):
+        # The exact scenario the review found: a graph built with a
+        # placeholder workload_id (e.g. "pending") that the executor's
+        # real, later-learned workload_id then disagrees with.
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            graph = CampaignGraph(nodes=(
+                StageNode("build", "build", "s1", "b1", "pending", (), ()),
+            ))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=["s1"], build_plan_id="b1",
+                workload_id="real-workload", build=lambda inputs: (),
+            )
+            with self.assertRaises(CampaignExecutionError) as ctx:
+                executor("build")
+            self.assertIn("workload_id", str(ctx.exception))
+
+    def test_generate_stage_rejects_node_source_slice_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            inventory = _inventory_artifact(store, with_workload_id=False, source_slice_id="s1")
+            graph = CampaignGraph(nodes=(
+                StageNode("gen", "generate", "wrong-slice", "b1", None, (), ()),
+            ))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {"manifest": {}, "workload_id": "w1"},
+                source_slice_id_holder=["s1"], build_plan_id="b1", inventory_ref=inventory,
+            )
+            with self.assertRaises(CampaignExecutionError) as ctx:
+                executor("gen")
+            self.assertIn("source_slice_id", str(ctx.exception))
+
+    def test_matching_node_identity_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            graph = CampaignGraph(nodes=(
+                StageNode("build", "build", "s1", "b1", "w1", (), ()),
+            ))
+            digest = store.publish_json("out.json", {"ok": True})
+            doc = provenance.make(
+                project={}, source={"source_slice_id": "s1"}, build={"build_plan_id": "b1"},
+                workload={"workload_id": "w1"}, campaign={"run_id": "run1"})
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=["s1"], build_plan_id="b1", workload_id="w1",
+                build=lambda inputs: (ArtifactRef(kind="out", path=store.resolve("out.json"),
+                                                  content_hash=digest, provenance=doc),),
+            )
+            executor("build")  # must not raise
+            self.assertEqual(len(executor.outputs["build"]), 1)
+
+
 class UnconfiguredWorkerTests(unittest.TestCase):
     def test_build_stage_without_a_worker_raises_clearly(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -209,11 +306,16 @@ class FullChainTests(unittest.TestCase):
             materialize_graph = CampaignGraph(nodes=(
                 StageNode("mat", "materialize", None, None, None, (), ()),
             ))
+            # Built with the REAL source_slice_id/workload_id, not
+            # placeholders -- a graph seeded with a placeholder and then
+            # silently outrun by the executor's real state is exactly the
+            # split-brain identity CampaignStageExecutor now rejects (see
+            # _require_node_identity_agreement).
             build_graph = CampaignGraph(nodes=(
-                StageNode("gen", "generate", "pending", build_plan_id, None, (), ()),
-                StageNode("build", "build", "pending", build_plan_id, "pending",
+                StageNode("gen", "generate", "real-slice", build_plan_id, "w1", (), ()),
+                StageNode("build", "build", "real-slice", build_plan_id, "w1",
                           ("gen",), ()),
-                StageNode("smoke", "runtime-smoke", "pending", build_plan_id, "pending",
+                StageNode("smoke", "runtime-smoke", "real-slice", build_plan_id, "w1",
                           ("build",), ()),
             ))
 

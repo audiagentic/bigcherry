@@ -96,15 +96,17 @@ def main(argv: list[str] | None = None) -> int:
 
     platform_cfg = cfg.platforms[args.platform]
     build_cfg = cfg.builds[args.build]
+    # cmake_configure_args always compiles for platform.targets (AMDGPU_TARGETS),
+    # never build_plan.targets -- there is exactly one authority for what
+    # architectures actually get compiled, and it is the platform, not this
+    # CLI's --arch. --arch only selects which architectures the CATALOG
+    # (autotune_catalog.build_manifest) generates candidates for. Passing
+    # platform_cfg.targets into BuildPlan too keeps BuildPlan.targets
+    # truthful about what will actually be compiled, instead of silently
+    # diverging from it as an earlier version of this script did.
     architectures = args.arch.split(",")
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
-    build_plan = BuildPlan(
-        source_slice_id=source_slice_id, phase=args.build, platform=platform_cfg.name,
-        targets=tuple(architectures), cmake_options=tuple(sorted(merged_options.items())),
-        variant_set=build_cfg.variant_set,
-    )
-    print(f"build plan: id={build_plan.build_plan_id} variant_set={build_plan.variant_set}")
 
     inventory_bytes = args.inventory.read_bytes()
     inventory_digest = store.publish_bytes("inputs/inventory.json", inventory_bytes)
@@ -114,10 +116,25 @@ def main(argv: list[str] | None = None) -> int:
     inventory_ref = ArtifactRef(kind="inventory", path=store.resolve("inputs/inventory.json"),
                                 content_hash=inventory_digest, provenance=inventory_doc)
 
+    # workload_id is deterministically the inventory's own content_hash
+    # (see campaign_workers.make_generate_worker) -- so it is knowable here,
+    # before generate ever runs, once the inventory is published. Computing
+    # it now and building the graph with the real value (not a placeholder)
+    # eliminates the split-brain identity a StageNode built before its real
+    # identity is known would otherwise create.
+    workload_id = inventory_digest
+
+    build_plan = BuildPlan(
+        source_slice_id=source_slice_id, phase=args.build, platform=platform_cfg.name,
+        targets=platform_cfg.targets, cmake_options=tuple(sorted(merged_options.items())),
+        variant_set=build_cfg.variant_set, inventory_hash=inventory_digest,
+    )
+    print(f"build plan: id={build_plan.build_plan_id} variant_set={build_plan.variant_set}")
+
     build_graph = campaign_plan.build_stage_graph(
         source_name=args.source, build_name=args.build,
         source_slice_id=source_slice_id, build_plan_id=build_plan.build_plan_id,
-        workload_id="pending",
+        workload_id=workload_id,
     )
 
     generate_worker = campaign_workers.make_generate_worker(
@@ -131,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         materialize=lambda: {}, generate=generate_worker,
         source_slice_id_holder=source_slice_id_holder,
         build_plan_id=build_plan.build_plan_id, inventory_ref=inventory_ref,
-        workload_id=None,
+        workload_id=workload_id,
         build=None, smoke=None,
     )
 
@@ -141,8 +158,15 @@ def main(argv: list[str] | None = None) -> int:
     except PipelineError as exc:
         print(f"GENERATE FAILED: {exc}", file=sys.stderr)
         return 1
-    workload_id = executor.outputs[generate_stage_id][0].provenance["workload"]["workload_id"]
-    executor.workload_id = workload_id
+    generated_workload_id = executor.outputs[generate_stage_id][0].provenance["workload"]["workload_id"]
+    if generated_workload_id != workload_id:
+        print(
+            f"GENERATE FAILED: generate established workload_id "
+            f"{generated_workload_id!r}, but the graph was built with the "
+            f"precomputed {workload_id!r} -- these must agree",
+            file=sys.stderr,
+        )
+        return 1
     print(f"generated: workload_id={workload_id}")
 
     executor._build = campaign_workers.make_build_worker(
@@ -151,7 +175,13 @@ def main(argv: list[str] | None = None) -> int:
         store=store, binary_relative_path=args.binary_relative_path,
         source_slice_id=source_slice_id, workload_id=workload_id,
         cmake_targets=(Path(args.binary_relative_path).name,),
-        inventory_path=args.inventory.resolve(),
+        # The verified, published copy -- not the caller's original file.
+        # Passing args.inventory directly would let CMake compile against
+        # whatever that path currently contains, even if it was mutated
+        # after inventory_ref's bytes were hashed and published; the
+        # artifact's own provenance would then describe content that is no
+        # longer what the build actually consumed.
+        inventory_path=inventory_ref.path,
     )
     build_stage_id = f"{args.source}:{args.build}:build"
     try:
