@@ -1513,6 +1513,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         poisoned.native_name = native.candidate ? native.candidate->stable_name : "";
         poisoned.signature_digest = ggml_hip_signature_digest(sig);
         poisoned.hardware_digest = ggml_hip_hardware_digest(hw);
+        // The stub skips the cold-path setup below; canonical_json has no
+        // valid default, and an empty value here used to serialize as
+        // "canonical":, -- invalid JSON in every row written after a fatal
+        // failure. Set it from the signature that is already in scope.
+        poisoned.canonical_json = ggml_hip_signature_json(sig, true);
         poisoned.reason = "tuning disabled after fatal measurement failure";
         poisoned.measurement_failure = true;
         open_tuning_journal_once(poisoned.hardware_digest);
@@ -1532,6 +1537,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         Result invalid;
         invalid.winner = native.candidate;
         invalid.native_name = native.candidate ? native.candidate->stable_name : "";
+        // Same serialization guard as the poisoned stub above: every field
+        // the flush prints must be valid JSON, and this path also bypasses
+        // the cold-path setup that would otherwise fill these in.
+        invalid.signature_digest = ggml_hip_signature_digest(sig);
+        invalid.hardware_digest = ggml_hip_hardware_digest(hw);
+        invalid.canonical_json = ggml_hip_signature_json(sig, true);
         invalid.reason = "invalid tuning configuration";
         record_result(dispatch_digest, invalid);
         return native.candidate;
@@ -2443,7 +2454,11 @@ void ggml_hip_tuner_flush() {
                 ggml_hip_digest_hex(entry.first).c_str(),
                 ggml_hip_digest_hex(r.signature_digest).c_str(),
                 ggml_hip_digest_hex(r.hardware_digest).c_str(),
-                r.canonical_json.c_str(),
+                // Fail closed on the only flush field without a valid JSON
+                // default: an empty canonical serializes as null rather than
+                // corrupting the row ("canonical":,). The stubs above set it;
+                // this keeps future stub paths from breaking every consumer.
+                r.canonical_json.empty() ? "null" : r.canonical_json.c_str(),
                 r.winner ? r.winner->stable_name : "",
                 r.native_name.c_str(),
                 r.improvement_pct, r.confidence,
