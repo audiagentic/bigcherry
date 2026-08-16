@@ -18,7 +18,7 @@ from bigcherry.builds import BuildPlan, build_directory  # noqa: E402
 from bigcherry.campaign_build import (CampaignBuildError, cmake_build_args,  # noqa: E402
                                       cmake_configure_args, execute_build_stage,
                                       materialize_source, publish_build_outputs,
-                                      resolve_toolchain_versions,
+                                      resolve_build_environment, resolve_toolchain_versions,
                                       toolchain_request_for_platform)
 from bigcherry.context import ProjectContext  # noqa: E402
 from bigcherry.workspace import SourcePlan  # noqa: E402
@@ -336,6 +336,25 @@ class ExecuteBuildStageTests(unittest.TestCase):
 
             expected_dir = build_directory(context, metadata["source_slice_id"], build_plan)
             self.assertTrue((expected_dir / "llama-server").is_file())
+
+
+class ResolveBuildEnvironmentTests(unittest.TestCase):
+    def test_only_the_allowlisted_vars_are_captured(self):
+        with patch.dict("os.environ", {
+            "PATH": "/usr/bin", "ROCM_PATH": "/opt/rocm",
+            "UNRELATED_SHELL_VAR": "should-not-appear",
+        }, clear=True):
+            env = dict(resolve_build_environment())
+        self.assertEqual(env, {"PATH": "/usr/bin", "ROCM_PATH": "/opt/rocm"})
+
+    def test_changing_a_relevant_var_changes_build_plan_id(self):
+        with patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True):
+            plan_a = BuildPlan(source_slice_id="s1", phase="tune", platform="p",
+                               targets=("gfx1100",), environment=resolve_build_environment())
+        with patch.dict("os.environ", {"PATH": "/opt/rocm/bin"}, clear=True):
+            plan_b = BuildPlan(source_slice_id="s1", phase="tune", platform="p",
+                               targets=("gfx1100",), environment=resolve_build_environment())
+        self.assertNotEqual(plan_a.build_plan_id, plan_b.build_plan_id)
 
 
 if __name__ == "__main__":
