@@ -68,12 +68,16 @@ def load_artifact(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]
         elif kind == "result":
             signature = row.get("signature")
             if not isinstance(signature, str):
-                raise ResidencyGateError(f"{path}: result without signature at line {number}")
+                raise ResidencyGateError(
+                    f"{path}: result without signature at line {number}"
+                )
             if signature in results:
                 raise ResidencyGateError(f"{path}: duplicate signature {signature}")
             results[signature] = row
         else:
-            raise ResidencyGateError(f"{path}: unknown record kind {kind!r} at line {number}")
+            raise ResidencyGateError(
+                f"{path}: unknown record kind {kind!r} at line {number}"
+            )
     if header is None or not results:
         raise ResidencyGateError(f"{path}: current header and results required")
     return header, results
@@ -98,7 +102,8 @@ def _ok_candidate_values(result: dict[str, Any]):
         value = candidate.get("median_us")
         if name is None:
             raise ResidencyGateError(
-                f"result {result.get('signature')!r}: ok candidate without a name")
+                f"result {result.get('signature')!r}: ok candidate without a name"
+            )
         if isinstance(value, (int, float)) and value > 0:
             # value is pre-validated as int/float above, so the conversion below
             # cannot raise; the ast-grep throwing-call matcher does not see that.
@@ -121,15 +126,20 @@ class Gate1Report:
 
 
 def gate1_hot_repeatability(
-        hot_a: dict[str, dict[str, Any]],
-        hot_b: dict[str, dict[str, Any]],
+    hot_a: dict[str, dict[str, Any]],
+    hot_b: dict[str, dict[str, Any]],
 ) -> Gate1Report:
     """Winner flips between the two hot arms over their completed intersection."""
     common = sorted(set(hot_a) & set(hot_b))
     pairs = [s for s in common if is_completed(hot_a[s]) and is_completed(hot_b[s])]
     flips = [
-        {"signature": s, "hot_a": hot_a[s].get("winner", ""), "hot_b": hot_b[s].get("winner", "")}
-        for s in pairs if hot_a[s].get("winner") != hot_b[s].get("winner")
+        {
+            "signature": s,
+            "hot_a": hot_a[s].get("winner", ""),
+            "hot_b": hot_b[s].get("winner", ""),
+        }
+        for s in pairs
+        if hot_a[s].get("winner") != hot_b[s].get("winner")
     ]
     return Gate1Report(pairs=len(pairs), flips=flips)
 
@@ -138,11 +148,11 @@ def gate1_hot_repeatability(
 class CrossoverDetail:
     signature: str
     cold_winner: str
-    hot_winners: dict[str, str]          # arm -> winner
-    per_arm: list[dict[str, Any]]        # hot_adv/cold_adv/missing info per hot arm
-    crosses_any_hot_arm: bool            # diagnostic only; never the hard gate
-    crosses_both_hot_arms: bool          # diagnostic only; necessary, not sufficient
-    replicated: bool                     # cold winner differs from BOTH hot winners
+    hot_winners: dict[str, str]  # arm -> winner
+    per_arm: list[dict[str, Any]]  # hot_adv/cold_adv/missing info per hot arm
+    crosses_any_hot_arm: bool  # diagnostic only; never the hard gate
+    crosses_both_hot_arms: bool  # diagnostic only; necessary, not sufficient
+    replicated: bool  # cold winner differs from BOTH hot winners
 
     @property
     def hard_gate_survivor(self) -> bool:
@@ -151,25 +161,36 @@ class CrossoverDetail:
 
 
 def _crossover_against(
-        arm: str,
-        hot_winner: str,
-        cold_winner: str,
-        hot_medians: dict[str, float],
-        cold_medians: dict[str, float],
-        material_pct: float,
+    arm: str,
+    hot_winner: str,
+    cold_winner: str,
+    hot_medians: dict[str, float],
+    cold_medians: dict[str, float],
+    material_pct: float,
 ) -> dict[str, Any]:
     info: dict[str, Any] = {"arm": arm}
     if hot_winner == cold_winner:
         info.update(hot_adv=None, cold_adv=None, crossover=False, reason="same-winner")
         return info
-    missing = [n for n in (hot_winner, cold_winner)
-               if n not in hot_medians or n not in cold_medians]
+    missing = [
+        n
+        for n in (hot_winner, cold_winner)
+        if n not in hot_medians or n not in cold_medians
+    ]
     if missing:
-        info.update(hot_adv=None, cold_adv=None, crossover=False,
-                    reason=f"missing-median:{','.join(missing)}")
+        info.update(
+            hot_adv=None,
+            cold_adv=None,
+            crossover=False,
+            reason=f"missing-median:{','.join(missing)}",
+        )
         return info
-    hot_adv = (hot_medians[cold_winner] - hot_medians[hot_winner]) / hot_medians[hot_winner]
-    cold_adv = (cold_medians[hot_winner] - cold_medians[cold_winner]) / cold_medians[cold_winner]
+    hot_adv = (hot_medians[cold_winner] - hot_medians[hot_winner]) / hot_medians[
+        hot_winner
+    ]
+    cold_adv = (cold_medians[hot_winner] - cold_medians[cold_winner]) / cold_medians[
+        cold_winner
+    ]
     info.update(
         hot_adv=hot_adv,
         cold_adv=cold_adv,
@@ -180,10 +201,10 @@ def _crossover_against(
 
 
 def gate2_material_reversals(
-        h1: dict[str, dict[str, Any]],
-        cold: dict[str, dict[str, Any]],
-        h2: dict[str, dict[str, Any]],
-        material_pct: float = 0.05,
+    h1: dict[str, dict[str, Any]],
+    cold: dict[str, dict[str, Any]],
+    h2: dict[str, dict[str, Any]],
+    material_pct: float = 0.05,
 ) -> list[CrossoverDetail]:
     """All signatures completed in all three arms, evaluated for gate 2.
 
@@ -200,37 +221,57 @@ def gate2_material_reversals(
         r1, rc, r2 = h1[signature], cold[signature], h2[signature]
         if not (is_completed(r1) and is_completed(rc) and is_completed(r2)):
             continue
-        winners = {arm: str(r.get("winner", "")) for arm, r in (("h1", r1), ("cold", rc), ("h2", r2))}
+        winners = {
+            arm: str(r.get("winner", ""))
+            for arm, r in (("h1", r1), ("cold", rc), ("h2", r2))
+        }
         if winners["cold"] == winners["h1"] and winners["cold"] == winners["h2"]:
             continue
         m1, mc, m2 = candidate_medians(r1), candidate_medians(rc), candidate_medians(r2)
         per_arm = [
-            _crossover_against("h1", winners["h1"], winners["cold"], m1, mc, material_pct),
-            _crossover_against("h2", winners["h2"], winners["cold"], m2, mc, material_pct),
+            _crossover_against(
+                "h1", winners["h1"], winners["cold"], m1, mc, material_pct
+            ),
+            _crossover_against(
+                "h2", winners["h2"], winners["cold"], m2, mc, material_pct
+            ),
         ]
-        details.append(CrossoverDetail(
-            signature=signature,
-            cold_winner=winners["cold"],
-            hot_winners={"h1": winners["h1"], "h2": winners["h2"]},
-            per_arm=per_arm,
-            crosses_any_hot_arm=any(info["crossover"] for info in per_arm),
-            crosses_both_hot_arms=all(info["crossover"] for info in per_arm),
-            replicated=(winners["cold"] != winners["h1"]) and (winners["cold"] != winners["h2"]),
-        ))
+        details.append(
+            CrossoverDetail(
+                signature=signature,
+                cold_winner=winners["cold"],
+                hot_winners={"h1": winners["h1"], "h2": winners["h2"]},
+                per_arm=per_arm,
+                crosses_any_hot_arm=any(info["crossover"] for info in per_arm),
+                crosses_both_hot_arms=all(info["crossover"] for info in per_arm),
+                replicated=(winners["cold"] != winners["h1"])
+                and (winners["cold"] != winners["h2"]),
+            )
+        )
     return details
 
 
-def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
-             material_pct: float = 0.05) -> dict[str, Any]:
+def evaluate(
+    h1_path: Path, cold_path: Path, h2_path: Path, material_pct: float = 0.05
+) -> dict[str, Any]:
     headers = {}
     arms = {}
     for name, path in (("h1", h1_path), ("cold", cold_path), ("h2", h2_path)):
         header, results = load_artifact(path)
-        headers[name] = {key: header.get(key) for key in
-                         ("flush_l2", "flush_evict_mb", "source_revision", "manifest_hash")}
+        headers[name] = {
+            key: header.get(key)
+            for key in (
+                "flush_l2",
+                "flush_evict_mb",
+                "source_revision",
+                "manifest_hash",
+            )
+        }
         arms[name] = results
     gate1 = gate1_hot_repeatability(arms["h1"], arms["h2"])
-    details = gate2_material_reversals(arms["h1"], arms["cold"], arms["h2"], material_pct)
+    details = gate2_material_reversals(
+        arms["h1"], arms["cold"], arms["h2"], material_pct
+    )
     # The locked hard gate: replicated AND material median crossover against
     # BOTH hot arms. One-hot-arm-only crossovers and non-replicated flips stay
     # in the diagnostic report but never fail the gate.
@@ -239,8 +280,11 @@ def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
     return {
         "headers": headers,
         "material_pct": material_pct,
-        "gate1": {"pairs": gate1.pairs, "flip_rate_pct": gate1.flip_rate_pct,
-                  "flips": gate1.flips},
+        "gate1": {
+            "pairs": gate1.pairs,
+            "flip_rate_pct": gate1.flip_rate_pct,
+            "flips": gate1.flips,
+        },
         "gate2": {
             "winner_differences": len(details),
             "replicated": [d.signature for d in details if d.replicated],
@@ -274,7 +318,7 @@ def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
             ],
         },
         "verdict": {
-            "gate1_pass": gate1.pairs > 0,          # stability judged by caller
+            "gate1_pass": gate1.pairs > 0,  # stability judged by caller
             "gate2_hard_pass": not survivors,
         },
     }
