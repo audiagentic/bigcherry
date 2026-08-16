@@ -93,6 +93,26 @@ class Experiment:
 
 
 @dataclass(frozen=True)
+class CampaignLaneSelector:
+    """One (source, build, platform) selection within a named campaign
+    profile -- RE19's replacement for legacy's default=true recipe
+    aggregation. Deliberately just an identity triple, not a full
+    CampaignLane (that's RE18's planning object, produced by expanding
+    this selector against real config).
+    """
+
+    source: str
+    build: str
+    platform: str
+
+
+@dataclass(frozen=True)
+class CampaignProfile:
+    name: str
+    lanes: tuple[CampaignLaneSelector, ...]
+
+
+@dataclass(frozen=True)
 class Config:
     pinned: str
     patch_sets: dict[str, PatchSet]
@@ -100,6 +120,7 @@ class Config:
     builds: dict[str, Build]
     platforms: dict[str, Platform]
     experiments: dict[str, Experiment]
+    campaigns: dict[str, CampaignProfile]
     path: Path
 
 
@@ -118,7 +139,8 @@ def load(path: str | Path) -> Config:
             f"{path}: expected explicit version = 2; v1 requires conversion"
         )
     unknown_top_level = sorted(
-        set(raw) - {"version", "pinned", "patch-set", "source", "build", "platform", "experiment", "compat"}
+        set(raw) - {"version", "pinned", "patch-set", "source", "build", "platform",
+                    "experiment", "compat", "campaign"}
     )
     if unknown_top_level:
         raise ConfigError(
@@ -200,4 +222,37 @@ def load(path: str | Path) -> Config:
             requires=_strings(data.get("requires"), f"experiment.{name}.requires"),
             conflicts=_strings(data.get("conflicts"), f"experiment.{name}.conflicts"),
         )
-    return Config(pinned, patch_sets, sources, builds, platforms, experiments, path)
+    campaigns: dict[str, CampaignProfile] = {}
+    for name, body in _table(raw.get("campaign"), "campaign").items():
+        data = _table(body, f"campaign.{name}")
+        raw_lanes = data.get("lanes")
+        if not isinstance(raw_lanes, list) or not raw_lanes:
+            raise ConfigError(f"campaign.{name}.lanes must be a non-empty list")
+        lanes: list[CampaignLaneSelector] = []
+        for index, raw_lane in enumerate(raw_lanes):
+            lane_data = _table(raw_lane, f"campaign.{name}.lanes[{index}]")
+            lane_source = lane_data.get("source")
+            lane_build = lane_data.get("build")
+            lane_platform = lane_data.get("platform")
+            if not all(isinstance(v, str) and v for v in (lane_source, lane_build, lane_platform)):
+                raise ConfigError(
+                    f"campaign.{name}.lanes[{index}] must set non-empty "
+                    f"source/build/platform strings"
+                )
+            if lane_source not in sources:
+                raise ConfigError(
+                    f"campaign.{name}.lanes[{index}] references unknown source {lane_source!r}"
+                )
+            if lane_build not in builds:
+                raise ConfigError(
+                    f"campaign.{name}.lanes[{index}] references unknown build {lane_build!r}"
+                )
+            if lane_platform not in platforms:
+                raise ConfigError(
+                    f"campaign.{name}.lanes[{index}] references unknown platform {lane_platform!r}"
+                )
+            lanes.append(CampaignLaneSelector(
+                source=lane_source, build=lane_build, platform=lane_platform))
+        campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
+
+    return Config(pinned, patch_sets, sources, builds, platforms, experiments, campaigns, path)
