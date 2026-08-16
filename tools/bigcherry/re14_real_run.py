@@ -252,6 +252,25 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("reuse pass: every stage reused, none re-executed")
 
+    # A machine-readable summary for tooling that wants to load this run's
+    # artifacts back out (RE14's parity harness, re14_parity_run.py) without
+    # re-deriving the store-relative paths itself -- store.root plus the
+    # published ArtifactRefs already published are the only source of truth
+    # for those paths; recomputing them independently would risk drifting
+    # from what CampaignStageExecutor/campaign_workers actually publish to.
+    manifest_ref = executor.outputs[generate_stage_id][0]
+    binary_ref = executor.outputs[build_stage_id][0]
+    print("RE14_PARITY_RESULT_JSON: " + json.dumps({
+        "run_id": run_id,
+        "source_slice_id": source_slice_id,
+        "build_plan_id": build_plan.build_plan_id,
+        "workload_id": workload_id,
+        "store_root": str(store.root),
+        "manifest_relative": str(manifest_ref.path.relative_to(store.root).as_posix()),
+        "manifest_content_hash": manifest_ref.content_hash,
+        "binary_relative": str(binary_ref.path.relative_to(store.root).as_posix()),
+    }))
+
     print(f"=== RE14 real run {run_id}: ALL STAGES PASSED ===")
     return 0
 
