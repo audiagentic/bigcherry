@@ -10,7 +10,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry.builds import (BuildIdentityError, BuildPlan, binary_hash,
-                              effective_build_id, validate_reuse)  # noqa: E402
+                              effective_build_id, parse_effective_configure,
+                              validate_reuse)  # noqa: E402
 
 
 class BuildIdentityTests(unittest.TestCase):
@@ -49,6 +50,88 @@ class BuildIdentityTests(unittest.TestCase):
             }
             validate_reuse(metadata, plan, binary=binary)
             binary.write_bytes(b"changed")
+            with self.assertRaisesRegex(BuildIdentityError, "binary hash"):
+                validate_reuse(metadata, plan, binary=binary)
+
+
+_CMAKE_CACHE = """\
+# This is the CMakeCache file.
+# For build in directory: /tmp/build
+//No help, variable specified on the command line.
+CMAKE_C_COMPILER:FILEPATH=/opt/rocm/llvm/bin/clang
+CMAKE_CXX_COMPILER:FILEPATH=/opt/rocm/llvm/bin/clang++
+CMAKE_BUILD_TYPE:STRING=Release
+AMDGPU_TARGETS:STRING=gfx1100;gfx1201
+GGML_HIP:BOOL=ON
+GGML_HIP_AUTOTUNE_VARIANT_SET:STRING=workload-max
+CMAKE_GENERATOR:INTERNAL=Ninja
+FETCHCONTENT_BASE_DIR:PATH=/tmp/build/_deps
+//Some unrelated cached find_package probe result
+Boost_INCLUDE_DIR:PATH=/usr/include
+"""
+
+
+class ParseEffectiveConfigureTests(unittest.TestCase):
+    def test_extracts_only_the_build_identity_relevant_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "CMakeCache.txt"
+            cache.write_text(_CMAKE_CACHE, encoding="utf-8")
+            record = parse_effective_configure(cache)
+            self.assertEqual(record, {
+                "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+                "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+                "CMAKE_BUILD_TYPE": "Release",
+                "AMDGPU_TARGETS": "gfx1100;gfx1201",
+                "GGML_HIP": "ON",
+                "GGML_HIP_AUTOTUNE_VARIANT_SET": "workload-max",
+            })
+            # Unrelated cache noise (generator internals, unrelated
+            # find_package probe results) must not leak in -- it would make
+            # effective_build_id() sensitive to changes that say nothing
+            # about what was actually built.
+            self.assertNotIn("CMAKE_GENERATOR", record)
+            self.assertNotIn("FETCHCONTENT_BASE_DIR", record)
+            self.assertNotIn("Boost_INCLUDE_DIR", record)
+
+    def test_missing_cache_file_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(BuildIdentityError, "no CMakeCache.txt"):
+                parse_effective_configure(Path(directory) / "CMakeCache.txt")
+
+    def test_cache_with_no_relevant_keys_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "CMakeCache.txt"
+            cache.write_text("CMAKE_GENERATOR:INTERNAL=Ninja\n", encoding="utf-8")
+            with self.assertRaisesRegex(BuildIdentityError, "no relevant configure keys"):
+                parse_effective_configure(cache)
+
+    def test_real_configure_then_reuse_round_trip(self):
+        # Ties parse_effective_configure directly to validate_reuse/
+        # effective_build_id, the way campaign_workers.make_build_worker
+        # actually uses it: parse a cache, build a metadata record from it,
+        # confirm a real BuildPlan reuses cleanly against its own recorded
+        # identity and rejects a binary that no longer matches.
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "CMakeCache.txt"
+            cache.write_text(_CMAKE_CACHE, encoding="utf-8")
+            binary = Path(directory) / "llama-bench"
+            binary.write_bytes(b"real-binary-bytes")
+
+            plan = BuildPlan(
+                source_slice_id="s1", phase="tune", platform="linux-multi",
+                targets=("gfx1100", "gfx1201"), variant_set="workload-max")
+            effective_configure = parse_effective_configure(cache)
+            metadata = {
+                "source_slice_id": plan.source_slice_id,
+                "build_plan_id": plan.build_plan_id,
+                "effective_configure": effective_configure,
+                "build_id": effective_build_id(effective_configure),
+                "binary_hash": binary_hash(binary),
+            }
+
+            validate_reuse(metadata, plan, binary=binary)  # must not raise
+
+            binary.write_bytes(b"a different compile produced this")
             with self.assertRaisesRegex(BuildIdentityError, "binary hash"):
                 validate_reuse(metadata, plan, binary=binary)
 
