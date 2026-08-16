@@ -20,6 +20,7 @@ content_hash is allowed to exist at all.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
@@ -47,13 +48,129 @@ def toolchain_request_for_platform(
     scheme -- so a BuildPlan's requested toolchain and the actual argv
     built from it stay traceable to the same names instead of two
     independent spellings of the same fact.
+
+    Also folds in resolve_toolchain_versions() (real, content-level
+    identity -- resolved compiler realpath, --version output, ROCm's own
+    .info/version, cmake/ninja versions), not just the requested compiler
+    PATH: this repo's linux-multi platform declares no c_compiler/
+    cxx_compiler in recipes.toml at all, relying on whatever cc/c++ resolve
+    to on PATH, and even an explicit path (e.g. /opt/rocm/llvm/bin/clang)
+    is itself a symlink chain that an in-place ROCm upgrade repoints
+    without changing. Since this is part of BuildPlan.toolchain_request,
+    it is hashed into build_plan_id -- an in-place ROCm upgrade at the same
+    path now gets its own build_directory() rather than colliding with (or
+    being silently reused by) a build made under the old version, and
+    pointing two BuildPlans at two different ROCm installs (e.g. via
+    --c-compiler) produces two genuinely separate, side-by-side comparable
+    build directories instead of one overwriting the other.
     """
     values: dict[str, str] = {"CMAKE_GENERATOR": "Ninja"}
     if platform.c_compiler:
         values["CMAKE_C_COMPILER"] = platform.c_compiler
     if platform.cxx_compiler:
         values["CMAKE_CXX_COMPILER"] = platform.cxx_compiler
+    values.update(resolve_toolchain_versions(platform.c_compiler, platform.cxx_compiler))
     return tuple(sorted(values.items()))
+
+
+def resolve_toolchain_versions(
+    c_compiler: str | None, cxx_compiler: str | None,
+) -> dict[str, str]:
+    """Real, content-level toolchain identity, not just a requested path.
+
+    Resolves whichever compiler is actually in play (explicit override, or
+    else whatever cc/c++ find on PATH -- resolving that explicitly rather
+    than skipping fingerprinting whenever no override is configured is
+    what lets a PATH-default build's cache still get invalidated by a
+    real toolchain change), follows symlinks to the real file, and records
+    --version output plus ROCm's own .info/version when the compiler lives
+    under a ROCm install. Best-effort throughout: a probe that fails (tool
+    missing, no ROCm layout, non-zero exit) is simply omitted, not an
+    error -- this must not make BuildPlan construction fail on a machine
+    without cmake/ninja/ROCm actually present yet (e.g. a dry planning
+    call), and every value that IS resolved still participates in
+    build_plan_id via the caller.
+    """
+    values: dict[str, str] = {}
+
+    resolved_c = _resolve_compiler_path(c_compiler, ("cc", "clang", "gcc"))
+    if resolved_c:
+        values["c_compiler_realpath"] = str(resolved_c)
+        version = _version_probe([str(resolved_c), "--version"])
+        if version:
+            values["c_compiler_version"] = version
+        rocm_version = _find_rocm_version(resolved_c)
+        if rocm_version:
+            values["rocm_version"] = rocm_version
+
+    resolved_cxx = _resolve_compiler_path(cxx_compiler, ("c++", "clang++", "g++"))
+    if resolved_cxx:
+        values["cxx_compiler_realpath"] = str(resolved_cxx)
+        version = _version_probe([str(resolved_cxx), "--version"])
+        if version:
+            values["cxx_compiler_version"] = version
+
+    cmake_version = _version_probe(["cmake", "--version"])
+    if cmake_version:
+        values["cmake_version"] = cmake_version
+    ninja_version = _version_probe(["ninja", "--version"])
+    if ninja_version:
+        values["ninja_version"] = ninja_version
+    return values
+
+
+def _resolve_compiler_path(explicit: str | None, fallback_names: tuple[str, ...]) -> Path | None:
+    if explicit:
+        candidate = Path(explicit)
+        return candidate.resolve() if candidate.exists() else None
+    for name in fallback_names:
+        found = shutil.which(name)
+        if found:
+            return Path(found).resolve()
+    return None
+
+
+def _version_probe(argv: list[str]) -> str | None:
+    try:
+        completed = subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    first_line = completed.stdout.splitlines()[0].strip() if completed.stdout else None
+    return first_line or None
+
+
+def _find_rocm_version(compiler_realpath: Path) -> str | None:
+    """ROCm's own version file, at <rocm_root>/.info/version, where
+    <rocm_root> is a few directories up from <rocm_root>/llvm/bin/clang.
+    Walks upward rather than assuming a fixed depth -- robust to layout
+    differences instead of a hardcoded ``.parents[2]`` -- but bounded, so a
+    compiler that isn't part of a ROCm install at all doesn't walk all the
+    way to the filesystem root looking for an unrelated .info/version.
+    """
+    for ancestor in list(compiler_realpath.parents)[:6]:
+        candidate = ancestor / ".info" / "version"
+        if candidate.is_file():
+            try:
+                return candidate.read_text(encoding="utf-8").strip()
+            except OSError:
+                return None
+    return None
+
+
+def _find_rocm_prefix(compiler_realpath: Path) -> Path | None:
+    """The ROCm install root that CMake's find_package(hip) etc. need on
+    CMAKE_PREFIX_PATH -- i.e. the ancestor of the resolved compiler that
+    actually carries lib/cmake/hip/hip-config.cmake. Deliberately not a
+    fixed-depth formula (e.g. two ``.parent``s): real ROCm layouts differ
+    (confirmed against an actual install: the compiler can resolve to
+    ``<root>/lib/llvm/bin/clang``, not the ``<root>/llvm/bin/clang`` a
+    fixed-depth guess would assume), so this walks upward and checks for
+    the actual marker file, the same pattern _find_rocm_version uses.
+    """
+    for ancestor in list(compiler_realpath.parents)[:6]:
+        if (ancestor / "lib" / "cmake" / "hip" / "hip-config.cmake").is_file():
+            return ancestor
+    return None
 
 
 def _default_runner(args: list[str], cwd: Path) -> None:
@@ -94,6 +211,19 @@ def cmake_configure_args(
         options["CMAKE_C_COMPILER"] = c_compiler
     if cxx_compiler:
         options["CMAKE_CXX_COMPILER"] = cxx_compiler
+    # Pointing --c-compiler at a specific ROCm install (to build/compare
+    # against a different ROCm version) is not enough on its own: without
+    # this, CMake's find_package(hip) etc. still search the DEFAULT
+    # CMAKE_PREFIX_PATH, which could pull in a DIFFERENT ROCm version's
+    # runtime/package-config files than the one the compiler came from --
+    # silently mixing versions rather than genuinely isolating them.
+    resolved_compiler = c_compiler or cxx_compiler
+    if resolved_compiler and Path(resolved_compiler).exists():
+        rocm_root = _find_rocm_prefix(Path(resolved_compiler).resolve())
+        if rocm_root is not None:
+            existing = options.get("CMAKE_PREFIX_PATH", "")
+            prefix_path = rocm_root.as_posix()
+            options["CMAKE_PREFIX_PATH"] = f"{existing};{prefix_path}" if existing else prefix_path
     return [
         "cmake", "-S", str(source_root), "-B", str(build_dir), "-G", "Ninja",
         *(f"-D{key}={value}" for key, value in sorted(options.items())),

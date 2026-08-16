@@ -10,12 +10,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from unittest.mock import patch  # noqa: E402
+
 from bigcherry import config as campaign_config  # noqa: E402
 from bigcherry.artifacts import ArtifactStore  # noqa: E402
 from bigcherry.builds import BuildPlan, build_directory  # noqa: E402
 from bigcherry.campaign_build import (CampaignBuildError, cmake_build_args,  # noqa: E402
                                       cmake_configure_args, execute_build_stage,
                                       materialize_source, publish_build_outputs,
+                                      resolve_toolchain_versions,
                                       toolchain_request_for_platform)
 from bigcherry.context import ProjectContext  # noqa: E402
 from bigcherry.workspace import SourcePlan  # noqa: E402
@@ -87,22 +90,150 @@ class CmakeArgsTests(unittest.TestCase):
 
 
 class ToolchainRequestTests(unittest.TestCase):
+    # resolve_toolchain_versions() is mocked away in these two -- they test
+    # the requested-path bookkeeping specifically (already covered before
+    # version resolution existed); real version-probing behavior has its
+    # own dedicated tests below, deterministic regardless of what cmake/
+    # ninja/compilers happen to be installed on whatever machine runs this.
     def test_includes_compilers_when_declared(self):
         platform = campaign_config.Platform(
             name="linux-multi", targets=("gfx1100",), options=(),
             c_compiler="/opt/rocm/llvm/bin/clang", cxx_compiler="/opt/rocm/llvm/bin/clang++")
-        self.assertEqual(
-            toolchain_request_for_platform(platform),
-            (("CMAKE_CXX_COMPILER", "/opt/rocm/llvm/bin/clang++"),
-             ("CMAKE_C_COMPILER", "/opt/rocm/llvm/bin/clang"),
-             ("CMAKE_GENERATOR", "Ninja")))
+        with patch("bigcherry.campaign_build.resolve_toolchain_versions", return_value={}):
+            self.assertEqual(
+                toolchain_request_for_platform(platform),
+                (("CMAKE_CXX_COMPILER", "/opt/rocm/llvm/bin/clang++"),
+                 ("CMAKE_C_COMPILER", "/opt/rocm/llvm/bin/clang"),
+                 ("CMAKE_GENERATOR", "Ninja")))
 
     def test_omits_compilers_when_not_declared(self):
         platform = campaign_config.Platform(
             name="windows-gfx1100", targets=("gfx1100",), options=())
-        self.assertEqual(
-            toolchain_request_for_platform(platform),
-            (("CMAKE_GENERATOR", "Ninja"),))
+        with patch("bigcherry.campaign_build.resolve_toolchain_versions", return_value={}):
+            self.assertEqual(
+                toolchain_request_for_platform(platform),
+                (("CMAKE_GENERATOR", "Ninja"),))
+
+    def test_real_version_resolution_feeds_into_the_result(self):
+        platform = campaign_config.Platform(
+            name="linux-multi", targets=("gfx1100",), options=(),
+            c_compiler="/opt/rocm/llvm/bin/clang", cxx_compiler=None)
+        with patch("bigcherry.campaign_build.resolve_toolchain_versions",
+                   return_value={"rocm_version": "7.2.4"}):
+            self.assertIn(("rocm_version", "7.2.4"), toolchain_request_for_platform(platform))
+
+
+class ResolveToolchainVersionsTests(unittest.TestCase):
+    """RE14: real, content-level toolchain identity, not just a requested
+    path -- gpt-auto-agent review item 3. The core scenario this exists
+    for: an in-place ROCm upgrade at the same symlinked path, or explicitly
+    pointing two BuildPlans at two different ROCm installs to run them
+    side by side as a genuine comparison, must produce two different
+    identities rather than colliding on one build_directory().
+    """
+
+    def _rocm_install(self, root: Path, version: str) -> Path:
+        clang = root / "llvm" / "bin" / "clang"
+        clang.parent.mkdir(parents=True, exist_ok=True)
+        clang.write_text("", encoding="utf-8")  # only needs to exist, not run
+        info_dir = root / ".info"
+        info_dir.mkdir(exist_ok=True)
+        (info_dir / "version").write_text(f"{version}\n", encoding="utf-8")
+        return clang
+
+    def test_two_different_rocm_installs_produce_different_identities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            clang_a = self._rocm_install(root / "rocm-6.9.9", "6.9.9")
+            clang_b = self._rocm_install(root / "rocm-7.2.4", "7.2.4")
+
+            with patch("bigcherry.campaign_build._version_probe",
+                       return_value="AMD clang version 22.0.0"):
+                values_a = resolve_toolchain_versions(str(clang_a), None)
+                values_b = resolve_toolchain_versions(str(clang_b), None)
+
+            self.assertEqual(values_a["rocm_version"], "6.9.9")
+            self.assertEqual(values_b["rocm_version"], "7.2.4")
+            self.assertNotEqual(values_a["c_compiler_realpath"], values_b["c_compiler_realpath"])
+
+    def test_in_place_upgrade_via_symlink_swap_changes_identity_at_the_same_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            clang_old = self._rocm_install(root / "rocm-7.1.0", "7.1.0")
+            clang_new = self._rocm_install(root / "rocm-7.2.4", "7.2.4")
+            current = root / "rocm-current" / "llvm" / "bin" / "clang"
+            current.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                current.symlink_to(clang_old)
+            except OSError:
+                self.skipTest("symlinks not supported in this environment")
+
+            with patch("bigcherry.campaign_build._version_probe",
+                       return_value="AMD clang version 22.0.0"):
+                before = resolve_toolchain_versions(str(current), None)
+                current.unlink()
+                current.symlink_to(clang_new)
+                after = resolve_toolchain_versions(str(current), None)
+
+            # Same requested path both times -- only the real toolchain
+            # underneath changed, which is exactly the case a
+            # requested-path-only identity would miss.
+            self.assertEqual(before["rocm_version"], "7.1.0")
+            self.assertEqual(after["rocm_version"], "7.2.4")
+            self.assertNotEqual(before["c_compiler_realpath"], after["c_compiler_realpath"])
+
+    def test_missing_tools_are_omitted_not_an_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = resolve_toolchain_versions(
+                str(Path(directory) / "does-not-exist" / "clang"), None)
+            # cmake/ninja may genuinely be installed on whatever machine
+            # runs this test -- only the compiler-specific keys are
+            # guaranteed absent for a path that doesn't exist.
+            self.assertNotIn("c_compiler_realpath", values)
+            self.assertNotIn("c_compiler_version", values)
+            self.assertNotIn("rocm_version", values)
+
+    def test_no_explicit_compiler_falls_back_to_path(self):
+        # This repo's linux-multi platform declares no c_compiler in
+        # recipes.toml at all -- if resolution only engaged for an
+        # explicit override, the PATH-default build (the common case all
+        # session) would never get real toolchain fingerprinting.
+        with patch("bigcherry.campaign_build.shutil.which", return_value=None):
+            values = resolve_toolchain_versions(None, None)
+        self.assertNotIn("c_compiler_realpath", values)  # nothing found on PATH either -- fine, not an error
+
+
+class CmakePrefixPathTests(unittest.TestCase):
+    def test_derives_prefix_path_from_resolved_compiler_when_hip_config_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rocm_root = Path(directory) / "rocm-7.2.4"
+            clang = rocm_root / "llvm" / "bin" / "clang"
+            clang.parent.mkdir(parents=True)
+            clang.write_text("", encoding="utf-8")
+            hip_config = rocm_root / "lib" / "cmake" / "hip" / "hip-config.cmake"
+            hip_config.parent.mkdir(parents=True)
+            hip_config.write_text("", encoding="utf-8")
+
+            build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
+            platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
+            args = cmake_configure_args(
+                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang))
+
+            joined = " ".join(args)
+            self.assertIn(f"-DCMAKE_PREFIX_PATH={rocm_root.as_posix()}", joined)
+
+    def test_no_prefix_path_when_hip_config_absent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            clang = Path(directory) / "llvm" / "bin" / "clang"
+            clang.parent.mkdir(parents=True)
+            clang.write_text("", encoding="utf-8")
+
+            build = campaign_config.Build(name="tune", options=(), variant_set=None, needs=frozenset())
+            platform = campaign_config.Platform(name="p", targets=("gfx1100",), options=())
+            args = cmake_configure_args(
+                build, platform, Path("/src"), Path("/build"), c_compiler=str(clang))
+
+            self.assertNotIn("CMAKE_PREFIX_PATH", " ".join(args))
 
 
 class MaterializeSourceTests(unittest.TestCase):
