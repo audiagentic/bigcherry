@@ -1,5 +1,6 @@
 # Slice A runtime proof - OFF smoke (escape hatch)
 $ErrorActionPreference = "Stop"
+$env:PATH = "C:\Program Files\AMD\ROCm\7.1\bin;C:\Program Files\AMD\ROCm\7.1\lib;" + $env:PATH
 $env:HIP_VISIBLE_DEVICES = "0"
 $env:GGML_HIP_DISPATCH_MODE = "tune"
 $env:GGML_HIP_TUNE_SCREEN_SAMPLES = "3"
