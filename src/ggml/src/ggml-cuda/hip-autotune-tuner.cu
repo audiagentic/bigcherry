@@ -669,7 +669,7 @@ static char * flush_evict_buffer(int device) {
         }
     }
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
-    if (config.flush_l2 == 0) {
+    if (config.pre_sample_mode == GGML_HIP_PRE_SAMPLE_NONE) {
         return nullptr;
     }
     const size_t bytes = (size_t) std::max(config.flush_evict_mb, 1) << 20;
@@ -726,10 +726,21 @@ static bool launch_cache_evict(const ggml_hip_launch_context & lc) {
     return true;
 }
 
+// HI65: resolved-mode provenance string for the artifact header. The mode is
+// the variable of the attribution experiment; flush_l2 in the same header is
+// its 0/1 wire mirror kept for older readers.
+static const char * pre_sample_mode_name(ggml_hip_pre_sample_mode mode) {
+    switch (mode) {
+        case GGML_HIP_PRE_SAMPLE_EVICT: return "evict";
+        case GGML_HIP_PRE_SAMPLE_EVICT_REWARM: return "evict_rewarm";
+        default: return "none";
+    }
+}
+
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     const ggml_hip_launch_context & lc,
                     int warmup, int samples, int launches_per_sample,
-                    bool flush_l2,
+                    ggml_hip_pre_sample_mode pre_sample,
                     std::vector<double> & gpu_us,
                     std::vector<double> & host_us,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
@@ -813,10 +824,28 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     host_us.reserve(samples);
 
     for (int s = 0; s < samples; ++s) {
-        if (flush_l2 && !launch_cache_evict(lc)) {
+        if (pre_sample != GGML_HIP_PRE_SAMPLE_NONE
+                && !launch_cache_evict(lc)) {
             destroy_events();
             disable_smi_after_measurement_failure();
             return false;
+        }
+        // HI65 EVICT_REWARM: after the eviction completes, run ONE untimed
+        // rewarm launch (checked, synchronized) so every timed window starts
+        // from a defined post-eviction state instead of a raw cold cache.
+        // It sits outside both clocks for the same reason the eviction does:
+        // an unsynchronized tail would ride inside host_us via the final
+        // hipEventSynchronize(stop).
+        if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM) {
+            trace_workspace_event(stage, "rewarm_begin", candidate->stable_name);
+            effective.launch(&effective, lc);
+            if (!hip_ok(hipGetLastError(), "rewarm launch")
+                    || hipStreamSynchronize(lc.stream) != hipSuccess) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            trace_workspace_event(stage, "rewarm_complete", candidate->stable_name);
         }
         trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
         const int64_t host_start = ggml_time_us();
@@ -1023,7 +1052,7 @@ CounterbalancedRound run_counterbalanced_round(
         size_t offset, bool reverse,
         const ggml_hip_launch_context & lc,
         int launches_per_sample,
-        bool flush_l2,
+        ggml_hip_pre_sample_mode pre_sample,
         const char * protocol_stage) {
     CounterbalancedRound out;
     out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
@@ -1051,7 +1080,7 @@ CounterbalancedRound run_counterbalanced_round(
             std::vector<double> one_gpu;
             std::vector<double> one_host;
             if (!time_candidate(candidates[index]->candidate, lc, 0, 1,
-                                launches_per_sample, flush_l2,
+                                launches_per_sample, pre_sample,
                                 one_gpu, one_host,
                                 nullptr, false, nullptr, protocol_stage) ||
                     one_gpu.empty() || one_host.empty()) {
@@ -1356,20 +1385,42 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
             int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
         }
+        int flush_l2_req = 0;
+        int flush_rewarm_req = 0;
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_L2")) {
-            int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, c.flush_l2);
+            int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, flush_l2_req);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_REWARM")) {
+            int_env("GGML_HIP_TUNE_FLUSH_REWARM", 0, 1, flush_rewarm_req);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_MB")) {
             int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);
         }
-        if (c.flush_l2 != 0 && c.max_launches_per_sample > 1) {
+        // HI65: resolve the two request flags into the single mode. Both set
+        // is a contradictory configuration (two different post-eviction
+        // states cannot both be \"the\" state) and fails closed at parse time.
+        if (flush_l2_req != 0 && flush_rewarm_req != 0) {
+            c.valid = false;
+            GGML_LOG_WARN("bigcherry: GGML_HIP_TUNE_FLUSH_L2 and "
+                          "GGML_HIP_TUNE_FLUSH_REWARM are mutually exclusive; "
+                          "tuning disabled\n");
+        } else if (flush_rewarm_req != 0) {
+            c.pre_sample_mode = GGML_HIP_PRE_SAMPLE_EVICT_REWARM;
+        } else if (flush_l2_req != 0) {
+            c.pre_sample_mode = GGML_HIP_PRE_SAMPLE_EVICT;
+        }
+        // Wire-format mirror for artifact emission and backward compatibility;
+        // measurement code branches on pre_sample_mode, never on this field.
+        c.flush_l2 = (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE) ? 1 : 0;
+        if (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE
+                && c.max_launches_per_sample > 1) {
             // A flush cannot reach inside a batch: a batched sample would
             // measure one cold launch plus lps-1 hot launches and report the
             // mean as if it were one number. Enforced here, where every
             // downstream calibration reads its ceiling, rather than at each
             // measurement site where a missed thread-through would silently
             // coexist flush and batching (Slice B0 invariant).
-            GGML_LOG_WARN("bigcherry: GGML_HIP_TUNE_FLUSH_L2 forces "
+            GGML_LOG_WARN("bigcherry: cache-eviction pre-sample mode forces "
                           "max_launches_per_sample=1 (was %d); a flush cannot "
                           "reach inside a batch\n", c.max_launches_per_sample);
             c.max_launches_per_sample = 1;
@@ -1883,7 +1934,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> pilot_gpu;
         std::vector<double> pilot_host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
-                            config.pilot_samples, 1, config.flush_l2 != 0,
+                            config.pilot_samples, 1, config.pre_sample_mode,
                             pilot_gpu, pilot_host,
                             &ctx, true, nullptr)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
@@ -1902,7 +1953,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
-                            config.flush_l2 != 0,
+                            config.pre_sample_mode,
                             gpu, host, &ctx, true, &native_m->pool_peak_bytes)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -1942,7 +1993,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
-                            config.flush_l2 != 0,
+                            config.pre_sample_mode,
                             gpu, host, &ctx, true, &m->pool_peak_bytes)) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -2088,7 +2139,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
             const CounterbalancedRound measured = run_counterbalanced_round(
                 finalists, offset, reverse, lc, result.launches_per_sample,
-                config.flush_l2 != 0, "final");
+                config.pre_sample_mode, "final");
             record_retime_observation(result, measured);
             if (!measured.complete) {
                 break;
@@ -2258,7 +2309,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
                 const CounterbalancedRound measured = run_counterbalanced_round(
                     {pair[0], pair[1]}, 0, reverse, lc,
-                    result.launches_per_sample, config.flush_l2 != 0, "final");
+                    result.launches_per_sample, config.pre_sample_mode, "final");
                 record_retime_observation(result, measured);
                 if (!measured.complete) {
                     break;
@@ -2425,7 +2476,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
             const CounterbalancedRound measured = run_counterbalanced_round(
                 {pair[0], pair[1]}, 0, reverse, lc,
-                result.launches_per_sample, config.flush_l2 != 0, "confirmation");
+                result.launches_per_sample, config.pre_sample_mode, "confirmation");
             record_retime_observation(result, measured);
             if (!measured.complete) {
                 result.winner = native.candidate;
@@ -2546,7 +2597,8 @@ void ggml_hip_tuner_flush() {
             "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
                 "\"alpha\":%.4f,\"double_native\":%d,"
-                "\"flush_l2\":%d,\"flush_evict_mb\":%d}\n",
+                "\"flush_l2\":%d,\"flush_evict_mb\":%d,"
+                "\"pre_sample_mode\":\"%s\"}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
@@ -2559,8 +2611,11 @@ void ggml_hip_tuner_flush() {
             config.confidence_alpha, config.double_native,
             // Measurement-affecting knobs belong in the evidence: a flush=0
             // artifact and a flush=1 artifact are not measurement-equivalent
-            // even with identical build/input digests (HI34 step 3).
-            config.flush_l2, config.flush_evict_mb);
+            // even with identical build/input digests (HI34 step 3). The
+            // resolved pre_sample_mode string is the provenance of record;
+            // flush_l2 is its 0/1 wire mirror (HI65).
+            config.flush_l2, config.flush_evict_mb,
+            pre_sample_mode_name(config.pre_sample_mode));
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;

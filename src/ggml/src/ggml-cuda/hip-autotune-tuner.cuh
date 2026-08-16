@@ -51,6 +51,23 @@ enum ggml_hip_reject_reason {
 
 // Tuning parameters. Defaults are the values standards 7 and 8 specify; they
 // are here rather than hard-coded so a long run can trade precision for time.
+// HI65: pre-sample intervention mode for the tuner's measurement loop.
+// ONE enum, not independent booleans: an invalid combination (an eviction
+// without a defined post-eviction state) is unrepresentable rather than
+// runtime-rejected. Resolved once in ggml_hip_tuner_get_config from
+// GGML_HIP_TUNE_FLUSH_L2 / GGML_HIP_TUNE_FLUSH_REWARM; setting both is a
+// fail-closed configuration error.
+enum ggml_hip_pre_sample_mode {
+    // No intervention; the back-to-back hot state (production default).
+    GGML_HIP_PRE_SAMPLE_NONE = 0,
+    // Evict + stream sync before each timed sample (Slice B0).
+    GGML_HIP_PRE_SAMPLE_EVICT = 1,
+    // Evict + sync, then ONE untimed rewarm launch + sync before the
+    // measurement clocks start: isolates cache-state preconditioning from
+    // residency itself (HI65 attribution matrix).
+    GGML_HIP_PRE_SAMPLE_EVICT_REWARM = 2,
+};
+
 struct ggml_hip_tuner_config {
     bool   valid                   = true;
     int    warmup_launches       = 15;   // 10-20 (standards 11.4)
@@ -79,7 +96,11 @@ struct ggml_hip_tuner_config {
     // enabled, get_config forces max_launches_per_sample to 1: a flush cannot
     // reach inside a batch, so a batched sample would measure one cold launch
     // plus lps-1 hot ones and report the mean as if it were one number.
-    int flush_l2       = 0;      // GGML_HIP_TUNE_FLUSH_L2
+    // HI65: measurement code branches on pre_sample_mode, never on the two
+    // request booleans. flush_l2 remains only as the resolved 0/1 wire format
+    // for artifact emission and backward compatibility (set by get_config).
+    ggml_hip_pre_sample_mode pre_sample_mode = GGML_HIP_PRE_SAMPLE_NONE;
+    int flush_l2       = 0;      // wire mirror: 1 iff pre_sample_mode != NONE
     int flush_evict_mb = 256;    // GGML_HIP_TUNE_FLUSH_MB
 
     // HI34: fresh, disjoint confirmation holdout for a provisional winner

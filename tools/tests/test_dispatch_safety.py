@@ -80,7 +80,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         # Slice B0: the confirmation round states its flush mode explicitly
         # (config read, never a hidden default).
         self.assertIn(
-            'result.launches_per_sample, config.flush_l2 != 0, "confirmation")', tuner
+            'result.launches_per_sample, config.pre_sample_mode, "confirmation")', tuner
         )
 
     def test_mmvq_native_moe_guard_precedes_native_return(self):
