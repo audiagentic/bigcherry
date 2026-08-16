@@ -91,11 +91,12 @@ class FlushContractTests(unittest.TestCase):
         sync = fn.find("hipStreamSynchronize(lc.stream)")
         ok_ret = fn.rfind("return true;")
         self.assertGreater(kernel, 0)
-        self.assertGreater(sync, kernel,
-                           "eviction must complete before launch_cache_evict returns")
+        self.assertGreater(
+            sync, kernel, "eviction must complete before launch_cache_evict returns"
+        )
         self.assertGreater(ok_ret, sync)
         # The synchronization is checked, not fire-and-forget.
-        sync_block = fn[sync:sync + 400]
+        sync_block = fn[sync : sync + 400]
         self.assertIn("!= hipSuccess", sync_block)
         self.assertIn("return false;", sync_block)
 
@@ -117,7 +118,7 @@ class FlushContractTests(unittest.TestCase):
         self.assertIn("struct ggml_hip_flush_evict_slot {", self.tuner)
         self.assertIn("slot.device == device", self.tuner)
         seam = self.tuner.find("static bool launch_cache_evict")
-        block = self.tuner[seam:seam + 700]
+        block = self.tuner[seam : seam + 700]
         self.assertIn("hipGetDevice(&device)", block)
         # A requested flush whose allocation failed returns false: the sample
         # is rejected, never silently measured unflushed.
