@@ -1,10 +1,13 @@
 """HI24 step 4: double-native noise-canary twin, source contract tests.
 
-The C++ side cannot be exercised on this machine (no HIP device), so these
-tests pin the structural invariants that make the design safe -- most
+These are source-contract tests: they pin the structural invariants that
+make the design safe independently of GPU runtime testing -- most
 importantly the pointer-lifetime ordering (twin push_back before the
-screening pointer vector is built) and the measurement-instance identity
-rules (schedule/flush emit "#twin", the funnel counts stay registry-sized).
+screening pointer vector is built), the measurement-instance identity
+rules (schedule/flush emit "#twin", the funnel counts stay registry-sized),
+and the naming-authority contract (every emission site goes through
+measurement_name(), the runtime ON/OFF artifacts do not exercise the
+policy/ranking twin branches).
 """
 
 from __future__ import annotations
@@ -136,6 +139,31 @@ class DoubleNativeContractTests(unittest.TestCase):
         # ON/OFF artifacts are not configuration-equivalent.
         self.assertIn("measurement_name(m).c_str()", self.tuner)
         self.assertIn('"\\"alpha\\":%.4f,\\"double_native\\":%d}\\n"', self.tuner)
+
+    def test_measurement_name_is_the_single_naming_authority(self):
+        # One definition of measurement-instance identity: the "#twin"
+        # suffix is constructed exactly once (inside the helper) and every
+        # emission site goes through it. The runtime ON artifact cannot
+        # exercise the policy/ranking twin branches, so this guard must be
+        # at source level.
+        self.assertEqual(self.tuner.count('"#twin"'), 1)
+        for use in (
+            "const std::string emitted_name = measurement_name(*rv.m);",
+            "const std::string predicted_name = measurement_name(*picked);",
+            "result.schedule_candidates.push_back(measurement_name(*m));",
+            "result.canary_pair = measurement_name(*twin);",
+            "measurement_name(m).c_str()",
+        ):
+            self.assertIn(use, self.tuner)
+
+    def test_jbest_search_excludes_the_synthetic_twin(self):
+        # "J-best preferred, synthetic twin fallback" must be encoded in the
+        # scan itself rather than emergent from the native wrapper's
+        # zero-variant descriptor never matching.
+        self.assertIn(
+            "if (m == native_m || m->is_native_twin ||\n"
+            "                            !m->measured || m->candidate == nullptr) {",
+            self.tuner)
 
 
 if __name__ == "__main__":
