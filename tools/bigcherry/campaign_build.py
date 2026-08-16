@@ -37,6 +37,25 @@ class CampaignBuildError(RuntimeError):
     pass
 
 
+def toolchain_request_for_platform(
+    platform: campaign_config.Platform,
+) -> tuple[tuple[str, str], ...]:
+    """The requested toolchain identity for ``BuildPlan.toolchain_request``.
+
+    These are literally the CMake controls that get passed on the command
+    line (see ``cmake_configure_args``), not a separately-invented naming
+    scheme -- so a BuildPlan's requested toolchain and the actual argv
+    built from it stay traceable to the same names instead of two
+    independent spellings of the same fact.
+    """
+    values: dict[str, str] = {"CMAKE_GENERATOR": "Ninja"}
+    if platform.c_compiler:
+        values["CMAKE_C_COMPILER"] = platform.c_compiler
+    if platform.cxx_compiler:
+        values["CMAKE_CXX_COMPILER"] = platform.cxx_compiler
+    return tuple(sorted(values.items()))
+
+
 def _default_runner(args: list[str], cwd: Path) -> None:
     subprocess.run(args, cwd=cwd, check=True)
 

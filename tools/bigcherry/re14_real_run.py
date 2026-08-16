@@ -24,12 +24,16 @@ import json
 import sys
 from pathlib import Path
 
-from . import campaign_execution, campaign_plan, campaign_source, campaign_workers, config
+from . import campaign_build, campaign_execution, campaign_plan, campaign_source, \
+    campaign_workers, config
 from . import runtime_smoke as smoke_module
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
+from .campaign import CampaignRun
+from .campaign_execution import CampaignExecutionError, make_artifact_reuse_checker, \
+    require_campaign_success
 from .context import ProjectContext
-from .pipeline import ArtifactRef, PipelineError
+from .pipeline import ArtifactRef
 from .provenance import make as make_provenance
 from .workspace import UpstreamRepository
 
@@ -73,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"source plan: overlay={source_plan.overlay_enabled} "
           f"patches={len(source_plan.patch_ids)} revision={resolved_revision}")
 
+    resource_root = context.work_root / "resource-locks"
+    campaign_root = context.work_root / "campaign-runs" / run_id
+
     materialize_graph = campaign_plan.materialize_stage_graph(
         source_name=args.source, build_name=args.build,
         upstream_repo_path=str(context.upstream_repo))
@@ -85,13 +92,26 @@ def main(argv: list[str] | None = None) -> int:
         generate=lambda inputs: {},
         source_slice_id_holder=source_slice_id_holder,
     )
-    materialize_stage_id = f"{args.source}:{args.build}:materialize"
+    # Through CampaignRun.execute(), not a direct executor(stage_id) call:
+    # CampaignStageExecutor.__call__(stage_id) -> tuple[str, ...] is exactly
+    # the Callable[[str], tuple[str, ...]] shape CampaignRun requires, so it
+    # composes directly with no adapter -- confirmed against both signatures
+    # before relying on it. This also means the materialize stage's
+    # upstream-worktree ResourceClaim (from campaign_plan.materialize_stage_graph)
+    # is now actually exercised via a real ResourceLock, not bypassed.
+    materialize_run = CampaignRun(materialize_graph, root=campaign_root / "materialize", run_id=run_id)
+    materialize_reuse = make_artifact_reuse_checker(executor=materialize_executor, store=store)
     try:
-        materialize_executor(materialize_stage_id)
-    except PipelineError as exc:
+        materialize_records = materialize_run.execute(
+            materialize_executor, resource_root=resource_root, reuse=materialize_reuse)
+        require_campaign_success(materialize_records, label="materialize")
+    except CampaignExecutionError as exc:
         print(f"MATERIALIZE FAILED: {exc}", file=sys.stderr)
         return 1
     source_slice_id = source_slice_id_holder[0]
+    if not source_slice_id:
+        print("MATERIALIZE FAILED: succeeded without resolving source_slice_id", file=sys.stderr)
+        return 1
     print(f"materialized: source_slice_id={source_slice_id}")
 
     platform_cfg = cfg.platforms[args.platform]
@@ -128,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         source_slice_id=source_slice_id, phase=args.build, platform=platform_cfg.name,
         targets=platform_cfg.targets, cmake_options=tuple(sorted(merged_options.items())),
         variant_set=build_cfg.variant_set, inventory_hash=inventory_digest,
+        toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
     )
     print(f"build plan: id={build_plan.build_plan_id} variant_set={build_plan.variant_set}")
 
@@ -143,33 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         upstream_revision=resolved_revision,
     )
 
-    executor = campaign_execution.CampaignStageExecutor(
-        graph=build_graph, store=store, run_id=run_id,
-        materialize=lambda: {}, generate=generate_worker,
-        source_slice_id_holder=source_slice_id_holder,
-        build_plan_id=build_plan.build_plan_id, inventory_ref=inventory_ref,
-        workload_id=workload_id,
-        build=None, smoke=None,
-    )
-
-    generate_stage_id = f"{args.source}:{args.build}:generate"
-    try:
-        executor(generate_stage_id)
-    except PipelineError as exc:
-        print(f"GENERATE FAILED: {exc}", file=sys.stderr)
-        return 1
-    generated_workload_id = executor.outputs[generate_stage_id][0].provenance["workload"]["workload_id"]
-    if generated_workload_id != workload_id:
-        print(
-            f"GENERATE FAILED: generate established workload_id "
-            f"{generated_workload_id!r}, but the graph was built with the "
-            f"precomputed {workload_id!r} -- these must agree",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"generated: workload_id={workload_id}")
-
-    executor._build = campaign_workers.make_build_worker(
+    build_worker = campaign_workers.make_build_worker(
         context=context, source_root=source_root, run_id=run_id,
         build_plan=build_plan, platform=platform_cfg, build=build_cfg,
         store=store, binary_relative_path=args.binary_relative_path,
@@ -183,18 +178,10 @@ def main(argv: list[str] | None = None) -> int:
         # longer what the build actually consumed.
         inventory_path=inventory_ref.path,
     )
-    build_stage_id = f"{args.source}:{args.build}:build"
-    try:
-        executor(build_stage_id)
-    except PipelineError as exc:
-        print(f"BUILD FAILED: {exc}", file=sys.stderr)
-        return 1
-    print(f"built: {len(executor.outputs[build_stage_id])} artifact(s) published")
-
     smoke_spec = smoke_module.RuntimeSmokeSpec(
         model_path=args.model, split_mode=args.split_mode,
     )
-    executor._smoke = campaign_workers.make_smoke_worker(
+    smoke_worker = campaign_workers.make_smoke_worker(
         run_id=run_id, store=store, source_slice_id=source_slice_id,
         build_plan_id=build_plan.build_plan_id, workload_id=workload_id,
         spec=smoke_spec,
@@ -204,22 +191,72 @@ def main(argv: list[str] | None = None) -> int:
             "PATH": __import__("os").environ.get("PATH", ""),
         },
     )
-    smoke_stage_id = f"{args.source}:{args.build}:runtime-smoke"
+
+    # All three workers configured before CampaignRun.execute() ever runs
+    # -- it iterates the whole graph in one pass, so (unlike the old
+    # manual stage-by-stage calls) there is no opportunity to construct a
+    # later stage's worker only after an earlier one has already run.
+    executor = campaign_execution.CampaignStageExecutor(
+        graph=build_graph, store=store, run_id=run_id,
+        materialize=lambda: {}, generate=generate_worker,
+        source_slice_id_holder=source_slice_id_holder,
+        build_plan_id=build_plan.build_plan_id, inventory_ref=inventory_ref,
+        workload_id=workload_id,
+        build=build_worker, smoke=smoke_worker,
+    )
+    build_run = CampaignRun(build_graph, root=campaign_root / "build", run_id=run_id)
+    build_reuse = make_artifact_reuse_checker(executor=executor, store=store)
+
     try:
-        executor(smoke_stage_id)
-    except PipelineError as exc:
-        print(f"SMOKE FAILED: {exc}", file=sys.stderr)
+        first_pass = build_run.execute(executor, resource_root=resource_root, reuse=build_reuse)
+        require_campaign_success(first_pass, label="generate/build/runtime-smoke")
+    except CampaignExecutionError as exc:
+        print(f"BUILD CAMPAIGN FAILED: {exc}", file=sys.stderr)
         return 1
+
+    generate_stage_id = f"{args.source}:{args.build}:generate"
+    build_stage_id = f"{args.source}:{args.build}:build"
+    smoke_stage_id = f"{args.source}:{args.build}:runtime-smoke"
+
+    generated_workload_id = executor.outputs[generate_stage_id][0].provenance["workload"]["workload_id"]
+    if generated_workload_id != workload_id:
+        print(
+            f"BUILD CAMPAIGN FAILED: generate established workload_id "
+            f"{generated_workload_id!r}, but the graph was built with the "
+            f"precomputed {workload_id!r} -- these must agree",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"generated: workload_id={workload_id}")
+    print(f"built: {len(executor.outputs[build_stage_id])} artifact(s) published")
     smoke_ref = executor.outputs[smoke_stage_id][0]
     result = json.loads(smoke_ref.path.read_text(encoding="utf-8"))
     print(f"smoke: {json.dumps(result, indent=2)}")
+
+    # The actual CampaignRun -> reuse callback -> ArtifactStore.verify()
+    # proof: run the SAME CampaignRun object again over the same graph.
+    # Every stage must come back "reused", not re-execute for real (no
+    # second git worktree materialize, no second compile, no second GPU
+    # smoke run).
+    try:
+        second_pass = build_run.execute(executor, resource_root=resource_root, reuse=build_reuse)
+        require_campaign_success(second_pass, label="generate/build/runtime-smoke reuse pass")
+    except CampaignExecutionError as exc:
+        print(f"BUILD CAMPAIGN REUSE PASS FAILED: {exc}", file=sys.stderr)
+        return 1
+    not_reused = {stage_id: record.state for stage_id, record in second_pass.items()
+                  if record.state != "reused"}
+    if not_reused:
+        print(f"BUILD CAMPAIGN REUSE PASS FAILED: expected every stage to "
+              f"reuse, got {not_reused}", file=sys.stderr)
+        return 1
+    print("reuse pass: every stage reused, none re-executed")
 
     print(f"=== RE14 real run {run_id}: ALL STAGES PASSED ===")
     return 0
 
 
 def campaign_workers_materialize(context: ProjectContext, source_plan) -> dict:
-    from . import campaign_build
     # allow_dirty_bigcherry=True: this repo has uncommitted RE14 work in
     # progress (the very files this script is part of). That is a real,
     # deliberate override of workspace.materialize's dirty-tree guard, not

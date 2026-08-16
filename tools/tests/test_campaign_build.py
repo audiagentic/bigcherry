@@ -15,7 +15,8 @@ from bigcherry.artifacts import ArtifactStore  # noqa: E402
 from bigcherry.builds import BuildPlan, build_directory  # noqa: E402
 from bigcherry.campaign_build import (CampaignBuildError, cmake_build_args,  # noqa: E402
                                       cmake_configure_args, execute_build_stage,
-                                      materialize_source, publish_build_outputs)
+                                      materialize_source, publish_build_outputs,
+                                      toolchain_request_for_platform)
 from bigcherry.context import ProjectContext  # noqa: E402
 from bigcherry.workspace import SourcePlan  # noqa: E402
 
@@ -83,6 +84,25 @@ class CmakeArgsTests(unittest.TestCase):
     def test_build_args_include_targets(self):
         args = cmake_build_args(Path("/build"), targets=("llama-server",))
         self.assertEqual(args, ["cmake", "--build", str(Path("/build")), "-j", "--target", "llama-server"])
+
+
+class ToolchainRequestTests(unittest.TestCase):
+    def test_includes_compilers_when_declared(self):
+        platform = campaign_config.Platform(
+            name="linux-multi", targets=("gfx1100",), options=(),
+            c_compiler="/opt/rocm/llvm/bin/clang", cxx_compiler="/opt/rocm/llvm/bin/clang++")
+        self.assertEqual(
+            toolchain_request_for_platform(platform),
+            (("CMAKE_CXX_COMPILER", "/opt/rocm/llvm/bin/clang++"),
+             ("CMAKE_C_COMPILER", "/opt/rocm/llvm/bin/clang"),
+             ("CMAKE_GENERATOR", "Ninja")))
+
+    def test_omits_compilers_when_not_declared(self):
+        platform = campaign_config.Platform(
+            name="windows-gfx1100", targets=("gfx1100",), options=())
+        self.assertEqual(
+            toolchain_request_for_platform(platform),
+            (("CMAKE_GENERATOR", "Ninja"),))
 
 
 class MaterializeSourceTests(unittest.TestCase):

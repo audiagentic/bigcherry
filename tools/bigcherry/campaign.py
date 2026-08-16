@@ -55,7 +55,15 @@ class CampaignRun:
                 self.records[stage_id] = StageRecord(stage_id, "blocked", digest)
                 continue
             previous = self.records.get(stage_id)
-            if previous and previous.spec_hash == digest and previous.state == "succeeded" and reuse and reuse(previous):
+            # previous.state in {"succeeded", "reused"}, not only
+            # "succeeded": after one successful reuse, previous.state
+            # becomes "reused" -- requiring exactly "succeeded" would force
+            # a third pass through the same unchanged stage to execute for
+            # real again, for no identity reason, purely because it had
+            # already been reused once.
+            if (previous and previous.spec_hash == digest
+                    and previous.state in {"succeeded", "reused"}
+                    and reuse and reuse(previous)):
                 previous.state = "reused"
                 continue
             locks = [ResourceLock(resource_root, claim.resource_id)
