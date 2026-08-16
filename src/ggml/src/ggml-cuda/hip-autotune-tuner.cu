@@ -646,35 +646,64 @@ __global__ void ggml_hip_cache_evict(volatile char * __restrict__ buffer,
     }
 }
 
-// One buffer for the process, not per signature: a per-signature allocation
-// through ctx.pool() would churn the allocator harder than the thing being
-// measured.
-static char * flush_evict_buffer() {
-    static char * buffer = [] -> char * {
-        const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
-        if (config.flush_l2 == 0) {
-            return nullptr;
+// One buffer PER DEVICE for the process lifetime, not per signature: a
+// per-signature allocation through ctx.pool() would churn the allocator harder
+// than the thing being measured. Per device because hipMalloc allocations are
+// device-specific -- a pointer allocated while tuning GPU A is not valid to
+// launch on GPU B's stream without peer access, and an eviction experiment
+// must not silently depend on peer capability.
+struct ggml_hip_flush_evict_slot {
+    int device = -1;
+    char * buffer = nullptr;
+};
+static std::vector<ggml_hip_flush_evict_slot> & flush_evict_slots() {
+    // The tuner is single-flight (one signature at a time under the
+    // measurement mutex), so plain vector bookkeeping is safe.
+    static std::vector<ggml_hip_flush_evict_slot> slots;
+    return slots;
+}
+static char * flush_evict_buffer(int device) {
+    for (const auto & slot : flush_evict_slots()) {
+        if (slot.device == device) {
+            return slot.buffer;
         }
-        const size_t bytes = (size_t) std::max(config.flush_evict_mb, 1) << 20;
-        char * p = nullptr;
-        if (hipMalloc((void **) &p, bytes) != hipSuccess) {
-            GGML_LOG_WARN("bigcherry: cannot allocate %zu MB for the cache "
-                          "eviction; a run with GGML_HIP_TUNE_FLUSH_L2 set "
-                          "cannot proceed without it\n", bytes >> 20);
-            return nullptr;
-        }
-        return p;
-    }();
-    return buffer;
+    }
+    const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
+    if (config.flush_l2 == 0) {
+        return nullptr;
+    }
+    const size_t bytes = (size_t) std::max(config.flush_evict_mb, 1) << 20;
+    char * p = nullptr;
+    // Allocated on the current device, which the tuner has already selected
+    // for this measurement; record the pairing so a later device never
+    // reuses a foreign pointer.
+    if (hipMalloc((void **) &p, bytes) != hipSuccess) {
+        GGML_LOG_WARN("bigcherry: cannot allocate %zu MB on device %d for "
+                      "the cache eviction; a run with GGML_HIP_TUNE_FLUSH_L2 "
+                      "set cannot proceed without it\n", bytes >> 20, device);
+    }
+    flush_evict_slots().push_back({device, p});
+    return p;
 }
 
-// Enqueued on the measurement stream BEFORE hipEventRecord(start), so stream
-// ordering guarantees the eviction has completed before the sample's event
-// pair is timestamped: none of it is inside the measurement window. It must
-// not sit between the launches within a batch, which is why flush mode forces
-// launches_per_sample to 1 in ggml_hip_tuner_get_config.
+// The eviction must COMPLETE before the sample's measurement begins -- not
+// merely be ordered before hipEventRecord(start) by stream sequencing.
+// Stream ordering keeps it out of the GPU event interval, but the tuner also
+// ranks on host wall time (effective_us = max(gpu, host - sync overhead)),
+// and an unsynchronized 256 MB eviction tail would ride inside that host
+// window: the final hipEventSynchronize(stop) waits for all earlier stream
+// work, including the eviction, so host_us would absorb it. The explicit
+// stream synchronization below closes that gap; it is outside both clocks.
+// It must also not sit between the launches within a batch, which is why
+// flush mode forces launches_per_sample to 1 in ggml_hip_tuner_get_config.
 static bool launch_cache_evict(const ggml_hip_launch_context & lc) {
-    char * buffer = flush_evict_buffer();
+    int device = -1;
+    if (hipGetDevice(&device) != hipSuccess || device < 0) {
+        GGML_LOG_WARN("bigcherry: cannot determine current HIP device for "
+                      "cache eviction\n");
+        return false;
+    }
+    char * buffer = flush_evict_buffer(device);
     if (buffer == nullptr) {
         // Fail closed rather than silently measure unflushed: a run that
         // requested eviction is an experiment whose variable is the eviction,
@@ -684,7 +713,17 @@ static bool launch_cache_evict(const ggml_hip_launch_context & lc) {
     const size_t bytes = (size_t) std::max(
         ggml_hip_tuner_get_config().flush_evict_mb, 1) << 20;
     ggml_hip_cache_evict<<<1024, 256, 0, lc.stream>>>(buffer, bytes);
-    return hip_ok(hipGetLastError(), "cache evict launch");
+    if (!hip_ok(hipGetLastError(), "cache evict launch")) {
+        return false;
+    }
+    // Complete the eviction before any measurement clock starts (see the
+    // comment above). Checked: a failure here must reject the sample.
+    if (hipStreamSynchronize(lc.stream) != hipSuccess) {
+        GGML_LOG_WARN("bigcherry: cache eviction synchronization failed on "
+                      "device %d\n", device);
+        return false;
+    }
+    return true;
 }
 
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
