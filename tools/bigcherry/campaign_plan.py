@@ -69,17 +69,26 @@ def build_stage_graph(
     source_slice_id: str,
     build_plan_id: str,
     workload_id: str | None,
+    include_generate: bool = True,
+    include_runtime_smoke: bool = True,
     gpu_resource_ids: tuple[str, ...] = (),
 ) -> CampaignGraph:
-    """Phase B: generate -> build -> runtime-smoke, with real identity.
+    """Phase B: [generate ->] build [-> runtime-smoke], with real identity.
 
-    ``build_plan_id`` is on the generate node as well as the build node,
-    not just source_slice_id: generation for a workload-scoped variant set
-    (e.g. ``workload-max``) depends on the inventory and variant set that
-    BuildPlan itself carries, not only on which source it runs against.
-    Putting build_plan_id on generate means its spec_hash (and therefore
-    CampaignRun's reuse decision) changes if those inputs change, not only
-    if the source does.
+    RE17: one flexible builder, not four named per-build-kind graph
+    builders -- config.Build has no "kind" enum; stock/control/record/tune/
+    replay are just names, not architecture. The real controls are
+    ``include_generate`` (== ``build_cfg.variant_set is not None``) and
+    ``include_runtime_smoke`` (== ``spec.validation is not None``), decided
+    by the caller from real config, not branched on here by build_name.
+
+    ``build_plan_id`` is on the generate node as well as the build node
+    (when present), not just source_slice_id: generation for a
+    workload-scoped variant set (e.g. ``workload-max``) depends on the
+    inventory and variant set that BuildPlan itself carries, not only on
+    which source it runs against. Putting build_plan_id on generate means
+    its spec_hash (and therefore CampaignRun's reuse decision) changes if
+    those inputs change, not only if the source does.
 
     The generate and build stages share one exclusive ``build-plan``
     resource claim (serialising them against any other stage building the
@@ -103,23 +112,25 @@ def build_stage_graph(
         for resource_id in sorted(gpu_resource_ids)
     )
 
-    nodes = (
-        StageNode(
+    nodes: list[StageNode] = []
+    if include_generate:
+        nodes.append(StageNode(
             stage_id=generate_id, kind="generate",
             source_slice_id=source_slice_id, build_plan_id=build_plan_id,
             workload_id=workload_id, dependencies=(), resources=(build_lock,),
-        ),
-        StageNode(
-            stage_id=build_id, kind="build",
-            source_slice_id=source_slice_id, build_plan_id=build_plan_id,
-            workload_id=workload_id, dependencies=(generate_id,),
-            resources=(build_lock,),
-        ),
-        StageNode(
+        ))
+    nodes.append(StageNode(
+        stage_id=build_id, kind="build",
+        source_slice_id=source_slice_id, build_plan_id=build_plan_id,
+        workload_id=workload_id,
+        dependencies=(generate_id,) if include_generate else (),
+        resources=(build_lock,),
+    ))
+    if include_runtime_smoke:
+        nodes.append(StageNode(
             stage_id=smoke_id, kind="runtime-smoke",
             source_slice_id=source_slice_id, build_plan_id=build_plan_id,
             workload_id=workload_id, dependencies=(build_id,),
             resources=gpu_claims,
-        ),
-    )
-    return CampaignGraph(nodes=nodes)
+        ))
+    return CampaignGraph(nodes=tuple(nodes))

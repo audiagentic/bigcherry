@@ -53,20 +53,32 @@ class CampaignLaneError(RuntimeError):
     pass
 
 
+#: A raw path (the CLI importing a file, e.g. --inventory) or an
+#: already-published ArtifactRef (a future canonical-lane caller, RE18).
+#: Both normalize to a verified ArtifactRef in _resolve_lane_inputs()
+#: before any stage runs.
+LaneInputValue = Path | ArtifactRef
+
+
 @dataclass(frozen=True)
 class CampaignLaneExecutionSpec:
     """What one lane execution needs. Deliberately not named ``CampaignLane``
     -- RE18 is where the canonical planning object of that name belongs;
-    this is today's execution-time shape (inventory required, smoke
-    required), which RE17 will generalize.
+    this is today's execution-time shape.
+
+    ``inputs`` keys must exactly equal ``cfg.builds[build_name].needs`` --
+    config.Build.needs (a real frozenset[str]) is the single authority for
+    what a lane requires, not a second typed inventory/winners schema
+    living beside it. A tuple of pairs, not a dict, because the spec is
+    frozen/hashable; ``_spec_inputs()`` below normalizes it.
     """
 
     source_name: str
     build_name: str
     platform_name: str
     architectures: tuple[str, ...]
-    inventory_path: Path
-    validation: smoke_module.RuntimeSmokeSpec
+    inputs: tuple[tuple[str, LaneInputValue], ...] = ()
+    validation: smoke_module.RuntimeSmokeSpec | None = None
     binary_relative_path: str = "bin/llama-bench"
     c_compiler: str | None = None
     cxx_compiler: str | None = None
@@ -84,13 +96,18 @@ class CampaignLaneResult:
     resolved_revision: str
     source_slice_id: str
     build_plan: BuildPlan
-    workload_id: str
+    #: None for a build with no workload at all (needs=[] --
+    #: stock/control/record/audit), not a placeholder value.
+    workload_id: str | None
     source_metadata_ref: ArtifactRef
-    inventory_ref: ArtifactRef
-    manifest_ref: ArtifactRef
-    generated_tree_ref: ArtifactRef
+    input_refs: tuple[tuple[str, ArtifactRef], ...]
+    #: None when the build has no generate stage (build_cfg.variant_set is
+    #: None -- stock).
+    manifest_ref: ArtifactRef | None
+    generated_tree_ref: ArtifactRef | None
     binary_ref: ArtifactRef
-    smoke_ref: ArtifactRef
+    #: None when spec.validation is None -- no runtime-smoke stage ran.
+    smoke_ref: ArtifactRef | None
 
     @property
     def build_plan_id(self) -> str:
@@ -111,7 +128,7 @@ def _require_one_artifact(
     """Replaces the previous ``executor.outputs[stage_id][0]`` positional
     indexing -- correct only because today's stages happen to return
     exactly one relevant kind first. Selecting by kind is robust to a
-    stage's output ordering or count changing (e.g. RE17's optional stages).
+    stage's output ordering or count changing.
     """
     matches = tuple(ref for ref in refs if ref.kind == kind)
     if len(matches) != 1:
@@ -120,6 +137,19 @@ def _require_one_artifact(
             f"found {len(matches)}"
         )
     return matches[0]
+
+
+def _optional_one_artifact(
+    refs: tuple[ArtifactRef, ...] | None, *, kind: str, stage_id: str,
+) -> ArtifactRef | None:
+    """RE17: a stage that may not exist in the graph at all (generate for
+    stock, runtime-smoke when validation is None) has no ``refs`` to look
+    in -- distinct from a stage that ran but produced the wrong thing,
+    which still fails via _require_one_artifact.
+    """
+    if refs is None:
+        return None
+    return _require_one_artifact(refs, kind=kind, stage_id=stage_id)
 
 
 def _materialize_worker(context: ProjectContext, source_plan) -> dict:
@@ -176,29 +206,80 @@ def _execute_materialize_phase(
     )
 
 
-def _publish_inventory(
-    spec: CampaignLaneExecutionSpec, *, store: ArtifactStore,
-    source_slice_id: str, run_id: str,
-) -> ArtifactRef:
-    # Content-addressed, not the previous fixed "inputs/inventory.json" --
-    # ArtifactStore is immutable (publishing different bytes to the same
-    # relative path raises ArtifactError), so a fixed path cannot survive a
-    # multi-lane caller where two lanes use different inventories. This is
-    # the one behavioral change bundled into this otherwise-pure extraction:
-    # the API cannot safely serve its stated next consumer (a multi-lane
-    # runner) without it.
-    inventory_bytes = spec.inventory_path.read_bytes()
-    inventory_digest = ArtifactStore.digest(inventory_bytes)
-    inventory_relative = f"inputs/inventory/{inventory_digest}.json"
-    published_digest = store.publish_bytes(inventory_relative, inventory_bytes)
-    if published_digest != inventory_digest:
-        raise CampaignLaneError("inventory digest changed during publication")
+def _spec_inputs(spec: CampaignLaneExecutionSpec) -> dict[str, LaneInputValue]:
+    result: dict[str, LaneInputValue] = {}
+    for name, value in spec.inputs:
+        if name in result:
+            raise CampaignLaneError(f"duplicate lane input {name!r}")
+        result[name] = value
+    return result
 
-    doc = make_provenance(
-        project={}, source={"source_slice_id": source_slice_id}, build={},
-        workload={}, campaign={"run_id": run_id})
-    return ArtifactRef(kind="inventory", path=store.resolve(inventory_relative),
-                       content_hash=inventory_digest, provenance=doc)
+
+def _resolve_lane_inputs(
+    spec: CampaignLaneExecutionSpec, *,
+    build: campaign_config.Build, store: ArtifactStore,
+    source_slice_id: str, run_id: str,
+) -> dict[str, ArtifactRef]:
+    """Generalizes the previous single-purpose _publish_inventory(): every
+    lane input, keyed by name, resolved to a verified ArtifactRef.
+
+    Exact set equality against build.needs, not a subset check -- a
+    caller that supplies an extra, unrequested input is as much a bug as
+    one that's missing a required one. Content-addressed publication
+    (inputs/<name>/<sha256>), not a fixed path: ArtifactStore is immutable,
+    so a fixed path cannot survive two lanes in one store using different
+    bytes for the same need name.
+    """
+    provided = _spec_inputs(spec)
+    actual = frozenset(provided)
+    required = build.needs
+    if actual != required:
+        missing = sorted(required - actual)
+        unexpected = sorted(actual - required)
+        raise CampaignLaneError(
+            f"build {build.name!r} input mismatch: missing={missing}, "
+            f"unexpected={unexpected}"
+        )
+    if unsupported := (actual - campaign_workers.SUPPORTED_BUILD_NEEDS):
+        raise CampaignLaneError(
+            f"build {build.name!r} declares need(s) this lane executor "
+            f"cannot yet represent in BuildPlan identity: {sorted(unsupported)}"
+        )
+
+    resolved: dict[str, ArtifactRef] = {}
+    for name, value in provided.items():
+        if isinstance(value, ArtifactRef):
+            if value.kind != name:
+                raise CampaignLaneError(
+                    f"lane input {name!r} has artifact kind {value.kind!r}"
+                )
+            try:
+                relative = value.path.resolve().relative_to(store.root)
+            except ValueError as exc:
+                raise CampaignLaneError(
+                    f"lane input {name!r} is not owned by this campaign's "
+                    f"ArtifactStore ({store.root})"
+                ) from exc
+            if not store.verify(relative, value.content_hash):
+                raise CampaignLaneError(
+                    f"lane input {name!r} bytes do not match its own content_hash"
+                )
+            resolved[name] = value
+            continue
+
+        data = value.read_bytes()
+        digest = ArtifactStore.digest(data)
+        relative = f"inputs/{name}/{digest}"
+        published_digest = store.publish_bytes(relative, data)
+        if published_digest != digest:
+            raise CampaignLaneError(f"lane input {name!r} digest changed during publication")
+        doc = make_provenance(
+            project={}, source={"source_slice_id": source_slice_id}, build={},
+            workload={}, campaign={"run_id": run_id})
+        resolved[name] = ArtifactRef(
+            kind=name, path=store.resolve(relative), content_hash=digest, provenance=doc)
+
+    return resolved
 
 
 def _execute_build_phase(
@@ -222,52 +303,72 @@ def _execute_build_phase(
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
 
-    inventory_ref = _publish_inventory(
-        spec, store=store, source_slice_id=materialized.source_slice_id, run_id=run_id)
+    input_refs = _resolve_lane_inputs(
+        spec, build=build_cfg, store=store,
+        source_slice_id=materialized.source_slice_id, run_id=run_id)
+    inventory_ref = input_refs.get("inventory")
+    winners_ref = input_refs.get("promoted-winners")
     # workload_id is deterministically the inventory's own content_hash --
     # knowable before generate ever runs, once the inventory is published.
-    workload_id = inventory_ref.content_hash
+    # NEVER a hash of inventory+winners combined: winners already has its
+    # own BuildPlan.winners_hash slot, which independently feeds
+    # build_plan_id -- a changed promoted-winners artifact changes
+    # build_plan_id, not workload_id.
+    workload_id = inventory_ref.content_hash if inventory_ref is not None else None
 
     build_plan = BuildPlan(
         source_slice_id=materialized.source_slice_id, phase=spec.build_name,
         platform=platform_cfg.name, targets=platform_cfg.targets,
         cmake_options=tuple(sorted(merged_options.items())),
-        variant_set=build_cfg.variant_set, inventory_hash=workload_id,
+        variant_set=build_cfg.variant_set,
+        inventory_hash=inventory_ref.content_hash if inventory_ref is not None else None,
+        winners_hash=winners_ref.content_hash if winners_ref is not None else None,
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
         environment=campaign_build.resolve_build_environment(),
     )
 
+    has_generate = build_cfg.variant_set is not None
+    has_smoke = spec.validation is not None
+
     build_graph = campaign_plan.build_stage_graph(
         source_name=spec.source_name, build_name=spec.build_name,
         source_slice_id=materialized.source_slice_id, build_plan_id=build_plan.build_plan_id,
-        workload_id=workload_id, gpu_resource_ids=spec.gpu_resource_ids,
+        workload_id=workload_id, include_generate=has_generate,
+        include_runtime_smoke=has_smoke, gpu_resource_ids=spec.gpu_resource_ids,
     )
 
-    generate_worker = campaign_workers.make_generate_worker(
-        context=context, source_root=materialized.source_root, run_id=run_id,
-        variant_set=build_plan.variant_set or "inventory", architectures=list(spec.architectures),
-        upstream_revision=materialized.resolved_revision,
-    )
+    generate_worker = None
+    if has_generate:
+        generate_worker = campaign_workers.make_generate_worker(
+            context=context, source_root=materialized.source_root, run_id=run_id,
+            variant_set=build_cfg.variant_set, architectures=list(spec.architectures),
+            upstream_revision=materialized.resolved_revision,
+            required_needs=build_cfg.needs,
+        )
     build_worker = campaign_workers.make_build_worker(
         context=context, source_root=materialized.source_root, run_id=run_id,
         build_plan=build_plan, platform=platform_cfg, build=build_cfg,
         store=store, binary_relative_path=spec.binary_relative_path,
         source_slice_id=materialized.source_slice_id, workload_id=workload_id,
+        lane_inputs=input_refs, has_generate_stage=has_generate,
         cmake_targets=(Path(spec.binary_relative_path).name,),
-        inventory_path=inventory_ref.path,
     )
-    smoke_worker = campaign_workers.make_smoke_worker(
-        run_id=run_id, store=store, source_slice_id=materialized.source_slice_id,
-        build_plan_id=build_plan.build_plan_id, workload_id=workload_id,
-        spec=spec.validation,
-        environment=None if spec.smoke_environment is None else dict(spec.smoke_environment),
-    )
+    smoke_worker = None
+    if has_smoke:
+        smoke_worker = campaign_workers.make_smoke_worker(
+            run_id=run_id, store=store, source_slice_id=materialized.source_slice_id,
+            build_plan_id=build_plan.build_plan_id, workload_id=workload_id,
+            spec=spec.validation,
+            environment=None if spec.smoke_environment is None else dict(spec.smoke_environment),
+        )
 
     executor = CampaignStageExecutor(
         graph=build_graph, store=store, run_id=run_id,
         materialize=lambda: {}, generate=generate_worker,
+        generate_inputs=input_refs if has_generate else None,
+        generate_needs=build_cfg.needs if has_generate else frozenset(),
         source_slice_id_holder=[materialized.source_slice_id],
-        build_plan_id=build_plan.build_plan_id, inventory_ref=inventory_ref,
+        build_plan_id=build_plan.build_plan_id,
         workload_id=workload_id, build=build_worker, smoke=smoke_worker,
     )
     campaign_run = CampaignRun(build_graph, root=campaign_root / "build", run_id=run_id)
@@ -283,28 +384,23 @@ def _execute_build_phase(
     build_stage_id = f"{spec.source_name}:{spec.build_name}:build"
     smoke_stage_id = f"{spec.source_name}:{spec.build_name}:runtime-smoke"
 
-    manifest_ref = _require_one_artifact(
-        executor.outputs[generate_stage_id], kind="manifest", stage_id=generate_stage_id)
-    generated_tree_ref = _require_one_artifact(
-        executor.outputs[generate_stage_id], kind="generated-tree", stage_id=generate_stage_id)
+    generate_outputs = executor.outputs.get(generate_stage_id)
+    manifest_ref = _optional_one_artifact(
+        generate_outputs, kind="manifest", stage_id=generate_stage_id)
+    generated_tree_ref = _optional_one_artifact(
+        generate_outputs, kind="generated-tree", stage_id=generate_stage_id)
     binary_ref = _require_one_artifact(
         executor.outputs[build_stage_id], kind="binary", stage_id=build_stage_id)
-    smoke_ref = _require_one_artifact(
-        executor.outputs[smoke_stage_id], kind="smoke-result", stage_id=smoke_stage_id)
-
-    generated_workload_id = manifest_ref.provenance["workload"]["workload_id"]
-    if generated_workload_id != workload_id:
-        raise CampaignLaneError(
-            f"generate established workload_id {generated_workload_id!r}, but the "
-            f"graph was built with the precomputed {workload_id!r} -- these must agree"
-        )
+    smoke_ref = _optional_one_artifact(
+        executor.outputs.get(smoke_stage_id), kind="smoke-result", stage_id=smoke_stage_id)
 
     return CampaignLaneResult(
         run_id=run_id, resolved_revision=materialized.resolved_revision,
         source_slice_id=materialized.source_slice_id, build_plan=build_plan,
         workload_id=workload_id, source_metadata_ref=materialized.source_metadata_ref,
-        inventory_ref=inventory_ref, manifest_ref=manifest_ref,
-        generated_tree_ref=generated_tree_ref, binary_ref=binary_ref, smoke_ref=smoke_ref,
+        input_refs=tuple(sorted(input_refs.items())),
+        manifest_ref=manifest_ref, generated_tree_ref=generated_tree_ref,
+        binary_ref=binary_ref, smoke_ref=smoke_ref,
     )
 
 

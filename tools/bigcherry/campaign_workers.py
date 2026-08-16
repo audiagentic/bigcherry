@@ -74,6 +74,13 @@ from .context import ProjectContext
 from .pipeline import ArtifactRef
 
 
+#: Need names the generate/build workers know how to interpret. Fail
+#: closed on anything else -- BuildPlan has no generic identity slot for
+#: an unknown need kind yet (only inventory_hash/winners_hash), so a need
+#: name outside this set has nowhere safe to record its identity.
+SUPPORTED_BUILD_NEEDS = frozenset({"inventory", "promoted-winners"})
+
+
 def make_generate_worker(
     *,
     context: ProjectContext,
@@ -82,27 +89,53 @@ def make_generate_worker(
     variant_set: str,
     architectures: list[str],
     upstream_revision: str,
+    required_needs: frozenset[str] = frozenset({"inventory"}),
 ):
-    """Returns the callable ``_run_generate`` expects: takes the inventory
-    ArtifactRef tuple, returns ``{"manifest": ..., "workload_id": ...}``.
+    """Returns the callable ``_run_generate`` expects: takes a by-kind
+    ``{need_name: ArtifactRef}`` mapping (RE17 -- config.Build.needs is the
+    authority for what a build kind requires, not a hardcoded single
+    inventory input), returns ``{"manifest": ..., "generated_tree": ...}``.
 
-    ``workload_id`` is the inventory artifact's own content_hash: the same
-    inventory bytes always yield the same workload_id, and different
-    inventory content always yields a different one. No other workload
-    identity convention exists in this project to defer to.
+    No ``workload_id`` in the result any more: the lane already knows it
+    (the inventory ref's own content_hash, computed before generate ever
+    runs) or knows there isn't one (needs=[] builds) -- generate
+    "discovering" it was backwards.
     """
 
-    def generate(inputs: tuple[ArtifactRef, ...]) -> dict[str, Any]:
-        if len(inputs) != 1:
+    def generate(inputs: Any) -> dict[str, Any]:
+        actual = frozenset(inputs)
+        if actual != required_needs:
             raise campaign_build.CampaignBuildError(
-                f"generate worker expects exactly one inventory input, got {len(inputs)}"
+                f"generate worker expected needs {sorted(required_needs)}, "
+                f"got {sorted(actual)}"
             )
-        inventory_ref = inputs[0]
-        inventory = autotune_catalog.Inventory.from_json(inventory_ref.path)
+        unsupported = actual - SUPPORTED_BUILD_NEEDS
+        if unsupported:
+            raise campaign_build.CampaignBuildError(
+                f"generate worker cannot interpret need(s): {sorted(unsupported)}"
+            )
+
+        inventory_ref = inputs.get("inventory")
+        winners_ref = inputs.get("promoted-winners")
+        inventory = (
+            autotune_catalog.Inventory.from_json(inventory_ref.path)
+            if inventory_ref is not None else None
+        )
+        # winners feeds BOTH the winners= filtering param (replay-slim's
+        # variant reduction) AND correctness_source= (production variant
+        # sets consume the same evidence as correctness input) -- matching
+        # what the legacy CLI already does with the same file; do not
+        # assume winners only matters for replay-slim's own filtering.
+        winners = (
+            autotune_catalog.read_winners(winners_ref.path)
+            if winners_ref is not None else None
+        )
 
         manifest = autotune_catalog.build_manifest(
             source_root, variant_set=variant_set, architectures=architectures,
             inventory=inventory, source_revision=upstream_revision,
+            winners=winners,
+            correctness_source=winners_ref.path if winners_ref is not None else None,
         )
 
         stage_root = context.work_root / "runs" / run_id / "generate"
@@ -114,11 +147,7 @@ def make_generate_worker(
         tree_manifest = generated_tree.build_manifest(
             generated_root, compile_inputs=emit_result.compile_input_paths)
 
-        return {
-            "manifest": manifest,
-            "generated_tree": tree_manifest,
-            "workload_id": inventory_ref.content_hash,
-        }
+        return {"manifest": manifest, "generated_tree": tree_manifest}
 
     return generate
 
@@ -134,38 +163,63 @@ def make_build_worker(
     store: ArtifactStore,
     binary_relative_path: str,
     source_slice_id: str,
-    workload_id: str,
+    workload_id: str | None,
+    lane_inputs: dict[str, ArtifactRef] | None = None,
+    has_generate_stage: bool = True,
     cmake_targets: tuple[str, ...] = (),
-    inventory_path: Path | None = None,
 ):
-    """Returns the callable ``_run_workload_scoped`` expects for the build
-    stage: takes generate's output ArtifactRef tuple, configures and
-    compiles for real, returns already-published+verified ArtifactRefs.
+    """Returns the callable ``_run_build_scoped`` expects for the build
+    stage: takes generate's output ArtifactRef tuple (or none at all, for
+    builds with no generate stage -- stock), configures and compiles for
+    real, returns already-published+verified ArtifactRefs.
+
+    ``lane_inputs`` is the same by-kind mapping the generate worker
+    received (e.g. ``{"inventory": ref}``) -- the build worker needs the
+    inventory's real, verified path for ``GGML_HIP_AUTOTUNE_SIGNATURE_FILE``,
+    independent of whether generation happened, so it is threaded through
+    here rather than re-derived from generate's stage inputs.
     """
+    lane_inputs = lane_inputs or {}
 
     def run_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-        by_kind = {ref.kind: ref for ref in inputs}
-        if len(inputs) != 2 or set(by_kind) != {"manifest", "generated-tree"}:
-            raise campaign_build.CampaignBuildError(
-                f"build worker expects exactly one 'manifest' and one "
-                f"'generated-tree' input from the generate stage, got "
-                f"{[ref.kind for ref in inputs]}"
-            )
-        generated_tree_document = json.loads(
-            by_kind["generated-tree"].path.read_text(encoding="utf-8"))
+        if has_generate_stage:
+            by_kind = {ref.kind: ref for ref in inputs}
+            if len(inputs) != 2 or set(by_kind) != {"manifest", "generated-tree"}:
+                raise campaign_build.CampaignBuildError(
+                    f"build worker expects exactly one 'manifest' and one "
+                    f"'generated-tree' input from the generate stage, got "
+                    f"{[ref.kind for ref in inputs]}"
+                )
+            generated_tree_document = json.loads(
+                by_kind["generated-tree"].path.read_text(encoding="utf-8"))
 
-        generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
-        if not generated_root.is_dir():
-            raise campaign_build.CampaignBuildError(
-                f"expected generate stage's generated/ directory at "
-                f"{generated_root}, but it does not exist"
-            )
-        # Prove the compile inputs on disk are still exactly what generate
-        # published, BEFORE trusting them to configure/compile -- this is
-        # the actual gap that made generated/ an unverified side-channel:
-        # build previously read this directory by run_id convention alone,
-        # with nothing checking it hadn't been modified since generate ran.
-        generated_tree.verify_tree(generated_root, generated_tree_document)
+            generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
+            if not generated_root.is_dir():
+                raise campaign_build.CampaignBuildError(
+                    f"expected generate stage's generated/ directory at "
+                    f"{generated_root}, but it does not exist"
+                )
+            # Prove the compile inputs on disk are still exactly what
+            # generate published, BEFORE trusting them to configure/compile
+            # -- this is the actual gap that made generated/ an unverified
+            # side-channel: build previously read this directory by run_id
+            # convention alone, with nothing checking it hadn't been
+            # modified since generate ran.
+            generated_tree.verify_tree(generated_root, generated_tree_document)
+            compile_inputs_hash = generated_tree_document["compile_inputs_hash"]
+        else:
+            # A build with no generate stage (stock: needs=[], no
+            # variant_set) has nothing to receive from a prior stage --
+            # absence of generation is a real graph property, not a
+            # zero-file generation run to fabricate an empty artifact for.
+            if inputs:
+                raise campaign_build.CampaignBuildError(
+                    f"build worker for a non-generated build expects no "
+                    f"stage inputs, got {[ref.kind for ref in inputs]}"
+                )
+            generated_tree_document = None
+            generated_root = None
+            compile_inputs_hash = None
 
         build_dir = build_directory(context, source_slice_id, build_plan)
         build_dir.mkdir(parents=True, exist_ok=True)
@@ -234,13 +288,19 @@ def make_build_worker(
             # it is a legitimate cache miss: the same requested BuildPlan
             # genuinely was built from a different generated catalog. Fall
             # through to a fresh build rather than failing closed here.
-            reused = metadata.get("generated_compile_inputs_hash") == \
-                generated_tree_document["compile_inputs_hash"]
+            # None == None for a non-generated build is correct: there is
+            # no generated catalog to diverge, so a stock build's metadata
+            # matching (source_slice_id, build_plan_id, toolchain, binary,
+            # runtime bundle) is already the complete identity -- nothing
+            # else could legitimately differ between two "reuses" of it.
+            reused = metadata.get("generated_compile_inputs_hash") == compile_inputs_hash
 
         if not reused:
+            inventory_ref = lane_inputs.get("inventory")
             configure_args = campaign_build.cmake_configure_args(
                 build, platform, source_root, build_dir,
-                generated_root=generated_root, inventory=inventory_path,
+                generated_root=generated_root,
+                inventory=inventory_ref.path if inventory_ref is not None else None,
                 c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
             )
             subprocess.run(configure_args, cwd=source_root, check=True)
@@ -253,12 +313,13 @@ def make_build_worker(
                 raise campaign_build.CampaignBuildError(
                     f"build did not produce the expected binary: {binary}"
                 )
-            # Verify again, after compiling: a pass before configure alone
-            # would still miss a modification that happened WHILE the
-            # compiler was running, between the pre-configure check and
-            # publication. Only meaningful when a compile actually ran --
-            # the reuse path never invokes the compiler.
-            generated_tree.verify_tree(generated_root, generated_tree_document)
+            if has_generate_stage:
+                # Verify again, after compiling: a pass before configure
+                # alone would still miss a modification that happened WHILE
+                # the compiler was running, between the pre-configure check
+                # and publication. Only meaningful when a compile actually
+                # ran AND there was a generated tree to begin with.
+                generated_tree.verify_tree(generated_root, generated_tree_document)
 
             effective_configure = parse_effective_configure(build_dir / "CMakeCache.txt")
             runtime_artifacts = {
@@ -272,7 +333,7 @@ def make_build_worker(
                 "build_id": effective_build_id(effective_configure),
                 "toolchain": expected_toolchain,
                 "binary_hash": binary_hash(binary),
-                "generated_compile_inputs_hash": generated_tree_document["compile_inputs_hash"],
+                "generated_compile_inputs_hash": compile_inputs_hash,
                 "runtime_artifacts": runtime_artifacts,
                 "runtime_bundle_hash": runtime_bundle_hash(runtime_artifacts),
             }
@@ -282,7 +343,7 @@ def make_build_worker(
         doc = provenance.make(
             project={}, source={"source_slice_id": source_slice_id},
             build={"build_plan_id": build_plan.build_plan_id},
-            workload={"workload_id": workload_id},
+            workload={"workload_id": workload_id} if workload_id is not None else {},
             campaign={"run_id": run_id},
         )
 
@@ -336,11 +397,11 @@ def make_smoke_worker(
     store: ArtifactStore,
     source_slice_id: str,
     build_plan_id: str,
-    workload_id: str,
+    workload_id: str | None,
     spec: runtime_smoke.RuntimeSmokeSpec,
     environment: dict[str, str] | None = None,
 ):
-    """Returns the callable ``_run_workload_scoped`` expects for the
+    """Returns the callable ``_run_build_scoped`` expects for the
     runtime-smoke stage: takes build's output ArtifactRef tuple, runs the
     real binary against ``spec``, publishes the smoke result.
     """
@@ -374,7 +435,7 @@ def make_smoke_worker(
         doc = provenance.make(
             project={}, source={"source_slice_id": source_slice_id},
             build={"build_plan_id": build_plan_id},
-            workload={"workload_id": workload_id},
+            workload={"workload_id": workload_id} if workload_id is not None else {},
             campaign={"run_id": run_id},
         )
         relative = f"runs/{run_id}/smoke/result.json"

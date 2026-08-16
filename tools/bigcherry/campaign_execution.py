@@ -23,7 +23,7 @@ workload-scoped, use the wider envelope including ``workload.workload_id``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from . import provenance
 from .artifacts import ArtifactStore
@@ -118,12 +118,28 @@ def workload_expected(
     legitimately have been produced by an earlier, separate record-mode
     campaign run, so run_id is not part of generate's own envelope.
     """
-    return {
+    return execution_expected(source_slice_id, build_plan_id, run_id, workload_id)
+
+
+def execution_expected(
+    source_slice_id: str, build_plan_id: str, run_id: str, workload_id: str | None,
+) -> dict[str, str]:
+    """RE17: workload_expected(), generalized for builds that have no
+    workload at all (needs=[] -- stock/control/record/audit). Omitting the
+    workload.workload_id key entirely when workload_id is None (rather than
+    some placeholder value) is correct because
+    ``provenance.require_compatible`` only checks keys actually present in
+    ``expected`` -- a key that isn't there is simply never checked, exactly
+    the right behavior for "this build has no workload identity to assert".
+    """
+    expected = {
         "source.source_slice_id": source_slice_id,
         "build.build_plan_id": build_plan_id,
-        "workload.workload_id": workload_id,
         "campaign.run_id": run_id,
     }
+    if workload_id is not None:
+        expected["workload.workload_id"] = workload_id
+    return expected
 
 
 def _empty_namespace_provenance(
@@ -158,10 +174,11 @@ class CampaignStageExecutor:
         store: ArtifactStore,
         run_id: str,
         materialize: Callable[[], dict[str, Any]],
-        generate: Callable[[tuple[ArtifactRef, ...]], dict[str, Any]],
-        source_slice_id_holder: list[str | None],
+        generate: Callable[[Mapping[str, ArtifactRef]], dict[str, Any]] | None = None,
+        generate_inputs: Mapping[str, ArtifactRef] | None = None,
+        generate_needs: frozenset[str] = frozenset(),
+        source_slice_id_holder: list[str | None] | None = None,
         build_plan_id: str | None = None,
-        inventory_ref: ArtifactRef | None = None,
         workload_id: str | None = None,
         build: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]] | None = None,
         smoke: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]] | None = None,
@@ -171,9 +188,10 @@ class CampaignStageExecutor:
         self.run_id = run_id
         self._materialize = materialize
         self._generate = generate
-        self._source_slice_id_holder = source_slice_id_holder
+        self._generate_inputs = dict(generate_inputs or {})
+        self._generate_needs = frozenset(generate_needs)
+        self._source_slice_id_holder = source_slice_id_holder if source_slice_id_holder is not None else [None]
         self.build_plan_id = build_plan_id
-        self.inventory_ref = inventory_ref
         self.workload_id = workload_id
         self._build = build
         self._smoke = smoke
@@ -240,27 +258,51 @@ class CampaignStageExecutor:
             )
         if self.build_plan_id is None:
             raise CampaignExecutionError("generate stage requires build_plan_id")
-        if self.inventory_ref is None:
-            raise CampaignExecutionError("generate stage requires an inventory artifact")
+        if self._generate is None:
+            raise CampaignExecutionError("no generate worker was configured")
+        # RE17: generate's real inputs are whatever config.Build.needs says
+        # (possibly none at all -- stock/control/record/audit generate with
+        # no external input), not always exactly one inventory artifact.
+        # Validated as an exact set, same as the build worker's own need
+        # validation, so a caller cannot silently supply the wrong input
+        # under the right key or the right input under the wrong key.
+        actual_needs = frozenset(self._generate_inputs)
+        if actual_needs != self._generate_needs:
+            raise CampaignExecutionError(
+                f"generate stage input keys disagree with declared needs: "
+                f"required={sorted(self._generate_needs)}, "
+                f"actual={sorted(actual_needs)}"
+            )
+        for name, ref in self._generate_inputs.items():
+            if ref.kind != name:
+                raise CampaignExecutionError(
+                    f"generate input {name!r} has artifact kind {ref.kind!r}"
+                )
+            self._require_stored_bytes(ref)
+
         self._require_node_identity_agreement(
             self.graph.nodes[stage_id], source_slice_id=source_slice_id,
             build_plan_id=self.build_plan_id,
         )
 
-        self._require_stored_bytes(self.inventory_ref)
+        # Deterministic order for a stable PipelineService input tuple,
+        # independent of dict insertion order.
+        ordered_names = tuple(sorted(self._generate_inputs))
+        ordered_inputs = tuple(self._generate_inputs[name] for name in ordered_names)
 
         def execute(_stage: str, inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-            result = self._generate(inputs)
+            by_kind = {ref.kind: ref for ref in inputs}
+            result = self._generate(by_kind)
             manifest = result["manifest"]
-            workload_id = result.get("workload_id")
-            if not isinstance(workload_id, str) or not workload_id:
-                raise CampaignExecutionError(
-                    "generate did not establish a workload_id for its output"
-                )
+            # workload_id is no longer discovered here: the lane already
+            # knows it (the inventory ref's own content_hash, computed
+            # before this stage ever runs) or knows there isn't one
+            # (needs=[] builds). Generate "establishing" it was backwards.
             doc = _empty_namespace_provenance(
                 source={"source_slice_id": source_slice_id},
                 build={"build_plan_id": self.build_plan_id},
-                workload={"workload_id": workload_id},
+                workload=({"workload_id": self.workload_id}
+                         if self.workload_id is not None else {}),
                 campaign={"run_id": self.run_id},
             )
             manifest_relative = Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"
@@ -276,17 +318,16 @@ class CampaignStageExecutor:
 
             return (manifest_ref, tree_ref)
 
-        # Narrowest envelope: source_slice_id only. workload_id does not
-        # exist on the inventory input (see module docstring) -- and
-        # neither does build_plan_id: the inventory artifact was produced
-        # by a DIFFERENT build entirely (a record-mode run), not by the
-        # tune build_plan_id this generate call is scoped to. The only
-        # identity genuinely invariant across generate's stage boundary is
-        # the source both the inventory and the new manifest were built
-        # against.
+        # Narrowest envelope: source_slice_id only, for every generated
+        # build including needs=[]. Not build_plan_id/workload_id/run_id:
+        # generate's real inputs (inventory, promoted-winners) may
+        # legitimately have been produced by a different build_plan or an
+        # earlier, separate campaign run -- the only identity genuinely
+        # invariant across generate's stage boundary is the source both
+        # those inputs and the new manifest were built against.
         pipeline = PipelineService(execute)
         outputs = pipeline.run(
-            stage_id, inputs=(self.inventory_ref,),
+            stage_id, inputs=ordered_inputs,
             expected=source_expected(source_slice_id),
         )
         self.outputs[stage_id] = outputs
@@ -343,7 +384,7 @@ class CampaignStageExecutor:
             gathered.extend(self.outputs[dep])
         return tuple(gathered)
 
-    def _run_workload_scoped(
+    def _run_build_scoped(
         self,
         stage_id: str,
         node,
@@ -352,13 +393,18 @@ class CampaignStageExecutor:
         kind_label: str,
     ) -> tuple[ArtifactRef, ...]:
         """Shared shape for build and runtime-smoke: both use the wider
-        workload-scoped envelope (source + build + workload, all genuinely
-        invariant across their input and output -- unlike generate), and
-        both delegate to an already-publishing worker callable rather than
-        building ArtifactRefs inline the way materialize/generate do, since
-        their real implementations (campaign_build.execute_build_stage,
-        the runtime-smoke harness) already own their own ArtifactStore
+        build-scoped envelope (source + build [+ workload, when the build
+        actually has one] + run_id, all genuinely invariant across their
+        input and output -- unlike generate), and both delegate to an
+        already-publishing worker callable rather than building ArtifactRefs
+        inline the way materialize/generate do, since their real
+        implementations (campaign_build.execute_build_stage, the
+        runtime-smoke harness) already own their own ArtifactStore
         publication.
+
+        RE17: workload_id is genuinely optional here (stock/control/record/
+        audit builds have none at all) -- unlike source_slice_id/
+        build_plan_id, which every build has.
         """
         source_slice_id = self._source_slice_id_holder[0]
         if not source_slice_id:
@@ -368,8 +414,6 @@ class CampaignStageExecutor:
             )
         if self.build_plan_id is None:
             raise CampaignExecutionError(f"{kind_label} stage requires build_plan_id")
-        if not self.workload_id:
-            raise CampaignExecutionError(f"{kind_label} stage requires workload_id")
         if worker is None:
             raise CampaignExecutionError(f"no {kind_label} worker was configured")
         self._require_node_identity_agreement(
@@ -390,8 +434,8 @@ class CampaignStageExecutor:
         pipeline = PipelineService(execute)
         outputs = pipeline.run(
             stage_id, inputs=inputs,
-            expected=workload_expected(
-                source_slice_id, self.build_plan_id, self.workload_id, self.run_id),
+            expected=execution_expected(
+                source_slice_id, self.build_plan_id, self.run_id, self.workload_id),
         )
         self.outputs[stage_id] = outputs
         return outputs
@@ -403,9 +447,9 @@ class CampaignStageExecutor:
         elif node.kind == "generate":
             outputs = self._run_generate(stage_id)
         elif node.kind == "build":
-            outputs = self._run_workload_scoped(stage_id, node, self._build, kind_label="build")
+            outputs = self._run_build_scoped(stage_id, node, self._build, kind_label="build")
         elif node.kind == "runtime-smoke":
-            outputs = self._run_workload_scoped(stage_id, node, self._smoke, kind_label="runtime-smoke")
+            outputs = self._run_build_scoped(stage_id, node, self._smoke, kind_label="runtime-smoke")
         else:
             raise CampaignExecutionError(
                 f"stage kind {node.kind!r} is not recognised by "
