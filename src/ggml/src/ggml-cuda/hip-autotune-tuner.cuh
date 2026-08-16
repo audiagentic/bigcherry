@@ -69,6 +69,19 @@ struct ggml_hip_tuner_config {
     double min_sample_us           = 100.0;   // GGML_HIP_TUNE_MIN_SAMPLE_US
     int    max_launches_per_sample = 32;      // GGML_HIP_TUNE_MAX_LPS
 
+    // HI34 step 3 (Slice B0): cache eviction between timed samples.
+    // Diagnostic only, default OFF: the residency experiment needs a cold
+    // extreme to compare against the hot back-to-back state. Sizing is
+    // explicit megabytes rather than 2 x hipDeviceAttributeL2CacheSize --
+    // on Navi 31 that attribute reports the 6 MB L2 and knows nothing about
+    // the 64-96 MB Infinity Cache behind it, so a derived size would flush
+    // the wrong level and produce a null result by construction. When
+    // enabled, get_config forces max_launches_per_sample to 1: a flush cannot
+    // reach inside a batch, so a batched sample would measure one cold launch
+    // plus lps-1 hot ones and report the mean as if it were one number.
+    int flush_l2       = 0;      // GGML_HIP_TUNE_FLUSH_L2
+    int flush_evict_mb = 256;    // GGML_HIP_TUNE_FLUSH_MB
+
     // HI34: fresh, disjoint confirmation holdout for a provisional winner
     // (selection samples never participate, removing winner's-curse from
     // promotion evidence). Rounds alternate first-measured by schedule_seed

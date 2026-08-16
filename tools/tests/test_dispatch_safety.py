@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
-import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -73,7 +73,11 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         metrics = tuner[tuner.index('#ifdef GGML_HIP_WORKSPACE_METRICS'):]
         self.assertIn('trace_workspace_event(stage, "rebase_peak"', metrics)
         self.assertIn('run_counterbalanced_round(', tuner)
-        self.assertIn('result.launches_per_sample, "confirmation")', tuner)
+        # Slice B0: the confirmation round states its flush mode explicitly
+        # (config read, never a hidden default).
+        self.assertIn(
+            'result.launches_per_sample, config.flush_l2 != 0, "confirmation")',
+            tuner)
 
     def test_mmvq_native_moe_guard_precedes_native_return(self):
         source = DISPATCH.read_text(encoding="utf-8")

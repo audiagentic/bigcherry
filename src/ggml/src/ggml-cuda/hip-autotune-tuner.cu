@@ -623,9 +623,74 @@ static bool smi_capture_enabled() {
         !g_smi_runtime_disabled.load(std::memory_order_relaxed);
 }
 
+// HI34 step 3 (Slice B0): evict the last level of the cache hierarchy.
+//
+// Sized to the last level, not the first: on Navi 31 that is 64-96 MB of
+// Infinity Cache behind a 6 MB L2, and hipDeviceAttributeL2CacheSize reports
+// the L2 only. A 12 MB eviction buffer leaves a fully-resident src0 resident
+// in Infinity Cache, so the flushed arm would read from the same place as the
+// unflushed one and report "no effect" for a reason unrelated to the
+// hypothesis. The size is therefore an explicit megabyte count
+// (GGML_HIP_TUNE_FLUSH_MB), 256 MB by default: comfortably past the largest
+// MALL on this generation, a rounding error against GPU memory a tuning run
+// already holds.
+//
+// `volatile` on the store: a kernel whose only effect is dead stores is a
+// kernel that flushes nothing, and it would fail silently.
+__global__ void ggml_hip_cache_evict(volatile char * __restrict__ buffer,
+                                      size_t n) {
+    const size_t stride = (size_t) gridDim.x * blockDim.x;
+    for (size_t i = blockIdx.x * (size_t) blockDim.x + threadIdx.x;
+         i < n; i += stride) {
+        buffer[i] = (char) (i & 0xff);
+    }
+}
+
+// One buffer for the process, not per signature: a per-signature allocation
+// through ctx.pool() would churn the allocator harder than the thing being
+// measured.
+static char * flush_evict_buffer() {
+    static char * buffer = [] -> char * {
+        const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
+        if (config.flush_l2 == 0) {
+            return nullptr;
+        }
+        const size_t bytes = (size_t) std::max(config.flush_evict_mb, 1) << 20;
+        char * p = nullptr;
+        if (hipMalloc((void **) &p, bytes) != hipSuccess) {
+            GGML_LOG_WARN("bigcherry: cannot allocate %zu MB for the cache "
+                          "eviction; a run with GGML_HIP_TUNE_FLUSH_L2 set "
+                          "cannot proceed without it\n", bytes >> 20);
+            return nullptr;
+        }
+        return p;
+    }();
+    return buffer;
+}
+
+// Enqueued on the measurement stream BEFORE hipEventRecord(start), so stream
+// ordering guarantees the eviction has completed before the sample's event
+// pair is timestamped: none of it is inside the measurement window. It must
+// not sit between the launches within a batch, which is why flush mode forces
+// launches_per_sample to 1 in ggml_hip_tuner_get_config.
+static bool launch_cache_evict(const ggml_hip_launch_context & lc) {
+    char * buffer = flush_evict_buffer();
+    if (buffer == nullptr) {
+        // Fail closed rather than silently measure unflushed: a run that
+        // requested eviction is an experiment whose variable is the eviction,
+        // and data collected without it must not masquerade as having it.
+        return false;
+    }
+    const size_t bytes = (size_t) std::max(
+        ggml_hip_tuner_get_config().flush_evict_mb, 1) << 20;
+    ggml_hip_cache_evict<<<1024, 256, 0, lc.stream>>>(buffer, bytes);
+    return hip_ok(hipGetLastError(), "cache evict launch");
+}
+
 bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     const ggml_hip_launch_context & lc,
                     int warmup, int samples, int launches_per_sample,
+                    bool flush_l2,
                     std::vector<double> & gpu_us,
                     std::vector<double> & host_us,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
@@ -709,6 +774,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
     host_us.reserve(samples);
 
     for (int s = 0; s < samples; ++s) {
+        if (flush_l2 && !launch_cache_evict(lc)) {
+            destroy_events();
+            disable_smi_after_measurement_failure();
+            return false;
+        }
         trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
         const int64_t host_start = ggml_time_us();
         if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
@@ -905,11 +975,16 @@ struct CounterbalancedRound {
 // is observed, throw away the first order and retry the exact same candidates
 // once in reverse order. Historical timings are never rescaled by a clock
 // ratio: only a stable reverse retry can replace a drifted round.
+// `flush_l2` is threaded explicitly rather than read from the config inside
+// the measurement paths: every caller must state the eviction mode it wants,
+// so a path that silently measures differently from its siblings becomes a
+// compile error instead of a silent inconsistency (Slice B0 invariant).
 CounterbalancedRound run_counterbalanced_round(
         const std::vector<Measurement *> & candidates,
         size_t offset, bool reverse,
         const ggml_hip_launch_context & lc,
         int launches_per_sample,
+        bool flush_l2,
         const char * protocol_stage) {
     CounterbalancedRound out;
     out.gpu_us.assign(candidates.size(), std::numeric_limits<double>::quiet_NaN());
@@ -937,7 +1012,8 @@ CounterbalancedRound run_counterbalanced_round(
             std::vector<double> one_gpu;
             std::vector<double> one_host;
             if (!time_candidate(candidates[index]->candidate, lc, 0, 1,
-                                launches_per_sample, one_gpu, one_host,
+                                launches_per_sample, flush_l2,
+                                one_gpu, one_host,
                                 nullptr, false, nullptr, protocol_stage) ||
                     one_gpu.empty() || one_host.empty()) {
                 complete = false;
@@ -1240,6 +1316,24 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
             int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_L2")) {
+            int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, c.flush_l2);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_MB")) {
+            int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);
+        }
+        if (c.flush_l2 != 0 && c.max_launches_per_sample > 1) {
+            // A flush cannot reach inside a batch: a batched sample would
+            // measure one cold launch plus lps-1 hot launches and report the
+            // mean as if it were one number. Enforced here, where every
+            // downstream calibration reads its ceiling, rather than at each
+            // measurement site where a missed thread-through would silently
+            // coexist flush and batching (Slice B0 invariant).
+            GGML_LOG_WARN("bigcherry: GGML_HIP_TUNE_FLUSH_L2 forces "
+                          "max_launches_per_sample=1 (was %d); a flush cannot "
+                          "reach inside a batch\n", c.max_launches_per_sample);
+            c.max_launches_per_sample = 1;
         }
         if (const char * v = getenv("GGML_HIP_TUNE_PRODUCTION_POLICY")) {
             c.production_policy = v;
@@ -1750,7 +1844,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> pilot_gpu;
         std::vector<double> pilot_host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
-                            config.pilot_samples, 1, pilot_gpu, pilot_host,
+                            config.pilot_samples, 1, config.flush_l2 != 0,
+                            pilot_gpu, pilot_host,
                             &ctx, true, nullptr)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -1768,6 +1863,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(native.candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
+                            config.flush_l2 != 0,
                             gpu, host, &ctx, true, &native_m->pool_peak_bytes)) {
             native_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -1807,6 +1903,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
+                            config.flush_l2 != 0,
                             gpu, host, &ctx, true, &m->pool_peak_bytes)) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -1951,7 +2048,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             const size_t offset = (result.schedule_seed + (uint32_t) round) % finalists.size();
             const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
             const CounterbalancedRound measured = run_counterbalanced_round(
-                finalists, offset, reverse, lc, result.launches_per_sample, "final");
+                finalists, offset, reverse, lc, result.launches_per_sample,
+                config.flush_l2 != 0, "final");
             record_retime_observation(result, measured);
             if (!measured.complete) {
                 break;
@@ -2121,7 +2219,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
                 const CounterbalancedRound measured = run_counterbalanced_round(
                     {pair[0], pair[1]}, 0, reverse, lc,
-                    result.launches_per_sample, "final");
+                    result.launches_per_sample, config.flush_l2 != 0, "final");
                 record_retime_observation(result, measured);
                 if (!measured.complete) {
                     break;
@@ -2288,7 +2386,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
             const CounterbalancedRound measured = run_counterbalanced_round(
                 {pair[0], pair[1]}, 0, reverse, lc,
-                result.launches_per_sample, "confirmation");
+                result.launches_per_sample, config.flush_l2 != 0, "confirmation");
             record_retime_observation(result, measured);
             if (!measured.complete) {
                 result.winner = native.candidate;
@@ -2408,7 +2506,8 @@ void ggml_hip_tuner_flush() {
             "\"warmup_launches\":%d,\"screen_samples\":%d,"
             "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
-                "\"alpha\":%.4f,\"double_native\":%d}\n",
+                "\"alpha\":%.4f,\"double_native\":%d,"
+                "\"flush_l2\":%d,\"flush_evict_mb\":%d}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
@@ -2418,7 +2517,11 @@ void ggml_hip_tuner_flush() {
             config.warmup_launches, config.screen_samples,
             config.confirmation_samples, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
-            config.confidence_alpha, config.double_native);
+            config.confidence_alpha, config.double_native,
+            // Measurement-affecting knobs belong in the evidence: a flush=0
+            // artifact and a flush=1 artifact are not measurement-equivalent
+            // even with identical build/input digests (HI34 step 3).
+            config.flush_l2, config.flush_evict_mb);
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;
