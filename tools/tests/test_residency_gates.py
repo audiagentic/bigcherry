@@ -113,9 +113,7 @@ class TestArmProvenance(unittest.TestCase):
 
     def test_missing_pre_sample_mode_fails(self):
         p1, pc, p2 = self._write_arms(None, None, None)  # legacy headers
-        expected = {
-            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
-        }
+        expected = {"cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}}
         report = rg.evaluate(p1, pc, p2, expected_arms=expected)
         self.assertEqual(report["header_check"]["status"], "fail")
         self.assertIn(
@@ -127,9 +125,7 @@ class TestArmProvenance(unittest.TestCase):
         # Both arms carry the legacy flush_l2=1 mirror; only the resolved
         # mode string can tell them apart.
         p1, pc, p2 = self._write_arms("none", "evict", "none")
-        expected = {
-            "cold": {"pre_sample_mode": "evict_rewarm", "flush_evict_mb": 256}
-        }
+        expected = {"cold": {"pre_sample_mode": "evict_rewarm", "flush_evict_mb": 256}}
         report = rg.evaluate(p1, pc, p2, expected_arms=expected)
         self.assertEqual(report["header_check"]["status"], "fail")
         self.assertTrue(
@@ -138,9 +134,7 @@ class TestArmProvenance(unittest.TestCase):
 
     def test_flush_mb_mismatch_fails(self):
         p1, pc, p2 = self._write_arms("none", "evict", "none", c_mb=128)
-        expected = {
-            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
-        }
+        expected = {"cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}}
         report = rg.evaluate(p1, pc, p2, expected_arms=expected)
         self.assertEqual(report["header_check"]["status"], "fail")
         self.assertTrue(
@@ -152,9 +146,7 @@ class TestArmProvenance(unittest.TestCase):
         bad = header(flush_l2=0, pre_sample_mode="none")
         bad["source_revision"] = "other-rev"
         p3 = write_artifact(self.tmp, "h2b.jsonl", bad, _one_result())
-        expected = {
-            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
-        }
+        expected = {"cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}}
         report = rg.evaluate(p1, pc, p3, expected_arms=expected)
         self.assertEqual(report["header_check"]["status"], "fail")
         self.assertTrue(
@@ -166,9 +158,7 @@ class TestArmProvenance(unittest.TestCase):
         bad = header(flush_l2=0, pre_sample_mode="none")
         del bad["manifest_hash"]
         p3 = write_artifact(self.tmp, "h2b.jsonl", bad, _one_result())
-        expected = {
-            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
-        }
+        expected = {"cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}}
         report = rg.evaluate(p1, pc, p3, expected_arms=expected)
         self.assertEqual(report["header_check"]["status"], "fail")
         self.assertTrue(
@@ -183,9 +173,7 @@ class TestArmProvenance(unittest.TestCase):
 
     def test_cli_exits_2_on_provenance_mismatch(self):
         p1, pc, p2 = self._write_arms("none", "evict", "none")
-        rc = rg.main(
-            [str(p1), str(pc), str(p2), "--arm", "cold=evict_rewarm@256"]
-        )
+        rc = rg.main([str(p1), str(pc), str(p2), "--arm", "cold=evict_rewarm@256"])
         self.assertEqual(rc, 2)
 
     def test_cli_exits_0_on_matching_declaration(self):
@@ -201,7 +189,13 @@ class TestArmProvenance(unittest.TestCase):
         self.assertEqual(spec, {"pre_sample_mode": "none", "flush_evict_mb": None})
 
     def test_parse_arm_spec_invalid(self):
-        for bad in ("evict@256", "cold=", "cold=bogus", "cold=evict@x", "cold=evict@-4"):
+        for bad in (
+            "evict@256",
+            "cold=",
+            "cold=bogus",
+            "cold=evict@x",
+            "cold=evict@-4",
+        ):
             with self.assertRaises(ValueError, msg=bad):
                 rg.parse_arm_spec(bad)
 
