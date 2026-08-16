@@ -69,7 +69,15 @@ def run_legacy_arm(
     *, recipe: str, build: str, inventory: Path, arch: str,
     c_compiler: str | None, cxx_compiler: str | None,
     binary_target: str, build_dir: Path,
-):
+) -> tuple:
+    """Returns ``(CampaignArm, platform_name)``. The platform name is
+    returned, not just the arm, so ``main()`` can pass the SAME platform to
+    ``run_new_arm`` instead of letting it silently default to whatever
+    ``re14_real_run.py``'s own --platform default happens to be -- a real
+    gpt-auto-agent review finding: --recipe was threaded to the legacy arm
+    only, so a non-default recipe naming a different platform would compare
+    two arms built for different platforms while still reporting a result.
+    """
     # Imported lazily and used only for its cmake-argument construction --
     # not to invoke any of the legacy orchestration (_build_one_recipe,
     # _generate_for) that carries the --arch bug this function exists to
@@ -109,15 +117,16 @@ def run_legacy_arm(
     manifest_path = paths.cuda_dir(root) / "hip-autotune-manifest.json"
     descriptor_path = paths.cuda_dir(root) / "hip-autotune-build-descriptor.json"
     binary_path = build_dir / "bin" / binary_target
-    return load_legacy_arm(
+    arm = load_legacy_arm(
         "legacy", manifest_path=manifest_path, descriptor_path=descriptor_path,
         binary_path=binary_path)
+    return arm, platform_obj.name
 
 
 def run_new_arm(
     *, upstream_repo: Path, inventory: Path, arch: str, model: Path,
     run_id: str, work_root: Path | None, hip_visible_devices: str,
-    split_mode: str, binary_target: str,
+    split_mode: str, binary_target: str, source: str, build: str, platform: str,
 ):
     cmd = [
         sys.executable, "-m", "bigcherry.re14_real_run",
@@ -125,6 +134,7 @@ def run_new_arm(
         "--arch", arch, "--model", str(model), "--run-id", run_id,
         "--hip-visible-devices", hip_visible_devices, "--split-mode", split_mode,
         "--binary-relative-path", f"bin/{binary_target}",
+        "--source", source, "--build", build, "--platform", platform,
     ]
     if work_root:
         cmd += ["--work-root", str(work_root)]
@@ -181,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or uuid.uuid4().hex[:12]
     print(f"=== RE14 parity run {run_id} ===")
 
-    legacy_arm = run_legacy_arm(
+    legacy_arm, platform_name = run_legacy_arm(
         recipe=args.recipe, build=args.build, inventory=args.inventory,
         arch=args.arch, c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
         binary_target=args.binary_target, build_dir=args.legacy_build_dir)
@@ -190,7 +200,14 @@ def main(argv: list[str] | None = None) -> int:
         upstream_repo=args.upstream_repo, inventory=args.inventory, arch=args.arch,
         model=args.model, run_id=run_id, work_root=args.work_root,
         hip_visible_devices=args.hip_visible_devices, split_mode=args.split_mode,
-        binary_target=args.binary_target)
+        binary_target=args.binary_target,
+        # --recipe names a source by the same string in this project's
+        # recipes.toml convention (both configs are parsed from the same
+        # file); --build is already literally shared between the two
+        # config loaders. platform_name comes from the recipe itself, not
+        # a separately-guessable default, so the two arms cannot silently
+        # diverge on which platform they were built for.
+        source=args.recipe, build=args.build, platform=platform_name)
 
     allowed = frozenset({"binary_hash", *args.allow})
     try:
