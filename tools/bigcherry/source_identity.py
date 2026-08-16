@@ -30,7 +30,20 @@ def _run(root: Path, *args: str, env: dict[str, str] | None = None) -> str:
 
 
 def git_tree_oid(root: Path, *, allowed_untracked: set[str] | None = None) -> str:
-    """Compute a tree OID with a temporary index, never the worktree index."""
+    """Compute a tree OID with a temporary index, never the worktree index.
+
+    Only untracked (``??``) files are checked against ``allowed_untracked``
+    and rejected if not named there. Modifications to already-tracked
+    files (``M``/``D``/etc against upstream's own tree) are never rejected
+    here: overlay and patch application both legitimately modify tracked
+    upstream files -- that is the entire mechanism of a patch -- and the
+    tree OID computed below already captures whatever the true resulting
+    state is via ``read-tree``/``add -A``/``write-tree``. Treating every
+    such modification as "unexpected" would make this function unable to
+    compute an identity for any patched source at all, which defeats its
+    purpose: it exists specifically to identify the effective tree AFTER
+    overlay and patches, not only a pristine upstream checkout.
+    """
     allowed_untracked = allowed_untracked or set()
     status = _run(root, "status", "--porcelain", "--untracked-files=all")
     unexpected: list[str] = []
@@ -39,7 +52,9 @@ def git_tree_oid(root: Path, *, allowed_untracked: set[str] | None = None) -> st
             continue
         code, _, name = line.partition(" ")
         name = name.strip().replace("\\", "/")
-        if code == "??" and name in allowed_untracked:
+        if code != "??":
+            continue
+        if name in allowed_untracked:
             continue
         unexpected.append(line)
     ignored = _run(root, "status", "--porcelain", "--ignored", "--untracked-files=all")
