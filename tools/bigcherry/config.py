@@ -78,6 +78,8 @@ class Platform:
     name: str
     targets: tuple[str, ...]
     options: tuple[tuple[str, str], ...]
+    c_compiler: str | None = None
+    cxx_compiler: str | None = None
 
 
 @dataclass(frozen=True)
@@ -173,10 +175,18 @@ def load(path: str | Path) -> Config:
     platforms: dict[str, Platform] = {}
     for name, body in _table(raw.get("platform"), "platform").items():
         data = _table(body, f"platform.{name}")
+        c_compiler = data.get("c-compiler")
+        if c_compiler is not None and not isinstance(c_compiler, str):
+            raise ConfigError(f"platform.{name}.c-compiler must be a string")
+        cxx_compiler = data.get("cxx-compiler")
+        if cxx_compiler is not None and not isinstance(cxx_compiler, str):
+            raise ConfigError(f"platform.{name}.cxx-compiler must be a string")
         platforms[name] = Platform(
             name=name,
             targets=_strings(data.get("targets"), f"platform.{name}.targets"),
             options=_options(data.get("options"), f"platform.{name}.options"),
+            c_compiler=c_compiler,
+            cxx_compiler=cxx_compiler,
         )
 
     experiments: dict[str, Experiment] = {}
