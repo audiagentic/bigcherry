@@ -61,6 +61,43 @@ medians is measurement error, and the pair calibrates the harness with no extern
 reference. Every result records `canary_pct`, `canary_retries` and `canary_pair`
 in the measurements JSONL. Check it before believing a narrow margin.
 
+## Server benchmark (Brutus bench runner)
+
+End-to-end pp/tg numbers for a **running** llama-server instance come from the
+bench harness on Brutus (`ssh brutus` / `10.10.100.10`, key auth, no password).
+Harness root: `/mnt/vault/development/llmhosts/llamacpp/bench`. For bigcherry
+tests we use **server-bench endpoint mode only** — point it at a server we
+started ourselves (tune/replay/native build of our choice); the harness's own
+build lanes and spawn mode are not used.
+
+```bash
+ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_bench.py \
+  --bench-type server-bench \
+  --server-url http://127.0.0.1:42007 \
+  --model <label> \
+  [--bench-configs default] \
+  [--toggles "{\"repetitions\":1}"]'
+```
+
+- **`--server-url`** — the running instance. In endpoint mode `--model` is only a
+  label for result matching: pass the model's gguf base name to pick up its
+  profile/toggles, or any string (e.g. `dummy`) if you want the defaults.
+- **`--bench-configs`** — config set from `bench/config/bench-configs.json`
+  (`server-bench` section): `default` (pp512 + tg128), `full`,
+  `long-prompt-12k`, `long-prompt-16k`, `request-cache`, `mtp-dual`,
+  `compression-*`, or comma-separated names (`tg128` for a fast smoke).
+- **`--toggles`** — JSON overrides applied last: `repetitions`,
+  `prompt_length`, `generation_length`, `ubatch_size`. Use
+  `{"repetitions":1}` plus one short config when you only need a liveness check.
+- OpenAI-style endpoints: add `--api-type openai` (or use a URL containing
+  `/v1`) and `--server-model <name>` for the endpoint's model id.
+- Output: per-config `<name>_tps` on stdout; one row appended to
+  `bench/results.json` / `results.db`; full log under `bench/raw_logs/` (path
+  printed in the output).
+- Timing discipline is the same as the offline sweeps: the GPU behind the server
+  must be idle, and a short single-repetition run is a liveness check, not a
+  performance conclusion.
+
 ## Coverage
 
 ```bash
