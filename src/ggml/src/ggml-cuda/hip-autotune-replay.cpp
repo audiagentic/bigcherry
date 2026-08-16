@@ -91,6 +91,13 @@ bool       g_loaded = false;
 // in a server that has been up for a week is not a usable answer to "is this
 // build actually tuned".
 bool       g_stale  = false;
+// GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=OFF lets lookup fall back to the
+// newest available entry for a dispatch key even when its source_revision or
+// manifest_hash does not match this binary. implementation_version is the
+// actual safety check in that mode (each entry is validated per-candidate at
+// load time, see the loader loop); ON (default) keeps today's exact-match,
+// fail-closed behavior.
+bool       g_require_revision_match = true;
 
 uint32_t read_u32(const uint8_t * p) {
     return (uint32_t) p[0] | ((uint32_t) p[1] << 8)
@@ -216,6 +223,11 @@ void reject(const char * path, const char * why) {
 bool ggml_hip_replay_init() {
     static std::once_flag once;
     std::call_once(once, []() {
+        const char * revision_match = getenv("GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH");
+        if (revision_match != nullptr && strcmp(revision_match, "0") == 0) {
+            g_require_revision_match = false;
+        }
+
         const char * path = getenv("GGML_HIP_DISPATCH_CACHE");
         if (path == nullptr || path[0] == '\0') {
             return;
@@ -289,6 +301,7 @@ bool ggml_hip_replay_init() {
 
         const char * strings = (const char *) (data + strings_at);
         size_t unknown = 0;
+        size_t stale_impl_version = 0;
 
         for (uint32_t i = 0; i < entry_count; ++i) {
             const uint8_t * entry = data + entries_at + (size_t) i * ENT_SIZE;
@@ -318,13 +331,20 @@ bool ggml_hip_replay_init() {
             ggml_hip_digest key;
             memcpy(key.bytes, entry + ENT_DISPATCH, GGML_HIP_DIGEST_BYTES);
 
+            // An implementation_version mismatch means this one entry no
+            // longer describes what the candidate actually does in this
+            // build; it is unsafe to use. It is not evidence about any other
+            // entry, including other generations of the same build or
+            // entries retained from other builds -- skip only this entry so
+            // a single stale winner cannot take the rest of the cache with
+            // it (previously this cleared g_winners entirely).
+            if (read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version) {
+                ++stale_impl_version;
+                continue;
+            }
+
             Winner winner = {};
             winner.candidate = candidate;
-            if (read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version) {
-                reject(path, "entry implementation version differs from candidate registry");
-                g_winners.clear();
-                return;
-            }
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);
@@ -376,6 +396,13 @@ bool ggml_hip_replay_init() {
                           "candidates; those signatures use native selection\n",
                           unknown);
         }
+        if (stale_impl_version) {
+            GGML_LOG_WARN("bigcherry: %zu cache entry/entries have an "
+                          "implementation_version that no longer matches "
+                          "this build's candidate registry and were skipped; "
+                          "other entries in the cache were retained\n",
+                          stale_impl_version);
+        }
     });
     return g_loaded;
 }
@@ -390,9 +417,14 @@ bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
     if (found == g_winners.end()) {
         return false;
     }
+    // Entries are stored newest-generation-first per key (the exporter sorts
+    // descending by generation), so the first signature match here is always
+    // the newest available winner for this dispatch key.
     for (const Winner & winner : found->second) {
-        if (!ggml_hip_digest_equal(winner.signature_digest, signature_digest) ||
-            !winner.fresh) {
+        if (!ggml_hip_digest_equal(winner.signature_digest, signature_digest)) {
+            continue;
+        }
+        if (g_require_revision_match && !winner.fresh) {
             continue;
         }
         *out_candidate = winner.candidate;

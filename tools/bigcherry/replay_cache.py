@@ -445,13 +445,18 @@ def build(
             {"source_revision": expected_revision, "manifest_hash": manifest_hash},
             where="manifest provenance")
         expected_revision = manifest_provenance["source_revision"]
-        expected_manifest = manifest_provenance["manifest_hash"]
+        # manifest_hash is deliberately not compared here: it is scoped to
+        # variant_set and candidate set (manifest_hash()), so a replay-slim
+        # manifest can never share a hash with the workload/full-max manifest
+        # that produced these measurements even when the export is correct.
+        # source_revision is the actual producer/consumer identity that
+        # matters -- the candidate-set compatibility check happens separately
+        # when winners are resolved against this manifest's catalog below.
         if (producer_header is None or
-                producer_header.get("source_revision", "").lower() != expected_revision or
-                producer_header.get("manifest_hash", "").lower() != expected_manifest):
+                producer_header.get("source_revision", "").lower() != expected_revision):
             raise SystemExit(
-                "refusing to export: measurements producer provenance does not "
-                "match the supplied manifest (source_revision/manifest_hash)"
+                "refusing to export: measurements producer source_revision does "
+                "not match the supplied manifest's source_revision"
             )
 
     if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:

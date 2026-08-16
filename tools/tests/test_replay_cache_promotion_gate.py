@@ -224,8 +224,39 @@ class ProducerProvenanceTests(unittest.TestCase):
                 json.dumps({"kind": "result", "dispatch": "a" * 32,
                             "winner": "native", "native": "native"}),
             ]) + "\n", encoding="utf-8")
-            with self.assertRaisesRegex(SystemExit, "producer provenance"):
+            with self.assertRaisesRegex(SystemExit, "producer source_revision"):
                 replay_cache.build(measurements, manifest, ggml_h)
+
+    def test_manifest_hash_mismatch_alone_is_accepted_when_source_revision_matches(self):
+        # A replay-slim manifest always has a different manifest_hash than the
+        # workload/full-max manifest that produced the tuning measurements --
+        # manifest_hash() is scoped to variant_set and candidate set, and
+        # replay-slim narrows both by design. Only source_revision identifies
+        # a compatible producer/consumer pair; requiring manifest_hash to
+        # match too made every replay-slim export refuse unconditionally.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "source_revision": "a" * 40,
+                "manifest_hash": "b" * 32,
+                "candidates": [
+                    {"stable_name": "mmvq:native:v1", "family": "mmvq",
+                     "source_class": "native_wrapper", "config": {}},
+                ],
+            }), encoding="utf-8")
+            ggml_h = root / "ggml.h"
+            ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+            measurements = root / "measurements.jsonl"
+            measurements.write_text("\n".join([
+                json.dumps({"kind": "header", "source_revision": "a" * 40,
+                            "manifest_hash": "c" * 32}),
+                json.dumps({"kind": "result", "dispatch": "a" * 32,
+                            "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+                            "signature": "e" * 32}),
+            ]) + "\n", encoding="utf-8")
+            blob = replay_cache.build(measurements, manifest, ggml_h)
+            self.assertGreater(len(blob), replay_cache.REPLAY_HEADER_SIZE)
 
 
 if __name__ == "__main__":

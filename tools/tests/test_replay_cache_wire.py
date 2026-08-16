@@ -190,7 +190,7 @@ class ReplayCacheWireTests(unittest.TestCase):
                 "signature schema version mismatch",
                 "hardware key schema version mismatch",
                 "artifact version mismatch",
-                "entry implementation version differs from candidate registry"):
+                "implementation_version that no longer matches"):
             self.assertTrue(check in source or check in header, check)
 
     def test_duplicate_dispatch_is_rejected_case_insensitively(self):
@@ -279,7 +279,7 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertIn("constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES", source)
         self.assertIn("constexpr size_t ENT_SIZE      = ENT_GENERATION + 4", source)
         for check in ("file is truncated", "content checksum mismatch", "duplicate generation identity",
-                      "entry implementation version differs from candidate registry"):
+                      "implementation_version that no longer matches"):
             self.assertIn(check, source)
 
 
