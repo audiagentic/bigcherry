@@ -25,7 +25,7 @@ class BuildManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             registry = _write(root, "hip-autotune-registry.inc", "registry")
-            manifest_json = _write(root, "hip-autotune-manifest.json", '{"generated_at": "t1"}')
+            _write(root, "hip-autotune-manifest.json", '{"generated_at": "t1"}')
 
             tree = build_manifest(root, compile_inputs=(registry,))
             self.assertEqual(set(tree["files"]), {

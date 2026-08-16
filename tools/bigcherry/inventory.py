@@ -43,14 +43,14 @@ _RESULT_STATUSES = {
 
 def _validate_measurement_header(header: dict[str, Any], line: int) -> None:
     """Require the sampling policy needed to interpret timing results."""
-    for field in ("final_samples", "warmup_launches", "screen_samples",
-                  "confirmation_samples"):
-        if field not in header:
+    for header_field in ("final_samples", "warmup_launches", "screen_samples",
+                         "confirmation_samples"):
+        if header_field not in header:
             continue  # retain compatibility with pre-HI34 artifacts
-        value = header[field]
+        value = header[header_field]
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise RecordError(
-                f"measurements line {line}: {field} must be a non-negative integer"
+                f"measurements line {line}: {header_field} must be a non-negative integer"
             )
 
 
@@ -168,10 +168,10 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
         if status not in _RESULT_STATUSES:
             raise RecordError(f"measurements line {line}: unknown candidate status {status!r}")
         names.add(name)
-        for field in ("median_us", "mad_us", "p95_us", "host_median_us",
-                      "nmse", "max_abs", "workspace", "samples"):
-            if field in candidate:
-                _finite_number(candidate[field], field)
+        for metric_field in ("median_us", "mad_us", "p95_us", "host_median_us",
+                             "nmse", "max_abs", "workspace", "samples"):
+            if metric_field in candidate:
+                _finite_number(candidate[metric_field], metric_field)
         samples = candidate.get("samples", 0)
         if int(samples) != samples:
             raise RecordError(f"measurements line {line}: samples must be an integer")
@@ -191,14 +191,14 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
         _validate_workspace_evidence(candidate, line)
     if winner not in names:
         raise RecordError(f"measurements line {line}: winner is not a candidate")
-    for field in ("improvement_pct", "confidence"):
-        if field in row:
-            _finite_number(row[field], field, nonnegative=False)
-    for field in ("generated", "applicable", "eligible", "measured"):
-        if field in row:
-            value = row[field]
+    for winner_field in ("improvement_pct", "confidence"):
+        if winner_field in row:
+            _finite_number(row[winner_field], winner_field, nonnegative=False)
+    for count_field in ("generated", "applicable", "eligible", "measured"):
+        if count_field in row:
+            value = row[count_field]
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise RecordError(f"measurements line {line}: {field} must be non-negative integer")
+                raise RecordError(f"measurements line {line}: {count_field} must be non-negative integer")
     if "launches_per_sample" in row:
         value = row["launches_per_sample"]
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:

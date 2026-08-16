@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import hashlib
-import json
 
 
 class PromotionError(ValueError):

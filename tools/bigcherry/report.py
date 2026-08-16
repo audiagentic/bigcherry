@@ -581,7 +581,6 @@ def cmd_overview(args: argparse.Namespace) -> int:
     pipe = data["pipeline"]
     imp = data["improvement"]
     rejections = data["rejections"]
-    families = data["families"]
     top_tuned = data["top_tuned"]
 
     print(f"Tuning: {sigs} signatures")

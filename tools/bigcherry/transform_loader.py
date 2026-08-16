@@ -12,7 +12,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .inventory import CURRENT_DB_SCHEMA_VERSION, RecordError, _require_current_schema
+from .inventory import RecordError, _require_current_schema
 from .transform_records import TransformRecordError, load_transform_records
 
 
