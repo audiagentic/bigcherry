@@ -530,6 +530,44 @@ class TestLoadMeasurements(unittest.TestCase):
         self.assertGreaterEqual(counts["measurements"], 3)
         os.unlink(path)
 
+    def test_measurement_import_skips_native_twin_candidate(self):
+        """HI24 step 4: the synthetic double-native replicate must not become
+        a candidate or a measurement row in SQLite; the JSONL stays its
+        authoritative evidence."""
+        import copy
+
+        row = copy.deepcopy(TUNING_RESULT_NATIVE)
+        twin = dict(row["candidates"][0])
+        twin["name"] = "mmq:native:v1#twin"
+        twin["median_us"] = 1.530
+        row["candidates"].append(twin)
+        # The funnel stays over the registry: measured does not count the twin.
+        row["measured"] = 2
+
+        path = make_jsonl_file(TUNING_HEADER, row)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+
+        with TempDB() as db:
+            counts = inventory.load_measurements(
+                path, db.db_path, schema_path, manifest_path=None,
+            )
+            twins = db.query(
+                "SELECT COUNT(*) FROM candidate WHERE stable_name LIKE '%#twin'"
+            )[0][0]
+            measurements = db.query("SELECT COUNT(*) FROM measurement")[0][0]
+            winner_native = db.query(
+                "SELECT native_stable_name FROM winner"
+            )[0][0]
+
+        self.assertEqual(counts["results"], 1)
+        # 3 registry candidates -- not 4 with the twin row.
+        self.assertEqual(counts["candidates"], 3)
+        self.assertEqual(twins, 0)
+        # 2 measured registry candidates + 1 screened-out = 3 rows, no twin.
+        self.assertEqual(measurements, 3)
+        self.assertEqual(winner_native, "mmq:native:v1")
+        os.unlink(path)
+
     def test_two_results(self):
         path = make_jsonl_file(
             TUNING_HEADER, TUNING_RESULT_NATIVE, TUNING_RESULT_IMPROVED

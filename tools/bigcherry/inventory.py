@@ -878,9 +878,19 @@ def load_measurements(
 
             signature_id = _resolve_signature(result)
 
-            # Insert measurement rows for each candidate
+            # Insert measurement rows for each candidate.
+            #
+            # HI24 step 4: a "<stable_name>#twin" row is the double-native
+            # synthetic repeatability replicate, not a registry candidate. It
+            # must not become a fake candidate (the fallback descriptor would
+            # fabricate one) and it must not inflate SQLite coverage counts.
+            # The JSONL remains the authoritative twin evidence; if the DB ever
+            # needs replicates, give them a distinct measurement role rather
+            # than reusing candidate identity.
             for cand in result.get("candidates", []):
                 cand_name = cand.get("name", "")
+                if cand_name.endswith("#twin"):
+                    continue
                 status = cand.get("status", "ok")
                 reject_reason = status_to_reason.get(status)
                 accepted = 1 if reject_reason is None else 0

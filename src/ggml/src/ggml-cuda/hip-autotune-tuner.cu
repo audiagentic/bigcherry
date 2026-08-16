@@ -90,6 +90,16 @@ struct Measurement {
     bool     is_native_twin            = false;
 };
 
+// HI24 step 4: the identity of a measurement *instance*, distinct from its
+// candidate. The double-native twin carries native's own descriptor, so its
+// rows are emitted as "<stable_name>#twin" -- '#' is not legal in a stable
+// name (standards 2.1), so no real candidate can collide with it. One helper
+// everywhere the JSONL or the schedule names a measurement instance.
+static std::string measurement_name(const Measurement & m) {
+    return std::string(m.candidate ? m.candidate->stable_name : "")
+           + (m.is_native_twin ? "#twin" : "");
+}
+
 // HI50: whether the noise canary (same-kernel pair, see below) confirmed
 // this signature's timings are trustworthy. NOT_AVAILABLE means no canary
 // pair existed to check (e.g. no MMQ J-best twin); UNRESOLVED means a pair
@@ -1204,6 +1214,9 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_NOISE_PCT")) {
             double_env("GGML_HIP_TUNE_NOISE_PCT", 0.0, std::numeric_limits<double>::max(), c.noise_canary_pct);
         }
+        if (const char * v = getenv("GGML_HIP_TUNE_DOUBLE_NATIVE")) {
+            int_env("GGML_HIP_TUNE_DOUBLE_NATIVE", 0, 1, c.double_native);
+        }
         if (const char * v = getenv("GGML_HIP_TUNE_ALPHA")) {
             double_env("GGML_HIP_TUNE_ALPHA", 0.0, 1.0, c.confidence_alpha);
         }
@@ -1620,6 +1633,31 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         result.measurements.push_back(m);
     }
 
+    // HI24 step 4. The J_best canary only applies where native is MMQ -- a
+    // minority of signatures -- so every other family records canary_pct =
+    // -1, which is exactly the set deciding the finest margins. A second
+    // Measurement over native's own descriptor gives every family a
+    // same-kernel repeatability check by construction: any divergence between
+    // the two rows is measurement error.
+    //
+    // Location is load-bearing: `screening` below holds raw pointers into
+    // result.measurements, so the twin must be pushed BEFORE that vector is
+    // built or a later reallocation would dangle every one of them. At this
+    // point native has not been timed yet, so the copy's timing fields are
+    // pristine; nothing in the registry loop writes transient state.
+    if (config.double_native) {
+        for (const Measurement & m : result.measurements) {
+            if (m.candidate == native.candidate &&
+                    m.reason == GGML_HIP_REJECT_NONE &&
+                    !m.is_native_twin) {
+                Measurement twin = m;
+                twin.is_native_twin = true;
+                result.measurements.push_back(std::move(twin));
+                break;
+            }
+        }
+    }
+
     std::vector<Measurement *> screening;
     for (Measurement & m : result.measurements) {
         if (m.reason == GGML_HIP_REJECT_NONE) {
@@ -1629,7 +1667,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
 
     Measurement * native_m = nullptr;
     for (Measurement * m : screening) {
-        if (m->candidate == native.candidate) { native_m = m; break; }
+        // Role identity, not descriptor identity: the twin shares native's
+        // descriptor and must never be mistaken for the baseline.
+        if (!m->is_native_twin && m->candidate == native.candidate) {
+            native_m = m; break;
+        }
     }
     if (native_m == nullptr) {
         // Standards 7.3: without a measured native there is no correctness
@@ -1749,7 +1791,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // --- screening (standards 11.4) -------------------------------------
     scratch_dst.data = candidate_buf.get();
     for (Measurement * m : screening) {
-        if (m->candidate == native.candidate) {
+        // Primary native was measured in its own block above; the twin is
+        // deliberately NOT skipped -- it traverses the same measurement path.
+        if (m == native_m) {
             continue;
         }
         std::vector<double> gpu;
@@ -1784,6 +1828,17 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         m->nmse          = nmse;
         m->max_abs_error = max_abs;
         if (nmse > config.max_nmse || max_abs > config.max_abs_error) {
+            // For an ordinary challenger this is a normal rejection. For the
+            // double-native twin it is stronger evidence: the same descriptor,
+            // same signature, same inputs produced a compatible output as
+            // primary native and an incompatible one moments later. The
+            // measurement context is not trustworthy for this signature --
+            // reject conservatively rather than drop the canary and carry on.
+            if (m->is_native_twin) {
+                result.reason = "double-native twin failed correctness; run rejected";
+                record_result(dispatch_digest, result);
+                return native.candidate;
+            }
             m->reason = GGML_HIP_REJECT_TOLERANCE;
             continue;
         }
@@ -1794,7 +1849,13 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         m->host_median_us = median_of(host);
         m->samples        = (int) gpu.size();
         m->measured       = true;
-        ++result.measured;
+        // The twin is a synthetic measurement role, not another registry
+        // candidate: generated >= applicable >= eligible >= measured must stay
+        // a funnel over the registry or offline consumers see invalid adaptive
+        // evidence.
+        if (!m->is_native_twin) {
+            ++result.measured;
+        }
     }
 
     // --- retain finalists -----------------------------------------------
@@ -1815,11 +1876,17 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     const double best = survivors.empty() ? 0.0 : survivors.front()->median_us;
     for (size_t i = 0; i < survivors.size(); ++i) {
         Measurement * m = survivors[i];
-        const bool is_native = m->candidate == native.candidate;
-        const bool in_top    = (int) i < config.screen_keep_top;
-        const bool near_best = best > 0.0 &&
+        // Role identity again: with the twin present, descriptor equality
+        // would classify both rows as native.
+        const bool is_native      = (m == native_m);
+        const bool is_twin        = m->is_native_twin;
+        const bool in_top         = (int) i < config.screen_keep_top;
+        const bool near_best      = best > 0.0 &&
             m->median_us <= best * (1.0 + config.screen_keep_within_pct / 100.0);
-        if (is_native || in_top || near_best) {
+        // The twin is retained unconditionally (once it has survived
+        // screening and correctness): it is the calibration instrument, and
+        // letting screening noise drop it would defeat its purpose.
+        if (is_native || is_twin || in_top || near_best) {
             finalists.push_back(m);
         }
     }
@@ -1836,17 +1903,25 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         // A fixed order would let whichever candidate is always measured
         // first in a round absorb a systematic share of thermal drift; the
         // rotation spreads that instead of cancelling it only in aggregate.
+        // The twin shares native's stable name, so plain strcmp leaves an
+        // equivalent-key pair whose order std::sort does not guarantee. Break
+        // ties explicitly (primary before twin) so the schedule is a
+        // deterministic, name-unique description of what was actually run.
         std::sort(finalists.begin(), finalists.end(),
                   [](const Measurement * a, const Measurement * b) {
-                      return strcmp(a->candidate->stable_name,
-                                    b->candidate->stable_name) < 0;
+                      const int cmp = strcmp(a->candidate->stable_name,
+                                             b->candidate->stable_name);
+                      if (cmp != 0) {
+                          return cmp < 0;
+                      }
+                      return a->is_native_twin < b->is_native_twin;
                   });
         result.schedule_seed = (uint32_t) result.signature_digest.bytes[0]
                              | ((uint32_t) result.signature_digest.bytes[1] << 8)
                              | ((uint32_t) result.signature_digest.bytes[2] << 16)
                              | ((uint32_t) result.signature_digest.bytes[3] << 24);
         for (const Measurement * m : finalists) {
-            result.schedule_candidates.push_back(m->candidate->stable_name);
+            result.schedule_candidates.push_back(measurement_name(*m));
         }
         for (Measurement * m : finalists) {
             m->final_gpu_us.assign(config.final_samples,
@@ -1952,6 +2027,19 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // Costs nothing when the pair is already present: both were going to be
     // measured anyway.
     {
+        // HI24 step 4: the explicit double-native replicate. It is the
+        // fallback for every family the J_best form cannot cover (non-MMQ
+        // natives), and it measures repeatability only -- so the J_best pair,
+        // which additionally verifies the forced-dispatch/native equivalence
+        // invariant, stays preferred where it exists.
+        Measurement * native_twin = nullptr;
+        for (Measurement * m : finalists) {
+            if (m->is_native_twin && m->measured) {
+                native_twin = m;
+                break;
+            }
+        }
+
         Measurement * twin = nullptr;
         if (native.candidate != nullptr &&
                 native.candidate->family == GGML_HIP_FAMILY_MMQ) {
@@ -1973,11 +2061,16 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 }
             }
         }
+        if (twin == nullptr) {
+            twin = native_twin;
+        }
 
         for (int attempt = 0; twin != nullptr && native_m->median_us > 0.0; ++attempt) {
             const double diff = std::fabs(native_m->median_us - twin->median_us);
             result.canary_pct  = 100.0 * diff / native_m->median_us;
-            result.canary_pair = twin->candidate->stable_name;
+            // Measurement-instance identity: a J-best pair emits the
+            // challenger's name, the fallback emits e.g. "mmvq:native:v1#twin".
+            result.canary_pair = measurement_name(*twin);
             if (result.canary_pct <= config.noise_canary_pct ||
                     attempt >= config.noise_canary_retries) {
                 if (result.canary_pct > config.noise_canary_pct) {
@@ -2292,7 +2385,7 @@ void ggml_hip_tuner_flush() {
             "\"warmup_launches\":%d,\"screen_samples\":%d,"
             "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
-            "\"alpha\":%.4f}\n",
+                "\"alpha\":%.4f,\"double_native\":%d}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
@@ -2302,7 +2395,7 @@ void ggml_hip_tuner_flush() {
             config.warmup_launches, config.screen_samples,
             config.confirmation_samples, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
-            config.confidence_alpha);
+            config.confidence_alpha, config.double_native);
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;
@@ -2399,7 +2492,7 @@ void ggml_hip_tuner_flush() {
                     "\"samples\":%d,\"sign_p\":%.4f,\"sign_wins\":%d,"
                     "\"sign_rounds\":%d",
                     first ? "" : ",",
-                    m.candidate ? m.candidate->stable_name : "",
+                    measurement_name(m).c_str(),
                     reason_name(m.reason), m.median_us, m.effective_us,
                     m.mad_us, m.p95_us,
                     m.host_median_us, m.nmse, m.max_abs_error,
