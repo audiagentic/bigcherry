@@ -42,8 +42,10 @@ class FlushContractTests(unittest.TestCase):
     def test_flush_defaults_off_with_explicit_mb_sizing(self):
         self.assertIn("int flush_l2       = 0;", self.tuner_h)
         self.assertIn("int flush_evict_mb = 256;", self.tuner_h)
+        # HI65: the request flags are parsed into locals, then resolved into
+        # the single pre_sample_mode enum in get_config.
         self.assertIn(
-            'int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, c.flush_l2);', self.tuner
+            'int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, flush_l2_req);', self.tuner
         )
         self.assertIn(
             'int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);',
@@ -71,7 +73,7 @@ class FlushContractTests(unittest.TestCase):
         # unfinished 256 MB eviction would ride inside that window via the
         # final hipEventSynchronize(stop).
         loop = self.tuner.find("for (int s = 0; s < samples; ++s)")
-        evict = self.tuner.find("if (flush_l2 && !launch_cache_evict(lc))")
+        evict = self.tuner.find("&& !launch_cache_evict(lc))")
         host_start = self.tuner.find("const int64_t host_start = ggml_time_us();")
         record_start = self.tuner.find("hipEventRecord(start, lc.stream)")
         self.assertGreater(loop, 0)
@@ -129,33 +131,34 @@ class FlushContractTests(unittest.TestCase):
 
     # --- threading through every measurement path ---------------------------
 
-    def test_flush_is_a_required_parameter_of_both_measurement_functions(self):
+    def test_flush_mode_is_a_required_parameter_of_both_measurement_functions(self):
         # Required, not defaulted: a caller that forgets to choose a mode is
-        # a compile error rather than a silent default.
+        # a compile error rather than a silent default. HI65 threaded the
+        # single pre_sample_mode enum instead of the raw flush_l2 boolean.
         self.assertIn(
-            "bool flush_l2,\n                    std::vector<double> & gpu_us,",
+            "ggml_hip_pre_sample_mode pre_sample,\n"
+            "                    std::vector<double> & gpu_us,",
             self.tuner,
         )
         self.assertIn(
             "int launches_per_sample,\n"
-            "        bool flush_l2,\n"
+            "        ggml_hip_pre_sample_mode pre_sample,\n"
             "        const char * protocol_stage) {",
             self.tuner,
         )
-        self.assertNotIn("bool flush_l2 =", self.tuner)
 
     def test_every_call_site_states_the_flush_mode(self):
         # Six direct decision sites (pilot, native, screening, final round,
         # canary re-measure, confirmation) read the config explicitly; the
         # counterbalanced round forwards its parameter to time_candidate.
         self.assertEqual(
-            self.tuner.count("config.flush_l2 != 0"),
+            self.tuner.count("config.pre_sample_mode,"),
             6,
             "expected pilot + native + screening + final + canary-remeasure "
             "+ confirmation call sites",
         )
         self.assertIn(
-            "launches_per_sample, flush_l2,\n"
+            "launches_per_sample, pre_sample,\n"
             "                                one_gpu, one_host,",
             self.tuner,
         )
@@ -165,10 +168,13 @@ class FlushContractTests(unittest.TestCase):
     def test_flush_forces_one_launch_per_sample(self):
         # Enforced in get_config, where every calibration reads its ceiling:
         # a batched sample would measure one cold launch plus lps-1 hot ones
-        # and report the mean as if it were one number.
-        clamp = self.tuner.find("if (c.flush_l2 != 0 && c.max_launches_per_sample > 1)")
+        # and report the mean as if it were one number. HI65: the clamp keys
+        # on the enum, so EVICT_REWARM is covered by the same invariant.
+        clamp = self.tuner.find(
+            "if (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE"
+        )
         self.assertGreater(clamp, 0)
-        block = self.tuner[clamp : clamp + 900]
+        block = self.tuner[clamp : clamp + 1200]
         self.assertIn("c.max_launches_per_sample = 1;", block)
         self.assertIn("a flush cannot ", block)
 
@@ -176,7 +182,7 @@ class FlushContractTests(unittest.TestCase):
 
     def test_flush_configuration_is_recorded_in_the_artifact_header(self):
         # The C string literal carries escaped quotes; match them literally.
-        header = self.tuner.find('\\"flush_l2\\":%d,\\"flush_evict_mb\\":%d}')
+        header = self.tuner.find('\\"flush_l2\\":%d,\\"flush_evict_mb\\":%d,')
 
         self.assertGreater(header, 0)
         self.assertIn("config.flush_l2, config.flush_evict_mb", self.tuner)
