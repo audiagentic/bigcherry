@@ -126,9 +126,14 @@ writes before every sample plausibly precondition GPU clock/power/memory-fabric
 state, so the intervention perturbs more than the cache. B1 therefore
 establishes **measurement-context sensitivity**, not yet "L2 residency caused
 this"; attribution needs the cause-validation sweep before any re-tuning or
-promotion decision. Four further replicated winner flips do NOT cross on
-medians; they are confirmation-noise artifacts of the noisier cold arm, not
-residency inversions. A secondary effect: under flush, 63 signatures rejected
+promotion decision (HI65). Four further replicated winner flips do NOT cross
+on medians — in the cold context the hot winner stays faster or ties — so they
+are non-crossover selection flips, consistent with the elevated cold-arm noise
+(MAD inflation under flush). They are NOT diagnosed as confirmation-noise
+artifacts: the production winner is not selected from raw GPU median alone
+(effective_us = max(gpu_median, host_median - sync_overhead), then a fresh
+confirmation holdout can change the final winner), and the evaluator did not
+check the confirmation stage for these four. A secondary effect: under flush, 63 signatures rejected
 fail-closed as "native timing unstable" (MAD inflation on small kernels), so
 the cold arm also changes the noise regime, not just the means.
 
@@ -151,10 +156,11 @@ extremes and depends on the graph, so the flush is NOT promoted to calibration
 default on this evidence. `flush=1` stays OFF by default and remains a
 diagnostic knob. Before any promotion or re-tuning decision, the eviction must
 be validated as the cause: size-saturation sweep (128/256/512 MB) on a
-diagnostic subset plus DVFS/thermal/memory-fabric preconditioning ruled out —
-tracked as a new item, not a flag flip.
+diagnostic subset plus an evict-then-rewarm control and DVFS/thermal/
+memory-fabric preconditioning ruled out — tracked as HI65, not a flag flip.
 
 Evidence: `artifacts/b1/{h1,cold,h2}.jsonl.measurements.jsonl` (arm headers
-carry `flush_l2`/`flush_evict_mb` provenance); strict gate-2 evaluator pending
-promotion from `tmp/b1-gate2-strict.py` to `tools/`. Plan item HI34 steps 4-5,
-notes of 2026-08-17.
+carry `flush_l2`/`flush_evict_mb` provenance); strict gate evaluator at
+`tools/residency_gates.py` with unit tests in `tools/tests/test_residency_gates.py`
+(promoted from `tmp/b1-gate2-strict.py`, 2026-08-17). Plan item HI34 steps
+4-5, notes of 2026-08-17; follow-on attribution item HI65.
