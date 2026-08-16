@@ -25,13 +25,24 @@ builds.validate_reuse(): build_directory() is content-addressed by
 (source_slice_id, build_plan_id), so a directory that already carries a
 prior build's metadata and still checks out against that recorded identity
 is trusted without recompiling. A directory that carries metadata which does
-NOT check out is a hard failure, not a silent rebuild -- that would hide
-real corruption or tampering of build output behind an unremarkable
-recompile. This is a different, lower layer than CampaignRun's own
-StageRecord-based reuse (campaign.py): that reuse skips re-executing a stage
-within one CampaignRun/run_id; this reuse lets a fresh process/run_id skip
-recompiling entirely when a prior run (any run_id) already produced the
-identical build.
+NOT check out against its OWN recorded identity (validate_reuse()) is a hard
+failure, not a silent rebuild -- that would hide real corruption or
+tampering of build output behind an unremarkable recompile. This is a
+different, lower layer than CampaignRun's own StageRecord-based reuse
+(campaign.py): that reuse skips re-executing a stage within one
+CampaignRun/run_id; this reuse lets a fresh process/run_id skip recompiling
+entirely when a prior run (any run_id) already produced the identical build.
+
+validate_reuse() alone is not sufficient, though: BuildPlan does not (and
+currently cannot cheaply) depend on the catalog's candidate architectures,
+so two generate runs given different --arch values can produce different
+generated/ catalogs while still sharing a build_plan_id and build_dir.
+generated_tree.py's compile_inputs_hash exists specifically to distinguish
+that case (see its docstring); the build worker additionally requires the
+cached metadata's recorded compile_inputs_hash to match the CURRENT
+generate stage's before trusting a cache hit. A mismatch there is not
+tampering -- it is a legitimate cache miss, so it falls through to a fresh
+build rather than raising.
 """
 
 from __future__ import annotations
@@ -178,7 +189,28 @@ def make_build_worker(
                     f"{metadata_path.name} but it failed reuse validation "
                     f"-- refusing to silently rebuild over it: {exc}"
                 ) from exc
-            reused = True
+            # validate_reuse() only proves this metadata's OWN recorded
+            # identity is self-consistent and matches the requested
+            # BuildPlan/toolchain/binary -- it says nothing about whether
+            # the cached binary was compiled from the SAME generated
+            # catalog this run's generate stage just produced. BuildPlan
+            # (and therefore build_plan_id / build_directory()) does not
+            # depend on the catalog's candidate architectures, so two
+            # generate runs asked for different --arch values can produce
+            # different registry.inc/candidate sets while still sharing a
+            # build_dir. generated_tree.py's own compile_inputs_hash exists
+            # specifically to answer that question (see its docstring) --
+            # a mismatch here is a real gap gpt-auto-agent review found:
+            # without this check, the second run would silently reuse a
+            # binary built from an entirely different candidate catalog.
+            #
+            # This is NOT tampering of build_dir's own identity (that's
+            # what validate_reuse() already checked and raises on above) --
+            # it is a legitimate cache miss: the same requested BuildPlan
+            # genuinely was built from a different generated catalog. Fall
+            # through to a fresh build rather than failing closed here.
+            reused = metadata.get("generated_compile_inputs_hash") == \
+                generated_tree_document["compile_inputs_hash"]
 
         if not reused:
             configure_args = campaign_build.cmake_configure_args(
@@ -211,6 +243,7 @@ def make_build_worker(
                 "build_id": effective_build_id(effective_configure),
                 "toolchain": expected_toolchain,
                 "binary_hash": binary_hash(binary),
+                "generated_compile_inputs_hash": generated_tree_document["compile_inputs_hash"],
             }
             metadata_path.write_text(
                 json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")

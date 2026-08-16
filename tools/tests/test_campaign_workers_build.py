@@ -65,23 +65,34 @@ class _Harness:
             name="tune", options=(), variant_set="workload-max", needs=frozenset({"inventory"}))
         self.calls: list[list[str]] = []
 
-    def generate_inputs(self) -> tuple[ArtifactRef, ...]:
+    def generate_inputs(
+        self, *, registry_content: str = "registry", label: str = "generate-inputs",
+    ) -> tuple[ArtifactRef, ...]:
         generated_root = self.context.work_root / "runs" / self.run_id / "generate" / "generated"
         registry = generated_root / "hip-autotune-registry.inc"
         registry.parent.mkdir(parents=True, exist_ok=True)
-        registry.write_text("registry", encoding="utf-8")
+        # Overwrite, not append: a second call with different
+        # registry_content (simulating a different --arch's generated
+        # catalog) must leave the on-disk generated/ tree matching the
+        # freshly-built tree_document below, or generated_tree.verify_tree()
+        # would reject it as tampered before the reuse decision is even
+        # reached.
+        registry.write_text(registry_content, encoding="utf-8")
         tree_document = generated_tree.build_manifest(generated_root, compile_inputs=(registry,))
 
         doc = provenance.make(
             project={}, source={"source_slice_id": self.source_slice_id},
             build={"build_plan_id": self.build_plan.build_plan_id},
             workload={"workload_id": self.workload_id}, campaign={"run_id": self.run_id})
-        manifest_digest = self.store.publish_json("manifest.json", {"candidates": []})
-        tree_digest = self.store.publish_json("generated-tree.json", tree_document)
+        # label-scoped store paths: two calls with different content must
+        # not collide on ArtifactStore's immutable-publish check the way two
+        # calls with the SAME content correctly do (see FreshBuildTests).
+        manifest_digest = self.store.publish_json(f"{label}/manifest.json", {"candidates": []})
+        tree_digest = self.store.publish_json(f"{label}/generated-tree.json", tree_document)
         return (
-            ArtifactRef(kind="manifest", path=self.store.resolve("manifest.json"),
+            ArtifactRef(kind="manifest", path=self.store.resolve(f"{label}/manifest.json"),
                         content_hash=manifest_digest, provenance=doc),
-            ArtifactRef(kind="generated-tree", path=self.store.resolve("generated-tree.json"),
+            ArtifactRef(kind="generated-tree", path=self.store.resolve(f"{label}/generated-tree.json"),
                         content_hash=tree_digest, provenance=doc),
         )
 
@@ -164,6 +175,47 @@ class ReuseTests(unittest.TestCase):
                        side_effect=AssertionError("must not silently recompile over a failed check")):
                 with self.assertRaisesRegex(CampaignBuildError, "failed reuse validation"):
                     harness.worker()(harness.generate_inputs())
+
+    def test_different_generated_catalog_under_the_same_build_plan_recompiles_not_reuses(self):
+        # gpt-auto-agent review finding, verified real before fixing (see
+        # campaign_workers.py's module docstring): BuildPlan does not depend
+        # on the catalog's --arch, so two generate runs asked for different
+        # candidate architectures can share a build_plan_id/build_dir while
+        # producing genuinely different generated/ catalogs. Without a
+        # compile_inputs_hash check, the second run would silently reuse a
+        # binary built from an entirely different candidate catalog -- a
+        # real false-reuse bug, not a hypothetical one.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            with patch("bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()):
+                harness.worker()(harness.generate_inputs(
+                    registry_content="registry-for-gfx1100", label="arch-a"))
+            first_calls = len(harness.calls)
+            self.assertEqual(first_calls, 2)
+
+            # A DIFFERENT generated catalog (simulating a different --arch),
+            # same build_plan_id/build_dir. This must NOT silently reuse the
+            # first build's binary -- it must recompile for real.
+            arch_b_inputs = harness.generate_inputs(
+                registry_content="registry-for-gfx1201-DIFFERENT", label="arch-b")
+            with patch("bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()):
+                refs = harness.worker()(arch_b_inputs)
+
+            self.assertEqual(len(harness.calls), first_calls + 2)  # recompiled, not reused
+            self.assertEqual(len(refs), 1)
+            self.assertEqual(refs[0].kind, "binary")
+
+            arch_b_tree_document = json.loads(
+                arch_b_inputs[1].path.read_text(encoding="utf-8"))
+            build_dir = build_directory(harness.context, harness.source_slice_id, harness.build_plan)
+            metadata = json.loads(
+                (build_dir / "bigcherry-build-metadata-llama-bench.json").read_text(encoding="utf-8"))
+            # The recorded hash now reflects the SECOND (arch-b) catalog,
+            # not the first -- a third call with arch-b's exact content
+            # would correctly reuse; a third call with arch-a's would not.
+            self.assertEqual(
+                metadata["generated_compile_inputs_hash"],
+                arch_b_tree_document["compile_inputs_hash"])
 
     def test_metadata_present_but_build_plan_differs_fails_closed(self):
         # Same build_dir (forced by publishing under the first plan's
