@@ -82,11 +82,11 @@ struct Measurement {
     int      sign_wins                 = 0;
     int      sign_rounds               = 0;
 
-    // HI24 step 4 / HI50: marks a same-kernel double-native measurement used
-    // as a noise canary when no MMQ J-best twin exists. Current tuner does
-    // not measure a double-native twin (that is HI24 step 4, not yet
-    // restored), so this is always false today -- present so
-    // select_latency_v1 below is byte-identical to the design that does.
+    // HI24 step 4 / HI50: marks the same-kernel double-native replicate,
+    // measured so every family (not only the MMQ J-best minority) gets a
+    // repeatability canary. A synthetic measurement role, never a candidate:
+    // excluded from winner selection, not counted in result.measured, and
+    // emitted as "<stable_name>#twin" via measurement_name().
     bool     is_native_twin            = false;
 };
 
@@ -1452,9 +1452,7 @@ static std::string policy_candidates_json(const std::vector<PolicyCandidateVerdi
         if (rv.m == nullptr) continue;
         if (!first) out += ",";
         first = false;
-        const std::string emitted_name = rv.m->is_native_twin && rv.m->candidate
-            ? std::string(rv.m->candidate->stable_name) + "#twin"
-            : (rv.m->candidate ? rv.m->candidate->stable_name : "");
+        const std::string emitted_name = measurement_name(*rv.m);
         char eff_buf[32];
         snprintf(eff_buf, sizeof(eff_buf), "%.3f", rv.m->effective_us);
         out += "{\"name\":\"";
@@ -1475,9 +1473,7 @@ static std::string ranking_decision_json(const PolicyTableEntry & entry,
                                   const PolicySelection & sel,
                                   Measurement * native_m, bool is_production) {
     Measurement * picked = sel.qualified.empty() ? native_m : sel.qualified.front();
-    const std::string predicted_name = picked->is_native_twin && picked->candidate
-        ? std::string(picked->candidate->stable_name) + "#twin"
-        : (picked->candidate ? picked->candidate->stable_name : "");
+    const std::string predicted_name = measurement_name(*picked);
     std::string out = "{\"policy_name\":\"";
     out += entry.name;
     out += "\",\"policy_version\":";
@@ -1822,24 +1818,35 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         double nmse = 0.0;
         double max_abs = 0.0;
         if (!compare_outputs(reference_host, candidate_host, nmse, max_abs)) {
+            // For an ordinary challenger this is a normal rejection. For the
+            // double-native twin it is stronger evidence: the same descriptor,
+            // same signature, same inputs produced a compatible output as
+            // primary native and NaN/Inf moments later. The measurement
+            // context is not trustworthy for this signature -- reject it
+            // rather than drop the canary and carry on. (Launch/copy
+            // failures remain the global poison case; a numerical
+            // disagreement only invalidates this signature.)
+            if (m->is_native_twin) {
+                m->reason = GGML_HIP_REJECT_NAN_INF;
+                result.reason = "double-native twin failed correctness; signature rejected";
+                record_result(dispatch_digest, result);
+                return native.candidate;
+            }
             m->reason = GGML_HIP_REJECT_NAN_INF;
             continue;
         }
         m->nmse          = nmse;
         m->max_abs_error = max_abs;
         if (nmse > config.max_nmse || max_abs > config.max_abs_error) {
-            // For an ordinary challenger this is a normal rejection. For the
-            // double-native twin it is stronger evidence: the same descriptor,
-            // same signature, same inputs produced a compatible output as
-            // primary native and an incompatible one moments later. The
-            // measurement context is not trustworthy for this signature --
-            // reject conservatively rather than drop the canary and carry on.
+            // Same reasoning as the NaN/Inf path above: an identical native
+            // descriptor disagreeing with itself numerically is a
+            // signature-level integrity failure, not an ordinary challenger.
+            m->reason = GGML_HIP_REJECT_TOLERANCE;
             if (m->is_native_twin) {
-                result.reason = "double-native twin failed correctness; run rejected";
+                result.reason = "double-native twin failed correctness; signature rejected";
                 record_result(dispatch_digest, result);
                 return native.candidate;
             }
-            m->reason = GGML_HIP_REJECT_TOLERANCE;
             continue;
         }
 
@@ -2049,7 +2056,12 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1]);
             if (j_best != 0) {
                 for (Measurement * m : finalists) {
-                    if (m == native_m || !m->measured || m->candidate == nullptr) {
+                    // The synthetic replicate is not a forced-J candidate; it
+                    // is the fallback, considered only when no J-best pair
+                    // exists. State the exclusion rather than rely on the
+                    // native wrapper's zero-variant descriptor never matching.
+                    if (m == native_m || m->is_native_twin ||
+                            !m->measured || m->candidate == nullptr) {
                         continue;
                     }
                     if (m->candidate->family == GGML_HIP_FAMILY_MMQ &&

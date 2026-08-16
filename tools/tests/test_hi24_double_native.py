@@ -66,11 +66,32 @@ class DoubleNativeContractTests(unittest.TestCase):
             "if (!m->is_native_twin) {\n            ++result.measured;\n        }",
             self.tuner)
 
+    def test_twin_nan_inf_rejects_the_signature(self):
+        # The NaN/Inf branch must reject the signature for a twin, not just
+        # drop it like an ordinary bad challenger -- compare_outputs fails
+        # before any tolerance is computed, so it needs its own twin check.
+        self.assertIn(
+            "if (m->is_native_twin) {\n"
+            "                m->reason = GGML_HIP_REJECT_NAN_INF;\n"
+            "                result.reason = \"double-native twin failed "
+            "correctness; signature rejected\";",
+            self.tuner)
+
     def test_twin_correctness_mismatch_rejects_the_signature(self):
         # The same descriptor producing incompatible output on its second
         # run is a measurement-context integrity failure, not an ordinary
-        # challenger rejection.
+        # challenger rejection. The reject reason must be recorded on the
+        # twin's Measurement BEFORE the return so flush never serializes a
+        # signature-killing failure as status "ok".
         self.assertIn(
+            "m->reason = GGML_HIP_REJECT_TOLERANCE;\n"
+            "            if (m->is_native_twin) {\n"
+            "                result.reason = \"double-native twin failed "
+            "correctness; signature rejected\";",
+            self.tuner)
+        # The twin message must not overstate the action scope (other
+        # unrelated paths legitimately use "run rejected").
+        self.assertNotIn(
             "double-native twin failed correctness; run rejected", self.tuner)
 
     def test_native_and_twin_are_both_retained_as_finalists(self):
