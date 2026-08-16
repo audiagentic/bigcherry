@@ -170,9 +170,7 @@ class FlushContractTests(unittest.TestCase):
         # a batched sample would measure one cold launch plus lps-1 hot ones
         # and report the mean as if it were one number. HI65: the clamp keys
         # on the enum, so EVICT_REWARM is covered by the same invariant.
-        clamp = self.tuner.find(
-            "if (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE"
-        )
+        clamp = self.tuner.find("if (c.pre_sample_mode != GGML_HIP_PRE_SAMPLE_NONE")
         self.assertGreater(clamp, 0)
         block = self.tuner[clamp : clamp + 1200]
         self.assertIn("c.max_launches_per_sample = 1;", block)

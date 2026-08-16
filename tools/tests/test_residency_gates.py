@@ -22,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import residency_gates as rg  # noqa: E402
 
 
-def header(flush_l2=0, flush_mb=256):
-    return {
+def header(flush_l2=0, flush_mb=256, pre_sample_mode=None):
+    row = {
         "kind": "header",
         "artifact_version": 1,
         "source_revision": "rev",
@@ -31,6 +31,9 @@ def header(flush_l2=0, flush_mb=256):
         "flush_l2": flush_l2,
         "flush_evict_mb": flush_mb,
     }
+    if pre_sample_mode is not None:
+        row["pre_sample_mode"] = pre_sample_mode
+    return row
 
 
 def result(signature, winner, candidates, reason="native retained"):
@@ -55,6 +58,152 @@ def write_artifact(tmp: Path, name: str, header_row, results):
     lines = [json.dumps(header_row)] + [json.dumps(r) for r in results]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def _one_result():
+    return [result("s1", "w", [cand("w", 1.0)])]
+
+
+class TestArmProvenance(unittest.TestCase):
+    """HI65 pre-run requirement: declared arms must match headers fail-closed."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="rg-arm-"))
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_arms(self, h1_mode=None, cold_mode=None, h2_mode=None, c_mb=256):
+        p1 = write_artifact(
+            self.tmp,
+            "h1.jsonl",
+            header(flush_l2=0 if h1_mode is None else 0, pre_sample_mode=h1_mode),
+            _one_result(),
+        )
+        pc = write_artifact(
+            self.tmp,
+            "cold.jsonl",
+            header(
+                flush_l2=0 if cold_mode is None else 1,
+                flush_mb=c_mb,
+                pre_sample_mode=cold_mode,
+            ),
+            _one_result(),
+        )
+        p2 = write_artifact(
+            self.tmp,
+            "h2.jsonl",
+            header(flush_l2=0, pre_sample_mode=h2_mode),
+            _one_result(),
+        )
+        return p1, pc, p2
+
+    def test_matching_arms_pass(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none", c_mb=128)
+        expected = {
+            "h1": {"pre_sample_mode": "none", "flush_evict_mb": None},
+            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 128},
+            "h2": {"pre_sample_mode": "none", "flush_evict_mb": None},
+        }
+        report = rg.evaluate(p1, pc, p2, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "ok")
+        self.assertTrue(report["verdict"]["header_check_pass"])
+
+    def test_missing_pre_sample_mode_fails(self):
+        p1, pc, p2 = self._write_arms(None, None, None)  # legacy headers
+        expected = {
+            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
+        }
+        report = rg.evaluate(p1, pc, p2, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "fail")
+        self.assertIn(
+            "pre_sample_mode",
+            report["header_check"]["mismatches"][0],
+        )
+
+    def test_evict_vs_evict_rewarm_detected_despite_identical_flush_l2(self):
+        # Both arms carry the legacy flush_l2=1 mirror; only the resolved
+        # mode string can tell them apart.
+        p1, pc, p2 = self._write_arms("none", "evict", "none")
+        expected = {
+            "cold": {"pre_sample_mode": "evict_rewarm", "flush_evict_mb": 256}
+        }
+        report = rg.evaluate(p1, pc, p2, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "fail")
+        self.assertTrue(
+            any("pre_sample_mode" in m for m in report["header_check"]["mismatches"])
+        )
+
+    def test_flush_mb_mismatch_fails(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none", c_mb=128)
+        expected = {
+            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
+        }
+        report = rg.evaluate(p1, pc, p2, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "fail")
+        self.assertTrue(
+            any("flush_evict_mb" in m for m in report["header_check"]["mismatches"])
+        )
+
+    def test_source_revision_differs_across_arms_fails(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none")
+        bad = header(flush_l2=0, pre_sample_mode="none")
+        bad["source_revision"] = "other-rev"
+        p3 = write_artifact(self.tmp, "h2b.jsonl", bad, _one_result())
+        expected = {
+            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
+        }
+        report = rg.evaluate(p1, pc, p3, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "fail")
+        self.assertTrue(
+            any("source_revision" in m for m in report["header_check"]["mismatches"])
+        )
+
+    def test_manifest_hash_missing_fails(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none")
+        bad = header(flush_l2=0, pre_sample_mode="none")
+        del bad["manifest_hash"]
+        p3 = write_artifact(self.tmp, "h2b.jsonl", bad, _one_result())
+        expected = {
+            "cold": {"pre_sample_mode": "evict", "flush_evict_mb": 256}
+        }
+        report = rg.evaluate(p1, pc, p3, expected_arms=expected)
+        self.assertEqual(report["header_check"]["status"], "fail")
+        self.assertTrue(
+            any("manifest_hash" in m for m in report["header_check"]["mismatches"])
+        )
+
+    def test_no_declared_arms_skips_check(self):
+        p1, pc, p2 = self._write_arms(None, None, None)
+        report = rg.evaluate(p1, pc, p2)
+        self.assertEqual(report["header_check"]["status"], "skipped")
+        self.assertTrue(report["verdict"]["header_check_pass"])
+
+    def test_cli_exits_2_on_provenance_mismatch(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none")
+        rc = rg.main(
+            [str(p1), str(pc), str(p2), "--arm", "cold=evict_rewarm@256"]
+        )
+        self.assertEqual(rc, 2)
+
+    def test_cli_exits_0_on_matching_declaration(self):
+        p1, pc, p2 = self._write_arms("none", "evict", "none")
+        rc = rg.main([str(p1), str(pc), str(p2), "--arm", "cold=evict@256"])
+        self.assertEqual(rc, 0)
+
+    def test_parse_arm_spec_valid(self):
+        name, spec = rg.parse_arm_spec("cold=evict@128")
+        self.assertEqual(name, "cold")
+        self.assertEqual(spec, {"pre_sample_mode": "evict", "flush_evict_mb": 128})
+        name, spec = rg.parse_arm_spec("h1=none")
+        self.assertEqual(spec, {"pre_sample_mode": "none", "flush_evict_mb": None})
+
+    def test_parse_arm_spec_invalid(self):
+        for bad in ("evict@256", "cold=", "cold=bogus", "cold=evict@x", "cold=evict@-4"):
+            with self.assertRaises(ValueError, msg=bad):
+                rg.parse_arm_spec(bad)
 
 
 class TestArtifactLoading(unittest.TestCase):
