@@ -1086,6 +1086,20 @@ def build_parser() -> argparse.ArgumentParser:
         func=lambda args: _experiment_main(args.experiment_args))
     experiment_cmd.add_argument("experiment_args", nargs=argparse.REMAINDER)
 
+    # RE14: the new, content-addressed, isolated-worktree campaign path,
+    # registered as a real subcommand rather than remaining only a
+    # standalone script -- not yet the default execution path (that flip
+    # is RE14 step 7, gated on further negative-case coverage). Legacy
+    # `build` above is completely untouched by this and remains the normal
+    # path until that flip happens.
+    campaign_build_cmd = sub.add_parser(
+        "campaign-build",
+        help="RE14: build via the new isolated/content-addressed campaign "
+             "path (not yet the default -- see `build` for the normal path)")
+    campaign_build_cmd.set_defaults(
+        func=lambda args: _campaign_build_main(args.campaign_build_args))
+    campaign_build_cmd.add_argument("campaign_build_args", nargs=argparse.REMAINDER)
+
     from . import compare_tunes as _compare_tunes
     compare = sub.add_parser("compare-tunes", help="compare two current tuning runs by signature")
     compare.add_argument("before")
@@ -1396,6 +1410,17 @@ def _experiment_main(argv: list[str]) -> int:
 def _ab_benchmark_main(argv: list[str]) -> int:
     from . import ab_benchmark
     return ab_benchmark.main(argv)
+
+
+def _campaign_build_main(argv: list[str]) -> int:
+    from . import re14_real_run
+    # REMAINDER captures a leading "--" (needed so the outer parser doesn't
+    # try to consume flags like --upstream-repo itself) literally as part
+    # of argv -- strip it before forwarding, same as ab_benchmark.main()
+    # already does for its own REMAINDER-captured command.
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    return re14_real_run.main(argv)
 
 
 def _resource_report_main(argv: list[str]) -> int:
