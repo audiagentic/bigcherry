@@ -138,7 +138,9 @@ class DoubleNativeContractTests(unittest.TestCase):
         # consumers; the header must record whether the twin was active so
         # ON/OFF artifacts are not configuration-equivalent.
         self.assertIn("measurement_name(m).c_str()", self.tuner)
-        self.assertIn('"\\"alpha\\":%.4f,\\"double_native\\":%d}\\n"', self.tuner)
+        # The header also records the Slice B0 flush configuration: a
+        # flush=0 artifact is not measurement-equivalent to a flush=1 one.
+        self.assertIn('"\\\"alpha\\\":%.4f,\\\"double_native\\\":%d,', self.tuner)
 
     def test_measurement_name_is_the_single_naming_authority(self):
         # One definition of measurement-instance identity: the "#twin"
