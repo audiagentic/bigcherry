@@ -263,8 +263,18 @@ class CampaignStageExecutor:
                 workload={"workload_id": workload_id},
                 campaign={"run_id": self.run_id},
             )
-            relative = Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"
-            return (self._publish(relative, manifest, kind="manifest", doc=doc),)
+            manifest_relative = Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"
+            manifest_ref = self._publish(manifest_relative, manifest, kind="manifest", doc=doc)
+
+            generated_tree_doc = result.get("generated_tree")
+            if not isinstance(generated_tree_doc, dict):
+                raise CampaignExecutionError(
+                    "generate did not return a generated_tree manifest"
+                )
+            tree_relative = Path("runs") / self.run_id / "generate" / "generated-tree.json"
+            tree_ref = self._publish(tree_relative, generated_tree_doc, kind="generated-tree", doc=doc)
+
+            return (manifest_ref, tree_ref)
 
         # Narrowest envelope: source_slice_id only. workload_id does not
         # exist on the inventory input (see module docstring) -- and
