@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry.builds import (BuildIdentityError, BuildPlan, binary_hash,
                               effective_build_id, parse_effective_configure,
+                              resolve_runtime_artifacts, runtime_bundle_hash,
                               validate_reuse)  # noqa: E402
 
 
@@ -52,6 +53,71 @@ class BuildIdentityTests(unittest.TestCase):
             binary.write_bytes(b"changed")
             with self.assertRaisesRegex(BuildIdentityError, "binary hash"):
                 validate_reuse(metadata, plan, binary=binary)
+
+
+class RuntimeBundleTests(unittest.TestCase):
+    def test_resolve_runtime_artifacts_includes_real_shared_libs_not_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory) / "bin"
+            bin_dir.mkdir()
+            binary = bin_dir / "llama-bench"
+            binary.write_bytes(b"launcher")
+            hip_so = bin_dir / "libggml-hip.so.0.19.0"
+            hip_so.write_bytes(b"hip-dispatch-logic")
+            try:
+                (bin_dir / "libggml-hip.so").symlink_to(hip_so.name)
+                (bin_dir / "libggml-hip.so.0").symlink_to(hip_so.name)
+            except OSError:
+                self.skipTest("symlinks not supported in this environment")
+            # A file that happens to match *.so* but isn't actually a
+            # library some other tool dropped there -- still real, still
+            # part of the closure by this function's directory-membership
+            # rule (deliberately simple; see its docstring).
+            other_so = bin_dir / "libggml.so.0.19.0"
+            other_so.write_bytes(b"core-ops")
+
+            artifacts = resolve_runtime_artifacts(binary)
+
+            self.assertEqual(set(artifacts), {binary, hip_so, other_so})
+            for path in artifacts:
+                self.assertFalse(path.is_symlink())
+
+    def test_runtime_bundle_hash_changes_when_any_dependent_library_changes(self):
+        # The exact gpt-auto-agent finding: a reuse check based only on the
+        # requested launcher's hash could accept a cache hit even though
+        # libggml-hip.so (where the real HIP dispatch logic lives, per
+        # RE09) changed underneath it.
+        base = {"llama-bench": "aaa", "libggml-hip.so.0.19.0": "bbb"}
+        changed_hip_lib = {"llama-bench": "aaa", "libggml-hip.so.0.19.0": "ccc"}
+        self.assertNotEqual(runtime_bundle_hash(base), runtime_bundle_hash(changed_hip_lib))
+
+    def test_validate_reuse_accepts_matching_runtime_bundle_and_rejects_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "bench"
+            binary.write_bytes(b"binary")
+            plan = BuildPlan(source_slice_id="s1", phase="tune", platform="p",
+                             targets=("gfx1100",))
+            configure = {"generator": "Ninja"}
+            artifacts = {"bench": binary_hash(binary), "libggml-hip.so.0.19.0": "bbb"}
+            metadata = {
+                "source_slice_id": plan.source_slice_id,
+                "build_plan_id": plan.build_plan_id,
+                "effective_configure": configure,
+                "build_id": effective_build_id(configure),
+                "binary_hash": binary_hash(binary),
+                "runtime_bundle_hash": runtime_bundle_hash(artifacts),
+            }
+
+            validate_reuse(metadata, plan, binary=binary,
+                           runtime_bundle_hash=runtime_bundle_hash(artifacts))
+
+            # The launcher itself is untouched, but a dependent library
+            # changed -- runtime_bundle_hash must catch this even though
+            # binary_hash alone would not.
+            tampered_artifacts = {**artifacts, "libggml-hip.so.0.19.0": "TAMPERED"}
+            with self.assertRaisesRegex(BuildIdentityError, "runtime bundle hash"):
+                validate_reuse(metadata, plan, binary=binary,
+                               runtime_bundle_hash=runtime_bundle_hash(tampered_artifacts))
 
 
 _CMAKE_CACHE = """\
