@@ -20,6 +20,7 @@ that directory as trusted only within one run, not as portable evidence.
 
 from __future__ import annotations
 
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -93,11 +94,11 @@ def make_build_worker(
     """
 
     def run_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-        if len(inputs) != 1:
+        if len(inputs) != 1 or inputs[0].kind != "manifest":
             raise campaign_build.CampaignBuildError(
-                f"build worker expects exactly one generate-stage input, got {len(inputs)}"
+                f"build worker expects exactly one 'manifest' input from "
+                f"the generate stage, got {[ref.kind for ref in inputs]}"
             )
-        manifest_ref = inputs[0]
 
         generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
         if not generated_root.is_dir():
@@ -134,19 +135,21 @@ def make_build_worker(
         )
 
         prefix = f"builds/{source_slice_id}/{build_plan.build_plan_id}"
-        # The manifest is already published (by generate's own worker) and
-        # already verified -- re-publishing its bytes under a second,
-        # build-scoped path is both redundant and unsafe: the raw manifest
-        # JSON embeds a real-time generated_at, so it is NOT guaranteed
-        # byte-stable across two otherwise-equivalent generate runs even
-        # though manifest_hash (which deliberately excludes the timestamp)
-        # is. A second publish attempt under a supposedly content-addressed
-        # path can then collide with itself on re-run, exactly as
-        # ArtifactStore's immutability check is supposed to catch -- and
-        # did, the first time this ran twice. The fix is to reference
-        # generate's existing ArtifactRef, not mint a new path for the same
-        # content.
-        refs: list[ArtifactRef] = [manifest_ref]
+        # Earlier version of this function re-published the manifest under
+        # a second, build-scoped path -- redundant (it is already published
+        # and verified by generate) and unsafe (the raw manifest JSON
+        # embeds a real-time generated_at not covered by manifest_hash, so
+        # a second publish attempt could collide with itself on re-run,
+        # exactly as ArtifactStore's immutability check is supposed to
+        # catch, and did). The fix was to stop re-publishing it at all --
+        # not just to reference the existing ArtifactRef, but to stop
+        # returning it from build entirely. Build did not produce the
+        # manifest; generate did, and it remains available via
+        # executor.outputs[generate_stage_id]. Returning it again from
+        # build serves no purpose and adds a needless kind="manifest"
+        # collision risk if build ever gains a second dependent stage that
+        # also produces a "manifest"-kind artifact.
+        refs: list[ArtifactRef] = []
 
         binary_relative = f"{prefix}/{binary.name}"
         binary_digest = store.publish_file(binary_relative, binary)
@@ -162,8 +165,11 @@ def make_build_worker(
         # data (JSON, manifests), not executables. A binary artifact is the
         # one kind that specifically needs its execute bit set here, by the
         # caller that knows it is a binary, not inside the general-purpose
-        # store.
-        published_binary.chmod(published_binary.stat().st_mode | 0o111)
+        # store. Owner-execute only: this store is not (yet) a shared
+        # multi-user artifact store, and mkstemp's default 0600 becoming
+        # 0700 is the narrowest change that makes the binary runnable by
+        # the same process/user that just published it.
+        published_binary.chmod(published_binary.stat().st_mode | stat.S_IXUSR)
         refs.append(ArtifactRef(kind="binary", path=published_binary,
                                 content_hash=binary_digest, provenance=doc))
 
@@ -188,11 +194,20 @@ def make_smoke_worker(
     """
 
     def run_smoke(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
-        binary_ref = next((ref for ref in inputs if ref.kind == "binary"), None)
-        if binary_ref is None:
+        # Exact cardinality, not "take whichever comes first": the graph
+        # does not (yet) forbid a node from depending on more than one
+        # upstream stage or from having overlapping artifact kinds, so a
+        # silent next()-style pick would be wrong under a future fan-in
+        # graph even though today's linear build->smoke edge makes it safe
+        # in practice. Matches the same-shaped guard the build worker
+        # already has on its own single manifest input.
+        binaries = [ref for ref in inputs if ref.kind == "binary"]
+        if len(binaries) != 1:
             raise campaign_build.CampaignBuildError(
-                "runtime-smoke worker found no 'binary' artifact among its inputs"
+                f"runtime-smoke worker expects exactly one 'binary' input, "
+                f"found {len(binaries)}"
             )
+        binary_ref = binaries[0]
 
         argv = runtime_smoke.smoke_argv(binary_ref.path, spec)
         completed = subprocess.run(
@@ -211,7 +226,21 @@ def make_smoke_worker(
             campaign={"run_id": run_id},
         )
         relative = f"runs/{run_id}/smoke/result.json"
-        result = {"rows": rows, "binary_hash": binary_ref.content_hash}
+        # A smoke result naming only binary_hash does not actually pin down
+        # what it proves: the same binary smoked against two different
+        # models, or two different -p/-n/-sm settings, would otherwise be
+        # indistinguishable evidence. Record the real inputs alongside the
+        # binary hash so the result is self-describing even before a
+        # first-class smoke_spec_id exists on StageNode's own identity.
+        result = {
+            "rows": rows,
+            "binary_hash": binary_ref.content_hash,
+            "model_hash": binary_hash(spec.model_path),
+            "model_path": str(spec.model_path),
+            "n_prompt": spec.n_prompt,
+            "n_gen": spec.n_gen,
+            "split_mode": spec.split_mode,
+        }
         digest = store.publish_json(relative, result)
         if not store.verify(relative, digest):
             raise campaign_build.CampaignBuildError(f"published {relative} failed verification")

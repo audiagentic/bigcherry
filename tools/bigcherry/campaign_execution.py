@@ -47,16 +47,27 @@ def build_expected(source_slice_id: str, build_plan_id: str) -> dict[str, str]:
 
 
 def workload_expected(
-    source_slice_id: str, build_plan_id: str, workload_id: str
+    source_slice_id: str, build_plan_id: str, workload_id: str, run_id: str
 ) -> dict[str, str]:
     """The wider envelope: build and runtime-smoke, where every participating
     artifact is already workload-scoped. Never used for generate -- see
     module docstring.
+
+    Includes campaign.run_id, unlike source_expected/build_expected: build
+    and runtime-smoke are same-run stage transitions, where every input and
+    output genuinely belongs to this run -- an artifact from a different
+    campaign run sharing the same source/build/workload identity by
+    coincidence is exactly the cross-campaign-artifact case RE14's own
+    negative-parity plan calls out, and should fail closed here rather than
+    pass silently. Generate is different: its inventory input may
+    legitimately have been produced by an earlier, separate record-mode
+    campaign run, so run_id is not part of generate's own envelope.
     """
     return {
         "source.source_slice_id": source_slice_id,
         "build.build_plan_id": build_plan_id,
         "workload.workload_id": workload_id,
+        "campaign.run_id": run_id,
     }
 
 
@@ -176,6 +187,10 @@ class CampaignStageExecutor:
             raise CampaignExecutionError("generate stage requires build_plan_id")
         if self.inventory_ref is None:
             raise CampaignExecutionError("generate stage requires an inventory artifact")
+        self._require_node_identity_agreement(
+            self.graph.nodes[stage_id], source_slice_id=source_slice_id,
+            build_plan_id=self.build_plan_id,
+        )
 
         self._require_stored_bytes(self.inventory_ref)
 
@@ -211,6 +226,46 @@ class CampaignStageExecutor:
         )
         self.outputs[stage_id] = outputs
         return outputs
+
+    @staticmethod
+    def _require_node_identity_agreement(
+        node, *, source_slice_id: str, build_plan_id: str | None = None,
+        workload_id: str | None = None,
+    ) -> None:
+        """CampaignRun computes its stage spec_hash from the frozen
+        StageNode's own source_slice_id/build_plan_id/workload_id fields
+        -- but nothing previously checked those against the executor's
+        actual, mutable identity state at execution time. A caller that
+        builds the graph before an identity is fully known (e.g. seeding
+        StageNode.workload_id with a placeholder before generate has run)
+        and then updates executor state without rebuilding the graph gets
+        a real split-brain: CampaignRun's own scheduling/reuse decisions
+        would be keyed on the stale placeholder while every artifact this
+        executor actually produces carries the real value. This check
+        makes that disagreement a hard failure instead of a silent
+        divergence between what CampaignRun thinks it ran and what
+        actually got produced.
+        """
+        if node.source_slice_id is not None and node.source_slice_id != source_slice_id:
+            raise CampaignExecutionError(
+                f"stage {node.stage_id!r} node.source_slice_id "
+                f"{node.source_slice_id!r} disagrees with the executor's "
+                f"actual source_slice_id {source_slice_id!r}"
+            )
+        if (build_plan_id is not None and node.build_plan_id is not None
+                and node.build_plan_id != build_plan_id):
+            raise CampaignExecutionError(
+                f"stage {node.stage_id!r} node.build_plan_id "
+                f"{node.build_plan_id!r} disagrees with the executor's "
+                f"actual build_plan_id {build_plan_id!r}"
+            )
+        if (workload_id is not None and node.workload_id is not None
+                and node.workload_id != workload_id):
+            raise CampaignExecutionError(
+                f"stage {node.stage_id!r} node.workload_id "
+                f"{node.workload_id!r} disagrees with the executor's "
+                f"actual workload_id {workload_id!r}"
+            )
 
     def _dependency_outputs(self, node) -> tuple[ArtifactRef, ...]:
         gathered: list[ArtifactRef] = []
@@ -252,6 +307,10 @@ class CampaignStageExecutor:
             raise CampaignExecutionError(f"{kind_label} stage requires workload_id")
         if worker is None:
             raise CampaignExecutionError(f"no {kind_label} worker was configured")
+        self._require_node_identity_agreement(
+            node, source_slice_id=source_slice_id, build_plan_id=self.build_plan_id,
+            workload_id=self.workload_id,
+        )
 
         inputs = self._dependency_outputs(node)
         for artifact in inputs:
@@ -266,7 +325,8 @@ class CampaignStageExecutor:
         pipeline = PipelineService(execute)
         outputs = pipeline.run(
             stage_id, inputs=inputs,
-            expected=workload_expected(source_slice_id, self.build_plan_id, self.workload_id),
+            expected=workload_expected(
+                source_slice_id, self.build_plan_id, self.workload_id, self.run_id),
         )
         self.outputs[stage_id] = outputs
         return outputs
