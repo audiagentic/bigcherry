@@ -17,9 +17,12 @@ winners, per hot arm A:
                   positive: the cold winner is faster on the cold context
 
 A median crossover against arm A requires BOTH to exceed the materiality
-threshold; a reversal SURVIVES if it crosses against at least one hot arm.
+threshold. A reversal is a HARD GATE-2 SURVIVOR only if it is replicated
+(cold winner differs from BOTH hot winners) AND shows a material median
+crossover against BOTH hot arms. Non-replicated flips and one-hot-arm-only
+crossovers stay in the diagnostic report but do NOT fail the hard gate.
 Sub-threshold flips, ties, and flips without median crossover (e.g. selection
-noise) are reported but do not fail the gate.
+noise) are likewise reported only.
 
 Medians are per-candidate `median_us` over `status == ok` candidates only.
 Signatures whose result reason marks an incomplete run (poison/fatal/failed/
@@ -137,8 +140,14 @@ class CrossoverDetail:
     cold_winner: str
     hot_winners: dict[str, str]          # arm -> winner
     per_arm: list[dict[str, Any]]        # hot_adv/cold_adv/missing info per hot arm
-    crosses_any_hot_arm: bool
+    crosses_any_hot_arm: bool            # diagnostic only; never the hard gate
+    crosses_both_hot_arms: bool          # diagnostic only; necessary, not sufficient
     replicated: bool                     # cold winner differs from BOTH hot winners
+
+    @property
+    def hard_gate_survivor(self) -> bool:
+        """The locked hard-gate criterion: replicated AND crossover vs BOTH arms."""
+        return self.replicated and self.crosses_both_hot_arms
 
 
 def _crossover_against(
@@ -180,8 +189,10 @@ def gate2_material_reversals(
 
     Returns one detail per signature whose cold winner differs from at least
     one hot winner (including the non-replicated ones), each annotated with
-    whether it is replicated and whether any hot arm shows a material median
-    crossover. A gate-2 FAIL is: any detail with crosses_any_hot_arm True.
+    replication and per-arm median crossovers. A gate-2 FAIL is: any detail
+    with hard_gate_survivor True (replicated AND crossover against BOTH hot
+    arms). Non-replicated flips and one-hot-arm-only crossovers are reported
+    for diagnosis but do not fail the locked hard gate.
     """
     common = sorted(set(h1) & set(cold) & set(h2))
     details: list[CrossoverDetail] = []
@@ -203,6 +214,7 @@ def gate2_material_reversals(
             hot_winners={"h1": winners["h1"], "h2": winners["h2"]},
             per_arm=per_arm,
             crosses_any_hot_arm=any(info["crossover"] for info in per_arm),
+            crosses_both_hot_arms=all(info["crossover"] for info in per_arm),
             replicated=(winners["cold"] != winners["h1"]) and (winners["cold"] != winners["h2"]),
         ))
     return details
@@ -219,7 +231,11 @@ def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
         arms[name] = results
     gate1 = gate1_hot_repeatability(arms["h1"], arms["h2"])
     details = gate2_material_reversals(arms["h1"], arms["cold"], arms["h2"], material_pct)
-    survivors = [d for d in details if d.crosses_any_hot_arm]
+    # The locked hard gate: replicated AND material median crossover against
+    # BOTH hot arms. One-hot-arm-only crossovers and non-replicated flips stay
+    # in the diagnostic report but never fail the gate.
+    survivors = [d for d in details if d.hard_gate_survivor]
+    diagnostics = [d for d in details if not d.hard_gate_survivor]
     return {
         "headers": headers,
         "material_pct": material_pct,
@@ -228,6 +244,7 @@ def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
         "gate2": {
             "winner_differences": len(details),
             "replicated": [d.signature for d in details if d.replicated],
+            # Hard-gate survivors: the only rows that can fail Gate 2.
             "survivors": [
                 {
                     "signature": d.signature,
@@ -236,6 +253,24 @@ def evaluate(h1_path: Path, cold_path: Path, h2_path: Path,
                     "per_arm": d.per_arm,
                 }
                 for d in survivors
+            ],
+            # Reported for diagnosis; do NOT fail the locked hard gate.
+            "diagnostics": [
+                {
+                    "signature": d.signature,
+                    "cold_winner": d.cold_winner,
+                    "hot_winners": d.hot_winners,
+                    "per_arm": d.per_arm,
+                    "replicated": d.replicated,
+                    "crosses_any_hot_arm": d.crosses_any_hot_arm,
+                    "crosses_both_hot_arms": d.crosses_both_hot_arms,
+                    "not_a_survivor_because": (
+                        "not-replicated"
+                        if not d.replicated
+                        else "crossover-missing-on-one-hot-arm"
+                    ),
+                }
+                for d in diagnostics
             ],
         },
         "verdict": {

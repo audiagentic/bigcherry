@@ -210,6 +210,55 @@ class TestGate2Crossover(unittest.TestCase):
         self.assertFalse(details[0].replicated)
 
 
+class TestGate2HardGateAggregation(unittest.TestCase):
+    """The locked hard gate requires replication AND crossover vs BOTH arms.
+
+    These tests pin the distinction that a one-hot-arm-only crossover or a
+    non-replicated flip must stay in diagnostics and never fail Gate 2, even
+    when a material median crossover exists on one side.
+    """
+
+    def test_replicated_crossover_single_arm_only_not_survivor(self):
+        # Constructed so the crossover is material vs h1 but NOT vs h2: on h2
+        # the hot winner's cold-context median stays below the cold winner's.
+        h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 110.0)])}
+        h2 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 103.0)])}
+        # cold: a=106, b=100 -> cold winner b beats a by ~5.9% (material).
+        # vs h1: hot_adv=(110-100)/100=+10%, cold_adv=(106-100)/100=+6% -> CROSS
+        # vs h2: hot_adv=(103-100)/100=+3% <5% -> NO cross
+        cold = {"s": result("s", "b:v1", [cand("a:v1", 106.0), cand("b:v1", 100.0)])}
+        details = rg.gate2_material_reversals(h1, cold, h2)
+        d = details[0]
+        self.assertTrue(d.replicated)
+        self.assertTrue(d.crosses_any_hot_arm)     # diagnostic: one arm crosses
+        self.assertFalse(d.crosses_both_hot_arms)
+        self.assertFalse(d.hard_gate_survivor)     # must NOT fail the hard gate
+
+    def test_non_replicated_material_crossover_not_survivor(self):
+        # cold agrees with h2 (b); differs only from h1 (a). The b-vs-a
+        # comparison is a material crossover on h1's side, but without
+        # replication this cannot be a hard-gate survivor.
+        h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 115.0)])}
+        h2 = {"s": result("s", "b:v1", [cand("a:v1", 100.0), cand("b:v1", 92.0)])}
+        cold = {"s": result("s", "b:v1", [cand("a:v1", 135.0), cand("b:v1", 96.0)])}
+        details = rg.gate2_material_reversals(h1, cold, h2)
+        d = details[0]
+        self.assertFalse(d.replicated)
+        # vs h1: hot_adv=(115-100)/100=+15%, cold_adv=(135-96)/96=+40.6% -> cross
+        self.assertTrue(d.crosses_any_hot_arm)
+        self.assertFalse(d.hard_gate_survivor)     # not replicated -> no survivor
+
+    def test_replicated_crossover_both_arms_is_survivor(self):
+        h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 110.0)])}
+        h2 = {"s": result("s", "a:v1", [cand("a:v1", 101.0), cand("b:v1", 112.0)])}
+        cold = {"s": result("s", "b:v1", [cand("a:v1", 130.0), cand("b:v1", 105.0)])}
+        details = rg.gate2_material_reversals(h1, cold, h2)
+        d = details[0]
+        self.assertTrue(d.replicated)
+        self.assertTrue(d.crosses_both_hot_arms)
+        self.assertTrue(d.hard_gate_survivor)      # Gate 2 FAIL on this row
+
+
 class TestEvaluateEndToEnd(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
