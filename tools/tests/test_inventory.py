@@ -38,9 +38,9 @@ RECORD_OBS_MMQ = {
     "native": "mmq:native:v1",
     "canonical": {
         "op": "MUL_MAT",
-        "src0_type": 8,      # q8_0
-        "src1_type": 0,      # f32
-        "dst_type": 0,       # f32
+        "src0_type": 8,  # q8_0
+        "src1_type": 0,  # f32
+        "dst_type": 0,  # f32
         "ne0": [64, 512],
         "ned": [64, 128],
     },
@@ -62,7 +62,7 @@ RECORD_OBS_MMF = {
     "native": "mmf:native:v1",
     "canonical": {
         "op": "MUL_MAT",
-        "src0_type": 0,      # f32
+        "src0_type": 0,  # f32
         "src1_type": 0,
         "dst_type": 0,
         "ne0": [256, 1024],
@@ -88,7 +88,7 @@ RECORD_OBS_BLAS = {
     "effective_call_api": "cublasGemmEx",
     "canonical": {
         "op": "MUL_MAT",
-        "src0_type": 1,      # f16
+        "src0_type": 1,  # f16
         "src1_type": 1,
         "dst_type": 1,
         "ne0": [2048, 4096],
@@ -284,6 +284,7 @@ MANIFEST = {
 
 # ------------------------------------------------------------------ helpers
 
+
 def make_jsonl_file(*records):
     """Write a JSONL file from dicts and return the path."""
     p = tempfile.mktemp(suffix=".jsonl")
@@ -323,6 +324,7 @@ class TempDB:
 
 
 # ------------------------------------------------------------------ tests
+
 
 class TestReadJSONL(unittest.TestCase):
     """Parse record-mode JSONL files."""
@@ -457,7 +459,8 @@ class TestBuildDatabase(unittest.TestCase):
         )
         with TempDB() as db:
             counts = inventory.build_database(
-                rec, db.db_path,
+                rec,
+                db.db_path,
                 Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
             )
 
@@ -470,7 +473,8 @@ class TestBuildDatabase(unittest.TestCase):
         rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_BLAS])
         with TempDB() as db:
             inventory.build_database(
-                rec, db.db_path,
+                rec,
+                db.db_path,
                 Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
             )
             row = db.query("SELECT diagnostics_json FROM observation")[0]
@@ -510,7 +514,10 @@ class TestLoadMeasurements(unittest.TestCase):
                     RecordError, "unsupported dispatch database schema_version"
                 ):
                     inventory.load_measurements(
-                        path, db.db_path, schema_path, manifest_path=None,
+                        path,
+                        db.db_path,
+                        schema_path,
+                        manifest_path=None,
                     )
         finally:
             os.unlink(path)
@@ -521,7 +528,10 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             counts = inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
 
         self.assertEqual(counts["results"], 1)
@@ -549,15 +559,16 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             counts = inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
             twins = db.query(
                 "SELECT COUNT(*) FROM candidate WHERE stable_name LIKE '%#twin'"
             )[0][0]
             measurements = db.query("SELECT COUNT(*) FROM measurement")[0][0]
-            winner_native = db.query(
-                "SELECT native_stable_name FROM winner"
-            )[0][0]
+            winner_native = db.query("SELECT native_stable_name FROM winner")[0][0]
 
         self.assertEqual(counts["results"], 1)
         # 3 registry candidates -- not 4 with the twin row.
@@ -576,7 +587,10 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             counts = inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
 
         self.assertEqual(counts["results"], 2)
@@ -594,7 +608,9 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             _counts = inventory.load_measurements(
-                meas_path, db.db_path, schema_path,
+                meas_path,
+                db.db_path,
+                schema_path,
                 manifest_path=manifest_path,
             )
 
@@ -615,7 +631,10 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
 
             # Check measurement has gpu_mad_us and host_median_us
@@ -640,7 +659,10 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
 
             rows = db.query("SELECT reason FROM winner")
@@ -655,7 +677,10 @@ class TestLoadMeasurements(unittest.TestCase):
 
         with TempDB() as db:
             inventory.load_measurements(
-                path, db.db_path, schema_path, manifest_path=None,
+                path,
+                db.db_path,
+                schema_path,
+                manifest_path=None,
             )
 
             # j8 is architecture-rejected in TUNING_RESULT_NATIVE
@@ -666,7 +691,10 @@ class TestLoadMeasurements(unittest.TestCase):
                 WHERE m.accepted = 0
             """)
             rejected_names = {r[0]: r[2] for r in rows}
-            self.assertIn("GGML_HIP_REJECT_ARCHITECTURE", rejected_names.get("mmq:generated:j8", ""))
+            self.assertIn(
+                "GGML_HIP_REJECT_ARCHITECTURE",
+                rejected_names.get("mmq:generated:j8", ""),
+            )
 
         os.unlink(path)
 
@@ -681,22 +709,32 @@ class TestLoadMeasurements(unittest.TestCase):
         with TempDB() as db:
             with self.assertRaisesRegex(RecordError, "invalid dispatch digest"):
                 inventory.load_measurements(
-                    path, db.db_path, schema_path, manifest_path=None,
+                    path,
+                    db.db_path,
+                    schema_path,
+                    manifest_path=None,
                 )
 
         os.unlink(path)
 
     def test_malformed_json_and_unknown_record_kind_are_rejected(self):
         schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
-        for tail, message in (("{", "malformed JSON"),
-                              (json.dumps({"kind": "future"}), "unknown record kind")):
+        for tail, message in (
+            ("{", "malformed JSON"),
+            (json.dumps({"kind": "future"}), "unknown record kind"),
+        ):
             path = make_jsonl_file(TUNING_HEADER)
-            path.write_text(path.read_text(encoding="utf-8") + tail + "\n", encoding="utf-8")
+            path.write_text(
+                path.read_text(encoding="utf-8") + tail + "\n", encoding="utf-8"
+            )
             try:
                 with TempDB() as db:
                     with self.assertRaisesRegex(RecordError, message):
                         inventory.load_measurements(
-                            path, db.db_path, schema_path, manifest_path=None,
+                            path,
+                            db.db_path,
+                            schema_path,
+                            manifest_path=None,
                         )
             finally:
                 os.unlink(path)
@@ -710,7 +748,10 @@ class TestLoadMeasurements(unittest.TestCase):
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "median_us.*numeric"):
                     inventory.load_measurements(
-                        path, db.db_path, schema_path, manifest_path=None,
+                        path,
+                        db.db_path,
+                        schema_path,
+                        manifest_path=None,
                     )
         finally:
             os.unlink(path)

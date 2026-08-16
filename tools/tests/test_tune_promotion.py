@@ -16,9 +16,12 @@ from bigcherry import tune_promotion  # noqa: E402
 def result(dispatch: str, p: float, winner: float) -> dict:
     signature = dispatch
     return {
-        "kind": "result", "dispatch": dispatch, "native": "native",
+        "kind": "result",
+        "dispatch": dispatch,
+        "native": "native",
         "signature": signature,
-        "winner": "candidate", "promotion_status": "pending_bh",
+        "winner": "candidate",
+        "promotion_status": "pending_bh",
         "provisional_winner": "candidate",
         "schedule_seed": int.from_bytes(bytes.fromhex(signature)[:4], "little"),
         "schedule": {
@@ -29,30 +32,40 @@ def result(dispatch: str, p: float, winner: float) -> dict:
         },
         "improvement_pct": 100.0 * (100.0 - winner) / 100.0,
         "confirmation": {
-            "p_value": p, "effect_pct": 100.0 * (100.0 - winner) / 100.0,
-            "wins": 12, "rounds": 12,
-            "native_us": [100.0] * 12, "winner_us": [winner] * 12,
+            "p_value": p,
+            "effect_pct": 100.0 * (100.0 - winner) / 100.0,
+            "wins": 12,
+            "rounds": 12,
+            "native_us": [100.0] * 12,
+            "winner_us": [winner] * 12,
         },
     }
 
 
 class PromotionTests(unittest.TestCase):
-
     HEADER = {
-        "kind": "header", "artifact_version": 1,
-        "source_revision": "a" * 40, "manifest_hash": "a" * 32,
+        "kind": "header",
+        "artifact_version": 1,
+        "source_revision": "a" * 40,
+        "manifest_hash": "a" * 32,
     }
 
     def test_nonpositive_event_durations_are_not_bootstrap_evidence(self):
         low, high = tune_promotion.paired_bootstrap(
-            [10.0, 10.0, 10.0], [9.0, -100.0, 9.0], seed=7, resamples=1000,
+            [10.0, 10.0, 10.0],
+            [9.0, -100.0, 9.0],
+            seed=7,
+            resamples=1000,
         )
         self.assertAlmostEqual(low, 10.0)
         self.assertAlmostEqual(high, 10.0)
 
     def test_bootstrap_resamples_ratio_of_medians(self):
         low, high = tune_promotion.paired_bootstrap(
-            [10.0, 20.0, 30.0], [5.0, 10.0, 15.0], seed=7, resamples=1000,
+            [10.0, 20.0, 30.0],
+            [5.0, 10.0, 15.0],
+            seed=7,
+            resamples=1000,
         )
         self.assertAlmostEqual(low, 50.0)
         self.assertAlmostEqual(high, 50.0)
@@ -66,7 +79,10 @@ class PromotionTests(unittest.TestCase):
             source, output = root / "source.jsonl", root / "promoted.jsonl"
             row = result("a" * 32, 0.001, 95.0)
             row["promotion_status"] = "confirmation_rejected"
-            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
             report = tune_promotion.promote(source, output, resamples=1000)
             self.assertEqual(report["hypotheses"], 1)
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
@@ -78,8 +94,13 @@ class PromotionTests(unittest.TestCase):
             source, output = root / "source.jsonl", root / "promoted.jsonl"
             row = result("a" * 32, 0.001, 95.0)
             row["confirmation"]["effect_pct"] = 99.0
-            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
-            with self.assertRaisesRegex(tune_promotion.PromotionError, "does not match"):
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                tune_promotion.PromotionError, "does not match"
+            ):
                 tune_promotion.promote(source, output, resamples=1000)
 
     def test_rejection_reason_is_classified(self):
@@ -87,7 +108,10 @@ class PromotionTests(unittest.TestCase):
             root = Path(directory)
             source, output = root / "source.jsonl", root / "promoted.jsonl"
             row = result("a" * 32, 0.001, 99.5)
-            source.write_text("".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]), encoding="utf-8")
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
             tune_promotion.promote(source, output, threshold_pct=1.0, resamples=1000)
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
@@ -98,9 +122,12 @@ class PromotionTests(unittest.TestCase):
             source, output = root / "source.jsonl", root / "promoted.jsonl"
             rows = [
                 self.HEADER,
-                result("a" * 32, 0.001, 95.0), result("b" * 32, 0.9, 99.5),
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.9, 99.5),
             ]
-            source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
             report = tune_promotion.promote(source, output, resamples=1000)
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(report["promoted"], 1)
@@ -111,19 +138,36 @@ class PromotionTests(unittest.TestCase):
             self.assertAlmostEqual(promoted[2]["promotion"]["q_value"], 0.9)
 
     def test_bh_adjusted_values_are_exact_and_monotone(self):
-        adjusted = tune_promotion.benjamini_hochberg([
-            ("d", 0.04), ("a", 0.001), ("c", 0.03), ("b", 0.02),
-        ])
-        self.assertEqual(adjusted, {
-            "a": 0.004, "b": 0.04, "c": 0.04, "d": 0.04,
-        })
+        adjusted = tune_promotion.benjamini_hochberg(
+            [
+                ("d", 0.04),
+                ("a", 0.001),
+                ("c", 0.03),
+                ("b", 0.02),
+            ]
+        )
+        self.assertEqual(
+            adjusted,
+            {
+                "a": 0.004,
+                "b": 0.04,
+                "c": 0.04,
+                "d": 0.04,
+            },
+        )
 
     def test_null_fdr_simulation_is_reproducible_and_controlled(self):
         first = tune_promotion.simulate_null_fdr(
-            experiments=2000, hypotheses=41, q=0.05, seed=340024,
+            experiments=2000,
+            hypotheses=41,
+            q=0.05,
+            seed=340024,
         )
         second = tune_promotion.simulate_null_fdr(
-            experiments=2000, hypotheses=41, q=0.05, seed=340024,
+            experiments=2000,
+            hypotheses=41,
+            q=0.05,
+            seed=340024,
         )
         self.assertEqual(first, second)
         self.assertLess(first["empirical_fdr"], 0.07)
@@ -145,9 +189,12 @@ class PromotionTests(unittest.TestCase):
             source = root / "source.jsonl"
             rows = [
                 self.HEADER,
-                result("a" * 32, 0.001, 95.0), result("b" * 32, 0.9, 99.5),
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.9, 99.5),
             ]
-            source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
             first = tune_promotion.promote(source, root / "out1.jsonl", resamples=1000)
             second = tune_promotion.promote(source, root / "out2.jsonl", resamples=1000)
             self.assertEqual(first["content_hash"], second["content_hash"])
@@ -159,14 +206,18 @@ class PromotionTests(unittest.TestCase):
         # complete.
         row = result("a" * 32, 0.001, 95.0)
         row["production_policy"] = {"name": "latency-v1", "version": 1}
-        row["ranking_decisions"] = [{
-            "policy_name": "latency-v1", "policy_version": 1,
-            "is_production": True, "predicted_winner": "candidate",
-            "candidates": [
-                {"name": "native", "verdict": "qualified"},
-                {"name": "candidate", "verdict": "winner"},
-            ],
-        }]
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "candidate",
+                "candidates": [
+                    {"name": "native", "verdict": "qualified"},
+                    {"name": "candidate", "verdict": "winner"},
+                ],
+            }
+        ]
         header = dict(self.HEADER, production_policy="latency-v1")
         tune_promotion._validate_policy_identity(row, header)
 
@@ -183,8 +234,7 @@ class PromotionTests(unittest.TestCase):
         # and measurement-instance cardinality intentionally differ: the stage
         # funnel stays over the registry.
         row = result("a" * 32, 0.001, 95.0)
-        row.update({"generated": 2, "applicable": 2, "eligible": 2,
-                    "measured": 2})
+        row.update({"generated": 2, "applicable": 2, "eligible": 2, "measured": 2})
         row["candidates"] = [
             {"name": "native", "samples": 10},
             {"name": "native#twin", "samples": 10},
@@ -213,17 +263,25 @@ class PromotionTests(unittest.TestCase):
 
     def test_adaptive_evidence_rejects_inconsistent_final_samples(self):
         row = result("a" * 32, 0.001, 95.0)
-        row["candidates"] = [{"name": "candidate", "samples": 3,
-                              "samples_us": [95.0, 95.0]}]
-        header = dict(self.HEADER, final_samples=2, screen_samples=4,
-                      confirmation_samples=8)
+        row["candidates"] = [
+            {"name": "candidate", "samples": 3, "samples_us": [95.0, 95.0]}
+        ]
+        header = dict(
+            self.HEADER, final_samples=2, screen_samples=4, confirmation_samples=8
+        )
         with self.assertRaisesRegex(tune_promotion.PromotionError, "samples_us"):
             tune_promotion.validate_adaptive_evidence(row, header)
 
     def test_adaptive_evidence_rejects_unresolved_canary_challenger(self):
         row = result("a" * 32, 0.001, 95.0)
-        row.update({"canary_state": "unresolved", "canary_retries": 1,
-                    "canary_pair": "native#twin", "canary_pct": 4.0})
+        row.update(
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 4.0,
+            }
+        )
         with self.assertRaisesRegex(tune_promotion.PromotionError, "unresolved"):
             tune_promotion.validate_adaptive_evidence(row, self.HEADER)
 
@@ -231,20 +289,26 @@ class PromotionTests(unittest.TestCase):
         first = tune_promotion.production_policy_hash("latency-v1", 1)
         second = tune_promotion.production_policy_hash("latency-v1", 1)
         self.assertEqual(first, second)
-        self.assertNotEqual(first, tune_promotion.production_policy_hash("latency-v1", 2))
+        self.assertNotEqual(
+            first, tune_promotion.production_policy_hash("latency-v1", 2)
+        )
 
     def test_ranking_coverage_requires_policy_identity_and_all_finalists(self):
         row = result("a" * 32, 0.001, 95.0)
         row["schedule"] = {"candidates": ["native", "candidate"]}
         row["production_policy"] = {"name": "latency-v1", "version": 1}
-        row["ranking_decisions"] = [{
-            "policy_name": "latency-v1", "policy_version": 1,
-            "is_production": True, "predicted_winner": "candidate",
-            "candidates": [
-                {"name": "native", "verdict": "qualified"},
-                {"name": "candidate", "verdict": "winner"},
-            ],
-        }]
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "candidate",
+                "candidates": [
+                    {"name": "native", "verdict": "qualified"},
+                    {"name": "candidate", "verdict": "winner"},
+                ],
+            }
+        ]
         header = dict(self.HEADER, production_policy="latency-v1")
         tune_promotion._validate_policy_identity(row, header)
         row["ranking_decisions"][0]["candidates"].pop()
@@ -257,11 +321,15 @@ class PromotionTests(unittest.TestCase):
         row["provisional_winner"] = "native"
         row.pop("schedule")
         row["production_policy"] = {"name": "latency-v1", "version": 1}
-        row["ranking_decisions"] = [{
-            "policy_name": "latency-v1", "policy_version": 1,
-            "is_production": True, "predicted_winner": "native",
-            "candidates": [{"name": "native", "verdict": "winner"}],
-        }]
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "native",
+                "candidates": [{"name": "native", "verdict": "winner"}],
+            }
+        ]
         header = dict(self.HEADER, production_policy="latency-v1")
         tune_promotion._validate_policy_identity(row, header)
 
@@ -274,16 +342,18 @@ class PromotionTests(unittest.TestCase):
     def test_policy_hash_tampering_is_rejected(self):
         row = result("a" * 32, 0.001, 95.0)
         row["production_policy"] = {
-            "name": "latency-v1", "version": 1, "policy_hash": "0" * 32,
+            "name": "latency-v1",
+            "version": 1,
+            "policy_hash": "0" * 32,
         }
         header = dict(self.HEADER, production_policy="latency-v1")
         with self.assertRaisesRegex(tune_promotion.PromotionError, "hash"):
             tune_promotion._validate_policy_identity(row, header)
 
-
     def test_confirmation_reduction_excludes_aligned_ties(self):
         confirmation = {
-            "rounds": 2, "wins": 2,
+            "rounds": 2,
+            "wins": 2,
             "native_us": [100.0, 100.0, 100.0],
             "winner_us": [90.0, 100.0, 80.0],
         }
@@ -293,7 +363,8 @@ class PromotionTests(unittest.TestCase):
 
     def test_effect_keeps_tied_samples_like_cpp_median(self):
         confirmation = {
-            "rounds": 8, "wins": 8,
+            "rounds": 8,
+            "wins": 8,
             "native_us": [100.0] * 9,
             "winner_us": [90.0] * 8 + [100.0],
             "effect_pct": 10.0,
@@ -306,14 +377,18 @@ class PromotionTests(unittest.TestCase):
         row["winner"] = "native"
         row["promotion_status"] = "native"
         row["production_policy"] = {"name": "latency-v1", "version": 1}
-        row["ranking_decisions"] = [{
-            "policy_name": "latency-v1", "policy_version": 1,
-            "is_production": True, "predicted_winner": "native",
-            "candidates": [
-                {"name": "native", "verdict": "outside_tie_band"},
-                {"name": "candidate", "verdict": "near_tie_below_threshold"},
-            ],
-        }]
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "native",
+                "candidates": [
+                    {"name": "native", "verdict": "outside_tie_band"},
+                    {"name": "candidate", "verdict": "near_tie_below_threshold"},
+                ],
+            }
+        ]
         header = dict(self.HEADER, production_policy="latency-v1")
         tune_promotion._validate_policy_identity(row, header)
 
