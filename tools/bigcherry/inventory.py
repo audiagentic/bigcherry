@@ -36,15 +36,26 @@ class RecordError(RuntimeError):
 CURRENT_DB_SCHEMA_VERSION = "3"
 
 _RESULT_STATUSES = {
-    "ok", "architecture", "ineligible", "workspace", "launch_failed",
-    "nan_inf", "tolerance", "unstable", "noisy",
+    "ok",
+    "architecture",
+    "ineligible",
+    "workspace",
+    "launch_failed",
+    "nan_inf",
+    "tolerance",
+    "unstable",
+    "noisy",
 }
 
 
 def _validate_measurement_header(header: dict[str, Any], line: int) -> None:
     """Require the sampling policy needed to interpret timing results."""
-    for header_field in ("final_samples", "warmup_launches", "screen_samples",
-                         "confirmation_samples"):
+    for header_field in (
+        "final_samples",
+        "warmup_launches",
+        "screen_samples",
+        "confirmation_samples",
+    ):
         if header_field not in header:
             continue  # retain compatibility with pre-HI34 artifacts
         value = header[header_field]
@@ -102,10 +113,11 @@ def _validate_workspace_evidence(candidate: dict[str, Any], line: int) -> None:
             + ", ".join(missing)
         )
     values = {
-        field: _nonnegative_integer(evidence[field], field, line)
-        for field in required
+        field: _nonnegative_integer(evidence[field], field, line) for field in required
     }
-    requested = _nonnegative_integer(candidate.get("workspace", 0), "requested_bytes", line)
+    requested = _nonnegative_integer(
+        candidate.get("workspace", 0), "requested_bytes", line
+    )
     if values["requested_bytes"] != requested:
         raise RecordError(
             f"measurements line {line}: workspace evidence request does not "
@@ -148,8 +160,11 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
     except IdentitySeparationError as exc:
         raise RecordError(str(exc)) from exc
     dispatch = row.get("dispatch")
-    if (not isinstance(dispatch, str) or len(dispatch) != 32 or
-            any(c not in "0123456789abcdefABCDEF" for c in dispatch)):
+    if (
+        not isinstance(dispatch, str)
+        or len(dispatch) != 32
+        or any(c not in "0123456789abcdefABCDEF" for c in dispatch)
+    ):
         raise RecordError(f"measurements line {line}: invalid dispatch digest")
     winner = row.get("winner")
     if not isinstance(winner, str) or not winner:
@@ -166,10 +181,20 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
         if not isinstance(name, str) or not name or name in names:
             raise RecordError(f"measurements line {line}: invalid candidate name")
         if status not in _RESULT_STATUSES:
-            raise RecordError(f"measurements line {line}: unknown candidate status {status!r}")
+            raise RecordError(
+                f"measurements line {line}: unknown candidate status {status!r}"
+            )
         names.add(name)
-        for metric_field in ("median_us", "mad_us", "p95_us", "host_median_us",
-                             "nmse", "max_abs", "workspace", "samples"):
+        for metric_field in (
+            "median_us",
+            "mad_us",
+            "p95_us",
+            "host_median_us",
+            "nmse",
+            "max_abs",
+            "workspace",
+            "samples",
+        ):
             if metric_field in candidate:
                 _finite_number(candidate[metric_field], metric_field)
         samples = candidate.get("samples", 0)
@@ -178,7 +203,9 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
         if "samples_us" in candidate:
             samples_us = candidate["samples_us"]
             if not isinstance(samples_us, list):
-                raise RecordError(f"measurements line {line}: samples_us must be an array")
+                raise RecordError(
+                    f"measurements line {line}: samples_us must be an array"
+                )
             for sample in samples_us:
                 if sample is not None:
                     _finite_number(sample, "samples_us")
@@ -198,7 +225,9 @@ def _validate_measurement_result(row: Any, line: int) -> dict[str, Any]:
         if count_field in row:
             value = row[count_field]
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise RecordError(f"measurements line {line}: {count_field} must be non-negative integer")
+                raise RecordError(
+                    f"measurements line {line}: {count_field} must be non-negative integer"
+                )
     if "launches_per_sample" in row:
         value = row["launches_per_sample"]
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -394,9 +423,13 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
     try:
         connection.executescript(schema.read_text(encoding="utf-8"))
         _require_current_schema(connection)
-        build_columns = {row[1] for row in connection.execute("PRAGMA table_info(build)")}
+        build_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(build)")
+        }
         if "build_descriptor_hash" not in build_columns:
-            connection.execute("ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT")
+            connection.execute(
+                "ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT"
+            )
         header = record.header
 
         cursor = connection.execute(
@@ -457,7 +490,11 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                         str(canonical.get("src1_type", "")),
                         str(canonical.get("dst_type", "")),
                         ne0[1] if len(ne0) > 1 else 0,
-                        ned[2] if has_ids and len(ned) > 2 else ned[1] if len(ned) > 1 else 0,
+                        ned[2]
+                        if has_ids and len(ned) > 2
+                        else ned[1]
+                        if len(ned) > 1
+                        else 0,
                         ne0[0] if ne0 else 0,
                         json.dumps(canonical, sort_keys=True, separators=(",", ":")),
                     ),
@@ -479,7 +516,8 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                     json.dumps(
                         {"blas": observation["blas_metadata"]}
                         if observation.get("effective_api")
-                        and observation.get("blas_metadata") else {},
+                        and observation.get("blas_metadata")
+                        else {},
                         sort_keys=True,
                         separators=(",", ":"),
                     ),
@@ -540,11 +578,15 @@ def load_measurements(
                     f"{measurements_path}: line {number} is malformed JSON"
                 ) from exc
             if not isinstance(row, dict):
-                raise RecordError(f"{measurements_path}: line {number} must be an object")
+                raise RecordError(
+                    f"{measurements_path}: line {number} must be an object"
+                )
             kind = row.get("kind")
             if kind == "header":
                 if header is not None:
-                    raise RecordError(f"{measurements_path}: duplicate header at line {number}")
+                    raise RecordError(
+                        f"{measurements_path}: duplicate header at line {number}"
+                    )
                 header = row
                 _validate_measurement_header(row, number)
             elif kind == "result":
@@ -607,14 +649,22 @@ def load_measurements(
         _require_current_schema(connection)
         connection.execute("PRAGMA foreign_keys = ON")
         for table in ("measurement", "winner"):
-            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            columns = {
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            }
             if "run_id" not in columns:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN run_id INTEGER")
             if "pool_peak_bytes" not in columns:
-                connection.execute(f"ALTER TABLE {table} ADD COLUMN pool_peak_bytes INTEGER")
-        build_columns = {row[1] for row in connection.execute("PRAGMA table_info(build)")}
+                connection.execute(
+                    f"ALTER TABLE {table} ADD COLUMN pool_peak_bytes INTEGER"
+                )
+        build_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(build)")
+        }
         if "build_descriptor_hash" not in build_columns:
-            connection.execute("ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT")
+            connection.execute(
+                "ALTER TABLE build ADD COLUMN build_descriptor_hash TEXT"
+            )
 
         # Find or create build row
         source_revision = header.get("source_revision", "")
@@ -629,8 +679,13 @@ def load_measurements(
             "SELECT build_id FROM build WHERE source_revision = ? "
             "AND manifest_hash = ? AND variant_set = ? "
             "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
-            (source_revision, manifest_hash, variant_set,
-             build_descriptor_hash, build_descriptor_hash),
+            (
+                source_revision,
+                manifest_hash,
+                variant_set,
+                build_descriptor_hash,
+                build_descriptor_hash,
+            ),
         )
         build_row = cursor.fetchone()
         if build_row:
@@ -657,20 +712,30 @@ def load_measurements(
             )
             build_id = cursor.lastrowid
 
-        signatures = sorted({str(row.get("signature", "")) for row in results
-                             if isinstance(row.get("signature"), str)})
+        signatures = sorted(
+            {
+                str(row.get("signature", ""))
+                for row in results
+                if isinstance(row.get("signature"), str)
+            }
+        )
         workload_digest = hashlib.blake2b(
             "\n".join(signatures).encode("ascii", "ignore"), digest_size=16
         ).digest()
-        run_material = json.dumps({
-            "source_revision": source_revision,
-            "manifest_hash": manifest_hash,
-            "workload_digest": workload_digest.hex(),
-            "header": header,
-        }, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        run_material = json.dumps(
+            {
+                "source_revision": source_revision,
+                "manifest_hash": manifest_hash,
+                "workload_digest": workload_digest.hex(),
+                "header": header,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
         run_digest = hashlib.blake2b(run_material, digest_size=16).digest()
         cursor = connection.execute(
-            "SELECT run_id FROM tuning_run WHERE run_digest = ?", (run_digest,))
+            "SELECT run_id FROM tuning_run WHERE run_digest = ?", (run_digest,)
+        )
         run_row = cursor.fetchone()
         if run_row:
             run_id = run_row[0]
@@ -679,12 +744,22 @@ def load_measurements(
                 "INSERT INTO tuning_run (build_id, run_digest, workload_digest, "
                 "workload_label, host_sync_overhead_us, config_json, machine_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (build_id, run_digest, workload_digest, header.get("workload_label"),
-                 header.get("host_sync_overhead_us"),
-                 json.dumps(header, sort_keys=True, separators=(",", ":")),
-                 json.dumps({"compiler": header.get("compiler"),
-                             "hip_version": header.get("hip_version")},
-                            sort_keys=True, separators=(",", ":"))),
+                (
+                    build_id,
+                    run_digest,
+                    workload_digest,
+                    header.get("workload_label"),
+                    header.get("host_sync_overhead_us"),
+                    json.dumps(header, sort_keys=True, separators=(",", ":")),
+                    json.dumps(
+                        {
+                            "compiler": header.get("compiler"),
+                            "hip_version": header.get("hip_version"),
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                ),
             )
             run_id = cursor.lastrowid
 
@@ -719,12 +794,15 @@ def load_measurements(
             try:
                 raw = bytes.fromhex(digest_hex)
             except ValueError as exc:
-                raise RecordError(f"invalid tuning hardware digest: {digest_hex!r}") from exc
+                raise RecordError(
+                    f"invalid tuning hardware digest: {digest_hex!r}"
+                ) from exc
             if len(raw) != 16:
                 raise RecordError("tuning hardware digest must be 16 bytes")
             if digest_hex not in hardware_ids:
                 cursor = connection.execute(
-                    "SELECT hardware_id FROM hardware WHERE hardware_digest = ?", (raw,))
+                    "SELECT hardware_id FROM hardware WHERE hardware_digest = ?", (raw,)
+                )
                 row = cursor.fetchone()
                 if row:
                     hardware_ids[digest_hex] = row[0]
@@ -733,7 +811,13 @@ def load_measurements(
                         "INSERT INTO hardware (hardware_digest, architecture, "
                         "architecture_code, wave_size, compute_units, feature_flags, "
                         "canonical_json) VALUES (?, 'unknown-incomplete', 0, 0, 0, 0, ?)",
-                        (raw, json.dumps({"digest": digest_hex, "complete": False}, sort_keys=True)),
+                        (
+                            raw,
+                            json.dumps(
+                                {"digest": digest_hex, "complete": False},
+                                sort_keys=True,
+                            ),
+                        ),
                     )
                     hardware_ids[digest_hex] = cursor.lastrowid
             return hardware_ids[digest_hex]
@@ -777,7 +861,11 @@ def load_measurements(
                         str(canonical.get("src1_type", "")),
                         str(canonical.get("dst_type", "")),
                         ne0[1] if len(ne0) > 1 else 0,
-                        ned[2] if has_ids and len(ned) > 2 else ned[1] if len(ned) > 1 else 0,
+                        ned[2]
+                        if has_ids and len(ned) > 2
+                        else ned[1]
+                        if len(ned) > 1
+                        else 0,
                         ne0[0] if ne0 else 0,
                         json.dumps(canonical, sort_keys=True, separators=(",", ":")),
                     ),
@@ -849,7 +937,9 @@ def load_measurements(
             try:
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
             except ValueError as exc:
-                raise RecordError(f"invalid tuning dispatch digest: {dispatch_hex!r}") from exc
+                raise RecordError(
+                    f"invalid tuning dispatch digest: {dispatch_hex!r}"
+                ) from exc
             if len(dispatch_bytes) != 16:
                 raise RecordError("tuning dispatch digest must be 16 bytes")
 
@@ -961,8 +1051,11 @@ def load_measurements(
                 # from a ":native:vN" name-suffix pattern, which a fresh
                 # candidate-naming convention could silently stop matching.
                 native_name = result.get("native") or next(
-                    (c.get("name", "") for c in result.get("candidates", [])
-                     if c.get("name", "").endswith((":native:v1", ":native:v0"))),
+                    (
+                        c.get("name", "")
+                        for c in result.get("candidates", [])
+                        if c.get("name", "").endswith((":native:v1", ":native:v0"))
+                    ),
                     None,
                 )
                 is_native = 1 if winner_name == native_name else 0
