@@ -23,13 +23,24 @@ import residency_gates as rg  # noqa: E402
 
 
 def header(flush_l2=0, flush_mb=256):
-    return {"kind": "header", "artifact_version": 1, "source_revision": "rev",
-            "manifest_hash": "man", "flush_l2": flush_l2, "flush_evict_mb": flush_mb}
+    return {
+        "kind": "header",
+        "artifact_version": 1,
+        "source_revision": "rev",
+        "manifest_hash": "man",
+        "flush_l2": flush_l2,
+        "flush_evict_mb": flush_mb,
+    }
 
 
 def result(signature, winner, candidates, reason="native retained"):
-    return {"kind": "result", "signature": signature, "winner": winner,
-            "reason": reason, "candidates": candidates}
+    return {
+        "kind": "result",
+        "signature": signature,
+        "winner": winner,
+        "reason": reason,
+        "candidates": candidates,
+    }
 
 
 def cand(name, median_us, status="ok"):
@@ -55,7 +66,9 @@ class TestArtifactLoading(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_loads_header_and_results(self):
-        p = write_artifact(self.tmp, "a.jsonl", header(), [result("s1", "w", [cand("w", 1.0)])])
+        p = write_artifact(
+            self.tmp, "a.jsonl", header(), [result("s1", "w", [cand("w", 1.0)])]
+        )
         h, r = rg.load_artifact(p)
         self.assertEqual(h["flush_l2"], 0)
         self.assertIn("s1", r)
@@ -67,14 +80,22 @@ class TestArtifactLoading(unittest.TestCase):
             rg.load_artifact(p)
 
     def test_duplicate_signature_raises(self):
-        p = write_artifact(self.tmp, "dup.jsonl", header(),
-                           [result("s", "w", []), result("s", "w", [])])
+        p = write_artifact(
+            self.tmp,
+            "dup.jsonl",
+            header(),
+            [result("s", "w", []), result("s", "w", [])],
+        )
         with self.assertRaises(rg.ResidencyGateError):
             rg.load_artifact(p)
 
     def test_unknown_kind_raises(self):
-        p = write_artifact(self.tmp, "u.jsonl", header(),
-                           [dict(result("s", "w", []), kind="observation")])
+        p = write_artifact(
+            self.tmp,
+            "u.jsonl",
+            header(),
+            [dict(result("s", "w", []), kind="observation")],
+        )
         with self.assertRaises(rg.ResidencyGateError):
             rg.load_artifact(p)
 
@@ -90,20 +111,32 @@ class TestArtifactLoading(unittest.TestCase):
 class TestCompleteness(unittest.TestCase):
     def test_completed_reasons(self):
         self.assertTrue(rg.is_completed({"reason": "native retained"}))
-        self.assertTrue(rg.is_completed({
-            "reason": "native retained (fresh confirmation rejected provisional winner)"}))
+        self.assertTrue(
+            rg.is_completed(
+                {
+                    "reason": "native retained (fresh confirmation rejected provisional winner)"
+                }
+            )
+        )
 
     def test_incomplete_reasons_excluded(self):
-        for reason in ("poisoned by twin mismatch", "native timing unstable; run rejected",
-                       "candidate fatal error", "run failed mid-screen",
-                       "tuner disabled"):
+        for reason in (
+            "poisoned by twin mismatch",
+            "native timing unstable; run rejected",
+            "candidate fatal error",
+            "run failed mid-screen",
+            "tuner disabled",
+        ):
             self.assertFalse(rg.is_completed({"reason": reason}), reason)
 
 
 class TestCandidateMedians(unittest.TestCase):
     def test_only_ok_positive_medians(self):
-        r = result("s", "w", [cand("a", 1.0), cand("b", 2.0, status="rejected"),
-                              cand("c", -5.0)])
+        r = result(
+            "s",
+            "w",
+            [cand("a", 1.0), cand("b", 2.0, status="rejected"), cand("c", -5.0)],
+        )
         self.assertEqual(rg.candidate_medians(r), {"a": 1.0})
 
     def test_ok_candidate_without_name_raises(self):
@@ -114,29 +147,54 @@ class TestCandidateMedians(unittest.TestCase):
 
 class TestGate1(unittest.TestCase):
     def test_flips_counted_over_completed_intersection_only(self):
-        h1 = {"s1": result("s1", "a", []), "s2": result("s2", "b", []),
-              "s3": result("s3", "c", [], reason="native timing unstable; run rejected")}
-        h2 = {"s1": result("s1", "a", []), "s2": result("s2", "d", []),
-              "s3": result("s3", "x", [])}
+        h1 = {
+            "s1": result("s1", "a", []),
+            "s2": result("s2", "b", []),
+            "s3": result("s3", "c", [], reason="native timing unstable; run rejected"),
+        }
+        h2 = {
+            "s1": result("s1", "a", []),
+            "s2": result("s2", "d", []),
+            "s3": result("s3", "x", []),
+        }
         report = rg.gate1_hot_repeatability(h1, h2)
-        self.assertEqual(report.pairs, 2)          # s3 excluded (incomplete in h1)
+        self.assertEqual(report.pairs, 2)  # s3 excluded (incomplete in h1)
         self.assertEqual([f["signature"] for f in report.flips], ["s2"])
         self.assertAlmostEqual(report.flip_rate_pct, 50.0)
 
 
 class TestGate2Crossover(unittest.TestCase):
-    def _arms(self, hot_winner="blas:native:v1", cold_winner="mmvf:native:v1",
-              hot_med=(100.0, 110.0), cold_med=(130.0, 105.0)):
+    def _arms(
+        self,
+        hot_winner="blas:native:v1",
+        cold_winner="mmvf:native:v1",
+        hot_med=(100.0, 110.0),
+        cold_med=(130.0, 105.0),
+    ):
         """hot: hot_winner faster by 10% (hot_adv +10%);
-           cold: cold_winner faster by ~24% (cold_adv +24%)."""
+        cold: cold_winner faster by ~24% (cold_adv +24%)."""
+
         def mk(winner, hw, cw):
             return result("s", winner, [cand(hw, hw), cand(cw, cw)])
+
         h1 = {"s": mk(hot_winner, hot_med[0], cold_med[0])}
         cold = {"s": mk(cold_winner, hot_med[0] * 1.0 + 30, cold_med[1])}
         # rebuild with explicit per-context medians for clarity:
-        h1 = {"s": result("s", hot_winner, [cand(hot_winner, 100.0), cand(cold_winner, 110.0)])}
-        h2 = {"s": result("s", hot_winner, [cand(hot_winner, 101.0), cand(cold_winner, 112.0)])}
-        cold = {"s": result("s", cold_winner, [cand(hot_winner, 130.0), cand(cold_winner, 105.0)])}
+        h1 = {
+            "s": result(
+                "s", hot_winner, [cand(hot_winner, 100.0), cand(cold_winner, 110.0)]
+            )
+        }
+        h2 = {
+            "s": result(
+                "s", hot_winner, [cand(hot_winner, 101.0), cand(cold_winner, 112.0)]
+            )
+        }
+        cold = {
+            "s": result(
+                "s", cold_winner, [cand(hot_winner, 130.0), cand(cold_winner, 105.0)]
+            )
+        }
         return h1, cold, h2
 
     def test_true_crossover_detected(self):
@@ -155,9 +213,27 @@ class TestGate2Crossover(unittest.TestCase):
     def test_no_crossover_when_hot_winner_stays_faster_on_cold(self):
         # cold context: hot winner still fastest -> selection flip without
         # median crossover (the four non-crossover B1 flips).
-        h1 = {"s": result("s", "blas:native:v1", [cand("blas:native:v1", 100.0), cand("mmvf:native:v1", 120.0)])}
-        h2 = {"s": result("s", "blas:native:v1", [cand("blas:native:v1", 101.0), cand("mmvf:native:v1", 121.0)])}
-        cold = {"s": result("s", "mmvf:native:v1", [cand("blas:native:v1", 98.0), cand("mmvf:native:v1", 104.0)])}
+        h1 = {
+            "s": result(
+                "s",
+                "blas:native:v1",
+                [cand("blas:native:v1", 100.0), cand("mmvf:native:v1", 120.0)],
+            )
+        }
+        h2 = {
+            "s": result(
+                "s",
+                "blas:native:v1",
+                [cand("blas:native:v1", 101.0), cand("mmvf:native:v1", 121.0)],
+            )
+        }
+        cold = {
+            "s": result(
+                "s",
+                "mmvf:native:v1",
+                [cand("blas:native:v1", 98.0), cand("mmvf:native:v1", 104.0)],
+            )
+        }
         details = rg.gate2_material_reversals(h1, cold, h2)
         self.assertEqual(len(details), 1)
         d = details[0]
@@ -187,17 +263,29 @@ class TestGate2Crossover(unittest.TestCase):
         h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 120.0)])}
         h2 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 120.0)])}
         # b (cold winner) rejected in the cold arm: no median to cross with.
-        cold = {"s": result("s", "b:v1", [cand("a:v1", 95.0), cand("b:v1", 90.0, status="rejected")])}
+        cold = {
+            "s": result(
+                "s", "b:v1", [cand("a:v1", 95.0), cand("b:v1", 90.0, status="rejected")]
+            )
+        }
         details = rg.gate2_material_reversals(h1, cold, h2)
         d = details[0]
         self.assertFalse(d.crosses_any_hot_arm)
-        self.assertTrue(all(info["reason"].startswith("missing-median") for info in d.per_arm))
+        self.assertTrue(
+            all(info["reason"].startswith("missing-median") for info in d.per_arm)
+        )
 
     def test_incomplete_arm_excludes_signature(self):
         h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 120.0)])}
         h2 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 120.0)])}
-        cold = {"s": result("s", "b:v1", [cand("a:v1", 130.0), cand("b:v1", 105.0)],
-                            reason="native timing unstable; run rejected")}
+        cold = {
+            "s": result(
+                "s",
+                "b:v1",
+                [cand("a:v1", 130.0), cand("b:v1", 105.0)],
+                reason="native timing unstable; run rejected",
+            )
+        }
         self.assertEqual(rg.gate2_material_reversals(h1, cold, h2), [])
 
     def test_non_replicated_flip_still_listed_but_not_replicated(self):
@@ -230,9 +318,9 @@ class TestGate2HardGateAggregation(unittest.TestCase):
         details = rg.gate2_material_reversals(h1, cold, h2)
         d = details[0]
         self.assertTrue(d.replicated)
-        self.assertTrue(d.crosses_any_hot_arm)     # diagnostic: one arm crosses
+        self.assertTrue(d.crosses_any_hot_arm)  # diagnostic: one arm crosses
         self.assertFalse(d.crosses_both_hot_arms)
-        self.assertFalse(d.hard_gate_survivor)     # must NOT fail the hard gate
+        self.assertFalse(d.hard_gate_survivor)  # must NOT fail the hard gate
 
     def test_non_replicated_material_crossover_not_survivor(self):
         # cold agrees with h2 (b); differs only from h1 (a). The b-vs-a
@@ -246,7 +334,7 @@ class TestGate2HardGateAggregation(unittest.TestCase):
         self.assertFalse(d.replicated)
         # vs h1: hot_adv=(115-100)/100=+15%, cold_adv=(135-96)/96=+40.6% -> cross
         self.assertTrue(d.crosses_any_hot_arm)
-        self.assertFalse(d.hard_gate_survivor)     # not replicated -> no survivor
+        self.assertFalse(d.hard_gate_survivor)  # not replicated -> no survivor
 
     def test_replicated_crossover_both_arms_is_survivor(self):
         h1 = {"s": result("s", "a:v1", [cand("a:v1", 100.0), cand("b:v1", 110.0)])}
@@ -256,7 +344,7 @@ class TestGate2HardGateAggregation(unittest.TestCase):
         d = details[0]
         self.assertTrue(d.replicated)
         self.assertTrue(d.crosses_both_hot_arms)
-        self.assertTrue(d.hard_gate_survivor)      # Gate 2 FAIL on this row
+        self.assertTrue(d.hard_gate_survivor)  # Gate 2 FAIL on this row
 
 
 class TestEvaluateEndToEnd(unittest.TestCase):
@@ -276,9 +364,13 @@ class TestEvaluateEndToEnd(unittest.TestCase):
 
         h1 = [mk("stable", "a:v1", 100.0, 90.0), mk("cross", "a:v1", 100.0, 110.0)]
         h2 = [mk("stable", "a:v1", 100.5, 90.4), mk("cross", "a:v1", 101.0, 112.0)]
-        cold_rows = [result("stable", "a:v1", [cand("a:v1", 101.0), cand("b:v1", 91.0)])]
+        cold_rows = [
+            result("stable", "a:v1", [cand("a:v1", 101.0), cand("b:v1", 91.0)])
+        ]
         # cross: a hot winner 100/110 on hot; on cold a=130, b=105 -> crossover
-        cold_rows.append(result("cross", "b:v1", [cand("a:v1", 130.0), cand("b:v1", 105.0)]))
+        cold_rows.append(
+            result("cross", "b:v1", [cand("a:v1", 130.0), cand("b:v1", 105.0)])
+        )
 
         p1 = write_artifact(self.tmp, "h1.jsonl", header(flush_l2=0), h1)
         pc = write_artifact(self.tmp, "cold.jsonl", header(flush_l2=1), cold_rows)
