@@ -103,3 +103,58 @@ for every rejection. Those three numbers being far apart is the signal:
 
 Check them before believing a winner. "We tuned it" without these is an
 assumption.
+
+## Measurement context — cache residency (HI34 B1, decided 2026-08-17)
+
+The question: does measuring candidates back-to-back on the same operands (hot
+L2/Infinity Cache) distort *which* candidate wins, compared to a cold-cache
+measurement? HI34 step 4 ran the locked three-arm experiment on Brutus (7900
+XTX, gfx1101, ROCm 7.2.4, unblocked): H1 (flush=0) -> C (flush=1, 256 MB
+eviction between samples, outside the timed window) -> H2 (flush=0), all at
+lps=1, full MUL_MAT matrix, 1156 signatures per arm.
+
+**Answer: measurement context changes the selected winner on this hardware.**
+Gate 1 passed (H1 vs H2: 3 winner flips in 1156, 0.26%). Gate 2 failed: four
+signatures show true material median crossovers — the hot-cache winner
+(`blas:native`) beats the cold-cache winner (`mmvf:native`) on hot context by
++5.7%..+24.4%, and the ordering inverts on cold context, where the cold winner
+beats the hot winner by +28.7%..+50.6%. One caveat limits attribution: the
+absolute shifts are not uniformly in the eviction direction — on two of the
+four, mmvf is much FASTER in the cold arm (102 -> 59 us), and on one, blas is
+slower (26 -> 36 us) while on another it is flat. Sustained 256 MB eviction
+writes before every sample plausibly precondition GPU clock/power/memory-fabric
+state, so the intervention perturbs more than the cache. B1 therefore
+establishes **measurement-context sensitivity**, not yet "L2 residency caused
+this"; attribution needs the cause-validation sweep before any re-tuning or
+promotion decision. Four further replicated winner flips do NOT cross on
+medians; they are confirmation-noise artifacts of the noisier cold arm, not
+residency inversions. A secondary effect: under flush, 63 signatures rejected
+fail-closed as "native timing unstable" (MAD inflation on small kernels), so
+the cold arm also changes the noise regime, not just the means.
+
+**Attribution caveat (does not change the verdict).** The absolute shifts are
+not uniformly in the cache-eviction direction: on some crossover signatures the
+cold arm is *faster* for both candidates (e.g. `38ee4d70...`: blas 83.4->76.4,
+mmvf 102.0->59.3 us; `f33c9997...`: mmvf 102.1->59.8 us), while on others the
+blas path is slower under flush (`ee8a2c18...`: 25.96->36.2 us, +39%). Sustained
+256 MB eviction writes before every sample plausibly precondition GPU
+clock/power state, so the intervention perturbs more than the cache. B1 therefore
+establishes **measurement-context sensitivity** (rankings move with the
+measurement context) but does NOT yet attribute the effect to L2/Infinity-Cache
+eviction per se.
+
+**Consequence.** Recorded winners of those four crossover signatures from hot
+tuning are suspect in the cold direction, but which direction is "more
+production-true" is exactly what the attribution work must settle. The
+experiment measures a bound, not a correction — production sits between the two
+extremes and depends on the graph, so the flush is NOT promoted to calibration
+default on this evidence. `flush=1` stays OFF by default and remains a
+diagnostic knob. Before any promotion or re-tuning decision, the eviction must
+be validated as the cause: size-saturation sweep (128/256/512 MB) on a
+diagnostic subset plus DVFS/thermal/memory-fabric preconditioning ruled out —
+tracked as a new item, not a flag flip.
+
+Evidence: `artifacts/b1/{h1,cold,h2}.jsonl.measurements.jsonl` (arm headers
+carry `flush_l2`/`flush_evict_mb` provenance); strict gate-2 evaluator pending
+promotion from `tmp/b1-gate2-strict.py` to `tools/`. Plan item HI34 steps 4-5,
+notes of 2026-08-17.
