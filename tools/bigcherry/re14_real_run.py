@@ -165,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         targets=platform_cfg.targets, cmake_options=tuple(sorted(merged_options.items())),
         variant_set=build_cfg.variant_set, inventory_hash=inventory_digest,
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
+        environment=campaign_build.resolve_build_environment(),
     )
     print(f"build plan: id={build_plan.build_plan_id} variant_set={build_plan.variant_set}")
 

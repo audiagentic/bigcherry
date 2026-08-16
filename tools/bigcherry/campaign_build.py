@@ -20,6 +20,7 @@ content_hash is allowed to exist at all.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -36,6 +37,29 @@ Runner = Callable[[list[str], Path], None]
 
 class CampaignBuildError(RuntimeError):
     pass
+
+
+#: Environment variables that can change what a build actually produces
+#: without changing any requested CMake option -- PATH affects which tools
+#: resolve at all, the rest affect where ROCm/HIP get found. Deliberately a
+#: small fixed allowlist, not the whole ambient environment: hashing every
+#: inherited variable would make build_plan_id sensitive to unrelated shell
+#: state (terminal colors, unrelated app config) with no bearing on the
+#: build, and would leak local machine details into a supposedly portable
+#: identity.
+_BUILD_RELEVANT_ENV_VARS = ("PATH", "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH")
+
+
+def resolve_build_environment() -> tuple[tuple[str, str], ...]:
+    """The subset of the current process environment relevant to
+    ``BuildPlan.environment`` -- real values, not merely "whatever the
+    caller happened to have set", so a build run under a different PATH/
+    ROCm environment gets its own build_plan_id instead of silently
+    colliding with one built under a different environment.
+    """
+    return tuple(
+        (name, os.environ[name]) for name in _BUILD_RELEVANT_ENV_VARS if name in os.environ
+    )
 
 
 def toolchain_request_for_platform(
