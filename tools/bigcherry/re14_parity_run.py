@@ -53,7 +53,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import paths
+from . import campaign_build, paths
 from . import recipes as recipes_module
 from .artifacts import ArtifactStore
 from .parity import ParityError, check_parity
@@ -117,9 +117,14 @@ def run_legacy_arm(
     manifest_path = paths.cuda_dir(root) / "hip-autotune-manifest.json"
     descriptor_path = paths.cuda_dir(root) / "hip-autotune-build-descriptor.json"
     binary_path = build_dir / "bin" / binary_target
+    # Independently resolved from the SAME c_compiler/cxx_compiler this arm
+    # was actually built with, not copied from the new arm's result -- so
+    # the parity comparison genuinely proves both arms resolved to the same
+    # real toolchain, rather than assuming the CLI wiring got it right.
+    toolchain = campaign_build.resolve_toolchain_versions(c_compiler, cxx_compiler)
     arm = load_legacy_arm(
         "legacy", manifest_path=manifest_path, descriptor_path=descriptor_path,
-        binary_path=binary_path)
+        binary_path=binary_path, toolchain=toolchain)
     return arm, platform_obj.name
 
 
@@ -127,6 +132,7 @@ def run_new_arm(
     *, upstream_repo: Path, inventory: Path, arch: str, model: Path,
     run_id: str, work_root: Path | None, hip_visible_devices: str,
     split_mode: str, binary_target: str, source: str, build: str, platform: str,
+    c_compiler: str | None = None, cxx_compiler: str | None = None,
 ):
     cmd = [
         sys.executable, "-m", "bigcherry.re14_real_run",
@@ -138,6 +144,10 @@ def run_new_arm(
     ]
     if work_root:
         cmd += ["--work-root", str(work_root)]
+    if c_compiler:
+        cmd += ["--c-compiler", c_compiler]
+    if cxx_compiler:
+        cmd += ["--cxx-compiler", cxx_compiler]
     print("=== new arm: python -m bigcherry.re14_real_run ===")
     print("    $ " + " ".join(cmd))
     completed = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -158,10 +168,11 @@ def run_new_arm(
         )
 
     store = ArtifactStore(Path(summary["store_root"]))
+    toolchain = campaign_build.resolve_toolchain_versions(c_compiler, cxx_compiler)
     return load_new_arm(
         "new", store=store, manifest_relative=summary["manifest_relative"],
         binary_relative=summary["binary_relative"],
-        manifest_content_hash=summary["manifest_content_hash"])
+        manifest_content_hash=summary["manifest_content_hash"], toolchain=toolchain)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -206,9 +217,19 @@ def main(argv: list[str] | None = None) -> int:
         # file); --build is already literally shared between the two
         # config loaders. platform_name comes from the recipe itself, not
         # a separately-guessable default, so the two arms cannot silently
-        # diverge on which platform they were built for.
-        source=args.recipe, build=args.build, platform=platform_name)
+        # diverge on which platform they were built for. c_compiler/
+        # cxx_compiler threaded symmetrically too -- a real gpt-auto-agent
+        # review finding: they previously applied to the legacy arm only.
+        source=args.recipe, build=args.build, platform=platform_name,
+        c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler)
 
+    # toolchain is NOT allowed to differ by default, unlike binary_hash:
+    # if the symmetric compiler wiring above is correct, both arms resolve
+    # to the same real toolchain and this passes for free -- it exists to
+    # catch the case where that wiring silently breaks, or where a real
+    # compiler/ROCm-version divergence is happening that binary_hash alone
+    # can't distinguish from the expected embedded-path difference. Pass
+    # --allow toolchain for a deliberate cross-version comparison.
     allowed = frozenset({"binary_hash", *args.allow})
     try:
         report = check_parity(

@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import campaign_build, campaign_execution, campaign_plan, campaign_source, \
@@ -52,6 +53,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hip-visible-devices", default="0")
     parser.add_argument("--split-mode", default="none")
     parser.add_argument("--binary-relative-path", default="bin/llama-bench")
+    parser.add_argument(
+        "--c-compiler", default=None,
+        help="override platform.c_compiler -- e.g. to build against a "
+             "specific ROCm install for a version comparison")
+    parser.add_argument("--cxx-compiler", default=None)
     args = parser.parse_args(argv)
 
     import uuid
@@ -72,7 +78,6 @@ def main(argv: list[str] | None = None) -> int:
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
         source_plan.upstream_revision
     )
-    from dataclasses import replace
     source_plan = replace(source_plan, upstream_revision=resolved_revision)
     print(f"source plan: overlay={source_plan.overlay_enabled} "
           f"patches={len(source_plan.patch_ids)} revision={resolved_revision}")
@@ -115,6 +120,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"materialized: source_slice_id={source_slice_id}")
 
     platform_cfg = cfg.platforms[args.platform]
+    if args.c_compiler or args.cxx_compiler:
+        # A single override point: everything downstream (toolchain_request_
+        # for_platform, make_build_worker's cmake_configure_args call) reads
+        # platform_cfg.c_compiler/cxx_compiler, so replacing it here means
+        # neither has to grow its own override plumbing -- the override is
+        # indistinguishable from the recipe having declared it that way.
+        platform_cfg = replace(
+            platform_cfg,
+            c_compiler=args.c_compiler or platform_cfg.c_compiler,
+            cxx_compiler=args.cxx_compiler or platform_cfg.cxx_compiler,
+        )
     build_cfg = cfg.builds[args.build]
     # cmake_configure_args always compiles for platform.targets (AMDGPU_TARGETS),
     # never build_plan.targets -- there is exactly one authority for what

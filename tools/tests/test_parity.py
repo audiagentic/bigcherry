@@ -13,7 +13,8 @@ from bigcherry.parity import CampaignArm, ParityError, check_parity  # noqa: E40
 
 def _arm(name: str, *, source_revision="rev1", variant_set="replay-slim",
          manifest_hash="m1", descriptor_hash="d1",
-         candidates=("mmq:native:v1", "mmvq:native:v1"), binary_hash="b1") -> CampaignArm:
+         candidates=("mmq:native:v1", "mmvq:native:v1"), binary_hash="b1",
+         toolchain=None) -> CampaignArm:
     return CampaignArm(
         name=name,
         manifest={"source_revision": source_revision, "variant_set": variant_set,
@@ -21,6 +22,7 @@ def _arm(name: str, *, source_revision="rev1", variant_set="replay-slim",
         descriptor={"descriptor_hash": descriptor_hash},
         candidate_names=frozenset(candidates),
         binary_hash=binary_hash,
+        toolchain=toolchain if toolchain is not None else {},
     )
 
 
@@ -63,6 +65,32 @@ class ParityTests(unittest.TestCase):
     def test_binary_hash_difference_rejects(self):
         with self.assertRaises(ParityError):
             check_parity(_arm("legacy"), _arm("new", binary_hash="b2"), label="tune")
+
+    def test_toolchain_difference_rejects_even_with_binary_hash_allowed(self):
+        # The actual gap this closes: a caller that always allows
+        # binary_hash to differ (expected -- embedded build-tree paths)
+        # must still catch a REAL divergence, like a different compiler or
+        # ROCm version, that binary_hash alone can't distinguish from the
+        # benign case.
+        left = _arm("legacy", binary_hash="b1", toolchain={"rocm_version": "7.2.4"})
+        right = _arm("new", binary_hash="b2", toolchain={"rocm_version": "7.1.0"})
+        with self.assertRaises(ParityError) as ctx:
+            check_parity(left, right, label="tune", allowed_differences=frozenset({"binary_hash"}))
+        self.assertIn("toolchain", str(ctx.exception))
+
+    def test_matching_toolchain_passes_alongside_allowed_binary_difference(self):
+        left = _arm("legacy", binary_hash="b1", toolchain={"rocm_version": "7.2.4"})
+        right = _arm("new", binary_hash="b2", toolchain={"rocm_version": "7.2.4"})
+        report = check_parity(left, right, label="tune", allowed_differences=frozenset({"binary_hash"}))
+        self.assertEqual(report.label, "tune")
+
+    def test_toolchain_difference_can_be_explicitly_allowed(self):
+        # The deliberate cross-version comparison use case: two BuildPlans
+        # run against different ROCm installs on purpose.
+        left = _arm("legacy", toolchain={"rocm_version": "7.2.4"})
+        right = _arm("new", toolchain={"rocm_version": "7.1.0"})
+        report = check_parity(left, right, label="tune", allowed_differences=frozenset({"toolchain"}))
+        self.assertEqual(report.label, "tune")
 
 
 if __name__ == "__main__":
