@@ -10,8 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry.campaign import CampaignRun  # noqa: E402
-from bigcherry.campaign_graph import (CampaignGraph, CampaignGraphError, ResourceClaim,
-                                      StageNode)  # noqa: E402
+from bigcherry.campaign_graph import CampaignGraph, CampaignGraphError, StageNode  # noqa: E402
 from bigcherry.resources import ResourceError, ResourceLock  # noqa: E402
 
 

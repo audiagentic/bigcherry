@@ -554,7 +554,6 @@ def build(
         return strings[name]
 
     packed = bytearray()
-    skipped = 0
     for record in sorted(selected_entries,
                          key=lambda item: (
                              item["portable_key"], -item["generation"],
@@ -729,7 +728,6 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
                     (isinstance(manifest.get("source_revision"), str) and
                      provenance["source_revision"] != manifest["source_revision"].lower())):
                 raise SystemExit("seed override provenance does not match supplied manifest")
-        existing = None
         # The caller supplies measurements separately; signature is checked
         # against that row below.  Unseen dispatches must carry one explicitly.
         signature = value.get("signature")

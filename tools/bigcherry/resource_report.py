@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path

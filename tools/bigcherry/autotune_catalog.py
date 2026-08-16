@@ -1126,12 +1126,12 @@ def _blas_plan_initialiser(candidate: dict[str, Any]) -> str | None:
     if candidate.get("family") != "blas" or plan is None:
         return None
     values = []
-    for field in schema.BLAS_PLAN_FIELDS:
+    for plan_field in schema.BLAS_PLAN_FIELDS:
         try:
-            values.append(_BLAS_PLAN_ENUM[field][plan[field]])
+            values.append(_BLAS_PLAN_ENUM[plan_field][plan[plan_field]])
         except KeyError as exc:
             raise CatalogError(
-                f"cannot render BLAS plan field {field!r} for "
+                f"cannot render BLAS plan field {plan_field!r} for "
                 f"{candidate['stable_name']!r}") from exc
     return "{ " + ", ".join(values) + " }"
 

@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry import autotune_catalog as catalog  # noqa: E402
-from bigcherry import paths, autotune_schema  # noqa: E402
+from bigcherry import paths  # noqa: E402
 
 
 class GeneratedLayoutTests(unittest.TestCase):

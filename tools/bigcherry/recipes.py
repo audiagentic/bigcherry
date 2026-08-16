@@ -1,6 +1,8 @@
 """Named build definitions -- an upstream ref plus a patch selection."""
 from __future__ import annotations
-import hashlib, re, tomllib
+import hashlib
+import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from . import paths
@@ -9,7 +11,9 @@ RECIPES_PATH = paths.REPO_ROOT / "recipes.toml"
 FOLLOW_PIN = "pinned"
 NEEDS = ("none", "inventory", "winners")
 
-class RecipeError(ValueError): pass
+
+class RecipeError(ValueError):
+    pass
 
 @dataclass(frozen=True)
 class Build:

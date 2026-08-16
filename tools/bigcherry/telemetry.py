@@ -8,7 +8,6 @@ partial or mixed-provenance file must be rejected before analysis.
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 from typing import Any, Iterable
 
