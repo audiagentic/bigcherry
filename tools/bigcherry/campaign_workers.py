@@ -43,6 +43,18 @@ cached metadata's recorded compile_inputs_hash to match the CURRENT
 generate stage's before trusting a cache hit. A mismatch there is not
 tampering -- it is a legitimate cache miss, so it falls through to a fresh
 build rather than raising.
+
+binary_hash alone is also not sufficient: RE09's own investigation
+established that the meaningful HIP dispatch logic lives in
+libggml-hip.so, not the tiny llama-bench launcher stub validate_reuse()
+was originally checking. The build worker additionally requires a
+runtime_bundle_hash (builds.resolve_runtime_artifacts/runtime_bundle_hash)
+covering every shared library this build produced alongside the launcher
+to match too -- UNLIKE the compile_inputs_hash check above, a mismatch
+here (given source/build/compile-inputs identity all already agreed) means
+something modified files inside what should be an untouched cached
+directory, so it IS treated as tampering: a hard failure, not a fresh
+rebuild.
 """
 
 from __future__ import annotations
@@ -56,7 +68,8 @@ from typing import Any
 from . import autotune_catalog, campaign_build, generated_tree, provenance, runtime_smoke
 from .artifacts import ArtifactStore
 from .builds import (BuildIdentityError, BuildPlan, binary_hash, build_directory,
-                     effective_build_id, parse_effective_configure, validate_reuse)
+                     effective_build_id, parse_effective_configure,
+                     resolve_runtime_artifacts, runtime_bundle_hash, validate_reuse)
 from .context import ProjectContext
 from .pipeline import ArtifactRef
 
@@ -181,8 +194,20 @@ def make_build_worker(
             # RE14's fail-closed philosophy exists to catch.
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                # Computed from whatever is CURRENTLY on disk next to the
+                # cached binary, not trusted from metadata -- validate_reuse
+                # compares this against the recorded runtime_bundle_hash, so
+                # a library modified since the metadata was written (even
+                # with the launcher itself untouched) is caught here.
+                current_runtime_hash = None
+                if binary.is_file():
+                    current_runtime_hash = runtime_bundle_hash({
+                        artifact.name: binary_hash(artifact)
+                        for artifact in resolve_runtime_artifacts(binary)
+                    })
                 validate_reuse(metadata, build_plan, binary=binary,
-                               expected_toolchain=expected_toolchain)
+                               expected_toolchain=expected_toolchain,
+                               runtime_bundle_hash=current_runtime_hash)
             except (BuildIdentityError, json.JSONDecodeError, OSError) as exc:
                 raise campaign_build.CampaignBuildError(
                     f"build directory {build_dir} has an existing "
@@ -236,6 +261,10 @@ def make_build_worker(
             generated_tree.verify_tree(generated_root, generated_tree_document)
 
             effective_configure = parse_effective_configure(build_dir / "CMakeCache.txt")
+            runtime_artifacts = {
+                artifact.name: binary_hash(artifact)
+                for artifact in resolve_runtime_artifacts(binary)
+            }
             metadata = {
                 "source_slice_id": source_slice_id,
                 "build_plan_id": build_plan.build_plan_id,
@@ -244,6 +273,8 @@ def make_build_worker(
                 "toolchain": expected_toolchain,
                 "binary_hash": binary_hash(binary),
                 "generated_compile_inputs_hash": generated_tree_document["compile_inputs_hash"],
+                "runtime_artifacts": runtime_artifacts,
+                "runtime_bundle_hash": runtime_bundle_hash(runtime_artifacts),
             }
             metadata_path.write_text(
                 json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")

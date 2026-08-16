@@ -73,6 +73,38 @@ def build_directory(context: ProjectContext, source_slice_id: str, plan: BuildPl
     return context.work_root / "builds" / source_slice_id / plan.build_plan_id
 
 
+def resolve_runtime_artifacts(binary: Path) -> tuple[Path, ...]:
+    """Every regular (non-symlink) file this build's own compile step
+    produced alongside ``binary`` -- llama.cpp's CMake build places every
+    project shared library directly next to its executables (libggml*.so*,
+    libllama*.so*), never installed elsewhere. This is a directory-
+    membership proxy for "this build's runtime output closure", not a
+    linker-dependency walk (ldd/readelf) -- deliberately: system libraries
+    (libc, the ROCm runtime itself) live outside this directory and are NOT
+    part of what this specific build produced; a change there is a
+    toolchain/environment identity question, not a build-output one.
+
+    gpt-auto-agent review finding: a reuse check that only hashes the
+    requested launcher (e.g. llama-bench) can accept a cache hit even if
+    the actual HIP dispatch implementation (libggml-hip.so) changed --
+    RE09's own investigation established that the meaningful logic lives
+    there, not in the small launcher stub.
+    """
+    directory = binary.parent
+    artifacts = [binary]
+    for candidate in sorted(directory.glob("*.so*")):
+        if candidate.is_file() and not candidate.is_symlink():
+            artifacts.append(candidate)
+    return tuple(artifacts)
+
+
+def runtime_bundle_hash(artifacts: dict[str, str]) -> str:
+    """Canonical hash of a ``{filename: sha256}`` runtime artifact map --
+    what validate_reuse() now trusts instead of a single binary_hash alone.
+    """
+    return _digest("bigcherry/runtime-bundle/v1", artifacts)
+
+
 #: CMakeCache.txt keys that actually describe what got built: resolved
 #: compiler paths, build type, GPU targets, and every autotune/HIP option.
 #: Deliberately not the whole cache -- that also carries unrelated
@@ -114,6 +146,7 @@ def validate_reuse(
     *,
     binary: Path,
     expected_toolchain: object | None = None,
+    runtime_bundle_hash: str | None = None,
 ) -> None:
     if metadata.get("source_slice_id") != plan.source_slice_id:
         raise BuildIdentityError("source_slice_id does not match build plan")
@@ -131,3 +164,11 @@ def validate_reuse(
         raise BuildIdentityError("requested binary is missing")
     if metadata.get("binary_hash") != binary_hash(binary):
         raise BuildIdentityError("binary hash does not match recorded identity")
+    # binary_hash alone only proves the requested launcher is unchanged --
+    # RE09 established the meaningful HIP dispatch logic lives in
+    # libggml-hip.so, not the launcher. When the caller supplies a
+    # freshly-computed runtime_bundle_hash (see resolve_runtime_artifacts),
+    # require it to match too, so a changed dependent library invalidates
+    # reuse even when the launcher itself is byte-identical.
+    if runtime_bundle_hash is not None and metadata.get("runtime_bundle_hash") != runtime_bundle_hash:
+        raise BuildIdentityError("runtime bundle hash does not match recorded identity")

@@ -105,7 +105,7 @@ class _Harness:
             cmake_targets=("llama-bench",),
         )
 
-    def fake_compiler(self, cmake_cache_text: str = _CMAKE_CACHE):
+    def fake_compiler(self, cmake_cache_text: str = _CMAKE_CACHE, hip_so_content: bytes = b"hip-dispatch-v1"):
         build_dir = build_directory(self.context, self.source_slice_id, self.build_plan)
 
         def run(cmd, cwd=None, check=None):
@@ -114,6 +114,11 @@ class _Harness:
                 binary = build_dir / "bin" / "llama-bench"
                 binary.parent.mkdir(parents=True, exist_ok=True)
                 binary.write_bytes(b"compiled-binary-bytes")
+                # A real build always produces libggml-hip.so alongside the
+                # launcher (see resolve_runtime_artifacts's docstring) --
+                # include one so runtime-bundle tests can tamper it
+                # independently of the launcher itself.
+                (build_dir / "bin" / "libggml-hip.so.0.19.0").write_bytes(hip_so_content)
             else:
                 (build_dir / "CMakeCache.txt").write_text(cmake_cache_text, encoding="utf-8")
             return subprocess.CompletedProcess(cmd, 0)
@@ -216,6 +221,26 @@ class ReuseTests(unittest.TestCase):
             self.assertEqual(
                 metadata["generated_compile_inputs_hash"],
                 arch_b_tree_document["compile_inputs_hash"])
+
+    def test_dependent_library_tampered_fails_closed_even_though_launcher_is_untouched(self):
+        # gpt-auto-agent review finding: "you're hashing one executable, not
+        # necessarily the build-output closure" -- RE09 established the
+        # real HIP dispatch logic lives in libggml-hip.so, not the launcher.
+        # A reuse check based on binary_hash alone would miss this.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            with patch("bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()):
+                harness.worker()(harness.generate_inputs())
+
+            build_dir = build_directory(harness.context, harness.source_slice_id, harness.build_plan)
+            # The launcher itself is byte-identical; only its dependent
+            # library changed.
+            (build_dir / "bin" / "libggml-hip.so.0.19.0").write_bytes(b"TAMPERED-hip-dispatch")
+
+            with patch("bigcherry.campaign_workers.subprocess.run",
+                       side_effect=AssertionError("must not silently recompile over a failed check")):
+                with self.assertRaisesRegex(CampaignBuildError, "failed reuse validation"):
+                    harness.worker()(harness.generate_inputs())
 
     def test_metadata_present_but_build_plan_differs_fails_closed(self):
         # Same build_dir (forced by publishing under the first plan's
