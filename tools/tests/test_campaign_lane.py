@@ -79,7 +79,7 @@ class _Harness:
         inventory_path.write_text('{"mmq_types": ["q8_0"]}', encoding="utf-8")
         values = dict(
             source_name="test-source", build_name="tune", platform_name="linux-multi",
-            architectures=("gfx1100",), inventory_path=inventory_path,
+            architectures=("gfx1100",), inputs=(("inventory", inventory_path),),
             validation=RuntimeSmokeSpec(model_path=Path("model.gguf")),
         )
         values.update(overrides)
@@ -92,7 +92,7 @@ class _Harness:
         def fake_generate_worker(**kwargs):
             def generate(inputs):
                 calls.append("generate")
-                self.assertEqual({ref.kind for ref in inputs}, {"inventory"})
+                assert set(inputs) == {"inventory"}
                 return {}
             return generate
 
@@ -151,15 +151,11 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             # a dict with manifest/generated_tree/workload_id, exactly what
             # the real make_generate_worker returns.
             def fake_generate_worker(**kwargs):
-                workload_id = None
-
                 def generate(inputs):
                     harness.calls.append("generate")
-                    nonlocal workload_id
-                    workload_id = inputs[0].content_hash
+                    assert set(inputs) == {"inventory"}
                     return {
                         "manifest": {"candidates": []},
-                        "workload_id": workload_id,
                         "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
                                            "compile_inputs_hash": "h"},
                     }
@@ -181,6 +177,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             self.assertEqual(result.binary_ref.kind, "binary")
             self.assertEqual(result.smoke_ref.kind, "smoke-result")
             self.assertEqual(result.build_plan_id, result.build_plan.build_plan_id)
+            self.assertIsNotNone(result.workload_id)
 
     def test_two_lanes_with_different_inventories_do_not_collide(self):
         # The one behavioral fix bundled into this extraction: inventory
@@ -194,9 +191,9 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
 
             def fake_generate_worker(**kwargs):
                 def generate(inputs):
+                    assert set(inputs) == {"inventory"}
                     return {
                         "manifest": {"candidates": []},
-                        "workload_id": inputs[0].content_hash,
                         "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
                                            "compile_inputs_hash": "h"},
                     }
@@ -216,44 +213,39 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                  patch("bigcherry.campaign_lane.campaign_workers.make_smoke_worker",
                        side_effect=fake_smoke):
                 result_a = execute_campaign_lane(
-                    harness.spec(inventory_path=inventory_a), cfg=harness.cfg,
+                    harness.spec(inputs=(("inventory", inventory_a),)), cfg=harness.cfg,
                     context=harness.context, store=harness.store, run_id="lane-a")
                 result_b = execute_campaign_lane(
-                    harness.spec(inventory_path=inventory_b), cfg=harness.cfg,
+                    harness.spec(inputs=(("inventory", inventory_b),)), cfg=harness.cfg,
                     context=harness.context, store=harness.store, run_id="lane-b")
 
-            self.assertNotEqual(result_a.inventory_ref.content_hash,
-                                result_b.inventory_ref.content_hash)
-            self.assertNotEqual(result_a.inventory_ref.path, result_b.inventory_ref.path)
-            self.assertTrue(result_a.inventory_ref.path.is_file())
-            self.assertTrue(result_b.inventory_ref.path.is_file())
+            inventory_ref_a = dict(result_a.input_refs)["inventory"]
+            inventory_ref_b = dict(result_b.input_refs)["inventory"]
+            self.assertNotEqual(inventory_ref_a.content_hash, inventory_ref_b.content_hash)
+            self.assertNotEqual(inventory_ref_a.path, inventory_ref_b.path)
+            self.assertTrue(inventory_ref_a.path.is_file())
+            self.assertTrue(inventory_ref_b.path.is_file())
 
-    def test_workload_id_mismatch_between_generate_and_precomputed_fails_closed(self):
+    def test_lane_inputs_not_matching_build_needs_fails_closed(self):
+        # RE17: build.needs is the sole authority for lane inputs -- an
+        # exact-set-equality check, not a subset check. Providing an input
+        # the build doesn't declare (or omitting one it does) must fail
+        # closed before any worker is constructed.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             upstream, revision = _init_upstream(root)
             harness = _Harness(root, upstream, revision)
-            _, fake_build, fake_smoke = harness.fake_workers()
-
-            def bad_generate_worker(**kwargs):
-                def generate(inputs):
-                    return {
-                        "manifest": {"candidates": []},
-                        "workload_id": "wrong-workload-id",
-                        "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
-                                           "compile_inputs_hash": "h"},
-                    }
-                return generate
+            fake_generate, fake_build, fake_smoke = harness.fake_workers()
 
             with patch("bigcherry.campaign_lane.campaign_workers.make_generate_worker",
-                       side_effect=bad_generate_worker), \
+                       side_effect=fake_generate), \
                  patch("bigcherry.campaign_lane.campaign_workers.make_build_worker",
                        side_effect=fake_build), \
                  patch("bigcherry.campaign_lane.campaign_workers.make_smoke_worker",
                        side_effect=fake_smoke):
                 with self.assertRaises(CampaignLaneError):
                     execute_campaign_lane(
-                        harness.spec(), cfg=harness.cfg, context=harness.context,
+                        harness.spec(inputs=()), cfg=harness.cfg, context=harness.context,
                         store=harness.store, run_id="run1")
 
 

@@ -73,7 +73,7 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
             def fake_generate(inputs):
                 self.assertEqual(len(inputs), 1)
                 return {
-                    "manifest": {"candidates": []}, "workload_id": "w1",
+                    "manifest": {"candidates": []},
                     "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
                                        "compile_inputs_hash": "h"},
                 }
@@ -82,7 +82,9 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
                 graph=graph, store=store, run_id="run1",
                 materialize=lambda: {}, generate=fake_generate,
                 source_slice_id_holder=holder, build_plan_id="b1",
-                inventory_ref=inventory,
+                generate_inputs={"inventory": inventory},
+                generate_needs=frozenset({"inventory"}),
+                workload_id="w1",
             )
             hashes = executor("gen")
             self.assertEqual(len(hashes), 2)  # manifest + generated-tree
@@ -105,14 +107,18 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
             ))
             executor = CampaignStageExecutor(
                 graph=graph, store=store, run_id="run1",
-                materialize=lambda: {}, generate=lambda inputs: {"manifest": {}, "workload_id": "w1"},
+                materialize=lambda: {}, generate=lambda inputs: {
+                    "manifest": {}, "generated_tree": {
+                        "schema_version": 1, "files": {}, "compile_inputs": [],
+                        "compile_inputs_hash": "h"}},
                 source_slice_id_holder=["s1"], build_plan_id="b1",
-                inventory_ref=inventory,
+                generate_inputs={"inventory": inventory},
+                generate_needs=frozenset({"inventory"}),
             )
             with self.assertRaises(Exception):
                 executor("gen")
 
-    def test_generate_rejects_missing_workload_id_from_result(self):
+    def test_generate_rejects_missing_generated_tree_from_result(self):
         with tempfile.TemporaryDirectory() as directory:
             store = ArtifactStore(Path(directory))
             inventory = _inventory_artifact(store, with_workload_id=False)
@@ -123,7 +129,8 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
                 graph=graph, store=store, run_id="run1",
                 materialize=lambda: {}, generate=lambda inputs: {"manifest": {}},
                 source_slice_id_holder=["s1"], build_plan_id="b1",
-                inventory_ref=inventory,
+                generate_inputs={"inventory": inventory},
+                generate_needs=frozenset({"inventory"}),
             )
             # PipelineService.run wraps the executor's raised exception in
             # a PipelineError; the underlying CampaignExecutionError is
@@ -241,8 +248,10 @@ class NodeIdentityAgreementTests(unittest.TestCase):
             ))
             executor = CampaignStageExecutor(
                 graph=graph, store=store, run_id="run1",
-                materialize=lambda: {}, generate=lambda inputs: {"manifest": {}, "workload_id": "w1"},
-                source_slice_id_holder=["s1"], build_plan_id="b1", inventory_ref=inventory,
+                materialize=lambda: {}, generate=lambda inputs: {"manifest": {}},
+                source_slice_id_holder=["s1"], build_plan_id="b1",
+                generate_inputs={"inventory": inventory},
+                generate_needs=frozenset({"inventory"}),
             )
             with self.assertRaises(CampaignExecutionError) as ctx:
                 executor("gen")
@@ -411,12 +420,14 @@ class FullChainTests(unittest.TestCase):
                 graph=build_graph, store=store, run_id="run1",
                 materialize=lambda: {},
                 generate=lambda inputs: {
-                    "manifest": {}, "workload_id": "w1",
+                    "manifest": {},
                     "generated_tree": {"schema_version": 1, "files": {}, "compile_inputs": [],
                                        "compile_inputs_hash": "h"},
                 },
                 source_slice_id_holder=source_slice_id_holder,
-                build_plan_id=build_plan_id, inventory_ref=inventory,
+                build_plan_id=build_plan_id,
+                generate_inputs={"inventory": inventory},
+                generate_needs=frozenset({"inventory"}),
                 workload_id="w1", build=fake_build, smoke=fake_smoke,
             )
             build_executor("gen")

@@ -64,7 +64,8 @@ def main(argv: list[str] | None = None) -> int:
 
     spec = CampaignLaneExecutionSpec(
         source_name=args.source, build_name=args.build, platform_name=args.platform,
-        architectures=tuple(args.arch.split(",")), inventory_path=args.inventory,
+        architectures=tuple(args.arch.split(",")),
+        inputs=(("inventory", args.inventory),),
         validation=RuntimeSmokeSpec(model_path=args.model, split_mode=args.split_mode),
         binary_relative_path=args.binary_relative_path,
         c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
