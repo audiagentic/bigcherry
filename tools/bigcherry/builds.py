@@ -73,6 +73,41 @@ def build_directory(context: ProjectContext, source_slice_id: str, plan: BuildPl
     return context.work_root / "builds" / source_slice_id / plan.build_plan_id
 
 
+#: CMakeCache.txt keys that actually describe what got built: resolved
+#: compiler paths, build type, GPU targets, and every autotune/HIP option.
+#: Deliberately not the whole cache -- that also carries unrelated
+#: find_package probe results and generator-internal bookkeeping (line
+#: numbers, help strings) that say nothing about build identity and would
+#: make effective_build_id() sensitive to changes that do not matter.
+_EFFECTIVE_CONFIGURE_PREFIXES = (
+    "CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_BUILD_TYPE", "AMDGPU_TARGETS", "GGML_HIP",
+)
+
+
+def parse_effective_configure(cmake_cache: Path) -> dict[str, str]:
+    """The post-configure record ``validate_reuse``/``effective_build_id``
+    need: read back from CMakeCache.txt, not from the requested BuildPlan.
+    ``BuildPlan`` records what was asked for; this records what CMake
+    actually resolved, which is what a reuse decision needs to trust.
+    """
+    if not cmake_cache.is_file():
+        raise BuildIdentityError(f"no CMakeCache.txt at {cmake_cache} -- configure did not run")
+    record: dict[str, str] = {}
+    for line in cmake_cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+        key_type, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key_type.partition(":")[0]
+        if key.startswith(_EFFECTIVE_CONFIGURE_PREFIXES):
+            record[key] = value
+    if not record:
+        raise BuildIdentityError(f"no relevant configure keys found in {cmake_cache}")
+    return record
+
+
 def validate_reuse(
     metadata: dict[str, object],
     plan: BuildPlan,

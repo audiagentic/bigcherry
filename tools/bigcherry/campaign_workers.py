@@ -14,10 +14,24 @@ that the build worker then reads by convention (same run_id). That
 filesystem convention is not itself the trust boundary, though: generate
 also hashes every file under generated/ (see generated_tree.py) and
 publishes that hash manifest as its own verified ArtifactRef, and build
-re-verifies the real directory against it -- once before configure, once
-again after compiling -- before either configuring or publishing a binary.
-A file that changed on disk between generate and build, or during the
-compile itself, is a hard failure, not a silent pass-through.
+re-verifies the real directory against it before trusting it -- once always,
+and again after compiling when a compile actually ran (the reuse path below
+never invokes the compiler, so there is nothing a second check there could
+catch). A file that changed on disk between generate and build, or during
+the compile itself, is a hard failure, not a silent pass-through.
+
+The build worker also implements real cross-invocation build reuse via
+builds.validate_reuse(): build_directory() is content-addressed by
+(source_slice_id, build_plan_id), so a directory that already carries a
+prior build's metadata and still checks out against that recorded identity
+is trusted without recompiling. A directory that carries metadata which does
+NOT check out is a hard failure, not a silent rebuild -- that would hide
+real corruption or tampering of build output behind an unremarkable
+recompile. This is a different, lower layer than CampaignRun's own
+StageRecord-based reuse (campaign.py): that reuse skips re-executing a stage
+within one CampaignRun/run_id; this reuse lets a fresh process/run_id skip
+recompiling entirely when a prior run (any run_id) already produced the
+identical build.
 """
 
 from __future__ import annotations
@@ -30,7 +44,8 @@ from typing import Any
 
 from . import autotune_catalog, campaign_build, generated_tree, provenance, runtime_smoke
 from .artifacts import ArtifactStore
-from .builds import BuildPlan, binary_hash, build_directory
+from .builds import (BuildIdentityError, BuildPlan, binary_hash, build_directory,
+                     effective_build_id, parse_effective_configure, validate_reuse)
 from .context import ProjectContext
 from .pipeline import ArtifactRef
 
@@ -130,27 +145,75 @@ def make_build_worker(
 
         build_dir = build_directory(context, source_slice_id, build_plan)
         build_dir.mkdir(parents=True, exist_ok=True)
-
-        configure_args = campaign_build.cmake_configure_args(
-            build, platform, source_root, build_dir,
-            generated_root=generated_root, inventory=inventory_path,
-            c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
-        )
-        subprocess.run(configure_args, cwd=source_root, check=True)
-        subprocess.run(
-            campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
-            cwd=source_root, check=True,
-        )
-
         binary = build_dir / binary_relative_path
-        if not binary.is_file():
-            raise campaign_build.CampaignBuildError(
-                f"build did not produce the expected binary: {binary}"
+        # toolchain_request is a tuple of tuples; metadata is read back from
+        # JSON, which only knows lists. Normalize once, to the same
+        # JSON-round-tripped shape on both the write and the reuse-check
+        # side, rather than comparing a tuple to a list and always losing.
+        expected_toolchain = [list(pair) for pair in build_plan.toolchain_request]
+        # Named per-binary, not one metadata file per build_dir: cmake_targets
+        # can request a different binary from the same build_plan_id/build_dir
+        # (a shared configure cache across targets is legitimate), and a
+        # single metadata file would describe only whichever target was
+        # built first.
+        metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
+
+        reused = False
+        if metadata_path.is_file():
+            # A prior build claims to have already produced this exact
+            # (source_slice_id, build_plan_id, binary) triple -- content-
+            # addressed by construction (build_directory() is keyed on
+            # both). A metadata file that fails its own recorded identity
+            # here means real corruption or tampering, not "just rebuild
+            # it": silently recompiling over a directory whose provenance
+            # doesn't check out would hide exactly the kind of divergence
+            # RE14's fail-closed philosophy exists to catch.
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                validate_reuse(metadata, build_plan, binary=binary,
+                               expected_toolchain=expected_toolchain)
+            except (BuildIdentityError, json.JSONDecodeError, OSError) as exc:
+                raise campaign_build.CampaignBuildError(
+                    f"build directory {build_dir} has an existing "
+                    f"{metadata_path.name} but it failed reuse validation "
+                    f"-- refusing to silently rebuild over it: {exc}"
+                ) from exc
+            reused = True
+
+        if not reused:
+            configure_args = campaign_build.cmake_configure_args(
+                build, platform, source_root, build_dir,
+                generated_root=generated_root, inventory=inventory_path,
+                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
             )
-        # Verify again, after compiling: a pass before configure alone
-        # would still miss a modification that happened WHILE the compiler
-        # was running, between the pre-configure check and publication.
-        generated_tree.verify_tree(generated_root, generated_tree_document)
+            subprocess.run(configure_args, cwd=source_root, check=True)
+            subprocess.run(
+                campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
+                cwd=source_root, check=True,
+            )
+
+            if not binary.is_file():
+                raise campaign_build.CampaignBuildError(
+                    f"build did not produce the expected binary: {binary}"
+                )
+            # Verify again, after compiling: a pass before configure alone
+            # would still miss a modification that happened WHILE the
+            # compiler was running, between the pre-configure check and
+            # publication. Only meaningful when a compile actually ran --
+            # the reuse path never invokes the compiler.
+            generated_tree.verify_tree(generated_root, generated_tree_document)
+
+            effective_configure = parse_effective_configure(build_dir / "CMakeCache.txt")
+            metadata = {
+                "source_slice_id": source_slice_id,
+                "build_plan_id": build_plan.build_plan_id,
+                "effective_configure": effective_configure,
+                "build_id": effective_build_id(effective_configure),
+                "toolchain": expected_toolchain,
+                "binary_hash": binary_hash(binary),
+            }
+            metadata_path.write_text(
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
         doc = provenance.make(
             project={}, source={"source_slice_id": source_slice_id},
