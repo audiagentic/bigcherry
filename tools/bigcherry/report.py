@@ -447,7 +447,7 @@ def cmd_summary(args: argparse.Namespace) -> int:
     for threshold, label in [(10, ">10%"), (5, ">5%"), (1, ">1%"), (0.5, ">0.5%")]:
         count = sum(1 for i in improvements if i > threshold)
         pct = 100 * count / total_sigs
-        bar = "█" * int(pct / 2)
+        bar = "#" * int(pct / 2)
         print(f"  {label:>6}: {count:4d} ({pct:5.1f}%) {bar}")
     print(
         f"  Native retained: {native_count:4d} ({100 * native_count / total_sigs:.1f}%)"
@@ -556,7 +556,7 @@ def cmd_families(args: argparse.Namespace) -> int:
         rejected = [c for c in candidates if c.get("status") != "ok"]
         if rejected:
             reject_statuses = {c["status"] for c in rejected}
-            print(f"  (rejected: {len(rejected)} — {', '.join(reject_statuses)})")
+            print(f"  (rejected: {len(rejected)} -- {', '.join(reject_statuses)})")
         print()
 
     return 0
@@ -626,7 +626,7 @@ def cmd_hot(args: argparse.Namespace) -> int:
     print(f"Top {len(rows)} signatures by call count")
     print()
     print(
-        f"{'Calls':>8} {'Op':<12} {'Shape':<20} {'Native':<35} {'Winner':<35} {'Δ%':>6}"
+        f"{'Calls':>8} {'Op':<12} {'Shape':<20} {'Native':<35} {'Winner':<35} {'d%':>6}"
     )
     print("-" * 126)
 
@@ -634,7 +634,7 @@ def cmd_hot(args: argparse.Namespace) -> int:
         m = row.get("m", 0) or 0
         n = row.get("n", 0) or 0
         k = row.get("k", 0) or 0
-        shape = f"{m}×{n}×{k}"
+        shape = f"{m}x{n}x{k}"
         native = (
             (row.get("native", "?")[:32] + "..")
             if len(row.get("native", "")) > 32

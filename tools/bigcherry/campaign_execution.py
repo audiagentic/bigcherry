@@ -27,12 +27,67 @@ from typing import Any, Callable
 
 from . import provenance
 from .artifacts import ArtifactStore
+from .campaign import StageRecord
 from .campaign_graph import CampaignGraph
 from .pipeline import ArtifactRef, PipelineService
 
 
 class CampaignExecutionError(RuntimeError):
     pass
+
+
+def require_campaign_success(
+    records: dict[str, "StageRecord"], *, label: str,
+) -> None:
+    """CampaignRun.execute() catches every executor exception itself and
+    records the stage as "failed" rather than re-raising -- a caller that
+    wraps ``run.execute(...)`` in a try/except for the executor's own
+    exception types will never see one, and would otherwise silently treat
+    a campaign with failed/blocked stages as a success. Call this
+    immediately after every ``CampaignRun.execute()`` call.
+    """
+    bad = {
+        stage_id: record.state for stage_id, record in records.items()
+        if record.state not in {"succeeded", "reused"}
+    }
+    if bad:
+        detail = ", ".join(f"{stage_id}={state}" for stage_id, state in sorted(bad.items()))
+        raise CampaignExecutionError(f"{label} campaign failed: {detail}")
+
+
+def make_artifact_reuse_checker(
+    *, executor: "CampaignStageExecutor", store: ArtifactStore,
+) -> Callable[["StageRecord"], bool]:
+    """A real reuse callback for CampaignRun.execute(reuse=...), proving
+    reuse against ArtifactStore rather than trusting StageRecord's own
+    output_hashes tuple (which has no path/kind, and is not itself
+    verified against anything by CampaignRun).
+
+    Only valid within the same process/executor instance: ``executor``
+    only knows about ArtifactRefs it has itself produced via
+    ``executor.outputs`` in this run. Cross-process resume (rerunning the
+    harness later and skipping already-built stages) needs persisted
+    StageRecords and a way to rehydrate ArtifactRefs from disk, neither of
+    which exists yet -- CampaignRun.root is not currently used to persist
+    or reload records.
+    """
+
+    def reusable(record: "StageRecord") -> bool:
+        refs = executor.outputs.get(record.stage_id)
+        if refs is None:
+            return False
+        if tuple(ref.content_hash for ref in refs) != record.output_hashes:
+            return False
+        for ref in refs:
+            try:
+                relative = ref.path.resolve().relative_to(store.root)
+            except ValueError:
+                return False
+            if not store.verify(relative, ref.content_hash):
+                return False
+        return True
+
+    return reusable
 
 
 def source_expected(source_slice_id: str) -> dict[str, str]:

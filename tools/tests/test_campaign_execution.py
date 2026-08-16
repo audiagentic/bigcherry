@@ -13,9 +13,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry import provenance  # noqa: E402
 from bigcherry.artifacts import ArtifactStore  # noqa: E402
+from bigcherry.campaign import CampaignRun, StageRecord  # noqa: E402
 from bigcherry.campaign_execution import (CampaignExecutionError,  # noqa: E402
                                           CampaignStageExecutor, build_expected,
-                                          source_expected, workload_expected)
+                                          make_artifact_reuse_checker,
+                                          require_campaign_success, source_expected,
+                                          workload_expected)
 from bigcherry.campaign_graph import CampaignGraph, StageNode  # noqa: E402
 from bigcherry.pipeline import ArtifactRef  # noqa: E402
 
@@ -371,6 +374,126 @@ class FullChainTests(unittest.TestCase):
             self.assertEqual(len(build_executor.outputs["smoke"]), 1)
             self.assertEqual(
                 build_executor.outputs["smoke"][0].provenance["workload"]["workload_id"], "w1")
+
+
+class RequireCampaignSuccessTests(unittest.TestCase):
+    def test_all_succeeded_or_reused_passes(self):
+        records = {
+            "a": StageRecord("a", "succeeded", "h1"),
+            "b": StageRecord("b", "reused", "h2"),
+        }
+        require_campaign_success(records, label="test")  # must not raise
+
+    def test_any_failed_or_blocked_raises(self):
+        records = {
+            "a": StageRecord("a", "succeeded", "h1"),
+            "b": StageRecord("b", "failed", "h2"),
+        }
+        with self.assertRaises(CampaignExecutionError) as ctx:
+            require_campaign_success(records, label="test")
+        self.assertIn("b=failed", str(ctx.exception))
+
+
+class MakeArtifactReuseCheckerTests(unittest.TestCase):
+    def test_reuse_accepted_when_bytes_still_verify(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            digest = store.publish_json("out.json", {"ok": True})
+            doc = provenance.make(
+                project={}, source={"source_slice_id": "s1"}, build={},
+                workload={}, campaign={"run_id": "run1"})
+            ref = ArtifactRef(kind="out", path=store.resolve("out.json"),
+                              content_hash=digest, provenance=doc)
+
+            graph = CampaignGraph(nodes=(StageNode("a", "materialize", None, None, None, (), ()),))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=[None],
+            )
+            executor.outputs["a"] = (ref,)
+
+            reuse = make_artifact_reuse_checker(executor=executor, store=store)
+            record = StageRecord("a", "succeeded", "h", (digest,))
+            self.assertTrue(reuse(record))
+
+    def test_reuse_rejected_when_bytes_no_longer_verify(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            digest = store.publish_json("out.json", {"ok": True})
+            doc = provenance.make(
+                project={}, source={"source_slice_id": "s1"}, build={},
+                workload={}, campaign={"run_id": "run1"})
+            ref = ArtifactRef(kind="out", path=store.resolve("out.json"),
+                              content_hash=digest, provenance=doc)
+
+            graph = CampaignGraph(nodes=(StageNode("a", "materialize", None, None, None, (), ()),))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=[None],
+            )
+            executor.outputs["a"] = (ref,)
+
+            reuse = make_artifact_reuse_checker(executor=executor, store=store)
+            # StageRecord claims a hash that does not match what the
+            # executor actually has on file for this stage -- must reject,
+            # not trust the StageRecord's own claim.
+            record = StageRecord("a", "succeeded", "h", ("different-hash",))
+            self.assertFalse(reuse(record))
+
+    def test_reuse_rejected_when_executor_has_no_memory_of_the_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            graph = CampaignGraph(nodes=(StageNode("a", "materialize", None, None, None, (), ()),))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=[None],
+            )
+            reuse = make_artifact_reuse_checker(executor=executor, store=store)
+            record = StageRecord("a", "succeeded", "h", ("some-hash",))
+            self.assertFalse(reuse(record))
+
+
+class CampaignRunIntegrationTests(unittest.TestCase):
+    """The real CampaignRun.execute() composing directly with
+    CampaignStageExecutor, no adapter -- confirmed by reading both
+    signatures before relying on it.
+    """
+
+    def test_materialize_graph_through_campaign_run_with_reuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory) / "store")
+            graph = CampaignGraph(nodes=(
+                StageNode("mat", "materialize", None, None, None, (), ()),
+            ))
+            calls = []
+
+            def fake_materialize():
+                calls.append(1)
+                return {"source_slice_id": "real-slice"}
+
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=fake_materialize, generate=lambda inputs: {},
+                source_slice_id_holder=[None],
+            )
+            run = CampaignRun(graph, root=Path(directory) / "run")
+            reuse = make_artifact_reuse_checker(executor=executor, store=store)
+            resource_root = Path(directory) / "locks"
+
+            first = run.execute(executor, resource_root=resource_root, reuse=reuse)
+            require_campaign_success(first, label="materialize")
+            self.assertEqual(first["mat"].state, "succeeded")
+
+            second = run.execute(executor, resource_root=resource_root, reuse=reuse)
+            require_campaign_success(second, label="materialize reuse")
+            self.assertEqual(second["mat"].state, "reused")
+
+            # The real proof: materialize (a real git worktree operation in
+            # production) only actually ran once.
+            self.assertEqual(calls, [1])
 
 
 if __name__ == "__main__":
