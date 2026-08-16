@@ -152,6 +152,46 @@ class PromotionTests(unittest.TestCase):
             second = tune_promotion.promote(source, root / "out2.jsonl", resamples=1000)
             self.assertEqual(first["content_hash"], second["content_hash"])
 
+    def test_ranking_coverage_ignores_synthetic_twin(self):
+        # The fixture schedule carries ["candidate", "native",
+        # "native#twin"]: ranking coverage must be taken over the real
+        # finalists only, so a decision naming exactly candidate+native is
+        # complete.
+        row = result("a" * 32, 0.001, 95.0)
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [{
+            "policy_name": "latency-v1", "policy_version": 1,
+            "is_production": True, "predicted_winner": "candidate",
+            "candidates": [
+                {"name": "native", "verdict": "qualified"},
+                {"name": "candidate", "verdict": "winner"},
+            ],
+        }]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
+    def test_schedule_rejects_duplicate_unsuffixed_native(self):
+        # The C++ bug this guards against: emitting raw stable names puts the
+        # twin into the schedule as a second plain "native".
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"]["candidates"] = ["candidate", "native", "native"]
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "drift"):
+            tune_promotion.validate_schedule(row)
+
+    def test_adaptive_evidence_counts_remain_registry_counts(self):
+        # Candidate cardinality (three emitted rows incl. the synthetic twin)
+        # and measurement-instance cardinality intentionally differ: the stage
+        # funnel stays over the registry.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update({"generated": 2, "applicable": 2, "eligible": 2,
+                    "measured": 2})
+        row["candidates"] = [
+            {"name": "native", "samples": 10},
+            {"name": "native#twin", "samples": 10},
+            {"name": "candidate", "samples": 10},
+        ]
+        tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
     def test_schedule_seed_and_position_drift_are_rejected(self):
         row = result("a" * 32, 0.001, 95.0)
         row["schedule_seed"] += 1

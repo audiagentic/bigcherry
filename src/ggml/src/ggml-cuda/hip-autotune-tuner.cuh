@@ -90,6 +90,13 @@ struct ggml_hip_tuner_config {
     double noise_canary_pct      = 5.0;
     int    noise_canary_retries  = 1;
 
+    // HI24 step 4: measure native a second time as a same-kernel twin so
+    // every family (not only the ~9% where native is MMQ with a J-best pair)
+    // gets a repeatability canary. The twin is a synthetic measurement role,
+    // never a candidate: it cannot win, is not counted in result.measured,
+    // and is emitted as "<stable_name>#twin".
+    int    double_native         = 1;   // GGML_HIP_TUNE_DOUBLE_NATIVE
+
     // Winner selection (standards 7.3).
     double replacement_threshold_pct = 1.0;
     double tie_pct                   = 0.5;
