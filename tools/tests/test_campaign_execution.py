@@ -269,6 +269,50 @@ class NodeIdentityAgreementTests(unittest.TestCase):
             self.assertEqual(len(executor.outputs["build"]), 1)
 
 
+class CrossCampaignArtifactTests(unittest.TestCase):
+    """RE14 step 6 negative case: an artifact produced by a DIFFERENT
+    campaign run, but otherwise carrying matching source/build/workload
+    identity, must not be silently consumed as if it were this run's own
+    dependency output. workload_expected() includes campaign.run_id
+    precisely so PipelineService's own require_compatible() check catches
+    this -- this test proves that wiring actually rejects the case, rather
+    than assuming it does because the field is present in the dict.
+    """
+
+    def test_build_stage_rejects_dependency_from_a_different_campaign_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            digest = store.publish_json("gen-out.json", {"candidates": []})
+            # Every identity field matches this run's own EXCEPT
+            # campaign.run_id -- exactly what a stray artifact left over
+            # from a prior/different campaign run would look like if it
+            # happened to share source/build/workload identity.
+            other_run_doc = provenance.make(
+                project={}, source={"source_slice_id": "s1"}, build={"build_plan_id": "b1"},
+                workload={"workload_id": "w1"}, campaign={"run_id": "some-other-run"})
+            other_run_artifact = ArtifactRef(
+                kind="manifest", path=store.resolve("gen-out.json"),
+                content_hash=digest, provenance=other_run_doc)
+
+            graph = CampaignGraph(nodes=(
+                StageNode("gen", "generate", "s1", "b1", None, (), ()),
+                StageNode("build", "build", "s1", "b1", "w1", ("gen",), ()),
+            ))
+            executor = CampaignStageExecutor(
+                graph=graph, store=store, run_id="run1",
+                materialize=lambda: {}, generate=lambda inputs: {},
+                source_slice_id_holder=["s1"], build_plan_id="b1", workload_id="w1",
+                build=lambda inputs: (),
+            )
+            # Seed "gen"'s output directly, as if it were left over from a
+            # prior campaign run rather than produced by this executor.
+            executor.outputs["gen"] = (other_run_artifact,)
+
+            with self.assertRaises(Exception) as ctx:
+                executor("build")
+            self.assertIn("campaign.run_id", str(ctx.exception))
+
+
 class UnconfiguredWorkerTests(unittest.TestCase):
     def test_build_stage_without_a_worker_raises_clearly(self):
         with tempfile.TemporaryDirectory() as directory:
