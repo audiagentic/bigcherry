@@ -346,6 +346,18 @@ def materialize_source(
     )
     record = dict(metadata)
     record["overlay_content_hash"] = identity["overlay_content_hash"]
+    # RE05 (RV48 audit): the three source identities, all explicit in the
+    # persisted record rather than two of them being implicit in facts the
+    # reader has to already know (the destination directory's own name IS
+    # materialization_plan_id, but that is not the same as it being a named
+    # field a reader can find without knowing that convention). source_plan_id
+    # answers "what request (IDs only) did we ask for"; materialization_plan_id
+    # answers "what CONTENT-resolved request produced this destination";
+    # source_tree_oid/source_slice_id (already in `metadata` from
+    # source_identity.describe()) answer "what did materialising it actually
+    # produce" and "BigCherry's durable content-domain identity" respectively.
+    record["source_plan_id"] = campaign_source.source_plan_id(plan)
+    record["materialization_plan_id"] = plan_id
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
