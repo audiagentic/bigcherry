@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from . import builds, campaign_source, config as campaign_config
+from . import builds, campaign_source, config as campaign_config, source_identity
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
 from .context import ProjectContext
@@ -309,7 +309,9 @@ def materialize_source(
                 cached_plan.get("overlay_enabled") != identity["overlay_enabled"] or
                 cached_patches != current_patches or
                 cached_plan.get("required_state") != identity["required_state"] or
-                cached.get("overlay_content_hash") != identity["overlay_content_hash"]):
+                cached.get("overlay_content_hash") != identity["overlay_content_hash"] or
+                cached_plan.get("patch_set_id") != identity.get("patch_set_id") or
+                cached_plan.get("classification") != identity.get("classification")):
             raise CampaignBuildError(
                 f"source directory {destination} exists with metadata for a "
                 f"different plan than requested (plan id collision or stale "
@@ -333,6 +335,36 @@ def materialize_source(
                 f"materialisation (tree oid {actual_tree_oid!r} != recorded "
                 f"{cached.get('source_tree_oid')!r}) -- refusing to reuse it"
             )
+        # GPT-auto-agent review (RE03/RE04/RE05 comprehensive follow-up,
+        # 2026-08-17): the checks above prove the REQUEST matches what was
+        # recorded and that the worktree BYTES are unmodified -- neither
+        # proves the persisted derived-identity FIELDS in the sibling
+        # .metadata.json themselves haven't been directly edited (that file
+        # is not covered by git_tree_oid() at all, since it lives beside
+        # the worktree, not inside it). A forged source_slice_id/
+        # source_plan_id/materialization_plan_id there would previously be
+        # returned to the caller verbatim and trusted for the rest of
+        # campaign execution. Re-derive each from the now-verified
+        # (upstream_revision, tree_oid, object_format) and the current
+        # request, and fail closed on any disagreement -- treating the
+        # persisted record as an assertion to re-prove, not an authority.
+        recomputed_source_slice_id = source_identity.source_slice_id(
+            upstream_revision=identity["upstream_revision"], tree_oid=actual_tree_oid,
+            object_format=cached.get("git_object_format", "sha1"),
+        )
+        recomputed_source_plan_id = campaign_source.source_plan_id(plan)
+        for label, recomputed, cached_value in (
+            ("source_slice_id", recomputed_source_slice_id, cached.get("source_slice_id")),
+            ("source_plan_id", recomputed_source_plan_id, cached.get("source_plan_id")),
+            ("materialization_plan_id", plan_id, cached.get("materialization_plan_id")),
+        ):
+            if recomputed != cached_value:
+                raise CampaignBuildError(
+                    f"cached source directory {destination} has a persisted "
+                    f"{label}={cached_value!r} that disagrees with the "
+                    f"re-derived value {recomputed!r} -- refusing to trust "
+                    f"tampered or corrupted source metadata"
+                )
         return cached
 
     if destination.exists():
