@@ -412,8 +412,26 @@ def build_inventory(record: Record) -> dict[str, Any]:
 # -------------------------------------------------------------------- sqlite
 
 
-def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]:
-    """Populate a fresh SQLite database from a record file."""
+def build_database(
+    record: Record, target: Path, schema: Path, *,
+    source_slice_id: str | None = None,
+    build_plan_id: str | None = None,
+    effective_build_id: str | None = None,
+    campaign_run_id: str | None = None,
+    workload_id: str | None = None,
+) -> dict[str, int]:
+    """Populate a fresh SQLite database from a record file.
+
+    RE09 (RV48 audit): the schema-3 campaign identity columns (build/
+    observation) are populated from these explicit keyword arguments, not
+    invented here -- the compiled record binary that writes the raw JSONL
+    has no notion of a Python-side CampaignLaneResult, so a real production
+    caller (one that actually ran this record build through
+    execute_campaign_lane and holds its result) must pass them through.
+    All default to None, so an ad-hoc/imported record file (no campaign
+    context) still loads exactly as before -- visibly NULL, not a fabricated
+    identity.
+    """
     if target.exists():
         target.unlink()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -434,8 +452,10 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
 
         cursor = connection.execute(
             "INSERT INTO build (source_revision, source_dirty, manifest_hash, "
-            "signature_schema, hardware_schema, variant_set, build_descriptor_hash) "
-            "VALUES (?, 0, ?, ?, ?, ?, ?)",
+            "signature_schema, hardware_schema, variant_set, build_descriptor_hash, "
+            "source_slice_id, build_plan_id, effective_build_id, campaign_run_id, "
+            "workload_id) "
+            "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 header.get("source_revision", ""),
                 header.get("manifest_hash", ""),
@@ -443,6 +463,11 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                 header.get("hardware_schema", 1),
                 header.get("variant_set", "inventory"),
                 header.get("build_descriptor_hash"),
+                source_slice_id or header.get("source_slice_id"),
+                build_plan_id or header.get("build_plan_id"),
+                effective_build_id or header.get("effective_build_id"),
+                campaign_run_id or header.get("campaign_run_id"),
+                workload_id or header.get("workload_id"),
             ),
         )
         build_id = cursor.lastrowid
@@ -504,7 +529,8 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
             connection.execute(
                 "INSERT OR REPLACE INTO observation (build_id, hardware_id, "
                 "signature_id, native_stable_name, calls, est_bytes, "
-                "sites_json, diagnostics_json) VALUES (?,?,?,?,?,?,?,?)",
+                "sites_json, diagnostics_json, source_slice_id, workload_id, "
+                "campaign_run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     build_id,
                     hardware_ids[hardware_hex],
@@ -521,6 +547,9 @@ def build_database(record: Record, target: Path, schema: Path) -> dict[str, int]
                         sort_keys=True,
                         separators=(",", ":"),
                     ),
+                    source_slice_id or header.get("source_slice_id"),
+                    workload_id or header.get("workload_id"),
+                    campaign_run_id or header.get("campaign_run_id"),
                 ),
             )
 
@@ -1133,6 +1162,16 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument(
         "--database", default=None, help="SQLite database to write (default: alongside)"
     )
+    rec.add_argument(
+        "--source-slice-id", default=None,
+        help="RE09: campaign source_slice_id, if this record run was produced "
+             "through a real execute_campaign_lane() build",
+    )
+    rec.add_argument("--build-plan-id", default=None, help="RE09: campaign build_plan_id")
+    rec.add_argument(
+        "--effective-build-id", default=None, help="RE09: campaign effective_build_id")
+    rec.add_argument("--campaign-run-id", default=None, help="RE09: campaign run_id")
+    rec.add_argument("--workload-id", default=None, help="RE09: campaign workload_id")
 
     # Tuning mode subcommand
     tune = sub.add_parser("tuning", help="Load tuning measurements into SQLite")
@@ -1193,7 +1232,18 @@ def _cmd_record(args) -> int:
     database_path = (
         Path(args.database) if args.database else record_path.with_suffix(".sqlite")
     )
-    counts = build_database(record, database_path, paths.SQL / "dispatch-db.sql")
+    counts = build_database(
+        record, database_path, paths.SQL / "dispatch-db.sql",
+        # getattr, not args.<name> directly: the "backward compat: bare
+        # positional means record mode" branch above parses via the
+        # top-level parser, which never defined these flags, so args may
+        # legitimately lack these attributes on that path.
+        source_slice_id=getattr(args, "source_slice_id", None),
+        build_plan_id=getattr(args, "build_plan_id", None),
+        effective_build_id=getattr(args, "effective_build_id", None),
+        campaign_run_id=getattr(args, "campaign_run_id", None),
+        workload_id=getattr(args, "workload_id", None),
+    )
 
     print(f"read {len(record.observations)} observation(s) from {record_path}")
     print(f"  types: mmq={inventory['mmq_types']} mmvq={inventory['mmvq_types']}")
