@@ -190,7 +190,7 @@ class ProbeTests(unittest.TestCase):
             pull_command = run.call_args_list[0].args[0]
             build_command = run.call_args_list[1].args[0]
             self.assertLess(pull_command.index("--llama-root"), pull_command.index("pull"))
-            self.assertLess(build_command.index("--llama-root"), build_command.index("build"))
+            self.assertLess(build_command.index("--llama-root"), build_command.index("legacy-build"))
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "compatible"', record)
 
