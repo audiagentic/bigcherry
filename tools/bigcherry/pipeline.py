@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
 from . import provenance
+# RE25.1 (GPT-auto-agent implementation plan, 2026-08-17): ArtifactRef now
+# lives in artifacts.py, beside descriptor persistence/rehydration --
+# re-exported here so every existing `from bigcherry.pipeline import
+# ArtifactRef` call site keeps working unchanged.
+from .artifacts import ArtifactRef
+
+__all__ = ["ArtifactRef", "PipelineError", "PipelineService"]
 
 
 class PipelineError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class ArtifactRef:
-    kind: str
-    path: Path
-    content_hash: str
-    provenance: dict[str, object]
 
 
 class PipelineService:
