@@ -165,4 +165,10 @@ def source_plan_for(
         overlay_enabled=source.overlay,
         patch_ids=lane.patch_set.module_ids,
         required_state=lane.patch_set.required_state,
+        # RE03 (RV48 audit): resolve_lane already computed this reviewed
+        # logical-composition identity -- carry it through instead of
+        # discarding it here, so materialize() can persist it into source
+        # provenance.
+        patch_set_id=lane.patch_set.patch_set_id,
+        classification=lane.patch_set.classification,
     )
