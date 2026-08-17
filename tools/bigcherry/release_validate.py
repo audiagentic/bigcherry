@@ -360,7 +360,7 @@ def probe(
 
     build_command = [
         sys.executable, "-m", "bigcherry", "--llama-root", str(checkout),
-        "build", "--recipe", recipe,
+        "legacy-build", "--recipe", recipe,
     ]
     if inventory is not None:
         build_command += ["--inventory", str(inventory)]
