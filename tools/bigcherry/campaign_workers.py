@@ -412,6 +412,18 @@ def make_build_worker(
         # and a bare source_slice_id string. Reused builds carry the same
         # effective identity as a fresh one (metadata['build_id'] is set on
         # both paths), so the provenance is identical either way.
+        # RE25.2 review fix: build must record the artifacts it actually
+        # consumed -- generate's manifest/tree (the stage inputs, verified
+        # against the store above) plus the lane inputs (e.g. inventory,
+        # promoted-winners) -- otherwise the lineage chain terminates here:
+        # generate records its own parents, but a build that republishes
+        # with an empty parent set severs the chain exactly where release
+        # provenance needs it most. Recording the IDs now does not pull
+        # RE25.3's sticky taint forward; it just makes the taint have real
+        # parents to walk when it lands.
+        consumed: dict[str, ArtifactRef] = {ref.kind: ref for ref in inputs}
+        consumed.update(lane_inputs)
+        input_entries, parent_ids = provenance.lane_input_provenance(consumed)
         build_provenance = provenance.BuildProvenance(
             build_plan_id=build_plan.build_plan_id,
             effective_build_id=metadata["build_id"],
@@ -419,10 +431,11 @@ def make_build_worker(
             runtime_bundle_hash=metadata["runtime_bundle_hash"],
             targets=tuple(build_plan.targets),
             catalog_architectures=tuple(build_plan.catalog_architectures),
+            inputs=input_entries,
         )
         doc = provenance.derive(
             parents=(),
-            parent_artifact_ids=(),
+            parent_artifact_ids=parent_ids,
             project_revision=project_revision,
             source=source_provenance
             if source_provenance is not None

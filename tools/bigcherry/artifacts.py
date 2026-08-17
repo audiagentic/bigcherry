@@ -100,7 +100,15 @@ class ArtifactDescriptor:
         relative_path = document.get("relative_path")
         content_hash = document.get("content_hash")
         artifact_id = document.get("artifact_id")
-        if not all(isinstance(v, str) and v for v in (kind, relative_path, content_hash, artifact_id)):
+        # Explicit per-field isinstance (not all(isinstance(...))): behaviour
+        # is identical, but pyright cannot narrow the four locals through the
+        # generator form and would reject the _artifact_id/constructor calls.
+        if (
+            not isinstance(kind, str) or not kind
+            or not isinstance(relative_path, str) or not relative_path
+            or not isinstance(content_hash, str) or not content_hash
+            or not isinstance(artifact_id, str) or not artifact_id
+        ):
             raise ArtifactError(
                 "artifact descriptor requires non-empty kind/relative_path/content_hash/artifact_id")
         try:

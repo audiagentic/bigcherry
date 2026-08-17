@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -40,13 +41,15 @@ def _production_build() -> BuildProvenance:
     )
 
 
-def _production_provenance(*, kind_extra: dict[str, object] | None = None) -> ProvenanceV2:
+def _production_provenance(
+    *, kind_extra: dict[str, object] | None = None, producer_stage: str = "build"
+) -> ProvenanceV2:
     return ProvenanceV2(
         schema_version=2,
         project=ProjectProvenance(provenance_class="production", bigcherry_revision="rev-abc"),
         source=_production_source(), build=_production_build(),
         workload=WorkloadProvenance(workload_id="w1"),
-        campaign=CampaignProvenance(run_id="run1", producer_stage="build"),
+        campaign=CampaignProvenance(run_id="run1", producer_stage=producer_stage),
     )
 
 
@@ -64,7 +67,8 @@ class ProvenanceV2RoundTripTests(unittest.TestCase):
 
     def test_from_document_rejects_unknown_provenance_class(self):
         doc = _production_provenance().document()
-        doc["project"]["provenance_class"] = "not-a-real-class"
+        # document() is dict[str, object]; cast the nested namespace.
+        cast("dict[str, object]", doc["project"])["provenance_class"] = "not-a-real-class"
         with self.assertRaises(ProvenanceError):
             ProvenanceV2.from_document(doc)
 
@@ -136,6 +140,25 @@ class KindContractTests(unittest.TestCase):
     def test_unknown_kind_has_no_registered_contract(self):
         with self.assertRaises(ProvenanceError):
             require_promotable(_production_provenance().document(), kind="not-a-real-kind")
+
+    def test_production_smoke_result_with_full_fields_passes(self):
+        # RE25.2 review fix: without a registered "smoke-result" contract,
+        # ArtifactStore.rehydrate() -- which ALWAYS runs validate_for_kind,
+        # even for non-promotable reads -- rejected every real production
+        # smoke result with "no provenance contract registered".
+        doc = _production_provenance(producer_stage="runtime-smoke").document()
+        require_promotable(doc, kind="smoke-result")
+
+    def test_production_smoke_result_missing_a_required_field_is_rejected(self):
+        provenance = _production_provenance(producer_stage="runtime-smoke")
+        incomplete = ProvenanceV2(
+            schema_version=2, project=provenance.project,
+            source=SourceProvenance(),  # missing everything
+            build=provenance.build, workload=provenance.workload,
+            campaign=provenance.campaign,
+        )
+        with self.assertRaises(ProvenanceError):
+            require_promotable(incomplete.document(), kind="smoke-result")
 
 
 class ArtifactDescriptorTests(unittest.TestCase):
@@ -231,8 +254,12 @@ class ArtifactDescriptorTests(unittest.TestCase):
             ref_a = store.rehydrate(descriptor_a.artifact_id)
             ref_b = store.rehydrate(descriptor_b.artifact_id)
             self.assertEqual(ref_a.content_hash, ref_b.content_hash)
-            self.assertEqual(ref_a.provenance["campaign"]["run_id"], "run-a")
-            self.assertEqual(ref_b.provenance["campaign"]["run_id"], "run-b")
+            self.assertEqual(
+                cast("dict[str, object]", ref_a.provenance["campaign"]).get("run_id"),
+                "run-a")
+            self.assertEqual(
+                cast("dict[str, object]", ref_b.provenance["campaign"]).get("run_id"),
+                "run-b")
 
     def test_rehydrate_require_promotable_rejects_imported_legacy(self):
         with tempfile.TemporaryDirectory() as directory:

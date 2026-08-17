@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 import sys
 
@@ -146,6 +147,63 @@ class FreshBuildTests(unittest.TestCase):
             self.assertEqual(metadata["source_slice_id"], "s1")
             self.assertEqual(metadata["build_plan_id"], harness.build_plan.build_plan_id)
             self.assertIn("CMAKE_C_COMPILER", metadata["effective_configure"])
+
+
+class Re25ParentLineageTests(unittest.TestCase):
+    def test_build_outputs_name_their_real_parent_artifacts(self):
+        # RE25.2 review fix: build must record the artifacts it actually
+        # consumed -- generate's manifest/tree plus the lane inputs -- into
+        # its own provenance, or the lineage chain terminates at build:
+        # generate records its parents, but a build republished with an
+        # empty parent set severs exactly the chain release provenance
+        # needs. Pre-descriptor refs (no artifact_id yet) carry their
+        # content_hash as the identity; RE25.3 replaces that fallback with
+        # real descriptors.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            inputs = harness.generate_inputs()
+            inventory_digest = harness.store.publish_bytes(
+                "inputs/inventory.json", b'{"mmq_types": ["q8_0"]}')
+            inventory_ref = ArtifactRef(
+                kind="inventory",
+                path=harness.store.resolve("inputs/inventory.json"),
+                content_hash=inventory_digest, provenance={})
+            worker = campaign_workers.make_build_worker(
+                context=harness.context, source_root=harness.directory / "source",
+                run_id=harness.run_id, build_plan=harness.build_plan,
+                platform=harness.platform, build=harness.build_cfg,
+                store=harness.store, binary_relative_path="bin/llama-bench",
+                source_slice_id=harness.source_slice_id,
+                workload_id=harness.workload_id, cmake_targets=("llama-bench",),
+                lane_inputs={"inventory": inventory_ref})
+            with patch("bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()):
+                refs = worker(inputs)
+
+            expected_ids = sorted([ref.content_hash for ref in inputs] + [inventory_digest])
+            by_kind = {ref.kind: ref for ref in refs}
+            self.assertEqual(set(by_kind), {"binary", "runtime-bundle"})
+            for kind in ("binary", "runtime-bundle"):
+                doc = by_kind[kind].provenance
+                # provenance is a dict[str, object] (JSON-shaped), so the
+                # nested namespaces are `object` to pyright -- cast each level.
+                campaign_doc = cast("dict[str, object]", doc["campaign"])
+                # campaign.producer_artifact_ids names the actual parents.
+                self.assertEqual(
+                    campaign_doc.get("producer_artifact_ids"), expected_ids)
+                build_doc = cast("dict[str, object]", doc["build"])
+                raw_inputs = cast("list[object]", build_doc.get("inputs") or [])
+                # build.inputs records them by name, with the content-hash
+                # identity fallback for refs that have no descriptor yet.
+                input_entries = {
+                    cast("dict[str, object]", entry).get("name"):
+                    cast("dict[str, object]", entry).get("artifact_id")
+                    for entry in raw_inputs
+                }
+                self.assertEqual(
+                    set(input_entries), {"manifest", "generated-tree", "inventory"})
+                for parent in inputs:
+                    self.assertEqual(input_entries[parent.kind], parent.content_hash)
+                self.assertEqual(input_entries["inventory"], inventory_digest)
 
 
 class ReuseTests(unittest.TestCase):

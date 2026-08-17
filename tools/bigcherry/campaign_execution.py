@@ -238,7 +238,9 @@ class CampaignStageExecutor:
         self._generate = generate
         self._generate_inputs = dict(generate_inputs or {})
         self._generate_needs = frozenset(generate_needs)
-        self._source_slice_id_holder = (
+        # Annotated: the ternary infers list[str|None] | list[None], and
+        # pyright would then reject str writes into the holder.
+        self._source_slice_id_holder: list[str | None] = (
             source_slice_id_holder if source_slice_id_holder is not None else [None]
         )
         self.build_plan_id = build_plan_id
@@ -248,7 +250,10 @@ class CampaignStageExecutor:
         # and whether this execution is production-class at all in the first
         # place ('development' for an allow_dirty_bigcherry harness run).
         self.project_revision = project_revision
-        self.local_provenance_class = local_provenance_class
+        # Annotated: assigning a parameter of Literal-union type to an
+        # attribute otherwise leaves it widened to str, which pyright then
+        # rejects at every ProvenanceClass-typed use site.
+        self.local_provenance_class: ProvenanceClass = local_provenance_class
         # Set by _run_materialize from materialize_source()'s own verified
         # metadata; generate inherits it so downstream stages carry the full
         # source lineage, not just a bare source_slice_id string. A build-phase
@@ -394,6 +399,10 @@ class CampaignStageExecutor:
             _stage: str, inputs: tuple[ArtifactRef, ...]
         ) -> tuple[ArtifactRef, ...]:
             by_kind = {ref.kind: ref for ref in inputs}
+            if self._generate is None:
+                raise CampaignExecutionError(
+                    "generate stage registered without a generate worker"
+                )
             result = self._generate(by_kind)
             manifest = result["manifest"]
             if self.source_provenance is None:
