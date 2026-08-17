@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -28,14 +29,18 @@ REQUIRED_NAMESPACES = ("project", "source", "build", "workload", "campaign")
 # without any other call site changing.
 
 ProvenanceClass = Literal["production", "imported-legacy", "development", "diagnostic"]
-_PROVENANCE_CLASSES = frozenset(("production", "imported-legacy", "development", "diagnostic"))
+_PROVENANCE_CLASSES = frozenset(
+    ("production", "imported-legacy", "development", "diagnostic")
+)
 
 
 def _require_str_or_none(value: object, field_name: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or isinstance(value, bool):
-        raise ProvenanceError(f"provenance field {field_name!r} must be a string or null")
+        raise ProvenanceError(
+            f"provenance field {field_name!r} must be a string or null"
+        )
     return value
 
 
@@ -45,7 +50,9 @@ def _require_str_tuple(value: object, field_name: str) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)) or not all(
         isinstance(item, str) and not isinstance(item, bool) for item in value
     ):
-        raise ProvenanceError(f"provenance field {field_name!r} must be a list of strings")
+        raise ProvenanceError(
+            f"provenance field {field_name!r} must be a list of strings"
+        )
     return tuple(value)
 
 
@@ -58,13 +65,15 @@ class PatchModuleProvenance:
         return {"patch_id": self.patch_id, "content_hash": self.content_hash}
 
     @classmethod
-    def from_document(cls, document: object) -> "PatchModuleProvenance":
+    def from_document(cls, document: object) -> PatchModuleProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("patch module provenance entry must be an object")
         patch_id = document.get("patch_id")
         content_hash = document.get("content_hash")
         if not isinstance(patch_id, str) or not isinstance(content_hash, str):
-            raise ProvenanceError("patch module provenance entry requires patch_id/content_hash strings")
+            raise ProvenanceError(
+                "patch module provenance entry requires patch_id/content_hash strings"
+            )
         return cls(patch_id=patch_id, content_hash=content_hash)
 
 
@@ -75,17 +84,30 @@ class BuildInputProvenance:
     content_hash: str
 
     def document(self) -> dict[str, object]:
-        return {"name": self.name, "artifact_id": self.artifact_id, "content_hash": self.content_hash}
+        return {
+            "name": self.name,
+            "artifact_id": self.artifact_id,
+            "content_hash": self.content_hash,
+        }
 
     @classmethod
-    def from_document(cls, document: object) -> "BuildInputProvenance":
+    def from_document(cls, document: object) -> BuildInputProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("build input provenance entry must be an object")
         name = document.get("name")
         artifact_id = document.get("artifact_id")
         content_hash = document.get("content_hash")
-        if not all(isinstance(v, str) for v in (name, artifact_id, content_hash)):
-            raise ProvenanceError("build input provenance entry requires name/artifact_id/content_hash strings")
+        # Explicit per-field isinstance (not all(isinstance(...))): behaviour
+        # is identical, but pyright cannot narrow the three locals through
+        # the generator form and would reject the constructor call.
+        if (
+            not isinstance(name, str)
+            or not isinstance(artifact_id, str)
+            or not isinstance(content_hash, str)
+        ):
+            raise ProvenanceError(
+                "build input provenance entry requires name/artifact_id/content_hash strings"
+            )
         return cls(name=name, artifact_id=artifact_id, content_hash=content_hash)
 
 
@@ -95,19 +117,25 @@ class ProjectProvenance:
     bigcherry_revision: str | None = None
 
     def document(self) -> dict[str, object]:
-        return {"provenance_class": self.provenance_class, "bigcherry_revision": self.bigcherry_revision}
+        return {
+            "provenance_class": self.provenance_class,
+            "bigcherry_revision": self.bigcherry_revision,
+        }
 
     @classmethod
-    def from_document(cls, document: object) -> "ProjectProvenance":
+    def from_document(cls, document: object) -> ProjectProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("project provenance must be an object")
         provenance_class = document.get("provenance_class", "production")
         if provenance_class not in _PROVENANCE_CLASSES:
-            raise ProvenanceError(f"unknown project.provenance_class: {provenance_class!r}")
+            raise ProvenanceError(
+                f"unknown project.provenance_class: {provenance_class!r}"
+            )
         return cls(
             provenance_class=provenance_class,
             bigcherry_revision=_require_str_or_none(
-                document.get("bigcherry_revision"), "project.bigcherry_revision"),
+                document.get("bigcherry_revision"), "project.bigcherry_revision"
+            ),
         )
 
 
@@ -139,26 +167,44 @@ class SourceProvenance:
         }
 
     @classmethod
-    def from_document(cls, document: object) -> "SourceProvenance":
+    def from_document(cls, document: object) -> SourceProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("source provenance must be an object")
         raw_modules = document.get("patch_modules") or []
         if not isinstance(raw_modules, list):
             raise ProvenanceError("source.patch_modules must be a list")
         return cls(
-            upstream_revision=_require_str_or_none(document.get("upstream_revision"), "source.upstream_revision"),
-            source_plan_id=_require_str_or_none(document.get("source_plan_id"), "source.source_plan_id"),
+            upstream_revision=_require_str_or_none(
+                document.get("upstream_revision"), "source.upstream_revision"
+            ),
+            source_plan_id=_require_str_or_none(
+                document.get("source_plan_id"), "source.source_plan_id"
+            ),
             materialization_plan_id=_require_str_or_none(
-                document.get("materialization_plan_id"), "source.materialization_plan_id"),
-            source_tree_oid=_require_str_or_none(document.get("source_tree_oid"), "source.source_tree_oid"),
-            source_slice_id=_require_str_or_none(document.get("source_slice_id"), "source.source_slice_id"),
-            git_object_format=_require_str_or_none(document.get("git_object_format"), "source.git_object_format"),
+                document.get("materialization_plan_id"),
+                "source.materialization_plan_id",
+            ),
+            source_tree_oid=_require_str_or_none(
+                document.get("source_tree_oid"), "source.source_tree_oid"
+            ),
+            source_slice_id=_require_str_or_none(
+                document.get("source_slice_id"), "source.source_slice_id"
+            ),
+            git_object_format=_require_str_or_none(
+                document.get("git_object_format"), "source.git_object_format"
+            ),
             overlay_content_hash=_require_str_or_none(
-                document.get("overlay_content_hash"), "source.overlay_content_hash"),
-            patch_set_id=_require_str_or_none(document.get("patch_set_id"), "source.patch_set_id"),
+                document.get("overlay_content_hash"), "source.overlay_content_hash"
+            ),
+            patch_set_id=_require_str_or_none(
+                document.get("patch_set_id"), "source.patch_set_id"
+            ),
             patch_classification=_require_str_or_none(
-                document.get("patch_classification"), "source.patch_classification"),
-            patch_modules=tuple(PatchModuleProvenance.from_document(item) for item in raw_modules),
+                document.get("patch_classification"), "source.patch_classification"
+            ),
+            patch_modules=tuple(
+                PatchModuleProvenance.from_document(item) for item in raw_modules
+            ),
         )
 
 
@@ -184,23 +230,32 @@ class BuildProvenance:
         }
 
     @classmethod
-    def from_document(cls, document: object) -> "BuildProvenance":
+    def from_document(cls, document: object) -> BuildProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("build provenance must be an object")
         raw_inputs = document.get("inputs") or []
         if not isinstance(raw_inputs, list):
             raise ProvenanceError("build.inputs must be a list")
         return cls(
-            build_plan_id=_require_str_or_none(document.get("build_plan_id"), "build.build_plan_id"),
+            build_plan_id=_require_str_or_none(
+                document.get("build_plan_id"), "build.build_plan_id"
+            ),
             effective_build_id=_require_str_or_none(
-                document.get("effective_build_id"), "build.effective_build_id"),
-            binary_hash=_require_str_or_none(document.get("binary_hash"), "build.binary_hash"),
+                document.get("effective_build_id"), "build.effective_build_id"
+            ),
+            binary_hash=_require_str_or_none(
+                document.get("binary_hash"), "build.binary_hash"
+            ),
             runtime_bundle_hash=_require_str_or_none(
-                document.get("runtime_bundle_hash"), "build.runtime_bundle_hash"),
+                document.get("runtime_bundle_hash"), "build.runtime_bundle_hash"
+            ),
             targets=_require_str_tuple(document.get("targets"), "build.targets"),
             catalog_architectures=_require_str_tuple(
-                document.get("catalog_architectures"), "build.catalog_architectures"),
-            inputs=tuple(BuildInputProvenance.from_document(item) for item in raw_inputs),
+                document.get("catalog_architectures"), "build.catalog_architectures"
+            ),
+            inputs=tuple(
+                BuildInputProvenance.from_document(item) for item in raw_inputs
+            ),
         )
 
 
@@ -210,16 +265,22 @@ class WorkloadProvenance:
     workload_spec_id: str | None = None
 
     def document(self) -> dict[str, object]:
-        return {"workload_id": self.workload_id, "workload_spec_id": self.workload_spec_id}
+        return {
+            "workload_id": self.workload_id,
+            "workload_spec_id": self.workload_spec_id,
+        }
 
     @classmethod
-    def from_document(cls, document: object) -> "WorkloadProvenance":
+    def from_document(cls, document: object) -> WorkloadProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("workload provenance must be an object")
         return cls(
-            workload_id=_require_str_or_none(document.get("workload_id"), "workload.workload_id"),
+            workload_id=_require_str_or_none(
+                document.get("workload_id"), "workload.workload_id"
+            ),
             workload_spec_id=_require_str_or_none(
-                document.get("workload_spec_id"), "workload.workload_spec_id"),
+                document.get("workload_spec_id"), "workload.workload_spec_id"
+            ),
         )
 
 
@@ -241,17 +302,23 @@ class CampaignProvenance:
         }
 
     @classmethod
-    def from_document(cls, document: object) -> "CampaignProvenance":
+    def from_document(cls, document: object) -> CampaignProvenance:
         if not isinstance(document, dict):
             raise ProvenanceError("campaign provenance must be an object")
         return cls(
             run_id=_require_str_or_none(document.get("run_id"), "campaign.run_id"),
-            campaign_plan_id=_require_str_or_none(document.get("campaign_plan_id"), "campaign.campaign_plan_id"),
-            producer_stage=_require_str_or_none(document.get("producer_stage"), "campaign.producer_stage"),
+            campaign_plan_id=_require_str_or_none(
+                document.get("campaign_plan_id"), "campaign.campaign_plan_id"
+            ),
+            producer_stage=_require_str_or_none(
+                document.get("producer_stage"), "campaign.producer_stage"
+            ),
             producer_artifact_ids=_require_str_tuple(
-                document.get("producer_artifact_ids"), "campaign.producer_artifact_ids"),
+                document.get("producer_artifact_ids"), "campaign.producer_artifact_ids"
+            ),
             comparison_plan_id=_require_str_or_none(
-                document.get("comparison_plan_id"), "campaign.comparison_plan_id"),
+                document.get("comparison_plan_id"), "campaign.comparison_plan_id"
+            ),
         )
 
 
@@ -278,12 +345,21 @@ class ProvenanceV2:
         }
 
     @classmethod
-    def from_document(cls, document: object) -> "ProvenanceV2":
-        if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
+    def from_document(cls, document: object) -> ProvenanceV2:
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != SCHEMA_VERSION
+        ):
             raise ProvenanceError("only complete provenance schema v2 is promotable")
-        missing = [name for name in REQUIRED_NAMESPACES if not isinstance(document.get(name), dict)]
+        missing = [
+            name
+            for name in REQUIRED_NAMESPACES
+            if not isinstance(document.get(name), dict)
+        ]
         if missing:
-            raise ProvenanceError("missing provenance namespace(s): " + ", ".join(missing))
+            raise ProvenanceError(
+                "missing provenance namespace(s): " + ", ".join(missing)
+            )
         return cls(
             schema_version=SCHEMA_VERSION,
             project=ProjectProvenance.from_document(document["project"]),
@@ -295,7 +371,9 @@ class ProvenanceV2:
 
 
 def derived_provenance_class(
-    parents: tuple[ProvenanceV2, ...], *, local_class: ProvenanceClass = "production",
+    parents: tuple[ProvenanceV2, ...],
+    *,
+    local_class: ProvenanceClass = "production",
 ) -> ProvenanceClass:
     """Sticky taint: an artifact derived from a non-production parent
     inherits that class even when the current stage's own work is
@@ -314,10 +392,17 @@ def derived_provenance_class(
 
 
 def derive(
-    *, parents: tuple[ProvenanceV2, ...], parent_artifact_ids: tuple[str, ...],
-    project_revision: str, source: SourceProvenance, build: BuildProvenance,
-    workload: WorkloadProvenance, run_id: str, producer_stage: str,
-    campaign_plan_id: str | None = None, comparison_plan_id: str | None = None,
+    *,
+    parents: tuple[ProvenanceV2, ...],
+    parent_artifact_ids: tuple[str, ...],
+    project_revision: str,
+    source: SourceProvenance,
+    build: BuildProvenance,
+    workload: WorkloadProvenance,
+    run_id: str,
+    producer_stage: str,
+    campaign_plan_id: str | None = None,
+    comparison_plan_id: str | None = None,
     local_class: ProvenanceClass = "production",
 ) -> ProvenanceV2:
     return ProvenanceV2(
@@ -326,9 +411,13 @@ def derive(
             provenance_class=derived_provenance_class(parents, local_class=local_class),
             bigcherry_revision=project_revision,
         ),
-        source=source, build=build, workload=workload,
+        source=source,
+        build=build,
+        workload=workload,
         campaign=CampaignProvenance(
-            run_id=run_id, campaign_plan_id=campaign_plan_id, producer_stage=producer_stage,
+            run_id=run_id,
+            campaign_plan_id=campaign_plan_id,
+            producer_stage=producer_stage,
             producer_artifact_ids=tuple(sorted(parent_artifact_ids)),
             comparison_plan_id=comparison_plan_id,
         ),
@@ -342,51 +431,98 @@ def derive(
 # validated-enhancements set legitimately has none.
 _KIND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "source-metadata": (
-        "project.bigcherry_revision", "source.upstream_revision", "source.source_plan_id",
-        "source.materialization_plan_id", "source.source_tree_oid", "source.source_slice_id",
-        "source.git_object_format", "source.patch_set_id", "campaign.run_id", "campaign.producer_stage",
+        "project.bigcherry_revision",
+        "source.upstream_revision",
+        "source.source_plan_id",
+        "source.materialization_plan_id",
+        "source.source_tree_oid",
+        "source.source_slice_id",
+        "source.git_object_format",
+        "source.patch_set_id",
+        "campaign.run_id",
+        "campaign.producer_stage",
     ),
     "manifest": (
-        "source.source_plan_id", "source.materialization_plan_id", "source.source_slice_id",
-        "source.patch_set_id", "build.build_plan_id", "campaign.run_id",
+        "source.source_plan_id",
+        "source.materialization_plan_id",
+        "source.source_slice_id",
+        "source.patch_set_id",
+        "build.build_plan_id",
+        "campaign.run_id",
     ),
-    "generated-tree": ("source.source_slice_id", "build.build_plan_id", "campaign.run_id"),
+    "generated-tree": (
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "campaign.run_id",
+    ),
     "binary": (
-        "source.source_plan_id", "source.materialization_plan_id", "source.source_slice_id",
-        "source.patch_set_id", "build.build_plan_id", "build.effective_build_id",
-        "build.binary_hash", "campaign.run_id",
+        "source.source_plan_id",
+        "source.materialization_plan_id",
+        "source.source_slice_id",
+        "source.patch_set_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "build.binary_hash",
+        "campaign.run_id",
     ),
     "runtime-bundle": (
-        "source.source_plan_id", "source.materialization_plan_id", "source.source_slice_id",
-        "source.patch_set_id", "build.build_plan_id", "build.effective_build_id",
-        "build.binary_hash", "build.runtime_bundle_hash", "campaign.run_id",
+        "source.source_plan_id",
+        "source.materialization_plan_id",
+        "source.source_slice_id",
+        "source.patch_set_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "build.binary_hash",
+        "build.runtime_bundle_hash",
+        "campaign.run_id",
     ),
     "record-jsonl": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_spec_id", "campaign.run_id",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_spec_id",
+        "campaign.run_id",
     ),
     "inventory": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_id", "campaign.run_id",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_id",
+        "campaign.run_id",
     ),
     "dispatch-db": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_id", "campaign.run_id",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_id",
+        "campaign.run_id",
     ),
     "tuning-measurements": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_id", "campaign.run_id",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_id",
+        "campaign.run_id",
     ),
     "promoted-winners": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_id", "campaign.run_id", "campaign.producer_stage",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_id",
+        "campaign.run_id",
+        "campaign.producer_stage",
     ),
     "replay-cache": (
-        "source.source_slice_id", "build.build_plan_id", "build.effective_build_id",
-        "workload.workload_id", "campaign.run_id",
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "workload.workload_id",
+        "campaign.run_id",
     ),
     "comparison-report": (
-        "campaign.campaign_plan_id", "campaign.run_id", "campaign.comparison_plan_id",
+        "campaign.campaign_plan_id",
+        "campaign.run_id",
+        "campaign.comparison_plan_id",
         "campaign.producer_stage",
     ),
 }
@@ -394,7 +530,10 @@ _KIND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 
 def _get_dotted(document: dict[str, object], dotted: str) -> object:
     namespace, _, field_name = dotted.partition(".")
-    return document.get(namespace, {}).get(field_name) if isinstance(document.get(namespace), dict) else None
+    namespace_document = document.get(namespace)
+    if not isinstance(namespace_document, dict):
+        return None
+    return namespace_document.get(field_name)
 
 
 def validate_for_kind(document: object, *, kind: str) -> ProvenanceV2:
@@ -414,7 +553,9 @@ def validate_for_kind(document: object, *, kind: str) -> ProvenanceV2:
         return parsed
     required = _KIND_REQUIRED_FIELDS.get(kind)
     if required is None:
-        raise ProvenanceError(f"no provenance contract registered for artifact kind {kind!r}")
+        raise ProvenanceError(
+            f"no provenance contract registered for artifact kind {kind!r}"
+        )
     doc = parsed.document()
     missing = [dotted for dotted in required if not _get_dotted(doc, dotted)]
     if missing:
@@ -433,8 +574,57 @@ def require_promotable(document: object, *, kind: str) -> ProvenanceV2:
     return parsed
 
 
-def make(*, project: dict[str, Any], source: dict[str, Any], build: dict[str, Any],
-         workload: dict[str, Any], campaign: dict[str, Any]) -> dict[str, Any]:
+def lane_input_provenance(
+    parents: Mapping[str, object],
+) -> tuple[tuple[BuildInputProvenance, ...], tuple[str, ...]]:
+    """RE25.2: the (build.inputs, campaign.producer_artifact_ids) pair for a
+    stage given its parent artifacts as a {name: ArtifactRef} mapping
+    (or {(kind): ref} for same-kind multi-sets -- name is just the label).
+
+    Pre-descriptor (legacy) ArtifactRefs carry no artifact_id yet, so their
+    content_hash stands in as the identity; RE25.3 gives lane inputs real
+    descriptors and this fallback disappears. Sorting makes both results
+    deterministic regardless of dict insertion order.
+    """
+    names = tuple(sorted(parents))
+    entries = tuple(
+        BuildInputProvenance(
+            name=name,
+            artifact_id=_parent_identity(parent_ref),
+            content_hash=_parent_content_hash(parent_ref),
+        )
+        for name, parent_ref in ((name, parents[name]) for name in names)
+    )
+    ids = tuple(_parent_identity(parents[name]) for name in names)
+    return entries, tuple(sorted(ids))
+
+
+def _parent_identity(ref: object) -> str:
+    artifact_id = getattr(ref, "artifact_id", "")
+    return (
+        artifact_id
+        if isinstance(artifact_id, str) and artifact_id
+        else _parent_content_hash(ref)
+    )
+
+
+def _parent_content_hash(ref: object) -> str:
+    content_hash = getattr(ref, "content_hash", "")
+    if not isinstance(content_hash, str):
+        raise ProvenanceError(
+            f"parent artifact {ref!r} has no usable content_hash identity"
+        )
+    return content_hash
+
+
+def make(
+    *,
+    project: dict[str, Any],
+    source: dict[str, Any],
+    build: dict[str, Any],
+    workload: dict[str, Any],
+    campaign: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "project": dict(project),
@@ -446,9 +636,14 @@ def make(*, project: dict[str, Any], source: dict[str, Any], build: dict[str, An
 
 
 def validate(document: object) -> dict[str, Any]:
-    if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != SCHEMA_VERSION
+    ):
         raise ProvenanceError("only complete provenance schema v2 is promotable")
-    missing = [name for name in REQUIRED_NAMESPACES if not isinstance(document.get(name), dict)]
+    missing = [
+        name for name in REQUIRED_NAMESPACES if not isinstance(document.get(name), dict)
+    ]
     if missing:
         raise ProvenanceError("missing provenance namespace(s): " + ", ".join(missing))
     return document

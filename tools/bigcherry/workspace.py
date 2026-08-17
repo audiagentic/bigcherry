@@ -109,7 +109,24 @@ class SourcePlan:
     classification: str | None = None
 
 
-def require_clean_bigcherry(context: ProjectContext, *, allow_dirty_bigcherry: bool) -> None:
+def bigcherry_revision(context: ProjectContext) -> str:
+    """RE25.2: the BigCherry project repository's own HEAD (the tooling
+    revision this execution ran under), as a full commit SHA.
+
+    Distinct from every upstream/source revision in the same execution:
+    source provenance records which upstream tree was materialised, while
+    project.provenance_class + project.bigcherry_revision record which
+    BigCherry checkout PRODUCED the artifacts -- a release consumer
+    auditing a runtime bundle needs both, and today's call sites pass an
+    empty project namespace (no revision at all), so this was previously
+    unrecoverable.
+    """
+    return _git(context.project_root, "rev-parse", "HEAD")
+
+
+def require_clean_bigcherry(
+    context: ProjectContext, *, allow_dirty_bigcherry: bool
+) -> None:
     """RE04 (RV48 audit fix): the dirty-BigCherry-tree check as its own
     reusable function, so a cache-hit path (campaign_build.materialize_source)
     can enforce it too -- it used to live only inside ``materialize()``,
@@ -125,7 +142,9 @@ def require_clean_bigcherry(context: ProjectContext, *, allow_dirty_bigcherry: b
         text=True,
     ).stdout.strip()
     if status:
-        raise WorkspaceError("BigCherry repository is dirty; use explicit development override")
+        raise WorkspaceError(
+            "BigCherry repository is dirty; use explicit development override"
+        )
 
 
 def materialize(

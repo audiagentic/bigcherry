@@ -65,11 +65,25 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import autotune_catalog, campaign_build, generated_tree, provenance, runtime_smoke
+from . import (
+    autotune_catalog,
+    campaign_build,
+    generated_tree,
+    provenance,
+    runtime_smoke,
+)
 from .artifacts import ArtifactStore
-from .builds import (BuildIdentityError, BuildPlan, binary_hash, build_directory,
-                     effective_build_id, parse_effective_configure,
-                     resolve_runtime_artifacts, runtime_bundle_hash, validate_reuse)
+from .builds import (
+    BuildIdentityError,
+    BuildPlan,
+    binary_hash,
+    build_directory,
+    effective_build_id,
+    parse_effective_configure,
+    resolve_runtime_artifacts,
+    runtime_bundle_hash,
+    validate_reuse,
+)
 from .context import ProjectContext
 from .pipeline import ArtifactRef
 
@@ -119,7 +133,8 @@ def make_generate_worker(
         winners_ref = inputs.get("promoted-winners")
         inventory = (
             autotune_catalog.Inventory.from_json(inventory_ref.path)
-            if inventory_ref is not None else None
+            if inventory_ref is not None
+            else None
         )
         # winners feeds BOTH the winners= filtering param (replay-slim's
         # variant reduction) AND correctness_source= (production variant
@@ -128,12 +143,16 @@ def make_generate_worker(
         # assume winners only matters for replay-slim's own filtering.
         winners = (
             autotune_catalog.read_winners(winners_ref.path)
-            if winners_ref is not None else None
+            if winners_ref is not None
+            else None
         )
 
         manifest = autotune_catalog.build_manifest(
-            source_root, variant_set=variant_set, architectures=architectures,
-            inventory=inventory, source_revision=upstream_revision,
+            source_root,
+            variant_set=variant_set,
+            architectures=architectures,
+            inventory=inventory,
+            source_revision=upstream_revision,
             winners=winners,
             correctness_source=winners_ref.path if winners_ref is not None else None,
         )
@@ -142,10 +161,12 @@ def make_generate_worker(
         artifact_root = stage_root / "catalog"
         generated_root = stage_root / "generated"
         emit_result = autotune_catalog.emit(
-            manifest, source_root, artifact_root, generated_root=generated_root)
+            manifest, source_root, artifact_root, generated_root=generated_root
+        )
 
         tree_manifest = generated_tree.build_manifest(
-            generated_root, compile_inputs=emit_result.compile_input_paths)
+            generated_root, compile_inputs=emit_result.compile_input_paths
+        )
 
         return {"manifest": manifest, "generated_tree": tree_manifest}
 
@@ -167,6 +188,9 @@ def make_build_worker(
     lane_inputs: dict[str, ArtifactRef] | None = None,
     has_generate_stage: bool = True,
     cmake_targets: tuple[str, ...] = (),
+    source_provenance: provenance.SourceProvenance | None = None,
+    project_revision: str = "",
+    local_provenance_class: provenance.ProvenanceClass = "production",
 ):
     """Returns the callable ``_run_build_scoped`` expects for the build
     stage: takes generate's output ArtifactRef tuple (or none at all, for
@@ -182,6 +206,10 @@ def make_build_worker(
     lane_inputs = lane_inputs or {}
 
     def run_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
+        # Computed unconditionally (a cheap Path join): the post-compile
+        # re-verify below needs it typed as a plain Path rather than
+        # Path | None, and for a non-generated build it is never read.
+        generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
         if has_generate_stage:
             by_kind = {ref.kind: ref for ref in inputs}
             if len(inputs) != 2 or set(by_kind) != {"manifest", "generated-tree"}:
@@ -190,10 +218,10 @@ def make_build_worker(
                     f"'generated-tree' input from the generate stage, got "
                     f"{[ref.kind for ref in inputs]}"
                 )
-            generated_tree_document = json.loads(
-                by_kind["generated-tree"].path.read_text(encoding="utf-8"))
+            tree_document = json.loads(
+                by_kind["generated-tree"].path.read_text(encoding="utf-8")
+            )
 
-            generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
             if not generated_root.is_dir():
                 raise campaign_build.CampaignBuildError(
                     f"expected generate stage's generated/ directory at "
@@ -205,8 +233,8 @@ def make_build_worker(
             # side-channel: build previously read this directory by run_id
             # convention alone, with nothing checking it hadn't been
             # modified since generate ran.
-            generated_tree.verify_tree(generated_root, generated_tree_document)
-            compile_inputs_hash = generated_tree_document["compile_inputs_hash"]
+            generated_tree.verify_tree(generated_root, tree_document)
+            compile_inputs_hash = tree_document["compile_inputs_hash"]
         else:
             # A build with no generate stage (stock: needs=[], no
             # variant_set) has nothing to receive from a prior stage --
@@ -217,8 +245,10 @@ def make_build_worker(
                     f"build worker for a non-generated build expects no "
                     f"stage inputs, got {[ref.kind for ref in inputs]}"
                 )
-            generated_tree_document = None
-            generated_root = None
+            # Empty (not None): the post-compile re-verify is gated on
+            # has_generate_stage and never runs here; a plain dict keeps
+            # the variable's type honest without an Optional dance.
+            tree_document: dict[str, Any] = {}
             compile_inputs_hash = None
 
         build_dir = build_directory(context, source_slice_id, build_plan)
@@ -236,6 +266,7 @@ def make_build_worker(
         # built first.
         metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
 
+        metadata: dict[str, Any] | None = None
         reused = False
         if metadata_path.is_file():
             # A prior build claims to have already produced this exact
@@ -247,7 +278,11 @@ def make_build_worker(
             # doesn't check out would hide exactly the kind of divergence
             # RE14's fail-closed philosophy exists to catch.
             try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                # Local (not metadata) while validating: metadata is typed
+                # Optional until a validated record exists, and validate_reuse
+                # takes a plain dict -- binding it only after validation keeps
+                # the 'None means no validated identity' invariant exact.
+                cached_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
                 # Computed from whatever is CURRENTLY on disk next to the
                 # cached binary, not trusted from metadata -- validate_reuse
                 # compares this against the recorded runtime_bundle_hash, so
@@ -255,13 +290,19 @@ def make_build_worker(
                 # with the launcher itself untouched) is caught here.
                 current_runtime_hash = None
                 if binary.is_file():
-                    current_runtime_hash = runtime_bundle_hash({
-                        artifact.name: binary_hash(artifact)
-                        for artifact in resolve_runtime_artifacts(binary)
-                    })
-                validate_reuse(metadata, build_plan, binary=binary,
-                               expected_toolchain=expected_toolchain,
-                               runtime_bundle_hash=current_runtime_hash)
+                    current_runtime_hash = runtime_bundle_hash(
+                        {
+                            artifact.name: binary_hash(artifact)
+                            for artifact in resolve_runtime_artifacts(binary)
+                        }
+                    )
+                validate_reuse(
+                    cached_metadata,
+                    build_plan,
+                    binary=binary,
+                    expected_toolchain=expected_toolchain,
+                    runtime_bundle_hash=current_runtime_hash,
+                )
             except (BuildIdentityError, json.JSONDecodeError, OSError) as exc:
                 raise campaign_build.CampaignBuildError(
                     f"build directory {build_dir} has an existing "
@@ -293,20 +334,31 @@ def make_build_worker(
             # matching (source_slice_id, build_plan_id, toolchain, binary,
             # runtime bundle) is already the complete identity -- nothing
             # else could legitimately differ between two "reuses" of it.
-            reused = metadata.get("generated_compile_inputs_hash") == compile_inputs_hash
+            # Only NOW does the record become `metadata` (the validated
+            # identity) -- after validate_reuse() has proven it, not before.
+            metadata = cached_metadata
+            reused = (
+                cached_metadata.get("generated_compile_inputs_hash")
+                == compile_inputs_hash
+            )
 
         if not reused:
             inventory_ref = lane_inputs.get("inventory")
             configure_args = campaign_build.cmake_configure_args(
-                build, platform, source_root, build_dir,
+                build,
+                platform,
+                source_root,
+                build_dir,
                 generated_root=generated_root,
                 inventory=inventory_ref.path if inventory_ref is not None else None,
-                c_compiler=platform.c_compiler, cxx_compiler=platform.cxx_compiler,
+                c_compiler=platform.c_compiler,
+                cxx_compiler=platform.cxx_compiler,
             )
             subprocess.run(configure_args, cwd=source_root, check=True)
             subprocess.run(
                 campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
-                cwd=source_root, check=True,
+                cwd=source_root,
+                check=True,
             )
 
             if not binary.is_file():
@@ -319,9 +371,11 @@ def make_build_worker(
                 # the compiler was running, between the pre-configure check
                 # and publication. Only meaningful when a compile actually
                 # ran AND there was a generated tree to begin with.
-                generated_tree.verify_tree(generated_root, generated_tree_document)
+                generated_tree.verify_tree(generated_root, tree_document)
 
-            effective_configure = parse_effective_configure(build_dir / "CMakeCache.txt")
+            effective_configure = parse_effective_configure(
+                build_dir / "CMakeCache.txt"
+            )
             runtime_artifacts = {
                 artifact.name: binary_hash(artifact)
                 for artifact in resolve_runtime_artifacts(binary)
@@ -338,13 +392,46 @@ def make_build_worker(
                 "runtime_bundle_hash": runtime_bundle_hash(runtime_artifacts),
             }
             metadata_path.write_text(
-                json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
 
-        doc = provenance.make(
-            project={}, source={"source_slice_id": source_slice_id},
-            build={"build_plan_id": build_plan.build_plan_id},
-            workload={"workload_id": workload_id} if workload_id is not None else {},
-            campaign={"run_id": run_id},
+        if metadata is None:
+            # Unreachable in practice (a cache hit either validates and binds
+            # metadata or raises; otherwise the fresh-build branch above ran),
+            # but fail closed anyway: never publish a build artifact whose
+            # identity record was not established on a path we can see.
+            raise campaign_build.CampaignBuildError(
+                f"build directory {build_dir} has no validated build metadata -- "
+                "neither a cache hit passed reuse validation nor a fresh build "
+                "completed; refusing to publish unattributed artifacts"
+            )
+
+        # RE25.2: typed provenance with the REAL build identity (the
+        # effective_build_id validate_reuse() itself trusts) and the full
+        # inherited source lineage -- replacing an empty project namespace
+        # and a bare source_slice_id string. Reused builds carry the same
+        # effective identity as a fresh one (metadata['build_id'] is set on
+        # both paths), so the provenance is identical either way.
+        build_provenance = provenance.BuildProvenance(
+            build_plan_id=build_plan.build_plan_id,
+            effective_build_id=metadata["build_id"],
+            binary_hash=binary_hash(binary),
+            runtime_bundle_hash=metadata["runtime_bundle_hash"],
+            targets=tuple(build_plan.targets),
+            catalog_architectures=tuple(build_plan.catalog_architectures),
+        )
+        doc = provenance.derive(
+            parents=(),
+            parent_artifact_ids=(),
+            project_revision=project_revision,
+            source=source_provenance
+            if source_provenance is not None
+            else provenance.SourceProvenance(source_slice_id=source_slice_id),
+            build=build_provenance,
+            workload=provenance.WorkloadProvenance(workload_id=workload_id),
+            run_id=run_id,
+            producer_stage="build",
+            local_class=local_provenance_class,
         )
 
         prefix = f"builds/{source_slice_id}/{build_plan.build_plan_id}"
@@ -365,26 +452,30 @@ def make_build_worker(
         refs: list[ArtifactRef] = []
 
         binary_relative = f"{prefix}/{binary.name}"
-        binary_digest = store.publish_file(binary_relative, binary)
-        if binary_digest != binary_hash(binary):
+        # RE25.2: descriptor-backed publication -- the binary artifact now
+        # has a real artifact_id and persists a rehydratable identity,
+        # not just bytes + a provenance dict on an in-memory ref.
+        # publish_file_ref verifies after publishing; the digest check below
+        # keeps the build-tree cross-check (store digest vs independently
+        # hashed binary) that plain publish_file never provided by itself.
+        binary_ref = store.publish_file_ref(
+            binary_relative, binary, kind="binary", provenance=doc
+        )
+        if binary_ref.content_hash != binary_hash(binary):
             raise campaign_build.CampaignBuildError(
                 "published binary digest differs from build-tree binary"
             )
-        if not store.verify(binary_relative, binary_digest):
-            raise campaign_build.CampaignBuildError(f"published {binary_relative} failed verification")
-        published_binary = store.resolve(binary_relative)
-        # ArtifactStore.publish_file copies bytes only; it makes no promise
-        # about executable mode, correctly -- most published artifacts are
-        # data (JSON, manifests), not executables. A binary artifact is the
-        # one kind that specifically needs its execute bit set here, by the
+        # ArtifactStore copies bytes only; it makes no promise about
+        # executable mode, correctly -- most published artifacts are data
+        # (JSON, manifests), not executables. A binary artifact is the one
+        # kind that specifically needs its execute bit set here, by the
         # caller that knows it is a binary, not inside the general-purpose
         # store. Owner-execute only: this store is not (yet) a shared
         # multi-user artifact store, and mkstemp's default 0600 becoming
         # 0700 is the narrowest change that makes the binary runnable by
         # the same process/user that just published it.
-        published_binary.chmod(published_binary.stat().st_mode | stat.S_IXUSR)
-        refs.append(ArtifactRef(kind="binary", path=published_binary,
-                                content_hash=binary_digest, provenance=doc))
+        binary_ref.path.chmod(binary_ref.path.stat().st_mode | stat.S_IXUSR)
+        refs.append(binary_ref)
 
         # RE07/RV48 audit fix: publish the FULL runtime .so closure too --
         # previously only the launcher (binary) reached ArtifactStore, so a
@@ -403,7 +494,8 @@ def make_build_worker(
             member_digest = store.publish_file(member_relative, artifact)
             if not store.verify(member_relative, member_digest):
                 raise campaign_build.CampaignBuildError(
-                    f"published {member_relative} failed verification")
+                    f"published {member_relative} failed verification"
+                )
             bundle_members[artifact.name] = member_digest
         computed_runtime_bundle_hash = runtime_bundle_hash(bundle_members)
         bundle_manifest = {
@@ -411,7 +503,9 @@ def make_build_worker(
             "members": bundle_members,
             "runtime_bundle_hash": computed_runtime_bundle_hash,
             "effective_build_id": metadata["build_id"],
-            "generated_compile_inputs_hash": metadata.get("generated_compile_inputs_hash"),
+            "generated_compile_inputs_hash": metadata.get(
+                "generated_compile_inputs_hash"
+            ),
             "toolchain": expected_toolchain,
         }
         # Content-addressed by a hash of the FULL manifest, not just
@@ -425,14 +519,14 @@ def make_build_worker(
         # ArtifactStore's immutability check on that recompile even though
         # nothing is wrong.
         bundle_content_hash = ArtifactStore.digest(
-            json.dumps(bundle_manifest, sort_keys=True, separators=(",", ":")).encode())
+            json.dumps(bundle_manifest, sort_keys=True, separators=(",", ":")).encode()
+        )
         bundle_relative = f"{prefix}/runtime-bundle-{bundle_content_hash}.json"
-        bundle_digest = store.publish_json(bundle_relative, bundle_manifest)
-        if not store.verify(bundle_relative, bundle_digest):
-            raise campaign_build.CampaignBuildError(
-                f"published {bundle_relative} failed verification")
-        refs.append(ArtifactRef(kind="runtime-bundle", path=store.resolve(bundle_relative),
-                                content_hash=bundle_digest, provenance=doc))
+        refs.append(
+            store.publish_json_ref(
+                bundle_relative, bundle_manifest, kind="runtime-bundle", provenance=doc
+            )
+        )
 
         return tuple(refs)
 
@@ -448,6 +542,9 @@ def make_smoke_worker(
     workload_id: str | None,
     spec: runtime_smoke.RuntimeSmokeSpec,
     environment: dict[str, str] | None = None,
+    source_provenance: provenance.SourceProvenance | None = None,
+    project_revision: str = "",
+    local_provenance_class: provenance.ProvenanceClass = "production",
 ):
     """Returns the callable ``_run_build_scoped`` expects for the
     runtime-smoke stage: takes build's output ArtifactRef tuple, runs the
@@ -488,9 +585,11 @@ def make_smoke_worker(
             )
         bundle_ref = bundles[0]
         if not store.verify(
-                bundle_ref.path.resolve().relative_to(store.root), bundle_ref.content_hash):
+            bundle_ref.path.resolve().relative_to(store.root), bundle_ref.content_hash
+        ):
             raise campaign_build.CampaignBuildError(
-                "runtime-bundle manifest failed store verification before smoke")
+                "runtime-bundle manifest failed store verification before smoke"
+            )
         bundle_manifest = json.loads(bundle_ref.path.read_text(encoding="utf-8"))
         entrypoint_hash = bundle_manifest["members"].get(bundle_manifest["entrypoint"])
         if entrypoint_hash != binary_ref.content_hash:
@@ -499,7 +598,9 @@ def make_smoke_worker(
                 "the binary this smoke stage was given"
             )
         for member_name, member_hash in bundle_manifest["members"].items():
-            member_relative = bundle_ref.path.parent.relative_to(store.root) / member_name
+            member_relative = (
+                bundle_ref.path.parent.relative_to(store.root) / member_name
+            )
             if not store.verify(member_relative, member_hash):
                 raise campaign_build.CampaignBuildError(
                     f"runtime-bundle member {member_name!r} failed store "
@@ -509,7 +610,10 @@ def make_smoke_worker(
 
         argv = runtime_smoke.smoke_argv(binary_ref.path, spec)
         completed = subprocess.run(
-            argv, capture_output=True, text=True, env=environment,
+            argv,
+            capture_output=True,
+            text=True,
+            env=environment,
         )
         if completed.returncode != 0:
             raise runtime_smoke.SmokeError(
@@ -517,11 +621,29 @@ def make_smoke_worker(
             )
         rows = runtime_smoke.evaluate_smoke_result(completed.stdout)
 
-        doc = provenance.make(
-            project={}, source={"source_slice_id": source_slice_id},
-            build={"build_plan_id": build_plan_id},
-            workload={"workload_id": workload_id} if workload_id is not None else {},
-            campaign={"run_id": run_id},
+        # RE25.2: the smoke result records its REAL parent artifacts (the
+        # binary and runtime bundle it actually ran -- verified against the
+        # store just above), not an anonymous build identity.
+        entries, parent_ids = provenance.lane_input_provenance(
+            {
+                "binary": binary_ref,
+                "runtime-bundle": bundle_ref,
+            }
+        )
+        doc = provenance.derive(
+            parents=(),
+            parent_artifact_ids=parent_ids,
+            project_revision=project_revision,
+            source=source_provenance
+            if source_provenance is not None
+            else provenance.SourceProvenance(source_slice_id=source_slice_id),
+            build=provenance.BuildProvenance(
+                build_plan_id=build_plan_id, inputs=entries
+            ),
+            workload=provenance.WorkloadProvenance(workload_id=workload_id),
+            run_id=run_id,
+            producer_stage="runtime-smoke",
+            local_class=local_provenance_class,
         )
         relative = f"runs/{run_id}/smoke/result.json"
         # A smoke result naming only binary_hash does not actually pin down
@@ -539,10 +661,10 @@ def make_smoke_worker(
             "n_gen": spec.n_gen,
             "split_mode": spec.split_mode,
         }
-        digest = store.publish_json(relative, result)
-        if not store.verify(relative, digest):
-            raise campaign_build.CampaignBuildError(f"published {relative} failed verification")
-        return (ArtifactRef(kind="smoke-result", path=store.resolve(relative),
-                            content_hash=digest, provenance=doc),)
+        return (
+            store.publish_json_ref(
+                relative, result, kind="smoke-result", provenance=doc
+            ),
+        )
 
     return run_smoke

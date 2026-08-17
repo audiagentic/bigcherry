@@ -30,23 +30,35 @@ generate+build+GPU-smoke pass for on every lane it executes.
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import campaign_build, campaign_plan, campaign_source, \
-    campaign_workers, config as campaign_config, patchset
+from . import (
+    campaign_build,
+    campaign_plan,
+    campaign_source,
+    campaign_workers,
+    config as campaign_config,
+    patchset,
+)
 from . import runtime_smoke as smoke_module
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
 from .campaign import CampaignRun
-from .campaign_execution import CampaignExecutionError, CampaignStageExecutor, \
-    make_artifact_reuse_checker, require_campaign_success
+from .campaign_execution import (
+    CampaignExecutionError,
+    CampaignStageExecutor,
+    make_artifact_reuse_checker,
+    require_campaign_success,
+    source_provenance_from_metadata,
+)
 from .context import ProjectContext
 from .pipeline import ArtifactRef
-from .provenance import make as make_provenance
-from .workspace import UpstreamRepository
+from .provenance import ProvenanceClass, SourceProvenance, make as make_provenance
+from .workspace import UpstreamRepository, WorkspaceError, bigcherry_revision
 
 
 class CampaignLaneError(RuntimeError):
@@ -120,6 +132,19 @@ class CampaignLaneResult:
     def build_plan_id(self) -> str:
         return self.build_plan.build_plan_id
 
+    @property
+    def effective_build_id(self) -> str | None:
+        """RE25.2: the runtime bundle's recorded effective-build identity,
+        read from its own provenance rather than re-parsing the bundle
+        manifest JSON -- RE09's v4 campaign-identity boundary needs exactly
+        this and previously had no way to get it without a second parse.
+        None when the build worker did not record one (e.g. a test fake)."""
+        build = self.runtime_bundle_ref.provenance.get("build")
+        if not isinstance(build, dict):
+            return None
+        value = build.get("effective_build_id")
+        return value if isinstance(value, str) else None
+
 
 @dataclass(frozen=True)
 class _MaterializedLaneSource:
@@ -127,10 +152,18 @@ class _MaterializedLaneSource:
     source_slice_id: str
     source_root: Path
     source_metadata_ref: ArtifactRef
+    #: RE25.2: the typed SourceProvenance re-derived from the published
+    #: source-metadata artifact's own (verified) bytes -- the same record
+    #: materialize_source() returned, so every stage in this lane carries
+    #: the full real source lineage downstream.
+    source_provenance: SourceProvenance
 
 
 def _require_one_artifact(
-    refs: tuple[ArtifactRef, ...], *, kind: str, stage_id: str,
+    refs: tuple[ArtifactRef, ...],
+    *,
+    kind: str,
+    stage_id: str,
 ) -> ArtifactRef:
     """Replaces the previous ``executor.outputs[stage_id][0]`` positional
     indexing -- correct only because today's stages happen to return
@@ -147,7 +180,10 @@ def _require_one_artifact(
 
 
 def _optional_one_artifact(
-    refs: tuple[ArtifactRef, ...] | None, *, kind: str, stage_id: str,
+    refs: tuple[ArtifactRef, ...] | None,
+    *,
+    kind: str,
+    stage_id: str,
 ) -> ArtifactRef | None:
     """RE17: a stage that may not exist in the graph at all (generate for
     stock, runtime-smoke when validation is None) has no ``refs`` to look
@@ -160,17 +196,28 @@ def _optional_one_artifact(
 
 
 def _materialize_worker(
-    context: ProjectContext, source_plan, *, allow_dirty_bigcherry: bool,
+    context: ProjectContext,
+    source_plan,
+    *,
+    allow_dirty_bigcherry: bool,
 ) -> dict:
     return campaign_build.materialize_source(
-        context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry)
+        context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry
+    )
 
 
 def _execute_materialize_phase(
-    spec: CampaignLaneExecutionSpec, *,
-    cfg: campaign_config.Config, context: ProjectContext, store: ArtifactStore,
-    run_id: str, campaign_root: Path, resource_root: Path,
+    spec: CampaignLaneExecutionSpec,
+    *,
+    cfg: campaign_config.Config,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    campaign_root: Path,
+    resource_root: Path,
     allow_dirty_bigcherry: bool = False,
+    project_revision: str,
+    local_provenance_class: ProvenanceClass,
 ) -> _MaterializedLaneSource:
     # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): without an
     # explicit catalog, source_plan_for()/resolve_lane() fall back to the
@@ -180,50 +227,80 @@ def _execute_materialize_phase(
     # real non-default patches_root deployment) would have its logical
     # patch-set resolution silently validated against the wrong catalog.
     source_plan = campaign_source.source_plan_for(
-        cfg, spec.source_name, catalog=patchset.catalog(directory=context.patches_root),
+        cfg,
+        spec.source_name,
+        catalog=patchset.catalog(directory=context.patches_root),
         # Explicit, not just inferred from the catalog's own first entry:
         # a genuinely empty context.patches_root (zero patch files) would
         # otherwise lose this directory entirely and silently fall back to
         # the wrong global default (GPT-auto-agent review, 2026-08-17).
-        catalog_directory=context.patches_root)
+        catalog_directory=context.patches_root,
+    )
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
-        source_plan.upstream_revision)
+        source_plan.upstream_revision
+    )
     source_plan = replace(source_plan, upstream_revision=resolved_revision)
-    source_root = context.work_root / "sources" / campaign_source.materialization_plan_id(
-        campaign_source.resolve_materialization_identity(context, source_plan))
+    source_root = (
+        context.work_root
+        / "sources"
+        / campaign_source.materialization_plan_id(
+            campaign_source.resolve_materialization_identity(context, source_plan)
+        )
+    )
 
     graph = campaign_plan.materialize_stage_graph(
-        source_name=spec.source_name, build_name=spec.build_name,
-        upstream_repo_path=str(context.upstream_repo))
+        source_name=spec.source_name,
+        build_name=spec.build_name,
+        upstream_repo_path=str(context.upstream_repo),
+    )
     source_slice_id_holder: list[str | None] = [None]
 
     executor = CampaignStageExecutor(
-        graph=graph, store=store, run_id=run_id,
+        graph=graph,
+        store=store,
+        run_id=run_id,
         materialize=lambda: _materialize_worker(
-            context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry),
+            context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry
+        ),
         generate=lambda inputs: {},
         source_slice_id_holder=source_slice_id_holder,
+        project_revision=project_revision,
+        local_provenance_class=local_provenance_class,
     )
     campaign_run = CampaignRun(graph, root=campaign_root / "materialize", run_id=run_id)
     reuse = make_artifact_reuse_checker(executor=executor, store=store)
 
     try:
-        records = campaign_run.execute(executor, resource_root=resource_root, reuse=reuse)
+        records = campaign_run.execute(
+            executor, resource_root=resource_root, reuse=reuse
+        )
         require_campaign_success(records, label="materialize")
     except CampaignExecutionError as exc:
         raise CampaignLaneError(f"materialize failed: {exc}") from exc
 
     source_slice_id = source_slice_id_holder[0]
     if not source_slice_id:
-        raise CampaignLaneError("materialize succeeded without resolving source_slice_id")
+        raise CampaignLaneError(
+            "materialize succeeded without resolving source_slice_id"
+        )
 
     stage_id = f"{spec.source_name}:{spec.build_name}:materialize"
     source_metadata_ref = _require_one_artifact(
-        executor.outputs[stage_id], kind="source-metadata", stage_id=stage_id)
+        executor.outputs[stage_id], kind="source-metadata", stage_id=stage_id
+    )
+    # RE25.2: build the lane's typed SourceProvenance from the PUBLISHED
+    # artifact's own bytes (verified by ArtifactRef at publish time), not
+    # from a second in-memory copy -- one source of truth, and it is the
+    # exact record materialize_source() re-verified per RE04/RE05.
+    metadata_doc = json.loads(source_metadata_ref.path.read_text(encoding="utf-8"))
+    source_provenance = source_provenance_from_metadata(metadata_doc)
 
     return _MaterializedLaneSource(
-        resolved_revision=resolved_revision, source_slice_id=source_slice_id,
-        source_root=source_root, source_metadata_ref=source_metadata_ref,
+        resolved_revision=resolved_revision,
+        source_slice_id=source_slice_id,
+        source_root=source_root,
+        source_metadata_ref=source_metadata_ref,
+        source_provenance=source_provenance,
     )
 
 
@@ -262,9 +339,12 @@ def _sniff_embedded_provenance(data: bytes) -> dict[str, object] | None:
 
 
 def _resolve_lane_inputs(
-    spec: CampaignLaneExecutionSpec, *,
-    build: campaign_config.Build, store: ArtifactStore,
-    source_slice_id: str, run_id: str,
+    spec: CampaignLaneExecutionSpec,
+    *,
+    build: campaign_config.Build,
+    store: ArtifactStore,
+    source_slice_id: str,
+    run_id: str,
 ) -> dict[str, ArtifactRef]:
     """Generalizes the previous single-purpose _publish_inventory(): every
     lane input, keyed by name, resolved to a verified ArtifactRef.
@@ -318,7 +398,9 @@ def _resolve_lane_inputs(
         relative = f"inputs/{name}/{digest}"
         published_digest = store.publish_bytes(relative, data)
         if published_digest != digest:
-            raise CampaignLaneError(f"lane input {name!r} digest changed during publication")
+            raise CampaignLaneError(
+                f"lane input {name!r} digest changed during publication"
+            )
         # RE08/RV48 audit fix: a raw Path has no producer identity of its
         # own to trust -- the caller merely handed us a file while building
         # THIS source, which is not proof the file was ever produced BY
@@ -334,19 +416,30 @@ def _resolve_lane_inputs(
         else:
             doc = make_provenance(
                 project={"provenance_class": "imported-legacy"},
-                source={"source_slice_id": source_slice_id}, build={},
-                workload={}, campaign={"run_id": run_id})
+                source={"source_slice_id": source_slice_id},
+                build={},
+                workload={},
+                campaign={"run_id": run_id},
+            )
         resolved[name] = ArtifactRef(
-            kind=name, path=store.resolve(relative), content_hash=digest, provenance=doc)
+            kind=name, path=store.resolve(relative), content_hash=digest, provenance=doc
+        )
 
     return resolved
 
 
 def _execute_build_phase(
-    spec: CampaignLaneExecutionSpec, *,
-    cfg: campaign_config.Config, context: ProjectContext, store: ArtifactStore,
-    run_id: str, campaign_root: Path, resource_root: Path,
+    spec: CampaignLaneExecutionSpec,
+    *,
+    cfg: campaign_config.Config,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    campaign_root: Path,
+    resource_root: Path,
     materialized: _MaterializedLaneSource,
+    project_revision: str,
+    local_provenance_class: ProvenanceClass,
 ) -> CampaignLaneResult:
     platform_cfg = cfg.platforms[spec.platform_name]
     if spec.c_compiler or spec.cxx_compiler:
@@ -364,8 +457,12 @@ def _execute_build_phase(
     merged_options.update(dict(build_cfg.options))
 
     input_refs = _resolve_lane_inputs(
-        spec, build=build_cfg, store=store,
-        source_slice_id=materialized.source_slice_id, run_id=run_id)
+        spec,
+        build=build_cfg,
+        store=store,
+        source_slice_id=materialized.source_slice_id,
+        run_id=run_id,
+    )
     inventory_ref = input_refs.get("inventory")
     # workload_id is deterministically the inventory's own content_hash --
     # knowable before generate ever runs, once the inventory is published.
@@ -375,74 +472,122 @@ def _execute_build_phase(
     # build_plan_id, not workload_id.
     workload_id = inventory_ref.content_hash if inventory_ref is not None else None
 
-    has_generate = build_cfg.variant_set is not None
+    # Walrus-narrowed, not just a separate boolean: pyright cannot carry a
+    # `build_cfg.variant_set is not None` fact through a distinct
+    # ``has_generate`` variable into the guarded call sites below, so the
+    # non-None proof has to live in the value itself.
+    variant_set = build_cfg.variant_set
     has_smoke = spec.validation is not None
 
     build_plan = BuildPlan(
-        source_slice_id=materialized.source_slice_id, phase=spec.build_name,
-        platform=platform_cfg.name, targets=platform_cfg.targets,
+        source_slice_id=materialized.source_slice_id,
+        phase=spec.build_name,
+        platform=platform_cfg.name,
+        targets=platform_cfg.targets,
         cmake_options=tuple(sorted(merged_options.items())),
         variant_set=build_cfg.variant_set,
         # RE07/RV48: empty for a build with no generate stage -- there is
         # no catalog to disambiguate. Otherwise the exact architecture set
         # generation was actually requested for (not platform_cfg.targets,
         # which is a different axis: compiled AMDGPU targets).
-        catalog_architectures=tuple(sorted(spec.architectures)) if has_generate else (),
+        catalog_architectures=tuple(sorted(spec.architectures))
+        if variant_set is not None
+        else (),
         # Generic over every declared need this lane resolved -- see
         # BuildPlan's own docstring for why this replaced the old
         # inventory_hash/winners_hash pair.
-        input_hashes=tuple(sorted(
-            (name, ref.content_hash) for name, ref in input_refs.items())),
+        input_hashes=tuple(
+            sorted((name, ref.content_hash) for name, ref in input_refs.items())
+        ),
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
         environment=campaign_build.resolve_build_environment(),
     )
 
     build_graph = campaign_plan.build_stage_graph(
-        source_name=spec.source_name, build_name=spec.build_name,
-        source_slice_id=materialized.source_slice_id, build_plan_id=build_plan.build_plan_id,
-        workload_id=workload_id, include_generate=has_generate,
-        include_runtime_smoke=has_smoke, gpu_resource_ids=spec.gpu_resource_ids,
+        source_name=spec.source_name,
+        build_name=spec.build_name,
+        source_slice_id=materialized.source_slice_id,
+        build_plan_id=build_plan.build_plan_id,
+        workload_id=workload_id,
+        include_generate=variant_set is not None,
+        include_runtime_smoke=has_smoke,
+        gpu_resource_ids=spec.gpu_resource_ids,
     )
 
     generate_worker = None
-    if has_generate:
+    if variant_set is not None:
         generate_worker = campaign_workers.make_generate_worker(
-            context=context, source_root=materialized.source_root, run_id=run_id,
-            variant_set=build_cfg.variant_set, architectures=list(spec.architectures),
+            context=context,
+            source_root=materialized.source_root,
+            run_id=run_id,
+            variant_set=variant_set,
+            architectures=list(spec.architectures),
             upstream_revision=materialized.resolved_revision,
             required_needs=build_cfg.needs,
         )
     build_worker = campaign_workers.make_build_worker(
-        context=context, source_root=materialized.source_root, run_id=run_id,
-        build_plan=build_plan, platform=platform_cfg, build=build_cfg,
-        store=store, binary_relative_path=spec.binary_relative_path,
-        source_slice_id=materialized.source_slice_id, workload_id=workload_id,
-        lane_inputs=input_refs, has_generate_stage=has_generate,
+        context=context,
+        source_root=materialized.source_root,
+        run_id=run_id,
+        build_plan=build_plan,
+        platform=platform_cfg,
+        build=build_cfg,
+        store=store,
+        binary_relative_path=spec.binary_relative_path,
+        source_slice_id=materialized.source_slice_id,
+        workload_id=workload_id,
+        lane_inputs=input_refs,
+        has_generate_stage=variant_set is not None,
         cmake_targets=(Path(spec.binary_relative_path).name,),
+        # RE25.2: full typed lineage for the artifacts this worker publishes
+        # -- the same source provenance and project identity every other
+        # stage in this lane carries.
+        source_provenance=materialized.source_provenance,
+        project_revision=project_revision,
+        local_provenance_class=local_provenance_class,
     )
     smoke_worker = None
-    if has_smoke:
+    validation_spec = spec.validation
+    if has_smoke and validation_spec is not None:
         smoke_worker = campaign_workers.make_smoke_worker(
-            run_id=run_id, store=store, source_slice_id=materialized.source_slice_id,
-            build_plan_id=build_plan.build_plan_id, workload_id=workload_id,
-            spec=spec.validation,
-            environment=None if spec.smoke_environment is None else dict(spec.smoke_environment),
+            run_id=run_id,
+            store=store,
+            source_slice_id=materialized.source_slice_id,
+            build_plan_id=build_plan.build_plan_id,
+            workload_id=workload_id,
+            spec=validation_spec,
+            environment=None
+            if spec.smoke_environment is None
+            else dict(spec.smoke_environment),
+            source_provenance=materialized.source_provenance,
+            project_revision=project_revision,
+            local_provenance_class=local_provenance_class,
         )
 
     executor = CampaignStageExecutor(
-        graph=build_graph, store=store, run_id=run_id,
-        materialize=lambda: {}, generate=generate_worker,
-        generate_inputs=input_refs if has_generate else None,
-        generate_needs=build_cfg.needs if has_generate else frozenset(),
+        graph=build_graph,
+        store=store,
+        run_id=run_id,
+        materialize=lambda: {},
+        generate=generate_worker,
+        generate_inputs=input_refs if variant_set is not None else None,
+        generate_needs=build_cfg.needs if variant_set is not None else frozenset(),
         source_slice_id_holder=[materialized.source_slice_id],
         build_plan_id=build_plan.build_plan_id,
-        workload_id=workload_id, build=build_worker, smoke=smoke_worker,
+        workload_id=workload_id,
+        build=build_worker,
+        smoke=smoke_worker,
+        project_revision=project_revision,
+        local_provenance_class=local_provenance_class,
+        initial_source_provenance=materialized.source_provenance,
     )
     campaign_run = CampaignRun(build_graph, root=campaign_root / "build", run_id=run_id)
     reuse = make_artifact_reuse_checker(executor=executor, store=store)
 
     try:
-        records = campaign_run.execute(executor, resource_root=resource_root, reuse=reuse)
+        records = campaign_run.execute(
+            executor, resource_root=resource_root, reuse=reuse
+        )
         require_campaign_success(records, label="generate/build/runtime-smoke")
     except CampaignExecutionError as exc:
         raise CampaignLaneError(f"generate/build/runtime-smoke failed: {exc}") from exc
@@ -453,29 +598,45 @@ def _execute_build_phase(
 
     generate_outputs = executor.outputs.get(generate_stage_id)
     manifest_ref = _optional_one_artifact(
-        generate_outputs, kind="manifest", stage_id=generate_stage_id)
+        generate_outputs, kind="manifest", stage_id=generate_stage_id
+    )
     generated_tree_ref = _optional_one_artifact(
-        generate_outputs, kind="generated-tree", stage_id=generate_stage_id)
+        generate_outputs, kind="generated-tree", stage_id=generate_stage_id
+    )
     binary_ref = _require_one_artifact(
-        executor.outputs[build_stage_id], kind="binary", stage_id=build_stage_id)
+        executor.outputs[build_stage_id], kind="binary", stage_id=build_stage_id
+    )
     runtime_bundle_ref = _require_one_artifact(
-        executor.outputs[build_stage_id], kind="runtime-bundle", stage_id=build_stage_id)
+        executor.outputs[build_stage_id], kind="runtime-bundle", stage_id=build_stage_id
+    )
     smoke_ref = _optional_one_artifact(
-        executor.outputs.get(smoke_stage_id), kind="smoke-result", stage_id=smoke_stage_id)
+        executor.outputs.get(smoke_stage_id),
+        kind="smoke-result",
+        stage_id=smoke_stage_id,
+    )
 
     return CampaignLaneResult(
-        run_id=run_id, resolved_revision=materialized.resolved_revision,
-        source_slice_id=materialized.source_slice_id, build_plan=build_plan,
-        workload_id=workload_id, source_metadata_ref=materialized.source_metadata_ref,
+        run_id=run_id,
+        resolved_revision=materialized.resolved_revision,
+        source_slice_id=materialized.source_slice_id,
+        build_plan=build_plan,
+        workload_id=workload_id,
+        source_metadata_ref=materialized.source_metadata_ref,
         input_refs=tuple(sorted(input_refs.items())),
-        manifest_ref=manifest_ref, generated_tree_ref=generated_tree_ref,
-        binary_ref=binary_ref, runtime_bundle_ref=runtime_bundle_ref, smoke_ref=smoke_ref,
+        manifest_ref=manifest_ref,
+        generated_tree_ref=generated_tree_ref,
+        binary_ref=binary_ref,
+        runtime_bundle_ref=runtime_bundle_ref,
+        smoke_ref=smoke_ref,
     )
 
 
 def execute_campaign_lane(
-    spec: CampaignLaneExecutionSpec, *,
-    cfg: campaign_config.Config, context: ProjectContext, store: ArtifactStore,
+    spec: CampaignLaneExecutionSpec,
+    *,
+    cfg: campaign_config.Config,
+    context: ProjectContext,
+    store: ArtifactStore,
     run_id: str | None = None,
     allow_dirty_bigcherry: bool = False,
 ) -> CampaignLaneResult:
@@ -493,24 +654,70 @@ def execute_campaign_lane(
     campaign_root = context.work_root / "campaign-runs" / effective_run_id
     resource_root = context.work_root / "resource-locks"
 
+    # RE25.2: the executing checkout's own revision, and the honest
+    # provenance class of this execution -- a dirty-tree development run is
+    # 'development' end to end (never 'production'), not something callers
+    # remember to stamp on individual artifacts by hand.
+    local_provenance_class: ProvenanceClass = (
+        "development" if allow_dirty_bigcherry else "production"
+    )
+    try:
+        project_revision = bigcherry_revision(context)
+    except WorkspaceError as exc:
+        # Production mode cannot get here with a non-git project_root:
+        # require_clean_bigcherry (inside materialize_source) already ran
+        # `git status` there and would have failed first. So a failure HERE
+        # in production is a real contradiction -- fail closed on it.
+        if local_provenance_class == "production":
+            raise CampaignLaneError(
+                f"cannot resolve the BigCherry project revision at "
+                f"{context.project_root}: {exc}"
+            ) from exc
+        # Development/harness mode with a synthetic (non-git) project root:
+        # no revision exists to record -- bigcherry_revision stays None in
+        # provenance rather than being invented. The 'development' class
+        # already marks the whole run as non-promotable.
+        project_revision = ""
+
     materialized = _execute_materialize_phase(
-        spec, cfg=cfg, context=context, store=store, run_id=effective_run_id,
-        campaign_root=campaign_root, resource_root=resource_root,
+        spec,
+        cfg=cfg,
+        context=context,
+        store=store,
+        run_id=effective_run_id,
+        campaign_root=campaign_root,
+        resource_root=resource_root,
         allow_dirty_bigcherry=allow_dirty_bigcherry,
+        project_revision=project_revision,
+        local_provenance_class=local_provenance_class,
     )
     return _execute_build_phase(
-        spec, cfg=cfg, context=context, store=store, run_id=effective_run_id,
-        campaign_root=campaign_root, resource_root=resource_root, materialized=materialized,
+        spec,
+        cfg=cfg,
+        context=context,
+        store=store,
+        run_id=effective_run_id,
+        campaign_root=campaign_root,
+        resource_root=resource_root,
+        materialized=materialized,
+        project_revision=project_revision,
+        local_provenance_class=local_provenance_class,
     )
 
 
-def smoke_environment_for_hip_devices(hip_visible_devices: str) -> tuple[tuple[str, str], ...]:
+def smoke_environment_for_hip_devices(
+    hip_visible_devices: str,
+) -> tuple[tuple[str, str], ...]:
     """The CLI-convenience translation from a single --hip-visible-devices
     flag to the environment dict the smoke worker actually accepts --
     kept out of the reusable API itself (make_smoke_worker's own environment
     parameter is HIP-agnostic; this is a CLI-specific convenience)."""
-    return tuple(sorted({
-        "HIP_VISIBLE_DEVICES": hip_visible_devices,
-        "ROCR_VISIBLE_DEVICES": hip_visible_devices,
-        "PATH": os.environ.get("PATH", ""),
-    }.items()))
+    return tuple(
+        sorted(
+            {
+                "HIP_VISIBLE_DEVICES": hip_visible_devices,
+                "ROCR_VISIBLE_DEVICES": hip_visible_devices,
+                "PATH": os.environ.get("PATH", ""),
+            }.items()
+        )
+    )
