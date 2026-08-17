@@ -23,18 +23,20 @@ import re
 import unittest
 from pathlib import Path
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))
-TUNER = os.path.join(REPO_ROOT, "src", "ggml", "src", "ggml-cuda",
-                     "hip-autotune-tuner.cu")
-TUNER_CUH = os.path.join(REPO_ROOT, "src", "ggml", "src", "ggml-cuda",
-                         "hip-autotune-tuner.cuh")
-CANARY_H = os.path.join(REPO_ROOT, "src", "ggml", "src", "ggml-cuda",
-                        "hip-autotune-canary.h")
-HOST_TEST_CPP = os.path.join(REPO_ROOT, "tools", "tests",
-                             "canary_decision_host_test.cpp")
-DRIVER_PY = os.path.join(REPO_ROOT, "tools", "tests",
-                         "test_hi68_canary_decision.py")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TUNER = os.path.join(
+    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cu"
+)
+TUNER_CUH = os.path.join(
+    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-tuner.cuh"
+)
+CANARY_H = os.path.join(
+    REPO_ROOT, "src", "ggml", "src", "ggml-cuda", "hip-autotune-canary.h"
+)
+HOST_TEST_CPP = os.path.join(
+    REPO_ROOT, "tools", "tests", "canary_decision_host_test.cpp"
+)
+DRIVER_PY = os.path.join(REPO_ROOT, "tools", "tests", "test_hi68_canary_decision.py")
 
 
 def _read(path):
@@ -57,38 +59,55 @@ class TestHi68CanaryContract(unittest.TestCase):
 
     # -- 1. the transition is a GPU-free pure header -----------------------
     def test_canary_header_exists_and_is_gpu_free(self):
-        for include in ("hip/", "ggml/", "hip-autotune-tuner",
-                        "hip-autotune-dispatch"):
+        for include in ("hip/", "ggml/", "hip-autotune-tuner", "hip-autotune-dispatch"):
             self.assertNotIn(
-                include, self.canary_h,
-                f"hip-autotune-canary.h must stay GPU-free (found {include!r})")
+                include,
+                self.canary_h,
+                f"hip-autotune-canary.h must stay GPU-free (found {include!r})",
+            )
 
     def test_canary_header_states_the_three_stages(self):
-        for stage in ("GGML_HIP_CANARY_STAGE_INITIAL",
-                      "GGML_HIP_CANARY_STAGE_PROBE",
-                      "GGML_HIP_CANARY_STAGE_FRESH"):
+        for stage in (
+            "GGML_HIP_CANARY_STAGE_INITIAL",
+            "GGML_HIP_CANARY_STAGE_PROBE",
+            "GGML_HIP_CANARY_STAGE_FRESH",
+        ):
             self.assertIn(stage, self.canary_h)
 
     def test_fresh_stage_has_no_retry_branch(self):
         # The FRESH case may only end in RANK or STOP_UNRESOLVED: requesting
         # another probe or fresh block would re-open the self-selected
         # baseline (F2).
-        body = _group(r"case GGML_HIP_CANARY_STAGE_FRESH:(.*?)break;",
-                      self.canary_h, "FRESH stage branch")
+        body = _group(
+            r"case GGML_HIP_CANARY_STAGE_FRESH:(.*?)break;",
+            self.canary_h,
+            "FRESH stage branch",
+        )
         self.assertNotIn("RUN_PROBE", body)
         self.assertNotIn("RUN_FRESH", body)
         self.assertIn("STOP_UNRESOLVED", body)
         self.assertIn("RANK", body)
 
     def test_retry_budget_is_initial_stage_only(self):
-        self.assertIn("retries_allowed",
-                      _group(r"case GGML_HIP_CANARY_STAGE_INITIAL:(.*?)break;",
-                             self.canary_h, "INITIAL stage branch"))
+        self.assertIn(
+            "retries_allowed",
+            _group(
+                r"case GGML_HIP_CANARY_STAGE_INITIAL:(.*?)break;",
+                self.canary_h,
+                "INITIAL stage branch",
+            ),
+        )
         for stage in ("PROBE", "FRESH"):
-            body = _group(rf"case GGML_HIP_CANARY_STAGE_{stage}:(.*?)break;",
-                          self.canary_h, f"{stage} stage branch")
-            self.assertNotIn("retries_allowed", body,
-                             f"{stage} stage must not consult the retry budget")
+            body = _group(
+                rf"case GGML_HIP_CANARY_STAGE_{stage}:(.*?)break;",
+                self.canary_h,
+                f"{stage} stage branch",
+            )
+            self.assertNotIn(
+                "retries_allowed",
+                body,
+                f"{stage} stage must not consult the retry budget",
+            )
 
     # -- 2. the probe is a probe: no statistics write-back -----------------
     def test_probe_does_not_overwrite_measurement_statistics(self):
@@ -97,8 +116,7 @@ class TestHi68CanaryContract(unittest.TestCase):
         self.assertNotIn("pair[i]->median_us", self.tuner)
         self.assertNotIn("pair[0]->median_us", self.tuner)
         for field in ("mad_us", "p95_us", "host_median_us"):
-            self.assertNotRegex(
-                self.tuner, rf"pair\[\d\]->{field}\s*=")
+            self.assertNotRegex(self.tuner, rf"pair\[\d\]->{field}\s*=")
 
     def test_old_attempt_retry_loop_is_gone(self):
         self.assertNotIn("for (int attempt = 0; twin != nullptr", self.tuner)
@@ -108,20 +126,21 @@ class TestHi68CanaryContract(unittest.TestCase):
     def test_final_stage_is_an_extracted_block_unit(self):
         self.assertIn("auto measure_finalist_block = [&]", self.tuner)
         # Two call sites: the normal final stage and the canary fresh path.
-        self.assertGreaterEqual(
-            self.tuner.count("measure_finalist_block();"), 2)
+        self.assertGreaterEqual(self.tuner.count("measure_finalist_block();"), 2)
 
     def test_fresh_path_remeasures_via_the_same_unit(self):
-        body = _group(r"GGML_HIP_CANARY_RUN_FRESH\)(.*?)\n            }",
-                      self.tuner, "RUN_FRESH dispatch branch")
+        body = _group(
+            r"GGML_HIP_CANARY_RUN_FRESH\)(.*?)\n            }",
+            self.tuner,
+            "RUN_FRESH dispatch branch",
+        )
         self.assertIn("measure_finalist_block();", body)
 
     def test_post_block_rejections_apply_to_every_ranked_block(self):
         # E4 noisy + native-baseline checks, extracted so the fresh block
         # gets identical scrutiny to the original.
         self.assertIn("auto post_block_reject_reason = [&]", self.tuner)
-        self.assertGreaterEqual(
-            self.tuner.count("post_block_reject_reason()"), 2)
+        self.assertGreaterEqual(self.tuner.count("post_block_reject_reason()"), 2)
 
     def test_fresh_canary_is_evaluated_once_with_zero_budget(self):
         # Evaluated exactly once, with a zero budget, and judged ONLY on
@@ -132,11 +151,11 @@ class TestHi68CanaryContract(unittest.TestCase):
             "                        native_m->measured ? native_m->median_us : -1.0,\n"
             "                        twin->measured ? twin->median_us : -1.0,\n"
             "                        config.noise_canary_pct, 0",
-            self.tuner)
+            self.tuner,
+        )
 
     def test_probe_uses_zero_budget_transition(self):
-        self.assertIn(
-            "GGML_HIP_CANARY_STAGE_PROBE,", self.tuner)
+        self.assertIn("GGML_HIP_CANARY_STAGE_PROBE,", self.tuner)
 
     def test_fresh_block_flag_is_recorded_and_serialized(self):
         self.assertIn("bool canary_fresh_block = false;", self.tuner)
@@ -151,14 +170,39 @@ class TestHi68CanaryContract(unittest.TestCase):
         # medians: a retried pass always comes from a fresh block, and a
         # fresh block may also end unresolved (terminal, native retained).
         self.assertIn(
-            "canary_state == retried_pass implies\n"
-            "    // canary_fresh_block", self.tuner)
+            "canary_state == retried_pass\n    // implies canary_fresh_block",
+            self.tuner,
+        )
+
+    def test_pessimistic_provenance_ordering(self):
+        # GPT HI68 follow-up (evidence finding 2): the RUN_PROBE branch must
+        # go pessimistic BEFORE any GPU work (state UNRESOLVED up front), and
+        # canary_fresh_block must be set AFTER measure_finalist_block() but
+        # BEFORE the E4 post-block scrutiny, so a row rejected by that
+        # scrutiny still says its evidence is the fresh block's.
+        probe = self.tuner.index("else {  // GGML_HIP_CANARY_RUN_PROBE")
+        branch_end = self.tuner.index("stability probe still divergent", probe)
+        branch = self.tuner[probe:branch_end]
+        state_idx = branch.index("result.canary_state = GGML_HIP_CANARY_UNRESOLVED")
+        fresh_idx = branch.index("result.canary_fresh_block = true;")
+        e4_idx = branch.index("post_block_reject_reason();")
+        block_idx = branch.index("measure_finalist_block();")
+        self.assertLess(
+            state_idx, block_idx, "state must be pessimistic before the probe runs"
+        )
+        self.assertLess(block_idx, fresh_idx)
+        self.assertLess(
+            fresh_idx,
+            e4_idx,
+            "fresh flag must precede E4 scrutiny so a rejected "
+            "row still carries authoritative window provenance",
+        )
 
     # -- host testability wiring ------------------------------------------
     def test_host_test_and_driver_exist(self):
         cpp = _read(HOST_TEST_CPP)
         driver = _read(DRIVER_PY)
-        self.assertIn("#include \"hip-autotune-canary.h\"", cpp)
+        self.assertIn('#include "hip-autotune-canary.h"', cpp)
         self.assertIn("CANARY_DECISION_HOST_TEST_OK", cpp)
         self.assertIn("CANARY_DECISION_HOST_TEST_OK", driver)
         self.assertIn("hip-autotune-canary.h", driver)
@@ -168,7 +212,7 @@ class TestHi68CanaryContract(unittest.TestCase):
         # so a reader of the config cannot mistake it for a retry-until-quiet
         # budget again.
         idx = self.cuh.index("noise_canary_retries")
-        window = self.cuh[max(0, idx - 700):idx]
+        window = self.cuh[max(0, idx - 700) : idx]
         self.assertIn("HI68", window)
         self.assertIn("stability", window.lower())
 

@@ -226,12 +226,14 @@ struct Result {
     double canary_pct    = -1.0;
     int    canary_retries = 0;   // number of stability probes performed (0 or 1, HI68)
     std::string canary_pair;   // which two entries were compared
-    // HI68: true when a fresh complete finalist block was measured after the
-    // original block's QC failed and its one stability probe passed. Offline
-    // readers use it to know which measurement window every ranked median in
-    // this row covers. Invariant: canary_state == retried_pass implies
-    // canary_fresh_block; a fresh block may also end canary_unresolved (its
-    // own canary still divergent -- terminal, native retained).
+    // HI68: true once the fresh complete finalist block has been produced
+    // mechanically (complete, non-poisoned, retime-resolved) and its window
+    // has replaced every finalist's statistics -- set BEFORE the E4
+    // post-block scrutiny so a row rejected on that scrutiny still says the
+    // evidence is the fresh block's. Invariants: canary_state == retried_pass
+    // implies canary_fresh_block; canary_fresh_block + canary_unresolved means
+    // fresh evidence was collected but remained non-decision-grade (terminal,
+    // native retained); a false flag always means original-block evidence.
     bool canary_fresh_block = false;
 };
 
@@ -2345,6 +2347,10 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                               "timings are unreliable at these sample counts\n",
                               result.canary_pct, result.canary_pair.c_str());
             } else {  // GGML_HIP_CANARY_RUN_PROBE
+                // Pessimistic terminal state from here on: every path below
+                // (probe failure, fresh-block rejection, fresh canary failure)
+                // ends UNRESOLVED; only a passed fresh canary upgrades it.
+                result.canary_state = GGML_HIP_CANARY_UNRESOLVED;
                 // One pair-only stability probe. Its samples answer "did the
                 // environment settle?" -- they are NOT a measurement of the
                 // pair, and their statistics are discarded (RV49/F2: the old
@@ -2393,6 +2399,14 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                         record_result(dispatch_digest, result);
                         return native.candidate;
                     }
+                    // Pessimistic provenance from here on: the fresh window
+                    // has already replaced every finalist's statistics, so
+                    // EVERY row serialized after this point -- including the
+                    // E4 rejections below -- must say the evidence is the
+                    // fresh block's. Setting it first is what makes
+                    // canary_fresh_block an authoritative measurement-window
+                    // marker rather than a "everything passed" flag.
+                    result.canary_fresh_block = true;
                     const std::string fresh_reject = post_block_reject_reason();
                     if (!fresh_reject.empty()) {
                         result.reason = fresh_reject;
@@ -2410,10 +2424,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                         twin->measured ? twin->median_us : -1.0,
                         config.noise_canary_pct, 0);
                     result.canary_pct = fresh.pct;
-                    result.canary_state = fresh.passed
-                        ? GGML_HIP_CANARY_RETRIED_PASS
-                        : GGML_HIP_CANARY_UNRESOLVED;
-                    result.canary_fresh_block = true;
+                    // The state was set UNRESOLVED pessimistically before the
+                    // probe; upgrade it only on a passed fresh canary.
+                    if (fresh.passed) {
+                        result.canary_state = GGML_HIP_CANARY_RETRIED_PASS;
+                    }
                     if (!fresh.passed) {
                         // Report rather than discard: native is retained on
                         // the fresh block's evidence, and that is what this
@@ -2427,8 +2442,8 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                     // The probe still failed: the environment did not settle.
                     // Native is retained on the ORIGINAL block's evidence --
                     // no statistics were swapped, so nothing was self-
-                    // selected. Report rather than discard.
-                    result.canary_state = GGML_HIP_CANARY_UNRESOLVED;
+                    // selected. The state is already UNRESOLVED (set
+                    // pessimistically above). Report rather than discard.
                     GGML_LOG_WARN("bigcherry: noise canary %.1f%% on this "
                                   "signature (native vs %s, identical kernels); "
                                   "stability probe still divergent; native retained\n",
