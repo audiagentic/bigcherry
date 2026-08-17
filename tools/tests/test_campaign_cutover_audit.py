@@ -449,17 +449,16 @@ class ReleaseProbeDecouplingTests(unittest.TestCase):
     def test_release_validate_does_not_invoke_a_command_scheduled_for_re23_deletion(self):
         import bigcherry.release_validate as release_validate
         source = Path(release_validate.__file__).read_text(encoding="utf-8")
-        # RE23 deletes cmd_build/legacy-build's mutable-checkout mechanics.
-        # release_validate must not shell out to that command AT ALL once
-        # RE13's probe migration lands -- today it still does (see RE13),
-        # so this assertion documents the CURRENT state honestly rather
-        # than asserting something not yet true.
-        self.assertIn(
-            '"legacy-build"', source,
-            "release_validate.py still invokes legacy-build (expected until "
-            "RE13's probe migration lands) -- if this assertion starts "
-            "failing because the string is gone, update this test to "
-            "assert the NEW non-legacy invocation instead")
+        # RE13 (2026-08-17): probe() now runs execute_campaign_lane()
+        # directly -- the same canonical production API `build` uses --
+        # instead of shelling out to `bigcherry ... legacy-build`. RE23 can
+        # delete legacy-build's mutable-checkout mechanics without breaking
+        # this compatibility probe. Checks for actual invocation syntax
+        # (quoted CLI arg / subprocess command token), not the word
+        # appearing in prose comments describing the historical design.
+        self.assertNotIn('"legacy-build"', source)
+        self.assertNotIn("'legacy-build'", source)
+        self.assertIn("execute_campaign_lane", source)
 
 
 if __name__ == "__main__":

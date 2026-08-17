@@ -1,20 +1,23 @@
 """Isolated upstream patch-compatibility probe (HI46).
 
-Clones a candidate ref into its own throwaway checkout and runs it through
-the current recipe/build pipeline (`bigcherry pull` + `bigcherry build`)
-without touching the pinned checkout or the shared `artifacts/<revision>/`
-tree -- a probe against `master` (ahead of the pin) must never be mistaken
-for a real release's candidate set. Answers "do the patches still apply and
-build cleanly against this ref", nothing more: full release validation (the
-record -> tune -> promote -> replay -> coverage gate sequence) is separate,
-larger work.
+Materialises a candidate ref into its own isolated source slice and runs it
+through the canonical campaign build lane (RE13/RV48) -- never the pinned
+checkout, never the shared `artifacts/<revision>/` tree, and never the
+mutable-checkout mechanics RE23 is retiring -- so a probe against `master`
+(ahead of the pin) can never be mistaken for a real release's candidate set,
+and cannot silently diverge from what a real canonical build actually does.
+Answers "do the patches still apply and build cleanly against this ref",
+nothing more: full release validation (the record -> tune -> promote ->
+replay -> coverage gate sequence) is separate, larger work.
 
-The old (pre-reset) version of this file drove builds itself via a hardcoded
-PROFILES dict of raw cmake command strings. That duplicated what recipes.py
-now owns -- which build options a platform needs -- and would drift from it
-silently. This version has no build knowledge of its own: it shells out to
-the same `bigcherry pull`/`bigcherry build` a human would run, so a probe and
-a real build can never disagree about what "building this recipe" means.
+This version has no build knowledge of its own beyond the legacy `recipe`
+name -> v2 (source, builds, platform) mapping below: it runs
+``execute_campaign_lane`` directly, the exact same production API a real
+`build` invocation uses, so a probe and a real build can never disagree
+about what building this ref actually does. Earlier versions of this file
+shelled out to `bigcherry pull` + `bigcherry legacy-build` as separate
+subprocesses; RE23 deletes `legacy-build` entirely, so a probe still calling
+it would simply break the day that lands.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ import datetime as dt
 import json
 import re
 import subprocess
-import sys
+from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +39,48 @@ from .device_state_validate import validate_device_state_report
 
 class ReleaseGateError(ValueError):
     """A validated-release claim is missing or contradicts its evidence."""
+
+
+class ProbeConfigError(ValueError):
+    """A probe request names a recipe/ref combination the canonical v2
+    config cannot express -- distinct from a build/patch failure: this is
+    a request the probe cannot even attempt, not evidence about the ref."""
+
+
+# RE13: legacy `[compat.recipe.*]` names are a groups/states-filtered patch
+# selection over one mutable checkout -- a different model from v2's fixed
+# named Source objects. Most compat recipes correspond to a v2 source of the
+# same name directly (bigcherry, bigcherry-native); the rest are explicit
+# aliases here rather than guessed, so a recipe this table cannot place
+# fails closed (ProbeConfigError) instead of silently probing the wrong
+# source. Recipes whose groups/states subset (e.g. "core") has no
+# corresponding v2 Source are deliberately NOT aliased -- add a real
+# [source.*] for them before probing, rather than approximating one here.
+_RECIPE_SOURCE_ALIASES = {
+    "upstream": "llama-native",
+    "workstation": "bigcherry",
+    "dev": "bigcherry",
+}
+
+# The v2 compat loader (recipes.py) injects a "native" alias into ITS OWN
+# builds table only, pointing at the real v2 "control" build -- v2's own
+# config.Config.builds has no "native" key. A compat recipe's builds list
+# can legitimately contain "native"; this is the same rename applied on
+# the v2 lookup side.
+_LEGACY_BUILD_ALIASES = {"native": "control"}
+
+
+def _v2_source_name_for_recipe(recipe: str, cfg: Any) -> str:
+    if recipe in cfg.sources:
+        return recipe
+    alias = _RECIPE_SOURCE_ALIASES.get(recipe)
+    if alias is not None and alias in cfg.sources:
+        return alias
+    raise ProbeConfigError(
+        f"recipe {recipe!r} has no v2 source mapping for the canonical "
+        f"probe -- add a [source.{recipe}] (or extend "
+        f"_RECIPE_SOURCE_ALIASES) before probing it"
+    )
 
 
 PRODUCTION_GATE_STAGES = (
@@ -289,19 +334,6 @@ def _write(run: Path, record: dict[str, Any]) -> Path:
     return path
 
 
-def _run_logged(command: list[str], *, cwd: Path, log: Path) -> bool:
-    completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
-    log.write_text(
-        f"$ {' '.join(command)}\n\n{completed.stdout}{completed.stderr}",
-        encoding="utf-8",
-    )
-    return completed.returncode == 0
-
-
-def _command_text(command: list[str]) -> str:
-    return subprocess.list2cmdline(command)
-
-
 def _failure_class(stage: str) -> str:
     return "patch-drift" if stage == "build" else f"{stage}-failed"
 
@@ -315,23 +347,34 @@ def probe(
 ) -> tuple[int, Path]:
     """Prove `ref` still audits, patches, and builds clean under `recipe`.
 
-    Never touches the pinned checkout: `pull`/`build` are both told to use
-    this run's own throwaway `--llama-root`, so a probe against an unrelated
-    ref (typically `master`, ahead of the pin) cannot corrupt or be confused
-    with the shared checkout or its `artifacts/<revision>/` tree -- the
-    revision embedded in anything `build` generates for this checkout is the
-    probed ref's own, which is exactly what makes it distinguishable from a
-    real release's candidates rather than requiring a separate override flag.
+    Never touches the pinned checkout: this run gets its own isolated
+    ``work_root`` (source/build cache + a dedicated ArtifactStore) under
+    ``staging_root``, so a probe against an unrelated ref (typically
+    `master`, ahead of the pin) cannot corrupt or be confused with the
+    shared checkout or its `artifacts/<revision>/` tree. The revision
+    embedded in every stage's provenance is the probed ref's own resolved
+    commit, which is exactly what makes it distinguishable from a real
+    release's candidates rather than requiring a separate override flag.
+
+    Still shares the host-local upstream git mirror with real production
+    builds (cloning llama.cpp fresh per probe would be needlessly slow) --
+    ``fetch_ref`` only fetches into it, it is never mutated any other way
+    from here.
     """
+    from . import config as campaign_config
+    from . import recipes as legacy_recipes
+    from .artifacts import ArtifactStore
+    from .campaign_lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
+    from .context import ProjectContext
+    from .workspace import UpstreamRepository, WorkspaceError
+
     run = staging_root / safe_name(run_id)
-    checkout = run / "llama.cpp"
     if run.exists():
         raise FileExistsError(f"run already exists: {run}")
     run.mkdir(parents=True)
     record: dict[str, Any] = {
         "schema_version": 2, "run_id": run_id, "ref": ref, "recipe": recipe,
-        "checkout": str(checkout), "source_revision": ref,
-        "bigcherry_revision": "unknown",
+        "source_revision": ref, "bigcherry_revision": "unknown",
     }
     try:
         record["bigcherry_revision"] = subprocess.run(
@@ -341,41 +384,75 @@ def probe(
     except (OSError, subprocess.CalledProcessError):
         pass
 
-    pull_command = [sys.executable, "-m", "bigcherry", "--llama-root",
-                    str(checkout), "pull", "--ref", ref]
-    pull_ok = _run_logged(
-        pull_command,
-        cwd=paths.REPO_ROOT, log=run / "pull.log",
-    )
-    record["pull"] = {"ok": pull_ok, "log": "pull.log", "stage": "pull",
-                       "command": _command_text(pull_command),
-                       "exit_code": 0 if pull_ok else 1}
-    if not pull_ok:
-        record["outcome"] = "pull-failed"
-        record["failure"] = {"stage": "pull",
-                              "command": _command_text(pull_command),
-                              "exit_code": 1,
-                              "failure_class": _failure_class("pull")}
+    def _config_failure(exc: Exception) -> tuple[int, Path]:
+        record["outcome"] = "config-error"
+        record["failure"] = {"stage": "config", "detail": str(exc),
+                              "failure_class": "config-error"}
         return 1, _write(run, record)
 
-    build_command = [
-        sys.executable, "-m", "bigcherry", "--llama-root", str(checkout),
-        "legacy-build", "--recipe", recipe,
-    ]
-    if inventory is not None:
-        build_command += ["--inventory", str(inventory)]
-    build_ok = _run_logged(
-        build_command,
-        cwd=paths.REPO_ROOT, log=run / "build.log",
-    )
-    record["build"] = {"ok": build_ok, "log": "build.log", "stage": "build",
-                        "command": _command_text(build_command),
-                        "exit_code": 0 if build_ok else 1}
+    default_context = ProjectContext.resolve()
+    context = ProjectContext.resolve(
+        work_root=run / "work", upstream_repo=default_context.upstream_repo)
+
+    try:
+        legacy_recipe = legacy_recipes.get(recipe, path=context.config_path)
+        cfg = campaign_config.load(context.config_path)
+        source_name = _v2_source_name_for_recipe(recipe, cfg)
+    except (legacy_recipes.RecipeError, campaign_config.ConfigError, ProbeConfigError) as exc:
+        return _config_failure(exc)
+
+    platform_name = legacy_recipe.platform
+    if platform_name is None or platform_name not in cfg.platforms:
+        return _config_failure(
+            ProbeConfigError(f"recipe {recipe!r} names no usable v2 platform"))
+    build_names = [_LEGACY_BUILD_ALIASES.get(name, name) for name in legacy_recipe.builds]
+    unknown_builds = [name for name in build_names if name not in cfg.builds]
+    if unknown_builds:
+        return _config_failure(
+            ProbeConfigError(f"recipe {recipe!r} names unknown v2 build(s): "
+                             f"{', '.join(unknown_builds)}"))
+
+    try:
+        resolved_ref = UpstreamRepository(context.upstream_repo).fetch_ref(ref)
+    except WorkspaceError as exc:
+        record["outcome"] = "pull-failed"
+        record["failure"] = {"stage": "pull", "detail": str(exc),
+                              "failure_class": _failure_class("pull")}
+        return 1, _write(run, record)
+    record["source_revision"] = resolved_ref
+
+    probe_source = dc_replace(cfg.sources[source_name], ref=resolved_ref)
+    cfg = dc_replace(cfg, sources={**cfg.sources, source_name: probe_source})
+
+    store = ArtifactStore(run / "artifacts-store")
+    architectures = cfg.platforms[platform_name].targets
+    build_records: dict[str, Any] = {}
+    build_ok = True
+    for build_name in build_names:
+        needs = cfg.builds[build_name].needs
+        inputs = (("inventory", inventory),) if inventory is not None and "inventory" in needs else ()
+        spec = CampaignLaneExecutionSpec(
+            source_name=source_name, build_name=build_name, platform_name=platform_name,
+            architectures=architectures, inputs=inputs,
+        )
+        try:
+            result = execute_campaign_lane(
+                spec, cfg=cfg, context=context, store=store,
+                run_id=f"{run_id}-{build_name}")
+        except CampaignLaneError as exc:
+            build_records[build_name] = {"ok": False, "detail": str(exc)}
+            build_ok = False
+            break
+        build_records[build_name] = {
+            "ok": True, "build_plan_id": result.build_plan_id,
+            "workload_id": result.workload_id,
+        }
+    record["builds"] = build_records
     record["outcome"] = "compatible" if build_ok else "patch-drift-or-build-failed"
     if not build_ok:
-        record["failure"] = {"stage": "build",
-                              "command": _command_text(build_command),
-                              "exit_code": 1,
+        failed_build = next(name for name, info in build_records.items() if not info["ok"])
+        record["failure"] = {"stage": "build", "build": failed_build,
+                              "detail": build_records[failed_build]["detail"],
                               "failure_class": _failure_class("build")}
     return (0 if build_ok else 1), _write(run, record)
 
