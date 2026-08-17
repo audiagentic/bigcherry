@@ -50,16 +50,20 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
     row_policy = row.get("production_policy")
     header_policy = header.get("production_policy")
     if row_policy is not None:
-        if (not isinstance(row_policy, dict) or
-                not isinstance(row_policy.get("name"), str) or
-                not row_policy["name"] or
-                isinstance(row_policy.get("version"), bool) or
-                not isinstance(row_policy.get("version"), int) or
-                row_policy["version"] < 1):
+        if (
+            not isinstance(row_policy, dict)
+            or not isinstance(row_policy.get("name"), str)
+            or not row_policy["name"]
+            or isinstance(row_policy.get("version"), bool)
+            or not isinstance(row_policy.get("version"), int)
+            or row_policy["version"] < 1
+        ):
             raise PromotionError("invalid production policy identity")
         if not isinstance(header_policy, str) or header_policy != row_policy["name"]:
             raise PromotionError("production policy identity does not match header")
-        expected_hash = production_policy_hash(row_policy["name"], row_policy["version"])
+        expected_hash = production_policy_hash(
+            row_policy["name"], row_policy["version"]
+        )
         supplied_hash = row_policy.get("policy_hash")
         if supplied_hash is not None and supplied_hash != expected_hash:
             raise PromotionError("production policy hash mismatch")
@@ -78,11 +82,16 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
     if row_policy is None:
         raise PromotionError("ranking decision production policy identity is missing")
     prod = production[0]
-    if (prod.policy_name != row_policy["name"] or
-            prod.policy_version != row_policy["version"]):
-        raise PromotionError("ranking decision production policy identity does not match")
+    if (
+        prod.policy_name != row_policy["name"]
+        or prod.policy_version != row_policy["version"]
+    ):
+        raise PromotionError(
+            "ranking decision production policy identity does not match"
+        )
     expected_names = {
-        name for name in row.get("schedule", {}).get("candidates", [])
+        name
+        for name in row.get("schedule", {}).get("candidates", [])
         if isinstance(name, str) and not name.endswith("#twin")
     }
     if not expected_names:
@@ -92,8 +101,7 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
         # decision against the native identity instead of treating the absent
         # schedule as malformed evidence.
         native = row.get("native")
-        if (not isinstance(native, str) or
-                row.get("provisional_winner") != native):
+        if not isinstance(native, str) or row.get("provisional_winner") != native:
             raise PromotionError("ranking decision coverage has no scheduled finalists")
         expected_names = {native}
     for decision in decisions:
@@ -101,24 +109,32 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
         if set(names) != expected_names or len(names) != len(set(names)):
             raise PromotionError("ranking decision candidate coverage is incomplete")
         if decision.predicted_winner not in expected_names:
-            raise PromotionError("ranking decision winner is outside candidate coverage")
-        if any(candidate.verdict not in ranking_policy.VERDICTS
-               for candidate in decision.candidates):
+            raise PromotionError(
+                "ranking decision winner is outside candidate coverage"
+            )
+        if any(
+            candidate.verdict not in ranking_policy.VERDICTS
+            for candidate in decision.candidates
+        ):
             raise PromotionError("ranking decision has unknown candidate verdict")
-        winners = [candidate.name for candidate in decision.candidates
-                   if candidate.verdict == "winner"]
+        winners = [
+            candidate.name
+            for candidate in decision.candidates
+            if candidate.verdict == "winner"
+        ]
         # When native is retained because no challenger clears the effect
         # threshold, latency-v1 can report native as the prediction while no
         # finalist receives the challenger-only ``winner`` verdict. This is
         # valid native-retention evidence, not a contradictory winner.
-        native_retained = (
-            not winners and
-            decision.predicted_winner == row.get("native") == row.get("provisional_winner")
-        )
+        native_retained = not winners and decision.predicted_winner == row.get(
+            "native"
+        ) == row.get("provisional_winner")
         if winners != [decision.predicted_winner] and not native_retained:
             raise PromotionError("ranking decision winner verdict is inconsistent")
     if prod.predicted_winner != row.get("provisional_winner"):
-        raise PromotionError("production ranking decision does not match provisional winner")
+        raise PromotionError(
+            "production ranking decision does not match provisional winner"
+        )
 
 
 def _validate_provisional_status(row: dict[str, Any]) -> None:
@@ -131,20 +147,34 @@ def _validate_provisional_status(row: dict[str, Any]) -> None:
     # the persisted status field; the caller applies the current-state gate.
     if status is None:
         return
-    if status not in {"native", "pending_bh", "confirmation_rejected", "promoted",
-                      "rejected_effect", "rejected_ci", "rejected_bh"}:
+    if status not in {
+        "native",
+        "pending_bh",
+        "confirmation_rejected",
+        "promoted",
+        "rejected_effect",
+        "rejected_ci",
+        "rejected_bh",
+    }:
         raise PromotionError("unknown promotion status")
     if provisional == native and status != "native":
-        raise PromotionError("native provisional winner has inconsistent promotion status")
+        raise PromotionError(
+            "native provisional winner has inconsistent promotion status"
+        )
     if provisional != native and status == "native":
-        raise PromotionError("challenger provisional winner has native promotion status")
+        raise PromotionError(
+            "challenger provisional winner has native promotion status"
+        )
 
 
 def _median(values: list[float]) -> float:
     ordered = sorted(values)
     middle = len(ordered) // 2
-    return ordered[middle] if len(ordered) % 2 else \
-        0.5 * (ordered[middle - 1] + ordered[middle])
+    return (
+        ordered[middle]
+        if len(ordered) % 2
+        else 0.5 * (ordered[middle - 1] + ordered[middle])
+    )
 
 
 def _validated_effect(confirmation: dict[str, Any]) -> float:
@@ -160,9 +190,12 @@ def _validated_effect(confirmation: dict[str, Any]) -> float:
     finite_pairs = [
         (float(left), float(right))
         for left, right in zip(raw_native or [], raw_winner or [])
-        if isinstance(left, (int, float)) and isinstance(right, (int, float))
-        and math.isfinite(float(left)) and math.isfinite(float(right))
-        and float(left) > 0.0 and float(right) > 0.0
+        if isinstance(left, (int, float))
+        and isinstance(right, (int, float))
+        and math.isfinite(float(left))
+        and math.isfinite(float(right))
+        and float(left) > 0.0
+        and float(right) > 0.0
     ]
     if not finite_pairs:
         raise PromotionError("confirmation has no usable paired rounds")
@@ -199,9 +232,12 @@ def _paired_rounds(confirmation: dict[str, Any]) -> tuple[list[float], list[floa
     native: list[float] = []
     winner: list[float] = []
     for left, right in zip(native_raw, winner_raw):
-        if (not isinstance(left, (int, float)) or
-                not isinstance(right, (int, float)) or
-                not math.isfinite(float(left)) or not math.isfinite(float(right))):
+        if (
+            not isinstance(left, (int, float))
+            or not isinstance(right, (int, float))
+            or not math.isfinite(float(left))
+            or not math.isfinite(float(right))
+        ):
             continue
         if float(left) <= 0.0 or float(right) <= 0.0:
             raise PromotionError("confirmation contains non-positive timing evidence")
@@ -222,8 +258,12 @@ def _paired_rounds(confirmation: dict[str, Any]) -> tuple[list[float], list[floa
     return native, winner
 
 
-def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
-                               min_paired_rounds: int = MIN_PAIRED_ROUNDS) -> None:
+def validate_adaptive_evidence(
+    row: dict[str, Any],
+    header: dict[str, Any],
+    *,
+    min_paired_rounds: int = MIN_PAIRED_ROUNDS,
+) -> None:
     """Validate screen/final/confirmation and HI24 canary evidence.
 
     This is deliberately an offline artifact check.  It does not alter the
@@ -237,10 +277,13 @@ def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
         if value is not None and (not isinstance(value, int) or value < 1):
             raise PromotionError(f"invalid {field} evidence count")
 
-    stage_counts = [row.get(field) for field in
-                    ("generated", "applicable", "eligible", "measured")]
-    if any(value is not None and (not isinstance(value, int) or value < 0)
-           for value in stage_counts):
+    stage_counts = [
+        row.get(field) for field in ("generated", "applicable", "eligible", "measured")
+    ]
+    if any(
+        value is not None and (not isinstance(value, int) or value < 0)
+        for value in stage_counts
+    ):
         raise PromotionError("invalid adaptive stage counts")
     present_counts = [value for value in stage_counts if value is not None]
     if present_counts != sorted(present_counts, reverse=True):
@@ -251,20 +294,64 @@ def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
         if canary_state not in {"not_available", "pass", "retried_pass", "unresolved"}:
             raise PromotionError("unknown noise-canary state")
         retries = row.get("canary_retries", 0)
-        if not isinstance(retries, int) or retries < 0:
+        if not isinstance(retries, int) or retries < 0 or retries > 1:
             raise PromotionError("invalid noise-canary retry count")
+        # HI68: the (state, retries, fresh_block) triple must be one of the
+        # producer's legal terminal states -- the same transition table the
+        # C++ canary state machine implements, so a consumer cannot silently
+        # re-encode an older protocol assumption. Pre-HI68 rows lack the
+        # fresh field; a retried_pass without it is legacy and accepted on
+        # that basis only (the old protocol's pair-replacement semantics).
+        has_fresh = "canary_fresh_block" in row
+        fresh_flag = row.get("canary_fresh_block", False)
+        if has_fresh and not isinstance(fresh_flag, bool):
+            raise PromotionError("invalid canary fresh-block flag")
+        fresh = bool(fresh_flag)
+        legal_terminal_states = {
+            ("not_available", 0, False),
+            ("pass", 0, False),
+            ("unresolved", 0, False),  # initial failed, probe disabled by config
+            (
+                "unresolved",
+                1,
+                False,
+            ),  # probe failed; original block retained diagnostically
+            ("retried_pass", 1, True),  # fresh complete block ranked
+            (
+                "unresolved",
+                1,
+                True,
+            ),  # fresh block canary failed; terminal, native retained
+        }
+        is_legacy_retried = not has_fresh and canary_state == "retried_pass"
+        if (
+            canary_state,
+            retries,
+            fresh,
+        ) not in legal_terminal_states and not is_legacy_retried:
+            raise PromotionError(
+                f"inconsistent noise-canary evidence: {canary_state} / "
+                f"retries={retries} / fresh_block={fresh}"
+            )
         pair = row.get("canary_pair", "")
         pct = row.get("canary_pct", -1.0)
-        if not isinstance(pair, str) or not isinstance(pct, (int, float)) or not math.isfinite(float(pct)):
+        if (
+            not isinstance(pair, str)
+            or not isinstance(pct, (int, float))
+            or not math.isfinite(float(pct))
+        ):
             raise PromotionError("invalid noise-canary evidence")
         if canary_state == "not_available" and (pair or float(pct) >= 0.0):
             raise PromotionError("noise-canary not_available evidence is inconsistent")
         if canary_state != "not_available" and (not pair or float(pct) < 0.0):
             raise PromotionError("noise-canary evidence is incomplete")
-        if canary_state == "unresolved" and retries < 1:
-            raise PromotionError("unresolved noise-canary lacks retry evidence")
-        if canary_state == "unresolved" and row.get("provisional_winner") not in (None, row.get("native")):
-            raise PromotionError("unresolved noise-canary cannot claim a challenger winner")
+        if canary_state == "unresolved" and row.get("provisional_winner") not in (
+            None,
+            row.get("native"),
+        ):
+            raise PromotionError(
+                "unresolved noise-canary cannot claim a challenger winner"
+            )
 
     candidates = row.get("candidates")
     if candidates is not None:
@@ -273,7 +360,9 @@ def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
         final_limit = header.get("final_samples")
         seen: set[str] = set()
         for candidate in candidates:
-            if not isinstance(candidate, dict) or not isinstance(candidate.get("name"), str):
+            if not isinstance(candidate, dict) or not isinstance(
+                candidate.get("name"), str
+            ):
                 raise PromotionError("malformed candidate evidence")
             name = candidate["name"]
             if name in seen:
@@ -286,9 +375,17 @@ def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
             if samples_us is not None:
                 if not isinstance(samples_us, list):
                     raise PromotionError("candidate final samples must be a list")
-                usable = [v for v in samples_us if isinstance(v, (int, float)) and math.isfinite(float(v)) and float(v) > 0]
+                usable = [
+                    v
+                    for v in samples_us
+                    if isinstance(v, (int, float))
+                    and math.isfinite(float(v))
+                    and float(v) > 0
+                ]
                 if samples != len(usable):
-                    raise PromotionError("candidate final samples do not match samples_us")
+                    raise PromotionError(
+                        "candidate final samples do not match samples_us"
+                    )
             if final_limit is not None and samples > final_limit:
                 raise PromotionError("candidate final samples exceed final_samples")
 
@@ -300,8 +397,12 @@ def validate_adaptive_evidence(row: dict[str, Any], header: dict[str, Any], *,
         if len(native) < min_paired_rounds:
             raise PromotionError("confirmation has insufficient paired rounds")
         configured = header.get("confirmation_samples")
-        if configured is not None and len(confirmation["native_us"]) < max(configured, min_paired_rounds):
-            raise PromotionError("confirmation round payload is shorter than configured evidence")
+        if configured is not None and len(confirmation["native_us"]) < max(
+            configured, min_paired_rounds
+        ):
+            raise PromotionError(
+                "confirmation round payload is shorter than configured evidence"
+            )
 
 
 def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -311,15 +412,18 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         try:
             row = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise PromotionError(f"malformed current measurements line {number}") from exc
+            raise PromotionError(
+                f"malformed current measurements line {number}"
+            ) from exc
         if row.get("kind") == "header":
             if header is not None:
                 raise PromotionError("duplicate header")
             header = row
         elif row.get("kind") == "result":
             try:
-                validate_measurement_identity(row, header=header,
-                                              where=f"measurements line {number}")
+                validate_measurement_identity(
+                    row, header=header, where=f"measurements line {number}"
+                )
             except IdentitySeparationError as exc:
                 raise PromotionError(str(exc)) from exc
             results.append(row)
@@ -327,17 +431,25 @@ def _read(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             raise PromotionError(f"unknown current record kind at line {number}")
     if header is None or not results:
         raise PromotionError("current measurements header/results required")
-    if "production_policy" in header and not isinstance(header["production_policy"], str):
+    if "production_policy" in header and not isinstance(
+        header["production_policy"], str
+    ):
         raise PromotionError("invalid production policy header identity")
     return header, results
 
 
-def paired_bootstrap(native: list[Any], winner: list[Any], *, seed: int,
-                     resamples: int = 10_000) -> tuple[float, float]:
+def paired_bootstrap(
+    native: list[Any], winner: list[Any], *, seed: int, resamples: int = 10_000
+) -> tuple[float, float]:
     pairs = [
-        (float(a), float(b)) for a, b in zip(native, winner)
-        if a is not None and b is not None and float(a) > 0 and float(b) > 0 and
-        math.isfinite(float(a)) and math.isfinite(float(b))
+        (float(a), float(b))
+        for a, b in zip(native, winner)
+        if a is not None
+        and b is not None
+        and float(a) > 0
+        and float(b) > 0
+        and math.isfinite(float(a))
+        and math.isfinite(float(b))
     ]
     if not pairs:
         raise PromotionError("confirmation has no usable paired rounds")
@@ -349,7 +461,9 @@ def paired_bootstrap(native: list[Any], winner: list[Any], *, seed: int,
         winner_median = _median([b for _, b in sample])
         draws.append(100.0 * (native_median - winner_median) / native_median)
     draws.sort()
-    return draws[int(0.025 * resamples)], draws[min(resamples - 1, int(0.975 * resamples))]
+    return draws[int(0.025 * resamples)], draws[
+        min(resamples - 1, int(0.975 * resamples))
+    ]
 
 
 def validate_schedule(row: dict[str, Any]) -> None:
@@ -357,22 +471,32 @@ def validate_schedule(row: dict[str, Any]) -> None:
     signature = row.get("signature")
     seed = row.get("schedule_seed")
     schedule = row.get("schedule")
-    if (not isinstance(signature, str) or len(signature) != 32 or
-            not isinstance(seed, int) or not isinstance(schedule, dict)):
+    if (
+        not isinstance(signature, str)
+        or len(signature) != 32
+        or not isinstance(seed, int)
+        or not isinstance(schedule, dict)
+    ):
         raise PromotionError("current schedule identity missing; rerun")
     expected_seed = int.from_bytes(bytes.fromhex(signature)[:4], "little")
     if seed != expected_seed:
         raise PromotionError("schedule seed drift detected")
-    if (schedule.get("schema_version") != 1 or
-            schedule.get("selection_algorithm") != "seeded-rotation-v1" or
-            schedule.get("confirmation_algorithm") != "seeded-alternation-v1"):
+    if (
+        schedule.get("schema_version") != 1
+        or schedule.get("selection_algorithm") != "seeded-rotation-v1"
+        or schedule.get("confirmation_algorithm") != "seeded-alternation-v1"
+    ):
         raise PromotionError("unknown current schedule algorithm; rerun")
     candidates = schedule.get("candidates")
-    if not isinstance(candidates, list) or len(candidates) < 2 or any(
-            not isinstance(name, str) or not name for name in candidates):
+    if (
+        not isinstance(candidates, list)
+        or len(candidates) < 2
+        or any(not isinstance(name, str) or not name for name in candidates)
+    ):
         raise PromotionError("current selection schedule candidates missing; rerun")
     expected_order = sorted(
-        candidates, key=lambda name: (name.removesuffix("#twin"), name.endswith("#twin"))
+        candidates,
+        key=lambda name: (name.removesuffix("#twin"), name.endswith("#twin")),
     )
     if candidates != expected_order or len(set(candidates)) != len(candidates):
         raise PromotionError("selection schedule position drift detected")
@@ -384,15 +508,17 @@ def benjamini_hochberg(rows: list[tuple[str, float]]) -> dict[str, float]:
     if len({digest for digest, _ in ordered}) != len(ordered):
         raise PromotionError("duplicate hypothesis identity")
     count = len(ordered)
-    adjusted = [min(1.0, p_value * count / rank)
-                for rank, (_, p_value) in enumerate(ordered, 1)]
+    adjusted = [
+        min(1.0, p_value * count / rank) for rank, (_, p_value) in enumerate(ordered, 1)
+    ]
     for index in range(count - 2, -1, -1):
         adjusted[index] = min(adjusted[index], adjusted[index + 1])
     return {ordered[index][0]: adjusted[index] for index in range(count)}
 
 
-def simulate_null_fdr(*, experiments: int, hypotheses: int, q: float,
-                      seed: int) -> dict[str, Any]:
+def simulate_null_fdr(
+    *, experiments: int, hypotheses: int, q: float, seed: int
+) -> dict[str, Any]:
     """Exercise the shipped BH implementation under independent global nulls."""
     if experiments < 100 or hypotheses < 1 or not 0 < q < 1:
         raise PromotionError("invalid null-FDR simulation policy")
@@ -406,21 +532,36 @@ def simulate_null_fdr(*, experiments: int, hypotheses: int, q: float,
         adjusted = benjamini_hochberg(rows)
         rejected = sorted(digest for digest, value in adjusted.items() if value <= q)
         false_discoveries += bool(rejected)
-        runs.append({
-            "experiment": experiment, "seed": experiment_seed,
-            "p_values": [value for _, value in rows], "rejected": rejected,
-        })
+        runs.append(
+            {
+                "experiment": experiment,
+                "seed": experiment_seed,
+                "p_values": [value for _, value in rows],
+                "rejected": rejected,
+            }
+        )
     observed = false_discoveries / experiments
     return {
-        "schema_version": SCHEMA_VERSION, "method": "benjamini-hochberg-global-null",
-        "seed": seed, "experiments": experiments, "hypotheses": hypotheses, "q": q,
+        "schema_version": SCHEMA_VERSION,
+        "method": "benjamini-hochberg-global-null",
+        "seed": seed,
+        "experiments": experiments,
+        "hypotheses": hypotheses,
+        "q": q,
         "experiments_with_false_discovery": false_discoveries,
-        "empirical_fdr": observed, "runs": runs,
+        "empirical_fdr": observed,
+        "runs": runs,
     }
 
 
-def promote(measurements: Path, output: Path, *, q: float = 0.05,
-            threshold_pct: float = 1.0, resamples: int = 10_000) -> dict[str, Any]:
+def promote(
+    measurements: Path,
+    output: Path,
+    *,
+    q: float = 0.05,
+    threshold_pct: float = 1.0,
+    resamples: int = 10_000,
+) -> dict[str, Any]:
     if not 0 < q < 1 or threshold_pct < 0 or resamples < 100:
         raise PromotionError("invalid predeclared promotion policy")
     header, results = _read(measurements)
@@ -430,9 +571,11 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
     required_header = {"artifact_version", "source_revision", "manifest_hash"}
     if required_header - header.keys():
         raise PromotionError("current measurements header metadata required; rerun")
-    if (header.get("artifact_version") != 1 or
-            not isinstance(header.get("manifest_hash"), str) or
-            len(header["manifest_hash"]) != 32):
+    if (
+        header.get("artifact_version") != 1
+        or not isinstance(header.get("manifest_hash"), str)
+        or len(header["manifest_hash"]) != 32
+    ):
         raise PromotionError("invalid current measurements header; rerun")
     hypotheses: list[tuple[str, float]] = []
     for row in results:
@@ -445,13 +588,18 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             continue
         original_status = row.get("promotion_status")
         if original_status not in {"pending_bh", "confirmation_rejected"}:
-            raise PromotionError("non-native result lacks current pending_bh/confirmation evidence")
+            raise PromotionError(
+                "non-native result lacks current pending_bh/confirmation evidence"
+            )
         validate_schedule(row)
         dispatch = row.get("dispatch")
         p_value = row.get("confirmation", {}).get("p_value")
-        if (not isinstance(dispatch, str) or
-                not isinstance(p_value, (int, float)) or
-                not math.isfinite(float(p_value)) or not 0.0 <= float(p_value) <= 1.0):
+        if (
+            not isinstance(dispatch, str)
+            or not isinstance(p_value, (int, float))
+            or not math.isfinite(float(p_value))
+            or not 0.0 <= float(p_value) <= 1.0
+        ):
             raise PromotionError("confirmation identity/p-value missing")
         hypotheses.append((dispatch, float(p_value)))
     adjusted = benjamini_hochberg(hypotheses) if hypotheses else {}
@@ -464,20 +612,33 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             continue
         confirmation = row["confirmation"]
         observed_effect = _validated_effect(confirmation)
-        seed_material = (str(header.get("manifest_hash", "")) + row["dispatch"]).encode("ascii")
-        seed = int.from_bytes(hashlib.blake2b(seed_material, digest_size=8).digest(), "little")
+        seed_material = (str(header.get("manifest_hash", "")) + row["dispatch"]).encode(
+            "ascii"
+        )
+        seed = int.from_bytes(
+            hashlib.blake2b(seed_material, digest_size=8).digest(), "little"
+        )
         low, high = paired_bootstrap(
-            confirmation.get("native_us", []), confirmation.get("winner_us", []),
-            seed=seed, resamples=resamples,
+            confirmation.get("native_us", []),
+            confirmation.get("winner_us", []),
+            seed=seed,
+            resamples=resamples,
         )
         original_status = row["promotion_status"]
-        passed = (original_status == "pending_bh" and
-                  row["dispatch"] in accepted and
-                  observed_effect >= threshold_pct and low > 0.0)
+        passed = (
+            original_status == "pending_bh"
+            and row["dispatch"] in accepted
+            and observed_effect >= threshold_pct
+            and low > 0.0
+        )
         row["promotion"] = {
-            "schema_version": SCHEMA_VERSION, "q": q,
-            "threshold_pct": threshold_pct, "bootstrap_resamples": resamples,
-            "bootstrap_seed": seed, "ci95_low_pct": low, "ci95_high_pct": high,
+            "schema_version": SCHEMA_VERSION,
+            "q": q,
+            "threshold_pct": threshold_pct,
+            "bootstrap_resamples": resamples,
+            "bootstrap_seed": seed,
+            "ci95_low_pct": low,
+            "ci95_high_pct": high,
             "p_value": float(confirmation["p_value"]),
             "q_value": adjusted[row["dispatch"]],
             "bh_accepted": row["dispatch"] in accepted,
@@ -505,18 +666,26 @@ def promote(measurements: Path, output: Path, *, q: float = 0.05,
             }[rejection_status]
     promoted_header = dict(header)
     promoted_header["promotion_policy"] = {
-        "schema_version": SCHEMA_VERSION, "method": "benjamini-hochberg",
-        "q": q, "threshold_pct": threshold_pct,
-        "bootstrap_resamples": resamples, "hypotheses": len(hypotheses),
+        "schema_version": SCHEMA_VERSION,
+        "method": "benjamini-hochberg",
+        "q": q,
+        "threshold_pct": threshold_pct,
+        "bootstrap_resamples": resamples,
+        "hypotheses": len(hypotheses),
     }
     promoted_header["promotion_policy"]["policy_hash"] = hashlib.blake2b(
-        canonical(promoted_header["promotion_policy"]), digest_size=16,
+        canonical(promoted_header["promotion_policy"]),
+        digest_size=16,
         person=b"bc-promotion-v1",
     ).hexdigest()
-    data = b"\n".join([canonical(promoted_header), *(canonical(row) for row in results)]) + b"\n"
+    data = (
+        b"\n".join([canonical(promoted_header), *(canonical(row) for row in results)])
+        + b"\n"
+    )
     atomic_write(output, data)
     return {
-        "schema_version": SCHEMA_VERSION, "hypotheses": len(hypotheses),
+        "schema_version": SCHEMA_VERSION,
+        "hypotheses": len(hypotheses),
         "promoted": promoted_count,
         "content_hash": hashlib.blake2b(data, digest_size=16).hexdigest(),
         "output": str(output),
@@ -532,8 +701,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resamples", type=int, default=10_000)
     args = parser.parse_args(argv)
     try:
-        result = promote(args.measurements, args.output, q=args.q,
-                         threshold_pct=args.threshold_pct, resamples=args.resamples)
+        result = promote(
+            args.measurements,
+            args.output,
+            q=args.q,
+            threshold_pct=args.threshold_pct,
+            resamples=args.resamples,
+        )
     except (OSError, ValueError, PromotionError) as exc:
         print(f"invalid: {exc}")
         return 1
@@ -550,8 +724,12 @@ def null_fdr_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, required=True)
     args = parser.parse_args(argv)
     try:
-        result = simulate_null_fdr(experiments=args.experiments, hypotheses=args.hypotheses,
-                                   q=args.q, seed=args.seed)
+        result = simulate_null_fdr(
+            experiments=args.experiments,
+            hypotheses=args.hypotheses,
+            q=args.q,
+            seed=args.seed,
+        )
     except PromotionError as exc:
         print(f"invalid: {exc}")
         return 1

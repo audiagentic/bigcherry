@@ -285,6 +285,132 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaisesRegex(tune_promotion.PromotionError, "unresolved"):
             tune_promotion.validate_adaptive_evidence(row, self.HEADER)
 
+    def test_hi68_canary_terminal_state_matrix_is_accepted(self):
+        # Producer/consumer contract (HI68): every terminal triple the C++
+        # canary state machine can emit must validate here. The zero-probe
+        # unresolved row is the P1 case: noise_canary_retries=0 makes it legal.
+        legal = [
+            {
+                "canary_state": "not_available",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+            },
+            {
+                "canary_state": "pass",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 1.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_fresh_block": True,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 9.0,
+            },
+        ]
+        for fields in legal:
+            with self.subTest(fields=fields):
+                row = result("a" * 32, 0.001, 95.0)
+                row.update(fields)
+                tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_hi68_illegal_canary_terminal_states_are_rejected(self):
+        illegal = [
+            {
+                "canary_state": "pass",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 1.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 0,
+                "canary_fresh_block": True,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 0,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+            # Explicit fresh=false on retried_pass is the NEW schema saying the
+            # producer contradicted itself: rejected (unlike the legacy row
+            # below, where the field is simply absent).
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+        ]
+        for fields in illegal:
+            with self.subTest(fields=fields):
+                row = result("a" * 32, 0.001, 95.0)
+                row.update(fields)
+                with self.assertRaises(tune_promotion.PromotionError):
+                    tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_legacy_retried_pass_without_fresh_field_still_validates(self):
+        # Pre-HI68 artifacts carry retried_pass with the pair-replacement
+        # semantics and no canary_fresh_block key at all; the field's ABSENCE
+        # (not a false value) is what marks them legacy.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_non_bool_canary_fresh_block_flag_is_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "fresh-block flag"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
     def test_production_policy_hash_is_deterministic(self):
         first = tune_promotion.production_policy_hash("latency-v1", 1)
         second = tune_promotion.production_policy_hash("latency-v1", 1)
