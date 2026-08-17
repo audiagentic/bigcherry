@@ -490,6 +490,48 @@ class TestBuildDatabase(unittest.TestCase):
             obs_count = db.query("SELECT COUNT(*) FROM observation")[0][0]
             self.assertEqual(obs_count, 1)
 
+    def test_legacy_record_with_no_campaign_context_loads_with_null_identity(self):
+        # RE09 (RV48 audit): an imported/ad-hoc record file, or any caller
+        # not passing the new campaign-identity kwargs, must still load --
+        # visibly NULL, not a fabricated or guessed identity.
+        rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_MMQ])
+        with TempDB() as db:
+            inventory.build_database(
+                rec, db.db_path,
+                Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
+            )
+            build_row = db.query(
+                "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                "campaign_run_id, workload_id FROM build")[0]
+            self.assertEqual(build_row, (None, None, None, None, None))
+            obs_row = db.query(
+                "SELECT source_slice_id, workload_id, campaign_run_id "
+                "FROM observation")[0]
+            self.assertEqual(obs_row, (None, None, None))
+
+    def test_production_record_with_campaign_context_persists_identity(self):
+        # RE09: a real caller that ran this record build through
+        # execute_campaign_lane() and holds its CampaignLaneResult passes
+        # those identities through explicitly.
+        rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_MMQ])
+        with TempDB() as db:
+            inventory.build_database(
+                rec, db.db_path,
+                Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
+                source_slice_id="slice-1", build_plan_id="plan-1",
+                effective_build_id="effective-1", campaign_run_id="run-1",
+                workload_id="workload-1",
+            )
+            build_row = db.query(
+                "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                "campaign_run_id, workload_id FROM build")[0]
+            self.assertEqual(
+                build_row, ("slice-1", "plan-1", "effective-1", "run-1", "workload-1"))
+            obs_row = db.query(
+                "SELECT source_slice_id, workload_id, campaign_run_id "
+                "FROM observation")[0]
+            self.assertEqual(obs_row, ("slice-1", "workload-1", "run-1"))
+
 
 class TestLoadMeasurements(unittest.TestCase):
     """Load tuning JSONL into SQLite (HI20)."""
