@@ -122,6 +122,11 @@ struct ggml_hip_tuner_config {
     // the observed floor -- a quiet machine reproduced the same kernel to 0.6%,
     // while a 3-sample screen on a busy one diverged by 14%.
     double noise_canary_pct      = 5.0;
+    // HI68: probe allowance. 0 sends a failed initial canary straight to
+    // UNRESOLVED; any positive value allows exactly ONE pair-only stability
+    // probe, followed (only if the probe passes) by one fresh complete
+    // finalist block that becomes the sole ranking dataset. The fresh
+    // block's own canary is never retried at any setting.
     int    noise_canary_retries  = 1;
 
     // HI24 step 4: measure native a second time as a same-kernel twin so

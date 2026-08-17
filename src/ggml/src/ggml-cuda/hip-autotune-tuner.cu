@@ -5,6 +5,7 @@
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE)
 
 #include "hip-autotune-build-hash.h"
+#include "hip-autotune-canary.h"
 #include "hip-autotune-dispatch.cuh"
 #include "hip-autotune-io.h"
 #include "hip-autotune-journal.h"
@@ -223,8 +224,15 @@ struct Result {
     // measurement error. -1 means the check could not be run for this
     // signature (no same-kernel pair reached final measurement).
     double canary_pct    = -1.0;
-    int    canary_retries = 0;
+    int    canary_retries = 0;   // number of stability probes performed (0 or 1, HI68)
     std::string canary_pair;   // which two entries were compared
+    // HI68: true when a fresh complete finalist block was measured after the
+    // original block's QC failed and its one stability probe passed. Offline
+    // readers use it to know which measurement window every ranked median in
+    // this row covers. Invariant: canary_state == retried_pass implies
+    // canary_fresh_block; a fresh block may also end canary_unresolved (its
+    // own canary still divergent -- terminal, native retained).
+    bool canary_fresh_block = false;
 };
 
 struct DigestHash {
@@ -2101,38 +2109,28 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // Interleaved rather than one candidate at a time. Measuring A to
     // completion and then B lets thermal drift or a clock change across the
     // run masquerade as a difference between them.
-    if (finalists.size() > 1) {
-        // HI34: deterministic order, then a per-signature seed (derived from
-        // the signature digest, so it is reproducible offline without
-        // storing anything extra) rotates which candidate starts each round.
-        // A fixed order would let whichever candidate is always measured
-        // first in a round absorb a systematic share of thermal drift; the
-        // rotation spreads that instead of cancelling it only in aggregate.
-        // The twin shares native's stable name, so plain strcmp leaves an
-        // equivalent-key pair whose order std::sort does not guarantee. Break
-        // ties explicitly (primary before twin) so the schedule is a
-        // deterministic, name-unique description of what was actually run.
-        std::sort(finalists.begin(), finalists.end(),
-                  [](const Measurement * a, const Measurement * b) {
-                      const int cmp = strcmp(a->candidate->stable_name,
-                                             b->candidate->stable_name);
-                      if (cmp != 0) {
-                          return cmp < 0;
-                      }
-                      return a->is_native_twin < b->is_native_twin;
-                  });
-        result.schedule_seed = (uint32_t) result.signature_digest.bytes[0]
-                             | ((uint32_t) result.signature_digest.bytes[1] << 8)
-                             | ((uint32_t) result.signature_digest.bytes[2] << 16)
-                             | ((uint32_t) result.signature_digest.bytes[3] << 24);
-        for (const Measurement * m : finalists) {
-            result.schedule_candidates.push_back(measurement_name(*m));
-        }
+    //
+    // HI68: one complete finalist measurement block, extracted as a unit so
+    // the canary's fresh-block path measures EXACTLY what the normal final
+    // stage measures (same interleaving, same counterbalance schedule, same
+    // retime bookkeeping) and nothing else. Every call fills a self-contained
+    // statistics set; whatever block the run ultimately ranks is one of these,
+    // whole -- never a patchwork of rounds from different blocks.
+    auto measure_finalist_block = [&]() {
         for (Measurement * m : finalists) {
             m->final_gpu_us.assign(config.final_samples,
                                    std::numeric_limits<double>::quiet_NaN());
             m->final_host_us.assign(config.final_samples,
                                     std::numeric_limits<double>::quiet_NaN());
+            // A fresh block is a fresh timing verdict. Clear the reasons a
+            // discarded block left (a candidate rejected noisy or failed on
+            // that block must not carry the verdict into the block being
+            // ranked). Correctness rejects exist only on unmeasured rows, so
+            // nothing authoritative can be cleared here.
+            if (m->reason == GGML_HIP_REJECT_NOISY ||
+                    m->reason == GGML_HIP_REJECT_LAUNCH_FAILED) {
+                m->reason = GGML_HIP_REJECT_NONE;
+            }
         }
         for (int round = 0; round < config.final_samples; ++round) {
             const size_t offset = (result.schedule_seed + (uint32_t) round) % finalists.size();
@@ -2166,6 +2164,35 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             m->host_median_us = median_of(m->final_host_us);
             m->samples        = (int) finite_gpu.size();
         }
+    };
+    if (finalists.size() > 1) {
+        // HI34: deterministic order, then a per-signature seed (derived from
+        // the signature digest, so it is reproducible offline without
+        // storing anything extra) rotates which candidate starts each round.
+        // A fixed order would let whichever candidate is always measured
+        // first in a round absorb a systematic share of thermal drift; the
+        // rotation spreads that instead of cancelling it only in aggregate.
+        // The twin shares native's stable name, so plain strcmp leaves an
+        // equivalent-key pair whose order std::sort does not guarantee. Break
+        // ties explicitly (primary before twin) so the schedule is a
+        // deterministic, name-unique description of what was actually run.
+        std::sort(finalists.begin(), finalists.end(),
+                  [](const Measurement * a, const Measurement * b) {
+                      const int cmp = strcmp(a->candidate->stable_name,
+                                             b->candidate->stable_name);
+                      if (cmp != 0) {
+                          return cmp < 0;
+                      }
+                      return a->is_native_twin < b->is_native_twin;
+                  });
+        result.schedule_seed = (uint32_t) result.signature_digest.bytes[0]
+                             | ((uint32_t) result.signature_digest.bytes[1] << 8)
+                             | ((uint32_t) result.signature_digest.bytes[2] << 16)
+                             | ((uint32_t) result.signature_digest.bytes[3] << 24);
+        for (const Measurement * m : finalists) {
+            result.schedule_candidates.push_back(measurement_name(*m));
+        }
+        measure_finalist_block();
     }
 
     if (result.measurement_failure || g_tuner_poisoned.load(std::memory_order_relaxed)) {
@@ -2188,33 +2215,46 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         return native.candidate;
     }
 
-    // A native baseline is only valid when it survived every measurement
-    // stage.  In particular, a finalist can have a valid screening median
-    // and then fail every final interleaved launch; retaining that stale
-    // median would make the ranking stage non-conservative.
-    if (native_m->reason == GGML_HIP_REJECT_LAUNCH_FAILED || !native_m->measured) {
-        result.reason = "native final measurement failed; run rejected";
-        record_result(dispatch_digest, result);
-        return native.candidate;
-    }
-
-    // E4: dispersion rejection, after the final stage. A candidate whose own
-    // spread is wider than the margins being decided cannot be ranked,
-    // however good its median looks.
-    for (Measurement * m : finalists) {
-        if (!m->measured || m->median_us <= 0.0) continue;
-        if (m->mad_us / m->median_us > config.noisy_mad_ratio) {
-            m->reason = GGML_HIP_REJECT_NOISY;
+    // Post-block verdicts for whatever statistics the finalists currently
+    // hold: the E4 dispersion rejection plus the "native must be a usable
+    // baseline" checks (standards 7.3). Returns a non-empty reason when the
+    // whole run must be rejected, empty otherwise. Runs after EVERY block
+    // that becomes the ranking dataset -- including HI68's fresh canary
+    // block, which gets exactly the same scrutiny as the original one.
+    auto post_block_reject_reason = [&]() -> std::string {
+        // E4: dispersion rejection, after the final stage. A candidate whose
+        // own spread is wider than the margins being decided cannot be
+        // ranked, however good its median looks.
+        for (Measurement * m : finalists) {
+            if (!m->measured || m->median_us <= 0.0) continue;
+            if (m->mad_us / m->median_us > config.noisy_mad_ratio) {
+                m->reason = GGML_HIP_REJECT_NOISY;
+            }
         }
-    }
-    if (native_m->reason == GGML_HIP_REJECT_NOISY) {
-        // Same treatment as an unmeasurable native (standards 7.3): a
-        // baseline that cannot be pinned down is not a baseline, and every
-        // improvement_pct in this signature would be computed against a
-        // number that moved.
-        result.reason = "native timing unstable; run rejected";
-        record_result(dispatch_digest, result);
-        return native.candidate;
+        // A native baseline is only valid when it survived every measurement
+        // stage.  In particular, a finalist can have a valid screening
+        // median and then fail every final interleaved launch; retaining that
+        // stale median would make the ranking stage non-conservative.
+        if (native_m->reason == GGML_HIP_REJECT_LAUNCH_FAILED || !native_m->measured) {
+            return "native final measurement failed; run rejected";
+        }
+        if (native_m->reason == GGML_HIP_REJECT_NOISY) {
+            // Same treatment as an unmeasurable native (standards 7.3): a
+            // baseline that cannot be pinned down is not a baseline, and
+            // every improvement_pct in this signature would be computed
+            // against a number that moved.
+            return "native timing unstable; run rejected";
+        }
+        return "";
+    };
+
+    {
+        const std::string initial_reject = post_block_reject_reason();
+        if (!initial_reject.empty()) {
+            result.reason = initial_reject;
+            record_result(dispatch_digest, result);
+            return native.candidate;
+        }
     }
 
     // --- noise canary (HI24) --------------------------------------------
@@ -2276,56 +2316,124 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             twin = native_twin;
         }
 
-        for (int attempt = 0; twin != nullptr && native_m->median_us > 0.0; ++attempt) {
-            const double diff = std::fabs(native_m->median_us - twin->median_us);
-            result.canary_pct  = 100.0 * diff / native_m->median_us;
+        // HI68: the transition between blocks is a pure CPU state machine
+        // (hip-autotune-canary.h, host-unit-tested). Whatever block the run
+        // ranks is always ONE complete finalist measurement; no partial
+        // round's statistics are ever substituted into another block's.
+        if (twin != nullptr && native_m->median_us > 0.0) {
             // Measurement-instance identity: a J-best pair emits the
             // challenger's name, the fallback emits e.g. "mmvq:native:v1#twin".
             result.canary_pair = measurement_name(*twin);
-            if (result.canary_pct <= config.noise_canary_pct ||
-                    attempt >= config.noise_canary_retries) {
-                if (result.canary_pct > config.noise_canary_pct) {
-                    // Report rather than discard. The winner may still be
-                    // right; what is established is that this signature's
-                    // margins are not resolvable at these sample counts.
+
+            const ggml_hip_canary_verdict initial = ggml_hip_canary_transition(
+                GGML_HIP_CANARY_STAGE_INITIAL, native_m->median_us,
+                twin->median_us, config.noise_canary_pct,
+                config.noise_canary_retries);
+            result.canary_pct = initial.pct;
+
+            if (initial.next == GGML_HIP_CANARY_RANK) {
+                // The original block's pair is quiet: rank it.
+                result.canary_state = GGML_HIP_CANARY_PASS;
+            } else if (initial.next == GGML_HIP_CANARY_STOP_UNRESOLVED) {
+                // Divergent and no probe allowed by config. Report rather
+                // than discard: the winner may still be right; what is
+                // established is that this signature's margins are not
+                // resolvable at these sample counts.
+                result.canary_state = GGML_HIP_CANARY_UNRESOLVED;
+                GGML_LOG_WARN("bigcherry: noise canary %.1f%% on this "
+                              "signature (native vs %s, identical kernels); "
+                              "timings are unreliable at these sample counts\n",
+                              result.canary_pct, result.canary_pair.c_str());
+            } else {  // GGML_HIP_CANARY_RUN_PROBE
+                // One pair-only stability probe. Its samples answer "did the
+                // environment settle?" -- they are NOT a measurement of the
+                // pair, and their statistics are discarded (RV49/F2: the old
+                // code overwrote the ranked medians with exactly this
+                // self-selected fresh draw).
+                ++result.canary_retries;
+                Measurement * pair[2] = { native_m, twin };
+                std::vector<double> probe_native, probe_twin;
+                for (int round = 0; round < config.final_samples; ++round) {
+                    const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
+                    const CounterbalancedRound measured = run_counterbalanced_round(
+                        {pair[0], pair[1]}, 0, reverse, lc,
+                        result.launches_per_sample, config.pre_sample_mode, "final");
+                    record_retime_observation(result, measured);
+                    if (!measured.complete) {
+                        break;
+                    }
+                    probe_native.push_back(measured.gpu_us[0]);
+                    probe_twin.push_back(measured.gpu_us[1]);
+                }
+                const std::vector<double> pn = finite_only(probe_native);
+                const std::vector<double> pt = finite_only(probe_twin);
+                const ggml_hip_canary_verdict probe = ggml_hip_canary_transition(
+                    GGML_HIP_CANARY_STAGE_PROBE,
+                    pn.empty() ? -1.0 : median_of(pn),
+                    pt.empty() ? -1.0 : median_of(pt),
+                    config.noise_canary_pct, 0);
+
+                if (probe.next == GGML_HIP_CANARY_RUN_FRESH) {
+                    // The environment settled: measure ONE fresh complete
+                    // finalist block. It becomes the SOLE ranking dataset --
+                    // the original block is exactly the one whose QC failed,
+                    // and it is discarded for ranking. Its canary is evaluated
+                    // once, on this block: never retried until quiet (that
+                    // would re-select a favorable baseline).
+                    measure_finalist_block();
+                    if (result.measurement_failure ||
+                            g_tuner_poisoned.load(std::memory_order_relaxed)) {
+                        result.reason = "tuning experiment poisoned; later measurements suppressed";
+                        capture_device_state_post();
+                        record_result(dispatch_digest, result);
+                        return native.candidate;
+                    }
+                    if (result.retime_status == "unresolved") {
+                        result.reason = "clock drift retime unresolved; run rejected";
+                        record_result(dispatch_digest, result);
+                        return native.candidate;
+                    }
+                    const std::string fresh_reject = post_block_reject_reason();
+                    if (!fresh_reject.empty()) {
+                        result.reason = fresh_reject;
+                        record_result(dispatch_digest, result);
+                        return native.candidate;
+                    }
+                    // Measured guards: a finalist that failed to launch on
+                    // the fresh block still holds its stale original-block
+                    // median; judging the canary against that would mix two
+                    // measurement windows. (Native is guaranteed measured by
+                    // post_block_reject_reason above.)
+                    const ggml_hip_canary_verdict fresh = ggml_hip_canary_transition(
+                        GGML_HIP_CANARY_STAGE_FRESH,
+                        native_m->measured ? native_m->median_us : -1.0,
+                        twin->measured ? twin->median_us : -1.0,
+                        config.noise_canary_pct, 0);
+                    result.canary_pct = fresh.pct;
+                    result.canary_state = fresh.passed
+                        ? GGML_HIP_CANARY_RETRIED_PASS
+                        : GGML_HIP_CANARY_UNRESOLVED;
+                    result.canary_fresh_block = true;
+                    if (!fresh.passed) {
+                        // Report rather than discard: native is retained on
+                        // the fresh block's evidence, and that is what this
+                        // row records.
+                        GGML_LOG_WARN("bigcherry: noise canary %.1f%% on "
+                                      "this signature (native vs %s, identical "
+                                      "kernels, fresh block); native retained\n",
+                                      result.canary_pct, result.canary_pair.c_str());
+                    }
+                } else {
+                    // The probe still failed: the environment did not settle.
+                    // Native is retained on the ORIGINAL block's evidence --
+                    // no statistics were swapped, so nothing was self-
+                    // selected. Report rather than discard.
                     result.canary_state = GGML_HIP_CANARY_UNRESOLVED;
                     GGML_LOG_WARN("bigcherry: noise canary %.1f%% on this "
-                                  "signature (native vs %s, identical "
-                                  "kernels); timings are unreliable at these "
-                                  "sample counts\n",
-                                  result.canary_pct, result.canary_pair.c_str());
-                } else {
-                    result.canary_state = result.canary_retries > 0
-                        ? GGML_HIP_CANARY_RETRIED_PASS
-                        : GGML_HIP_CANARY_PASS;
+                                  "signature (native vs %s, identical kernels); "
+                                  "stability probe still divergent; native retained\n",
+                                  initial.pct, result.canary_pair.c_str());
                 }
-                break;
-            }
-            // Re-measure the pair interleaved, exactly as the final stage does.
-            ++result.canary_retries;
-            Measurement * pair[2] = { native_m, twin };
-            std::vector<std::vector<double>> g(2), h(2);
-            for (int round = 0; round < config.final_samples; ++round) {
-                const bool reverse = ((result.schedule_seed ^ (uint32_t) round) & 1u) != 0;
-                const CounterbalancedRound measured = run_counterbalanced_round(
-                    {pair[0], pair[1]}, 0, reverse, lc,
-                    result.launches_per_sample, config.pre_sample_mode, "final");
-                record_retime_observation(result, measured);
-                if (!measured.complete) {
-                    break;
-                }
-                for (int i = 0; i < 2; ++i) {
-                    g[i].push_back(measured.gpu_us[(size_t) i]);
-                    h[i].push_back(measured.host_us[(size_t) i]);
-                }
-            }
-            for (int i = 0; i < 2; ++i) {
-                if (g[i].empty()) continue;
-                pair[i]->median_us      = median_of(g[i]);
-                pair[i]->mad_us         = mad_of(g[i], pair[i]->median_us);
-                pair[i]->p95_us         = percentile_of(g[i], 0.95);
-                pair[i]->host_median_us = median_of(h[i]);
-                pair[i]->samples        = (int) g[i].size();
             }
         }
     }
@@ -2341,8 +2449,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     }
 
     // E3: rank on whichever resource is actually binding, computed after the
-    // canary section above (which can re-measure native and its twin) so
-    // this is never stale relative to what median_us/host_median_us hold.
+    // canary section above (which under HI68 may replace the entire finalist
+    // statistics set with a fresh complete block) so this is never stale
+    // relative to what median_us/host_median_us hold.
     // For most candidates host_median ~= gpu_median + sync_overhead and the
     // adjustment does nothing; it matters when host-side submission cost is
     // a material fraction of a tiny call (TUNING-DETAIL.md's 12.36us
@@ -2637,6 +2746,7 @@ void ggml_hip_tuner_flush() {
                 "\"workspace\":%d,\"launch_failed\":%d,\"nan_inf\":%d,"
                 "\"tolerance\":%d,\"noisy\":%d,\"unstable\":%d},"
                 "\"canary_pct\":%.3f,\"canary_retries\":%d,"
+                "\"canary_fresh_block\":%s,"
                 "\"canary_pair\":\"%s\","
                 "\"promotion_status\":\"%s\","
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
@@ -2669,7 +2779,8 @@ void ggml_hip_tuner_flush() {
                 counts[GGML_HIP_REJECT_TOLERANCE],
                 counts[GGML_HIP_REJECT_NOISY],
                 counts[GGML_HIP_REJECT_UNSTABLE],
-                r.canary_pct, r.canary_retries, r.canary_pair.c_str(),
+                r.canary_pct, r.canary_retries,
+                r.canary_fresh_block ? "true" : "false", r.canary_pair.c_str(),
                 r.promotion_status.c_str(),
                 r.launches_per_sample, r.schedule_seed,
                 r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
