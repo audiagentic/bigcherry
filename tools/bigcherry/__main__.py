@@ -1339,9 +1339,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate_ref_cmd.add_argument("--ref", default="master")
     validate_ref_cmd.add_argument("--recipe", default="bigcherry")
     validate_ref_cmd.add_argument("--inventory", default=None)
+    validate_ref_cmd.add_argument("--promoted-winners", default=None)
     validate_ref_cmd.set_defaults(func=lambda args: _validate_release_main([
         "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
         *( ["--inventory", args.inventory] if args.inventory else []),
+        *( ["--promoted-winners", args.promoted_winners] if args.promoted_winners else []),
         *( ["--staging-root", args.staging_root] if args.staging_root else []),
     ]))
 

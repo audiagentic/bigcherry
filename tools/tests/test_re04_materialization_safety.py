@@ -14,7 +14,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -124,15 +123,12 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                 path=root / "recipes.toml",
             )
             catalog = bc_patchset.catalog(directory=context.patches_root)
-            # resolve_lane() cross-checks the supplied catalog against
-            # patchset.catalog() with NO directory override, which defaults
-            # to paths.PATCHES (the real project's patches/), not
-            # context.patches_root -- see RE24's own notes on this same
-            # architectural gap. Patch the shared default for this isolated
-            # fixture's catalog to be visible to that check.
-            with mock.patch("bigcherry.paths.PATCHES", context.patches_root):
-                plan = source_plan_for(cfg, "test-source", catalog=catalog)
-                lane = campaign_resolution.resolve_lane("test-source", cfg, catalog)
+            # GPT-auto-agent review follow-up (2026-08-17): resolve_patch_set()
+            # now re-derives its cross-check directory from the supplied
+            # catalog itself, rather than defaulting to paths.PATCHES (the
+            # real project's patches/) -- no monkeypatch needed any more.
+            plan = source_plan_for(cfg, "test-source", catalog=catalog)
+            lane = campaign_resolution.resolve_lane("test-source", cfg, catalog)
 
             record = materialize_source(context, plan, allow_dirty_bigcherry=True)
 

@@ -110,6 +110,63 @@ def _run_real_lane(root: Path):
             run_id="promotion-wiring-run", allow_dirty_bigcherry=True)
 
 
+def _run_real_lane_with_generate(root: Path, *, architectures: tuple[str, ...]):
+    """Same shape as _run_real_lane, but a real generate stage (variant_set
+    set) so the result's build_plan.catalog_architectures is non-empty --
+    needed to exercise pointer_from_campaign_result's architecture
+    cross-check for real. autotune_catalog.emit() itself is faked (needs a
+    real llama.cpp source tree this fixture doesn't have), matching
+    test_campaign_cutover_audit.py's CatalogArchitectureIdentityTests
+    pattern; everything else (BuildPlan identity, generated_tree.verify_tree,
+    real build worker, real ArtifactStore) is real.
+    """
+    upstream, revision = _init_upstream(root)
+    project = root / "project"
+    _init_project(project)
+    context = ProjectContext.resolve(
+        project_root=project, config_path=root / "recipes.toml",
+        artifacts_root=root / "artifacts", work_root=root / "work",
+        upstream_repo=upstream)
+    store = ArtifactStore(root / "store")
+    cfg = campaign_config.Config(
+        pinned=revision, patch_sets={},
+        sources={"test-source": campaign_config.Source(
+            name="test-source", ref=revision, overlay=False, patch_sets=())},
+        builds={"gen-build": campaign_config.Build(
+            name="gen-build", options=(), variant_set="inventory", needs=frozenset())},
+        platforms={"linux-multi": campaign_config.Platform(
+            name="linux-multi", targets=architectures, options=())},
+        experiments={}, campaigns={}, path=root / "recipes.toml",
+    )
+    spec = CampaignLaneExecutionSpec(
+        source_name="test-source", build_name="gen-build", platform_name="linux-multi",
+        architectures=architectures, inputs=(), validation=None,
+    )
+
+    def fake_make_generate_worker(*, context, source_root, run_id, variant_set,
+                                  architectures, upstream_revision, required_needs=frozenset()):
+        from bigcherry import generated_tree as gt
+
+        def generate(inputs):
+            generated_root = context.work_root / "runs" / run_id / "generate" / "generated"
+            generated_root.mkdir(parents=True, exist_ok=True)
+            header = generated_root / "hip-autotune-arch.h"
+            header.write_text(f"// architectures: {','.join(sorted(architectures))}\n",
+                              encoding="utf-8")
+            tree_manifest = gt.build_manifest(generated_root, compile_inputs=(header,))
+            return {"manifest": {"architectures": sorted(architectures)},
+                    "generated_tree": tree_manifest}
+        return generate
+
+    calls: list = []
+    with patch("bigcherry.campaign_workers.subprocess.run", _fake_compiler(calls)), \
+         patch("bigcherry.campaign_workers.make_generate_worker",
+               side_effect=fake_make_generate_worker):
+        return execute_campaign_lane(
+            spec, cfg=cfg, context=context, store=store,
+            run_id="promotion-wiring-generate-run", allow_dirty_bigcherry=True)
+
+
 class PointerFromCampaignResultTests(unittest.TestCase):
     def test_pointer_reads_identities_off_the_real_lane_result(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -140,11 +197,33 @@ class PointerFromCampaignResultTests(unittest.TestCase):
             pointer = pointer_from_campaign_result(
                 result=result, release_tag="b10362", campaign_plan_id="plan1",
                 architectures=("gfx1100",), report=b"a real report body", valid=True)
-            record = releases.ReleaseRecord(revision=result.resolved_revision, stage="tested")
+            record = releases.ReleaseRecord(
+                revision=result.resolved_revision, release_tag="b10362", stage="tested")
             releases.promote(record, pointer)
             self.assertEqual(record.stage, "validated")
             self.assertEqual(record.promotion["promoted_source"]["binary_hash"],
                              result.binary_ref.content_hash)
+
+    def test_claimed_architectures_beyond_the_real_catalog_are_rejected(self):
+        # GPT-auto-agent review (RE13 follow-up, 2026-08-17): a valid
+        # result for gfx1100 only must not be wrappable in a pointer
+        # claiming broader coverage.
+        with tempfile.TemporaryDirectory() as directory:
+            result = _run_real_lane_with_generate(Path(directory), architectures=("gfx1100",))
+            self.assertEqual(result.build_plan.catalog_architectures, ("gfx1100",))
+            with self.assertRaisesRegex(PromotionError, "exceed"):
+                pointer_from_campaign_result(
+                    result=result, release_tag="b10362", campaign_plan_id="plan1",
+                    architectures=("gfx1100", "gfx1201"), report=b"report", valid=True)
+
+    def test_claimed_architectures_within_the_real_catalog_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = _run_real_lane_with_generate(
+                Path(directory), architectures=("gfx1100", "gfx1201"))
+            pointer = pointer_from_campaign_result(
+                result=result, release_tag="b10362", campaign_plan_id="plan1",
+                architectures=("gfx1100",), report=b"report", valid=True)
+            self.assertEqual(pointer.required_architectures, ("gfx1100",))
 
 
 if __name__ == "__main__":

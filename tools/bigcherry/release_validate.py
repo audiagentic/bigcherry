@@ -344,6 +344,7 @@ def probe(
     ref: str,
     recipe: str,
     inventory: Path | None = None,
+    promoted_winners: Path | None = None,
 ) -> tuple[int, Path]:
     """Prove `ref` still audits, patches, and builds clean under `recipe`.
 
@@ -426,11 +427,35 @@ def probe(
 
     store = ArtifactStore(run / "artifacts-store")
     architectures = cfg.platforms[platform_name].targets
+    # GPT-auto-agent review (RE13 follow-up, 2026-08-17): the shipped
+    # default recipe ("bigcherry") includes record/tune/replay -- tune
+    # needs "inventory", replay needs "inventory" AND "promoted-winners".
+    # Neither is meaningful to synthesize for an arbitrary, possibly
+    # untested future ref (there is no real tuning history for it yet), so
+    # a build whose declared needs this probe cannot supply is SKIPPED,
+    # not attempted -- attempting it always failed with a CampaignBuildError
+    # that got misreported as "patch-drift-or-build-failed", when the real
+    # situation is "this input does not exist to test against", not "the
+    # patches/build are broken". Compilation compatibility (what this probe
+    # actually answers) is still tested for every build whose needs ARE
+    # satisfiable.
+    available_inputs = {
+        name: path for name, path in (
+            ("inventory", inventory), ("promoted-winners", promoted_winners))
+        if path is not None
+    }
     build_records: dict[str, Any] = {}
     build_ok = True
     for build_name in build_names:
         needs = cfg.builds[build_name].needs
-        inputs = (("inventory", inventory),) if inventory is not None and "inventory" in needs else ()
+        missing = needs - set(available_inputs)
+        if missing:
+            build_records[build_name] = {
+                "ok": True, "skipped": True,
+                "reason": f"missing required input(s): {sorted(missing)}",
+            }
+            continue
+        inputs = tuple((name, available_inputs[name]) for name in sorted(needs))
         spec = CampaignLaneExecutionSpec(
             source_name=source_name, build_name=build_name, platform_name=platform_name,
             architectures=architectures, inputs=inputs,
@@ -468,10 +493,15 @@ def main(argv: list[str] | None = None) -> int:
         "--inventory", default=None,
         help="record-mode inventory JSON for recipes whose build includes tuning",
     )
+    parser.add_argument(
+        "--promoted-winners", default=None,
+        help="promoted-winners JSONL for recipes whose build includes replay",
+    )
     args = parser.parse_args(argv)
     code, path = probe(
         args.run_id, Path(args.staging_root), args.ref, args.recipe,
         Path(args.inventory) if args.inventory else None,
+        Path(args.promoted_winners) if args.promoted_winners else None,
     )
     print(f"record: {path}")
     return code

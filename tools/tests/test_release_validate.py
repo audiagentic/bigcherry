@@ -188,6 +188,11 @@ ref = "pinned"
 overlay = false
 patch-sets = []
 
+[source.test-source-full]
+ref = "pinned"
+overlay = false
+patch-sets = []
+
 [build.stock]
 options = {}
 needs = []
@@ -196,9 +201,22 @@ needs = []
 targets = ["gfx1100"]
 options = {}
 
+[build.needs-inventory]
+options = {}
+needs = ["inventory"]
+
+[build.needs-replay]
+options = {}
+needs = ["inventory", "promoted-winners"]
+
 [compat.recipe.test-source]
 ref = "pinned"
 builds = ["stock"]
+platform = "linux-multi"
+
+[compat.recipe.test-source-full]
+ref = "pinned"
+builds = ["stock", "needs-inventory", "needs-replay"]
 platform = "linux-multi"
 """
 
@@ -343,6 +361,47 @@ class ProbeTests(unittest.TestCase):
             self.assertIn('"outcome": "patch-drift-or-build-failed"', record)
             self.assertIn('"failure_class": "patch-drift"', record)
             self.assertIn('"build": "stock"', record)
+
+    def test_builds_needing_an_unavailable_input_are_skipped_not_reported_as_drift(self):
+        # GPT-auto-agent review (RE13 follow-up, 2026-08-17): the shipped
+        # default recipe includes tune/replay-shaped builds needing
+        # inventory/promoted-winners, neither of which is meaningful to
+        # synthesize for an arbitrary probed ref. Those builds must be
+        # skipped, not attempted-and-misreported as patch-drift.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            harness = _ProbeHarness(root)
+            patches = harness.patches()
+            with patches[0], patches[1]:
+                code, path = release_validate.probe(
+                    "r5", root / "staging", "HEAD", "test-source-full")
+            self.assertEqual(code, 0)
+            record = path.read_text(encoding="utf-8")
+            self.assertIn('"outcome": "compatible"', record)
+            self.assertIn('"skipped": true', record)
+            self.assertIn("missing required input", record)
+            self.assertNotIn("patch-drift-or-build-failed", record)
+
+    def test_supplying_inventory_lets_the_dependent_build_run_for_real(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            harness = _ProbeHarness(root)
+            inventory = root / "inventory.json"
+            inventory.write_text("{}", encoding="utf-8")
+            calls: list = []
+            patches = harness.patches(calls)
+            with patches[0], patches[1]:
+                code, path = release_validate.probe(
+                    "r6", root / "staging", "HEAD", "test-source-full",
+                    inventory=inventory)
+            self.assertEqual(code, 0)
+            record = path.read_text(encoding="utf-8")
+            self.assertIn('"outcome": "compatible"', record)
+            # needs-inventory actually ran (has a build_plan_id, not skipped);
+            # needs-replay still skipped (no promoted-winners supplied).
+            self.assertIn('"needs-inventory"', record)
+            self.assertIn('"build_plan_id"', record)
+            self.assertIn('"skipped": true', record)
 
 
 if __name__ == "__main__":

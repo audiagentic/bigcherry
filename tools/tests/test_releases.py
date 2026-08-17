@@ -46,12 +46,19 @@ class ReleasePublicationTests(unittest.TestCase):
             with mock.patch.object(releases, "RELEASES_DIR", root), \
                     mock.patch.object(releases, "INDEX_PATH", root / "index.json"), \
                     mock.patch.object(releases, "_atomic_write_json", wraps=releases._atomic_write_json) as write:
+                from bigcherry.promotion import make_pointer
+                pointer = make_pointer(
+                    release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
+                    campaign_run_id="run1", report=b"report-bytes",
+                    source_slice_id="slice1", build_id="build1", binary_hash="bin-hash",
+                    required_architectures=("gfx1100",), replay_artifact_hash="replay-hash",
+                    valid=True)
                 record = releases.ReleaseRecord(
-                    revision="abc123", stage="validated",
-                    promotion={"schema_version": 2, "revision": "abc123"})
+                    revision="abc123", release_tag="b10362", stage="validated",
+                    promotion=pointer.document())
                 path = record.save()
 
-            self.assertEqual(path, root / "abc123.json")
+            self.assertEqual(path, root / "b10362.json")
             self.assertEqual(write.call_count, 2)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["stage"],
                              "validated")
@@ -63,22 +70,29 @@ class PromotionWiringTests(unittest.TestCase):
     """RE13: `validated` can only be reached through a real, campaign-backed
     PromotionPointer -- releases.promote(), not a bare stage assignment."""
 
-    def _pointer(self, revision="abc123"):
+    def _pointer(self, revision="abc123", release_tag="b10362"):
         from bigcherry.promotion import make_pointer
         return make_pointer(
-            release_tag="b10362", revision=revision, campaign_plan_id="plan1",
+            release_tag=release_tag, revision=revision, campaign_plan_id="plan1",
             campaign_run_id="run1", report=b"report-bytes",
             source_slice_id="slice1", build_id="build1", binary_hash="bin-hash",
             required_architectures=("gfx1100", "gfx1201"),
             replay_artifact_hash="replay-hash", valid=True)
 
-    def test_advance_to_validated_without_a_pointer_is_rejected(self):
+    def test_advance_to_validated_is_always_rejected_directly(self):
+        # RE13 (GPT-auto-agent review): even WITH a promotion pointer
+        # already set, advance_to("validated") must still reject -- only
+        # promote() may perform this transition.
         record = releases.ReleaseRecord(revision="abc123", stage="tested")
-        with self.assertRaisesRegex(ValueError, "promotion pointer"):
+        with self.assertRaisesRegex(ValueError, "releases.promote"):
+            record.advance_to("validated")
+        record.promotion = self._pointer().document()
+        with self.assertRaisesRegex(ValueError, "releases.promote"):
             record.advance_to("validated")
 
     def test_promote_sets_promotion_and_advances_stage(self):
-        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="tested")
         releases.promote(record, self._pointer())
         self.assertEqual(record.stage, "validated")
         self.assertEqual(record.promotion["revision"], "abc123")
@@ -86,21 +100,55 @@ class PromotionWiringTests(unittest.TestCase):
                          ["gfx1100", "gfx1201"])
 
     def test_promote_rejects_a_pointer_for_a_different_revision(self):
-        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="tested")
         with self.assertRaisesRegex(ValueError, "does not match"):
             releases.promote(record, self._pointer(revision="other-revision"))
         self.assertEqual(record.stage, "tested")
         self.assertIsNone(record.promotion)
 
+    def test_promote_rejects_a_pointer_for_a_different_release_tag(self):
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="tested")
+        with self.assertRaisesRegex(ValueError, "release_tag"):
+            releases.promote(record, self._pointer(release_tag="b99999"))
+        self.assertEqual(record.stage, "tested")
+        self.assertIsNone(record.promotion)
+
+    def test_promote_accepts_revision_as_release_tag_for_an_untagged_release(self):
+        # ReleaseRecord.release_tag is legitimately "" for an untagged
+        # revision; the pointer's own (required non-empty) release_tag
+        # must then equal the revision itself, matching slug()'s own
+        # fallback convention.
+        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        releases.promote(record, self._pointer(release_tag="abc123"))
+        self.assertEqual(record.stage, "validated")
+
     def test_validate_rejects_a_validated_record_loaded_with_no_pointer(self):
         record = releases.ReleaseRecord(revision="abc123", stage="validated")
-        with self.assertRaisesRegex(ValueError, "lacks a promotion pointer"):
+        with self.assertRaisesRegex(ValueError, "invalid promotion pointer"):
+            record.validate()
+
+    def test_validate_rejects_a_minimal_incomplete_promotion_pointer(self):
+        # GPT-auto-agent review: this exact minimal shape used to pass the
+        # old loose check.
+        record = releases.ReleaseRecord(
+            revision="abc123", stage="validated",
+            promotion={"schema_version": 2, "revision": "abc123"})
+        with self.assertRaisesRegex(ValueError, "invalid promotion pointer"):
             record.validate()
 
     def test_validate_rejects_a_promotion_pointer_for_the_wrong_revision(self):
         record = releases.ReleaseRecord(
-            revision="abc123", stage="validated",
-            promotion={"schema_version": 2, "revision": "not-abc123"})
+            revision="abc123", release_tag="b10362", stage="validated",
+            promotion=self._pointer(revision="not-abc123").document())
+        with self.assertRaisesRegex(ValueError, "disagrees"):
+            record.validate()
+
+    def test_validate_rejects_a_promotion_pointer_for_the_wrong_release_tag(self):
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="validated",
+            promotion=self._pointer(release_tag="b99999").document())
         with self.assertRaisesRegex(ValueError, "disagrees"):
             record.validate()
 
@@ -136,6 +184,41 @@ class ReleaseLifecycleTests(unittest.TestCase):
         releases.record_apply_result(record, True, mutated=True)
         self.assertEqual(record.stage, "patched")
         self.assertEqual(record.manifest_hash, "")
+
+    def test_mutating_reapply_clears_stale_promotion_pointer(self):
+        # GPT-auto-agent review (RE13 follow-up, 2026-08-17): the exact
+        # stale-evidence bypass the review found -- a validated record's
+        # promotion pointer must not survive an evidence-invalidating
+        # mutation, even though advance_to("validated") itself is now
+        # unconditionally blocked as a second, independent guard.
+        from bigcherry.promotion import make_pointer
+        pointer = make_pointer(
+            release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
+            campaign_run_id="run1", report=b"report-bytes",
+            source_slice_id="slice1", build_id="build1", binary_hash="bin-hash",
+            required_architectures=("gfx1100",), replay_artifact_hash="replay-hash",
+            valid=True)
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="validated",
+            manifest_hash="dead" * 8, promotion=pointer.document())
+        releases.record_apply_result(record, True, mutated=True)
+        self.assertEqual(record.stage, "patched")
+        self.assertIsNone(record.promotion)
+
+    def test_failed_apply_also_clears_stale_promotion_pointer(self):
+        from bigcherry.promotion import make_pointer
+        pointer = make_pointer(
+            release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
+            campaign_run_id="run1", report=b"report-bytes",
+            source_slice_id="slice1", build_id="build1", binary_hash="bin-hash",
+            required_architectures=("gfx1100",), replay_artifact_hash="replay-hash",
+            valid=True)
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="validated",
+            promotion=pointer.document())
+        releases.record_apply_result(record, False)
+        self.assertEqual(record.stage, "broken")
+        self.assertIsNone(record.promotion)
 
     def test_selection_change_is_a_mutating_reapply(self):
         record = releases.ReleaseRecord(revision="abc123", stage="tested")

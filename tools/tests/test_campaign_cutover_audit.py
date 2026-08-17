@@ -158,16 +158,14 @@ class _Harness:
 
     def run(self, *, run_id: str, allow_dirty_bigcherry: bool = True, calls: list | None = None):
         calls = calls if calls is not None else []
-        # campaign_source.source_plan_for() resolves patch SELECTION via
-        # patchset.catalog() with no directory override -- it always reads
-        # paths.PATCHES (the real project's patches/), never context.
-        # patches_root. Only workspace.materialize()/resolve_materialization_
-        # identity() read context.patches_root explicitly. Patch the shared
-        # default so this harness's isolated patch fixtures are what gets
-        # resolved during materialize, matching what a real isolated
-        # checkout would see.
-        with patch("bigcherry.paths.PATCHES", self.context.patches_root), \
-             patch("bigcherry.campaign_workers.subprocess.run", _fake_compiler(calls)):
+        # GPT-auto-agent review follow-up (2026-08-17): campaign_lane.py's
+        # _execute_materialize_phase() now explicitly passes
+        # patchset.catalog(directory=context.patches_root) into
+        # source_plan_for(), so this harness's isolated patch fixtures are
+        # correctly resolved without needing to monkeypatch the shared
+        # paths.PATCHES default (the workaround this comment used to
+        # describe, and the real production gap the audit flagged).
+        with patch("bigcherry.campaign_workers.subprocess.run", _fake_compiler(calls)):
             return execute_campaign_lane(
                 self.spec(), cfg=self.cfg, context=self.context, store=self.store,
                 run_id=run_id, allow_dirty_bigcherry=allow_dirty_bigcherry)
