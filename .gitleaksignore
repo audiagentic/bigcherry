@@ -1,0 +1,4 @@
+# Gitleaks native ignore (honored automatically at the scan root).
+# The agent-execution-gateway idempotency store is gitignored local runtime
+# state; its files contain only SHA-256 request digests, not credentials.
+.audiagentic/runtime/agent-execution-gateway/idempotency/

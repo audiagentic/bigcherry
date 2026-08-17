@@ -474,6 +474,56 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             tuner,
         )
 
+    def _tune_branch(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        # "if (mode == GGML_HIP_DISPATCH_MODE_TUNE)" also appears in the
+        # earlier mode-validation function; anchor on the occurrence that
+        # immediately precedes the tuner call inside the resolver.
+        resolve_call = dispatch.index("ggml_hip_tuner_resolve(ctx, sig, hw")
+        start = dispatch.rindex(
+            "if (mode == GGML_HIP_DISPATCH_MODE_TUNE)", 0, resolve_call
+        )
+        end = dispatch.index("#ifdef GGML_HIP_DISPATCH_REPLAY", start)
+        return dispatch[start:end]
+
+    def test_hi67_tune_mode_never_installs_a_winner_into_the_live_binding(self):
+        """F1: tune mode measures/selects/records; the workload stays native.
+
+        A selected winner must not reach real dispatch from the tuner path:
+        native-relative acceptance is a screening invariant, not production
+        correctness proof (RV08). Winners arrive only via replay, after
+        external promotion against CPU-reference evidence.
+        """
+        branch = self._tune_branch()
+        # The resolver is still called (measurement/selection/recording are
+        # intact) -- what is gone is the install into the binding.
+        self.assertIn("ggml_hip_tuner_resolve(ctx, sig, hw", branch)
+        self.assertNotIn("binding.candidate  = winner;", branch)
+        self.assertNotIn("binding.variant    = winner->variant;", branch)
+        self.assertNotIn("binding.from_cache = true;", branch)
+
+    def test_hi67_tune_mode_keeps_native_and_reports_nonnative_selections(self):
+        """The divergence is observable: a non-native selection logs once per
+        signature that dispatch stays native, while a native selection is
+        silent (no log storm on long runs)."""
+        branch = self._tune_branch()
+        guard = "winner != nullptr && winner != native.candidate"
+        call = "ggml_hip_log_tune_kept_native("
+        self.assertIn(guard, branch)
+        self.assertIn(call, branch)
+        self.assertLess(branch.index(guard), branch.index(call))
+
+    def test_hi67_stays_native_log_is_once_per_signature(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        start = dispatch.index("void ggml_hip_log_tune_kept_native(")
+        end = dispatch.index("#endif // GGML_HIP_AUTOTUNE", start)
+        function = dispatch[start:end]
+        self.assertIn("static std::set<std::string> logged;", function)
+        insert = function.index("logged.insert(key).second")
+        early_return = function.index("return;", insert)
+        emit = function.index("GGML_LOG_INFO(", insert)
+        self.assertLess(early_return, emit)
+
     def test_tune_journal_result_keeps_replay_identity_digests(self):
         tuner = TUNER.read_text(encoding="utf-8")
         summary = tuner[tuner.index("std::string journal_result_summary(") :]
