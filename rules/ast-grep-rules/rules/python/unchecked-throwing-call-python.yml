@@ -1,0 +1,14 @@
+# Project-level SHADOW of the bundled pi-lens rule with the same id.
+# The built-in flags every int()/float()/open()/json.loads() call that is not
+# inside a try/except, which is far too broad for Python (float() on an
+# isinstance-checked value never raises) and produced 36+ false-positive
+# "blocking" findings in tools/bigcherry/tune_promotion.py alone.
+# This rule has the same id but a pattern that can never match, so it shadows
+# (disables) the built-in for this repository only. Delete this file to
+# restore the bundled rule.
+id: unchecked-throwing-call-python
+language: Python
+severity: error
+message: "DISABLED FOR THIS REPO (project shadow of the bundled rule)"
+rule:
+  pattern: pi_lens_rule_disabled_sentinel_call($$$)
