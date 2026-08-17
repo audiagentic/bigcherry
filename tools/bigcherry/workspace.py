@@ -78,6 +78,21 @@ class SourcePlan:
     overlay_enabled: bool
     patch_ids: tuple[str, ...]
     required_state: str | None = None
+    #: RE03 (RV48 audit): the reviewed logical-composition identity
+    #: campaign_resolution.resolve_lane already computes (patch_set_id --
+    #: distinct from the byte-level source_slice_id two different logical
+    #: compositions could still legitimately share) -- optional so direct
+    #: construction (most existing tests) is unaffected; source_plan_for()
+    #: is the one real caller that populates it, closing the gap where this
+    #: identity was computed then silently discarded before reaching
+    #: materialize().
+    patch_set_id: str | None = None
+    #: The declared patch-set classification (e.g. "base"/"experimental" --
+    #: see campaign_resolution.ResolvedPatchSet); which named [patch-set.*]
+    #: a module belongs to (framework vs validated-enhancements) is the
+    #: actual human review boundary and is already explicit in recipes.toml
+    #: itself, not re-decided here.
+    classification: str | None = None
 
 
 def require_clean_bigcherry(context: ProjectContext, *, allow_dirty_bigcherry: bool) -> None:
@@ -143,6 +158,14 @@ def materialize(
             for item in selection.modules
         ],
         "required_state": plan.required_state,
+        # RE03 (RV48 audit): the reviewed logical-composition identity,
+        # carried through into materialised source provenance instead of
+        # being discarded after campaign_resolution.resolve_lane computes
+        # it -- verifiable from this metadata without recomputing patch
+        # resolution. None for a caller that constructed SourcePlan
+        # directly rather than through source_plan_for().
+        "patch_set_id": plan.patch_set_id,
+        "classification": plan.classification,
     }
     # RE04 (RV48 audit fix): stored so a later cache-hit re-verification can
     # recompute this same destination's git_tree_oid with the SAME allowed-

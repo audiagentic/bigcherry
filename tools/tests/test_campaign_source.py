@@ -50,6 +50,24 @@ class CampaignSourceTests(unittest.TestCase):
         lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
         self.assertEqual(plan.patch_ids, lane.patch_set.module_ids)
 
+    def test_patch_set_id_and_classification_carry_through_from_resolve_lane(self):
+        # RE03 (RV48 audit): resolve_lane already computes patch_set_id/
+        # classification; source_plan_for() used to discard both -- nothing
+        # downstream of resolution carried this reviewed logical-composition
+        # identity. Now it survives into the SourcePlan itself.
+        from bigcherry import campaign_resolution
+        plan = source_plan_for(self.cfg, "bigcherry", catalog=self.catalog)
+        lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        self.assertEqual(plan.patch_set_id, lane.patch_set.patch_set_id)
+        self.assertTrue(plan.patch_set_id)
+        self.assertEqual(plan.classification, lane.patch_set.classification)
+
+    def test_source_with_no_patch_sets_still_carries_a_patch_set_id(self):
+        # Empty composition is still a real, reviewed identity (_digest of
+        # an empty module list), not an absence of one.
+        plan = source_plan_for(self.cfg, "llama-native", catalog=self.catalog)
+        self.assertTrue(plan.patch_set_id)
+
     def test_unknown_source_rejected(self):
         with self.assertRaises(CampaignSourceError):
             source_plan_for(self.cfg, "does-not-exist", catalog=self.catalog)

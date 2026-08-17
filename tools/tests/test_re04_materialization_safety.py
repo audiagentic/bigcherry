@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -88,6 +89,64 @@ def _write_marker_patch(patches_root: Path, *, marker_text: str) -> None:
         ")\n",
         encoding="utf-8",
     )
+
+
+class PatchSetIdentityPersistedTests(unittest.TestCase):
+    """RE03 (RV48 audit): patch_set_id/classification, computed by
+    campaign_resolution.resolve_lane, must reach the materialised source's
+    own persisted metadata -- verifiable without recomputing patch
+    resolution -- not be silently discarded on the way to SourcePlan."""
+
+    def test_source_plan_for_real_lane_persists_patch_set_id_into_metadata(self):
+        import json as _json
+        from bigcherry import campaign_resolution
+        from bigcherry import config as campaign_config
+        from bigcherry import patchset as bc_patchset
+        from bigcherry.campaign_build import _source_metadata_path
+        from bigcherry.campaign_source import (materialization_plan_id,
+                                               resolve_materialization_identity,
+                                               source_plan_for)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            _write_marker_patch(context.patches_root, marker_text="marker-v1")
+
+            cfg = campaign_config.Config(
+                pinned=revision,
+                patch_sets={"core": campaign_config.PatchSet(
+                    name="core", patches=("0001_marker",), required_state="validated")},
+                sources={"test-source": campaign_config.Source(
+                    name="test-source", ref=revision, overlay=False,
+                    patch_sets=("core",))},
+                builds={}, platforms={}, experiments={}, campaigns={},
+                path=root / "recipes.toml",
+            )
+            catalog = bc_patchset.catalog(directory=context.patches_root)
+            # resolve_lane() cross-checks the supplied catalog against
+            # patchset.catalog() with NO directory override, which defaults
+            # to paths.PATCHES (the real project's patches/), not
+            # context.patches_root -- see RE24's own notes on this same
+            # architectural gap. Patch the shared default for this isolated
+            # fixture's catalog to be visible to that check.
+            with mock.patch("bigcherry.paths.PATCHES", context.patches_root):
+                plan = source_plan_for(cfg, "test-source", catalog=catalog)
+                lane = campaign_resolution.resolve_lane("test-source", cfg, catalog)
+
+            record = materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            self.assertEqual(record["plan"]["patch_set_id"], lane.patch_set.patch_set_id)
+            self.assertTrue(record["plan"]["patch_set_id"])
+            self.assertEqual(record["plan"]["classification"], lane.patch_set.classification)
+
+            # Verifiable WITHOUT recomputation: reading the persisted
+            # .metadata.json file back off disk carries the same identity.
+            identity = resolve_materialization_identity(context, plan)
+            destination = context.work_root / "sources" / materialization_plan_id(identity)
+            persisted = _json.loads(
+                _source_metadata_path(destination).read_text(encoding="utf-8"))
+            self.assertEqual(persisted["plan"]["patch_set_id"], lane.patch_set.patch_set_id)
 
 
 class PatchContentEditNotReusedTests(unittest.TestCase):
