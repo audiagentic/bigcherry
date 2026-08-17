@@ -204,6 +204,7 @@ def run_campaign(
     context: ProjectContext,
     store: ArtifactStore,
     run_id: str | None = None,
+    allow_dirty_bigcherry: bool = False,
 ) -> dict[str, CampaignLaneResult | Exception]:
     """Execute every lane sequentially, isolating faults per lane: one
     lane raising must not affect any other lane's own result, matching
@@ -214,6 +215,11 @@ def run_campaign(
     CampaignLanes directly without going through plan(), and a duplicate
     here would silently overwrite an earlier lane's result in ``results``
     (both keyed on the same lane_id) rather than erroring.
+
+    ``allow_dirty_bigcherry`` (RE04/RV48 audit fix) defaults to False and
+    is forwarded to every lane's ``execute_campaign_lane()`` call -- the
+    production `build` CLI never sets it; only a development/harness
+    caller has a real reason to.
     """
     duplicate_ids = sorted({
         lid for lid in (lane_id(lane) for lane in lanes)
@@ -228,6 +234,7 @@ def run_campaign(
             results[lane_id(lane)] = execute_campaign_lane(
                 _to_spec(lane), cfg=cfg, context=context, store=store,
                 run_id=_lane_run_id(campaign_run_id, lane),
+                allow_dirty_bigcherry=allow_dirty_bigcherry,
             )
         except Exception as exc:  # noqa: BLE001 -- deliberately broad: one
             # lane's failure (of any kind) must not abort sibling lanes.

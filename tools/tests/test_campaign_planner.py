@@ -161,7 +161,7 @@ class RunCampaignTests(unittest.TestCase):
         )
         seen_run_ids: list[str] = []
 
-        def fake_execute(spec, *, cfg, context, store, run_id):
+        def fake_execute(spec, *, cfg, context, store, run_id, allow_dirty_bigcherry=False):
             seen_run_ids.append(run_id)
             return f"result-for-{run_id}"
 
@@ -183,7 +183,7 @@ class RunCampaignTests(unittest.TestCase):
                         platform_name="linux-multi", architectures=("gfx1100",)),
         )
 
-        def fake_execute(spec, *, cfg, context, store, run_id):
+        def fake_execute(spec, *, cfg, context, store, run_id, allow_dirty_bigcherry=False):
             if spec.source_name == "src-a":
                 raise RuntimeError("injected fault in src-a's lane")
             return f"ok-{spec.source_name}"
@@ -209,7 +209,7 @@ class RunCampaignTests(unittest.TestCase):
                               platform_name="linux-multi", architectures=("gfx1100",)),)
         captured = {}
 
-        def fake_execute(spec, *, cfg, context, store, run_id):
+        def fake_execute(spec, *, cfg, context, store, run_id, allow_dirty_bigcherry=False):
             captured["run_id"] = run_id
             return "ok"
 

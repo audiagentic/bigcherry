@@ -30,7 +30,8 @@ from . import builds, campaign_source, config as campaign_config
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
 from .context import ProjectContext
-from .workspace import SourcePlan, materialize
+from .source_identity import SourceIdentityError, git_tree_oid
+from .workspace import SourcePlan, materialize, require_clean_bigcherry
 
 Runner = Callable[[list[str], Path], None]
 
@@ -274,29 +275,63 @@ def materialize_source(
     """Materialise ``plan`` into an isolated, content-identified worktree.
 
     Idempotent by construction: the destination is keyed by
-    ``campaign_source.source_plan_id(plan)``, not by any caller-chosen name,
-    so two calls with an equal plan always target the same directory. If
-    that directory already carries metadata from a prior materialisation of
-    the SAME plan, it is reused rather than re-materialised -- but the
-    stored plan is compared field-by-field first; a hash collision alone
-    would not be trusted silently, since a mismatch on read is exactly the
-    kind of fail-closed check this project's provenance rules require.
+    ``campaign_source.materialization_plan_id()`` of the CONTENT-resolved
+    identity (patch module content hashes + overlay file bytes, not just
+    IDs/flags) -- RE04/RV48: an in-place edit to a patch module or overlay
+    file under an unchanged canonical ID must not silently reuse the old
+    materialisation. If that directory already carries metadata from a
+    prior materialisation, it is reused rather than re-materialised -- but
+    the cached destination TREE is re-hashed and checked against the
+    stored ``source_tree_oid`` first (a hash-collision-only comparison
+    would not be trusted silently, and neither would trusting a cached
+    identity match without re-verifying the actual bytes on disk: a
+    modified cached worktree must fail closed, not compile stale bytes).
+
+    The dirty-BigCherry-tree check runs unconditionally here, BEFORE the
+    cache-hit branch -- ``materialize()``'s own check only guards the
+    fresh-creation path, which a cache hit never reaches.
     """
-    plan_id = campaign_source.source_plan_id(plan)
+    require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
+
+    identity = campaign_source.resolve_materialization_identity(context, plan)
+    plan_id = campaign_source.materialization_plan_id(identity)
     destination = context.work_root / "sources" / plan_id
     metadata_path = _source_metadata_path(destination)
 
     if destination.is_dir() and metadata_path.is_file():
         cached = json.loads(metadata_path.read_text(encoding="utf-8"))
         cached_plan = cached.get("plan", {})
-        if (cached_plan.get("upstream_revision") != plan.upstream_revision or
-                cached_plan.get("overlay_enabled") != plan.overlay_enabled or
-                sorted(cached_plan.get("patch_ids", [])) != sorted(plan.patch_ids) or
-                cached_plan.get("required_state") != plan.required_state):
+        cached_patches = sorted(
+            (item["patch_id"], item["content_hash"]) for item in cached_plan.get("patches", []))
+        current_patches = sorted(
+            (item["patch_id"], item["content_hash"]) for item in identity["patches"])
+        if (cached_plan.get("upstream_revision") != identity["upstream_revision"] or
+                cached_plan.get("overlay_enabled") != identity["overlay_enabled"] or
+                cached_patches != current_patches or
+                cached_plan.get("required_state") != identity["required_state"] or
+                cached.get("overlay_content_hash") != identity["overlay_content_hash"]):
             raise CampaignBuildError(
                 f"source directory {destination} exists with metadata for a "
                 f"different plan than requested (plan id collision or stale "
                 f"cache) -- refusing to reuse or overwrite it"
+            )
+        # Re-hash the cached destination tree itself: the plan_id/metadata
+        # comparison above proves the REQUEST matches what was recorded,
+        # not that the on-disk bytes still do. A worktree modified after
+        # materialisation (by anything, not necessarily this code) must
+        # fail closed rather than be silently compiled.
+        try:
+            actual_tree_oid = git_tree_oid(
+                destination, allowed_untracked=set(cached.get("allowed_untracked", ())))
+        except SourceIdentityError as exc:
+            raise CampaignBuildError(
+                f"cached source directory {destination} failed re-verification: {exc}"
+            ) from exc
+        if actual_tree_oid != cached.get("source_tree_oid"):
+            raise CampaignBuildError(
+                f"cached source directory {destination} has been modified since "
+                f"materialisation (tree oid {actual_tree_oid!r} != recorded "
+                f"{cached.get('source_tree_oid')!r}) -- refusing to reuse it"
             )
         return cached
 
@@ -310,12 +345,7 @@ def materialize_source(
         context, plan, destination, allow_dirty_bigcherry=allow_dirty_bigcherry
     )
     record = dict(metadata)
-    record["plan"] = {
-        "upstream_revision": plan.upstream_revision,
-        "overlay_enabled": plan.overlay_enabled,
-        "patch_ids": list(plan.patch_ids),
-        "required_state": plan.required_state,
-    }
+    record["overlay_content_hash"] = identity["overlay_content_hash"]
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -416,7 +446,8 @@ def execute_build_stage(
             f"match build_plan.source_slice_id {build_plan.source_slice_id!r}"
         )
 
-    source_root = context.work_root / "sources" / campaign_source.source_plan_id(source_plan)
+    source_root = context.work_root / "sources" / campaign_source.materialization_plan_id(
+        campaign_source.resolve_materialization_identity(context, source_plan))
     build_dir = builds.build_directory(context, source_slice_id, build_plan)
     build_dir.mkdir(parents=True, exist_ok=True)
 

@@ -63,6 +63,25 @@ class SourcePlan:
     required_state: str | None = None
 
 
+def require_clean_bigcherry(context: ProjectContext, *, allow_dirty_bigcherry: bool) -> None:
+    """RE04 (RV48 audit fix): the dirty-BigCherry-tree check as its own
+    reusable function, so a cache-hit path (campaign_build.materialize_source)
+    can enforce it too -- it used to live only inside ``materialize()``,
+    which a cache hit never called, so dirty-tree execution was implicit on
+    reuse regardless of what a caller intended.
+    """
+    if allow_dirty_bigcherry:
+        return
+    status = subprocess.run(
+        ["git", "-C", str(context.project_root), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if status:
+        raise WorkspaceError("BigCherry repository is dirty; use explicit development override")
+
+
 def materialize(
     context: ProjectContext,
     plan: SourcePlan,
@@ -71,15 +90,7 @@ def materialize(
     allow_dirty_bigcherry: bool = False,
 ) -> dict[str, object]:
     """Materialise one source plan and return external identity metadata."""
-    if not allow_dirty_bigcherry:
-        status = subprocess.run(
-            ["git", "-C", str(context.project_root), "status", "--porcelain"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        if status:
-            raise WorkspaceError("BigCherry repository is dirty; use explicit development override")
+    require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
     repository = UpstreamRepository(context.upstream_repo)
     repository.add_detached_worktree(plan.upstream_revision, destination)
     allowed_untracked: set[str] = set()
@@ -114,5 +125,12 @@ def materialize(
             {"patch_id": item.patch_id, "content_hash": item.content_hash}
             for item in selection.modules
         ],
+        "required_state": plan.required_state,
     }
+    # RE04 (RV48 audit fix): stored so a later cache-hit re-verification can
+    # recompute this same destination's git_tree_oid with the SAME allowed-
+    # untracked set used when it was first materialised, without having to
+    # re-walk overlay_root (which may have changed since -- caught instead
+    # by the overlay content hash in resolve_materialization_identity()).
+    metadata["allowed_untracked"] = sorted(allowed_untracked)
     return metadata
