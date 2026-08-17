@@ -225,6 +225,28 @@ class PointerFromCampaignResultTests(unittest.TestCase):
                 architectures=("gfx1100",), report=b"report", valid=True)
             self.assertEqual(pointer.required_architectures, ("gfx1100",))
 
+    def test_no_generate_result_cannot_claim_an_uncompiled_architecture(self):
+        # GPT-auto-agent review (RE13 follow-up, 2026-08-17): a residual
+        # gap in the first architecture-check fix -- a no-generate build's
+        # catalog_architectures is empty by construction (RE07: "no catalog
+        # to disambiguate", not "no data"), and the first fix skipped the
+        # check entirely in that case. A no-generate result compiled only
+        # for gfx1100 must still not be wrappable in a pointer claiming a
+        # DIFFERENT architecture -- fall back to build_plan.targets.
+        with tempfile.TemporaryDirectory() as directory:
+            result = _run_real_lane(Path(directory))
+            self.assertEqual(result.build_plan.catalog_architectures, ())
+            self.assertEqual(result.build_plan.targets, ("gfx1100",))
+            with self.assertRaisesRegex(PromotionError, "exceed"):
+                pointer_from_campaign_result(
+                    result=result, release_tag="b10362", campaign_plan_id="plan1",
+                    architectures=("gfx1201",), report=b"report", valid=True)
+            # The architecture it WAS actually compiled for is still fine.
+            pointer = pointer_from_campaign_result(
+                result=result, release_tag="b10362", campaign_plan_id="plan1",
+                architectures=("gfx1100",), report=b"report", valid=True)
+            self.assertEqual(pointer.required_architectures, ("gfx1100",))
+
 
 if __name__ == "__main__":
     unittest.main()

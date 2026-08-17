@@ -44,6 +44,7 @@ def resolve_patch_set(
     extra_patch_ids: tuple[str, ...] = (),
     required_state_override: str | None = None,
     classification: str = "base",
+    catalog_directory: object = None,
 ) -> ResolvedPatchSet:
     if name == "all":
         raise ResolutionError("'all' is not a valid production patch-set")
@@ -53,12 +54,6 @@ def resolve_patch_set(
     ids = tuple(declared.patches) + tuple(extra_patch_ids)
     if len(set(ids)) != len(ids):
         raise ResolutionError("resolved patch set contains duplicate module IDs")
-    selected = patchset.resolve_exact(
-        ids,
-        directory=(catalog[0].path.parent if catalog else None),
-        required_state=required_state_override or declared.required_state,
-    )
-    by_id = {module.patch_id: module for module in catalog}
     # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): this used to
     # call patchset.catalog() with no directory override, defaulting to
     # paths.PATCHES (the real project's patches/) regardless of what
@@ -67,11 +62,23 @@ def resolve_patch_set(
     # in this same call chain correctly use context.patches_root. A caller
     # whose context is rooted at a different checkout (any isolated test,
     # or a real non-default patches_root in production) would have its
-    # otherwise-correct catalog rejected here. Re-derive the directory the
-    # SUPPLIED catalog actually came from and cross-check self-consistency
-    # against that, not an unrelated global default.
-    catalog_directory = catalog[0].path.parent if catalog else None
-    if set(by_id) != {module.patch_id for module in patchset.catalog(directory=catalog_directory)}:
+    # otherwise-correct catalog rejected here.
+    #
+    # Prefer an explicitly supplied ``catalog_directory`` (source_plan_for()
+    # passes context.patches_root through resolve_lane() to here); fall
+    # back to inferring it from the supplied catalog's own first entry only
+    # when the caller didn't supply one -- inference alone loses the
+    # directory entirely for a genuinely EMPTY custom catalog (a context
+    # with zero patch files), which would otherwise silently fall back to
+    # the wrong global default.
+    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
+    selected = patchset.resolve_exact(
+        ids, directory=resolved_catalog_directory,
+        required_state=required_state_override or declared.required_state,
+    )
+    by_id = {module.patch_id: module for module in catalog}
+    if set(by_id) != {module.patch_id
+                      for module in patchset.catalog(directory=resolved_catalog_directory)}:
         raise ResolutionError("catalog argument does not match the physical patch catalog")
     # resolve_exact uses the project catalog; ensure the passed catalog supplies
     # identical content identities before exposing the result.
@@ -104,6 +111,7 @@ def resolve_lane(
     catalog: list[patchset.PatchModule],
     *,
     experiment: str | None = None,
+    catalog_directory: object = None,
 ) -> ResolvedLane:
     if source_name not in cfg.sources:
         raise ResolutionError(f"unknown source {source_name!r}")
@@ -127,14 +135,14 @@ def resolve_lane(
     else:
         base_name = source.patch_sets[0]
     resolved = resolve_patch_set(
-        base_name, cfg, catalog, classification="experimental" if experiment else "base"
+        base_name, cfg, catalog, classification="experimental" if experiment else "base",
+        catalog_directory=catalog_directory,
     )
+    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
     if experiment:
         extra = cfg.experiments[experiment].patches
         extra_selection = patchset.resolve_exact(
-            extra,
-            directory=(catalog[0].path.parent if catalog else None),
-            required_state=None,
+            extra, directory=resolved_catalog_directory, required_state=None,
         )
         if set(resolved.module_ids) & {module.patch_id for module in extra_selection.modules}:
             raise ResolutionError("experiment repeats a base patch module")

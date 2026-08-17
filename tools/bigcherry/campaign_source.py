@@ -59,6 +59,23 @@ def resolve_materialization_identity(
     this), and hashes the overlay tree's actual file bytes (an overlay edit
     changes this too). ``source_plan_id()`` alone (IDs/flags only) is not
     safe to key a reused destination directory by -- see its own docstring.
+
+    GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): also includes
+    ``plan.patch_set_id``/``classification`` -- the reviewed LOGICAL
+    composition identity, not just the byte-producing inputs above. Without
+    this, two sources with different logical patch-set membership that
+    happen to resolve to byte-identical trees (e.g. ``bigcherry-native``'s
+    [framework] vs ``bigcherry``'s [framework, validated-enhancements]
+    while validated-enhancements is empty) would share one materialisation
+    directory, and materialize_source()'s cache-hit path returns the
+    FIRST request's persisted patch_set_id/classification verbatim for
+    the SECOND, differently-composed request -- a real cache-aliasing bug
+    in the standard campaign profile, not a hypothetical: bigcherry-native
+    runs before bigcherry in campaign.standard's lane order. Folding these
+    into the destination key trades away byte-identical dedup between
+    differently-composed sources in exchange for correct per-request
+    provenance -- the simpler of the two fixes discussed, not the
+    architecturally larger physical-cache/logical-provenance split.
     """
     selection = patchset.resolve_exact(
         plan.patch_ids, directory=context.patches_root,
@@ -75,6 +92,8 @@ def resolve_materialization_identity(
             for module in selection.modules
         ],
         "required_state": plan.required_state,
+        "patch_set_id": plan.patch_set_id,
+        "classification": plan.classification,
     }
 
 
@@ -123,6 +142,7 @@ def source_plan_for(
     *,
     catalog: list[patchset.PatchModule] | None = None,
     experiment: str | None = None,
+    catalog_directory: Path | None = None,
 ) -> workspace.SourcePlan:
     """Resolve one ``config.Source`` into a ``workspace.SourcePlan``.
 
@@ -155,7 +175,8 @@ def source_plan_for(
 
     try:
         lane = campaign_resolution.resolve_lane(
-            source_name, cfg, resolved_catalog, experiment=experiment
+            source_name, cfg, resolved_catalog, experiment=experiment,
+            catalog_directory=catalog_directory,
         )
     except campaign_resolution.ResolutionError as exc:
         raise CampaignSourceError(str(exc)) from exc

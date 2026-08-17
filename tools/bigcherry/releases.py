@@ -285,6 +285,15 @@ def promote(record: ReleaseRecord, pointer: PromotionPointer) -> None:
     supported way to reach ``validated``. Does not save; the caller decides
     when to persist, same as every other stage transition in this module.
     """
+    # GPT-auto-agent review (RE13 follow-up, 2026-08-17): re-parse through
+    # PromotionPointer.from_document() rather than trusting the caller's
+    # already-constructed object -- a caller could hand-build a
+    # PromotionPointer with a bypassed/patched __init__ (frozen dataclasses
+    # do not prevent object.__setattr__) or a subtly malformed instance;
+    # this is the same strict validation validate() applies to a persisted
+    # document, applied here too so the mutation API itself is fail-closed,
+    # not just save()/validate() catching it later.
+    pointer = PromotionPointer.from_document(pointer.document())
     if pointer.revision != record.revision:
         raise ValueError(
             f"promotion pointer revision {pointer.revision!r} does not "

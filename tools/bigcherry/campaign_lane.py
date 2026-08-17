@@ -180,7 +180,12 @@ def _execute_materialize_phase(
     # real non-default patches_root deployment) would have its logical
     # patch-set resolution silently validated against the wrong catalog.
     source_plan = campaign_source.source_plan_for(
-        cfg, spec.source_name, catalog=patchset.catalog(directory=context.patches_root))
+        cfg, spec.source_name, catalog=patchset.catalog(directory=context.patches_root),
+        # Explicit, not just inferred from the catalog's own first entry:
+        # a genuinely empty context.patches_root (zero patch files) would
+        # otherwise lose this directory entirely and silently fall back to
+        # the wrong global default (GPT-auto-agent review, 2026-08-17).
+        catalog_directory=context.patches_root)
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
         source_plan.upstream_revision)
     source_plan = replace(source_plan, upstream_revision=resolved_revision)

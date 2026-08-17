@@ -446,6 +446,7 @@ def probe(
     }
     build_records: dict[str, Any] = {}
     build_ok = True
+    any_skipped = False
     for build_name in build_names:
         needs = cfg.builds[build_name].needs
         missing = needs - set(available_inputs)
@@ -454,6 +455,7 @@ def probe(
                 "ok": True, "skipped": True,
                 "reason": f"missing required input(s): {sorted(missing)}",
             }
+            any_skipped = True
             continue
         inputs = tuple((name, available_inputs[name]) for name in sorted(needs))
         spec = CampaignLaneExecutionSpec(
@@ -473,7 +475,18 @@ def probe(
             "workload_id": result.workload_id,
         }
     record["builds"] = build_records
-    record["outcome"] = "compatible" if build_ok else "patch-drift-or-build-failed"
+    # GPT-auto-agent review (RE13 follow-up, 2026-08-17): "compatible" must
+    # not silently mean more than was actually demonstrated. A skipped
+    # build (missing inventory/promoted-winners) means its own compile
+    # path was never exercised at all -- record that explicitly as
+    # "compatible-partial" rather than letting an incomplete probe report
+    # the same unqualified "compatible" a fully-exercised one would.
+    if not build_ok:
+        record["outcome"] = "patch-drift-or-build-failed"
+    elif any_skipped:
+        record["outcome"] = "compatible-partial"
+    else:
+        record["outcome"] = "compatible"
     if not build_ok:
         failed_build = next(name for name, info in build_records.items() if not info["ok"])
         record["failure"] = {"stage": "build", "build": failed_build,
