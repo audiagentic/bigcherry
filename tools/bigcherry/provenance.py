@@ -525,6 +525,26 @@ _KIND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "campaign.comparison_plan_id",
         "campaign.producer_stage",
     ),
+    # RE25.2 review fix: without this entry, a PRODUCTION smoke result
+    # could never be rehydrated -- ArtifactStore.rehydrate() always runs
+    # validate_for_kind(), which treats an unregistered kind as an error,
+    # so store.rehydrate(id, expected_kind="smoke-result") failed every
+    # real lane with "no provenance contract registered". The contract is
+    # exactly what the real smoke worker's document carries: the full
+    # materialized source lineage (same set as "source-metadata" minus the
+    # project/patch-module fields), the build plan it smoked, and the
+    # campaign stamp. Its binary/bundle parents ride in build.inputs.
+    "smoke-result": (
+        "source.source_plan_id",
+        "source.materialization_plan_id",
+        "source.source_tree_oid",
+        "source.source_slice_id",
+        "source.git_object_format",
+        "source.patch_set_id",
+        "build.build_plan_id",
+        "campaign.run_id",
+        "campaign.producer_stage",
+    ),
 }
 
 
