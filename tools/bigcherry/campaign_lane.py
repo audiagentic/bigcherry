@@ -30,13 +30,11 @@ generate+build+GPU-smoke pass for on every lane it executes.
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import provenance
 from . import campaign_build, campaign_plan, campaign_source, \
     campaign_workers, config as campaign_config
 from . import runtime_smoke as smoke_module
@@ -226,24 +224,28 @@ def _spec_inputs(spec: CampaignLaneExecutionSpec) -> dict[str, LaneInputValue]:
 
 
 def _sniff_embedded_provenance(data: bytes) -> dict[str, object] | None:
-    """RE08/RV48 audit fix: before inventing provenance for a raw-Path lane
-    input, check whether the file's own bytes already carry real provenance
-    -- i.e. it happens to be a byte-for-byte copy of a document this project
-    itself published elsewhere (a real producer, just handed to us as a
-    file path instead of an ArtifactRef). Returns the real, validated
-    document if so; ``None`` if the bytes are not themselves a provenance
-    document (the overwhelmingly common case -- inventory/winners files are
-    plain data, not provenance-wrapped), which the caller must then
-    classify as imported-legacy rather than stamp with an assumed identity.
+    """Deliberately always returns ``None`` -- kept as a named seam (not
+    deleted outright) documenting why a raw-Path input's bytes are NEVER
+    trusted to self-report their own provenance.
+
+    An earlier version of this function accepted any payload that merely
+    happened to parse as JSON with ``schema_version == 2`` and five dict
+    namespaces (``provenance.validate()``'s own shape check) as "real
+    embedded provenance". GPT-auto-agent review (RV48 follow-up,
+    2026-08-17) correctly identified this as still a provenance-laundering
+    route, just a smaller one: ``provenance.validate()`` is structural
+    only -- it has no way to prove a document was genuinely produced by
+    THIS project rather than hand-crafted by whoever supplied the raw
+    file. A crafted JSON blob asserting any ``source_slice_id`` it likes
+    would have been accepted as "real" here. Verifying a claimed embedded
+    identity for real needs a chain-of-custody primitive this project
+    does not have yet (RE25b's ArtifactDescriptor persistence/
+    rehydration -- checking the claimed content against what THIS
+    project's own ArtifactStore actually recorded for it, not just
+    trusting the shape of the bytes). Until that lands, every raw-Path
+    input is unconditionally imported-legacy -- see _resolve_lane_inputs.
     """
-    try:
-        parsed = json.loads(data)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return None
-    try:
-        return provenance.validate(parsed)
-    except provenance.ProvenanceError:
-        return None
+    return None
 
 
 def _resolve_lane_inputs(

@@ -470,6 +470,43 @@ def make_smoke_worker(
             )
         binary_ref = binaries[0]
 
+        # RE07/RV48 follow-up (GPT review, 2026-08-17): binary_ref alone
+        # only proves the launcher is unchanged -- it says nothing about
+        # whether the .so files it will actually load at runtime (where
+        # RE09 established the real HIP dispatch logic lives) are the
+        # verified ones this build published, or a mutable build-tree copy
+        # that has since changed. Require the runtime-bundle artifact too,
+        # verify every one of its members against the store, and cross-
+        # check the manifest's own entrypoint hash against binary_ref's --
+        # only THEN is running binary_ref.path actually running the
+        # verified bundle rather than merely a verified launcher.
+        bundles = [ref for ref in inputs if ref.kind == "runtime-bundle"]
+        if len(bundles) != 1:
+            raise campaign_build.CampaignBuildError(
+                f"runtime-smoke worker expects exactly one 'runtime-bundle' "
+                f"input, found {len(bundles)}"
+            )
+        bundle_ref = bundles[0]
+        if not store.verify(
+                bundle_ref.path.resolve().relative_to(store.root), bundle_ref.content_hash):
+            raise campaign_build.CampaignBuildError(
+                "runtime-bundle manifest failed store verification before smoke")
+        bundle_manifest = json.loads(bundle_ref.path.read_text(encoding="utf-8"))
+        entrypoint_hash = bundle_manifest["members"].get(bundle_manifest["entrypoint"])
+        if entrypoint_hash != binary_ref.content_hash:
+            raise campaign_build.CampaignBuildError(
+                "runtime-bundle manifest's entrypoint hash does not match "
+                "the binary this smoke stage was given"
+            )
+        for member_name, member_hash in bundle_manifest["members"].items():
+            member_relative = bundle_ref.path.parent.relative_to(store.root) / member_name
+            if not store.verify(member_relative, member_hash):
+                raise campaign_build.CampaignBuildError(
+                    f"runtime-bundle member {member_name!r} failed store "
+                    f"verification before smoke -- refusing to run against "
+                    f"a tampered or missing runtime dependency"
+                )
+
         argv = runtime_smoke.smoke_argv(binary_ref.path, spec)
         completed = subprocess.run(
             argv, capture_output=True, text=True, env=environment,
