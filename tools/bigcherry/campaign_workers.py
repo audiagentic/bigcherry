@@ -424,6 +424,23 @@ def make_build_worker(
         consumed: dict[str, ArtifactRef] = {ref.kind: ref for ref in inputs}
         consumed.update(lane_inputs)
         input_entries, parent_ids = provenance.lane_input_provenance(consumed)
+        # RE25.3: the PROVENANCE CLASS taint needs the real parent documents,
+        # not just their identity strings (the IDs above are recorded too, so
+        # sticky class derivation and identity lineage agree). Imported-
+        # legacy lane inputs (raw Path imports, downgraded legacy refs) now
+        # actually taint build + runtime-bundle instead of being silently
+        # re-stamped production here. Parents that don't parse as schema-v2
+        # docs fail closed: a build whose parents' classes can't be verified
+        # must not claim production.
+        try:
+            parent_docs = tuple(
+                provenance.ProvenanceV2.from_document(ref.provenance)
+                for ref in consumed.values()
+            )
+        except provenance.ProvenanceError as exc:
+            raise campaign_build.CampaignBuildError(
+                f"build input provenance is not a schema-v2 document: {exc}"
+            ) from exc
         build_provenance = provenance.BuildProvenance(
             build_plan_id=build_plan.build_plan_id,
             effective_build_id=metadata["build_id"],
@@ -434,7 +451,7 @@ def make_build_worker(
             inputs=input_entries,
         )
         doc = provenance.derive(
-            parents=(),
+            parents=parent_docs,
             parent_artifact_ids=parent_ids,
             project_revision=project_revision,
             source=source_provenance
@@ -637,14 +654,26 @@ def make_smoke_worker(
         # RE25.2: the smoke result records its REAL parent artifacts (the
         # binary and runtime bundle it actually ran -- verified against the
         # store just above), not an anonymous build identity.
+        # RE25.3: those same parents now also drive the provenance CLASS
+        # taint -- a smoke run against a tainted (imported-legacy /
+        # development) build is itself tainted, and never promotable.
         entries, parent_ids = provenance.lane_input_provenance(
             {
                 "binary": binary_ref,
                 "runtime-bundle": bundle_ref,
             }
         )
+        try:
+            parent_docs = (
+                provenance.ProvenanceV2.from_document(binary_ref.provenance),
+                provenance.ProvenanceV2.from_document(bundle_ref.provenance),
+            )
+        except provenance.ProvenanceError as exc:
+            raise runtime_smoke.SmokeError(
+                f"smoke parent provenance is not a schema-v2 document: {exc}"
+            ) from exc
         doc = provenance.derive(
-            parents=(),
+            parents=parent_docs,
             parent_artifact_ids=parent_ids,
             project_revision=project_revision,
             source=source_provenance

@@ -27,10 +27,24 @@ from bigcherry.pipeline import ArtifactRef  # noqa: E402
 from bigcherry import provenance  # noqa: E402
 from bigcherry.runtime_smoke import RuntimeSmokeSpec  # noqa: E402
 
-_FAKE_SMOKE_STDOUT = json.dumps([
-    {"build_commit": "abc", "n_prompt": 512, "n_gen": 0, "avg_ts": 100.0, "samples_ts": [100.0]},
-    {"build_commit": "abc", "n_prompt": 0, "n_gen": 128, "avg_ts": 50.0, "samples_ts": [50.0]},
-])
+_FAKE_SMOKE_STDOUT = json.dumps(
+    [
+        {
+            "build_commit": "abc",
+            "n_prompt": 512,
+            "n_gen": 0,
+            "avg_ts": 100.0,
+            "samples_ts": [100.0],
+        },
+        {
+            "build_commit": "abc",
+            "n_prompt": 0,
+            "n_gen": 128,
+            "avg_ts": 50.0,
+            "samples_ts": [50.0],
+        },
+    ]
+)
 
 
 class _Fixture:
@@ -43,16 +57,24 @@ class _Fixture:
         self.store = ArtifactStore(directory / "store")
         self.prefix = "builds/s1/bp1"
         doc = provenance.make(
-            project={}, source={"source_slice_id": "s1"}, build={"build_plan_id": "bp1"},
-            workload={}, campaign={"run_id": "run1"})
+            project={},
+            source={"source_slice_id": "s1"},
+            build={"build_plan_id": "bp1"},
+            workload={},
+            campaign={"run_id": "run1"},
+        )
 
         binary_relative = f"{self.prefix}/llama-bench"
         binary_digest = self.store.publish_bytes(binary_relative, b"launcher-bytes")
         so_relative = f"{self.prefix}/libggml-hip.so.0"
         so_digest = self.store.publish_bytes(so_relative, b"hip-dispatch-bytes")
 
-        self.binary_ref = ArtifactRef(kind="binary", path=self.store.resolve(binary_relative),
-                                      content_hash=binary_digest, provenance=doc)
+        self.binary_ref = ArtifactRef(
+            kind="binary",
+            path=self.store.resolve(binary_relative),
+            content_hash=binary_digest,
+            provenance=doc,
+        )
 
         manifest = {
             "entrypoint": "llama-bench",
@@ -64,15 +86,27 @@ class _Fixture:
         }
         bundle_relative = f"{self.prefix}/runtime-bundle-x.json"
         bundle_digest = self.store.publish_json(bundle_relative, manifest)
-        self.bundle_ref = ArtifactRef(kind="runtime-bundle", path=self.store.resolve(bundle_relative),
-                                      content_hash=bundle_digest, provenance=doc)
+        self.bundle_ref = ArtifactRef(
+            kind="runtime-bundle",
+            path=self.store.resolve(bundle_relative),
+            content_hash=bundle_digest,
+            provenance=doc,
+        )
         self.so_relative = so_relative
 
     def worker(self):
         spec = RuntimeSmokeSpec(model_path=Path(tempfile.mkstemp()[1]))
         return campaign_workers.make_smoke_worker(
-            run_id="run1", store=self.store, source_slice_id="s1", build_plan_id="bp1",
-            workload_id=None, spec=spec,
+            run_id="run1",
+            store=self.store,
+            source_slice_id="s1",
+            build_plan_id="bp1",
+            workload_id=None,
+            spec=spec,
+            # RE25.3: mechanism test with fixture (non-production)
+            # provenance docs -- development class (see
+            # test_re07_build_identity for the rationale).
+            local_provenance_class="development",
         )
 
 
@@ -118,8 +152,11 @@ class SmokeConsumesVerifiedBundleTests(unittest.TestCase):
             # published two different-content binaries under confusable
             # identities. Must not silently run either as "the" bundle.
             wrong_binary_ref = ArtifactRef(
-                kind="binary", path=fx.binary_ref.path,
-                content_hash="0" * 64, provenance=fx.binary_ref.provenance)
+                kind="binary",
+                path=fx.binary_ref.path,
+                content_hash="0" * 64,
+                provenance=fx.binary_ref.provenance,
+            )
             with patch("bigcherry.campaign_workers.subprocess.run") as fake_run:
                 with self.assertRaises(CampaignBuildError):
                     worker((wrong_binary_ref, fx.bundle_ref))
