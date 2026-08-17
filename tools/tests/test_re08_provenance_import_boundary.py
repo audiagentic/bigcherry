@@ -72,33 +72,38 @@ class RawPathImportDoesNotClaimUnearnedIdentityTests(unittest.TestCase):
             doc = resolved["inventory"].provenance
             self.assertEqual(doc["project"]["provenance_class"], "imported-legacy")
 
-    def test_a_files_own_real_embedded_provenance_is_preserved_not_overwritten(self):
-        # The other half of the fix: if the raw file genuinely IS a copy of
-        # a document this project already published elsewhere (a real
-        # producer, just hand-carried as a path instead of an ArtifactRef),
-        # its OWN real provenance must be preserved, not discarded in favor
-        # of an invented one.
+    def test_a_crafted_json_blob_claiming_to_be_provenance_is_not_trusted(self):
+        # GPT-auto-agent review (RV48 follow-up, 2026-08-17): an earlier
+        # version of this fix trusted any raw-Path bytes that merely
+        # PARSED as a schema_version==2, five-namespace document as "real
+        # embedded provenance" -- provenance.validate() is a structural
+        # shape check only, so a hand-crafted JSON blob asserting whatever
+        # source_slice_id it likes would have been accepted as real. That
+        # is still a laundering route, just a smaller one. Verifying a
+        # raw file's own embedded identity for real needs a chain-of-
+        # custody primitive this project does not have yet (RE25b) -- until
+        # then, a raw-Path input is unconditionally imported-legacy, even
+        # when its bytes happen to look exactly like a provenance document.
         with tempfile.TemporaryDirectory() as directory:
             store = ArtifactStore(Path(directory) / "store")
-            real_doc = provenance.make(
-                project={}, source={"source_slice_id": "the-real-producer-slice-id"},
-                build={"build_plan_id": "real-bp"}, workload={}, campaign={"run_id": "earlier-run"})
+            spoofed_doc = provenance.make(
+                project={}, source={"source_slice_id": "an-identity-the-attacker-picked"},
+                build={"build_plan_id": "not-real"}, workload={}, campaign={"run_id": "not-real"})
             inventory = Path(directory) / "inventory.json"
-            inventory.write_text(json.dumps(real_doc), encoding="utf-8")
+            inventory.write_text(json.dumps(spoofed_doc), encoding="utf-8")
 
             spec = CampaignLaneExecutionSpec(
                 source_name="bigcherry", build_name="tune", platform_name="linux-multi",
                 architectures=("gfx1100",), inputs=(("inventory", inventory),))
             resolved = _resolve_lane_inputs(
                 spec, build=_build(frozenset({"inventory"})), store=store,
-                # Deliberately a DIFFERENT source_slice_id than the embedded
-                # document's own -- proving the embedded identity wins
-                # rather than being overwritten by the current lane's.
                 source_slice_id="source-B-slice-id", run_id="run1")
 
             doc = resolved["inventory"].provenance
-            self.assertEqual(doc["source"]["source_slice_id"], "the-real-producer-slice-id")
-            self.assertNotIn("provenance_class", doc.get("project", {}))
+            # The spoofed claim must NOT win -- the real lane identity and
+            # the imported-legacy classification are what get recorded.
+            self.assertEqual(doc["source"]["source_slice_id"], "source-B-slice-id")
+            self.assertEqual(doc["project"]["provenance_class"], "imported-legacy")
 
     def test_artifactref_input_path_is_unaffected_by_the_import_boundary_fix(self):
         # An already-published ArtifactRef takes a completely different
