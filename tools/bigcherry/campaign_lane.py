@@ -106,6 +106,13 @@ class CampaignLaneResult:
     manifest_ref: ArtifactRef | None
     generated_tree_ref: ArtifactRef | None
     binary_ref: ArtifactRef
+    #: RE07/RV48: the full runtime .so closure + effective-build identity,
+    #: published as its own immutable artifact -- downstream consumers
+    #: (smoke/benchmark/release) should read THIS, not binary_ref alone,
+    #: since binary_ref names only the launcher and says nothing about
+    #: whether the dependent libraries it actually loads are the ones
+    #: this build produced.
+    runtime_bundle_ref: ArtifactRef
     #: None when spec.validation is None -- no runtime-smoke stage ran.
     smoke_ref: ArtifactRef | None
 
@@ -308,7 +315,6 @@ def _execute_build_phase(
         spec, build=build_cfg, store=store,
         source_slice_id=materialized.source_slice_id, run_id=run_id)
     inventory_ref = input_refs.get("inventory")
-    winners_ref = input_refs.get("promoted-winners")
     # workload_id is deterministically the inventory's own content_hash --
     # knowable before generate ever runs, once the inventory is published.
     # NEVER a hash of inventory+winners combined: winners already has its
@@ -317,19 +323,27 @@ def _execute_build_phase(
     # build_plan_id, not workload_id.
     workload_id = inventory_ref.content_hash if inventory_ref is not None else None
 
+    has_generate = build_cfg.variant_set is not None
+    has_smoke = spec.validation is not None
+
     build_plan = BuildPlan(
         source_slice_id=materialized.source_slice_id, phase=spec.build_name,
         platform=platform_cfg.name, targets=platform_cfg.targets,
         cmake_options=tuple(sorted(merged_options.items())),
         variant_set=build_cfg.variant_set,
-        inventory_hash=inventory_ref.content_hash if inventory_ref is not None else None,
-        winners_hash=winners_ref.content_hash if winners_ref is not None else None,
+        # RE07/RV48: empty for a build with no generate stage -- there is
+        # no catalog to disambiguate. Otherwise the exact architecture set
+        # generation was actually requested for (not platform_cfg.targets,
+        # which is a different axis: compiled AMDGPU targets).
+        catalog_architectures=tuple(sorted(spec.architectures)) if has_generate else (),
+        # Generic over every declared need this lane resolved -- see
+        # BuildPlan's own docstring for why this replaced the old
+        # inventory_hash/winners_hash pair.
+        input_hashes=tuple(sorted(
+            (name, ref.content_hash) for name, ref in input_refs.items())),
         toolchain_request=campaign_build.toolchain_request_for_platform(platform_cfg),
         environment=campaign_build.resolve_build_environment(),
     )
-
-    has_generate = build_cfg.variant_set is not None
-    has_smoke = spec.validation is not None
 
     build_graph = campaign_plan.build_stage_graph(
         source_name=spec.source_name, build_name=spec.build_name,
@@ -392,6 +406,8 @@ def _execute_build_phase(
         generate_outputs, kind="generated-tree", stage_id=generate_stage_id)
     binary_ref = _require_one_artifact(
         executor.outputs[build_stage_id], kind="binary", stage_id=build_stage_id)
+    runtime_bundle_ref = _require_one_artifact(
+        executor.outputs[build_stage_id], kind="runtime-bundle", stage_id=build_stage_id)
     smoke_ref = _optional_one_artifact(
         executor.outputs.get(smoke_stage_id), kind="smoke-result", stage_id=smoke_stage_id)
 
@@ -401,7 +417,7 @@ def _execute_build_phase(
         workload_id=workload_id, source_metadata_ref=materialized.source_metadata_ref,
         input_refs=tuple(sorted(input_refs.items())),
         manifest_ref=manifest_ref, generated_tree_ref=generated_tree_ref,
-        binary_ref=binary_ref, smoke_ref=smoke_ref,
+        binary_ref=binary_ref, runtime_bundle_ref=runtime_bundle_ref, smoke_ref=smoke_ref,
     )
 
 

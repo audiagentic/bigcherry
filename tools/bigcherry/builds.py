@@ -31,14 +31,37 @@ def _digest(domain: str, value: object) -> str:
 
 @dataclass(frozen=True)
 class BuildPlan:
+    """RV48/RE07 audit fix: ``input_hashes`` replaces the old hard-coded
+    ``inventory_hash``/``winners_hash`` pair. ``config.Build.needs`` is
+    already the sole authority for what a lane requires (RE17) -- a build
+    plan's OWN identity must track that generically too, or a third kind
+    of declared need (e.g. HI66's correctness-evidence artifact) has
+    nowhere to participate in ``build_plan_id`` without a fourth named
+    field and a fourth special case in every reader. ``inventory_hash``/
+    ``winners_hash`` remain as read-only compatibility properties.
+
+    ``catalog_architectures`` is the architecture set actually requested
+    for candidate GENERATION -- distinct from ``targets`` (the compiled
+    AMDGPU targets). Two lanes sharing every other BuildPlan field but
+    requesting generation for different architectures previously produced
+    the SAME build_plan_id/build_dir despite representing two different
+    generated catalogs -- campaign_workers.py's own generated_compile_
+    inputs_hash reuse-miss check existed specifically to paper over this
+    gap post hoc; this field closes it at the identity layer instead.
+    Empty for a build with no generate stage (stock).
+    """
+
     source_slice_id: str
     phase: str
     platform: str
     targets: tuple[str, ...]
     cmake_options: tuple[tuple[str, str], ...] = ()
     variant_set: str | None = None
-    inventory_hash: str | None = None
-    winners_hash: str | None = None
+    catalog_architectures: tuple[str, ...] = ()
+    #: (need_name, content_hash) pairs, sorted by need_name -- one entry
+    #: per key in config.Build.needs this lane actually resolved, generic
+    #: over whatever kinds exist now or are added later.
+    input_hashes: tuple[tuple[str, str], ...] = ()
     resource_report_hashes: tuple[str, ...] = ()
     toolchain_request: tuple[tuple[str, str], ...] = ()
     environment: tuple[tuple[str, str], ...] = ()
@@ -49,6 +72,14 @@ class BuildPlan:
     @property
     def build_plan_id(self) -> str:
         return _digest("bigcherry/build-plan/v1", self.canonical())
+
+    @property
+    def inventory_hash(self) -> str | None:
+        return dict(self.input_hashes).get("inventory")
+
+    @property
+    def winners_hash(self) -> str | None:
+        return dict(self.input_hashes).get("promoted-winners")
 
 
 def effective_build_id(configure_record: dict[str, object]) -> str:

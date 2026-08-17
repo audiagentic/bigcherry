@@ -30,8 +30,9 @@ class BuildIdentityTests(unittest.TestCase):
         for field, value in {
             "source_slice_id": "s2", "phase": "tune", "platform": "other",
             "targets": ("gfx1201",), "cmake_options": (("GGML_HIP", "OFF"),),
-            "variant_set": "full-max", "inventory_hash": "i",
-            "winners_hash": "w", "resource_report_hashes": ("r",),
+            "variant_set": "full-max", "catalog_architectures": ("gfx1201",),
+            "input_hashes": (("inventory", "i"), ("promoted-winners", "w")),
+            "resource_report_hashes": ("r",),
             "environment": (("CXXFLAGS", "-O0"),),
         }.items():
             self.assertNotEqual(base, self._plan(**{field: value}).build_plan_id, field)

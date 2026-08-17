@@ -110,8 +110,14 @@ class _Harness:
                     campaign={"run_id": run_id})
                 relative = f"builds/{build_plan_id}/{run_id}/bin"
                 digest = store.publish_bytes(relative, b"fake-binary")
-                return (ArtifactRef(kind="binary", path=store.resolve(relative),
-                                    content_hash=digest, provenance=doc),)
+                bundle_relative = f"builds/{build_plan_id}/{run_id}/runtime-bundle.json"
+                bundle_digest = store.publish_json(bundle_relative, {"entrypoint": "bin"})
+                return (
+                    ArtifactRef(kind="binary", path=store.resolve(relative),
+                               content_hash=digest, provenance=doc),
+                    ArtifactRef(kind="runtime-bundle", path=store.resolve(bundle_relative),
+                               content_hash=bundle_digest, provenance=doc),
+                )
             return build
 
         def fake_smoke_worker(**kwargs):

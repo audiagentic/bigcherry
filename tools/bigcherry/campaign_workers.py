@@ -386,6 +386,54 @@ def make_build_worker(
         refs.append(ArtifactRef(kind="binary", path=published_binary,
                                 content_hash=binary_digest, provenance=doc))
 
+        # RE07/RV48 audit fix: publish the FULL runtime .so closure too --
+        # previously only the launcher (binary) reached ArtifactStore, so a
+        # downstream consumer reading binary_ref alone had no immutable,
+        # verified copy of the libraries it actually loads at runtime
+        # (libggml-hip.so etc, where RE09 established the real HIP dispatch
+        # logic lives). Every regular runtime file next to the binary is
+        # published under the same content-addressed prefix, verified
+        # individually, then described by one runtime-bundle manifest
+        # artifact carrying the same identity fields validate_reuse()
+        # already trusts, so a downstream consumer has one self-describing
+        # reference instead of having to re-derive the bundle shape itself.
+        bundle_members: dict[str, str] = {}
+        for artifact in resolve_runtime_artifacts(binary):
+            member_relative = f"{prefix}/{artifact.name}"
+            member_digest = store.publish_file(member_relative, artifact)
+            if not store.verify(member_relative, member_digest):
+                raise campaign_build.CampaignBuildError(
+                    f"published {member_relative} failed verification")
+            bundle_members[artifact.name] = member_digest
+        computed_runtime_bundle_hash = runtime_bundle_hash(bundle_members)
+        bundle_manifest = {
+            "entrypoint": binary.name,
+            "members": bundle_members,
+            "runtime_bundle_hash": computed_runtime_bundle_hash,
+            "effective_build_id": metadata["build_id"],
+            "generated_compile_inputs_hash": metadata.get("generated_compile_inputs_hash"),
+            "toolchain": expected_toolchain,
+        }
+        # Content-addressed by a hash of the FULL manifest, not just
+        # runtime_bundle_hash (member file bytes only): the same build_plan_id
+        # can legitimately recompile to a different generated catalog on a
+        # later run (compile_inputs_hash mismatch is a documented legitimate
+        # cache-miss above, not tampering) while the compiled binary/library
+        # bytes happen to stay identical -- runtime_bundle_hash alone would
+        # not change, but the manifest's own generated_compile_inputs_hash
+        # field would, and a path keyed on identity alone would collide
+        # ArtifactStore's immutability check on that recompile even though
+        # nothing is wrong.
+        bundle_content_hash = ArtifactStore.digest(
+            json.dumps(bundle_manifest, sort_keys=True, separators=(",", ":")).encode())
+        bundle_relative = f"{prefix}/runtime-bundle-{bundle_content_hash}.json"
+        bundle_digest = store.publish_json(bundle_relative, bundle_manifest)
+        if not store.verify(bundle_relative, bundle_digest):
+            raise campaign_build.CampaignBuildError(
+                f"published {bundle_relative} failed verification")
+        refs.append(ArtifactRef(kind="runtime-bundle", path=store.resolve(bundle_relative),
+                                content_hash=bundle_digest, provenance=doc))
+
         return tuple(refs)
 
     return run_build
