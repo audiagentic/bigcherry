@@ -36,10 +36,12 @@ from .provenance import (
     CampaignProvenance,
     PatchModuleProvenance,
     ProvenanceClass,
+    ProvenanceError,
     ProjectProvenance,
     ProvenanceV2,
     SourceProvenance,
     WorkloadProvenance,
+    derive,
 )
 
 
@@ -415,7 +417,25 @@ class CampaignStageExecutor:
             # before this stage ever runs) or knows there isn't one
             # (needs=[] builds). Generate "establishing" it was backwards.
             parent_ids = tuple(ref.artifact_id or ref.content_hash for ref in inputs)
-            provenance_v2 = self._stage_provenance(
+            # RE25.3: feed the REAL parent documents into derive() so the
+            # sticky provenance class actually taints generate's outputs --
+            # previously this built a ProvenanceV2 directly with only the
+            # local class, so an imported-legacy inventory would still have
+            # yielded "production" manifest/tree artifacts. Parents that
+            # don't parse as schema-v2 docs fail closed: taint derivation
+            # needs verifiable parent classes.
+            try:
+                parents = tuple(
+                    ProvenanceV2.from_document(ref.provenance) for ref in inputs
+                )
+            except ProvenanceError as exc:
+                raise CampaignExecutionError(
+                    f"generate input provenance is not a schema-v2 document: {exc}"
+                ) from exc
+            provenance_v2 = derive(
+                parents=parents,
+                parent_artifact_ids=parent_ids,
+                project_revision=self.project_revision,
                 source=self.source_provenance,
                 build=BuildProvenance(
                     build_plan_id=self.build_plan_id,
@@ -428,9 +448,10 @@ class CampaignStageExecutor:
                         for name, ref in sorted(self._generate_inputs.items())
                     ),
                 ),
-                workload_id=self.workload_id,
+                workload=WorkloadProvenance(workload_id=self.workload_id),
+                run_id=self.run_id,
                 producer_stage="generate",
-                parent_artifact_ids=parent_ids,
+                local_class=self.local_provenance_class,
             )
             manifest_relative = (
                 Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"

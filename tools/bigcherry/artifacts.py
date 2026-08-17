@@ -8,9 +8,14 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-from .provenance import ProvenanceError, ProvenanceV2, require_promotable, validate_for_kind
+from .provenance import (
+    ProvenanceError,
+    ProvenanceV2,
+    require_promotable,
+    validate_for_kind,
+)
 
 
 class ArtifactError(ValueError):
@@ -24,6 +29,7 @@ class ArtifactRef:
     this one for compatibility -- see its own module docstring). Lives
     here, beside descriptor persistence, rather than in pipeline.py.
     """
+
     kind: str
     path: Path
     content_hash: str
@@ -36,11 +42,28 @@ class ArtifactRef:
     artifact_id: str = ""
 
 
+@dataclass(frozen=True)
+class ArtifactLocator:
+    """RE25.3: the one small cross-process input handle -- nothing more
+    sophisticated (no query language, resolver service, or catalog).
+
+    A campaign lane accepts these as lane inputs alongside raw Paths and
+    ArtifactRefs; _resolve_lane_inputs() rehydrates them against a specific
+    store and verifies the kind before anything downstream sees them.
+    """
+
+    artifact_id: str
+
+
 DESCRIPTOR_SCHEMA_VERSION = 1
 
 
 def _artifact_id(
-    *, kind: str, relative_path: str, content_hash: str, provenance: ProvenanceV2,
+    *,
+    kind: str,
+    relative_path: str,
+    content_hash: str,
+    provenance: ProvenanceV2,
 ) -> str:
     body = {
         "schema_version": DESCRIPTOR_SCHEMA_VERSION,
@@ -50,7 +73,9 @@ def _artifact_id(
         "provenance": provenance.document(),
     }
     encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.blake2b(b"bigcherry/artifact-descriptor/v1\0" + encoded, digest_size=16).hexdigest()
+    return hashlib.blake2b(
+        b"bigcherry/artifact-descriptor/v1\0" + encoded, digest_size=16
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -62,6 +87,7 @@ class ArtifactDescriptor:
     exactly what RE11's cross-process campaign resume needs and today
     cannot do (CampaignRun.records is process memory only).
     """
+
     schema_version: int
     artifact_id: str
     kind: str
@@ -71,13 +97,26 @@ class ArtifactDescriptor:
 
     @classmethod
     def create(
-        cls, *, kind: str, relative_path: str, content_hash: str, provenance: ProvenanceV2,
+        cls,
+        *,
+        kind: str,
+        relative_path: str,
+        content_hash: str,
+        provenance: ProvenanceV2,
     ) -> "ArtifactDescriptor":
         artifact_id = _artifact_id(
-            kind=kind, relative_path=relative_path, content_hash=content_hash, provenance=provenance)
+            kind=kind,
+            relative_path=relative_path,
+            content_hash=content_hash,
+            provenance=provenance,
+        )
         return cls(
-            schema_version=DESCRIPTOR_SCHEMA_VERSION, artifact_id=artifact_id, kind=kind,
-            relative_path=relative_path, content_hash=content_hash, provenance=provenance,
+            schema_version=DESCRIPTOR_SCHEMA_VERSION,
+            artifact_id=artifact_id,
+            kind=kind,
+            relative_path=relative_path,
+            content_hash=content_hash,
+            provenance=provenance,
         )
 
     def document(self) -> dict[str, object]:
@@ -104,32 +143,47 @@ class ArtifactDescriptor:
         # is identical, but pyright cannot narrow the four locals through the
         # generator form and would reject the _artifact_id/constructor calls.
         if (
-            not isinstance(kind, str) or not kind
-            or not isinstance(relative_path, str) or not relative_path
-            or not isinstance(content_hash, str) or not content_hash
-            or not isinstance(artifact_id, str) or not artifact_id
+            not isinstance(kind, str)
+            or not kind
+            or not isinstance(relative_path, str)
+            or not relative_path
+            or not isinstance(content_hash, str)
+            or not content_hash
+            or not isinstance(artifact_id, str)
+            or not artifact_id
         ):
             raise ArtifactError(
-                "artifact descriptor requires non-empty kind/relative_path/content_hash/artifact_id")
+                "artifact descriptor requires non-empty kind/relative_path/content_hash/artifact_id"
+            )
         try:
             provenance = ProvenanceV2.from_document(document.get("provenance"))
         except ProvenanceError as exc:
-            raise ArtifactError(f"artifact descriptor has invalid provenance: {exc}") from exc
+            raise ArtifactError(
+                f"artifact descriptor has invalid provenance: {exc}"
+            ) from exc
         # Re-derive artifact_id from the body EXCLUDING the claimed
         # artifact_id itself, and require it to match -- a descriptor
         # whose JSON was hand-edited (provenance/content_hash/kind/path
         # changed) while its filename/claimed artifact_id was left alone
         # must not be trusted just because the file parses.
         expected = _artifact_id(
-            kind=kind, relative_path=relative_path, content_hash=content_hash, provenance=provenance)
+            kind=kind,
+            relative_path=relative_path,
+            content_hash=content_hash,
+            provenance=provenance,
+        )
         if expected != artifact_id:
             raise ArtifactError(
                 f"artifact descriptor artifact_id {artifact_id!r} disagrees with its own "
                 f"recomputed identity {expected!r} -- refusing to trust a tampered descriptor"
             )
         return cls(
-            schema_version=DESCRIPTOR_SCHEMA_VERSION, artifact_id=artifact_id, kind=kind,
-            relative_path=relative_path, content_hash=content_hash, provenance=provenance,
+            schema_version=DESCRIPTOR_SCHEMA_VERSION,
+            artifact_id=artifact_id,
+            kind=kind,
+            relative_path=relative_path,
+            content_hash=content_hash,
+            provenance=provenance,
         )
 
 
@@ -159,7 +213,9 @@ class ArtifactStore:
         digest = self.digest(data)
         if target.exists():
             if target.read_bytes() != data:
-                raise ArtifactError(f"immutable artifact already exists with different bytes: {relative}")
+                raise ArtifactError(
+                    f"immutable artifact already exists with different bytes: {relative}"
+                )
             return digest
         fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         try:
@@ -216,7 +272,9 @@ class ArtifactStore:
                 f"content_hash {descriptor.content_hash!r}"
             )
         descriptor_relative = _descriptor_relative(descriptor.artifact_id)
-        encoded = (json.dumps(descriptor.document(), indent=2, sort_keys=True) + "\n").encode("utf-8")
+        encoded = (
+            json.dumps(descriptor.document(), indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
         self.publish_bytes(descriptor_relative, encoded)
         return self._path(descriptor_relative)
 
@@ -224,11 +282,15 @@ class ArtifactStore:
         descriptor_relative = _descriptor_relative(artifact_id)
         target = self._path(descriptor_relative)
         if not target.is_file():
-            raise ArtifactError(f"no artifact descriptor for artifact_id={artifact_id!r}")
+            raise ArtifactError(
+                f"no artifact descriptor for artifact_id={artifact_id!r}"
+            )
         try:
             document = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ArtifactError(f"artifact descriptor {artifact_id!r} is not valid JSON: {exc}") from exc
+            raise ArtifactError(
+                f"artifact descriptor {artifact_id!r} is not valid JSON: {exc}"
+            ) from exc
         descriptor = ArtifactDescriptor.from_document(document)
         if descriptor.artifact_id != artifact_id:
             raise ArtifactError(
@@ -238,7 +300,11 @@ class ArtifactStore:
         return descriptor
 
     def rehydrate(
-        self, artifact_id: str, *, expected_kind: str | None = None, require_promotable: bool = False,
+        self,
+        artifact_id: str,
+        *,
+        expected_kind: str | None = None,
+        require_promotable: bool = False,
     ) -> ArtifactRef:
         """The real cross-process recovery primitive RE11 needs: given
         only (store root, artifact_id), reconstruct a byte-verified,
@@ -250,15 +316,23 @@ class ArtifactStore:
         descriptor = self.load_descriptor(artifact_id)
         if expected_kind is not None and descriptor.kind != expected_kind:
             raise ArtifactError(
-                f"artifact {artifact_id!r} has kind {descriptor.kind!r}, expected {expected_kind!r}")
+                f"artifact {artifact_id!r} has kind {descriptor.kind!r}, expected {expected_kind!r}"
+            )
         try:
-            (validate_for_kind if not require_promotable else _require_promotable_wrapper)(
-                descriptor.provenance.document(), kind=descriptor.kind)
+            (
+                validate_for_kind
+                if not require_promotable
+                else _require_promotable_wrapper
+            )(descriptor.provenance.document(), kind=descriptor.kind)
         except ProvenanceError as exc:
-            raise ArtifactError(f"artifact {artifact_id!r} failed provenance validation: {exc}") from exc
+            raise ArtifactError(
+                f"artifact {artifact_id!r} failed provenance validation: {exc}"
+            ) from exc
         target = self._path(descriptor.relative_path)
         if not target.is_file():
-            raise ArtifactError(f"artifact {artifact_id!r} references missing bytes: {descriptor.relative_path!r}")
+            raise ArtifactError(
+                f"artifact {artifact_id!r} references missing bytes: {descriptor.relative_path!r}"
+            )
         actual_hash = self.digest(target.read_bytes())
         if actual_hash != descriptor.content_hash:
             raise ArtifactError(
@@ -266,43 +340,108 @@ class ArtifactStore:
                 f"(recorded {descriptor.content_hash!r}, actual {actual_hash!r}) -- refusing to trust them"
             )
         return ArtifactRef(
-            kind=descriptor.kind, path=target, content_hash=descriptor.content_hash,
-            provenance=descriptor.provenance.document(), artifact_id=descriptor.artifact_id,
+            kind=descriptor.kind,
+            path=target,
+            content_hash=descriptor.content_hash,
+            provenance=descriptor.provenance.document(),
+            artifact_id=descriptor.artifact_id,
         )
 
     def _publish_ref(
-        self, relative: str | Path, *, publish: "Callable[[], str]", kind: str, provenance: ProvenanceV2,
+        self,
+        relative: str | Path,
+        *,
+        publish: "Callable[[], str]",
+        kind: str,
+        provenance: ProvenanceV2 | dict[str, Any],
     ) -> ArtifactRef:
+        # RE25.3 step 3.4: enforce the kind contract at PUBLICATION, before
+        # any bytes or descriptor become durable -- a malformed PRODUCTION
+        # document must fail here, not only when somebody later happens to
+        # rehydrate it. validate_for_kind deliberately skips production-field
+        # requirements for non-production classes (imported-legacy /
+        # development), so those keep publishing. Deliberately NOT in
+        # persist_descriptor(): RE25.1's tamper tests persist corrupt
+        # descriptors directly and must keep failing at load/rehydrate time.
+        # A plain document dict is normalized to the typed form once here
+        # (from_document also re-validates schema + namespaces), so every
+        # downstream consumer works with ProvenanceV2.
+        if isinstance(provenance, dict):
+            try:
+                provenance = ProvenanceV2.from_document(provenance)
+            except ProvenanceError as exc:
+                raise ArtifactError(
+                    f"refusing to publish {relative} with kind {kind!r}: "
+                    f"invalid provenance document: {exc}"
+                ) from exc
+        try:
+            validate_for_kind(provenance.document(), kind=kind)
+        except ProvenanceError as exc:
+            raise ArtifactError(
+                f"refusing to publish {relative} with kind {kind!r}: {exc}"
+            ) from exc
         content_hash = publish()
         if not self.verify(relative, content_hash):
             raise ArtifactError(f"published {relative} failed verification")
         descriptor = ArtifactDescriptor.create(
-            kind=kind, relative_path=str(Path(relative).as_posix()),
-            content_hash=content_hash, provenance=provenance,
+            kind=kind,
+            relative_path=str(Path(relative).as_posix()),
+            content_hash=content_hash,
+            provenance=provenance,
         )
         self.persist_descriptor(descriptor)
         return ArtifactRef(
-            kind=kind, path=self._path(relative), content_hash=content_hash,
-            provenance=provenance.document(), artifact_id=descriptor.artifact_id,
+            kind=kind,
+            path=self._path(relative),
+            content_hash=content_hash,
+            provenance=provenance.document(),
+            artifact_id=descriptor.artifact_id,
         )
 
     def publish_bytes_ref(
-        self, relative: str | Path, data: bytes, *, kind: str, provenance: ProvenanceV2,
+        self,
+        relative: str | Path,
+        data: bytes,
+        *,
+        kind: str,
+        provenance: ProvenanceV2 | dict[str, Any],
     ) -> ArtifactRef:
-        return self._publish_ref(relative, publish=lambda: self.publish_bytes(relative, data),
-                                 kind=kind, provenance=provenance)
+        return self._publish_ref(
+            relative,
+            publish=lambda: self.publish_bytes(relative, data),
+            kind=kind,
+            provenance=provenance,
+        )
 
     def publish_file_ref(
-        self, relative: str | Path, source: Path, *, kind: str, provenance: ProvenanceV2,
+        self,
+        relative: str | Path,
+        source: Path,
+        *,
+        kind: str,
+        provenance: ProvenanceV2 | dict[str, Any],
     ) -> ArtifactRef:
-        return self._publish_ref(relative, publish=lambda: self.publish_file(relative, source),
-                                 kind=kind, provenance=provenance)
+        return self._publish_ref(
+            relative,
+            publish=lambda: self.publish_file(relative, source),
+            kind=kind,
+            provenance=provenance,
+        )
 
     def publish_json_ref(
-        self, relative: str | Path, value: object, *, kind: str, provenance: ProvenanceV2,
+        self,
+        relative: str | Path,
+        value: object,
+        *,
+        kind: str,
+        provenance: ProvenanceV2 | dict[str, Any],
     ) -> ArtifactRef:
-        return self._publish_ref(relative, publish=lambda: self.publish_json(relative, value),
-                                 kind=kind, provenance=provenance)
+        return self._publish_ref(
+            relative,
+            publish=lambda: self.publish_json(relative, value),
+            kind=kind,
+            provenance=provenance,
+        )
 
 
 def _require_promotable_wrapper(document: object, *, kind: str) -> ProvenanceV2:

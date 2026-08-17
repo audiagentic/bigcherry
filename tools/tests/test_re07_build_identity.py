@@ -26,8 +26,11 @@ from bigcherry.context import ProjectContext  # noqa: E402
 
 def _plan(**overrides) -> BuildPlan:
     values = dict(
-        source_slice_id="s1", phase="tune", platform="linux-multi",
-        targets=("gfx1100", "gfx1201"), variant_set="workload-max",
+        source_slice_id="s1",
+        phase="tune",
+        platform="linux-multi",
+        targets=("gfx1100", "gfx1201"),
+        variant_set="workload-max",
         catalog_architectures=("gfx1100",),
         input_hashes=(("inventory", "hash-a"),),
     )
@@ -43,9 +46,12 @@ class CatalogArchitecturesParticipateInIdentityTests(unittest.TestCase):
 
     def test_changing_catalog_architectures_changes_build_directory(self):
         context = ProjectContext(
-            project_root=Path("."), config_path=Path("recipes.toml"),
-            artifacts_root=Path("artifacts"), work_root=Path("/tmp/bigcherry-work"),
-            upstream_repo=Path("upstream"), overlay_root=Path("src"),
+            project_root=Path("."),
+            config_path=Path("recipes.toml"),
+            artifacts_root=Path("artifacts"),
+            work_root=Path("/tmp/bigcherry-work"),
+            upstream_repo=Path("upstream"),
+            overlay_root=Path("src"),
             patches_root=Path("patches"),
         )
         a = _plan(catalog_architectures=("gfx1100",))
@@ -54,18 +60,25 @@ class CatalogArchitecturesParticipateInIdentityTests(unittest.TestCase):
         # set differs. RV48's exact finding: these two used to share a
         # build_dir despite representing two different generated catalogs.
         self.assertNotEqual(
-            build_directory(context, "s1", a), build_directory(context, "s1", b))
+            build_directory(context, "s1", a), build_directory(context, "s1", b)
+        )
 
     def test_two_lanes_same_plan_different_architectures_never_share_a_build_dir(self):
         context = ProjectContext(
-            project_root=Path("."), config_path=Path("recipes.toml"),
-            artifacts_root=Path("artifacts"), work_root=Path("/tmp/bigcherry-work"),
-            upstream_repo=Path("upstream"), overlay_root=Path("src"),
+            project_root=Path("."),
+            config_path=Path("recipes.toml"),
+            artifacts_root=Path("artifacts"),
+            work_root=Path("/tmp/bigcherry-work"),
+            upstream_repo=Path("upstream"),
+            overlay_root=Path("src"),
             patches_root=Path("patches"),
         )
         lane1 = _plan(catalog_architectures=("gfx1100",))
         lane2 = _plan(catalog_architectures=("gfx1030",))
-        dirs = {build_directory(context, "s1", lane1), build_directory(context, "s1", lane2)}
+        dirs = {
+            build_directory(context, "s1", lane1),
+            build_directory(context, "s1", lane2),
+        }
         self.assertEqual(len(dirs), 2)
 
 
@@ -80,13 +93,15 @@ class InputHashesParticipateInIdentityTests(unittest.TestCase):
         # {inventory, promoted-winners} -- HI66's correctness-evidence need
         # (or any future kind) must change identity the same way.
         a = _plan(input_hashes=(("inventory", "hash-a"),))
-        b = _plan(input_hashes=(
-            ("inventory", "hash-a"), ("correctness-evidence", "hash-c")))
+        b = _plan(
+            input_hashes=(("inventory", "hash-a"), ("correctness-evidence", "hash-c"))
+        )
         self.assertNotEqual(a.build_plan_id, b.build_plan_id)
 
     def test_inventory_hash_and_winners_hash_compat_properties_still_work(self):
-        plan = _plan(input_hashes=(
-            ("inventory", "hash-a"), ("promoted-winners", "hash-w")))
+        plan = _plan(
+            input_hashes=(("inventory", "hash-a"), ("promoted-winners", "hash-w"))
+        )
         self.assertEqual(plan.inventory_hash, "hash-a")
         self.assertEqual(plan.winners_hash, "hash-w")
 
@@ -109,20 +124,28 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             context = ProjectContext(
-                project_root=root, config_path=root / "recipes.toml",
-                artifacts_root=root / "artifacts", work_root=root / "work",
-                upstream_repo=root / "upstream", overlay_root=root / "src",
+                project_root=root,
+                config_path=root / "recipes.toml",
+                artifacts_root=root / "artifacts",
+                work_root=root / "work",
+                upstream_repo=root / "upstream",
+                overlay_root=root / "src",
                 patches_root=root / "patches",
             )
             store = ArtifactStore(root / "store")
             build_plan = BuildPlan(
-                source_slice_id="s1", phase="tune", platform="linux-multi",
-                targets=("gfx1100",), variant_set=None,
+                source_slice_id="s1",
+                phase="tune",
+                platform="linux-multi",
+                targets=("gfx1100",),
+                variant_set=None,
             )
             platform = campaign_config.Platform(
-                name="linux-multi", targets=("gfx1100",), options=())
+                name="linux-multi", targets=("gfx1100",), options=()
+            )
             build_cfg = campaign_config.Build(
-                name="stock", options=(), variant_set=None, needs=frozenset())
+                name="stock", options=(), variant_set=None, needs=frozenset()
+            )
 
             build_dir = build_directory(context, "s1", build_plan)
 
@@ -132,27 +155,45 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
                     if "--build" in args:
                         build_dir.mkdir(parents=True, exist_ok=True)
                         (build_dir / "llama-bench").write_bytes(b"launcher-bytes")
-                        (build_dir / "libggml-hip.so.0").write_bytes(b"hip-dispatch-bytes")
+                        (build_dir / "libggml-hip.so.0").write_bytes(
+                            b"hip-dispatch-bytes"
+                        )
                         (build_dir / "libggml.so.0").write_bytes(b"ggml-base-bytes")
                     else:
                         build_dir.mkdir(parents=True, exist_ok=True)
                         (build_dir / "CMakeCache.txt").write_text(
                             "CMAKE_C_COMPILER:FILEPATH=/opt/rocm/llvm/bin/clang\n"
                             "AMDGPU_TARGETS:STRING=gfx1100\n"
-                            "GGML_HIP:BOOL=ON\n", encoding="utf-8")
+                            "GGML_HIP:BOOL=ON\n",
+                            encoding="utf-8",
+                        )
                     return subprocess.CompletedProcess(args, 0)
+
                 return run
 
             worker = campaign_workers.make_build_worker(
-                context=context, source_root=root / "src-tree", run_id="run1",
-                build_plan=build_plan, platform=platform, build=build_cfg,
-                store=store, binary_relative_path="llama-bench",
-                source_slice_id="s1", workload_id=None,
-                has_generate_stage=False, cmake_targets=("llama-bench",),
+                context=context,
+                source_root=root / "src-tree",
+                run_id="run1",
+                build_plan=build_plan,
+                platform=platform,
+                build=build_cfg,
+                store=store,
+                binary_relative_path="llama-bench",
+                source_slice_id="s1",
+                workload_id=None,
+                has_generate_stage=False,
+                cmake_targets=("llama-bench",),
+                # RE25.3: mechanism test with fixture (non-production)
+                # provenance docs -- development class keeps the
+                # production-only publish-time kind contract out of scope.
+                local_provenance_class="development",
             )
 
             calls: list = []
-            with patch("bigcherry.campaign_workers.subprocess.run", fake_compiler(calls)):
+            with patch(
+                "bigcherry.campaign_workers.subprocess.run", fake_compiler(calls)
+            ):
                 refs = worker(())
 
             bundle_ref = next(ref for ref in refs if ref.kind == "runtime-bundle")
@@ -162,7 +203,8 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
                 set(manifest["members"]),
                 {"llama-bench", "libggml-hip.so.0", "libggml.so.0"},
                 "the runtime bundle must include every .so member alongside "
-                "the launcher, not just the launcher itself")
+                "the launcher, not just the launcher itself",
+            )
             # Every published member is real, verified, immutable store content.
             for name in manifest["members"]:
                 relative = bundle_ref.path.relative_to(store.root).parent / name
@@ -175,7 +217,9 @@ class RuntimeBundlePublicationTests(unittest.TestCase):
             self.assertTrue(store.verify("builds/s1/b1/libggml-hip.so.0", digest))
 
             # Tamper with the published bytes directly on disk.
-            (Path(directory) / "builds/s1/b1/libggml-hip.so.0").write_bytes(b"tampered!!")
+            (Path(directory) / "builds/s1/b1/libggml-hip.so.0").write_bytes(
+                b"tampered!!"
+            )
             self.assertFalse(store.verify("builds/s1/b1/libggml-hip.so.0", digest))
 
             # And a second publish attempt at the same path with the ORIGINAL

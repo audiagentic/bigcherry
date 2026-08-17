@@ -45,7 +45,7 @@ from . import (
     patchset,
 )
 from . import runtime_smoke as smoke_module
-from .artifacts import ArtifactStore
+from .artifacts import ArtifactLocator, ArtifactStore
 from .builds import BuildPlan
 from .campaign import CampaignRun
 from .campaign_execution import (
@@ -57,7 +57,17 @@ from .campaign_execution import (
 )
 from .context import ProjectContext
 from .pipeline import ArtifactRef
-from .provenance import ProvenanceClass, SourceProvenance, make as make_provenance
+from .provenance import (
+    BuildProvenance,
+    CampaignProvenance,
+    ProvenanceClass,
+    ProvenanceError,
+    ProvenanceV2,
+    ProjectProvenance,
+    SCHEMA_VERSION,
+    SourceProvenance,
+    WorkloadProvenance,
+)
 from .workspace import UpstreamRepository, WorkspaceError, bigcherry_revision
 
 
@@ -65,11 +75,13 @@ class CampaignLaneError(RuntimeError):
     pass
 
 
-#: A raw path (the CLI importing a file, e.g. --inventory) or an
-#: already-published ArtifactRef (a future canonical-lane caller, RE18).
-#: Both normalize to a verified ArtifactRef in _resolve_lane_inputs()
+#: A raw path (the CLI importing a file, e.g. --inventory), an
+#: already-published ArtifactRef (a future canonical-lane caller, RE18), or
+#: an ArtifactLocator -- the small cross-process handle naming an artifact
+#: by its descriptor identity alone (RE25.3). All three normalize to a
+#: verified, descriptor-backed ArtifactRef in _resolve_lane_inputs()
 #: before any stage runs.
-LaneInputValue = Path | ArtifactRef
+LaneInputValue = Path | ArtifactRef | ArtifactLocator
 
 
 @dataclass(frozen=True)
@@ -327,15 +339,40 @@ def _sniff_embedded_provenance(data: bytes) -> dict[str, object] | None:
     only -- it has no way to prove a document was genuinely produced by
     THIS project rather than hand-crafted by whoever supplied the raw
     file. A crafted JSON blob asserting any ``source_slice_id`` it likes
-    would have been accepted as "real" here. Verifying a claimed embedded
-    identity for real needs a chain-of-custody primitive this project
-    does not have yet (RE25b's ArtifactDescriptor persistence/
-    rehydration -- checking the claimed content against what THIS
-    project's own ArtifactStore actually recorded for it, not just
-    trusting the shape of the bytes). Until that lands, every raw-Path
-    input is unconditionally imported-legacy -- see _resolve_lane_inputs.
+    would have been accepted as "real" here. The chain-of-custody
+    primitive that closes the gap for good has since landed (RE25.1
+    ArtifactDescriptor persistence + rehydration): a caller who KNOWS an
+    artifact's descriptor identity passes an ArtifactLocator and
+    _resolve_lane_inputs() rehydrates it against the store -- checking
+    the claimed content against what THIS project actually recorded. A
+    raw Path, however, still carries no claimed identity to verify, so
+    every raw-Path input remains unconditionally imported-legacy.
     """
     return None
+
+
+def _imported_legacy_document(
+    run_id: str, producer_stage: str = "lane-import"
+) -> ProvenanceV2:
+    """RE25.3: the honest identity for evidence whose origin we cannot
+    verify -- imported-legacy class with NO source/build/workload claims.
+
+    The previous version stamped THIS lane's source_slice_id onto imported
+    evidence, which is not proof of where the file was produced (an
+    inventory from source A supplied while building source B must not
+    acquire a source-B claim). The empty source namespace is deliberate:
+    PipelineService._check_inputs() exempts imported-legacy inputs from the
+    stage-envelope field check for exactly this reason, and the sticky
+    class guarantees nothing derived from it can ever be promotable.
+    """
+    return ProvenanceV2(
+        schema_version=SCHEMA_VERSION,
+        project=ProjectProvenance(provenance_class="imported-legacy"),
+        source=SourceProvenance(),
+        build=BuildProvenance(),
+        workload=WorkloadProvenance(),
+        campaign=CampaignProvenance(run_id=run_id, producer_stage=producer_stage),
+    )
 
 
 def _resolve_lane_inputs(
@@ -343,18 +380,32 @@ def _resolve_lane_inputs(
     *,
     build: campaign_config.Build,
     store: ArtifactStore,
-    source_slice_id: str,
     run_id: str,
 ) -> dict[str, ArtifactRef]:
     """Generalizes the previous single-purpose _publish_inventory(): every
-    lane input, keyed by name, resolved to a verified ArtifactRef.
+    lane input, keyed by name, resolved to a verified, descriptor-backed
+    ArtifactRef (RE25.3).
 
     Exact set equality against build.needs, not a subset check -- a
     caller that supplies an extra, unrequested input is as much a bug as
-    one that's missing a required one. Content-addressed publication
-    (inputs/<name>/<sha256>), not a fixed path: ArtifactStore is immutable,
-    so a fixed path cannot survive two lanes in one store using different
-    bytes for the same need name.
+    one that's missing a required one.
+
+    Resolution by input kind:
+    - ArtifactLocator: rehydrate by artifact_id (kind + provenance
+      contract enforced), use the returned ref unchanged.
+    - ArtifactRef WITH artifact_id: rehydrate by its ID and verify kind /
+      content hash agree with the supplied ref -- a claimed descriptor
+      identity is re-proven, never trusted (closes the RE25.2-review
+      follow-on). Use the rehydrated ref.
+    - ArtifactRef WITHOUT artifact_id: legacy evidence. Verify store
+      ownership + bytes, then downgrade any non-imported provenance class
+      to imported-legacy -- an unverified ref cannot be first-party
+      production evidence (no laundering). Parseable docs keep their fields
+      (so a wrong-source claim still fails the envelope); unparseable docs
+      are replaced with a minimal imported-legacy identity.
+    - raw Path: read/hash bytes, stamp a typed imported-legacy document
+      with NO source claims, publish through the descriptor API so the
+      input gets a real rehydratable artifact_id.
     """
     provided = _spec_inputs(spec)
     actual = frozenset(provided)
@@ -374,6 +425,18 @@ def _resolve_lane_inputs(
 
     resolved: dict[str, ArtifactRef] = {}
     for name, value in provided.items():
+        if isinstance(value, ArtifactLocator):
+            # The trusted cross-process path: rehydrate proves bytes +
+            # provenance contract + kind against the store's own records.
+            try:
+                resolved[name] = store.rehydrate(value.artifact_id, expected_kind=name)
+            except Exception as exc:
+                raise CampaignLaneError(
+                    f"lane input {name!r}: locator artifact_id "
+                    f"{value.artifact_id!r} failed rehydration: {exc}"
+                ) from exc
+            continue
+
         if isinstance(value, ArtifactRef):
             if value.kind != name:
                 raise CampaignLaneError(
@@ -390,40 +453,74 @@ def _resolve_lane_inputs(
                 raise CampaignLaneError(
                     f"lane input {name!r} bytes do not match its own content_hash"
                 )
-            resolved[name] = value
+            if value.artifact_id:
+                # Descriptor-backed: re-prove the claimed identity against
+                # the store's persisted descriptor, then use the
+                # rehydrated ref (its provenance is what the store
+                # recorded, not what the in-memory ref happened to carry).
+                try:
+                    rehydrated = store.rehydrate(value.artifact_id, expected_kind=name)
+                except Exception as exc:
+                    raise CampaignLaneError(
+                        f"lane input {name!r}: claimed artifact_id "
+                        f"{value.artifact_id!r} failed rehydration: {exc}"
+                    ) from exc
+                if rehydrated.content_hash != value.content_hash:
+                    raise CampaignLaneError(
+                        f"lane input {name!r} content hash "
+                        f"{value.content_hash!r} disagrees with its own "
+                        f"descriptor's {rehydrated.content_hash!r}"
+                    )
+                resolved[name] = rehydrated
+            else:
+                # Legacy (no descriptor identity): legacy/imported evidence
+                # only -- downgrade any first-party class claim, never let
+                # an unverified ref launder itself into production.
+                try:
+                    parsed = ProvenanceV2.from_document(value.provenance)
+                except ProvenanceError:
+                    # Unparseable/malformed doc: nothing verifiable in it.
+                    parsed = _imported_legacy_document(run_id)
+                if parsed.project.provenance_class != "imported-legacy":
+                    parsed = ProvenanceV2(
+                        schema_version=parsed.schema_version,
+                        project=ProjectProvenance(
+                            provenance_class="imported-legacy",
+                            bigcherry_revision=parsed.project.bigcherry_revision,
+                        ),
+                        source=parsed.source,
+                        build=parsed.build,
+                        workload=parsed.workload,
+                        campaign=parsed.campaign,
+                    )
+                resolved[name] = replace(value, provenance=parsed.document())
             continue
 
+        # raw Path: imported-legacy, descriptor-backed, no source claims.
         data = value.read_bytes()
         digest = ArtifactStore.digest(data)
         relative = f"inputs/{name}/{digest}"
-        published_digest = store.publish_bytes(relative, data)
-        if published_digest != digest:
-            raise CampaignLaneError(
-                f"lane input {name!r} digest changed during publication"
-            )
-        # RE08/RV48 audit fix: a raw Path has no producer identity of its
-        # own to trust -- the caller merely handed us a file while building
-        # THIS source, which is not proof the file was ever produced BY
-        # this source (an inventory from source A, supplied while building
-        # source B, must not silently acquire source-B provenance). Prefer
-        # the file's own embedded provenance if it happens to carry one
-        # (a real producer, just passed as a path instead of an
-        # ArtifactRef); otherwise stamp it visibly as imported-legacy
-        # evidence rather than inventing an unearned claim.
         embedded = _sniff_embedded_provenance(data)
         if embedded is not None:
-            doc = embedded
+            # Seam is always-None today (see its docstring); kept so a
+            # future verified path flows through the same contract.
+            try:
+                parsed = ProvenanceV2.from_document(embedded)
+            except ProvenanceError as exc:
+                raise CampaignLaneError(
+                    f"lane input {name!r}: embedded provenance is not a "
+                    f"valid schema-v2 document: {exc}"
+                ) from exc
         else:
-            doc = make_provenance(
-                project={"provenance_class": "imported-legacy"},
-                source={"source_slice_id": source_slice_id},
-                build={},
-                workload={},
-                campaign={"run_id": run_id},
+            parsed = _imported_legacy_document(run_id)
+        try:
+            resolved[name] = store.publish_bytes_ref(
+                relative, data, kind=name, provenance=parsed
             )
-        resolved[name] = ArtifactRef(
-            kind=name, path=store.resolve(relative), content_hash=digest, provenance=doc
-        )
+        except Exception as exc:
+            raise CampaignLaneError(
+                f"lane input {name!r} failed descriptor publication: {exc}"
+            ) from exc
 
     return resolved
 
@@ -456,13 +553,7 @@ def _execute_build_phase(
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
 
-    input_refs = _resolve_lane_inputs(
-        spec,
-        build=build_cfg,
-        store=store,
-        source_slice_id=materialized.source_slice_id,
-        run_id=run_id,
-    )
+    input_refs = _resolve_lane_inputs(spec, build=build_cfg, store=store, run_id=run_id)
     inventory_ref = input_refs.get("inventory")
     # workload_id is deterministically the inventory's own content_hash --
     # knowable before generate ever runs, once the inventory is published.

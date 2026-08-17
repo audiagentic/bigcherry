@@ -122,6 +122,11 @@ class GenerateStageEnvelopeTests(unittest.TestCase):
                 generate_inputs={"inventory": inventory},
                 generate_needs=frozenset({"inventory"}),
                 workload_id="w1",
+                # RE25.3: mechanism test, not production evidence -- the
+                # minimal fixture docs carry no kind-required source fields,
+                # and step 3.4's publish-time validation correctly rejects
+                # incomplete PRODUCTION docs. development class is honest.
+                local_provenance_class="development",
                 # RE25.2: a standalone generate executor (no materialize
                 # stage in this graph) seeds the source provenance it would
                 # have inherited from one.
@@ -238,6 +243,10 @@ class MaterializeStageTests(unittest.TestCase):
                 materialize=fake_materialize,
                 generate=lambda inputs: {},
                 source_slice_id_holder=holder,
+                # RE25.3: mechanism test -- minimal fixture metadata carries
+                # no kind-required fields; development class keeps the
+                # publish-time kind contract (production-only) out of scope.
+                local_provenance_class="development",
             )
             hashes = executor("mat")
             self.assertEqual(len(hashes), 1)
@@ -596,6 +605,8 @@ class FullChainTests(unittest.TestCase):
                 materialize=lambda: {"source_slice_id": "real-slice"},
                 generate=lambda inputs: {},
                 source_slice_id_holder=source_slice_id_holder,
+                # RE25.3: mechanism test -- development class (see above).
+                local_provenance_class="development",
             )
             materialize_executor("mat")
             self.assertEqual(source_slice_id_holder[0], "real-slice")
@@ -639,6 +650,8 @@ class FullChainTests(unittest.TestCase):
                 build=fake_build,
                 smoke=fake_smoke,
                 initial_source_provenance=build_source_provenance,
+                # RE25.3: mechanism test -- development class (see above).
+                local_provenance_class="development",
             )
             build_executor("gen")
             build_executor("build")
@@ -787,6 +800,8 @@ class CampaignRunIntegrationTests(unittest.TestCase):
                 materialize=fake_materialize,
                 generate=lambda inputs: {},
                 source_slice_id_holder=[None],
+                # RE25.3: mechanism test -- development class (see above).
+                local_provenance_class="development",
             )
             run = CampaignRun(graph, root=Path(directory) / "run")
             reuse = make_artifact_reuse_checker(executor=executor, store=store)

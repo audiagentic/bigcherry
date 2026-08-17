@@ -1,10 +1,22 @@
-"""RE08 (RV48 audit fix): raw-Path lane inputs must not launder provenance.
+"""RE08/RV48 + RE25.3: lane inputs must not launder provenance.
 
-The verified defect: _resolve_lane_inputs's raw-Path branch used to stamp
-a freshly-invented provenance document claiming the CURRENT lane's
-source_slice_id for a file it had no way to prove came from that source
--- an inventory genuinely produced by building source A, supplied as a
-raw path while building source B, silently acquired source-B provenance.
+Contract layers (all verified here):
+
+1. RE08/RV48: a raw-Path lane input used to be stamped with the CURRENT
+   lane's source_slice_id -- an inventory from source A supplied while
+   building source B silently acquired source-B provenance. Fixed by the
+   imported-legacy classification.
+
+2. RE25.3: the residual unearned claim is removed -- the imported-legacy
+   document carries NO source_slice_id (the stage-envelope check exempts
+   exactly that class; the sticky taint blocks promotion). Raw inputs are
+   now descriptor-backed with a real rehydratable artifact_id.
+
+3. RE25.3 identity handling: an ArtifactRef WITH an artifact_id has its
+   claimed identity re-proven by store rehydration (kind + content hash
+   must agree); an ArtifactRef WITHOUT one is legacy evidence and any
+   first-party class claim is downgraded to imported-legacy so it cannot
+   launder itself into production.
 """
 
 from __future__ import annotations
@@ -19,117 +31,244 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry import config as campaign_config  # noqa: E402
 from bigcherry import provenance  # noqa: E402
-from bigcherry.artifacts import ArtifactStore  # noqa: E402
-from bigcherry.campaign_lane import _resolve_lane_inputs  # noqa: E402
-from bigcherry.campaign_lane import CampaignLaneExecutionSpec  # noqa: E402
+from bigcherry.artifacts import (  # noqa: E402
+    ArtifactLocator,
+    ArtifactStore,
+)
+from bigcherry.campaign_lane import (  # noqa: E402
+    CampaignLaneError,
+    CampaignLaneExecutionSpec,
+    LaneInputValue,
+    _resolve_lane_inputs,
+)
+from bigcherry.pipeline import ArtifactRef  # noqa: E402
 
 
 def _build(needs: frozenset[str]) -> campaign_config.Build:
-    return campaign_config.Build(name="tune", options=(), variant_set="workload-max", needs=needs)
+    return campaign_config.Build(
+        name="tune", options=(), variant_set="workload-max", needs=needs
+    )
+
+
+def _spec(*inputs: tuple[str, LaneInputValue]) -> CampaignLaneExecutionSpec:
+    return CampaignLaneExecutionSpec(
+        source_name="bigcherry",
+        build_name="tune",
+        platform_name="linux-multi",
+        architectures=("gfx1100",),
+        inputs=inputs,
+    )
+
+
+def _resolve(store: ArtifactStore, *inputs: tuple[str, LaneInputValue]):
+    return _resolve_lane_inputs(
+        _spec(*inputs),
+        build=_build(frozenset(n for n, _ in inputs)),
+        store=store,
+        run_id="run1",
+    )
+
+
+def _ns(doc: dict[str, object], name: str) -> dict[str, object]:
+    """Narrow one provenance namespace (docs are dict[str, object])."""
+    value = doc[name]
+    assert isinstance(value, dict), f"namespace {name!r} is not a dict"
+    return value
 
 
 class RawPathImportDoesNotClaimUnearnedIdentityTests(unittest.TestCase):
-    def test_a_plain_data_file_is_classified_imported_legacy_not_stamped_as_produced(self):
-        with tempfile.TemporaryDirectory() as directory:
-            store = ArtifactStore(Path(directory) / "store")
-            inventory = Path(directory) / "inventory.json"
-            # A real inventory shape -- plain data, no provenance of its own
-            # -- exactly what a raw --inventory CLI import actually is.
+    def test_plain_data_file_is_imported_legacy_with_no_source_claim_and_real_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            inventory = Path(d) / "inventory.json"
+            # A real inventory shape -- plain data, no provenance of its own.
             inventory.write_text(json.dumps({"mmq_types": ["q8_0"]}), encoding="utf-8")
 
-            spec = CampaignLaneExecutionSpec(
-                source_name="bigcherry", build_name="tune", platform_name="linux-multi",
-                architectures=("gfx1100",), inputs=(("inventory", inventory),))
-            resolved = _resolve_lane_inputs(
-                spec, build=_build(frozenset({"inventory"})), store=store,
-                source_slice_id="source-B-slice-id", run_id="run1")
+            resolved = _resolve(store, ("inventory", inventory))
+            ref = resolved["inventory"]
+            doc = ref.provenance
 
-            doc = resolved["inventory"].provenance
-            self.assertEqual(doc["project"].get("provenance_class"), "imported-legacy")
-            # The visible classification is the point -- a downstream reader
-            # can now tell "this claim is unproven" instead of trusting it
-            # as if the lane's own materialize/generate stage produced it.
+            self.assertEqual(_ns(doc, "project")["provenance_class"], "imported-legacy")
+            # RE25.3: NO source claim at all -- the previous version stamped
+            # this lane's source_slice_id onto imported evidence, which was
+            # itself an unearned identity (see test_wrong_source_*).
+            self.assertIsNone(_ns(doc, "source").get("source_slice_id"))
+            # Descriptor-backed: a real id that rehydrates in a fresh store.
+            self.assertTrue(ref.artifact_id)
+            fresh = ArtifactStore(Path(d) / "store")
+            rehydrated = fresh.rehydrate(ref.artifact_id, expected_kind="inventory")
+            self.assertEqual(rehydrated.content_hash, ref.content_hash)
 
-    def test_wrong_source_inventory_is_not_silently_relabelled_as_the_current_source(self):
-        # This IS the exact laundering scenario RV48 named: an inventory
-        # that genuinely came from a DIFFERENT source is handed as a raw
-        # path while building source-B. Assert the result does not claim
-        # unqualified production-quality provenance for source-B -- it
-        # must be visibly imported-legacy, not indistinguishable from a
-        # real generate-stage output.
-        with tempfile.TemporaryDirectory() as directory:
-            store = ArtifactStore(Path(directory) / "store")
-            inventory = Path(directory) / "inventory.json"
+    def test_wrong_source_inventory_is_not_relabelled_as_the_current_source(self):
+        # THE exact laundering scenario RV48 named: an inventory from a
+        # different source handed as a raw path while building source-B.
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            inventory = Path(d) / "inventory.json"
             inventory.write_text(json.dumps({"mmq_types": ["f16"]}), encoding="utf-8")
 
-            spec = CampaignLaneExecutionSpec(
-                source_name="bigcherry", build_name="tune", platform_name="linux-multi",
-                architectures=("gfx1100",), inputs=(("inventory", inventory),))
-            resolved = _resolve_lane_inputs(
-                spec, build=_build(frozenset({"inventory"})), store=store,
-                source_slice_id="source-B-slice-id", run_id="run1")
+            doc = _resolve(store, ("inventory", inventory))["inventory"].provenance
+            self.assertEqual(_ns(doc, "project")["provenance_class"], "imported-legacy")
+            # Must NOT acquire the current lane's identity (and source-B has
+            # no slice id even in this fixture -- there is nothing to claim).
+            self.assertIsNone(_ns(doc, "source").get("source_slice_id"))
 
-            doc = resolved["inventory"].provenance
-            self.assertEqual(doc["project"]["provenance_class"], "imported-legacy")
+    def test_crafted_json_blob_claiming_provenance_is_not_trusted(self):
+        # A hand-crafted JSON blob that merely PARSES as a schema-v2
+        # five-namespace document must not be accepted as real embedded
+        # provenance -- no chain-of-custody primitive exists for raw paths,
+        # so the raw-Path branch is unconditionally imported-legacy.
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            spoofed = provenance.make(
+                project={},
+                source={"source_slice_id": "an-identity-the-attacker-picked"},
+                build={"build_plan_id": "not-real"},
+                workload={},
+                campaign={"run_id": "not-real"},
+            )
+            inventory = Path(d) / "inventory.json"
+            inventory.write_text(json.dumps(spoofed), encoding="utf-8")
 
-    def test_a_crafted_json_blob_claiming_to_be_provenance_is_not_trusted(self):
-        # GPT-auto-agent review (RV48 follow-up, 2026-08-17): an earlier
-        # version of this fix trusted any raw-Path bytes that merely
-        # PARSED as a schema_version==2, five-namespace document as "real
-        # embedded provenance" -- provenance.validate() is a structural
-        # shape check only, so a hand-crafted JSON blob asserting whatever
-        # source_slice_id it likes would have been accepted as real. That
-        # is still a laundering route, just a smaller one. Verifying a
-        # raw file's own embedded identity for real needs a chain-of-
-        # custody primitive this project does not have yet (RE25b) -- until
-        # then, a raw-Path input is unconditionally imported-legacy, even
-        # when its bytes happen to look exactly like a provenance document.
-        with tempfile.TemporaryDirectory() as directory:
-            store = ArtifactStore(Path(directory) / "store")
-            spoofed_doc = provenance.make(
-                project={}, source={"source_slice_id": "an-identity-the-attacker-picked"},
-                build={"build_plan_id": "not-real"}, workload={}, campaign={"run_id": "not-real"})
-            inventory = Path(directory) / "inventory.json"
-            inventory.write_text(json.dumps(spoofed_doc), encoding="utf-8")
+            doc = _resolve(store, ("inventory", inventory))["inventory"].provenance
+            self.assertEqual(_ns(doc, "project")["provenance_class"], "imported-legacy")
+            # Neither the spoofed claim nor a fresh lane stamp may win.
+            self.assertIsNone(_ns(doc, "source").get("source_slice_id"))
 
-            spec = CampaignLaneExecutionSpec(
-                source_name="bigcherry", build_name="tune", platform_name="linux-multi",
-                architectures=("gfx1100",), inputs=(("inventory", inventory),))
-            resolved = _resolve_lane_inputs(
-                spec, build=_build(frozenset({"inventory"})), store=store,
-                source_slice_id="source-B-slice-id", run_id="run1")
 
-            doc = resolved["inventory"].provenance
-            # The spoofed claim must NOT win -- the real lane identity and
-            # the imported-legacy classification are what get recorded.
-            self.assertEqual(doc["source"]["source_slice_id"], "source-B-slice-id")
-            self.assertEqual(doc["project"]["provenance_class"], "imported-legacy")
-
-    def test_artifactref_input_path_is_unaffected_by_the_import_boundary_fix(self):
-        # An already-published ArtifactRef takes a completely different
-        # branch (store.verify against its OWN recorded content_hash) --
-        # this fix must not touch that path at all.
-        with tempfile.TemporaryDirectory() as directory:
-            from bigcherry.pipeline import ArtifactRef
-            store = ArtifactStore(Path(directory) / "store")
+class ArtifactRefIdentityTests(unittest.TestCase):
+    def test_ref_without_id_is_downgraded_to_imported_legacy(self):
+        # Legacy evidence: store-verified bytes, but an unverified ref must
+        # not carry a first-party class into the lane (no laundering).
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
             data = json.dumps({"mmq_types": ["q8_0"]}).encode()
-            digest = store.publish_bytes("inputs/inventory/pre-published", data)
-            real_doc = provenance.make(
-                project={}, source={"source_slice_id": "real-producer"},
-                build={}, workload={}, campaign={"run_id": "run0"})
-            ref = ArtifactRef(kind="inventory", path=store.resolve("inputs/inventory/pre-published"),
-                              content_hash=digest, provenance=real_doc)
+            digest = store.publish_bytes("inputs/inventory/pre", data)
+            doc = provenance.make(
+                project={"provenance_class": "production"},
+                source={"source_slice_id": "claimed-producer"},
+                build={},
+                workload={},
+                campaign={"run_id": "run0"},
+            )
+            ref = ArtifactRef(
+                kind="inventory",
+                path=store.resolve("inputs/inventory/pre"),
+                content_hash=digest,
+                provenance=doc,
+            )
 
-            spec = CampaignLaneExecutionSpec(
-                source_name="bigcherry", build_name="tune", platform_name="linux-multi",
-                architectures=("gfx1100",), inputs=(("inventory", ref),))
-            resolved = _resolve_lane_inputs(
-                spec, build=_build(frozenset({"inventory"})), store=store,
-                source_slice_id="source-B-slice-id", run_id="run1")
+            resolved = _resolve(store, ("inventory", ref))
+            out = resolved["inventory"]
+            self.assertEqual(out.content_hash, digest)  # same evidence...
+            self.assertEqual(
+                _ns(out.provenance, "project")["provenance_class"], "imported-legacy"
+            )
+            # ...but the class claim is downgraded; source fields survive so
+            # a wrong-source claim still fails the envelope downstream.
+            self.assertEqual(
+                _ns(out.provenance, "source")["source_slice_id"], "claimed-producer"
+            )
 
-            self.assertIs(resolved["inventory"], ref)
-            self.assertEqual(resolved["inventory"].provenance["source"]["source_slice_id"],
-                             "real-producer")
+    def test_ref_with_matching_descriptor_identity_is_rehydrated(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            data = json.dumps({"mmq_types": ["q8_0"]}).encode()
+            published = store.publish_bytes_ref(
+                "inputs/inventory/pre",
+                data,
+                kind="inventory",
+                provenance=provenance.make(
+                    project={"provenance_class": "development"},
+                    source={"source_slice_id": "real-producer"},
+                    build={},
+                    workload={},
+                    campaign={"run_id": "run0"},
+                ),
+            )
+            # In-memory ref with the same ID but a LIEING in-memory doc:
+            # the rehydrated store record must win, not the caller's copy.
+            lying = ArtifactRef(
+                kind="inventory",
+                path=published.path,
+                content_hash=published.content_hash,
+                provenance=provenance.make(
+                    project={},
+                    source={"source_slice_id": "an-attacker-edit"},
+                    build={},
+                    workload={},
+                    campaign={"run_id": "x"},
+                ),
+                artifact_id=published.artifact_id,
+            )
+
+            out = _resolve(store, ("inventory", lying))["inventory"]
+            self.assertEqual(out.artifact_id, published.artifact_id)
+            self.assertEqual(
+                _ns(out.provenance, "project")["provenance_class"], "development"
+            )
+            self.assertEqual(
+                _ns(out.provenance, "source")["source_slice_id"], "real-producer"
+            )
+
+    def test_ref_with_descriptor_identity_disagreeing_on_content_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            data_a = json.dumps({"mmq_types": ["a"]}).encode()
+            published = store.publish_bytes_ref(
+                "inputs/inventory/pre",
+                data_a,
+                kind="inventory",
+                provenance=provenance.make(
+                    project={"provenance_class": "development"},
+                    source={},
+                    build={},
+                    workload={},
+                    campaign={},
+                ),
+            )
+            data_b = json.dumps({"mmq_types": ["b"]}).encode()
+            digest_b = store.publish_bytes("inputs/inventory/other", data_b)
+            ref = ArtifactRef(
+                kind="inventory",
+                path=store.resolve("inputs/inventory/other"),
+                content_hash=digest_b,
+                provenance=provenance.make(
+                    project={"provenance_class": "development"},
+                    source={},
+                    build={},
+                    workload={},
+                    campaign={},
+                ),
+                artifact_id=published.artifact_id,
+            )
+            with self.assertRaises(CampaignLaneError):
+                _resolve(store, ("inventory", ref))
+
+    def test_locator_rehydrates_and_locator_with_missing_descriptor_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = ArtifactStore(Path(d) / "store")
+            data = json.dumps({"mmq_types": ["q8_0"]}).encode()
+            published = store.publish_bytes_ref(
+                "inputs/inventory/pre",
+                data,
+                kind="inventory",
+                provenance=provenance.make(
+                    project={"provenance_class": "development"},
+                    source={},
+                    build={},
+                    workload={},
+                    campaign={},
+                ),
+            )
+
+            out = _resolve(
+                store, ("inventory", ArtifactLocator(published.artifact_id))
+            )["inventory"]
+            self.assertEqual(out.content_hash, published.content_hash)
+
+            with self.assertRaises(CampaignLaneError):
+                _resolve(store, ("inventory", ArtifactLocator("does-not-exist")))
 
 
 if __name__ == "__main__":
