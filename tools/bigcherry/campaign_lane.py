@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import campaign_build, campaign_plan, campaign_source, \
-    campaign_workers, config as campaign_config
+    campaign_workers, config as campaign_config, patchset
 from . import runtime_smoke as smoke_module
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
@@ -172,7 +172,15 @@ def _execute_materialize_phase(
     run_id: str, campaign_root: Path, resource_root: Path,
     allow_dirty_bigcherry: bool = False,
 ) -> _MaterializedLaneSource:
-    source_plan = campaign_source.source_plan_for(cfg, spec.source_name)
+    # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): without an
+    # explicit catalog, source_plan_for()/resolve_lane() fall back to the
+    # real project's default patch directory (paths.PATCHES), NOT this
+    # context's patches_root -- two authorities in one execution. A
+    # context rooted at a non-default checkout (isolated tests today; any
+    # real non-default patches_root deployment) would have its logical
+    # patch-set resolution silently validated against the wrong catalog.
+    source_plan = campaign_source.source_plan_for(
+        cfg, spec.source_name, catalog=patchset.catalog(directory=context.patches_root))
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
         source_plan.upstream_revision)
     source_plan = replace(source_plan, upstream_revision=resolved_revision)

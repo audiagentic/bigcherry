@@ -125,6 +125,12 @@ def record_apply_result(
     ``patched``. A failed apply remains an explicit transition to ``broken``.
     """
     if not succeeded:
+        # RE13 (GPT-auto-agent review, 2026-08-17): a validated record
+        # whose apply just failed had its evidence invalidated -- clearing
+        # promotion here (not just deferring to advance_to's own guard)
+        # means a record.promotion left stale can never be reused by ANY
+        # future direct stage assignment, only by a fresh promote() call.
+        record.promotion = None
         record.advance_to("broken")
         return
     if record.stage == "broken":
@@ -134,8 +140,16 @@ def record_apply_result(
         # relaxation of the monotonic lifecycle transition rule. The caller
         # has observed a real tree mutation, so generated/build/test evidence
         # no longer describes the checkout.
+        # RE13 (GPT-auto-agent review): this is exactly the stale-evidence
+        # bypass the review found -- demoting to `patched` used to clear
+        # manifest_hash but leave `promotion` in place, so a later
+        # advance_to("validated") (now impossible directly, but even a
+        # future promote() call checking `if already validated, skip`
+        # style logic would have been fooled) could see pre-mutation
+        # evidence as still valid for the post-mutation tree.
         record.stage = "patched"
         record.manifest_hash = ""
+        record.promotion = None
     elif STAGE_ORDER.index(record.stage) < STAGE_ORDER.index("patched"):
         record.advance_to("patched")
 
@@ -189,21 +203,32 @@ class ReleaseRecord:
         A record that has been `validated` should not be demoted to `built`
         because someone re-ran `apply`. Only an explicit `broken` moves down.
 
-        RE13: `validated` additionally requires ``promotion`` to already be
-        set -- a persisted, campaign-backed ``PromotionPointer`` document.
-        `validated` is a production-readiness claim; without this a caller
-        could set it by convention alone, with no immutable evidence a real
-        campaign run ever produced what is being claimed. Use ``promote()``
-        to reach `validated`, not this method directly.
+        RE13: `validated` can ONLY be reached via ``releases.promote()`` --
+        this method unconditionally rejects it, even when ``promotion`` is
+        already set (GPT-auto-agent review, 2026-08-17: the original guard
+        only checked ``promotion is None``, which meant any code path that
+        left a stale pointer in place -- e.g. an evidence-invalidating
+        mutation that forgot to clear it -- could still walk back to
+        `validated` through this method directly, reusing pre-mutation
+        evidence for a post-mutation tree). ``promote()`` performs the
+        transition itself via ``_set_validated_via_promotion()``.
         """
-        if stage == "validated" and self.promotion is None:
+        if stage == "validated":
             raise ValueError(
-                "cannot advance to 'validated' without a promotion pointer "
-                "-- call releases.promote() instead")
+                "cannot advance to 'validated' directly -- call "
+                "releases.promote() instead")
         _validate_transition(self.stage, stage)
         if stage == self.stage:
             return
         self.stage = stage
+
+    def _set_validated_via_promotion(self) -> None:
+        """Only called by releases.promote(), after it has set
+        ``self.promotion`` to a freshly validated pointer document. Not
+        part of advance_to()'s public contract on purpose -- see its
+        docstring."""
+        _validate_transition(self.stage, "validated")
+        self.stage = "validated"
 
     def validate(self) -> None:
         """Reject malformed persisted records before they become evidence."""
@@ -212,17 +237,34 @@ class ReleaseRecord:
             raise ValueError("release record has no source revision")
         if not isinstance(self.release_tag, str):
             raise ValueError("release record has an invalid release tag")
-        # RE13: re-check on every load/save, not only at the advance_to()
-        # transition -- a record read back from disk could have `validated`
-        # and a missing/edited promotion pointer with no transition ever
-        # having happened in this process.
+        # RE13 (GPT-auto-agent review, 2026-08-17): re-check on every
+        # load/save, not only at the advance_to() transition -- a record
+        # read back from disk could have `validated` and a missing/edited
+        # promotion pointer with no transition ever having happened in
+        # this process. Strict PromotionPointer.from_document() validation
+        # (schema_version, every identity field non-empty) replaces the
+        # old loose isinstance(dict) + bare revision-match check, which a
+        # record carrying only {"schema_version": 2, "revision": "..."}
+        # used to pass. release_tag must also agree, not just revision --
+        # revision alone does not disambiguate a re-tagged release.
         if self.stage == "validated":
-            if not isinstance(self.promotion, dict):
-                raise ValueError(
-                    "validated release record lacks a promotion pointer")
-            if self.promotion.get("revision") != self.revision:
+            from .promotion import PromotionError, PromotionPointer
+            try:
+                pointer = PromotionPointer.from_document(self.promotion)
+            except PromotionError as exc:
+                raise ValueError(f"validated release record has an invalid promotion pointer: {exc}") from exc
+            if pointer.revision != self.revision:
                 raise ValueError(
                     "promotion pointer revision disagrees with release record")
+            # PromotionPointer.release_tag is required non-empty (make_pointer
+            # rejects ""), but ReleaseRecord.release_tag is legitimately ""
+            # for an untagged revision (see its own docstring) -- the same
+            # fallback slug() already uses (release_tag or revision) is the
+            # correct comparison, not a bare equality that would reject
+            # every untagged release's own real promotion pointer.
+            if pointer.release_tag != (self.release_tag or self.revision):
+                raise ValueError(
+                    "promotion pointer release_tag disagrees with release record")
 
     def save(self) -> Path:
         now = _dt.datetime.now(_dt.timezone.utc).isoformat()
@@ -247,8 +289,12 @@ def promote(record: ReleaseRecord, pointer: PromotionPointer) -> None:
         raise ValueError(
             f"promotion pointer revision {pointer.revision!r} does not "
             f"match release record revision {record.revision!r}")
+    if pointer.release_tag != (record.release_tag or record.revision):
+        raise ValueError(
+            f"promotion pointer release_tag {pointer.release_tag!r} does not "
+            f"match release record release_tag {record.release_tag!r}")
     record.promotion = pointer.document()
-    record.advance_to("validated")
+    record._set_validated_via_promotion()
 
 
 def load(revision: str, release_tag: str = "") -> ReleaseRecord:

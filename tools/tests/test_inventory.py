@@ -636,6 +636,52 @@ class TestLoadMeasurements(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_disagreeing_campaign_identity_on_the_same_legacy_key_fails_closed(self):
+        # GPT-auto-agent review (RE09 follow-up, 2026-08-17): the build
+        # table's legacy UNIQUE key (source_revision, manifest_hash,
+        # variant_set, build_descriptor_hash) does not include the new
+        # campaign-identity columns. Two loads that share that legacy key
+        # but carry genuinely different campaign identity must not
+        # silently reuse the first load's build_id -- that would
+        # misattribute the second run's measurement/winner rows to the
+        # wrong build.
+        path_a = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        path_b = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    path_a, db.db_path, schema_path, manifest_path=None,
+                    source_slice_id="slice-a", build_plan_id="plan-a")
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        path_b, db.db_path, schema_path, manifest_path=None,
+                        source_slice_id="slice-b", build_plan_id="plan-b")
+        finally:
+            os.unlink(path_a)
+            os.unlink(path_b)
+
+    def test_agreeing_campaign_identity_on_the_same_legacy_key_does_not_raise(self):
+        # The disagreement check must not reject a build row whose
+        # identity genuinely matches what this load is carrying -- proven
+        # directly against the same SELECT the real code path uses, since
+        # a second full load_measurements() call into the same DB hits a
+        # separate, pre-existing, unrelated limitation (placeholder
+        # hardware digest collision -- see _resolve_hardware's own KNOWN
+        # GAP comment) that has nothing to do with campaign identity.
+        path_a = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    path_a, db.db_path, schema_path, manifest_path=None,
+                    source_slice_id="slice-a", build_plan_id="plan-a")
+                row = db.query(
+                    "SELECT source_slice_id, build_plan_id FROM build")[0]
+                self.assertEqual(row, ("slice-a", "plan-a"))
+        finally:
+            os.unlink(path_a)
+
     def test_measurement_import_skips_native_twin_candidate(self):
         """HI24 step 4: the synthetic double-native replicate must not become
         a candidate or a measurement row in SQLite; the JSONL stays its

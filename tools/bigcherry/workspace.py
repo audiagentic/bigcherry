@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,9 +51,22 @@ class UpstreamRepository:
         pin (typically ``master``) is the one legitimate exception, and
         needs this repo's ``origin`` remote to already exist -- it never
         clones one.
+
+        GPT-auto-agent review (2026-08-17): fetches into a private,
+        uniquely-named ref rather than resolving the shared, mutable
+        ``FETCH_HEAD`` -- this mirror is shared with real production
+        materialisation and can legitimately see concurrent fetches (e.g.
+        two probes at once); resolving ``FETCH_HEAD`` after a plain
+        ``git fetch`` is a real race where a concurrent fetch on the same
+        mirror can flip it before this call reads it back, resolving the
+        WRONG commit for the ref actually requested here.
         """
-        _git(self.path, "fetch", "--no-tags", "origin", ref)
-        return self.resolve_ref("FETCH_HEAD")
+        private_ref = f"refs/bigcherry-probe/{uuid.uuid4().hex}"
+        try:
+            _git(self.path, "fetch", "--no-tags", "origin", f"{ref}:{private_ref}")
+            return self.resolve_ref(private_ref)
+        finally:
+            _git(self.path, "update-ref", "-d", private_ref)
 
     def ensure_commit(self, revision: str) -> None:
         _git(self.path, "cat-file", "-e", f"{revision}^{{commit}}")

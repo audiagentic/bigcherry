@@ -58,6 +58,55 @@ class PromotionPointer:
             "replay_artifact_hash": self.replay_artifact_hash,
         }
 
+    @classmethod
+    def from_document(cls, document: object) -> "PromotionPointer":
+        """GPT-auto-agent review (RE13 follow-up, 2026-08-17): the strict
+        inverse of document() -- every field document() writes is required
+        and type/non-emptiness-checked here, not just ``isinstance(dict)``
+        plus a revision match. A persisted release record's own claim of
+        ``validated`` is only as trustworthy as this check: the review
+        found a record saving ``{"schema_version": 2, "revision": "..."}``
+        as its entire promotion pointer and passing the old, loose check.
+        """
+        if not isinstance(document, dict):
+            raise PromotionError("promotion pointer document must be an object")
+        if document.get("schema_version") != 2:
+            raise PromotionError("promotion pointer has an unsupported schema_version")
+
+        def _str(value: object, field: str) -> str:
+            if not isinstance(value, str) or not value:
+                raise PromotionError(f"promotion pointer field {field!r} must be a non-empty string")
+            return value
+
+        release_tag = _str(document.get("release_tag"), "release_tag")
+        revision = _str(document.get("revision"), "revision")
+        campaign = document.get("validated_campaign")
+        if not isinstance(campaign, dict):
+            raise PromotionError("promotion pointer lacks validated_campaign")
+        campaign_plan_id = _str(campaign.get("campaign_plan_id"), "validated_campaign.campaign_plan_id")
+        campaign_run_id = _str(campaign.get("campaign_run_id"), "validated_campaign.campaign_run_id")
+        report_hash = _str(campaign.get("report_hash"), "validated_campaign.report_hash")
+        source = document.get("promoted_source")
+        if not isinstance(source, dict):
+            raise PromotionError("promotion pointer lacks promoted_source")
+        source_slice_id = _str(source.get("source_slice_id"), "promoted_source.source_slice_id")
+        build_id = _str(source.get("build_id"), "promoted_source.build_id")
+        binary_hash = _str(source.get("binary_hash"), "promoted_source.binary_hash")
+        required_architectures = document.get("required_architectures")
+        if (not isinstance(required_architectures, list) or not required_architectures
+                or not all(isinstance(arch, str) and arch for arch in required_architectures)):
+            raise PromotionError(
+                "promotion pointer required_architectures must be a non-empty list of "
+                "non-empty strings")
+        replay_artifact_hash = _str(document.get("replay_artifact_hash"), "replay_artifact_hash")
+        return cls(
+            schema_version=2, release_tag=release_tag, revision=revision,
+            campaign_plan_id=campaign_plan_id, campaign_run_id=campaign_run_id,
+            report_hash=report_hash, source_slice_id=source_slice_id, build_id=build_id,
+            binary_hash=binary_hash, required_architectures=tuple(required_architectures),
+            replay_artifact_hash=replay_artifact_hash,
+        )
+
 
 def make_pointer(*, release_tag: str, revision: str, campaign_plan_id: str,
                  campaign_run_id: str, report: bytes, source_slice_id: str,
@@ -100,7 +149,24 @@ def pointer_from_campaign_result(
     release_validate.validate_release_claim's job), and does not persist
     anything (releases.promote() does that). Full record -> tune -> promote
     -> replay -> coverage orchestration is separate, larger work.
+
+    ``architectures`` is cross-checked against the result's own
+    ``build_plan.catalog_architectures`` when the build plan actually
+    generated a catalog (GPT-auto-agent review, RE13 follow-up,
+    2026-08-17): previously this was purely caller-supplied and unchecked,
+    so a valid result for one architecture could be wrapped in a pointer
+    claiming broader coverage than the campaign run actually proved. A
+    build with no generate stage (empty catalog_architectures) has no
+    campaign-derived architecture evidence to check against; the caller's
+    claim is trusted there as before, since RE07 made catalog_architectures
+    empty exactly for that no-generate-stage case, not an absence of data.
     """
+    catalog_architectures = result.build_plan.catalog_architectures
+    if catalog_architectures and not set(architectures) <= set(catalog_architectures):
+        raise PromotionError(
+            f"claimed required_architectures {sorted(architectures)} exceed what "
+            f"this campaign result actually covered {sorted(catalog_architectures)}"
+        )
     return make_pointer(
         release_tag=release_tag, revision=result.resolved_revision,
         campaign_plan_id=campaign_plan_id, campaign_run_id=result.run_id,

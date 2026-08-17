@@ -741,7 +741,8 @@ def load_measurements(
         # DB constraint. Left as explicit follow-up; this fix only makes the
         # identity columns populated, not the row-identity boundary correct.
         cursor = connection.execute(
-            "SELECT build_id FROM build WHERE source_revision = ? "
+            "SELECT build_id, source_slice_id, build_plan_id, effective_build_id "
+            "FROM build WHERE source_revision = ? "
             "AND manifest_hash = ? AND variant_set = ? "
             "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
             (
@@ -754,7 +755,34 @@ def load_measurements(
         )
         build_row = cursor.fetchone()
         if build_row:
-            build_id = build_row[0]
+            build_id, existing_source_slice_id, existing_build_plan_id, existing_effective_build_id = build_row
+            # GPT-auto-agent review (RE09 follow-up, 2026-08-17): the
+            # legacy key this SELECT still matches on does not include
+            # the new campaign-identity columns (see the NOTE above and
+            # its own reasoning for not simply widening the SELECT against
+            # the existing UNIQUE constraint). Reusing this row's build_id
+            # for a DIFFERENT campaign identity would silently attribute
+            # this run's measurement/winner rows to the WRONG build --
+            # "columns look populated but attribution is wrong" is exactly
+            # the failure mode flagged. Fail closed instead: an incoming
+            # non-NULL identity that disagrees with what this row already
+            # recorded is a real schema gap, not a value to silently merge
+            # or overwrite.
+            for label, existing, incoming in (
+                ("source_slice_id", existing_source_slice_id, resolved_source_slice_id),
+                ("build_plan_id", existing_build_plan_id, resolved_build_plan_id),
+                ("effective_build_id", existing_effective_build_id, resolved_effective_build_id),
+            ):
+                if incoming is not None and existing is not None and incoming != existing:
+                    raise RecordError(
+                        f"existing build row {build_id} has {label}={existing!r}, "
+                        f"but this measurements load carries {label}={incoming!r} for "
+                        f"the same legacy (source_revision, manifest_hash, variant_set, "
+                        f"build_descriptor_hash) key -- refusing to silently attribute "
+                        f"this run's evidence to a build with a different campaign "
+                        f"identity (schema cannot yet represent two distinct build "
+                        f"identities under this legacy key; see RE09 notes)"
+                    )
         else:
             # `compiler` is HI12 E6 -- omitted here for a while even after the
             # tuner started writing it in the header, which is exactly the

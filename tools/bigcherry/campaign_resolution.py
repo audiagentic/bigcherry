@@ -59,7 +59,19 @@ def resolve_patch_set(
         required_state=required_state_override or declared.required_state,
     )
     by_id = {module.patch_id: module for module in catalog}
-    if set(by_id) != {module.patch_id for module in patchset.catalog()}:
+    # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): this used to
+    # call patchset.catalog() with no directory override, defaulting to
+    # paths.PATCHES (the real project's patches/) regardless of what
+    # directory `catalog` was actually resolved against -- two authorities
+    # in one execution, since materialisation/patch application elsewhere
+    # in this same call chain correctly use context.patches_root. A caller
+    # whose context is rooted at a different checkout (any isolated test,
+    # or a real non-default patches_root in production) would have its
+    # otherwise-correct catalog rejected here. Re-derive the directory the
+    # SUPPLIED catalog actually came from and cross-check self-consistency
+    # against that, not an unrelated global default.
+    catalog_directory = catalog[0].path.parent if catalog else None
+    if set(by_id) != {module.patch_id for module in patchset.catalog(directory=catalog_directory)}:
         raise ResolutionError("catalog argument does not match the physical patch catalog")
     # resolve_exact uses the project catalog; ensure the passed catalog supplies
     # identical content identities before exposing the result.
