@@ -46,7 +46,9 @@ class ReleasePublicationTests(unittest.TestCase):
             with mock.patch.object(releases, "RELEASES_DIR", root), \
                     mock.patch.object(releases, "INDEX_PATH", root / "index.json"), \
                     mock.patch.object(releases, "_atomic_write_json", wraps=releases._atomic_write_json) as write:
-                record = releases.ReleaseRecord(revision="abc123", stage="validated")
+                record = releases.ReleaseRecord(
+                    revision="abc123", stage="validated",
+                    promotion={"schema_version": 2, "revision": "abc123"})
                 path = record.save()
 
             self.assertEqual(path, root / "abc123.json")
@@ -55,6 +57,52 @@ class ReleasePublicationTests(unittest.TestCase):
                              "validated")
             self.assertEqual(len(json.loads((root / "index.json").read_text(
                 encoding="utf-8"))["releases"]), 1)
+
+
+class PromotionWiringTests(unittest.TestCase):
+    """RE13: `validated` can only be reached through a real, campaign-backed
+    PromotionPointer -- releases.promote(), not a bare stage assignment."""
+
+    def _pointer(self, revision="abc123"):
+        from bigcherry.promotion import make_pointer
+        return make_pointer(
+            release_tag="b10362", revision=revision, campaign_plan_id="plan1",
+            campaign_run_id="run1", report=b"report-bytes",
+            source_slice_id="slice1", build_id="build1", binary_hash="bin-hash",
+            required_architectures=("gfx1100", "gfx1201"),
+            replay_artifact_hash="replay-hash", valid=True)
+
+    def test_advance_to_validated_without_a_pointer_is_rejected(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        with self.assertRaisesRegex(ValueError, "promotion pointer"):
+            record.advance_to("validated")
+
+    def test_promote_sets_promotion_and_advances_stage(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        releases.promote(record, self._pointer())
+        self.assertEqual(record.stage, "validated")
+        self.assertEqual(record.promotion["revision"], "abc123")
+        self.assertEqual(record.promotion["required_architectures"],
+                         ["gfx1100", "gfx1201"])
+
+    def test_promote_rejects_a_pointer_for_a_different_revision(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="tested")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            releases.promote(record, self._pointer(revision="other-revision"))
+        self.assertEqual(record.stage, "tested")
+        self.assertIsNone(record.promotion)
+
+    def test_validate_rejects_a_validated_record_loaded_with_no_pointer(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="validated")
+        with self.assertRaisesRegex(ValueError, "lacks a promotion pointer"):
+            record.validate()
+
+    def test_validate_rejects_a_promotion_pointer_for_the_wrong_revision(self):
+        record = releases.ReleaseRecord(
+            revision="abc123", stage="validated",
+            promotion={"schema_version": 2, "revision": "not-abc123"})
+        with self.assertRaisesRegex(ValueError, "disagrees"):
+            record.validate()
 
 
 class ReleaseLifecycleTests(unittest.TestCase):
