@@ -768,12 +768,22 @@ def load_measurements(
             # non-NULL identity that disagrees with what this row already
             # recorded is a real schema gap, not a value to silently merge
             # or overwrite.
+            #
+            # existing is None must ALSO reject when incoming is non-NULL
+            # (not just existing-and-incoming-both-non-NULL-and-different):
+            # a second GPT review pass found that two campaign-aware loads
+            # sharing this legacy key, both hitting a row whose identity
+            # columns are still NULL (predates campaign identity, or was
+            # never backfilled -- this code deliberately never backfills,
+            # see below), would otherwise BOTH be silently accepted even
+            # when they carry genuinely different campaign identities,
+            # since neither ever compared against the OTHER load's claim.
             for label, existing, incoming in (
                 ("source_slice_id", existing_source_slice_id, resolved_source_slice_id),
                 ("build_plan_id", existing_build_plan_id, resolved_build_plan_id),
                 ("effective_build_id", existing_effective_build_id, resolved_effective_build_id),
             ):
-                if incoming is not None and existing is not None and incoming != existing:
+                if incoming is not None and existing != incoming:
                     raise RecordError(
                         f"existing build row {build_id} has {label}={existing!r}, "
                         f"but this measurements load carries {label}={incoming!r} for "

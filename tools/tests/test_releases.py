@@ -12,6 +12,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bigcherry import releases  # noqa: E402
 from bigcherry import __main__ as bigcherry_main  # noqa: E402
+from bigcherry.promotion import PromotionError  # noqa: E402
 
 
 class AtomicJsonWriteTests(unittest.TestCase):
@@ -123,6 +124,21 @@ class PromotionWiringTests(unittest.TestCase):
         record = releases.ReleaseRecord(revision="abc123", stage="tested")
         releases.promote(record, self._pointer(release_tag="abc123"))
         self.assertEqual(record.stage, "validated")
+
+    def test_promote_rejects_a_hand_tampered_pointer_object(self):
+        # GPT-auto-agent review (RE13 follow-up, 2026-08-17): promote()
+        # must re-validate through PromotionPointer.from_document(), not
+        # trust an already-constructed object -- frozen dataclasses do not
+        # prevent object.__setattr__, so a caller-tampered pointer could
+        # otherwise bypass make_pointer()'s own validation entirely.
+        pointer = self._pointer()
+        object.__setattr__(pointer, "source_slice_id", "")
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b10362", stage="tested")
+        with self.assertRaises(PromotionError):
+            releases.promote(record, pointer)
+        self.assertEqual(record.stage, "tested")
+        self.assertIsNone(record.promotion)
 
     def test_validate_rejects_a_validated_record_loaded_with_no_pointer(self):
         record = releases.ReleaseRecord(revision="abc123", stage="validated")

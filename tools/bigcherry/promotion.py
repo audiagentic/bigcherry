@@ -150,22 +150,25 @@ def pointer_from_campaign_result(
     anything (releases.promote() does that). Full record -> tune -> promote
     -> replay -> coverage orchestration is separate, larger work.
 
-    ``architectures`` is cross-checked against the result's own
-    ``build_plan.catalog_architectures`` when the build plan actually
-    generated a catalog (GPT-auto-agent review, RE13 follow-up,
-    2026-08-17): previously this was purely caller-supplied and unchecked,
-    so a valid result for one architecture could be wrapped in a pointer
-    claiming broader coverage than the campaign run actually proved. A
-    build with no generate stage (empty catalog_architectures) has no
-    campaign-derived architecture evidence to check against; the caller's
-    claim is trusted there as before, since RE07 made catalog_architectures
-    empty exactly for that no-generate-stage case, not an absence of data.
+    ``architectures`` is cross-checked against real campaign evidence, not
+    trusted from the caller unchecked (GPT-auto-agent review, RE13
+    follow-up, 2026-08-17 -- both the original finding and a residual gap
+    in the first fix). A build WITH a generate stage is checked against
+    ``build_plan.catalog_architectures`` (the architectures generation was
+    actually asked to cover). A build with NO generate stage has an empty
+    ``catalog_architectures`` by construction (RE07: that field means "no
+    catalog to disambiguate", not "no data") -- the first fix skipped the
+    check entirely in that case, which the review correctly flagged as
+    still lettting a no-generate result claim coverage for an architecture
+    it was never even COMPILED for. Falls back to ``build_plan.targets``
+    (the AMDGPU targets actually compiled) there instead of skipping.
     """
     catalog_architectures = result.build_plan.catalog_architectures
-    if catalog_architectures and not set(architectures) <= set(catalog_architectures):
+    covered = catalog_architectures or result.build_plan.targets
+    if covered and not set(architectures) <= set(covered):
         raise PromotionError(
             f"claimed required_architectures {sorted(architectures)} exceed what "
-            f"this campaign result actually covered {sorted(catalog_architectures)}"
+            f"this campaign result actually covered {sorted(covered)}"
         )
     return make_pointer(
         release_tag=release_tag, revision=result.resolved_revision,

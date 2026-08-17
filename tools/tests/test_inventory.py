@@ -661,6 +661,32 @@ class TestLoadMeasurements(unittest.TestCase):
             os.unlink(path_a)
             os.unlink(path_b)
 
+    def test_legacy_null_identity_row_cannot_be_silently_claimed_by_a_campaign_load(self):
+        # GPT-auto-agent review (RE09 follow-up, 2026-08-17): the exact
+        # migration-era scenario the first fix missed -- an existing row
+        # predating campaign identity (source_slice_id=NULL) must not be
+        # silently claimed by a later campaign-aware load sharing the same
+        # legacy key. Fail closed (existing=NULL != incoming=non-NULL),
+        # rather than accepting it (which would then let a SECOND,
+        # DIFFERENT campaign-aware load also be silently accepted against
+        # the same still-NULL row, aliasing two disagreeing claims).
+        path_legacy = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        path_campaign = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    path_legacy, db.db_path, schema_path, manifest_path=None)
+                row = db.query("SELECT source_slice_id FROM build")[0]
+                self.assertIsNone(row[0])
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        path_campaign, db.db_path, schema_path, manifest_path=None,
+                        source_slice_id="slice-a", build_plan_id="plan-a")
+        finally:
+            os.unlink(path_legacy)
+            os.unlink(path_campaign)
+
     def test_agreeing_campaign_identity_on_the_same_legacy_key_does_not_raise(self):
         # The disagreement check must not reject a build row whose
         # identity genuinely matches what this load is carrying -- proven

@@ -377,7 +377,10 @@ class ProbeTests(unittest.TestCase):
                     "r5", root / "staging", "HEAD", "test-source-full")
             self.assertEqual(code, 0)
             record = path.read_text(encoding="utf-8")
-            self.assertIn('"outcome": "compatible"', record)
+            # GPT-auto-agent review (RE13 follow-up): "compatible-partial",
+            # not unqualified "compatible" -- a skipped build's compile
+            # path was never actually exercised.
+            self.assertIn('"outcome": "compatible-partial"', record)
             self.assertIn('"skipped": true', record)
             self.assertIn("missing required input", record)
             self.assertNotIn("patch-drift-or-build-failed", record)
@@ -396,7 +399,10 @@ class ProbeTests(unittest.TestCase):
                     inventory=inventory)
             self.assertEqual(code, 0)
             record = path.read_text(encoding="utf-8")
-            self.assertIn('"outcome": "compatible"', record)
+            # needs-replay is still skipped (no promoted-winners supplied),
+            # so this remains "compatible-partial", not unqualified
+            # "compatible".
+            self.assertIn('"outcome": "compatible-partial"', record)
             # needs-inventory actually ran (has a build_plan_id, not skipped);
             # needs-replay still skipped (no promoted-winners supplied).
             self.assertIn('"needs-inventory"', record)

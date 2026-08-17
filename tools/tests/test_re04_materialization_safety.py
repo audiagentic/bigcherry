@@ -144,6 +144,78 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
                 _source_metadata_path(destination).read_text(encoding="utf-8"))
             self.assertEqual(persisted["plan"]["patch_set_id"], lane.patch_set.patch_set_id)
 
+    def test_two_sources_with_identical_bytes_but_different_logical_composition_do_not_alias(self):
+        # GPT-auto-agent review (RE03/RE05 follow-up, 2026-08-17): the
+        # exact bug found in the standard campaign profile --
+        # bigcherry-native resolves patch-sets=[framework] and bigcherry
+        # resolves patch-sets=[framework, validated-enhancements], and
+        # while validated-enhancements is empty the two sources produce
+        # byte-identical trees but genuinely different logical patch_set_id/
+        # classification. Before this fix, resolve_materialization_identity()
+        # omitted patch_set_id/classification, so both requests shared one
+        # materialisation directory and the cache-hit path returned the
+        # FIRST request's persisted logical provenance verbatim for the
+        # SECOND -- bigcherry-native runs first in campaign.standard, so
+        # bigcherry's own materialisation would have silently reported
+        # bigcherry-native's patch_set_id/classification.
+        from bigcherry import campaign_resolution
+        from bigcherry import config as campaign_config
+        from bigcherry import patchset as bc_patchset
+        from bigcherry.campaign_source import source_plan_for
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            _write_marker_patch(context.patches_root, marker_text="marker-v1")
+
+            cfg = campaign_config.Config(
+                pinned=revision,
+                patch_sets={
+                    "framework": campaign_config.PatchSet(
+                        name="framework", patches=("0001_marker",), required_state="validated"),
+                    "validated-enhancements": campaign_config.PatchSet(
+                        name="validated-enhancements", patches=(), required_state="validated"),
+                },
+                sources={
+                    "bigcherry-native": campaign_config.Source(
+                        name="bigcherry-native", ref=revision, overlay=False,
+                        patch_sets=("framework",)),
+                    "bigcherry": campaign_config.Source(
+                        name="bigcherry", ref=revision, overlay=False,
+                        patch_sets=("framework", "validated-enhancements")),
+                },
+                builds={}, platforms={}, experiments={}, campaigns={},
+                path=root / "recipes.toml",
+            )
+            catalog = bc_patchset.catalog(directory=context.patches_root)
+
+            native_plan = source_plan_for(
+                cfg, "bigcherry-native", catalog=catalog, catalog_directory=context.patches_root)
+            full_plan = source_plan_for(
+                cfg, "bigcherry", catalog=catalog, catalog_directory=context.patches_root)
+            native_lane = campaign_resolution.resolve_lane(
+                "bigcherry-native", cfg, catalog, catalog_directory=context.patches_root)
+            full_lane = campaign_resolution.resolve_lane(
+                "bigcherry", cfg, catalog, catalog_directory=context.patches_root)
+
+            # Same byte-producing patch selection...
+            self.assertEqual(native_plan.patch_ids, full_plan.patch_ids)
+            # ...but genuinely different logical composition identity.
+            self.assertNotEqual(native_lane.patch_set.patch_set_id, full_lane.patch_set.patch_set_id)
+
+            native_record = materialize_source(context, native_plan, allow_dirty_bigcherry=True)
+            full_record = materialize_source(context, full_plan, allow_dirty_bigcherry=True)
+
+            # The bug: these used to be equal (aliased). Now each request
+            # gets its own materialisation and its own correct provenance.
+            self.assertNotEqual(
+                native_record["materialization_plan_id"], full_record["materialization_plan_id"])
+            self.assertEqual(native_record["plan"]["patch_set_id"], native_lane.patch_set.patch_set_id)
+            self.assertEqual(full_record["plan"]["patch_set_id"], full_lane.patch_set.patch_set_id)
+            self.assertNotEqual(
+                native_record["plan"]["patch_set_id"], full_record["plan"]["patch_set_id"])
+
 
 class ThreeSourceIdentitiesPersistedTests(unittest.TestCase):
     """RE05 (RV48 audit): source provenance must retain all three source
