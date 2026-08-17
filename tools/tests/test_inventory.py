@@ -582,6 +582,60 @@ class TestLoadMeasurements(unittest.TestCase):
         self.assertGreaterEqual(counts["measurements"], 3)
         os.unlink(path)
 
+    def test_legacy_load_has_null_campaign_identity(self):
+        # RE09 (RV48 audit): no campaign kwargs supplied -- behaves exactly
+        # as before, NULL identity, not a fabricated one.
+        path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+                build_row = db.query(
+                    "SELECT source_slice_id, build_plan_id FROM build")[0]
+                self.assertEqual(build_row, (None, None))
+                measurement_row = db.query(
+                    "SELECT source_slice_id, build_plan_id, workload_id, "
+                    "campaign_run_id FROM measurement LIMIT 1")[0]
+                self.assertEqual(measurement_row, (None, None, None, None))
+                winner_row = db.query(
+                    "SELECT source_slice_id, campaign_run_id FROM winner LIMIT 1")[0]
+                self.assertEqual(winner_row, (None, None))
+        finally:
+            os.unlink(path)
+
+    def test_campaign_identity_persists_on_build_measurement_and_winner(self):
+        # RE09: a real caller holding a CampaignLaneResult passes these
+        # through; they land on build, measurement, AND winner rows.
+        path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
+        schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    path, db.db_path, schema_path, manifest_path=None,
+                    source_slice_id="slice-1", build_plan_id="plan-1",
+                    effective_build_id="effective-1", campaign_run_id="run-1",
+                    workload_id="workload-1",
+                )
+                build_row = db.query(
+                    "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                    "campaign_run_id, workload_id FROM build")[0]
+                self.assertEqual(
+                    build_row, ("slice-1", "plan-1", "effective-1", "run-1", "workload-1"))
+                measurement_row = db.query(
+                    "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                    "workload_id, campaign_run_id FROM measurement LIMIT 1")[0]
+                self.assertEqual(
+                    measurement_row,
+                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"))
+                winner_row = db.query(
+                    "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                    "workload_id, campaign_run_id FROM winner LIMIT 1")[0]
+                self.assertEqual(
+                    winner_row,
+                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"))
+        finally:
+            os.unlink(path)
+
     def test_measurement_import_skips_native_twin_candidate(self):
         """HI24 step 4: the synthetic double-native replicate must not become
         a candidate or a measurement row in SQLite; the JSONL stays its

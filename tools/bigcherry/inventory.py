@@ -571,8 +571,26 @@ def load_measurements(
     *,
     manifest_path: Path | None = None,
     signature_source_paths: list[Path] | None = None,
+    source_slice_id: str | None = None,
+    build_plan_id: str | None = None,
+    effective_build_id: str | None = None,
+    campaign_run_id: str | None = None,
+    workload_id: str | None = None,
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
+
+    RE09 (RV48 audit): the campaign-identity keyword arguments mirror
+    build_database()'s -- a real caller holding a CampaignLaneResult
+    passes them through and they are persisted onto the build/measurement/
+    winner rows; absent, this behaves exactly as before (NULL identity).
+    Does NOT yet change the build-row lookup/dedup boundary itself (RE09
+    requirement 2, "build-row identity based on actual source/build
+    identities, not just source revision + manifest") -- the build table's
+    UNIQUE constraint does not include these columns, so widening the
+    lookup to key on them too would raise IntegrityError against the
+    existing constraint rather than correctly disambiguate; that needs its
+    own schema migration and is left as explicit follow-up, not attempted
+    here.
 
     Reads the .measurements.jsonl written by the tuning engine (HI12)
     and populates build, candidate, measurement, and winner tables.
@@ -703,7 +721,25 @@ def load_measurements(
             raise ValueError("measurements header requires variant_set")
         build_descriptor_hash = header.get("build_descriptor_hash")
         artifact_version = header.get("artifact_version", 1)
+        resolved_source_slice_id = source_slice_id or header.get("source_slice_id")
+        resolved_build_plan_id = build_plan_id or header.get("build_plan_id")
+        resolved_effective_build_id = effective_build_id or header.get("effective_build_id")
+        resolved_campaign_run_id = campaign_run_id or header.get("campaign_run_id")
+        resolved_workload_id = workload_id or header.get("workload_id")
 
+        # NOTE (RE09, RV48 audit requirement 2 -- NOT done here): the build
+        # table's UNIQUE constraint is (source_revision, manifest_hash,
+        # signature_schema, hardware_schema, variant_set,
+        # build_descriptor_hash) -- it does not include source_slice_id/
+        # build_plan_id, so two campaign runs sharing those five fields but
+        # genuinely different source/build identity are STILL forced to
+        # collide on the same build row; widening this lookup without also
+        # widening the UNIQUE constraint just raises IntegrityError instead
+        # of silently merging. Properly closing requirement 2 needs its own
+        # schema migration (extending the unique index) -- a bigger, more
+        # careful decision than this pass should make for a live production
+        # DB constraint. Left as explicit follow-up; this fix only makes the
+        # identity columns populated, not the row-identity boundary correct.
         cursor = connection.execute(
             "SELECT build_id FROM build WHERE source_revision = ? "
             "AND manifest_hash = ? AND variant_set = ? "
@@ -727,8 +763,10 @@ def load_measurements(
             cursor = connection.execute(
                 "INSERT INTO build (source_revision, source_dirty, "
                 "manifest_hash, signature_schema, hardware_schema, variant_set, "
-                "dispatch_abi, compiler, hip_version, build_descriptor_hash) "
-                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?)",
+                "dispatch_abi, compiler, hip_version, build_descriptor_hash, "
+                "source_slice_id, build_plan_id, effective_build_id, campaign_run_id, "
+                "workload_id) "
+                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     source_revision,
                     manifest_hash,
@@ -737,6 +775,11 @@ def load_measurements(
                     header.get("compiler"),
                     header.get("hip_version"),
                     build_descriptor_hash,
+                    resolved_source_slice_id,
+                    resolved_build_plan_id,
+                    resolved_effective_build_id,
+                    resolved_campaign_run_id,
+                    resolved_workload_id,
                 ),
             )
             build_id = cursor.lastrowid
@@ -1044,9 +1087,10 @@ def load_measurements(
                     "accepted, reject_reason, samples, launches_per_sample, "
                     "median_us, gpu_mad_us, "
                     "p95_us, host_median_us, workspace_bytes, pool_peak_bytes, nmse, "
-                    "max_abs_err, samples_json, effective_us) "
+                    "max_abs_err, samples_json, effective_us, source_slice_id, "
+                    "build_plan_id, effective_build_id, workload_id, campaign_run_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, 'latency', 'final', ?, ?, ?, ?, ?, "
-                    "?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
@@ -1068,6 +1112,11 @@ def load_measurements(
                         max_abs_err,
                         samples_json,
                         effective_us,
+                        resolved_source_slice_id,
+                        resolved_build_plan_id,
+                        resolved_effective_build_id,
+                        resolved_workload_id,
+                        resolved_campaign_run_id,
                     ),
                 )
                 measurements_inserted += 1
@@ -1109,8 +1158,10 @@ def load_measurements(
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
                     "median_us, p95_us, workspace_bytes, pool_peak_bytes, reason, confidence, "
-                    "promotion_status, q_value) "
-                    "VALUES (?, ?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "promotion_status, q_value, source_slice_id, build_plan_id, "
+                    "effective_build_id, workload_id, campaign_run_id) "
+                    "VALUES (?, ?, ?, ?, 'latency', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?)",
                     (
                         build_id,
                         hardware_id,
@@ -1130,6 +1181,11 @@ def load_measurements(
                         confidence,
                         promotion_status,
                         q_value,
+                        resolved_source_slice_id,
+                        resolved_build_plan_id,
+                        resolved_effective_build_id,
+                        resolved_workload_id,
+                        resolved_campaign_run_id,
                     ),
                 )
                 results_inserted += 1
