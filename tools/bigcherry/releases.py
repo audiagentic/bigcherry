@@ -35,6 +35,7 @@ from typing import Any, Literal
 
 from . import ARTIFACT_VERSION
 from . import paths
+from .promotion import PromotionPointer
 
 RELEASES_DIR = paths.REPO_ROOT / "releases"
 INDEX_PATH = RELEASES_DIR / "index.json"
@@ -157,7 +158,20 @@ class ReleaseRecord:
     #: Fingerprint of the patch selection currently applied to the checkout,
     #: from ``recipes.tree_state_key``. Lets a build tell whether the tree is
     #: already what it needs, instead of re-applying and forcing a rebuild.
+    #: RE13/RE23: legacy mutable-checkout state -- only the legacy
+    #: cmd_build/legacy-build path still writes this. It stays populated for
+    #: as long as that path exists (RE23 retires it); a `validated` record
+    #: no longer needs it as evidence -- ``promotion`` below is what a
+    #: canonical campaign-backed release actually points at.
     tree_state: str = ""
+    #: A persisted ``PromotionPointer.document()`` (RE13) -- immutable
+    #: source/build/runtime/campaign/report identities from a real
+    #: ``execute_campaign_lane`` run, not a mutable checkout snapshot. Set
+    #: only by ``promote()``, which is also what actually advances a
+    #: record's stage to ``validated`` -- a record cannot reach ``validated``
+    #: any other way, so ``validated`` implies a real, verifiable promotion
+    #: pointer exists.
+    promotion: dict[str, Any] | None = None
     #: Free-form notes -- in practice, why a release is `broken`.
     notes: str = ""
     first_seen: str = ""
@@ -174,7 +188,18 @@ class ReleaseRecord:
 
         A record that has been `validated` should not be demoted to `built`
         because someone re-ran `apply`. Only an explicit `broken` moves down.
+
+        RE13: `validated` additionally requires ``promotion`` to already be
+        set -- a persisted, campaign-backed ``PromotionPointer`` document.
+        `validated` is a production-readiness claim; without this a caller
+        could set it by convention alone, with no immutable evidence a real
+        campaign run ever produced what is being claimed. Use ``promote()``
+        to reach `validated`, not this method directly.
         """
+        if stage == "validated" and self.promotion is None:
+            raise ValueError(
+                "cannot advance to 'validated' without a promotion pointer "
+                "-- call releases.promote() instead")
         _validate_transition(self.stage, stage)
         if stage == self.stage:
             return
@@ -187,6 +212,17 @@ class ReleaseRecord:
             raise ValueError("release record has no source revision")
         if not isinstance(self.release_tag, str):
             raise ValueError("release record has an invalid release tag")
+        # RE13: re-check on every load/save, not only at the advance_to()
+        # transition -- a record read back from disk could have `validated`
+        # and a missing/edited promotion pointer with no transition ever
+        # having happened in this process.
+        if self.stage == "validated":
+            if not isinstance(self.promotion, dict):
+                raise ValueError(
+                    "validated release record lacks a promotion pointer")
+            if self.promotion.get("revision") != self.revision:
+                raise ValueError(
+                    "promotion pointer revision disagrees with release record")
 
     def save(self) -> Path:
         now = _dt.datetime.now(_dt.timezone.utc).isoformat()
@@ -199,6 +235,20 @@ class ReleaseRecord:
         _rebuild_index()
         validate_index_consistency()
         return target
+
+
+def promote(record: ReleaseRecord, pointer: PromotionPointer) -> None:
+    """Advance ``record`` to ``validated`` via a real campaign-backed
+    :class:`~bigcherry.promotion.PromotionPointer` (RE13) -- the only
+    supported way to reach ``validated``. Does not save; the caller decides
+    when to persist, same as every other stage transition in this module.
+    """
+    if pointer.revision != record.revision:
+        raise ValueError(
+            f"promotion pointer revision {pointer.revision!r} does not "
+            f"match release record revision {record.revision!r}")
+    record.promotion = pointer.document()
+    record.advance_to("validated")
 
 
 def load(revision: str, release_tag: str = "") -> ReleaseRecord:

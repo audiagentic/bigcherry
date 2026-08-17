@@ -31,12 +31,26 @@ class ComparisonPromotionTests(unittest.TestCase):
         pointer = make_pointer(
             release_tag="b10362", revision="r", campaign_plan_id="p",
             campaign_run_id="run", report=b"report", source_slice_id="s",
-            build_id="b", binary_hash="bin", valid=True,
+            build_id="b", binary_hash="bin",
+            required_architectures=("gfx1100", "gfx1201"),
+            replay_artifact_hash="replay-hash", valid=True,
         )
         self.assertEqual(pointer.document()["schema_version"], 2)
         self.assertEqual(pointer.document()["validated_campaign"]["report_hash"], pointer.report_hash)
+        self.assertEqual(pointer.document()["required_architectures"], ["gfx1100", "gfx1201"])
         with self.assertRaises(PromotionError):
-            make_pointer(release_tag="b", revision="r", campaign_plan_id="p", campaign_run_id="run", report=b"x", source_slice_id="s", build_id="b", binary_hash="h", valid=False)
+            make_pointer(
+                release_tag="b", revision="r", campaign_plan_id="p", campaign_run_id="run",
+                report=b"x", source_slice_id="s", build_id="b", binary_hash="h",
+                required_architectures=("gfx1100",), replay_artifact_hash="h", valid=False)
+
+    def test_promotion_rejects_missing_architecture_evidence(self):
+        with self.assertRaises(PromotionError):
+            make_pointer(
+                release_tag="b10362", revision="r", campaign_plan_id="p",
+                campaign_run_id="run", report=b"report", source_slice_id="s",
+                build_id="b", binary_hash="bin", required_architectures=(),
+                replay_artifact_hash="replay-hash", valid=True)
 
 
 if __name__ == "__main__":
