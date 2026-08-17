@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import importlib.util
 import re
 import subprocess
 import sys
@@ -33,14 +32,25 @@ DEFAULT_GROUP = "core"
 
 
 def _load_module(path: Path) -> ModuleType:
+    """Compile and exec the module's SOURCE directly -- deliberately not
+    ``importlib``'s standard loader machinery (RV48/RE04 audit fix).
+    ``SourceFileLoader.exec_module`` writes/reads a mtime-keyed
+    ``__pycache__/*.pyc`` bytecode cache; two writes to the same patch file
+    within one mtime-resolution tick (routine in tests, and not impossible
+    in fast development iteration) can serve STALE bytecode for a file
+    whose on-disk bytes -- and ``catalog()``'s own sha256 content_hash --
+    have already changed. A patch module's actual applied effect must never
+    diverge from what ``content_hash`` says it is; compiling straight from
+    freshly-read source bypasses that cache entirely, every call.
+    """
     name = f"bigcherry._patches.{path.stem}"
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load patch module {path}")
-    module = importlib.util.module_from_spec(spec)
+    source = path.read_text(encoding="utf-8")
+    code = compile(source, str(path), "exec")
+    module = ModuleType(name)
+    module.__file__ = str(path)
     # Register before exec so a patch module may import its siblings.
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    exec(code, module.__dict__)
     return module
 
 

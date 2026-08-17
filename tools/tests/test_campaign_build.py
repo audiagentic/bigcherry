@@ -258,7 +258,8 @@ class MaterializeSourceTests(unittest.TestCase):
 
             # Corrupt the stored metadata to simulate a stale/mismatched cache.
             from bigcherry import campaign_source
-            plan_id = campaign_source.source_plan_id(plan)
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
             destination = context.work_root / "sources" / plan_id
             metadata_path = destination.parent / f"{destination.name}.metadata.json"
             import json

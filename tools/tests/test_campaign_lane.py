@@ -169,7 +169,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                        side_effect=fake_smoke):
                 result = execute_campaign_lane(
                     harness.spec(), cfg=harness.cfg, context=harness.context,
-                    store=harness.store, run_id="run1")
+                    store=harness.store, run_id="run1", allow_dirty_bigcherry=True)
 
             self.assertEqual(harness.calls, ["generate", "build", "smoke"])  # exactly once each
             self.assertEqual(result.run_id, "run1")
@@ -214,10 +214,12 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                        side_effect=fake_smoke):
                 result_a = execute_campaign_lane(
                     harness.spec(inputs=(("inventory", inventory_a),)), cfg=harness.cfg,
-                    context=harness.context, store=harness.store, run_id="lane-a")
+                    context=harness.context, store=harness.store, run_id="lane-a",
+                    allow_dirty_bigcherry=True)
                 result_b = execute_campaign_lane(
                     harness.spec(inputs=(("inventory", inventory_b),)), cfg=harness.cfg,
-                    context=harness.context, store=harness.store, run_id="lane-b")
+                    context=harness.context, store=harness.store, run_id="lane-b",
+                    allow_dirty_bigcherry=True)
 
             inventory_ref_a = dict(result_a.input_refs)["inventory"]
             inventory_ref_b = dict(result_b.input_refs)["inventory"]
@@ -246,7 +248,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                 with self.assertRaises(CampaignLaneError):
                     execute_campaign_lane(
                         harness.spec(inputs=()), cfg=harness.cfg, context=harness.context,
-                        store=harness.store, run_id="run1")
+                        store=harness.store, run_id="run1", allow_dirty_bigcherry=True)
 
 
 class SmokeEnvironmentHelperTests(unittest.TestCase):

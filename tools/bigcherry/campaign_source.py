@@ -11,25 +11,99 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 from . import campaign_resolution
 from . import config as campaign_config
 from . import patchset
 from . import workspace
+from .context import ProjectContext
 
 
 class CampaignSourceError(ValueError):
     pass
 
 
+def _overlay_content_hash(overlay_root: Path) -> str | None:
+    """A single hash over every overlay file's relative path and bytes,
+    order-independent (sorted by relative path first). ``None`` when there
+    is nothing to hash, so an overlay-disabled plan's identity is not
+    perturbed by an unrelated overlay_root that happens to exist on disk.
+    """
+    if not overlay_root.is_dir():
+        return None
+    digest = hashlib.blake2b(b"bigcherry/overlay-content/v1\0")
+    found = False
+    for source in sorted(overlay_root.rglob("*")):
+        if not source.is_file():
+            continue
+        found = True
+        relative = source.relative_to(overlay_root).as_posix()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative.encode("utf-8"))
+        content = source.read_bytes()
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    if not found:
+        return None
+    return digest.hexdigest()
+
+
+def resolve_materialization_identity(
+    context: ProjectContext, plan: workspace.SourcePlan,
+) -> dict[str, object]:
+    """RE04 (RV48 audit fix): the CONTENT-aware identity a materialisation
+    destination is actually keyed by -- resolves ``plan.patch_ids`` against
+    the real patch catalog to get each module's own ``content_hash`` (an
+    in-place edit to a patch file under its unchanged canonical ID changes
+    this), and hashes the overlay tree's actual file bytes (an overlay edit
+    changes this too). ``source_plan_id()`` alone (IDs/flags only) is not
+    safe to key a reused destination directory by -- see its own docstring.
+    """
+    selection = patchset.resolve_exact(
+        plan.patch_ids, directory=context.patches_root,
+        required_state=plan.required_state,
+    )
+    return {
+        "upstream_revision": plan.upstream_revision,
+        "overlay_enabled": plan.overlay_enabled,
+        "overlay_content_hash": (
+            _overlay_content_hash(context.overlay_root) if plan.overlay_enabled else None
+        ),
+        "patches": [
+            {"patch_id": module.patch_id, "content_hash": module.content_hash}
+            for module in selection.modules
+        ],
+        "required_state": plan.required_state,
+    }
+
+
+def materialization_plan_id(identity: dict[str, object]) -> str:
+    """Deterministic id for a content-resolved materialisation identity --
+    what the destination directory is actually keyed by (RE04). Distinct
+    from ``source_plan_id()``, which is cheap/context-free and therefore
+    necessarily ID-only.
+    """
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.blake2b(
+        b"bigcherry/materialization-plan/v1\0" + encoded, digest_size=16
+    ).hexdigest()
+
+
 def source_plan_id(plan: workspace.SourcePlan) -> str:
     """Deterministic id for a SourcePlan, independent of materialising it.
 
+    ID-only (patch IDs, not their content) and therefore NOT safe to key a
+    reused materialisation destination directory by -- an in-place edit to
+    a patch module under its unchanged canonical ID would collide with the
+    old materialisation. Use ``materialization_plan_id(resolve_materialization_
+    identity(context, plan))`` for that. This function remains for cheap,
+    context-free comparisons where content-safety is not the concern (e.g.
+    logging, request-shape equality checks before a context even exists).
+
     ``source_slice_id`` (source_identity.source_slice_id) can only be known
     AFTER materialisation -- it hashes the actual post-overlay-and-patch git
-    tree OID. A materialise destination path has to be chosen BEFORE that,
-    so callers need a stable identifier derived purely from the plan's own
-    fields to pick (and later recognise/reuse) that destination.
+    tree OID.
     """
     payload = {
         "upstream_revision": plan.upstream_revision,

@@ -152,25 +152,25 @@ def _optional_one_artifact(
     return _require_one_artifact(refs, kind=kind, stage_id=stage_id)
 
 
-def _materialize_worker(context: ProjectContext, source_plan) -> dict:
-    # allow_dirty_bigcherry=True: real production callers run against a
-    # clean checkout, but this proof/harness path has always run against a
-    # repo with in-progress RE14 work -- see workspace.py's docstring on
-    # this parameter for why it is a real, deliberate override rather than
-    # a default.
-    return campaign_build.materialize_source(context, source_plan, allow_dirty_bigcherry=True)
+def _materialize_worker(
+    context: ProjectContext, source_plan, *, allow_dirty_bigcherry: bool,
+) -> dict:
+    return campaign_build.materialize_source(
+        context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry)
 
 
 def _execute_materialize_phase(
     spec: CampaignLaneExecutionSpec, *,
     cfg: campaign_config.Config, context: ProjectContext, store: ArtifactStore,
     run_id: str, campaign_root: Path, resource_root: Path,
+    allow_dirty_bigcherry: bool = False,
 ) -> _MaterializedLaneSource:
     source_plan = campaign_source.source_plan_for(cfg, spec.source_name)
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
         source_plan.upstream_revision)
     source_plan = replace(source_plan, upstream_revision=resolved_revision)
-    source_root = context.work_root / "sources" / campaign_source.source_plan_id(source_plan)
+    source_root = context.work_root / "sources" / campaign_source.materialization_plan_id(
+        campaign_source.resolve_materialization_identity(context, source_plan))
 
     graph = campaign_plan.materialize_stage_graph(
         source_name=spec.source_name, build_name=spec.build_name,
@@ -179,7 +179,8 @@ def _execute_materialize_phase(
 
     executor = CampaignStageExecutor(
         graph=graph, store=store, run_id=run_id,
-        materialize=lambda: _materialize_worker(context, source_plan),
+        materialize=lambda: _materialize_worker(
+            context, source_plan, allow_dirty_bigcherry=allow_dirty_bigcherry),
         generate=lambda inputs: {},
         source_slice_id_holder=source_slice_id_holder,
     )
@@ -408,10 +409,17 @@ def execute_campaign_lane(
     spec: CampaignLaneExecutionSpec, *,
     cfg: campaign_config.Config, context: ProjectContext, store: ArtifactStore,
     run_id: str | None = None,
+    allow_dirty_bigcherry: bool = False,
 ) -> CampaignLaneResult:
     """Execute one campaign lane: materialize, then generate/build/smoke.
     Each graph runs exactly once -- no automatic reuse-proof second pass
     (see module docstring). Raises CampaignLaneError on any failure.
+
+    ``allow_dirty_bigcherry`` (RE04/RV48 audit fix) defaults to False: a
+    production caller of this public API runs against a clean BigCherry
+    checkout. Only a development/harness caller (re14_real_run.py, RE14's
+    own proof/parity tooling) has a real reason to pass True -- it must
+    never be an implicit default baked into the library function itself.
     """
     effective_run_id = run_id or uuid.uuid4().hex[:12]
     campaign_root = context.work_root / "campaign-runs" / effective_run_id
@@ -420,6 +428,7 @@ def execute_campaign_lane(
     materialized = _execute_materialize_phase(
         spec, cfg=cfg, context=context, store=store, run_id=effective_run_id,
         campaign_root=campaign_root, resource_root=resource_root,
+        allow_dirty_bigcherry=allow_dirty_bigcherry,
     )
     return _execute_build_phase(
         spec, cfg=cfg, context=context, store=store, run_id=effective_run_id,

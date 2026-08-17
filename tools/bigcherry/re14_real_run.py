@@ -73,7 +73,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        result = execute_campaign_lane(spec, cfg=cfg, context=context, store=store, run_id=run_id)
+        # allow_dirty_bigcherry=True: this is RE14's own harness/proof
+        # entrypoint (see module docstring), which has always run against a
+        # repo with in-progress work -- production callers (the `build`/
+        # `campaign-build` CLI, campaign_planner.run_campaign()) leave this
+        # at its real default (False).
+        result = execute_campaign_lane(
+            spec, cfg=cfg, context=context, store=store, run_id=run_id,
+            allow_dirty_bigcherry=True)
     except CampaignLaneError as exc:
         print(f"BUILD CAMPAIGN FAILED: {exc}", file=sys.stderr)
         return 1
