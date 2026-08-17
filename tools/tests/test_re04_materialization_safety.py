@@ -149,6 +149,41 @@ class PatchSetIdentityPersistedTests(unittest.TestCase):
             self.assertEqual(persisted["plan"]["patch_set_id"], lane.patch_set.patch_set_id)
 
 
+class ThreeSourceIdentitiesPersistedTests(unittest.TestCase):
+    """RE05 (RV48 audit): source provenance must retain all three source
+    identities explicitly -- source_plan_id ("what request did we ask
+    for"), materialization_plan_id/source_tree_oid ("what did that
+    request actually produce"), source_slice_id ("BigCherry's durable
+    content-domain identity") -- not leave any of them implicit in facts
+    a reader has to already know (e.g. the destination directory's own
+    name)."""
+
+    def test_all_three_identities_are_explicit_in_the_persisted_record(self):
+        from bigcherry import campaign_source
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+
+            record = materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            self.assertEqual(record["source_plan_id"], campaign_source.source_plan_id(plan))
+            identity = campaign_source.resolve_materialization_identity(context, plan)
+            self.assertEqual(record["materialization_plan_id"],
+                             campaign_source.materialization_plan_id(identity))
+            self.assertTrue(record["source_tree_oid"])
+            self.assertTrue(record["source_slice_id"])
+            # Four genuinely distinct values for a non-trivial request --
+            # collapsing any pair together would mean one identity secretly
+            # stood in for another rather than each answering its own
+            # question.
+            values = {record["source_plan_id"], record["materialization_plan_id"],
+                     record["source_tree_oid"], record["source_slice_id"]}
+            self.assertEqual(len(values), 4)
+
+
 class PatchContentEditNotReusedTests(unittest.TestCase):
     def test_editing_a_patch_module_under_its_unchanged_id_does_not_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
