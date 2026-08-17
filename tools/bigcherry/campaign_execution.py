@@ -30,6 +30,17 @@ from .artifacts import ArtifactStore
 from .campaign import StageRecord
 from .campaign_graph import CampaignGraph
 from .pipeline import ArtifactRef, PipelineService
+from .provenance import (
+    BuildInputProvenance,
+    BuildProvenance,
+    CampaignProvenance,
+    PatchModuleProvenance,
+    ProvenanceClass,
+    ProjectProvenance,
+    ProvenanceV2,
+    SourceProvenance,
+    WorkloadProvenance,
+)
 
 
 class CampaignExecutionError(RuntimeError):
@@ -37,7 +48,9 @@ class CampaignExecutionError(RuntimeError):
 
 
 def require_campaign_success(
-    records: dict[str, "StageRecord"], *, label: str,
+    records: dict[str, "StageRecord"],
+    *,
+    label: str,
 ) -> None:
     """CampaignRun.execute() catches every executor exception itself and
     records the stage as "failed" rather than re-raising -- a caller that
@@ -47,16 +60,21 @@ def require_campaign_success(
     immediately after every ``CampaignRun.execute()`` call.
     """
     bad = {
-        stage_id: record.state for stage_id, record in records.items()
+        stage_id: record.state
+        for stage_id, record in records.items()
         if record.state not in {"succeeded", "reused"}
     }
     if bad:
-        detail = ", ".join(f"{stage_id}={state}" for stage_id, state in sorted(bad.items()))
+        detail = ", ".join(
+            f"{stage_id}={state}" for stage_id, state in sorted(bad.items())
+        )
         raise CampaignExecutionError(f"{label} campaign failed: {detail}")
 
 
 def make_artifact_reuse_checker(
-    *, executor: "CampaignStageExecutor", store: ArtifactStore,
+    *,
+    executor: "CampaignStageExecutor",
+    store: ArtifactStore,
 ) -> Callable[["StageRecord"], bool]:
     """A real reuse callback for CampaignRun.execute(reuse=...), proving
     reuse against ArtifactStore rather than trusting StageRecord's own
@@ -122,7 +140,10 @@ def workload_expected(
 
 
 def execution_expected(
-    source_slice_id: str, build_plan_id: str, run_id: str, workload_id: str | None,
+    source_slice_id: str,
+    build_plan_id: str,
+    run_id: str,
+    workload_id: str | None,
 ) -> dict[str, str]:
     """RE17: workload_expected(), generalized for builds that have no
     workload at all (needs=[] -- stock/control/record/audit). Omitting the
@@ -142,19 +163,41 @@ def execution_expected(
     return expected
 
 
-def _empty_namespace_provenance(
-    *, source: dict[str, Any], build: dict[str, Any],
-    workload: dict[str, Any], campaign: dict[str, Any],
-) -> dict[str, Any]:
-    """``provenance.validate`` requires all five namespaces present as
-    dicts, even when a stage has nothing meaningful to say for one of them
-    yet (e.g. generate's inputs have no real workload identity). An empty
-    dict satisfies that structural requirement without asserting a value
-    ``require_compatible`` could ever be asked to check, since an empty
-    ``expected`` for that namespace never occurs -- see module docstring.
+def source_provenance_from_metadata(metadata: Mapping[str, Any]) -> SourceProvenance:
+    """RE25.2: a typed :class:`SourceProvenance` from ``materialize_source()``'s
+    own returned/persisted metadata record.
+
+    After the RE03/RE04/RE05 fixes that record carries the COMPLETE real
+    source lineage -- upstream revision, content-resolved plan identities,
+    tree OID/slice id, overlay hash, and patch-set composition with per-
+    module content hashes -- so no field here is a guess or placeholder.
+    Two call sites build from the SAME shape through this single code
+    path: the materialize stage (from its worker's return value) and
+    campaign_lane (re-reading the published source-metadata artifact, whose
+    bytes are exactly this record). Fields absent from a hand-built record
+    stay ``None`` -- the kind contracts (RE25.3) are what turn that into a
+    hard failure at rehydration time, not this constructor.
     """
-    return provenance.make(
-        project={}, source=source, build=build, workload=workload, campaign=campaign,
+    raw_plan = metadata.get("plan")
+    plan = raw_plan if isinstance(raw_plan, dict) else {}
+    raw_patches = plan.get("patches")
+    raw_modules = [item for item in (raw_patches or []) if isinstance(item, dict)]
+    return SourceProvenance(
+        upstream_revision=metadata.get("upstream_revision"),
+        source_plan_id=metadata.get("source_plan_id"),
+        materialization_plan_id=metadata.get("materialization_plan_id"),
+        source_tree_oid=metadata.get("source_tree_oid"),
+        source_slice_id=metadata.get("source_slice_id"),
+        git_object_format=metadata.get("git_object_format"),
+        overlay_content_hash=metadata.get("overlay_content_hash"),
+        patch_set_id=plan.get("patch_set_id"),
+        patch_classification=plan.get("classification"),
+        patch_modules=tuple(
+            PatchModuleProvenance(
+                patch_id=item["patch_id"], content_hash=item["content_hash"]
+            )
+            for item in raw_modules
+        ),
     )
 
 
@@ -180,8 +223,13 @@ class CampaignStageExecutor:
         source_slice_id_holder: list[str | None] | None = None,
         build_plan_id: str | None = None,
         workload_id: str | None = None,
-        build: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]] | None = None,
-        smoke: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]] | None = None,
+        build: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]]
+        | None = None,
+        smoke: Callable[[tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]]
+        | None = None,
+        project_revision: str = "",
+        local_provenance_class: ProvenanceClass = "production",
+        initial_source_provenance: SourceProvenance | None = None,
     ) -> None:
         self.graph = graph
         self.store = store
@@ -190,12 +238,60 @@ class CampaignStageExecutor:
         self._generate = generate
         self._generate_inputs = dict(generate_inputs or {})
         self._generate_needs = frozenset(generate_needs)
-        self._source_slice_id_holder = source_slice_id_holder if source_slice_id_holder is not None else [None]
+        self._source_slice_id_holder = (
+            source_slice_id_holder if source_slice_id_holder is not None else [None]
+        )
         self.build_plan_id = build_plan_id
         self.workload_id = workload_id
+        # RE25.2: which BigCherry checkout produced these artifacts (the
+        # project repo's own HEAD -- distinct from every upstream revision)
+        # and whether this execution is production-class at all in the first
+        # place ('development' for an allow_dirty_bigcherry harness run).
+        self.project_revision = project_revision
+        self.local_provenance_class = local_provenance_class
+        # Set by _run_materialize from materialize_source()'s own verified
+        # metadata; generate inherits it so downstream stages carry the full
+        # source lineage, not just a bare source_slice_id string. A build-phase
+        # executor (materialize=lambda: {}) has no materialize stage to set
+        # it from -- the lane seeds it from its own verified
+        # source-metadata artifact via initial_source_provenance.
+        self.source_provenance = initial_source_provenance
         self._build = build
         self._smoke = smoke
         self.outputs: dict[str, tuple[ArtifactRef, ...]] = {}
+
+    def _stage_provenance(
+        self,
+        *,
+        source: SourceProvenance,
+        build: BuildProvenance,
+        workload_id: str | None,
+        producer_stage: str,
+        parent_artifact_ids: tuple[str, ...],
+    ) -> ProvenanceV2:
+        """RE25.2: one typed ProvenanceV2 per stage output -- all five
+        namespaces real (project identity from the executing checkout, source
+        inherited from materialize, build/workload as far as this stage
+        actually knows them), never a hand-built dict with empty namespaces.
+        ``parent_artifact_ids`` records WHICH artifacts this one derived
+        from; pre-descriptor (legacy) refs have no artifact_id yet, so their
+        content_hash stands in as the identity -- RE25.3 gives lane inputs
+        real descriptors and this fallback disappears."""
+        return ProvenanceV2(
+            schema_version=provenance.SCHEMA_VERSION,
+            project=ProjectProvenance(
+                provenance_class=self.local_provenance_class,
+                bigcherry_revision=self.project_revision or None,
+            ),
+            source=source,
+            build=build,
+            workload=WorkloadProvenance(workload_id=workload_id),
+            campaign=CampaignProvenance(
+                run_id=self.run_id,
+                producer_stage=producer_stage,
+                producer_artifact_ids=tuple(sorted(parent_artifact_ids)),
+            ),
+        )
 
     def _require_stored_bytes(self, artifact: ArtifactRef) -> None:
         try:
@@ -211,21 +307,10 @@ class CampaignStageExecutor:
                 f"{artifact.content_hash}"
             )
 
-    def _publish(
-        self, relative: Path, value: dict[str, Any], *, kind: str, doc: dict[str, Any]
-    ) -> ArtifactRef:
-        digest = self.store.publish_json(relative, value)
-        if not self.store.verify(relative, digest):
-            raise CampaignExecutionError(
-                f"published artifact {relative} failed immediate verification"
-            )
-        return ArtifactRef(
-            kind=kind, path=self.store.resolve(relative),
-            content_hash=digest, provenance=doc,
-        )
-
     def _run_materialize(self, stage_id: str) -> tuple[ArtifactRef, ...]:
-        def execute(_stage: str, _inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
+        def execute(
+            _stage: str, _inputs: tuple[ArtifactRef, ...]
+        ) -> tuple[ArtifactRef, ...]:
             metadata = self._materialize()
             source_slice_id = metadata.get("source_slice_id")
             if not isinstance(source_slice_id, str) or not source_slice_id:
@@ -233,12 +318,26 @@ class CampaignStageExecutor:
                     "materialize did not return a source_slice_id"
                 )
             self._source_slice_id_holder[0] = source_slice_id
-            doc = _empty_namespace_provenance(
-                source={"source_slice_id": source_slice_id},
-                build={}, workload={}, campaign={"run_id": self.run_id},
+            # RE25.2: the real source lineage from materialize's own
+            # re-verified metadata (RE04/RE05) -- not a bare
+            # source_slice_id string in an otherwise-empty namespace.
+            source = source_provenance_from_metadata(metadata)
+            self.source_provenance = source
+            provenance_v2 = self._stage_provenance(
+                source=source,
+                build=BuildProvenance(),
+                workload_id=None,
+                producer_stage="materialize",
+                parent_artifact_ids=(),
             )
-            relative = Path("runs") / self.run_id / "materialize" / "source-metadata.json"
-            return (self._publish(relative, metadata, kind="source-metadata", doc=doc),)
+            relative = (
+                Path("runs") / self.run_id / "materialize" / "source-metadata.json"
+            )
+            return (
+                self.store.publish_json_ref(
+                    relative, metadata, kind="source-metadata", provenance=provenance_v2
+                ),
+            )
 
         # No prior identity exists for materialize: nothing to check inputs
         # or outputs against beyond structural provenance validity, so
@@ -281,7 +380,8 @@ class CampaignStageExecutor:
             self._require_stored_bytes(ref)
 
         self._require_node_identity_agreement(
-            self.graph.nodes[stage_id], source_slice_id=source_slice_id,
+            self.graph.nodes[stage_id],
+            source_slice_id=source_slice_id,
             build_plan_id=self.build_plan_id,
         )
 
@@ -290,31 +390,60 @@ class CampaignStageExecutor:
         ordered_names = tuple(sorted(self._generate_inputs))
         ordered_inputs = tuple(self._generate_inputs[name] for name in ordered_names)
 
-        def execute(_stage: str, inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
+        def execute(
+            _stage: str, inputs: tuple[ArtifactRef, ...]
+        ) -> tuple[ArtifactRef, ...]:
             by_kind = {ref.kind: ref for ref in inputs}
             result = self._generate(by_kind)
             manifest = result["manifest"]
+            if self.source_provenance is None:
+                raise CampaignExecutionError(
+                    "generate stage requires the completed materialize stage's "
+                    "source provenance"
+                )
             # workload_id is no longer discovered here: the lane already
             # knows it (the inventory ref's own content_hash, computed
             # before this stage ever runs) or knows there isn't one
             # (needs=[] builds). Generate "establishing" it was backwards.
-            doc = _empty_namespace_provenance(
-                source={"source_slice_id": source_slice_id},
-                build={"build_plan_id": self.build_plan_id},
-                workload=({"workload_id": self.workload_id}
-                         if self.workload_id is not None else {}),
-                campaign={"run_id": self.run_id},
+            parent_ids = tuple(ref.artifact_id or ref.content_hash for ref in inputs)
+            provenance_v2 = self._stage_provenance(
+                source=self.source_provenance,
+                build=BuildProvenance(
+                    build_plan_id=self.build_plan_id,
+                    inputs=tuple(
+                        BuildInputProvenance(
+                            name=name,
+                            artifact_id=ref.artifact_id or ref.content_hash,
+                            content_hash=ref.content_hash,
+                        )
+                        for name, ref in sorted(self._generate_inputs.items())
+                    ),
+                ),
+                workload_id=self.workload_id,
+                producer_stage="generate",
+                parent_artifact_ids=parent_ids,
             )
-            manifest_relative = Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"
-            manifest_ref = self._publish(manifest_relative, manifest, kind="manifest", doc=doc)
+            manifest_relative = (
+                Path("runs") / self.run_id / "generate" / "hip-autotune-manifest.json"
+            )
+            manifest_ref = self.store.publish_json_ref(
+                manifest_relative, manifest, kind="manifest", provenance=provenance_v2
+            )
 
             generated_tree_doc = result.get("generated_tree")
             if not isinstance(generated_tree_doc, dict):
                 raise CampaignExecutionError(
                     "generate did not return a generated_tree manifest"
                 )
-            tree_relative = Path("runs") / self.run_id / "generate" / "generated-tree.json"
-            tree_ref = self._publish(tree_relative, generated_tree_doc, kind="generated-tree", doc=doc)
+            tree_relative = (
+                Path("runs") / self.run_id / "generate" / "generated-tree.json"
+            )
+            tree_ref = self.store.publish_json_ref(
+                tree_relative,
+                generated_tree_doc,
+                kind="generated-tree",
+                provenance=provenance_v2,
+            )
 
             return (manifest_ref, tree_ref)
 
@@ -327,7 +456,8 @@ class CampaignStageExecutor:
         # those inputs and the new manifest were built against.
         pipeline = PipelineService(execute)
         outputs = pipeline.run(
-            stage_id, inputs=ordered_inputs,
+            stage_id,
+            inputs=ordered_inputs,
             expected=source_expected(source_slice_id),
         )
         self.outputs[stage_id] = outputs
@@ -335,7 +465,10 @@ class CampaignStageExecutor:
 
     @staticmethod
     def _require_node_identity_agreement(
-        node, *, source_slice_id: str, build_plan_id: str | None = None,
+        node,
+        *,
+        source_slice_id: str,
+        build_plan_id: str | None = None,
         workload_id: str | None = None,
     ) -> None:
         """CampaignRun computes its stage spec_hash from the frozen
@@ -358,15 +491,21 @@ class CampaignStageExecutor:
                 f"{node.source_slice_id!r} disagrees with the executor's "
                 f"actual source_slice_id {source_slice_id!r}"
             )
-        if (build_plan_id is not None and node.build_plan_id is not None
-                and node.build_plan_id != build_plan_id):
+        if (
+            build_plan_id is not None
+            and node.build_plan_id is not None
+            and node.build_plan_id != build_plan_id
+        ):
             raise CampaignExecutionError(
                 f"stage {node.stage_id!r} node.build_plan_id "
                 f"{node.build_plan_id!r} disagrees with the executor's "
                 f"actual build_plan_id {build_plan_id!r}"
             )
-        if (workload_id is not None and node.workload_id is not None
-                and node.workload_id != workload_id):
+        if (
+            workload_id is not None
+            and node.workload_id is not None
+            and node.workload_id != workload_id
+        ):
             raise CampaignExecutionError(
                 f"stage {node.stage_id!r} node.workload_id "
                 f"{node.workload_id!r} disagrees with the executor's "
@@ -417,7 +556,9 @@ class CampaignStageExecutor:
         if worker is None:
             raise CampaignExecutionError(f"no {kind_label} worker was configured")
         self._require_node_identity_agreement(
-            node, source_slice_id=source_slice_id, build_plan_id=self.build_plan_id,
+            node,
+            source_slice_id=source_slice_id,
+            build_plan_id=self.build_plan_id,
             workload_id=self.workload_id,
         )
 
@@ -425,7 +566,9 @@ class CampaignStageExecutor:
         for artifact in inputs:
             self._require_stored_bytes(artifact)
 
-        def execute(_stage: str, refs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
+        def execute(
+            _stage: str, refs: tuple[ArtifactRef, ...]
+        ) -> tuple[ArtifactRef, ...]:
             produced = worker(refs)
             for artifact in produced:
                 self._require_stored_bytes(artifact)
@@ -433,9 +576,11 @@ class CampaignStageExecutor:
 
         pipeline = PipelineService(execute)
         outputs = pipeline.run(
-            stage_id, inputs=inputs,
+            stage_id,
+            inputs=inputs,
             expected=execution_expected(
-                source_slice_id, self.build_plan_id, self.run_id, self.workload_id),
+                source_slice_id, self.build_plan_id, self.run_id, self.workload_id
+            ),
         )
         self.outputs[stage_id] = outputs
         return outputs
@@ -447,12 +592,15 @@ class CampaignStageExecutor:
         elif node.kind == "generate":
             outputs = self._run_generate(stage_id)
         elif node.kind == "build":
-            outputs = self._run_build_scoped(stage_id, node, self._build, kind_label="build")
+            outputs = self._run_build_scoped(
+                stage_id, node, self._build, kind_label="build"
+            )
         elif node.kind == "runtime-smoke":
-            outputs = self._run_build_scoped(stage_id, node, self._smoke, kind_label="runtime-smoke")
+            outputs = self._run_build_scoped(
+                stage_id, node, self._smoke, kind_label="runtime-smoke"
+            )
         else:
             raise CampaignExecutionError(
-                f"stage kind {node.kind!r} is not recognised by "
-                f"CampaignStageExecutor"
+                f"stage kind {node.kind!r} is not recognised by CampaignStageExecutor"
             )
         return tuple(artifact.content_hash for artifact in outputs)

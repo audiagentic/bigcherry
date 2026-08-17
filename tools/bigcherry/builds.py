@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -25,8 +26,12 @@ def _canonical(value: object) -> object:
 
 
 def _digest(domain: str, value: object) -> str:
-    encoded = json.dumps(_canonical(value), sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.blake2b(domain.encode() + b"\0" + encoded, digest_size=16).hexdigest()
+    encoded = json.dumps(
+        _canonical(value), sort_keys=True, separators=(",", ":")
+    ).encode()
+    return hashlib.blake2b(
+        domain.encode() + b"\0" + encoded, digest_size=16
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -82,11 +87,17 @@ class BuildPlan:
         return dict(self.input_hashes).get("promoted-winners")
 
 
-def effective_build_id(configure_record: dict[str, object]) -> str:
-    """Hash the normalized post-configure record, not the requested label."""
-    if not isinstance(configure_record, dict) or not configure_record:
-        raise BuildIdentityError("effective configure record must be a non-empty object")
-    return _digest("bigcherry/effective-build/v1", configure_record)
+def effective_build_id(configure_record: Mapping[str, object]) -> str:
+    """Hash the normalized post-configure record, not the requested label.
+
+    Mapping (not dict): covariant in the value type, so a
+    ``dict[str, str]`` from parse_effective_configure() is accepted directly
+    -- dict invariance would force every caller to widen the annotation."""
+    if not isinstance(configure_record, Mapping) or not configure_record:
+        raise BuildIdentityError(
+            "effective configure record must be a non-empty object"
+        )
+    return _digest("bigcherry/effective-build/v1", dict(configure_record))
 
 
 def binary_hash(binary: Path) -> str:
@@ -100,7 +111,9 @@ def binary_hash(binary: Path) -> str:
         raise BuildIdentityError(f"cannot hash binary {binary}: {exc}") from exc
 
 
-def build_directory(context: ProjectContext, source_slice_id: str, plan: BuildPlan) -> Path:
+def build_directory(
+    context: ProjectContext, source_slice_id: str, plan: BuildPlan
+) -> Path:
     return context.work_root / "builds" / source_slice_id / plan.build_plan_id
 
 
@@ -143,7 +156,11 @@ def runtime_bundle_hash(artifacts: dict[str, str]) -> str:
 #: numbers, help strings) that say nothing about build identity and would
 #: make effective_build_id() sensitive to changes that do not matter.
 _EFFECTIVE_CONFIGURE_PREFIXES = (
-    "CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_BUILD_TYPE", "AMDGPU_TARGETS", "GGML_HIP",
+    "CMAKE_C_COMPILER",
+    "CMAKE_CXX_COMPILER",
+    "CMAKE_BUILD_TYPE",
+    "AMDGPU_TARGETS",
+    "GGML_HIP",
 )
 
 
@@ -154,7 +171,9 @@ def parse_effective_configure(cmake_cache: Path) -> dict[str, str]:
     actually resolved, which is what a reuse decision needs to trust.
     """
     if not cmake_cache.is_file():
-        raise BuildIdentityError(f"no CMakeCache.txt at {cmake_cache} -- configure did not run")
+        raise BuildIdentityError(
+            f"no CMakeCache.txt at {cmake_cache} -- configure did not run"
+        )
     record: dict[str, str] = {}
     for line in cmake_cache.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
@@ -189,7 +208,10 @@ def validate_reuse(
     recorded_id = metadata.get("build_id")
     if recorded_id != effective_build_id(record):
         raise BuildIdentityError("recorded build_id does not recompute")
-    if expected_toolchain is not None and metadata.get("toolchain") != expected_toolchain:
+    if (
+        expected_toolchain is not None
+        and metadata.get("toolchain") != expected_toolchain
+    ):
         raise BuildIdentityError("toolchain identity does not match")
     if not binary.is_file():
         raise BuildIdentityError("requested binary is missing")
@@ -201,5 +223,8 @@ def validate_reuse(
     # freshly-computed runtime_bundle_hash (see resolve_runtime_artifacts),
     # require it to match too, so a changed dependent library invalidates
     # reuse even when the launcher itself is byte-identical.
-    if runtime_bundle_hash is not None and metadata.get("runtime_bundle_hash") != runtime_bundle_hash:
+    if (
+        runtime_bundle_hash is not None
+        and metadata.get("runtime_bundle_hash") != runtime_bundle_hash
+    ):
         raise BuildIdentityError("runtime bundle hash does not match recorded identity")
