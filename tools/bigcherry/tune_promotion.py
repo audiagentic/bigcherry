@@ -323,7 +323,9 @@ def validate_adaptive_evidence(
                 "unresolved",
                 1,
                 False,
-            ),  # probe failed; original block retained diagnostically
+            ),  # probe/fresh path unresolved; original block retained
+            # diagnostically (probe failed, or the fresh attempt failed
+            # mechanically and was transactionally restored)
             ("retried_pass", 1, True),  # fresh complete block ranked
             (
                 "unresolved",
