@@ -30,11 +30,13 @@ generate+build+GPU-smoke pass for on every lane it executes.
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from . import provenance
 from . import campaign_build, campaign_plan, campaign_source, \
     campaign_workers, config as campaign_config
 from . import runtime_smoke as smoke_module
@@ -223,6 +225,27 @@ def _spec_inputs(spec: CampaignLaneExecutionSpec) -> dict[str, LaneInputValue]:
     return result
 
 
+def _sniff_embedded_provenance(data: bytes) -> dict[str, object] | None:
+    """RE08/RV48 audit fix: before inventing provenance for a raw-Path lane
+    input, check whether the file's own bytes already carry real provenance
+    -- i.e. it happens to be a byte-for-byte copy of a document this project
+    itself published elsewhere (a real producer, just handed to us as a
+    file path instead of an ArtifactRef). Returns the real, validated
+    document if so; ``None`` if the bytes are not themselves a provenance
+    document (the overwhelmingly common case -- inventory/winners files are
+    plain data, not provenance-wrapped), which the caller must then
+    classify as imported-legacy rather than stamp with an assumed identity.
+    """
+    try:
+        parsed = json.loads(data)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    try:
+        return provenance.validate(parsed)
+    except provenance.ProvenanceError:
+        return None
+
+
 def _resolve_lane_inputs(
     spec: CampaignLaneExecutionSpec, *,
     build: campaign_config.Build, store: ArtifactStore,
@@ -281,9 +304,23 @@ def _resolve_lane_inputs(
         published_digest = store.publish_bytes(relative, data)
         if published_digest != digest:
             raise CampaignLaneError(f"lane input {name!r} digest changed during publication")
-        doc = make_provenance(
-            project={}, source={"source_slice_id": source_slice_id}, build={},
-            workload={}, campaign={"run_id": run_id})
+        # RE08/RV48 audit fix: a raw Path has no producer identity of its
+        # own to trust -- the caller merely handed us a file while building
+        # THIS source, which is not proof the file was ever produced BY
+        # this source (an inventory from source A, supplied while building
+        # source B, must not silently acquire source-B provenance). Prefer
+        # the file's own embedded provenance if it happens to carry one
+        # (a real producer, just passed as a path instead of an
+        # ArtifactRef); otherwise stamp it visibly as imported-legacy
+        # evidence rather than inventing an unearned claim.
+        embedded = _sniff_embedded_provenance(data)
+        if embedded is not None:
+            doc = embedded
+        else:
+            doc = make_provenance(
+                project={"provenance_class": "imported-legacy"},
+                source={"source_slice_id": source_slice_id}, build={},
+                workload={}, campaign={"run_id": run_id})
         resolved[name] = ArtifactRef(
             kind=name, path=store.resolve(relative), content_hash=digest, provenance=doc)
 
