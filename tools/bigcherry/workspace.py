@@ -37,6 +37,23 @@ class UpstreamRepository:
     def resolve_ref(self, ref: str) -> str:
         return _git(self.path, "rev-parse", f"{ref}^{{commit}}")
 
+    def fetch_ref(self, ref: str) -> str:
+        """Fetch ``ref`` from ``origin`` into this repo and return its
+        resolved commit sha.
+
+        RE13: the only place in the codebase that fetches an arbitrary,
+        not-yet-local ref -- canonical production builds only ever resolve
+        refs already present (the pin, updated by a separate, deliberate
+        process), by design (RE13's own detailed_solution: do not
+        reintroduce a general --ref override into canonical builds). A
+        release-compatibility probe against an upstream ref ahead of the
+        pin (typically ``master``) is the one legitimate exception, and
+        needs this repo's ``origin`` remote to already exist -- it never
+        clones one.
+        """
+        _git(self.path, "fetch", "--no-tags", "origin", ref)
+        return self.resolve_ref("FETCH_HEAD")
+
     def ensure_commit(self, revision: str) -> None:
         _git(self.path, "cat-file", "-e", f"{revision}^{{commit}}")
 
