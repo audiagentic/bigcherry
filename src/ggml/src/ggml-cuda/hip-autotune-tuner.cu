@@ -234,6 +234,11 @@ struct Result {
     // implies canary_fresh_block; canary_fresh_block + canary_unresolved means
     // fresh evidence was collected but remained non-decision-grade (terminal,
     // native retained); a false flag always means original-block evidence.
+    // That last invariant holds even when a fresh attempt STARTED but failed
+    // mechanically: the attempt is transactional -- every field it could have
+    // mutated is snapshotted beforehand and restored on both failure paths
+    // (measurement_failure/poison, retime-unresolved), so partial fresh
+    // statistics can never be serialized under a false flag.
     bool canary_fresh_block = false;
 };
 
@@ -2386,15 +2391,78 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                     // and it is discarded for ranking. Its canary is evaluated
                     // once, on this block: never retried until quiet (that
                     // would re-select a favorable baseline).
+                    //
+                    // HI68 fault-path fix (GPT adjudication): measure_
+                    // finalist_block() is NOT transactional -- it clears and
+                    // refills the final-sample arrays and recomputes every
+                    // finalist's statistics as soon as any fresh round
+                    // completes. If the attempt then fails mechanically
+                    // (incomplete round, poison, unresolved retime), this row
+                    // must still carry ORIGINAL-block evidence: canary_
+                    // fresh_block=false means "original-block evidence" by
+                    // contract, and a validator assigns unresolved/1/false the
+                    // meaning "probe failed; original block retained". So
+                    // snapshot every authoritative field the block can mutate,
+                    // and restore them on both mechanical-failure paths below.
+                    // Only a mechanically valid fresh block is ever committed.
+                    struct FreshEvidenceSnapshot {
+                        std::vector<double> final_gpu_us;
+                        std::vector<double> final_host_us;
+                        ggml_hip_reject_reason reason;
+                        double median_us      = 0.0;
+                        double mad_us         = 0.0;
+                        double p95_us         = 0.0;
+                        double host_median_us = 0.0;
+                        int    samples        = 0;
+                        bool   measured       = false;
+                    };
+                    std::vector<FreshEvidenceSnapshot> fresh_snapshot(finalists.size());
+                    for (size_t i = 0; i < finalists.size(); ++i) {
+                        const Measurement * m = finalists[i];
+                        FreshEvidenceSnapshot & s = fresh_snapshot[i];
+                        s.final_gpu_us   = m->final_gpu_us;
+                        s.final_host_us  = m->final_host_us;
+                        s.reason         = m->reason;
+                        s.median_us      = m->median_us;
+                        s.mad_us         = m->mad_us;
+                        s.p95_us         = m->p95_us;
+                        s.host_median_us = m->host_median_us;
+                        s.samples        = m->samples;
+                        s.measured       = m->measured;
+                    }
+                    const auto restore_fresh_evidence = [&]() {
+                        for (size_t i = 0; i < finalists.size(); ++i) {
+                            Measurement * m = finalists[i];
+                            const FreshEvidenceSnapshot & s = fresh_snapshot[i];
+                            m->final_gpu_us   = s.final_gpu_us;
+                            m->final_host_us  = s.final_host_us;
+                            m->reason         = s.reason;
+                            m->median_us      = s.median_us;
+                            m->mad_us         = s.mad_us;
+                            m->p95_us         = s.p95_us;
+                            m->host_median_us = s.host_median_us;
+                            m->samples        = s.samples;
+                            m->measured       = s.measured;
+                        }
+                    };
                     measure_finalist_block();
                     if (result.measurement_failure ||
                             g_tuner_poisoned.load(std::memory_order_relaxed)) {
+                        // The fresh attempt's partial rounds have already
+                        // mutated the finalists' evidence. Roll it back so the
+                        // rejected row still serializes original-block
+                        // statistics; the rejection itself stands.
+                        restore_fresh_evidence();
                         result.reason = "tuning experiment poisoned; later measurements suppressed";
                         capture_device_state_post();
                         record_result(dispatch_digest, result);
                         return native.candidate;
                     }
                     if (result.retime_status == "unresolved") {
+                        // Same transactional guarantee for the retime gate:
+                        // a fresh attempt that ended with unresolved clock
+                        // drift leaves original-block evidence in place.
+                        restore_fresh_evidence();
                         result.reason = "clock drift retime unresolved; run rejected";
                         record_result(dispatch_digest, result);
                         return native.candidate;

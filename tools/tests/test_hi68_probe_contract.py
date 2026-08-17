@@ -174,6 +174,60 @@ class TestHi68CanaryContract(unittest.TestCase):
             self.tuner,
         )
 
+    def test_fresh_block_failure_restores_original_evidence(self):
+        # GPT HI68 closure requirement (fault-path provenance): probe pass ->
+        # fresh block BEGINS -> mechanical failure after mutation. The row
+        # emitted on that path must still carry ORIGINAL-block evidence:
+        # canary_fresh_block stays false, state stays UNRESOLVED, retries is 1.
+        # measure_finalist_block() is not transactional -- it clears the
+        # sample arrays and recomputes statistics as soon as any fresh round
+        # completes -- so the guarantee can only come from snapshot-before +
+        # restore-on-every-mechanical-failure-gate. Pinning both gates (the
+        # retime-unresolved path is independently reachable via a fresh round
+        # that reports unresolved clock drift).
+        probe = self.tuner.index("else {  // GGML_HIP_CANARY_RUN_PROBE")
+        branch_end = self.tuner.index("stability probe still divergent", probe)
+        branch = self.tuner[probe:branch_end]
+
+        snap_idx = branch.index("std::vector<FreshEvidenceSnapshot> fresh_snapshot")
+        block_idx = branch.index("measure_finalist_block();")
+        self.assertLess(
+            snap_idx, block_idx, "snapshot must precede any fresh-block mutation"
+        )
+
+        # Gate 1: measurement failure / poison -> restore before serialize.
+        gate1 = branch.index("if (result.measurement_failure ||", block_idx)
+        r1 = branch.index("restore_fresh_evidence();", gate1)
+        s1 = branch.index("record_result(dispatch_digest, result);", gate1)
+        self.assertLess(
+            r1,
+            s1,
+            "poison/failed fresh path must restore original evidence before the row is emitted",
+        )
+
+        # Gate 2: retime unresolved -> restore before serialize.
+        gate2 = branch.index('if (result.retime_status == "unresolved")', gate1)
+        r2 = branch.index("restore_fresh_evidence();", gate2)
+        s2 = branch.index("record_result(dispatch_digest, result);", gate2)
+        self.assertLess(
+            r2,
+            s2,
+            "retime-unresolved fresh path must restore original evidence before the row is emitted",
+        )
+
+        # Commit point: the fresh flag is set only AFTER both failure gates,
+        # so canary_fresh_block=false unambiguously means original-block
+        # evidence on every serialized row.
+        flag_idx = branch.index("result.canary_fresh_block = true;", gate2)
+        self.assertGreater(flag_idx, r1)
+        self.assertGreater(flag_idx, r2)
+
+        # The probe already consumed the retry budget before any of this:
+        # a fault-path row therefore serializes unresolved/1/false, which is
+        # exactly the legal-matrix triple the promotion validator assigns the
+        # meaning "original block retained diagnostically".
+        self.assertLess(branch.index("++result.canary_retries;"), snap_idx)
+
     def test_pessimistic_provenance_ordering(self):
         # GPT HI68 follow-up (evidence finding 2): the RUN_PROBE branch must
         # go pessimistic BEFORE any GPU work (state UNRESOLVED up front), and
@@ -197,6 +251,108 @@ class TestHi68CanaryContract(unittest.TestCase):
             "fresh flag must precede E4 scrutiny so a rejected "
             "row still carries authoritative window provenance",
         )
+
+    # -- 4. the fresh attempt is transactional (fault-path provenance) -----
+    def _run_probe_branch(self):
+        probe = self.tuner.index("else {  // GGML_HIP_CANARY_RUN_PROBE")
+        branch_end = self.tuner.index("stability probe still divergent", probe)
+        return self.tuner[probe:branch_end]
+
+    def test_fresh_block_attempt_is_transactional(self):
+        # GPT HI68 closure requirement (fault-path provenance): when a fresh
+        # attempt fails mechanically -- measurement_failure/poison or
+        # retime-unresolved -- the serialized row must still carry ORIGINAL-
+        # block evidence, because canary_fresh_block=false means exactly that
+        # by contract (and the validator assigns unresolved/1/false the
+        # meaning "probe failed; original block retained"). measure_
+        # finalist_block() is not transactional on its own -- it clears the
+        # sample arrays and recomputes statistics as soon as any fresh round
+        # completes -- so the fresh path must (1) snapshot before the attempt,
+        # (2) restore on BOTH mechanical-failure branches before the row is
+        # serialized, and (3) set canary_fresh_block only past both gates.
+        branch = self._run_probe_branch()
+
+        snap_idx = branch.index("std::vector<FreshEvidenceSnapshot> fresh_snapshot")
+        restore_def_idx = branch.index("const auto restore_fresh_evidence")
+        block_idx = branch.index("measure_finalist_block();")
+        self.assertLess(snap_idx, block_idx, "snapshot must precede the fresh attempt")
+        self.assertLess(
+            restore_def_idx, block_idx, "restore lambda must be defined before use"
+        )
+
+        poison_gate = branch.index("if (result.measurement_failure ||", block_idx)
+        retime_gate = branch.index('if (result.retime_status == "unresolved")', poison_gate)
+        flag_idx = branch.index("result.canary_fresh_block = true;", retime_gate)
+
+        poison_restore = branch.index("restore_fresh_evidence();", poison_gate)
+        poison_record = branch.index("record_result(", poison_gate)
+        self.assertLess(
+            poison_restore,
+            poison_record,
+            "poison/failed-fresh path must restore original evidence before serializing",
+        )
+
+        retime_restore = branch.index("restore_fresh_evidence();", retime_gate)
+        retime_record = branch.index("record_result(", retime_gate)
+        self.assertLess(
+            retime_restore,
+            retime_record,
+            "retime-unresolved path must restore original evidence before serializing",
+        )
+
+        self.assertGreater(flag_idx, poison_record)
+        self.assertGreater(
+            flag_idx,
+            retime_record,
+            "the fresh flag (commit point) must be set only after both "
+            "mechanical-failure gates: an incomplete fresh attempt is not a "
+            "committed fresh ranking block",
+        )
+
+    def test_fresh_evidence_snapshot_covers_all_mutable_fields(self):
+        # The snapshot/restore pair must cover every field
+        # measure_finalist_block() can mutate -- a missed field would let one
+        # stale fresh value survive the rollback and re-create the provenance
+        # ambiguity under a false flag.
+        branch = self._run_probe_branch()
+        fields = (
+            "final_gpu_us",
+            "final_host_us",
+            "reason",
+            "median_us",
+            "mad_us",
+            "p95_us",
+            "host_median_us",
+            "samples",
+            "measured",
+        )
+        snap_struct = _group(
+            r"struct FreshEvidenceSnapshot \{(.*?)\};", branch, "snapshot struct"
+        )
+        for field in fields:
+            self.assertIn(field, snap_struct)
+
+        capture_window = branch[
+            branch.index("std::vector<FreshEvidenceSnapshot> fresh_snapshot") :
+            branch.index("const auto restore_fresh_evidence")
+        ]
+        restore_window = branch[
+            branch.index("const auto restore_fresh_evidence") :
+            branch.index("measure_finalist_block();")
+        ]
+        for field in fields:
+            # Whitespace-tolerant: the assignments are column-aligned by the
+            # formatter, and the guarantee is the field coverage, not spacing.
+            self.assertRegex(
+                capture_window,
+                rf"s\.{field}\s*=\s*m->{field};",
+                f"snapshot capture loop must read {field}",
+            )
+            self.assertRegex(
+                restore_window,
+                rf"m->{field}\s*=\s*s\.{field};",
+                f"restore loop must write back {field}",
+            )
 
     # -- host testability wiring ------------------------------------------
     def test_host_test_and_driver_exist(self):
