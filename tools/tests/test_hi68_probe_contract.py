@@ -281,7 +281,9 @@ class TestHi68CanaryContract(unittest.TestCase):
         )
 
         poison_gate = branch.index("if (result.measurement_failure ||", block_idx)
-        retime_gate = branch.index('if (result.retime_status == "unresolved")', poison_gate)
+        retime_gate = branch.index(
+            'if (result.retime_status == "unresolved")', poison_gate
+        )
         flag_idx = branch.index("result.canary_fresh_block = true;", retime_gate)
 
         poison_restore = branch.index("restore_fresh_evidence();", poison_gate)
@@ -333,12 +335,14 @@ class TestHi68CanaryContract(unittest.TestCase):
             self.assertIn(field, snap_struct)
 
         capture_window = branch[
-            branch.index("std::vector<FreshEvidenceSnapshot> fresh_snapshot") :
-            branch.index("const auto restore_fresh_evidence")
+            branch.index(
+                "std::vector<FreshEvidenceSnapshot> fresh_snapshot"
+            ) : branch.index("const auto restore_fresh_evidence")
         ]
         restore_window = branch[
-            branch.index("const auto restore_fresh_evidence") :
-            branch.index("measure_finalist_block();")
+            branch.index("const auto restore_fresh_evidence") : branch.index(
+                "measure_finalist_block();"
+            )
         ]
         for field in fields:
             # Whitespace-tolerant: the assignments are column-aligned by the
