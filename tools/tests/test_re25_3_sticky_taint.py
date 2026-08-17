@@ -177,9 +177,7 @@ class _Harness:
         )
 
     def fake_compiler(self):
-        build_dir = build_directory(
-            self.context, self.source_slice_id, self.build_plan
-        )
+        build_dir = build_directory(self.context, self.source_slice_id, self.build_plan)
 
         def run(cmd, cwd=None, check=None):
             if "--build" in cmd:
@@ -207,8 +205,11 @@ def _resolve(store: ArtifactStore, *inputs: tuple[str, LaneInputValue], build=No
             architectures=("gfx1100",),
             inputs=inputs,
         ),
-        build=build or campaign_config.Build(
-            name="tune", options=(), variant_set="workload-max",
+        build=build
+        or campaign_config.Build(
+            name="tune",
+            options=(),
+            variant_set="workload-max",
             needs=frozenset(n for n, _ in inputs),
         ),
         store=store,
@@ -228,7 +229,9 @@ class RawPathTaintEndToEndTests(unittest.TestCase):
             # no chain-of-custody comes out imported-legacy, descriptor-backed.
             inventory = directory / "inventory.json"
             inventory.write_text(json.dumps({"mmq_types": ["q8_0"]}))
-            resolved = _resolve(harness.store, ("inventory", inventory), build=harness.build_cfg)
+            resolved = _resolve(
+                harness.store, ("inventory", inventory), build=harness.build_cfg
+            )
             inv_ref = resolved["inventory"]
             self.assertEqual(_class(inv_ref.provenance), "imported-legacy")
             self.assertTrue(inv_ref.artifact_id)
@@ -254,7 +257,8 @@ class RawPathTaintEndToEndTests(unittest.TestCase):
             # ...and the lineage is intact (the inventory's real id was
             # recorded as a parent, not severed).
             self.assertIn(
-                inv_ref.artifact_id, _ns(bundle_doc, "campaign")["producer_artifact_ids"]
+                inv_ref.artifact_id,
+                _ns(bundle_doc, "campaign")["producer_artifact_ids"],
             )
             # ...so neither can ever become release evidence.
             with self.assertRaises(provenance.ProvenanceError):
@@ -438,10 +442,15 @@ class LocatorKindMismatchTests(unittest.TestCase):
             # inventory slot. (imported-legacy class: a minimal fixture doc
             # would not satisfy the production kind contract at publish.)
             manifest_id = store.publish_bytes_ref(
-                "inputs/manifest/m", b"{}", kind="manifest",
+                "inputs/manifest/m",
+                b"{}",
+                kind="manifest",
                 provenance=provenance.make(
                     project={"provenance_class": "imported-legacy"},
-                    source={}, build={}, workload={}, campaign={},
+                    source={},
+                    build={},
+                    workload={},
+                    campaign={},
                 ),
             ).artifact_id
             with self.assertRaises(CampaignLaneError) as ctx:
@@ -474,7 +483,8 @@ class PublishKindContractGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = ArtifactStore(Path(td) / "store")
             doc = self._inventory_doc(
-                project_class="production", run_id=None  # type: ignore[arg-type]
+                project_class="production",
+                run_id=None,  # type: ignore[arg-type]
             )
             del doc["campaign"]["run_id"]  # absent, not None
             with self.assertRaises(ArtifactError) as ctx:
