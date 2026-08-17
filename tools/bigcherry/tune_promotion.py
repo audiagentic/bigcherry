@@ -294,7 +294,15 @@ def validate_adaptive_evidence(
         if canary_state not in {"not_available", "pass", "retried_pass", "unresolved"}:
             raise PromotionError("unknown noise-canary state")
         retries = row.get("canary_retries", 0)
-        if not isinstance(retries, int) or retries < 0 or retries > 1:
+        # isinstance(True, int) is True in Python, so a JSON boolean would
+        # otherwise be accepted as retry count 1; the terminal matrix is
+        # type-strict and requires a real integer.
+        if (
+            isinstance(retries, bool)
+            or not isinstance(retries, int)
+            or retries < 0
+            or retries > 1
+        ):
             raise PromotionError("invalid noise-canary retry count")
         # HI68: the (state, retries, fresh_block) triple must be one of the
         # producer's legal terminal states -- the same transition table the

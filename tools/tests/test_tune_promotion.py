@@ -411,6 +411,23 @@ class PromotionTests(unittest.TestCase):
         with self.assertRaisesRegex(tune_promotion.PromotionError, "fresh-block flag"):
             tune_promotion.validate_adaptive_evidence(row, self.HEADER)
 
+    def test_bool_canary_retries_count_is_rejected(self):
+        # isinstance(True, int) is True in Python: without an explicit bool
+        # guard a JSON boolean would be accepted as retry count 1 and slip
+        # into the terminal matrix. The evidence schema is type-strict.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": True,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "retry count"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
     def test_production_policy_hash_is_deterministic(self):
         first = tune_promotion.production_policy_hash("latency-v1", 1)
         second = tune_promotion.production_policy_hash("latency-v1", 1)
