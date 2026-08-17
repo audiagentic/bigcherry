@@ -9,6 +9,7 @@ file, a tampered cached worktree, and a dirty-tree bypass via cache reuse.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -319,6 +320,60 @@ class CachedWorktreeTamperFailsClosedTests(unittest.TestCase):
             with self.assertRaises(CampaignBuildError):
                 materialize_source(context, plan, allow_dirty_bigcherry=True)
             self.assertTrue(metadata["source_slice_id"])  # sanity: first call succeeded
+
+    def test_forging_the_persisted_source_slice_id_fails_closed(self):
+        # GPT-auto-agent review (RE03/RE04/RE05 comprehensive follow-up,
+        # 2026-08-17): a real gap the worktree-tamper test above does not
+        # cover -- the sibling .metadata.json file lives BESIDE the
+        # worktree, not inside it, so git_tree_oid() never sees an edit to
+        # it. A directly forged source_slice_id in that file used to be
+        # returned to the caller verbatim on cache-hit and trusted for the
+        # rest of campaign execution, even though the worktree bytes
+        # themselves were never touched.
+        from bigcherry import campaign_source
+        from bigcherry.campaign_build import _source_metadata_path
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            destination = context.work_root / "sources" / plan_id
+            metadata_path = _source_metadata_path(destination)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["source_slice_id"] = "forged-slice-id-not-actually-derived"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with self.assertRaises(CampaignBuildError):
+                materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+    def test_forging_the_persisted_source_plan_id_fails_closed(self):
+        from bigcherry import campaign_source
+        from bigcherry.campaign_build import _source_metadata_path
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            destination = context.work_root / "sources" / plan_id
+            metadata_path = _source_metadata_path(destination)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["source_plan_id"] = "forged-plan-id"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with self.assertRaises(CampaignBuildError):
+                materialize_source(context, plan, allow_dirty_bigcherry=True)
 
 
 class DirtyBigCherryRejectedOnBothPathsTests(unittest.TestCase):

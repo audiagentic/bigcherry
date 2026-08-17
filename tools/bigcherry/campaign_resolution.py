@@ -45,6 +45,7 @@ def resolve_patch_set(
     required_state_override: str | None = None,
     classification: str = "base",
     catalog_directory: object = None,
+    composition_names: tuple[str, ...] | None = None,
 ) -> ResolvedPatchSet:
     if name == "all":
         raise ResolutionError("'all' is not a valid production patch-set")
@@ -94,6 +95,18 @@ def resolve_patch_set(
         "required_state": required_state_override or declared.required_state,
         "modules": module_hashes,
         "classification": classification,
+        # GPT-auto-agent review (RE03 comprehensive follow-up, 2026-08-17):
+        # RE03's own architectural contract says two byte-identical sources
+        # can have distinct REVIEWED logical compositions and must get
+        # distinct patch_set_ids -- but resolve_lane()'s multi-patch-set
+        # case collapsed every named-set combination into one synthetic
+        # "__merged__" name before calling this function, so [A, B] and
+        # [C, D] resolving to the same modules/state/classification got the
+        # SAME patch_set_id; the ordered constituent set names were gone by
+        # the time this identity was hashed. Include them explicitly
+        # (defaults to (name,) for the single-set/no-composition case, so
+        # this is not a behaviour change there).
+        "composition_names": list(composition_names or (name,)),
     }
     return ResolvedPatchSet(
         name=name,
@@ -137,6 +150,10 @@ def resolve_lane(
     resolved = resolve_patch_set(
         base_name, cfg, catalog, classification="experimental" if experiment else "base",
         catalog_directory=catalog_directory,
+        # The REAL ordered constituent set names, not the synthetic
+        # "__merged__" placeholder -- see resolve_patch_set()'s own
+        # comment on why this must participate in patch_set_id.
+        composition_names=tuple(source.patch_sets),
     )
     resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
     if experiment:
@@ -161,6 +178,7 @@ def resolve_lane(
             "required_state": resolved.required_state,
             "modules": module_hashes,
             "classification": "experimental",
+            "composition_names": list(source.patch_sets) + [f"experiment:{experiment}"],
         }
         resolved = ResolvedPatchSet(
             name=resolved.name,
