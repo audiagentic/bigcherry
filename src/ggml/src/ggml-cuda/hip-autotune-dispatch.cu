@@ -26,6 +26,7 @@
 #include <cstring>
 #include <string>
 #include <limits>
+#include <set>
 #include <unordered_map>
 
 #ifdef GGML_HIP_AUTOTUNE_RECORD
@@ -376,6 +377,30 @@ void ggml_hip_warn_tuning_skipped_under_capture() {
                       __func__);
     });
 }
+
+// HI67 (F1): tune mode measures, selects, and records -- but the actual
+// workload keeps running on native until CPU-reference correctness evidence
+// exists. The tuner's native-relative acceptance does not bound end-to-end
+// error (RV08), so a selected winner must never be installed into the live
+// binding from this path; winners reach real dispatch only through replay,
+// after external promotion against CPU-reference evidence.
+// Logged once per signature (a long run re-dispatches each tuned signature
+// many times) and only when the selection actually differs from native,
+// so a native-wins run stays silent.
+void ggml_hip_log_tune_kept_native(const ggml_hip_digest & dispatch_digest,
+                                   const char * winner_name) {
+    static std::mutex log_mutex;
+    static std::set<std::string> logged;
+    const std::string key = ggml_hip_digest_hex(dispatch_digest);
+    std::lock_guard<std::mutex> lock(log_mutex);
+    if (!logged.insert(key).second) {
+        return;
+    }
+    GGML_LOG_INFO("bigcherry: tune selected %s for %s; workload dispatch "
+                  "stays native until CPU-reference evidence promotes it "
+                  "(HI67)\n",
+                  winner_name, key.c_str());
+}
 #endif // GGML_HIP_AUTOTUNE
 
 } // namespace
@@ -523,12 +548,20 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // winner at all.
             ggml_hip_warn_tuning_skipped_under_capture();
         } else {
+            // HI67 (F1): measure/select/record only. The tuner launches its
+            // own measurement rounds through lc, so keeping this binding on
+            // native does not change what is measured -- it changes ONLY
+            // which kernel the actual workload runs. Native-relative
+            // acceptance is a screening invariant, not production
+            // correctness proof (RV08); installing an unproven winner here
+            // is exactly the intermittent 5e-4 cliff failure. The binding
+            // below therefore always installs native in tune mode.
             const ggml_hip_candidate_descriptor * winner =
                 ggml_hip_tuner_resolve(ctx, sig, hw, dispatch_digest, native, lc);
-            if (winner != nullptr) {
-                binding.candidate  = winner;
-                binding.variant    = winner->variant;
-                binding.from_cache = true;
+            if (winner != nullptr && winner != native.candidate) {
+                ggml_hip_log_tune_kept_native(
+                    dispatch_digest,
+                    winner->stable_name ? winner->stable_name : "?");
             }
         }
     }
