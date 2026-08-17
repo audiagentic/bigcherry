@@ -135,8 +135,9 @@ class FreshBuildTests(unittest.TestCase):
                 refs = harness.worker()(inputs)
 
             self.assertEqual(len(harness.calls), 2)  # configure, then build
-            self.assertEqual(len(refs), 1)
+            self.assertEqual(len(refs), 2)
             self.assertEqual(refs[0].kind, "binary")
+            self.assertEqual(refs[1].kind, "runtime-bundle")
 
             build_dir = build_directory(harness.context, harness.source_slice_id, harness.build_plan)
             metadata_path = build_dir / "bigcherry-build-metadata-llama-bench.json"
@@ -164,8 +165,9 @@ class ReuseTests(unittest.TestCase):
                        side_effect=AssertionError("must not recompile on reuse")):
                 refs = harness.worker()(harness.generate_inputs())
 
-            self.assertEqual(len(refs), 1)
+            self.assertEqual(len(refs), 2)
             self.assertEqual(refs[0].kind, "binary")
+            self.assertEqual(refs[1].kind, "runtime-bundle")
 
     def test_metadata_present_but_binary_tampered_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -207,8 +209,9 @@ class ReuseTests(unittest.TestCase):
                 refs = harness.worker()(arch_b_inputs)
 
             self.assertEqual(len(harness.calls), first_calls + 2)  # recompiled, not reused
-            self.assertEqual(len(refs), 1)
+            self.assertEqual(len(refs), 2)
             self.assertEqual(refs[0].kind, "binary")
+            self.assertEqual(refs[1].kind, "runtime-bundle")
 
             arch_b_tree_document = json.loads(
                 arch_b_inputs[1].path.read_text(encoding="utf-8"))
