@@ -13,6 +13,7 @@ RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
 RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
 DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
+MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
 SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
 
@@ -108,6 +109,59 @@ class TestDispatchSafetyContracts(unittest.TestCase):
             "sig.ned[2] > 1) {\n        return false;",
             function,
         )
+
+    def test_mmq_native_wrapper_dense_safety_precedes_native_return(self):
+        # HI71: the MMQ native-wrapper branch must compute its own natural J
+        # and run it through the same dense-safety check as a forced
+        # candidate, not exempt itself with an unconditional `return true`.
+        source = DISPATCH.read_text(encoding="utf-8")
+        start = source.index("bool ggml_hip_mmq_can_execute(")
+        end = source.index("void ggml_hip_mmq_launch(", start)
+        function = source[start:end]
+
+        native_branch = "if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER)"
+        native_j_call = "ggml_cuda_mmq_native_j_best("
+        self.assertIn(native_branch, function)
+        self.assertIn(native_j_call, function)
+        self.assertIn("if (native_j == 0)", function)
+        self.assertIn("return false;", function)
+
+        # the native-J lookup and its safety check must be inside the
+        # native-wrapper branch, i.e. after native_branch starts.
+        self.assertGreater(function.index(native_j_call), function.index(native_branch))
+        native_slice = function[function.index(native_branch):]
+        self.assertIn(
+            "return ggml_cuda_mmq_variant_is_eligible(",
+            native_slice,
+        )
+
+    def test_mmq_type_is_supported_uses_config_check_not_shape_aware_entry(self):
+        # HI71: ggml_cuda_mmq_type_is_supported has no real dispatch signature
+        # to test, so it must call the config-only ggml_cuda_mmq_config_is_eligible
+        # directly rather than passing a sentinel ncols_max into the
+        # shape-aware ggml_cuda_mmq_variant_is_eligible.
+        source = MMQ_PATCH.read_text(encoding="utf-8")
+        start = source.index("bool ggml_cuda_mmq_type_is_supported(")
+        end = source.index("\n}", start)
+        function = source[start:end]
+
+        self.assertIn("ggml_cuda_mmq_config_is_eligible(", function)
+        self.assertNotIn("ggml_cuda_mmq_variant_is_eligible(", function)
+
+    def test_mmq_variant_is_eligible_checks_tail_padding(self):
+        # HI71: dense-shape-aware eligibility must compare the launch's
+        # required tail-padding columns against what upstream's own
+        # J-selection search (ggml_cuda_mmq_get_J_max) would have allocated.
+        source = MMQ_PATCH.read_text(encoding="utf-8")
+        start = source.index("bool ggml_cuda_mmq_variant_is_eligible(")
+        end = source.index("\n}", start)
+        function = source[start:end]
+
+        self.assertIn("ncols_max > 0", function)
+        self.assertIn("required_tail", function)
+        self.assertIn("available_tail", function)
+        self.assertIn("ggml_cuda_mmq_get_J_max(", function)
+        self.assertIn("required_tail <= available_tail", function)
 
     def test_tuner_numeric_environment_parsers_reject_empty_and_whitespace(self):
         source = TUNER.read_text(encoding="utf-8")
@@ -433,9 +487,15 @@ class TestDispatchSafetyContracts(unittest.TestCase):
 
     def test_ex02_quarantine_bypass_is_explicitly_opt_in(self):
         dispatch = DISPATCH.read_text(encoding="utf-8")
+        # HI71: ggml_hip_mmq_can_execute's native-wrapper branch now has its
+        # OWN earlier "return ggml_cuda_mmq_variant_is_eligible(" call (its
+        # dense-safety check on the native candidate's own J), so the
+        # quarantine slice's end boundary must be anchored to the FIRST such
+        # call *after* the quarantine comment, not the first in the file.
+        quarantine_start = dispatch.index("// EX02 quarantine")
         quarantine = dispatch[
-            dispatch.index("// EX02 quarantine") : dispatch.index(
-                "return ggml_cuda_mmq_variant_is_eligible("
+            quarantine_start : dispatch.index(
+                "return ggml_cuda_mmq_variant_is_eligible(", quarantine_start
             )
         ]
         self.assertIn("GGML_HIP_TUNE_TEST_DISABLE_EX02_QUARANTINE", quarantine)

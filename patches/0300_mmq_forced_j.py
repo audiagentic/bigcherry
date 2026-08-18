@@ -128,12 +128,34 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args,
 }}"""
 
 _MMQ_SOURCE = """
-// bigcherry (HI06): hard eligibility (standards 12.4), as a non-template entry
-// point the dispatch layer can call.
+// bigcherry (HI06/HI71): hard eligibility (standards 12.4), as a non-template
+// entry point the dispatch layer can call.
+//
+// HI71 (real Brutus hardware, 2026-08-18): dense-shape-aware. upstream's
+// dense ggml_cuda_mul_mat_q() pads its quantized src1_q8_1 activation buffer
+// with ggml_cuda_mmq_get_J_max(type, fallback, cc, ncols_max) -- a tail sized
+// for upstream's OWN J-selection search over the REAL batch width. mmq.cuh's
+// Y-tile staging load reads a full compile-time J-wide tile unconditionally,
+// even for the grid's last (partial) tile (ntx = ceil(ncols_max / J) allows
+// ncols_max < J by design), and that read is bounded only by the buffer's
+// available padding, not by anything the eligibility check used to verify.
+// A forced J outside the envelope that J_max's own search over ncols_max
+// would have produced can therefore read past the buffer.
+//
+// Confirmed on real hardware: forcing J=112 (mmq:q8_0:j112:fb0) against a
+// real ncols_max=3 dispatch signature (MTP speculative-decoding draft-batch
+// verification) needs 109 padding columns; ggml_cuda_mmq_get_J_max(q8_0,
+// fb0, gfx1201, 3) returns 0 -- a 109-column out-of-bounds read, and the
+// exact crash this check now prevents.
+//
+// ncols_max must be the REAL number of destination columns this launch will
+// process. A caller with no real signature to test (ggml_cuda_mmq_type_is_
+// supported, below) must use ggml_cuda_mmq_config_is_eligible directly
+// rather than passing a sentinel here -- a sentinel would just recreate the
+// ambiguity this function used to have when it silently discarded ncols_max.
 bool ggml_cuda_mmq_variant_is_eligible(
         ggml_type type, int j, bool fallback, int cc, size_t shared_mem_limit,
         int64_t ncols_max) {
-    GGML_UNUSED(ncols_max);
     const int id = ggml_cuda_get_device();
     if (cc == 0) {
         cc = ggml_cuda_info().devices[id].cc;
@@ -141,8 +163,17 @@ bool ggml_cuda_mmq_variant_is_eligible(
     if (shared_mem_limit == 0) {
         shared_mem_limit = ggml_cuda_info().devices[id].smpbo;
     }
-    return ggml_cuda_mmq_config_is_eligible(type, j, fallback, cc,
-                                            shared_mem_limit);
+    if (!ggml_cuda_mmq_config_is_eligible(type, j, fallback, cc,
+                                          shared_mem_limit)) {
+        return false;
+    }
+    GGML_ASSERT(ncols_max > 0 &&
+        "ggml_cuda_mmq_variant_is_eligible requires a real batch width -- "
+        "use ggml_cuda_mmq_config_is_eligible for a config-only check with "
+        "no real dispatch signature");
+    const int required_tail = (int) ((j - (ncols_max % j)) % j);
+    const int available_tail = ggml_cuda_mmq_get_J_max(type, fallback, cc, ncols_max);
+    return required_tail <= available_tail;
 }
 
 // bigcherry (HI24): which J would native's own scan choose for this shape?
@@ -201,12 +232,26 @@ int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max
 // The J sweep mirrors ggml_cuda_mmq_config_is_eligible's own bounds. It is
 // 32 table lookups of a constexpr function, run once per candidate per
 // signature during tuning and never on a replay path.
+//
+// HI71: calls ggml_cuda_mmq_config_is_eligible directly, NOT
+// ggml_cuda_mmq_variant_is_eligible -- there is no real dispatch signature
+// here (this asks "does any config exist for this type at all", not "is
+// this config safe for this batch"), and ggml_cuda_mmq_variant_is_eligible
+// now requires a real ncols_max to answer that different, shape-aware
+// question.
 bool ggml_cuda_mmq_type_is_supported(ggml_type type, int cc, size_t shared_mem_limit) {
+    const int id = ggml_cuda_get_device();
+    if (cc == 0) {
+        cc = ggml_cuda_info().devices[id].cc;
+    }
+    if (shared_mem_limit == 0) {
+        shared_mem_limit = ggml_cuda_info().devices[id].smpbo;
+    }
     for (int j = 8; j <= 128; j += 8) {
-        if (ggml_cuda_mmq_variant_is_eligible(type, j, /*fallback =*/ false, cc,
-                                              shared_mem_limit, /*ncols_max =*/ 0)
-         || ggml_cuda_mmq_variant_is_eligible(type, j, /*fallback =*/ true, cc,
-                                              shared_mem_limit, /*ncols_max =*/ 0)) {
+        if (ggml_cuda_mmq_config_is_eligible(type, j, /*fallback =*/ false, cc,
+                                             shared_mem_limit)
+         || ggml_cuda_mmq_config_is_eligible(type, j, /*fallback =*/ true, cc,
+                                             shared_mem_limit)) {
             return true;
         }
     }
