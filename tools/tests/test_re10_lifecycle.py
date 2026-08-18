@@ -280,6 +280,58 @@ class InventoryStageTests(unittest.TestCase):
             for (scope,) in rows:
                 self.assertEqual(scope, "legacy-imported")
 
+    def test_imported_legacy_parent_with_complete_triple_is_not_campaign_evidence(self):
+        # RE09 audit fix: RE25.3's downgraded-Ref branch keeps an unverified
+        # doc's source/build fields, so an imported-legacy runtime bundle CAN
+        # carry a complete triple. Those fields must NOT establish a
+        # 'campaign'-scoped DB row -- the class means "origin we cannot
+        # verify", and RE09's own rule ("a partial identity is not campaign
+        # evidence") extends to unverified ones.
+        #
+        # NOTE: the record stage runs at local_provenance_class="production"
+        # deliberately -- that is what a real campaign lane does, and it is
+        # what lets the imported-legacy taint SURVIVE re-derivation (a
+        # non-production local class would mask it: derived_provenance_class
+        # returns the local class when it is not production). The taint must
+        # reach the inventory stage's identity derivation for the gate to
+        # have anything to catch.
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            fx.seed_doc = provenance.ProvenanceV2.from_document(provenance.make(
+                project={"provenance_class": "imported-legacy", "bigcherry_revision": "r1"},
+                source={"source_slice_id": "s1"},
+                build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
+                workload={}, campaign={"run_id": "seed"},
+            ))
+            manifest = {"entrypoint": "entrypoint.py",
+                        "members": {"entrypoint.py": fx.store.digest((fx.directory / "entrypoint.py").read_bytes())}}
+            fx.bundle_ref = fx.store.publish_json_ref(
+                "builds/s1/bp1/runtime-bundle-3.json", manifest,
+                kind="runtime-bundle", provenance=fx.seed_doc)
+            with patch("bigcherry.lifecycle.subprocess.run", _fake_run(record_jsonl=_RECORD_JSONL)):
+                record_ref = lifecycle.execute_record_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id), spec=fx.spec,
+                    local_provenance_class="production",
+                ).record_ref
+            # Sanity: the taint actually reached the record artifact.
+            self.assertEqual(
+                provenance.ProvenanceV2.from_document(record_ref.provenance)
+                .project.provenance_class, "imported-legacy")
+            result = lifecycle.execute_inventory_stage(
+                context=fx.context, store=fx.store, run_id=fx.run_id,
+                record=ArtifactLocator(record_ref.artifact_id),
+                local_provenance_class="development",
+            )
+            conn = sqlite3.connect(str(result.database_ref.path))
+            try:
+                rows = conn.execute("SELECT identity_scope FROM build").fetchall()
+            finally:
+                conn.close()
+            self.assertTrue(rows)
+            for (scope,) in rows:
+                self.assertEqual(scope, "legacy-imported")
+
 
 class TuneStageTests(unittest.TestCase):
     def _inventory(self, fx: _Fixture):
