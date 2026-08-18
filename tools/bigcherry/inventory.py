@@ -44,11 +44,13 @@ class CampaignDatabaseIdentity:
     workload identity yet. ``None`` for the whole identity (not this type)
     means diagnostic/imported: the caller has no real campaign context to
     assert, and the row is recorded as identity_scope='legacy-imported'."""
+
     source_slice_id: str
     build_plan_id: str
     effective_build_id: str
     campaign_run_id: str
     workload_id: str | None = None
+
 
 _RESULT_STATUSES = {
     "ok",
@@ -428,7 +430,10 @@ def build_inventory(record: Record) -> dict[str, Any]:
 
 
 def build_database(
-    record: Record, target: Path, schema: Path, *,
+    record: Record,
+    target: Path,
+    schema: Path,
+    *,
     identity: CampaignDatabaseIdentity | None = None,
 ) -> dict[str, int]:
     """Populate a fresh SQLite database from a record file.
@@ -460,23 +465,45 @@ def build_database(
             )
         header = record.header
 
-        resolved_source_slice_id = (identity.source_slice_id if identity else None) or header.get(
-            "source_slice_id")
-        resolved_build_plan_id = (identity.build_plan_id if identity else None) or header.get(
-            "build_plan_id")
-        resolved_effective_build_id = (identity.effective_build_id if identity else None) or header.get(
-            "effective_build_id")
-        resolved_campaign_run_id = (identity.campaign_run_id if identity else None) or header.get(
-            "campaign_run_id")
-        resolved_workload_id = (identity.workload_id if identity else None) or header.get("workload_id")
-        # RE09/RV50: 'campaign' requires the COMPLETE triple -- a partial
-        # identity is not campaign evidence and must not be silently
-        # promoted to look like it is (matches the migration's own rule).
-        identity_scope = (
-            "campaign"
-            if resolved_source_slice_id and resolved_build_plan_id and resolved_effective_build_id
-            else "legacy-imported"
-        )
+        # GPT audit fix (2026-08-18): identity authority is BINARY. The
+        # previous code fell back to header fields when identity=None and
+        # derived scope from the resolved values -- so a hostile record
+        # JSONL with a complete triple in its header produced a
+        # 'campaign'-scoped row from identity nobody verified (the compiled
+        # record binary never writes these header fields; they only ever
+        # arrive attacker- or script-controlled). Now:
+        #   identity is None  -> identity_scope='legacy-imported', and the
+        #       identity columns are visibly NULL (RE09 acceptance: an
+        #       imported DB loads with NULLs, not fabricated identity);
+        #   identity is set   -> its fields are used authoritatively and
+        #       must all be non-empty (a partial CampaignDatabaseIdentity
+        #       is a caller bug; fail closed rather than guess).
+        if identity is None:
+            resolved_source_slice_id = None
+            resolved_build_plan_id = None
+            resolved_effective_build_id = None
+            resolved_campaign_run_id = None
+            resolved_workload_id = None
+            identity_scope = "legacy-imported"
+        else:
+            if not (
+                identity.source_slice_id
+                and identity.build_plan_id
+                and identity.effective_build_id
+                and identity.campaign_run_id
+            ):
+                raise RecordError(
+                    "build_database: a CampaignDatabaseIdentity with an empty "
+                    "required field is partial campaign evidence and must not "
+                    "be written; pass identity=None for imported/diagnostic "
+                    "loads instead"
+                )
+            resolved_source_slice_id = identity.source_slice_id
+            resolved_build_plan_id = identity.build_plan_id
+            resolved_effective_build_id = identity.effective_build_id
+            resolved_campaign_run_id = identity.campaign_run_id
+            resolved_workload_id = identity.workload_id
+            identity_scope = "campaign"
 
         cursor = connection.execute(
             "INSERT INTO build (source_revision, source_dirty, manifest_hash, "
@@ -746,22 +773,47 @@ def load_measurements(
             raise ValueError("measurements header requires variant_set")
         build_descriptor_hash = header.get("build_descriptor_hash")
         artifact_version = header.get("artifact_version", 1)
-        resolved_source_slice_id = (identity.source_slice_id if identity else None) or header.get(
-            "source_slice_id")
-        resolved_build_plan_id = (identity.build_plan_id if identity else None) or header.get(
-            "build_plan_id")
-        resolved_effective_build_id = (identity.effective_build_id if identity else None) or header.get(
-            "effective_build_id")
-        resolved_campaign_run_id = (identity.campaign_run_id if identity else None) or header.get(
-            "campaign_run_id")
-        resolved_workload_id = (identity.workload_id if identity else None) or header.get("workload_id")
-        # RE09/RV50: 'campaign' requires the COMPLETE triple, matching
-        # build_database()'s and the schema-4 migration's own rule.
-        identity_scope = (
-            "campaign"
-            if resolved_source_slice_id and resolved_build_plan_id and resolved_effective_build_id
-            else "legacy-imported"
-        )
+        # GPT audit fix (2026-08-18): same binary identity authority as
+        # build_database() -- a hostile measurements JSONL header must never
+        # upgrade an absent identity into 'campaign' scope, and a partial
+        # CampaignDatabaseIdentity is a caller bug (fail closed).
+        if identity is None:
+            resolved_source_slice_id = None
+            resolved_build_plan_id = None
+            resolved_effective_build_id = None
+            resolved_campaign_run_id = None
+            resolved_workload_id = None
+            identity_scope = "legacy-imported"
+        else:
+            if not (
+                identity.source_slice_id
+                and identity.build_plan_id
+                and identity.effective_build_id
+                and identity.campaign_run_id
+            ):
+                raise RecordError(
+                    "load_measurements: a CampaignDatabaseIdentity with an empty "
+                    "required field is partial campaign evidence and must not "
+                    "be written; pass identity=None for imported/diagnostic "
+                    "loads instead"
+                )
+            resolved_source_slice_id = identity.source_slice_id
+            resolved_build_plan_id = identity.build_plan_id
+            resolved_effective_build_id = identity.effective_build_id
+            resolved_campaign_run_id = identity.campaign_run_id
+            resolved_workload_id = identity.workload_id
+            identity_scope = "campaign"
+
+        # GPT audit fix (2026-08-18): the legacy lookup must be LITERALLY
+        # build_legacy_identity_uq's key -- it previously omitted
+        # signature_schema and hardware_schema, so two legitimate legacy
+        # rows separated by schema version (which the DB's own uniqueness
+        # model distinguishes) could be misidentified. The values come from
+        # the same header defaults build_database() uses, and the INSERT
+        # below uses them too (it previously hardcoded 1/1, which would
+        # contradict this lookup whenever a header carried schema > 1).
+        signature_schema = header.get("signature_schema", 1)
+        hardware_schema = header.get("hardware_schema", 1)
 
         # RE09/RV50 schema-4: the lookup is now scoped to the REAL identity
         # for this load, using the partial-unique-index-backed columns --
@@ -778,16 +830,23 @@ def load_measurements(
             cursor = connection.execute(
                 "SELECT build_id FROM build WHERE identity_scope = 'campaign' "
                 "AND source_slice_id = ? AND build_plan_id = ? AND effective_build_id = ?",
-                (resolved_source_slice_id, resolved_build_plan_id, resolved_effective_build_id),
+                (
+                    resolved_source_slice_id,
+                    resolved_build_plan_id,
+                    resolved_effective_build_id,
+                ),
             )
         else:
             cursor = connection.execute(
                 "SELECT build_id FROM build WHERE identity_scope = 'legacy-imported' "
-                "AND source_revision = ? AND manifest_hash = ? AND variant_set = ? "
+                "AND source_revision = ? AND manifest_hash = ? "
+                "AND signature_schema = ? AND hardware_schema = ? AND variant_set = ? "
                 "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
                 (
                     source_revision,
                     manifest_hash,
+                    signature_schema,
+                    hardware_schema,
                     variant_set,
                     build_descriptor_hash,
                     build_descriptor_hash,
@@ -807,10 +866,12 @@ def load_measurements(
                 "dispatch_abi, compiler, hip_version, build_descriptor_hash, "
                 "source_slice_id, build_plan_id, effective_build_id, campaign_run_id, "
                 "workload_id, identity_scope) "
-                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     source_revision,
                     manifest_hash,
+                    signature_schema,
+                    hardware_schema,
                     variant_set,
                     str(artifact_version),
                     header.get("compiler"),
@@ -1261,13 +1322,17 @@ def main(argv: list[str] | None = None) -> int:
         "--database", default=None, help="SQLite database to write (default: alongside)"
     )
     rec.add_argument(
-        "--source-slice-id", default=None,
+        "--source-slice-id",
+        default=None,
         help="RE09: campaign source_slice_id, if this record run was produced "
-             "through a real execute_campaign_lane() build",
+        "through a real execute_campaign_lane() build",
     )
-    rec.add_argument("--build-plan-id", default=None, help="RE09: campaign build_plan_id")
     rec.add_argument(
-        "--effective-build-id", default=None, help="RE09: campaign effective_build_id")
+        "--build-plan-id", default=None, help="RE09: campaign build_plan_id"
+    )
+    rec.add_argument(
+        "--effective-build-id", default=None, help="RE09: campaign effective_build_id"
+    )
     rec.add_argument("--campaign-run-id", default=None, help="RE09: campaign run_id")
     rec.add_argument("--workload-id", default=None, help="RE09: campaign workload_id")
 
@@ -1292,13 +1357,17 @@ def main(argv: list[str] | None = None) -> int:
         help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
     )
     tune.add_argument(
-        "--source-slice-id", default=None,
+        "--source-slice-id",
+        default=None,
         help="RE09: campaign source_slice_id, if this tune run was produced "
-             "through a real execute_campaign_lane() build",
+        "through a real execute_campaign_lane() build",
     )
-    tune.add_argument("--build-plan-id", default=None, help="RE09: campaign build_plan_id")
     tune.add_argument(
-        "--effective-build-id", default=None, help="RE09: campaign effective_build_id")
+        "--build-plan-id", default=None, help="RE09: campaign build_plan_id"
+    )
+    tune.add_argument(
+        "--effective-build-id", default=None, help="RE09: campaign effective_build_id"
+    )
     tune.add_argument("--campaign-run-id", default=None, help="RE09: campaign run_id")
     tune.add_argument("--workload-id", default=None, help="RE09: campaign workload_id")
 
@@ -1330,11 +1399,15 @@ def _identity_from_args(args) -> CampaignDatabaseIdentity | None:
     build_plan_id = getattr(args, "build_plan_id", None)
     effective_build_id = getattr(args, "effective_build_id", None)
     campaign_run_id = getattr(args, "campaign_run_id", None)
-    if not (source_slice_id and build_plan_id and effective_build_id and campaign_run_id):
+    if not (
+        source_slice_id and build_plan_id and effective_build_id and campaign_run_id
+    ):
         return None
     return CampaignDatabaseIdentity(
-        source_slice_id=source_slice_id, build_plan_id=build_plan_id,
-        effective_build_id=effective_build_id, campaign_run_id=campaign_run_id,
+        source_slice_id=source_slice_id,
+        build_plan_id=build_plan_id,
+        effective_build_id=effective_build_id,
+        campaign_run_id=campaign_run_id,
         workload_id=getattr(args, "workload_id", None),
     )
 
@@ -1366,7 +1439,9 @@ def _cmd_record(args) -> int:
         Path(args.database) if args.database else record_path.with_suffix(".sqlite")
     )
     counts = build_database(
-        record, database_path, paths.SQL / "dispatch-db.sql",
+        record,
+        database_path,
+        paths.SQL / "dispatch-db.sql",
         identity=_identity_from_args(args),
     )
 
