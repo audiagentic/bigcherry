@@ -172,14 +172,20 @@ def _fake_run(
             # RE15 real-hardware finding: GGML_HIP_DISPATCH_MODE defaults to
             # "native" when unset -- the record build silently records
             # nothing without this.
-            assert env.get("GGML_HIP_DISPATCH_MODE") == "record", env.get("GGML_HIP_DISPATCH_MODE")
+            assert env.get("GGML_HIP_DISPATCH_MODE") == "record", env.get(
+                "GGML_HIP_DISPATCH_MODE"
+            )
             Path(db_path).write_text(record_jsonl, encoding="utf-8")
         if tune_jsonl is not None:
-            assert env.get("GGML_HIP_DISPATCH_MODE") == "tune", env.get("GGML_HIP_DISPATCH_MODE")
+            assert env.get("GGML_HIP_DISPATCH_MODE") == "tune", env.get(
+                "GGML_HIP_DISPATCH_MODE"
+            )
             # RE15 real-hardware finding: without this, HIP graph replay
             # crashed (illegal memory access) at small ubatch sizes during
             # tune-mode candidate rotation.
-            assert env.get("GGML_CUDA_DISABLE_GRAPHS") == "1", env.get("GGML_CUDA_DISABLE_GRAPHS")
+            assert env.get("GGML_CUDA_DISABLE_GRAPHS") == "1", env.get(
+                "GGML_CUDA_DISABLE_GRAPHS"
+            )
             Path(db_path + ".measurements.jsonl").write_text(
                 tune_jsonl, encoding="utf-8"
             )
@@ -486,7 +492,6 @@ class InventoryStageTests(unittest.TestCase):
             for (scope,) in rows:
                 self.assertEqual(scope, "legacy-imported")
 
-
     def test_hostile_record_header_stays_legacy_through_record_to_inventory(self):
         # GPT audit fix (2026-08-18): end-to-end regression. The record
         # JSONL header carries a complete (attacker-planted) campaign
@@ -497,26 +502,48 @@ class InventoryStageTests(unittest.TestCase):
         # gate nor the writer's binary authority may fail.
         with tempfile.TemporaryDirectory() as directory:
             fx = _Fixture(Path(directory))
-            fx.seed_doc = provenance.ProvenanceV2.from_document(provenance.make(
-                project={"provenance_class": "imported-legacy", "bigcherry_revision": "r1"},
-                source={"source_slice_id": "s1"},
-                build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
-                workload={}, campaign={"run_id": "seed"},
-            ))
-            manifest = {"entrypoint": "entrypoint.py",
-                        "members": {"entrypoint.py": fx.store.digest((fx.directory / "entrypoint.py").read_bytes())}}
+            fx.seed_doc = provenance.ProvenanceV2.from_document(
+                provenance.make(
+                    project={
+                        "provenance_class": "imported-legacy",
+                        "bigcherry_revision": "r1",
+                    },
+                    source={"source_slice_id": "s1"},
+                    build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
+                    workload={},
+                    campaign={"run_id": "seed"},
+                )
+            )
+            manifest = {
+                "entrypoint": "entrypoint.py",
+                "members": {
+                    "entrypoint.py": fx.store.digest(
+                        (fx.directory / "entrypoint.py").read_bytes()
+                    )
+                },
+            }
             fx.bundle_ref = fx.store.publish_json_ref(
-                "builds/s1/bp1/runtime-bundle-4.json", manifest,
-                kind="runtime-bundle", provenance=fx.seed_doc)
-            with patch("bigcherry.lifecycle.subprocess.run",
-                       _fake_run(record_jsonl=_HOSTILE_RECORD_JSONL)):
+                "builds/s1/bp1/runtime-bundle-4.json",
+                manifest,
+                kind="runtime-bundle",
+                provenance=fx.seed_doc,
+            )
+            with patch(
+                "bigcherry.lifecycle.subprocess.run",
+                _fake_run(record_jsonl=_HOSTILE_RECORD_JSONL),
+            ):
                 record_ref = lifecycle.execute_record_stage(
-                    context=fx.context, store=fx.store, run_id=fx.run_id,
-                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id), spec=fx.spec,
+                    context=fx.context,
+                    store=fx.store,
+                    run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    spec=fx.spec,
                     local_provenance_class="production",
                 ).record_ref
             result = lifecycle.execute_inventory_stage(
-                context=fx.context, store=fx.store, run_id=fx.run_id,
+                context=fx.context,
+                store=fx.store,
+                run_id=fx.run_id,
                 record=ArtifactLocator(record_ref.artifact_id),
                 local_provenance_class="development",
             )
@@ -580,22 +607,41 @@ class TuneStageTests(unittest.TestCase):
         # stage runs at local_class='production' (the real lane's class).
         with tempfile.TemporaryDirectory() as directory:
             fx = _Fixture(Path(directory))
-            fx.seed_doc = provenance.ProvenanceV2.from_document(provenance.make(
-                project={"provenance_class": "imported-legacy", "bigcherry_revision": "r1"},
-                source={"source_slice_id": "s1"},
-                build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
-                workload={}, campaign={"run_id": "seed"},
-            ))
-            manifest = {"entrypoint": "entrypoint.py",
-                        "members": {"entrypoint.py": fx.store.digest((fx.directory / "entrypoint.py").read_bytes())}}
+            fx.seed_doc = provenance.ProvenanceV2.from_document(
+                provenance.make(
+                    project={
+                        "provenance_class": "imported-legacy",
+                        "bigcherry_revision": "r1",
+                    },
+                    source={"source_slice_id": "s1"},
+                    build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
+                    workload={},
+                    campaign={"run_id": "seed"},
+                )
+            )
+            manifest = {
+                "entrypoint": "entrypoint.py",
+                "members": {
+                    "entrypoint.py": fx.store.digest(
+                        (fx.directory / "entrypoint.py").read_bytes()
+                    )
+                },
+            }
             fx.bundle_ref = fx.store.publish_json_ref(
-                "builds/s1/bp1/runtime-bundle-5.json", manifest,
-                kind="runtime-bundle", provenance=fx.seed_doc)
+                "builds/s1/bp1/runtime-bundle-5.json",
+                manifest,
+                kind="runtime-bundle",
+                provenance=fx.seed_doc,
+            )
             inv = self._inventory(fx)
-            with patch("bigcherry.lifecycle.subprocess.run",
-                       _fake_run(tune_jsonl=_HOSTILE_TUNE_JSONL)):
+            with patch(
+                "bigcherry.lifecycle.subprocess.run",
+                _fake_run(tune_jsonl=_HOSTILE_TUNE_JSONL),
+            ):
                 result = lifecycle.execute_tune_stage(
-                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    context=fx.context,
+                    store=fx.store,
+                    run_id=fx.run_id,
                     runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
                     dispatch_db=ArtifactLocator(inv.database_ref.artifact_id),
                     spec=fx.spec,
