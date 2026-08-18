@@ -75,7 +75,11 @@ def plan_pair(
     """6.2 preflight: compare every identity axis between arms BEFORE any
     executable is even rehydrated, let alone run -- only differences named
     in ``allowed_differences`` may proceed."""
-    differences = {field for field in _IDENTITY_FIELDS if getattr(left, field) != getattr(right, field)}
+    differences = {
+        field
+        for field in _IDENTITY_FIELDS
+        if getattr(left, field) != getattr(right, field)
+    }
     undeclared = differences - set(allowed_differences)
     if undeclared:
         raise ComparisonError(
@@ -84,11 +88,23 @@ def plan_pair(
     return ComparisonPlan(left, right, allowed_differences, label)
 
 
-def _rehydrate_arm(store: ArtifactStore, arm: BenchmarkArm) -> tuple[Path, ArtifactRef, ArtifactRef | None]:
+def _rehydrate_arm(
+    store: ArtifactStore, arm: BenchmarkArm
+) -> tuple[Path, ArtifactRef, ArtifactRef, ArtifactRef | None]:
     """6.1/6.2: rehydrate and re-verify every byte this arm claims to run
     -- a tampered runtime-bundle member is rejected here, before any
-    subprocess is launched. Returns (entrypoint_path, binary_ref, cache_ref)."""
-    bundle_ref = store.rehydrate(arm.runtime_bundle_artifact_id, expected_kind="runtime-bundle")
+    subprocess is launched. Returns (entrypoint_path, bundle_ref, binary_ref, cache_ref).
+
+    GPT audit fix (2026-08-18, RE12 pointer boundary, item 1): the
+    BenchmarkArm fields are CALLER CLAIMS, not evidence. Before execution
+    they are cross-checked against the stored provenance of the arm's own
+    bundle and binary, and the entrypoint member the benchmark actually
+    executes must be byte-identical to the binary the promotion pointer
+    will later record -- otherwise a valid pointer could say 'binary X was
+    validated' when the benchmark ran binary Y."""
+    bundle_ref = store.rehydrate(
+        arm.runtime_bundle_artifact_id, expected_kind="runtime-bundle"
+    )
     binary_ref = store.rehydrate(arm.binary_artifact_id, expected_kind="binary")
     manifest = json.loads(bundle_ref.path.read_text(encoding="utf-8"))
     for member_name, member_hash in manifest["members"].items():
@@ -98,16 +114,54 @@ def _rehydrate_arm(store: ArtifactStore, arm: BenchmarkArm) -> tuple[Path, Artif
                 f"arm {arm.name!r}: runtime-bundle member {member_name!r} failed store "
                 f"verification -- refusing to run against a tampered or missing dependency"
             )
-    entrypoint_path = bundle_ref.path.parent / manifest["entrypoint"]
+    entrypoint_name = manifest["entrypoint"]
+    if manifest["members"].get(entrypoint_name) != binary_ref.content_hash:
+        raise ComparisonError(
+            f"arm {arm.name!r}: runtime-bundle entrypoint {entrypoint_name!r} (member hash "
+            f"{manifest['members'].get(entrypoint_name)!r}) is not the same artifact as the "
+            f"declared binary {arm.binary_artifact_id!r} (content hash "
+            f"{binary_ref.content_hash!r}) -- refusing to benchmark one binary and "
+            f"promote another"
+        )
+    claimed = (arm.source_slice_id, arm.build_plan_id, arm.effective_build_id)
+    for label, ref in (("runtime-bundle", bundle_ref), ("binary", binary_ref)):
+        doc = provenance.ProvenanceV2.from_document(ref.provenance)
+        actual = (
+            doc.source.source_slice_id,
+            doc.build.build_plan_id,
+            doc.build.effective_build_id,
+        )
+        if actual != claimed:
+            raise ComparisonError(
+                f"arm {arm.name!r}: declared identity {claimed} does not match the stored "
+                f"{label} provenance identity {actual} -- the arm dataclass is a caller "
+                f"claim, not evidence"
+            )
+        if (
+            doc.workload.workload_id is not None
+            and doc.workload.workload_id != arm.workload_id
+        ):
+            raise ComparisonError(
+                f"arm {arm.name!r}: declared workload {arm.workload_id!r} does not match "
+                f"the stored {label} workload {doc.workload.workload_id!r}"
+            )
+    entrypoint_path = bundle_ref.path.parent / entrypoint_name
     cache_ref = (
         store.rehydrate(arm.replay_cache_artifact_id, expected_kind="replay-cache")
-        if arm.replay_cache_artifact_id else None
+        if arm.replay_cache_artifact_id
+        else None
     )
-    return entrypoint_path, binary_ref, cache_ref
+    return entrypoint_path, bundle_ref, binary_ref, cache_ref
 
 
 def _publish_raw_evidence(
-    store: ArtifactStore, output: Path, run: dict[str, Any], *, run_id: str, side: str, pair: int,
+    store: ArtifactStore,
+    output: Path,
+    run: dict[str, Any],
+    *,
+    run_id: str,
+    side: str,
+    pair: int,
     doc: provenance.ProvenanceV2,
 ) -> dict[str, str]:
     """6.4: every arm's stdout/stderr/coverage becomes its own immutable
@@ -119,8 +173,11 @@ def _publish_raw_evidence(
             continue
         source_path = output / name
         ref = store.publish_file_ref(
-            f"runs/{run_id}/compare/{side}/pair-{pair}/{name}", source_path,
-            kind="comparison-raw-evidence", provenance=doc)
+            f"runs/{run_id}/compare/{side}/pair-{pair}/{name}",
+            source_path,
+            kind="comparison-raw-evidence",
+            provenance=doc,
+        )
         ids[field] = ref.artifact_id
     return ids
 
@@ -149,10 +206,12 @@ def run_comparison(
     then publish ONE comparison-report artifact carrying every raw
     evidence artifact ID, effect estimates, and a validity/decision-grade
     verdict -- never a bare in-memory summary."""
-    left_entrypoint, left_binary, left_cache = _rehydrate_arm(store, plan.left)
-    right_entrypoint, right_binary, right_cache = _rehydrate_arm(store, plan.right)
-    left_doc = provenance.ProvenanceV2.from_document(left_binary.provenance)
-    right_doc = provenance.ProvenanceV2.from_document(right_binary.provenance)
+    left_entrypoint, left_bundle, left_binary, left_cache = _rehydrate_arm(
+        store, plan.left
+    )
+    right_entrypoint, right_bundle, right_binary, right_cache = _rehydrate_arm(
+        store, plan.right
+    )
 
     output.mkdir(parents=True, exist_ok=True)
     patterns = metric_patterns or {}
@@ -164,19 +223,45 @@ def run_comparison(
     caches = {"left": left_cache, "right": right_cache}
     arms = {"left": plan.left, "right": plan.right}
     binaries = {"left": left_binary, "right": right_binary}
-    parent_docs = {"left": left_doc, "right": right_doc}
+    bundles = {"left": left_bundle, "right": right_bundle}
+    side_docs: dict[str, tuple[provenance.ProvenanceV2, ...]] = {}
+    for side, bundle, binary, cache in (
+        ("left", left_bundle, left_binary, left_cache),
+        ("right", right_bundle, right_binary, right_cache),
+    ):
+        docs = (
+            provenance.ProvenanceV2.from_document(binary.provenance),
+            provenance.ProvenanceV2.from_document(bundle.provenance),
+        )
+        if cache is not None:
+            docs = docs + (provenance.ProvenanceV2.from_document(cache.provenance),)
+        side_docs[side] = docs
 
     def _run_doc(side: str) -> provenance.ProvenanceV2:
-        parent = parent_docs[side]
-        entries, parent_ids = provenance.lane_input_provenance({"binary": binaries[side]})
+        parent = side_docs[side][0]
+        # GPT audit fix (item 2): every execution authority -- binary, the
+        # runtime bundle actually executed, and the replay cache actually
+        # used -- must be a provenance parent, or an imported-legacy
+        # bundle/cache could ride under a production binary's provenance.
+        parent_map = {"binary": binaries[side], "runtime-bundle": bundles[side]}
+        if caches[side] is not None:
+            parent_map["replay-cache"] = caches[side]
+        entries, parent_ids = provenance.lane_input_provenance(parent_map)
         return provenance.derive(
-            parents=(parent,), parent_artifact_ids=parent_ids, project_revision=project_revision,
+            parents=side_docs[side],
+            parent_artifact_ids=parent_ids,
+            project_revision=project_revision,
             source=parent.source,
             build=provenance.BuildProvenance(
                 build_plan_id=parent.build.build_plan_id,
-                effective_build_id=parent.build.effective_build_id, inputs=entries),
-            workload=parent.workload, run_id=run_id, producer_stage="compare-run",
-            campaign_plan_id=campaign_plan_id, comparison_plan_id=comparison_plan_id,
+                effective_build_id=parent.build.effective_build_id,
+                inputs=entries,
+            ),
+            workload=parent.workload,
+            run_id=run_id,
+            producer_stage="compare-run",
+            campaign_plan_id=campaign_plan_id,
+            comparison_plan_id=comparison_plan_id,
             local_class=local_provenance_class,
         )
 
@@ -193,19 +278,39 @@ def run_comparison(
                 base_env["HIP_VISIBLE_DEVICES"] = arm.device
             coverage = output / f"pair-{pair + 1:03d}-{side}.coverage.json"
             env = ab_benchmark.sanitize_environment(
-                base_env, "replay" if cache_ref else "native",
-                cache=cache_ref.path if cache_ref else None, coverage=coverage)
+                base_env,
+                "replay" if cache_ref else "native",
+                cache=cache_ref.path if cache_ref else None,
+                coverage=coverage,
+            )
             command = [str(entrypoints[side]), *model_args]
             run = ab_benchmark.run_arm_capture(
-                command=command, cwd=None, output=output, pair=pair, side=side, env=env,
-                patterns=patterns, structured=structured, replay=cache_ref is not None)
+                command=command,
+                cwd=None,
+                output=output,
+                pair=pair,
+                side=side,
+                env=env,
+                patterns=patterns,
+                structured=structured,
+                replay=cache_ref is not None,
+            )
             runs.append(run)
             if run["returncode"] != 0:
-                issues.append(f"pair {pair + 1} {side}: command exited {run['returncode']}")
+                issues.append(
+                    f"pair {pair + 1} {side}: command exited {run['returncode']}"
+                )
             elif "metric_error" in run:
                 issues.append(f"pair {pair + 1} {side}: {run['metric_error']}")
             ids = _publish_raw_evidence(
-                store, output, run, run_id=run_id, side=side, pair=pair + 1, doc=run_docs[side])
+                store,
+                output,
+                run,
+                run_id=run_id,
+                side=side,
+                pair=pair + 1,
+                doc=run_docs[side],
+            )
             raw_evidence[side][f"pair-{pair + 1}"] = ids
 
     metric_names = sorted({name for run in runs for name in run.get("metrics", {})})
@@ -213,31 +318,50 @@ def run_comparison(
     for metric in metric_names:
         try:
             evidence = ab_benchmark.block_bootstrap_effect(
-                runs, "right", "left", metric, seed=schedule_seed, resamples=resamples)
+                runs, "right", "left", metric, seed=schedule_seed, resamples=resamples
+            )
         except ValueError as exc:
             issues.append(f"metric {metric!r}: {exc}")
             continue
         evidence["decision"] = (
-            "improved" if evidence["ci95_low_pct"] >= practical_threshold_pct else
-            "regressed" if evidence["ci95_high_pct"] <= -practical_threshold_pct else
-            "inconclusive"
+            "improved"
+            if evidence["ci95_low_pct"] >= practical_threshold_pct
+            else "regressed"
+            if evidence["ci95_high_pct"] <= -practical_threshold_pct
+            else "inconclusive"
         )
         effects[metric] = evidence
 
     valid = not issues
     resolved_decision_grade = decision_grade and valid
 
-    entries, parent_ids = provenance.lane_input_provenance(
-        {"left-binary": left_binary, "right-binary": right_binary})
+    report_parent_map: dict[str, ArtifactRef] = {
+        "left-binary": left_binary,
+        "left-runtime-bundle": left_bundle,
+        "right-binary": right_binary,
+        "right-runtime-bundle": right_bundle,
+    }
+    if left_cache is not None:
+        report_parent_map["left-replay-cache"] = left_cache
+    if right_cache is not None:
+        report_parent_map["right-replay-cache"] = right_cache
+    entries, parent_ids = provenance.lane_input_provenance(report_parent_map)
+    left_doc = side_docs["left"][0]
     report_doc = provenance.derive(
-        parents=(left_doc, right_doc), parent_artifact_ids=parent_ids,
+        parents=side_docs["left"] + side_docs["right"],
+        parent_artifact_ids=parent_ids,
         project_revision=project_revision,
         source=left_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=left_doc.build.build_plan_id,
-            effective_build_id=left_doc.build.effective_build_id, inputs=entries),
-        workload=left_doc.workload, run_id=run_id, producer_stage="compare",
-        campaign_plan_id=campaign_plan_id, comparison_plan_id=comparison_plan_id,
+            effective_build_id=left_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=left_doc.workload,
+        run_id=run_id,
+        producer_stage="compare",
+        campaign_plan_id=campaign_plan_id,
+        comparison_plan_id=comparison_plan_id,
         local_class=local_provenance_class,
     )
 
@@ -264,7 +388,9 @@ def run_comparison(
         "right_arm": _arm_document(plan.right),
         "left_binary_artifact_id": left_binary.artifact_id,
         "right_binary_artifact_id": right_binary.artifact_id,
-        "replay_arm": "right" if right_cache is not None else ("left" if left_cache is not None else None),
+        "replay_arm": "right"
+        if right_cache is not None
+        else ("left" if left_cache is not None else None),
         "allowed_differences": sorted(plan.allowed_differences),
         "schedule_seed": schedule_seed,
         "pairs": pairs,
@@ -276,5 +402,8 @@ def run_comparison(
     }
     report_bytes = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8")
     return store.publish_bytes_ref(
-        f"runs/{run_id}/compare/report.json", report_bytes,
-        kind="comparison-report", provenance=report_doc)
+        f"runs/{run_id}/compare/report.json",
+        report_bytes,
+        kind="comparison-report",
+        provenance=report_doc,
+    )

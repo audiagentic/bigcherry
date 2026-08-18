@@ -497,16 +497,18 @@ class TestBuildDatabase(unittest.TestCase):
         rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_MMQ])
         with TempDB() as db:
             inventory.build_database(
-                rec, db.db_path,
+                rec,
+                db.db_path,
                 Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
             )
             build_row = db.query(
                 "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                "campaign_run_id, workload_id FROM build")[0]
+                "campaign_run_id, workload_id FROM build"
+            )[0]
             self.assertEqual(build_row, (None, None, None, None, None))
             obs_row = db.query(
-                "SELECT source_slice_id, workload_id, campaign_run_id "
-                "FROM observation")[0]
+                "SELECT source_slice_id, workload_id, campaign_run_id FROM observation"
+            )[0]
             self.assertEqual(obs_row, (None, None, None))
 
     def test_hostile_record_header_cannot_upgrade_to_campaign_scope(self):
@@ -516,21 +518,25 @@ class TestBuildDatabase(unittest.TestCase):
         # identity=None MUST mean legacy-imported with visibly-NULL
         # identity columns; a header triple must never upgrade scope.
         hostile_header = RECORD_HEADER.copy()
-        hostile_header.update({
-            "source_slice_id": "slice-hostile",
-            "build_plan_id": "plan-hostile",
-            "effective_build_id": "eb-hostile",
-            "campaign_run_id": "run-hostile",
-        })
+        hostile_header.update(
+            {
+                "source_slice_id": "slice-hostile",
+                "build_plan_id": "plan-hostile",
+                "effective_build_id": "eb-hostile",
+                "campaign_run_id": "run-hostile",
+            }
+        )
         rec = Record(header=hostile_header, observations=[RECORD_OBS_MMQ])
         with TempDB() as db:
             inventory.build_database(
-                rec, db.db_path,
+                rec,
+                db.db_path,
                 Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
             )
             build_row = db.query(
                 "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                "campaign_run_id, workload_id, identity_scope FROM build")[0]
+                "campaign_run_id, workload_id, identity_scope FROM build"
+            )[0]
             self.assertEqual(
                 build_row, (None, None, None, None, None, "legacy-imported")
             )
@@ -543,11 +549,14 @@ class TestBuildDatabase(unittest.TestCase):
         with TempDB() as db:
             with self.assertRaises(RecordError):
                 inventory.build_database(
-                    rec, db.db_path,
+                    rec,
+                    db.db_path,
                     Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
                     identity=inventory.CampaignDatabaseIdentity(
-                        source_slice_id="slice-1", build_plan_id="",
-                        effective_build_id="eb-1", campaign_run_id="run-1",
+                        source_slice_id="slice-1",
+                        build_plan_id="",
+                        effective_build_id="eb-1",
+                        campaign_run_id="run-1",
                     ),
                 )
 
@@ -558,22 +567,27 @@ class TestBuildDatabase(unittest.TestCase):
         rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_MMQ])
         with TempDB() as db:
             inventory.build_database(
-                rec, db.db_path,
+                rec,
+                db.db_path,
                 Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
                 identity=inventory.CampaignDatabaseIdentity(
-                    source_slice_id="slice-1", build_plan_id="plan-1",
-                    effective_build_id="effective-1", campaign_run_id="run-1",
+                    source_slice_id="slice-1",
+                    build_plan_id="plan-1",
+                    effective_build_id="effective-1",
+                    campaign_run_id="run-1",
                     workload_id="workload-1",
                 ),
             )
             build_row = db.query(
                 "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                "campaign_run_id, workload_id FROM build")[0]
+                "campaign_run_id, workload_id FROM build"
+            )[0]
             self.assertEqual(
-                build_row, ("slice-1", "plan-1", "effective-1", "run-1", "workload-1"))
+                build_row, ("slice-1", "plan-1", "effective-1", "run-1", "workload-1")
+            )
             obs_row = db.query(
-                "SELECT source_slice_id, workload_id, campaign_run_id "
-                "FROM observation")[0]
+                "SELECT source_slice_id, workload_id, campaign_run_id FROM observation"
+            )[0]
             self.assertEqual(obs_row, ("slice-1", "workload-1", "run-1"))
 
 
@@ -633,16 +647,21 @@ class TestLoadMeasurements(unittest.TestCase):
         schema_path = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
-                inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+                inventory.load_measurements(
+                    path, db.db_path, schema_path, manifest_path=None
+                )
                 build_row = db.query(
-                    "SELECT source_slice_id, build_plan_id FROM build")[0]
+                    "SELECT source_slice_id, build_plan_id FROM build"
+                )[0]
                 self.assertEqual(build_row, (None, None))
                 measurement_row = db.query(
                     "SELECT source_slice_id, build_plan_id, workload_id, "
-                    "campaign_run_id FROM measurement LIMIT 1")[0]
+                    "campaign_run_id FROM measurement LIMIT 1"
+                )[0]
                 self.assertEqual(measurement_row, (None, None, None, None))
                 winner_row = db.query(
-                    "SELECT source_slice_id, campaign_run_id FROM winner LIMIT 1")[0]
+                    "SELECT source_slice_id, campaign_run_id FROM winner LIMIT 1"
+                )[0]
                 self.assertEqual(winner_row, (None, None))
         finally:
             os.unlink(path)
@@ -655,30 +674,42 @@ class TestLoadMeasurements(unittest.TestCase):
         try:
             with TempDB() as db:
                 inventory.load_measurements(
-                    path, db.db_path, schema_path, manifest_path=None,
+                    path,
+                    db.db_path,
+                    schema_path,
+                    manifest_path=None,
                     identity=inventory.CampaignDatabaseIdentity(
-                        source_slice_id="slice-1", build_plan_id="plan-1",
-                        effective_build_id="effective-1", campaign_run_id="run-1",
+                        source_slice_id="slice-1",
+                        build_plan_id="plan-1",
+                        effective_build_id="effective-1",
+                        campaign_run_id="run-1",
                         workload_id="workload-1",
                     ),
                 )
                 build_row = db.query(
                     "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                    "campaign_run_id, workload_id FROM build")[0]
+                    "campaign_run_id, workload_id FROM build"
+                )[0]
                 self.assertEqual(
-                    build_row, ("slice-1", "plan-1", "effective-1", "run-1", "workload-1"))
+                    build_row,
+                    ("slice-1", "plan-1", "effective-1", "run-1", "workload-1"),
+                )
                 measurement_row = db.query(
                     "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                    "workload_id, campaign_run_id FROM measurement LIMIT 1")[0]
+                    "workload_id, campaign_run_id FROM measurement LIMIT 1"
+                )[0]
                 self.assertEqual(
                     measurement_row,
-                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"))
+                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"),
+                )
                 winner_row = db.query(
                     "SELECT source_slice_id, build_plan_id, effective_build_id, "
-                    "workload_id, campaign_run_id FROM winner LIMIT 1")[0]
+                    "workload_id, campaign_run_id FROM winner LIMIT 1"
+                )[0]
                 self.assertEqual(
                     winner_row,
-                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"))
+                    ("slice-1", "plan-1", "effective-1", "workload-1", "run-1"),
+                )
         finally:
             os.unlink(path)
 
@@ -701,7 +732,14 @@ class TestLoadMeasurements(unittest.TestCase):
             connection = sqlite3.connect(str(db.db_path))
             try:
                 connection.executescript(schema_path.read_text(encoding="utf-8"))
-                shared_legacy_key = ("rev1", "manifest1", 1, 1, "inventory", "descriptor1")
+                shared_legacy_key = (
+                    "rev1",
+                    "manifest1",
+                    1,
+                    1,
+                    "inventory",
+                    "descriptor1",
+                )
                 connection.execute(
                     "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
                     "hardware_schema, variant_set, build_descriptor_hash, source_slice_id, "
@@ -731,7 +769,13 @@ class TestLoadMeasurements(unittest.TestCase):
                         "hardware_schema, variant_set, build_descriptor_hash, source_slice_id, "
                         "build_plan_id, effective_build_id, campaign_run_id, identity_scope) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'campaign')",
-                        (*shared_legacy_key, "slice-a", "plan-a", "effective-a", "run-a-again"),
+                        (
+                            *shared_legacy_key,
+                            "slice-a",
+                            "plan-a",
+                            "effective-a",
+                            "run-a-again",
+                        ),
                     )
             finally:
                 connection.close()
@@ -752,7 +796,8 @@ class TestLoadMeasurements(unittest.TestCase):
         try:
             with TempDB() as db:
                 inventory.load_measurements(
-                    path_legacy, db.db_path, schema_path, manifest_path=None)
+                    path_legacy, db.db_path, schema_path, manifest_path=None
+                )
                 row = db.query("SELECT source_slice_id, identity_scope FROM build")[0]
                 self.assertEqual(row, (None, "legacy-imported"))
         finally:
@@ -772,12 +817,20 @@ class TestLoadMeasurements(unittest.TestCase):
         try:
             with TempDB() as db:
                 inventory.load_measurements(
-                    path_a, db.db_path, schema_path, manifest_path=None,
+                    path_a,
+                    db.db_path,
+                    schema_path,
+                    manifest_path=None,
                     identity=inventory.CampaignDatabaseIdentity(
-                        source_slice_id="slice-a", build_plan_id="plan-a",
-                        effective_build_id="effective-a", campaign_run_id="run-a"))
+                        source_slice_id="slice-a",
+                        build_plan_id="plan-a",
+                        effective_build_id="effective-a",
+                        campaign_run_id="run-a",
+                    ),
+                )
                 row = db.query(
-                    "SELECT source_slice_id, build_plan_id, identity_scope FROM build")[0]
+                    "SELECT source_slice_id, build_plan_id, identity_scope FROM build"
+                )[0]
                 self.assertEqual(row, ("slice-a", "plan-a", "campaign"))
         finally:
             os.unlink(path_a)
