@@ -33,7 +33,22 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "3"
+CURRENT_DB_SCHEMA_VERSION = "4"
+
+
+@dataclass(frozen=True)
+class CampaignDatabaseIdentity:
+    """RE09/RV50 schema-4: the real campaign identity a DB write is made
+    under, replacing five loose keyword arguments. ``workload_id`` is the
+    only optional field -- a stock/control/record build genuinely has no
+    workload identity yet. ``None`` for the whole identity (not this type)
+    means diagnostic/imported: the caller has no real campaign context to
+    assert, and the row is recorded as identity_scope='legacy-imported'."""
+    source_slice_id: str
+    build_plan_id: str
+    effective_build_id: str
+    campaign_run_id: str
+    workload_id: str | None = None
 
 _RESULT_STATUSES = {
     "ok",
@@ -414,23 +429,18 @@ def build_inventory(record: Record) -> dict[str, Any]:
 
 def build_database(
     record: Record, target: Path, schema: Path, *,
-    source_slice_id: str | None = None,
-    build_plan_id: str | None = None,
-    effective_build_id: str | None = None,
-    campaign_run_id: str | None = None,
-    workload_id: str | None = None,
+    identity: CampaignDatabaseIdentity | None = None,
 ) -> dict[str, int]:
     """Populate a fresh SQLite database from a record file.
 
-    RE09 (RV48 audit): the schema-3 campaign identity columns (build/
-    observation) are populated from these explicit keyword arguments, not
-    invented here -- the compiled record binary that writes the raw JSONL
-    has no notion of a Python-side CampaignLaneResult, so a real production
-    caller (one that actually ran this record build through
-    execute_campaign_lane and holds its result) must pass them through.
-    All default to None, so an ad-hoc/imported record file (no campaign
-    context) still loads exactly as before -- visibly NULL, not a fabricated
-    identity.
+    RE09/RV50 schema-4: the campaign identity columns (build/observation)
+    are populated from ``identity``, not invented here -- the compiled
+    record binary that writes the raw JSONL has no notion of a Python-side
+    CampaignLaneResult, so a real production caller (one that actually ran
+    this record build through execute_campaign_lane and holds its result)
+    must pass it through. ``identity=None`` means diagnostic/imported: an
+    ad-hoc/imported record file still loads exactly as before -- visibly
+    NULL and identity_scope='legacy-imported', not a fabricated identity.
     """
     if target.exists():
         target.unlink()
@@ -450,12 +460,30 @@ def build_database(
             )
         header = record.header
 
+        resolved_source_slice_id = (identity.source_slice_id if identity else None) or header.get(
+            "source_slice_id")
+        resolved_build_plan_id = (identity.build_plan_id if identity else None) or header.get(
+            "build_plan_id")
+        resolved_effective_build_id = (identity.effective_build_id if identity else None) or header.get(
+            "effective_build_id")
+        resolved_campaign_run_id = (identity.campaign_run_id if identity else None) or header.get(
+            "campaign_run_id")
+        resolved_workload_id = (identity.workload_id if identity else None) or header.get("workload_id")
+        # RE09/RV50: 'campaign' requires the COMPLETE triple -- a partial
+        # identity is not campaign evidence and must not be silently
+        # promoted to look like it is (matches the migration's own rule).
+        identity_scope = (
+            "campaign"
+            if resolved_source_slice_id and resolved_build_plan_id and resolved_effective_build_id
+            else "legacy-imported"
+        )
+
         cursor = connection.execute(
             "INSERT INTO build (source_revision, source_dirty, manifest_hash, "
             "signature_schema, hardware_schema, variant_set, build_descriptor_hash, "
             "source_slice_id, build_plan_id, effective_build_id, campaign_run_id, "
-            "workload_id) "
-            "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "workload_id, identity_scope) "
+            "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 header.get("source_revision", ""),
                 header.get("manifest_hash", ""),
@@ -463,11 +491,12 @@ def build_database(
                 header.get("hardware_schema", 1),
                 header.get("variant_set", "inventory"),
                 header.get("build_descriptor_hash"),
-                source_slice_id or header.get("source_slice_id"),
-                build_plan_id or header.get("build_plan_id"),
-                effective_build_id or header.get("effective_build_id"),
-                campaign_run_id or header.get("campaign_run_id"),
-                workload_id or header.get("workload_id"),
+                resolved_source_slice_id,
+                resolved_build_plan_id,
+                resolved_effective_build_id,
+                resolved_campaign_run_id,
+                resolved_workload_id,
+                identity_scope,
             ),
         )
         build_id = cursor.lastrowid
@@ -547,9 +576,9 @@ def build_database(
                         sort_keys=True,
                         separators=(",", ":"),
                     ),
-                    source_slice_id or header.get("source_slice_id"),
-                    workload_id or header.get("workload_id"),
-                    campaign_run_id or header.get("campaign_run_id"),
+                    resolved_source_slice_id,
+                    resolved_workload_id,
+                    resolved_campaign_run_id,
                 ),
             )
 
@@ -571,26 +600,22 @@ def load_measurements(
     *,
     manifest_path: Path | None = None,
     signature_source_paths: list[Path] | None = None,
-    source_slice_id: str | None = None,
-    build_plan_id: str | None = None,
-    effective_build_id: str | None = None,
-    campaign_run_id: str | None = None,
-    workload_id: str | None = None,
+    identity: CampaignDatabaseIdentity | None = None,
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
-    RE09 (RV48 audit): the campaign-identity keyword arguments mirror
-    build_database()'s -- a real caller holding a CampaignLaneResult
-    passes them through and they are persisted onto the build/measurement/
-    winner rows; absent, this behaves exactly as before (NULL identity).
-    Does NOT yet change the build-row lookup/dedup boundary itself (RE09
-    requirement 2, "build-row identity based on actual source/build
-    identities, not just source revision + manifest") -- the build table's
-    UNIQUE constraint does not include these columns, so widening the
-    lookup to key on them too would raise IntegrityError against the
-    existing constraint rather than correctly disambiguate; that needs its
-    own schema migration and is left as explicit follow-up, not attempted
-    here.
+    RE09/RV50 schema-4: ``identity`` mirrors build_database()'s -- a real
+    caller holding a CampaignLaneResult passes it through and it is
+    persisted onto the build/measurement/winner rows; absent, this behaves
+    exactly as before (NULL identity, identity_scope='legacy-imported').
+    The build-row lookup is now keyed on the REAL identity_scope-qualified
+    identity (campaign: source_slice_id+build_plan_id+effective_build_id;
+    legacy-imported: the old five-field key) instead of always matching on
+    the legacy key regardless of scope -- schema-4's two partial unique
+    indexes are what makes this safe: two campaign runs sharing a legacy
+    key but genuinely different campaign identity now correctly get two
+    distinct rows, rather than the previous interim fail-closed-on-
+    disagreement guard this function used to need.
 
     Reads the .measurements.jsonl written by the tuning engine (HI12)
     and populates build, candidate, measurement, and winner tables.
@@ -721,78 +746,56 @@ def load_measurements(
             raise ValueError("measurements header requires variant_set")
         build_descriptor_hash = header.get("build_descriptor_hash")
         artifact_version = header.get("artifact_version", 1)
-        resolved_source_slice_id = source_slice_id or header.get("source_slice_id")
-        resolved_build_plan_id = build_plan_id or header.get("build_plan_id")
-        resolved_effective_build_id = effective_build_id or header.get("effective_build_id")
-        resolved_campaign_run_id = campaign_run_id or header.get("campaign_run_id")
-        resolved_workload_id = workload_id or header.get("workload_id")
-
-        # NOTE (RE09, RV48 audit requirement 2 -- NOT done here): the build
-        # table's UNIQUE constraint is (source_revision, manifest_hash,
-        # signature_schema, hardware_schema, variant_set,
-        # build_descriptor_hash) -- it does not include source_slice_id/
-        # build_plan_id, so two campaign runs sharing those five fields but
-        # genuinely different source/build identity are STILL forced to
-        # collide on the same build row; widening this lookup without also
-        # widening the UNIQUE constraint just raises IntegrityError instead
-        # of silently merging. Properly closing requirement 2 needs its own
-        # schema migration (extending the unique index) -- a bigger, more
-        # careful decision than this pass should make for a live production
-        # DB constraint. Left as explicit follow-up; this fix only makes the
-        # identity columns populated, not the row-identity boundary correct.
-        cursor = connection.execute(
-            "SELECT build_id, source_slice_id, build_plan_id, effective_build_id "
-            "FROM build WHERE source_revision = ? "
-            "AND manifest_hash = ? AND variant_set = ? "
-            "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
-            (
-                source_revision,
-                manifest_hash,
-                variant_set,
-                build_descriptor_hash,
-                build_descriptor_hash,
-            ),
+        resolved_source_slice_id = (identity.source_slice_id if identity else None) or header.get(
+            "source_slice_id")
+        resolved_build_plan_id = (identity.build_plan_id if identity else None) or header.get(
+            "build_plan_id")
+        resolved_effective_build_id = (identity.effective_build_id if identity else None) or header.get(
+            "effective_build_id")
+        resolved_campaign_run_id = (identity.campaign_run_id if identity else None) or header.get(
+            "campaign_run_id")
+        resolved_workload_id = (identity.workload_id if identity else None) or header.get("workload_id")
+        # RE09/RV50: 'campaign' requires the COMPLETE triple, matching
+        # build_database()'s and the schema-4 migration's own rule.
+        identity_scope = (
+            "campaign"
+            if resolved_source_slice_id and resolved_build_plan_id and resolved_effective_build_id
+            else "legacy-imported"
         )
+
+        # RE09/RV50 schema-4: the lookup is now scoped to the REAL identity
+        # for this load, using the partial-unique-index-backed columns --
+        # a campaign load looks up by its own (source_slice_id,
+        # build_plan_id, effective_build_id) triple; a legacy/imported load
+        # looks up by the old five-field key, scoped to identity_scope=
+        # 'legacy-imported' rows only. Two campaign runs sharing a legacy
+        # key but genuinely different campaign identity now correctly
+        # resolve to two distinct rows instead of colliding or needing the
+        # interim fail-closed-on-disagreement guard this function used to
+        # carry (schema-3 could not represent both identities at once;
+        # schema-4 can).
+        if identity_scope == "campaign":
+            cursor = connection.execute(
+                "SELECT build_id FROM build WHERE identity_scope = 'campaign' "
+                "AND source_slice_id = ? AND build_plan_id = ? AND effective_build_id = ?",
+                (resolved_source_slice_id, resolved_build_plan_id, resolved_effective_build_id),
+            )
+        else:
+            cursor = connection.execute(
+                "SELECT build_id FROM build WHERE identity_scope = 'legacy-imported' "
+                "AND source_revision = ? AND manifest_hash = ? AND variant_set = ? "
+                "AND (build_descriptor_hash = ? OR (build_descriptor_hash IS NULL AND ? IS NULL))",
+                (
+                    source_revision,
+                    manifest_hash,
+                    variant_set,
+                    build_descriptor_hash,
+                    build_descriptor_hash,
+                ),
+            )
         build_row = cursor.fetchone()
         if build_row:
-            build_id, existing_source_slice_id, existing_build_plan_id, existing_effective_build_id = build_row
-            # GPT-auto-agent review (RE09 follow-up, 2026-08-17): the
-            # legacy key this SELECT still matches on does not include
-            # the new campaign-identity columns (see the NOTE above and
-            # its own reasoning for not simply widening the SELECT against
-            # the existing UNIQUE constraint). Reusing this row's build_id
-            # for a DIFFERENT campaign identity would silently attribute
-            # this run's measurement/winner rows to the WRONG build --
-            # "columns look populated but attribution is wrong" is exactly
-            # the failure mode flagged. Fail closed instead: an incoming
-            # non-NULL identity that disagrees with what this row already
-            # recorded is a real schema gap, not a value to silently merge
-            # or overwrite.
-            #
-            # existing is None must ALSO reject when incoming is non-NULL
-            # (not just existing-and-incoming-both-non-NULL-and-different):
-            # a second GPT review pass found that two campaign-aware loads
-            # sharing this legacy key, both hitting a row whose identity
-            # columns are still NULL (predates campaign identity, or was
-            # never backfilled -- this code deliberately never backfills,
-            # see below), would otherwise BOTH be silently accepted even
-            # when they carry genuinely different campaign identities,
-            # since neither ever compared against the OTHER load's claim.
-            for label, existing, incoming in (
-                ("source_slice_id", existing_source_slice_id, resolved_source_slice_id),
-                ("build_plan_id", existing_build_plan_id, resolved_build_plan_id),
-                ("effective_build_id", existing_effective_build_id, resolved_effective_build_id),
-            ):
-                if incoming is not None and existing != incoming:
-                    raise RecordError(
-                        f"existing build row {build_id} has {label}={existing!r}, "
-                        f"but this measurements load carries {label}={incoming!r} for "
-                        f"the same legacy (source_revision, manifest_hash, variant_set, "
-                        f"build_descriptor_hash) key -- refusing to silently attribute "
-                        f"this run's evidence to a build with a different campaign "
-                        f"identity (schema cannot yet represent two distinct build "
-                        f"identities under this legacy key; see RE09 notes)"
-                    )
+            build_id = build_row[0]
         else:
             # `compiler` is HI12 E6 -- omitted here for a while even after the
             # tuner started writing it in the header, which is exactly the
@@ -803,8 +806,8 @@ def load_measurements(
                 "manifest_hash, signature_schema, hardware_schema, variant_set, "
                 "dispatch_abi, compiler, hip_version, build_descriptor_hash, "
                 "source_slice_id, build_plan_id, effective_build_id, campaign_run_id, "
-                "workload_id) "
-                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "workload_id, identity_scope) "
+                "VALUES (?, 0, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     source_revision,
                     manifest_hash,
@@ -818,6 +821,7 @@ def load_measurements(
                     resolved_effective_build_id,
                     resolved_campaign_run_id,
                     resolved_workload_id,
+                    identity_scope,
                 ),
             )
             build_id = cursor.lastrowid
@@ -1287,6 +1291,16 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
     )
+    tune.add_argument(
+        "--source-slice-id", default=None,
+        help="RE09: campaign source_slice_id, if this tune run was produced "
+             "through a real execute_campaign_lane() build",
+    )
+    tune.add_argument("--build-plan-id", default=None, help="RE09: campaign build_plan_id")
+    tune.add_argument(
+        "--effective-build-id", default=None, help="RE09: campaign effective_build_id")
+    tune.add_argument("--campaign-run-id", default=None, help="RE09: campaign run_id")
+    tune.add_argument("--workload-id", default=None, help="RE09: campaign workload_id")
 
     args = parser.parse_args(argv)
 
@@ -1298,6 +1312,31 @@ def main(argv: list[str] | None = None) -> int:
         # Backward compat: positional arg means record mode
         args.record = args.subcommand  # treat subcommand as record path
         return _cmd_record(args)
+
+
+def _identity_from_args(args) -> CampaignDatabaseIdentity | None:
+    """RE09/RV50: build a CampaignDatabaseIdentity from CLI flags, or None
+    for a diagnostic/imported load. getattr, not args.<name> directly: the
+    "backward compat: bare positional means record mode" branch parses via
+    the top-level parser, which never defined these flags, so args may
+    legitimately lack these attributes on that path. The three required
+    identity fields (source_slice_id/build_plan_id/effective_build_id) --
+    campaign_run_id is also required by the dataclass -- must ALL be
+    present to build a real identity; a partial set is not campaign
+    evidence (matches build_database()'s/the migration's own rule), so it
+    is treated the same as none at all rather than raising here.
+    """
+    source_slice_id = getattr(args, "source_slice_id", None)
+    build_plan_id = getattr(args, "build_plan_id", None)
+    effective_build_id = getattr(args, "effective_build_id", None)
+    campaign_run_id = getattr(args, "campaign_run_id", None)
+    if not (source_slice_id and build_plan_id and effective_build_id and campaign_run_id):
+        return None
+    return CampaignDatabaseIdentity(
+        source_slice_id=source_slice_id, build_plan_id=build_plan_id,
+        effective_build_id=effective_build_id, campaign_run_id=campaign_run_id,
+        workload_id=getattr(args, "workload_id", None),
+    )
 
 
 def _cmd_record(args) -> int:
@@ -1328,15 +1367,7 @@ def _cmd_record(args) -> int:
     )
     counts = build_database(
         record, database_path, paths.SQL / "dispatch-db.sql",
-        # getattr, not args.<name> directly: the "backward compat: bare
-        # positional means record mode" branch above parses via the
-        # top-level parser, which never defined these flags, so args may
-        # legitimately lack these attributes on that path.
-        source_slice_id=getattr(args, "source_slice_id", None),
-        build_plan_id=getattr(args, "build_plan_id", None),
-        effective_build_id=getattr(args, "effective_build_id", None),
-        campaign_run_id=getattr(args, "campaign_run_id", None),
-        workload_id=getattr(args, "workload_id", None),
+        identity=_identity_from_args(args),
     )
 
     print(f"read {len(record.observations)} observation(s) from {record_path}")
@@ -1368,6 +1399,7 @@ def _cmd_tuning(args) -> int:
         paths.SQL / "dispatch-db.sql",
         manifest_path=manifest_path,
         signature_source_paths=[Path(p) for p in args.signature_source],
+        identity=_identity_from_args(args),
     )
 
     print(
