@@ -389,21 +389,31 @@ def render_report(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _run_arm(
+def run_arm_capture(
     *,
     command: list[str],
     cwd: Path | None,
     output: Path,
     pair: int,
-    mode: str,
-    cache: Path,
+    side: str,
+    env: dict[str, str],
     patterns: dict[str, re.Pattern[str]],
     structured: bool = False,
+    replay: bool = False,
 ) -> dict[str, Any]:
-    """Run one arm and retain complete evidence even when it fails."""
-    stem = f"pair-{pair + 1:03d}-{mode}"
+    """Run one arm and retain complete evidence even when it fails.
+
+    RE12: extracted from the original ``_run_arm`` so comparisons.py's
+    identity-aware, descriptor-backed arm runner can reuse the exact same
+    subprocess/evidence-capture/statistics code instead of a second
+    benchmark framework -- ``side`` is an opaque label (``"native"``,
+    ``"replay"``, ``"left"``, ``"right"``, ...) used only for output
+    filenames and pairing keys; the caller builds ``env`` (this module's
+    own callers still go through ``sanitize_environment``) and decides
+    whether ``replay`` coverage validation applies.
+    """
+    stem = f"pair-{pair + 1:03d}-{side}"
     coverage = output / f"{stem}.coverage.json"
-    env = sanitize_environment(os.environ, mode, cache, coverage)
 
     started = time.time()
     completed = subprocess.run(command, cwd=cwd, text=True, capture_output=True, env=env)
@@ -413,13 +423,13 @@ def _run_arm(
     combined = completed.stdout + "\n" + completed.stderr
     run: dict[str, Any] = {
         "pair": pair + 1,
-        "mode": mode,
+        "mode": side,
         "returncode": completed.returncode,
         "elapsed_s": elapsed,
         "stdout": f"{stem}.stdout.log",
         "stderr": f"{stem}.stderr.log",
     }
-    if mode == "replay":
+    if replay:
         run["coverage"] = coverage.name
     if completed.returncode == 0:
         try:
@@ -431,11 +441,33 @@ def _run_arm(
                 }
             else:
                 run["metrics"] = extract_metrics(combined, patterns)
-            if mode == "replay":
+            if replay:
                 run["replay_provenance"] = validate_replay_coverage(coverage)
         except ValueError as exc:
             run["metric_error"] = str(exc)
     return run
+
+
+def _run_arm(
+    *,
+    command: list[str],
+    cwd: Path | None,
+    output: Path,
+    pair: int,
+    mode: str,
+    cache: Path,
+    patterns: dict[str, re.Pattern[str]],
+    structured: bool = False,
+) -> dict[str, Any]:
+    """This module's own native/replay/stock CLI arm: builds the
+    dispatch-mode env via sanitize_environment(), then delegates to the
+    reusable run_arm_capture()."""
+    coverage = output / f"pair-{pair + 1:03d}-{mode}.coverage.json"
+    env = sanitize_environment(os.environ, mode, cache, coverage)
+    return run_arm_capture(
+        command=command, cwd=cwd, output=output, pair=pair, side=mode, env=env,
+        patterns=patterns, structured=structured, replay=mode == "replay",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

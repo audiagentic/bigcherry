@@ -535,6 +535,16 @@ _KIND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "campaign.comparison_plan_id",
         "campaign.producer_stage",
     ),
+    # RE12: one artifact per arm's stdout/stderr/coverage file, published
+    # before the comparison-report that references their artifact IDs --
+    # 6.4's "every arm's raw evidence becomes its own immutable ArtifactRef".
+    "comparison-raw-evidence": (
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "campaign.run_id",
+        "campaign.producer_stage",
+    ),
     # RE25.2 review fix: without this entry, a PRODUCTION smoke result
     # could never be rehydrated -- ArtifactStore.rehydrate() always runs
     # validate_for_kind(), which treats an unregistered kind as an error,
