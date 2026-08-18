@@ -430,7 +430,7 @@ def pointer_from_comparison_report(
         replay_binary_ref.provenance
     )
 
-    return PromotionPointer(
+    pointer = PromotionPointer(
         schema_version=3,
         release_tag=release_tag,
         revision=replay_binary_doc.source.upstream_revision or "",
@@ -445,3 +445,9 @@ def pointer_from_comparison_report(
         report_artifact_id=report_artifact_id,
         coverage_artifact_id=replay_coverage_artifact_id,
     )
+    # GPT audit fix (item 7): a constructor must never return an object its
+    # own strict deserializer would reject -- round-trip through
+    # from_document() so an empty release_tag or a replay binary whose
+    # source provenance lacks upstream_revision fails HERE, not later when
+    # something calls PromotionPointer.from_document(pointer.document()).
+    return PromotionPointer.from_document(pointer.document())
