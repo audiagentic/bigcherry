@@ -102,6 +102,30 @@ def _jsonl(*rows: dict) -> str:
 _RECORD_JSONL = _jsonl(RECORD_HEADER, RECORD_OBS)
 _TUNE_JSONL = _jsonl(TUNING_HEADER, TUNING_RESULT_NATIVE)
 
+# GPT audit fix (2026-08-18): the compiled binary never writes identity
+# fields into these headers -- so a complete triple here is attacker-
+# controlled (the only thing that ever produces them is a hostile file).
+# Both lifecycle gates must hold for these to stay legacy-imported:
+# _identity_from_provenance() rejects the imported-legacy bundle, AND
+# build_database()/load_measurements() treat identity=None as
+# authoritative (binary authority, no header fallback).
+_HOSTILE_RECORD_HEADER = dict(
+    RECORD_HEADER,
+    source_slice_id="slice-hostile",
+    build_plan_id="plan-hostile",
+    effective_build_id="eb-hostile",
+    campaign_run_id="run-hostile",
+)
+_HOSTILE_RECORD_JSONL = _jsonl(_HOSTILE_RECORD_HEADER, RECORD_OBS)
+_HOSTILE_TUNE_HEADER = dict(
+    TUNING_HEADER,
+    source_slice_id="slice-hostile",
+    build_plan_id="plan-hostile",
+    effective_build_id="eb-hostile",
+    campaign_run_id="run-hostile",
+)
+_HOSTILE_TUNE_JSONL = _jsonl(_HOSTILE_TUNE_HEADER, TUNING_RESULT_NATIVE)
+
 
 class _FakeCompletedProcess:
     def __init__(self, returncode: int = 0, stderr: str = ""):
@@ -459,6 +483,52 @@ class InventoryStageTests(unittest.TestCase):
                 self.assertEqual(scope, "legacy-imported")
 
 
+    def test_hostile_record_header_stays_legacy_through_record_to_inventory(self):
+        # GPT audit fix (2026-08-18): end-to-end regression. The record
+        # JSONL header carries a complete (attacker-planted) campaign
+        # triple, the bundle is imported-legacy, and the record stage runs
+        # at the real lane's local_class='production' (so the imported
+        # taint reaches inventory). The DB row must land legacy-imported
+        # with visibly-NULL identity columns -- neither the bundle class
+        # gate nor the writer's binary authority may fail.
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            fx.seed_doc = provenance.ProvenanceV2.from_document(provenance.make(
+                project={"provenance_class": "imported-legacy", "bigcherry_revision": "r1"},
+                source={"source_slice_id": "s1"},
+                build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
+                workload={}, campaign={"run_id": "seed"},
+            ))
+            manifest = {"entrypoint": "entrypoint.py",
+                        "members": {"entrypoint.py": fx.store.digest((fx.directory / "entrypoint.py").read_bytes())}}
+            fx.bundle_ref = fx.store.publish_json_ref(
+                "builds/s1/bp1/runtime-bundle-4.json", manifest,
+                kind="runtime-bundle", provenance=fx.seed_doc)
+            with patch("bigcherry.lifecycle.subprocess.run",
+                       _fake_run(record_jsonl=_HOSTILE_RECORD_JSONL)):
+                record_ref = lifecycle.execute_record_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id), spec=fx.spec,
+                    local_provenance_class="production",
+                ).record_ref
+            result = lifecycle.execute_inventory_stage(
+                context=fx.context, store=fx.store, run_id=fx.run_id,
+                record=ArtifactLocator(record_ref.artifact_id),
+                local_provenance_class="development",
+            )
+            conn = sqlite3.connect(str(result.database_ref.path))
+            try:
+                rows = conn.execute(
+                    "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                    "campaign_run_id, identity_scope FROM build"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertTrue(rows)
+            for row in rows:
+                self.assertEqual(row, (None, None, None, None, "legacy-imported"))
+
+
 class TuneStageTests(unittest.TestCase):
     def _inventory(self, fx: _Fixture):
         record_ref = _record(fx)
@@ -497,6 +567,57 @@ class TuneStageTests(unittest.TestCase):
                     fx.store.digest(original_bytes),
                 )
             )
+
+    def test_hostile_tuning_header_stays_legacy_through_tune_to_db(self):
+        # GPT audit fix (2026-08-18): the tune-side analogue. The tuning
+        # JSONL header carries a complete attacker-planted triple and the
+        # bundle is imported-legacy; the updated DB's build row must stay
+        # legacy-imported with NULL identity columns even though the tune
+        # stage runs at local_class='production' (the real lane's class).
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            fx.seed_doc = provenance.ProvenanceV2.from_document(provenance.make(
+                project={"provenance_class": "imported-legacy", "bigcherry_revision": "r1"},
+                source={"source_slice_id": "s1"},
+                build={"build_plan_id": "bp1", "effective_build_id": "eb1"},
+                workload={}, campaign={"run_id": "seed"},
+            ))
+            manifest = {"entrypoint": "entrypoint.py",
+                        "members": {"entrypoint.py": fx.store.digest((fx.directory / "entrypoint.py").read_bytes())}}
+            fx.bundle_ref = fx.store.publish_json_ref(
+                "builds/s1/bp1/runtime-bundle-5.json", manifest,
+                kind="runtime-bundle", provenance=fx.seed_doc)
+            inv = self._inventory(fx)
+            with patch("bigcherry.lifecycle.subprocess.run",
+                       _fake_run(tune_jsonl=_HOSTILE_TUNE_JSONL)):
+                result = lifecycle.execute_tune_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    dispatch_db=ArtifactLocator(inv.database_ref.artifact_id),
+                    spec=fx.spec,
+                    local_provenance_class="production",
+                )
+            conn = sqlite3.connect(str(result.database_ref.path))
+            try:
+                rows = conn.execute(
+                    "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                    "campaign_run_id, identity_scope FROM build"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertTrue(rows)
+            hostile = ("slice-hostile", "plan-hostile", "eb-hostile")
+            for row in rows:
+                # The attacker-planted header triple must NOT appear on ANY
+                # row -- that is the invariant under test.
+                self.assertNotEqual(row[:3], hostile)
+                # The pre-existing inventory row is campaign-scoped from the
+                # dev-class bundle's LEGITIMATE complete triple (RE09's
+                # completeness rule); no other triple may be campaign.
+                if row[4] == "campaign":
+                    self.assertEqual(row[:3], ("s1", "bp1", "eb1"))
+            # The tune load itself landed as a NULL-identity legacy row.
+            self.assertIn((None, None, None, None, "legacy-imported"), rows)
 
     def test_tune_stage_fails_before_running_when_the_db_artifact_was_tampered(self):
         with tempfile.TemporaryDirectory() as directory:
