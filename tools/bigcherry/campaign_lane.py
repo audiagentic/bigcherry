@@ -45,7 +45,7 @@ from . import (
     patchset,
 )
 from . import runtime_smoke as smoke_module
-from .artifacts import ArtifactLocator, ArtifactStore
+from .artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
 from .builds import BuildPlan
 from .campaign import CampaignRun
 from .campaign_execution import (
@@ -493,7 +493,35 @@ def _resolve_lane_inputs(
                         workload=parsed.workload,
                         campaign=parsed.campaign,
                     )
-                resolved[name] = replace(value, provenance=parsed.document())
+                # GPT audit fix (2026-08-18): the locked RE25.3 contract is
+                # that EVERY lane input normalizes to a descriptor-backed
+                # ref -- this branch used to downgrade the class but leave
+                # artifact_id="", keeping the content_hash-as-identity
+                # fallback alive exactly where it was supposed to die.
+                # Persist a descriptor for the ALREADY-VERIFIED bytes at
+                # value.path (persist_descriptor re-verifies them, so no new
+                # trust is introduced) and return the ref with its real id.
+                # The kind contract needs no separate check here: the doc
+                # is imported-legacy by construction, and
+                # validate_for_kind imposes no production fields on that
+                # class (same as the raw-Path branch's _publish_ref gate).
+                try:
+                    descriptor = ArtifactDescriptor.create(
+                        kind=name,
+                        relative_path=str(Path(relative).as_posix()),
+                        content_hash=value.content_hash,
+                        provenance=parsed,
+                    )
+                    store.persist_descriptor(descriptor)
+                except Exception as exc:
+                    raise CampaignLaneError(
+                        f"lane input {name!r} failed descriptor persistence: {exc}"
+                    ) from exc
+                resolved[name] = replace(
+                    value,
+                    provenance=parsed.document(),
+                    artifact_id=descriptor.artifact_id,
+                )
             continue
 
         # raw Path: imported-legacy, descriptor-backed, no source claims.
