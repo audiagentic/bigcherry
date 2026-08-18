@@ -203,6 +203,12 @@ def execute_record_stage(
 
     env = dict(os.environ)
     env.update(environment or {})
+    # RE15 real-hardware finding: GGML_HIP_DISPATCH_MODE defaults to
+    # "native" (ggml_hip_parse_mode()) when unset -- without this, the
+    # record build's dispatch layer never enters GGML_HIP_DISPATCH_MODE_
+    # RECORD and silently records nothing, no matter what
+    # GGML_HIP_DISPATCH_DB points at.
+    env["GGML_HIP_DISPATCH_MODE"] = "record"
     env["GGML_HIP_DISPATCH_DB"] = str(record_path)
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
@@ -358,6 +364,11 @@ def execute_tune_stage(
     measurements_base = stage_root / "tune"
     env = dict(os.environ)
     env.update(environment or {})
+    # RE15 real-hardware finding (same root cause as execute_record_stage):
+    # GGML_HIP_DISPATCH_MODE defaults to "native" when unset, so the tune
+    # build's dispatch layer never enters GGML_HIP_DISPATCH_MODE_TUNE
+    # without this.
+    env["GGML_HIP_DISPATCH_MODE"] = "tune"
     env["GGML_HIP_DISPATCH_DB"] = str(measurements_base)
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
