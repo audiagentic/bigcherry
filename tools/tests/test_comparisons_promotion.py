@@ -8,13 +8,16 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry.comparisons import (BenchmarkArm, ComparisonError, plan_pair,
-                                   report_row)  # noqa: E402
+from bigcherry.comparisons import BenchmarkArm, ComparisonError, plan_pair  # noqa: E402
 from bigcherry.promotion import PromotionError, make_pointer  # noqa: E402
 
 
 def _arm(name: str, source: str = "s1", build: str = "b1") -> BenchmarkArm:
-    return BenchmarkArm(name, name * 4, Path(name), (), None, source, build, "w1")
+    return BenchmarkArm(
+        name=name, runtime_bundle_artifact_id=name * 4, binary_artifact_id=name * 4,
+        replay_cache_artifact_id=None, source_slice_id=source, build_plan_id=build,
+        effective_build_id="eb1", workload_id="w1", environment=(), device="",
+    )
 
 
 class ComparisonPromotionTests(unittest.TestCase):
@@ -23,9 +26,11 @@ class ComparisonPromotionTests(unittest.TestCase):
             plan_pair(_arm("a"), _arm("b", source="s2"), label="bad")
         plan = plan_pair(
             _arm("a"), _arm("b", source="s2"), label="source-effect",
-            allowed_differences=frozenset({"source_slice_id", "build_id", "binary_hash"}),
+            allowed_differences=frozenset({
+                "source_slice_id", "binary_artifact_id", "runtime_bundle_artifact_id"}),
         )
-        self.assertEqual(report_row(plan, validity="valid", metric=1.0, delta=0.1)["validity"], "valid")
+        self.assertEqual(plan.label, "source-effect")
+        self.assertIn("source_slice_id", plan.allowed_differences)
 
     def test_promotion_requires_valid_report_and_preserves_hashes(self):
         pointer = make_pointer(

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 from typing import TYPE_CHECKING
+
+from . import provenance
+from .artifacts import ArtifactStore
 
 if TYPE_CHECKING:
     from .campaign_lane import CampaignLaneResult
@@ -38,9 +42,15 @@ class PromotionPointer:
     #: binary and runtime-bundle as separate ArtifactRefs: the launcher
     #: alone does not prove the .so closure it loads is unmodified.
     replay_artifact_hash: str
+    #: RE12/schema 3: the comparison-report ArtifactRef this pointer was
+    #: actually built from -- "" for a schema-2 pointer (report_hash alone
+    #: was the only anchor then; a schema-3 pointer additionally lets a
+    #: verifier rehydrate and re-check the full report bytes, not just
+    #: trust their recorded hash).
+    report_artifact_id: str = ""
 
     def document(self) -> dict[str, object]:
-        return {
+        document: dict[str, object] = {
             "schema_version": self.schema_version,
             "release_tag": self.release_tag,
             "revision": self.revision,
@@ -57,6 +67,9 @@ class PromotionPointer:
             "required_architectures": list(self.required_architectures),
             "replay_artifact_hash": self.replay_artifact_hash,
         }
+        if self.schema_version >= 3:
+            document["report_artifact_id"] = self.report_artifact_id
+        return document
 
     @classmethod
     def from_document(cls, document: object) -> "PromotionPointer":
@@ -70,7 +83,8 @@ class PromotionPointer:
         """
         if not isinstance(document, dict):
             raise PromotionError("promotion pointer document must be an object")
-        if document.get("schema_version") != 2:
+        schema_version = document.get("schema_version")
+        if schema_version not in (2, 3):
             raise PromotionError("promotion pointer has an unsupported schema_version")
 
         def _str(value: object, field: str) -> str:
@@ -99,12 +113,15 @@ class PromotionPointer:
                 "promotion pointer required_architectures must be a non-empty list of "
                 "non-empty strings")
         replay_artifact_hash = _str(document.get("replay_artifact_hash"), "replay_artifact_hash")
+        report_artifact_id = ""
+        if schema_version == 3:
+            report_artifact_id = _str(document.get("report_artifact_id"), "report_artifact_id")
         return cls(
-            schema_version=2, release_tag=release_tag, revision=revision,
+            schema_version=schema_version, release_tag=release_tag, revision=revision,
             campaign_plan_id=campaign_plan_id, campaign_run_id=campaign_run_id,
             report_hash=report_hash, source_slice_id=source_slice_id, build_id=build_id,
             binary_hash=binary_hash, required_architectures=tuple(required_architectures),
-            replay_artifact_hash=replay_artifact_hash,
+            replay_artifact_hash=replay_artifact_hash, report_artifact_id=report_artifact_id,
         )
 
 
@@ -181,4 +198,87 @@ def pointer_from_campaign_result(
         # binary_ref alone -- see PromotionPointer.replay_artifact_hash.
         replay_artifact_hash=result.runtime_bundle_ref.content_hash,
         valid=valid,
+    )
+
+
+def pointer_from_comparison_report(
+    *, store: ArtifactStore, report_artifact_id: str, release_tag: str,
+    replay_coverage_artifact_id: str, required_architectures: tuple[str, ...],
+) -> PromotionPointer:
+    """RE12 6.5: the release-pointer trust boundary for real balanced
+    comparison evidence -- schema 3. Everything a pointer claims is read
+    off the STORED, re-verified comparison-report artifact (never a
+    caller-supplied campaign_plan_id/run_id/valid boolean the way the old
+    pointer_from_campaign_result() call site historically trusted for
+    ad-hoc reports): the report must be production-class, valid, and
+    decision-grade, and its replay-side arm identity must independently
+    match a real replay-validation coverage artifact this caller also
+    names -- a report cannot claim replay evidence that was never actually
+    run. report_hash is derived from the REHYDRATED bytes, not accepted as
+    a claim inside the report itself."""
+    report_ref = store.rehydrate(report_artifact_id, expected_kind="comparison-report")
+    report_doc = provenance.ProvenanceV2.from_document(report_ref.provenance)
+    if report_doc.project.provenance_class != "production":
+        raise PromotionError(
+            f"comparison report {report_artifact_id!r} is not production-class evidence "
+            f"(provenance_class={report_doc.project.provenance_class!r})"
+        )
+    report_bytes = report_ref.path.read_bytes()
+    try:
+        report = json.loads(report_bytes)
+    except json.JSONDecodeError as exc:
+        raise PromotionError(f"comparison report {report_artifact_id!r} is not valid JSON: {exc}") from exc
+    if not isinstance(report, dict) or not report.get("valid"):
+        raise PromotionError(f"comparison report {report_artifact_id!r} is not valid")
+    if not report.get("decision_grade"):
+        raise PromotionError(f"comparison report {report_artifact_id!r} is not decision-grade")
+    replay_side = report.get("replay_arm")
+    if replay_side not in ("left", "right"):
+        raise PromotionError(
+            f"comparison report {report_artifact_id!r} has no replay arm to cross-check"
+        )
+    replay_arm = report.get(f"{replay_side}_arm")
+    if not isinstance(replay_arm, dict):
+        raise PromotionError(f"comparison report {report_artifact_id!r} is missing its {replay_side}_arm")
+
+    coverage_ref = store.rehydrate(replay_coverage_artifact_id, expected_kind="replay-coverage")
+    coverage_doc = provenance.ProvenanceV2.from_document(coverage_ref.provenance)
+    reported_identity = (
+        replay_arm.get("source_slice_id"), replay_arm.get("build_plan_id"),
+        replay_arm.get("effective_build_id"),
+    )
+    actual_identity = (
+        coverage_doc.source.source_slice_id, coverage_doc.build.build_plan_id,
+        coverage_doc.build.effective_build_id,
+    )
+    if reported_identity != actual_identity:
+        raise PromotionError(
+            f"replay validation artifact {replay_coverage_artifact_id!r} identity "
+            f"{actual_identity} does not match the comparison report's replay arm "
+            f"identity {reported_identity}"
+        )
+
+    if (not required_architectures
+            or not all(isinstance(arch, str) and arch for arch in required_architectures)):
+        raise PromotionError(
+            "promotion requires at least one non-empty required architecture")
+    replay_binary_artifact_id = report.get(f"{replay_side}_binary_artifact_id")
+    if not isinstance(replay_binary_artifact_id, str) or not replay_binary_artifact_id:
+        raise PromotionError(
+            f"comparison report {report_artifact_id!r} is missing its {replay_side}_binary_artifact_id"
+        )
+    binary_hash = store.rehydrate(replay_binary_artifact_id, expected_kind="binary").content_hash
+
+    return PromotionPointer(
+        schema_version=3, release_tag=release_tag,
+        revision=report_doc.project.bigcherry_revision or "",
+        campaign_plan_id=report_doc.campaign.campaign_plan_id or "",
+        campaign_run_id=report_doc.campaign.run_id or "",
+        report_hash=hashlib.sha256(report_bytes).hexdigest(),
+        source_slice_id=replay_arm.get("source_slice_id") or "",
+        build_id=replay_arm.get("build_plan_id") or "",
+        binary_hash=binary_hash,
+        required_architectures=tuple(required_architectures),
+        replay_artifact_hash=coverage_ref.content_hash,
+        report_artifact_id=report_artifact_id,
     )
