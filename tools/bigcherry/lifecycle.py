@@ -45,7 +45,9 @@ class LifecycleError(RuntimeError):
 LaneInputValue = ArtifactRef | ArtifactLocator
 
 
-def _rehydrate(store: ArtifactStore, value: LaneInputValue, *, expected_kind: str) -> ArtifactRef:
+def _rehydrate(
+    store: ArtifactStore, value: LaneInputValue, *, expected_kind: str
+) -> ArtifactRef:
     """The same descriptor-backed resolution campaign_lane.py's
     _resolve_lane_inputs() uses (RE25.3), narrowed to the two production
     input shapes this module accepts: an ArtifactLocator (rehydrate by
@@ -64,7 +66,9 @@ def _rehydrate(store: ArtifactStore, value: LaneInputValue, *, expected_kind: st
                 f"(expected kind {expected_kind!r}): {exc}"
             ) from exc
     if isinstance(value, ArtifactRef) and value.artifact_id:
-        rehydrated = _rehydrate(store, ArtifactLocator(value.artifact_id), expected_kind=expected_kind)
+        rehydrated = _rehydrate(
+            store, ArtifactLocator(value.artifact_id), expected_kind=expected_kind
+        )
         if rehydrated.content_hash != value.content_hash:
             raise LifecycleError(
                 f"supplied ArtifactRef content_hash {value.content_hash!r} disagrees "
@@ -78,11 +82,15 @@ def _rehydrate(store: ArtifactStore, value: LaneInputValue, *, expected_kind: st
     )
 
 
-def _verify_runtime_bundle(store: ArtifactStore, bundle_ref: ArtifactRef) -> tuple[dict[str, Any], Path]:
+def _verify_runtime_bundle(
+    store: ArtifactStore, bundle_ref: ArtifactRef
+) -> tuple[dict[str, Any], Path]:
     """Same verification make_smoke_worker() already does: every bundle
     member re-hashed against the store, not just the manifest JSON's own
     bytes. Returns (manifest, entrypoint_path)."""
-    if not store.verify(bundle_ref.path.resolve().relative_to(store.root), bundle_ref.content_hash):
+    if not store.verify(
+        bundle_ref.path.resolve().relative_to(store.root), bundle_ref.content_hash
+    ):
         raise LifecycleError("runtime-bundle manifest failed store verification")
     manifest = json.loads(bundle_ref.path.read_text(encoding="utf-8"))
     for member_name, member_hash in manifest["members"].items():
@@ -104,9 +112,13 @@ def _workload_spec_id(spec: runtime_smoke.RuntimeSmokeSpec) -> str:
     """
     payload = {
         "model_hash": ArtifactStore.digest(spec.model_path.read_bytes()),
-        "n_prompt": spec.n_prompt, "n_gen": spec.n_gen, "repetitions": spec.repetitions,
-        "n_gpu_layers": spec.n_gpu_layers, "split_mode": spec.split_mode,
-        "tensor_split": list(spec.tensor_split), "environment": list(spec.environment),
+        "n_prompt": spec.n_prompt,
+        "n_gen": spec.n_gen,
+        "repetitions": spec.repetitions,
+        "n_gpu_layers": spec.n_gpu_layers,
+        "split_mode": spec.split_mode,
+        "tensor_split": list(spec.tensor_split),
+        "environment": list(spec.environment),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return ArtifactStore.digest(encoded)
@@ -116,10 +128,14 @@ def _parent_doc(ref: ArtifactRef) -> provenance.ProvenanceV2:
     try:
         return provenance.ProvenanceV2.from_document(ref.provenance)
     except provenance.ProvenanceError as exc:
-        raise LifecycleError(f"parent artifact provenance is not a schema-v2 document: {exc}") from exc
+        raise LifecycleError(
+            f"parent artifact provenance is not a schema-v2 document: {exc}"
+        ) from exc
 
 
-def _identity_from_provenance(doc: provenance.ProvenanceV2, *, run_id: str) -> CampaignDatabaseIdentity | None:
+def _identity_from_provenance(
+    doc: provenance.ProvenanceV2, *, run_id: str
+) -> CampaignDatabaseIdentity | None:
     """RE09/RE10: a real production caller derives its CampaignDatabaseIdentity
     from the ACTUAL runtime-bundle provenance it just verified, not from a
     separately caller-supplied value -- an imported-legacy/development
@@ -146,8 +162,10 @@ def _identity_from_provenance(doc: provenance.ProvenanceV2, *, run_id: str) -> C
     if not (source_slice_id and build_plan_id and effective_build_id):
         return None
     return CampaignDatabaseIdentity(
-        source_slice_id=source_slice_id, build_plan_id=build_plan_id,
-        effective_build_id=effective_build_id, campaign_run_id=run_id,
+        source_slice_id=source_slice_id,
+        build_plan_id=build_plan_id,
+        effective_build_id=effective_build_id,
+        campaign_run_id=run_id,
         workload_id=doc.workload.workload_id,
     )
 
@@ -161,9 +179,14 @@ class RecordStageResult:
 
 
 def execute_record_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    runtime_bundle: LaneInputValue, spec: runtime_smoke.RuntimeSmokeSpec,
-    environment: dict[str, str] | None = None, project_revision: str = "",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    runtime_bundle: LaneInputValue,
+    spec: runtime_smoke.RuntimeSmokeSpec,
+    environment: dict[str, str] | None = None,
+    project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> RecordStageResult:
     """Runs the ALREADY-BUILT record runtime bundle for real, with
@@ -182,26 +205,44 @@ def execute_record_stage(
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
     if completed.returncode != 0:
-        raise LifecycleError(f"record run exited {completed.returncode}: {completed.stderr[-2000:]}")
+        raise LifecycleError(
+            f"record run exited {completed.returncode}: {completed.stderr[-2000:]}"
+        )
 
     try:
         inventory_module.read_jsonl(record_path)
     except inventory_module.RecordError as exc:
-        raise LifecycleError(f"record run produced an invalid record file: {exc}") from exc
+        raise LifecycleError(
+            f"record run produced an invalid record file: {exc}"
+        ) from exc
 
     bundle_doc = _parent_doc(bundle_ref)
-    entries, parent_ids = provenance.lane_input_provenance({"runtime-bundle": bundle_ref})
+    entries, parent_ids = provenance.lane_input_provenance(
+        {"runtime-bundle": bundle_ref}
+    )
     doc = provenance.derive(
-        parents=(bundle_doc,), parent_artifact_ids=parent_ids, project_revision=project_revision,
-        source=bundle_doc.source, build=provenance.BuildProvenance(
+        parents=(bundle_doc,),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
+        source=bundle_doc.source,
+        build=provenance.BuildProvenance(
             build_plan_id=bundle_doc.build.build_plan_id,
-            effective_build_id=bundle_doc.build.effective_build_id, inputs=entries),
-        workload=provenance.WorkloadProvenance(workload_spec_id=_workload_spec_id(spec)),
-        run_id=run_id, producer_stage="record",
+            effective_build_id=bundle_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=provenance.WorkloadProvenance(
+            workload_spec_id=_workload_spec_id(spec)
+        ),
+        run_id=run_id,
+        producer_stage="record",
         local_class=local_provenance_class,
     )
     record_ref = store.publish_file_ref(
-        f"runs/{run_id}/record/record.jsonl", record_path, kind="record-jsonl", provenance=doc)
+        f"runs/{run_id}/record/record.jsonl",
+        record_path,
+        kind="record-jsonl",
+        provenance=doc,
+    )
     return RecordStageResult(record_ref=record_ref)
 
 
@@ -216,8 +257,12 @@ class InventoryStageResult:
 
 
 def execute_inventory_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    record: LaneInputValue, project_revision: str = "",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    record: LaneInputValue,
+    project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> InventoryStageResult:
     record_ref = _rehydrate(store, record, expected_kind="record-jsonl")
@@ -235,24 +280,40 @@ def execute_inventory_stage(
     if identity is not None:
         identity = dataclasses.replace(identity, workload_id=workload_id)
     inventory_module.build_database(
-        rec, db_path, paths.SQL / "dispatch-db.sql", identity=identity)
+        rec, db_path, paths.SQL / "dispatch-db.sql", identity=identity
+    )
 
     entries, parent_ids = provenance.lane_input_provenance({"record-jsonl": record_ref})
     doc = provenance.derive(
-        parents=(record_doc,), parent_artifact_ids=parent_ids, project_revision=project_revision,
+        parents=(record_doc,),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
         source=record_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=record_doc.build.build_plan_id,
-            effective_build_id=record_doc.build.effective_build_id, inputs=entries),
+            effective_build_id=record_doc.build.effective_build_id,
+            inputs=entries,
+        ),
         workload=provenance.WorkloadProvenance(workload_id=workload_id),
-        run_id=run_id, producer_stage="inventory", local_class=local_provenance_class,
+        run_id=run_id,
+        producer_stage="inventory",
+        local_class=local_provenance_class,
     )
     inventory_ref = store.publish_bytes_ref(
-        f"runs/{run_id}/inventory/inventory.json", inventory_bytes, kind="inventory", provenance=doc)
+        f"runs/{run_id}/inventory/inventory.json",
+        inventory_bytes,
+        kind="inventory",
+        provenance=doc,
+    )
     database_ref = store.publish_file_ref(
-        f"runs/{run_id}/inventory/dispatch.sqlite", db_path, kind="dispatch-db", provenance=doc)
+        f"runs/{run_id}/inventory/dispatch.sqlite",
+        db_path,
+        kind="dispatch-db",
+        provenance=doc,
+    )
     return InventoryStageResult(
-        inventory_ref=inventory_ref, database_ref=database_ref, workload_id=workload_id)
+        inventory_ref=inventory_ref, database_ref=database_ref, workload_id=workload_id
+    )
 
 
 # ----------------------------------------------------------------------- tune
@@ -265,10 +326,16 @@ class TuneStageResult:
 
 
 def execute_tune_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    runtime_bundle: LaneInputValue, dispatch_db: LaneInputValue,
-    spec: runtime_smoke.RuntimeSmokeSpec, environment: dict[str, str] | None = None,
-    project_revision: str = "", local_provenance_class: provenance.ProvenanceClass = "production",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    runtime_bundle: LaneInputValue,
+    dispatch_db: LaneInputValue,
+    spec: runtime_smoke.RuntimeSmokeSpec,
+    environment: dict[str, str] | None = None,
+    project_revision: str = "",
+    local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> TuneStageResult:
     """The tune build's candidate catalog is already baked in at compile
     time (GGML_HIP_AUTOTUNE_SIGNATURE_FILE is a cmake-configure option,
@@ -292,7 +359,9 @@ def execute_tune_stage(
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
     if completed.returncode != 0:
-        raise LifecycleError(f"tune run exited {completed.returncode}: {completed.stderr[-2000:]}")
+        raise LifecycleError(
+            f"tune run exited {completed.returncode}: {completed.stderr[-2000:]}"
+        )
 
     measurements_path = Path(str(measurements_base) + ".measurements.jsonl")
     if not measurements_path.is_file():
@@ -302,24 +371,39 @@ def execute_tune_stage(
     db_doc = _parent_doc(db_ref)
     identity = _identity_from_provenance(bundle_doc, run_id=run_id)
     inventory_module.load_measurements(
-        measurements_path, working_db, paths.SQL / "dispatch-db.sql", identity=identity)
+        measurements_path, working_db, paths.SQL / "dispatch-db.sql", identity=identity
+    )
 
     entries, parent_ids = provenance.lane_input_provenance(
-        {"runtime-bundle": bundle_ref, "dispatch-db": db_ref})
+        {"runtime-bundle": bundle_ref, "dispatch-db": db_ref}
+    )
     doc = provenance.derive(
-        parents=(bundle_doc, db_doc), parent_artifact_ids=parent_ids, project_revision=project_revision,
+        parents=(bundle_doc, db_doc),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
         source=bundle_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=bundle_doc.build.build_plan_id,
-            effective_build_id=bundle_doc.build.effective_build_id, inputs=entries),
-        workload=db_doc.workload, run_id=run_id, producer_stage="tune",
+            effective_build_id=bundle_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=db_doc.workload,
+        run_id=run_id,
+        producer_stage="tune",
         local_class=local_provenance_class,
     )
     measurements_ref = store.publish_file_ref(
-        f"runs/{run_id}/tune/measurements.jsonl", measurements_path,
-        kind="tuning-measurements", provenance=doc)
+        f"runs/{run_id}/tune/measurements.jsonl",
+        measurements_path,
+        kind="tuning-measurements",
+        provenance=doc,
+    )
     database_ref = store.publish_file_ref(
-        f"runs/{run_id}/tune/dispatch.sqlite", working_db, kind="dispatch-db", provenance=doc)
+        f"runs/{run_id}/tune/dispatch.sqlite",
+        working_db,
+        kind="dispatch-db",
+        provenance=doc,
+    )
     return TuneStageResult(measurements_ref=measurements_ref, database_ref=database_ref)
 
 
@@ -332,15 +416,23 @@ class PromotionStageResult:
 
 
 def execute_promotion_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    measurements: LaneInputValue, q: float = 0.05, threshold_pct: float = 1.0,
-    resamples: int = 10_000, project_revision: str = "",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    measurements: LaneInputValue,
+    q: float = 0.05,
+    threshold_pct: float = 1.0,
+    resamples: int = 10_000,
+    project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> PromotionStageResult:
     """Delegates to the EXISTING tune_promotion.promote() implementation
     -- it already owns evidence validation including the noise-canary
     protocol; nothing about promotion statistics is reimplemented here."""
-    measurements_ref = _rehydrate(store, measurements, expected_kind="tuning-measurements")
+    measurements_ref = _rehydrate(
+        store, measurements, expected_kind="tuning-measurements"
+    )
     measurements_doc = _parent_doc(measurements_ref)
 
     stage_root = context.work_root / "runs" / run_id / "promote"
@@ -348,23 +440,41 @@ def execute_promotion_stage(
     output_path = stage_root / "promoted-winners.jsonl"
     try:
         tune_promotion.promote(
-            measurements_ref.path, output_path, q=q, threshold_pct=threshold_pct, resamples=resamples)
+            measurements_ref.path,
+            output_path,
+            q=q,
+            threshold_pct=threshold_pct,
+            resamples=resamples,
+        )
     except tune_promotion.PromotionError as exc:
-        raise LifecycleError(f"promotion rejected this measurements evidence: {exc}") from exc
+        raise LifecycleError(
+            f"promotion rejected this measurements evidence: {exc}"
+        ) from exc
 
-    entries, parent_ids = provenance.lane_input_provenance({"tuning-measurements": measurements_ref})
+    entries, parent_ids = provenance.lane_input_provenance(
+        {"tuning-measurements": measurements_ref}
+    )
     doc = provenance.derive(
-        parents=(measurements_doc,), parent_artifact_ids=parent_ids, project_revision=project_revision,
+        parents=(measurements_doc,),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
         source=measurements_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=measurements_doc.build.build_plan_id,
-            effective_build_id=measurements_doc.build.effective_build_id, inputs=entries),
-        workload=measurements_doc.workload, run_id=run_id, producer_stage="tune-promote",
+            effective_build_id=measurements_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=measurements_doc.workload,
+        run_id=run_id,
+        producer_stage="tune-promote",
         local_class=local_provenance_class,
     )
     promoted_winners_ref = store.publish_file_ref(
-        f"runs/{run_id}/promote/promoted-winners.jsonl", output_path,
-        kind="promoted-winners", provenance=doc)
+        f"runs/{run_id}/promote/promoted-winners.jsonl",
+        output_path,
+        kind="promoted-winners",
+        provenance=doc,
+    )
     return PromotionStageResult(promoted_winners_ref=promoted_winners_ref)
 
 
@@ -377,9 +487,16 @@ class ReplayExportStageResult:
 
 
 def execute_replay_export_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    promoted_winners: LaneInputValue, manifest: LaneInputValue, source_root: Path,
-    generation: int = 0, keep_generations: int = 3, project_revision: str = "",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    promoted_winners: LaneInputValue,
+    manifest: LaneInputValue,
+    source_root: Path,
+    generation: int = 0,
+    keep_generations: int = 3,
+    project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> ReplayExportStageResult:
     """Delegates to replay_cache.build() -- keeps the portable replay
@@ -393,28 +510,45 @@ def execute_replay_export_stage(
 
     ggml_h = source_root / "ggml" / "include" / "ggml.h"
     if not ggml_h.is_file():
-        raise LifecycleError(f"replay export needs a real source tree: {ggml_h} does not exist")
+        raise LifecycleError(
+            f"replay export needs a real source tree: {ggml_h} does not exist"
+        )
 
     try:
         cache_bytes = replay_cache.build(
-            winners_ref.path, manifest_ref.path, ggml_h,
-            keep_generations=keep_generations, generation=generation)
+            winners_ref.path,
+            manifest_ref.path,
+            ggml_h,
+            keep_generations=keep_generations,
+            generation=generation,
+        )
     except SystemExit as exc:
         raise LifecycleError(f"replay export refused: {exc}") from exc
 
     entries, parent_ids = provenance.lane_input_provenance(
-        {"promoted-winners": winners_ref, "manifest": manifest_ref})
+        {"promoted-winners": winners_ref, "manifest": manifest_ref}
+    )
     doc = provenance.derive(
-        parents=(winners_doc, manifest_doc), parent_artifact_ids=parent_ids,
-        project_revision=project_revision, source=winners_doc.source,
+        parents=(winners_doc, manifest_doc),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
+        source=winners_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=winners_doc.build.build_plan_id,
-            effective_build_id=winners_doc.build.effective_build_id, inputs=entries),
-        workload=winners_doc.workload, run_id=run_id, producer_stage="replay-export",
+            effective_build_id=winners_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=winners_doc.workload,
+        run_id=run_id,
+        producer_stage="replay-export",
         local_class=local_provenance_class,
     )
     replay_cache_ref = store.publish_bytes_ref(
-        f"runs/{run_id}/replay/replay.cache", cache_bytes, kind="replay-cache", provenance=doc)
+        f"runs/{run_id}/replay/replay.cache",
+        cache_bytes,
+        kind="replay-cache",
+        provenance=doc,
+    )
     return ReplayExportStageResult(replay_cache_ref=replay_cache_ref)
 
 
@@ -428,10 +562,16 @@ class ReplayValidationStageResult:
 
 
 def execute_replay_validation_stage(
-    *, context: ProjectContext, store: ArtifactStore, run_id: str,
-    runtime_bundle: LaneInputValue, replay_cache_artifact: LaneInputValue,
-    spec: runtime_smoke.RuntimeSmokeSpec, environment: dict[str, str] | None = None,
-    project_revision: str = "", local_provenance_class: provenance.ProvenanceClass = "production",
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    runtime_bundle: LaneInputValue,
+    replay_cache_artifact: LaneInputValue,
+    spec: runtime_smoke.RuntimeSmokeSpec,
+    environment: dict[str, str] | None = None,
+    project_revision: str = "",
+    local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> ReplayValidationStageResult:
     """Runs the replay runtime bundle with GGML_HIP_DISPATCH_MODE=replay
     against the verified cache, then reuses ab_benchmark.validate_replay_coverage()
@@ -452,25 +592,37 @@ def execute_replay_validation_stage(
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
     if completed.returncode != 0:
-        raise LifecycleError(f"replay validation run exited {completed.returncode}: "
-                             f"{completed.stderr[-2000:]}")
+        raise LifecycleError(
+            f"replay validation run exited {completed.returncode}: "
+            f"{completed.stderr[-2000:]}"
+        )
 
     coverage = validate_replay_coverage(coverage_path)
 
     bundle_doc = _parent_doc(bundle_ref)
     cache_doc = _parent_doc(cache_ref)
     entries, parent_ids = provenance.lane_input_provenance(
-        {"runtime-bundle": bundle_ref, "replay-cache": cache_ref})
+        {"runtime-bundle": bundle_ref, "replay-cache": cache_ref}
+    )
     doc = provenance.derive(
-        parents=(bundle_doc, cache_doc), parent_artifact_ids=parent_ids,
-        project_revision=project_revision, source=bundle_doc.source,
+        parents=(bundle_doc, cache_doc),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
+        source=bundle_doc.source,
         build=provenance.BuildProvenance(
             build_plan_id=bundle_doc.build.build_plan_id,
-            effective_build_id=bundle_doc.build.effective_build_id, inputs=entries),
-        workload=bundle_doc.workload, run_id=run_id, producer_stage="replay-validate",
+            effective_build_id=bundle_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=bundle_doc.workload,
+        run_id=run_id,
+        producer_stage="replay-validate",
         local_class=local_provenance_class,
     )
     coverage_ref = store.publish_file_ref(
-        f"runs/{run_id}/replay-validate/coverage.json", coverage_path,
-        kind="replay-coverage", provenance=doc)
+        f"runs/{run_id}/replay-validate/coverage.json",
+        coverage_path,
+        kind="replay-coverage",
+        provenance=doc,
+    )
     return ReplayValidationStageResult(coverage_ref=coverage_ref, coverage=coverage)
