@@ -145,8 +145,13 @@ def _fake_run(
             return _FakeCompletedProcess()
         db_path = env["GGML_HIP_DISPATCH_DB"]
         if record_jsonl is not None:
+            # RE15 real-hardware finding: GGML_HIP_DISPATCH_MODE defaults to
+            # "native" when unset -- the record build silently records
+            # nothing without this.
+            assert env.get("GGML_HIP_DISPATCH_MODE") == "record", env.get("GGML_HIP_DISPATCH_MODE")
             Path(db_path).write_text(record_jsonl, encoding="utf-8")
         if tune_jsonl is not None:
+            assert env.get("GGML_HIP_DISPATCH_MODE") == "tune", env.get("GGML_HIP_DISPATCH_MODE")
             Path(db_path + ".measurements.jsonl").write_text(
                 tune_jsonl, encoding="utf-8"
             )
