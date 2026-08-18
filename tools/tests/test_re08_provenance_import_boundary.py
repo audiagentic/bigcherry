@@ -176,9 +176,7 @@ class ArtifactRefIdentityTests(unittest.TestCase):
             # the downgraded class, not the original production claim.
             self.assertTrue(out.artifact_id)
             fresh = ArtifactStore(Path(d) / "store")
-            rehydrated = fresh.rehydrate(
-                out.artifact_id, expected_kind="inventory"
-            )
+            rehydrated = fresh.rehydrate(out.artifact_id, expected_kind="inventory")
             self.assertEqual(rehydrated.content_hash, digest)
             self.assertEqual(
                 _ns(rehydrated.provenance, "project")["provenance_class"],

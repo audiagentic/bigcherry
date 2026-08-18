@@ -176,6 +176,10 @@ def _fake_run(
             Path(db_path).write_text(record_jsonl, encoding="utf-8")
         if tune_jsonl is not None:
             assert env.get("GGML_HIP_DISPATCH_MODE") == "tune", env.get("GGML_HIP_DISPATCH_MODE")
+            # RE15 real-hardware finding: without this, HIP graph replay
+            # crashed (illegal memory access) at small ubatch sizes during
+            # tune-mode candidate rotation.
+            assert env.get("GGML_CUDA_DISABLE_GRAPHS") == "1", env.get("GGML_CUDA_DISABLE_GRAPHS")
             Path(db_path + ".measurements.jsonl").write_text(
                 tune_jsonl, encoding="utf-8"
             )

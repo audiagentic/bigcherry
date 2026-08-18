@@ -369,6 +369,16 @@ def execute_tune_stage(
     # build's dispatch layer never enters GGML_HIP_DISPATCH_MODE_TUNE
     # without this.
     env["GGML_HIP_DISPATCH_MODE"] = "tune"
+    # RE15 real-hardware finding: HIP graph capture/replay is keyed on
+    # tensor shapes/pointers, not on which candidate kernel the tune
+    # dispatcher picked -- with graphs on, a captured launch from one
+    # candidate gets replayed against a later call sized for a DIFFERENT
+    # candidate at the same shape, which segfaulted (illegal memory
+    # access) at small ubatch sizes. Confirmed required by
+    # docs/reference/TEST.md's own tuning instructions. Tune-only: the
+    # replay/production path never sets this, so shipped inference keeps
+    # graph-launch performance.
+    env["GGML_CUDA_DISABLE_GRAPHS"] = "1"
     env["GGML_HIP_DISPATCH_DB"] = str(measurements_base)
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
