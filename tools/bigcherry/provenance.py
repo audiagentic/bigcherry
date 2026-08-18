@@ -519,6 +519,16 @@ _KIND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "workload.workload_id",
         "campaign.run_id",
     ),
+    # RE10: the coverage/validation evidence execute_replay_validation_stage
+    # publishes -- proof a replay runtime bundle was actually run against a
+    # verified cache, not just that the cache itself was built.
+    "replay-coverage": (
+        "source.source_slice_id",
+        "build.build_plan_id",
+        "build.effective_build_id",
+        "campaign.run_id",
+        "campaign.producer_stage",
+    ),
     "comparison-report": (
         "campaign.campaign_plan_id",
         "campaign.run_id",
