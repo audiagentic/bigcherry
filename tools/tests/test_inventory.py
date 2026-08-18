@@ -509,6 +509,48 @@ class TestBuildDatabase(unittest.TestCase):
                 "FROM observation")[0]
             self.assertEqual(obs_row, (None, None, None))
 
+    def test_hostile_record_header_cannot_upgrade_to_campaign_scope(self):
+        # GPT audit fix (2026-08-18): the record JSONL is attacker-
+        # controlled bytes -- the compiled record binary never writes these
+        # header fields, so a complete triple in the header is untrusted.
+        # identity=None MUST mean legacy-imported with visibly-NULL
+        # identity columns; a header triple must never upgrade scope.
+        hostile_header = RECORD_HEADER.copy()
+        hostile_header.update({
+            "source_slice_id": "slice-hostile",
+            "build_plan_id": "plan-hostile",
+            "effective_build_id": "eb-hostile",
+            "campaign_run_id": "run-hostile",
+        })
+        rec = Record(header=hostile_header, observations=[RECORD_OBS_MMQ])
+        with TempDB() as db:
+            inventory.build_database(
+                rec, db.db_path,
+                Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
+            )
+            build_row = db.query(
+                "SELECT source_slice_id, build_plan_id, effective_build_id, "
+                "campaign_run_id, workload_id, identity_scope FROM build")[0]
+            self.assertEqual(
+                build_row, (None, None, None, None, None, "legacy-imported")
+            )
+
+    def test_partial_campaign_identity_fails_closed(self):
+        # GPT audit fix (2026-08-18): a CampaignDatabaseIdentity with an
+        # empty required field is a caller bug -- fail closed rather than
+        # silently write partial campaign evidence.
+        rec = Record(header=RECORD_HEADER.copy(), observations=[RECORD_OBS_MMQ])
+        with TempDB() as db:
+            with self.assertRaises(RecordError):
+                inventory.build_database(
+                    rec, db.db_path,
+                    Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql",
+                    identity=inventory.CampaignDatabaseIdentity(
+                        source_slice_id="slice-1", build_plan_id="",
+                        effective_build_id="eb-1", campaign_run_id="run-1",
+                    ),
+                )
+
     def test_production_record_with_campaign_context_persists_identity(self):
         # RE09: a real caller that ran this record build through
         # execute_campaign_lane() and holds its CampaignLaneResult passes
