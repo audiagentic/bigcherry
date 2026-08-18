@@ -22,16 +22,31 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     value TEXT NOT NULL
 );
 
--- Schema 3 (campaign identity): adds the columns/tables below, matching a real recovered
--- pre-reset schema (schema_version 9 there; renumbered here since the
--- intermediate 2-8 DDL was never recovered -- see
--- docs/recovery/schema9-recovered-ddl.sql for the exact source and
--- docs/recovery/RECOVERY_TEST_LEDGER.md for what carried over vs what did
--- not). A reader must reject any schema_version it does not recognise
--- (standards: current-only, no silent migration) rather than guess at an
--- unlisted intermediate shape.
+-- Schema 4 (RE09/RV50: identity_scope): the build table's row identity now
+-- matches the identity model instead of contradicting it -- a row is either
+-- 'campaign' (complete source_slice_id/build_plan_id/effective_build_id,
+-- uniquely identified BY that triple) or 'legacy-imported' (uniquely
+-- identified by the old (source_revision, manifest_hash, signature_schema,
+-- hardware_schema, variant_set, build_descriptor_hash) tuple, exactly as
+-- before). Two campaign builds that happen to share a legacy key but carry
+-- genuinely different campaign identity can now coexist as two real rows,
+-- instead of either colliding or silently aliasing (see the interim
+-- fail-closed check inventory.py carried before this schema existed).
+-- Named identity_scope, not provenance_class: artifact-level provenance
+-- (bigcherry.provenance.ProvenanceClass: production/imported-legacy/
+-- development/diagnostic) is a DIFFERENT axis with different values: a
+-- same-named DB column would invite conflating the two.
+--
+-- Schema 3 (campaign identity) added the columns below without changing
+-- row identity, matching a real recovered pre-reset schema (schema_version
+-- 9 there; renumbered here since the intermediate 2-8 DDL was never
+-- recovered -- see docs/recovery/schema9-recovered-ddl.sql for the exact
+-- source and docs/recovery/RECOVERY_TEST_LEDGER.md for what carried over vs
+-- what did not). A reader must reject any schema_version it does not
+-- recognise (standards: current-only, no silent migration) rather than
+-- guess at an unlisted intermediate shape.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '3'),
+    ('schema_version',    '4'),
     ('signature_schema',  '1'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -58,10 +73,30 @@ CREATE TABLE IF NOT EXISTS build (
     campaign_run_id      TEXT,
     workload_id          TEXT,
     dispatch_abi        TEXT,               -- artifact version string (B3)
+    identity_scope       TEXT    NOT NULL DEFAULT 'legacy-imported',
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (source_revision, manifest_hash, signature_schema,
-            hardware_schema, variant_set, build_descriptor_hash)
+    CHECK (identity_scope IN ('campaign', 'legacy-imported')),
+    -- SQLite cannot express a conditional NOT NULL directly; this CHECK is
+    -- the equivalent: a 'campaign' row must carry the complete triple, or
+    -- it is not really campaign-identified at all.
+    CHECK (identity_scope = 'legacy-imported' OR (
+        source_slice_id IS NOT NULL
+        AND build_plan_id IS NOT NULL
+        AND effective_build_id IS NOT NULL
+    ))
 );
+
+-- The real, non-contradictory row identity, one partial index per scope --
+-- replaces the old table-level UNIQUE, which used to apply to every row
+-- regardless of whether it carried campaign identity at all.
+CREATE UNIQUE INDEX IF NOT EXISTS build_campaign_identity_uq
+    ON build(source_slice_id, build_plan_id, effective_build_id)
+    WHERE identity_scope = 'campaign';
+
+CREATE UNIQUE INDEX IF NOT EXISTS build_legacy_identity_uq
+    ON build(source_revision, manifest_hash, signature_schema,
+             hardware_schema, variant_set, build_descriptor_hash)
+    WHERE identity_scope = 'legacy-imported';
 
 -- ------------------------------------------------------------------ hardware
 -- Executing GPU *class*, never a device ordinal (standards 1, 10.1).
