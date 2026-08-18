@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -200,7 +201,8 @@ def execute_record_stage(
     stage_root.mkdir(parents=True, exist_ok=True)
     record_path = stage_root / "record.jsonl"
 
-    env = dict(environment or {})
+    env = dict(os.environ)
+    env.update(environment or {})
     env["GGML_HIP_DISPATCH_DB"] = str(record_path)
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
@@ -354,7 +356,8 @@ def execute_tune_stage(
     working_db.write_bytes(db_ref.path.read_bytes())
 
     measurements_base = stage_root / "tune"
-    env = dict(environment or {})
+    env = dict(os.environ)
+    env.update(environment or {})
     env["GGML_HIP_DISPATCH_DB"] = str(measurements_base)
     argv = runtime_smoke.smoke_argv(entrypoint_path, spec)
     completed = subprocess.run(argv, capture_output=True, text=True, env=env)
@@ -584,7 +587,8 @@ def execute_replay_validation_stage(
     stage_root.mkdir(parents=True, exist_ok=True)
     coverage_path = stage_root / "coverage.json"
 
-    env = dict(environment or {})
+    env = dict(os.environ)
+    env.update(environment or {})
     env["GGML_HIP_DISPATCH_MODE"] = "replay"
     env["GGML_HIP_DISPATCH_CACHE"] = str(cache_ref.path)
     env["GGML_HIP_DISPATCH_COVERAGE"] = str(coverage_path)
