@@ -169,6 +169,21 @@ class ArtifactRefIdentityTests(unittest.TestCase):
             self.assertEqual(
                 _ns(out.provenance, "source")["source_slice_id"], "claimed-producer"
             )
+            # GPT audit fix (2026-08-18): RE25.3's locked contract is that
+            # EVERY lane input comes out descriptor-backed -- this branch
+            # used to leave artifact_id="" (content_hash-as-identity).
+            # The persisted descriptor must rehydrate in a fresh store with
+            # the downgraded class, not the original production claim.
+            self.assertTrue(out.artifact_id)
+            fresh = ArtifactStore(Path(d) / "store")
+            rehydrated = fresh.rehydrate(
+                out.artifact_id, expected_kind="inventory"
+            )
+            self.assertEqual(rehydrated.content_hash, digest)
+            self.assertEqual(
+                _ns(rehydrated.provenance, "project")["provenance_class"],
+                "imported-legacy",
+            )
 
     def test_ref_with_matching_descriptor_identity_is_rehydrated(self):
         with tempfile.TemporaryDirectory() as d:
