@@ -746,6 +746,73 @@ class PointerFromComparisonReportTests(unittest.TestCase):
                     required_architectures=("gfx1100",),
                 )
 
+    def test_correct_identity_but_wrong_cache_parent_rejects(self):
+        # GPT audit fix (item 4) regression pin: a matching source/build/
+        # effective triple is NOT pairing -- the coverage's own recorded
+        # parent artifacts must be exactly the replay arm's bundle+cache,
+        # not just from the same build identity. This test keeps the
+        # triple correct (matches_right=True) and substitutes only the
+        # cache half of the parent set, so it exercises the artifact-
+        # pairing check specifically, not the earlier identity-triple check
+        # test_a_caller_cannot_substitute_a_mismatched_replay_result already
+        # covers.
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            report_artifact_id = self._valid_report(fx)
+            right = fx._arm_artifacts["right"]
+            wrong_parent_ids = tuple(
+                sorted([right["bundle"], fx._arm_artifacts["left"]["binary"]])
+            )
+            coverage_id = fx.publish_replay_coverage(
+                matches_right=True, parent_ids=wrong_parent_ids
+            )
+            with self.assertRaises(PromotionError):
+                pointer_from_comparison_report(
+                    store=fx.store,
+                    report_artifact_id=report_artifact_id,
+                    release_tag="b1",
+                    replay_coverage_artifact_id=coverage_id,
+                    required_architectures=("gfx1100",),
+                )
+
+    def test_non_exact_coverage_rejects_at_the_pointer_boundary(self):
+        # GPT audit fix (item 5) regression pin: pointer_from_comparison_report()
+        # re-runs validate_replay_coverage() independently at the release
+        # boundary. This test keeps the comparison report itself valid and
+        # the coverage's identity/parent pairing correct, and only makes
+        # the coverage BYTES non-exact, so it exercises that independent
+        # re-validation specifically -- test_an_invalid_report_is_rejected
+        # already covers the report itself being invalid, which exits
+        # before the pointer's own coverage validator ever runs.
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            report_artifact_id = self._valid_report(fx)
+            non_exact_bytes = json.dumps(
+                {
+                    "total_dispatched": 1,
+                    "total_executed": 1,
+                    "replay": {
+                        "schema_version": 2,
+                        "exact": 0,
+                        "candidate_unavailable": 0,
+                        "rerun_required": 1,
+                        "incompatible": 0,
+                        "misses": 0,
+                    },
+                }
+            ).encode("utf-8")
+            coverage_id = fx.publish_replay_coverage(
+                matches_right=True, coverage_bytes=non_exact_bytes
+            )
+            with self.assertRaises(PromotionError):
+                pointer_from_comparison_report(
+                    store=fx.store,
+                    report_artifact_id=report_artifact_id,
+                    release_tag="b1",
+                    replay_coverage_artifact_id=coverage_id,
+                    required_architectures=("gfx1100",),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
