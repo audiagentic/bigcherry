@@ -802,12 +802,24 @@ def smoke_environment_for_hip_devices(
     """The CLI-convenience translation from a single --hip-visible-devices
     flag to the environment dict the smoke worker actually accepts --
     kept out of the reusable API itself (make_smoke_worker's own environment
-    parameter is HIP-agnostic; this is a CLI-specific convenience)."""
+    parameter is HIP-agnostic; this is a CLI-specific convenience).
+
+    RE15 real-hardware finding (2026-08-18): HIP_VISIBLE_DEVICES and
+    ROCR_VISIBLE_DEVICES are NOT aliases -- ROCR_VISIBLE_DEVICES filters the
+    ROCm agent list first, and HIP_VISIBLE_DEVICES then indexes into
+    whatever that filtered list left. Setting both to the SAME raw device
+    index double-filters: on a real 4-GPU Brutus box, HIP_VISIBLE_DEVICES=2
+    ROCR_VISIBLE_DEVICES=2 selects agent 2 (gfx1201), which becomes the
+    sole entry in the ROCR-filtered list, and then HIP_VISIBLE_DEVICES=2
+    tries to index into that single-entry list and fails with "no
+    ROCm-capable device is detected" -- verified this only breaks for a
+    nonzero index (index 0 degenerately still resolves), which is why
+    every prior real run here (always device 0) never surfaced it. Only
+    HIP_VISIBLE_DEVICES is set now."""
     return tuple(
         sorted(
             {
                 "HIP_VISIBLE_DEVICES": hip_visible_devices,
-                "ROCR_VISIBLE_DEVICES": hip_visible_devices,
                 "PATH": os.environ.get("PATH", ""),
             }.items()
         )

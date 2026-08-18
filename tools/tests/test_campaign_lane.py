@@ -580,8 +580,16 @@ class SmokeEnvironmentHelperTests(unittest.TestCase):
     def test_translates_hip_visible_devices(self):
         env = dict(smoke_environment_for_hip_devices("0,1"))
         self.assertEqual(env["HIP_VISIBLE_DEVICES"], "0,1")
-        self.assertEqual(env["ROCR_VISIBLE_DEVICES"], "0,1")
         self.assertIn("PATH", env)
+
+    def test_does_not_also_set_rocr_visible_devices(self):
+        # RE15 real-hardware finding: HIP_VISIBLE_DEVICES and
+        # ROCR_VISIBLE_DEVICES are sequential filters, not aliases -- setting
+        # both to the same raw index double-filters and breaks device
+        # selection for any nonzero index (proven on real Brutus hardware,
+        # device 2/gfx1201: "no ROCm-capable device is detected").
+        env = dict(smoke_environment_for_hip_devices("2"))
+        self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
 
 
 if __name__ == "__main__":
