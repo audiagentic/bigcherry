@@ -875,8 +875,34 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     if (!ggml_hip_family_can_serve(GGML_HIP_FAMILY_MMQ, sig)) {
         return false;
     }
+
+    // `fallback` is not a free choice -- mul_mat_q_case derives it from row
+    // divisibility. ne0[1] is ne01, the same quantity mul_mat_q_case uses.
+    const bool shape_fallback = (sig.ne0[1] % 128) != 0;
+    const int64_t ncols_max = (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1];
+
+    // HI71 (mirrors HI53's MMVQ fix, hip-autotune-dispatch.cu's
+    // ggml_hip_mmvq_can_execute): the native wrapper is NOT exempt from
+    // MMQ's own launch-envelope safety. Upstream's dense dispatch would
+    // never reach MMQ at all for many of the shapes tune-mode measurement
+    // deliberately explores (e.g. a tiny batch upstream would route to
+    // MMVQ instead) -- "native" here means "if MMQ had been invoked, use
+    // MMQ's own J-selection policy", not "whatever upstream's dispatch
+    // would have picked overall". So the native wrapper's own natural J
+    // (ggml_cuda_mmq_native_j_best) must pass the SAME dense-safety
+    // predicate as every forced candidate, via the same call below --
+    // returning true unconditionally here previously let tune-mode
+    // measurement admit an MMQ-native launch upstream's own dispatch would
+    // never make.
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {
-        return true;
+        const int native_j = ggml_cuda_mmq_native_j_best(
+            (ggml_type) sig.src0_type, shape_fallback, ncols_max);
+        if (native_j == 0) {
+            return false;
+        }
+        return ggml_cuda_mmq_variant_is_eligible(
+            (ggml_type) sig.src0_type, native_j, shape_fallback,
+            /*cc =*/ 0, hw.shared_memory_per_block, ncols_max);
     }
 
     // MMQ's config table is per type, so every other field of this candidate's
@@ -897,8 +923,7 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     // `NO_DEVICE_CODE` guard in mmq.cuh and aborts.
     //
     // So reject the disagreement here rather than discovering it at launch
-    // (standards 12.4). ne0[1] is ne01, the same quantity mul_mat_q_case uses.
-    const bool shape_fallback = (sig.ne0[1] % 128) != 0;
+    // (standards 12.4).
     if ((self->variant.fallback != 0) != shape_fallback) {
         return false;
     }
@@ -911,9 +936,19 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     // exhaustive sweep -- native's own J-selection always picks the
     // smallest J that covers the batch in one tile, so it never forces
     // J=112 onto MTP's narrow draft-decode batches the way a full sweep
-    // does. Not a shared-memory-limit or workspace-sizing gap (both
-    // checked against real numbers/source and ruled out; see EX02) --
-    // root cause is still open, needs rocgdb, not more source reading.
+    // does.
+    //
+    // HI71 (2026-08-18): a real, DIFFERENT (type=q8_0, architecture=gfx1201)
+    // instance of this exact failure class was root-caused on real hardware
+    // and fixed below via ggml_cuda_mmq_variant_is_eligible's new dense
+    // tail-padding check -- forcing J=112 at ncols_max=3 needs 109 padding
+    // columns while ggml_cuda_mmq_get_J_max(q8_0, fb0, gfx1201, 3) provides
+    // 0. That fix plausibly also covers this quarantined gfx1100 q6_k/J=112
+    // candidate, but EX02's own historical trigger was never recovered with
+    // an exact signature, so its own acceptance criteria (rocgdb/equivalent
+    // fault identification against the ORIGINAL trigger) are unmet by this
+    // cross-reference alone -- do NOT remove this quarantine on HI71's
+    // evidence alone; see EX02.md.
     //
     // Scoped to exactly this stable identity, on gfx1100 only: this
     // candidate's config row is shared with other architectures whose own
@@ -940,8 +975,7 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     return ggml_cuda_mmq_variant_is_eligible(
         (ggml_type) sig.src0_type, self->variant.primary,
         shape_fallback,
-        /*cc =*/ 0, hw.shared_memory_per_block,
-        (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1]);
+        /*cc =*/ 0, hw.shared_memory_per_block, ncols_max);
 }
 
 void ggml_hip_mmq_launch(const ggml_hip_candidate_descriptor * self,
