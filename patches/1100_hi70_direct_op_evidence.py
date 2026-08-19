@@ -12,8 +12,17 @@ batch width that well-formed production models structurally never produce:
   K-quant block alignment means most production models never trigger this.
   12 of 16 fb1 candidates (q6_k/q8_0/q4_k) were eventually confirmed reachable
   by hunting for real models with an irregular dense dimension (gpt-oss-20B,
-  Qwen3.5-9B, Qwen3.6-35B-A3B). The last 4 (q5_k) had no local model with an
-  irregular Q5_K tensor.
+  Qwen3.5-9B, Qwen3.6-35B-A3B), and the last 4 (q5_k) via an earlier,
+  narrower version of this corpus. All 4 types are covered directly here now
+  (2026-08-19): a real acceptance run's own tune measurements are scoped to
+  ONE specific compiled binary/manifest, so reusing evidence gathered against
+  a DIFFERENT binary (a different session's model-hunting runs) is fragile --
+  read_correctness_evidence() ties evidence to the exact tune artifact
+  supplied, and a fresh acceptance run has no fb1 evidence for any type until
+  something exercises it. Covering all 4 types directly, deterministically,
+  means every future acceptance run's OWN tune pass can regenerate complete
+  fb1 evidence in one corpus run against its own binary, with no dependency
+  on which real models happen to be available locally.
 - MMF f16 nwarps candidates require a MUL_MAT batch width (src1_ncols) in
   [1, 16] (mmf.cu's `should_use_mmf()` policy gate) -- a width only speculative
   decoding's multi-token draft-batch verification produces; no single-stream
@@ -29,8 +38,9 @@ logic says should be reachable, without needing a lucky model or (for MMF)
 speculative decoding at all.
 
 Shapes, per HI70's gpt-auto-agent deep-dive recommendation:
-- q5_k fb1 (4 candidates: j16/j32/j64/j128): M=127 (any M % 128 != 0), K=256,
-  N=128 -- deterministically forces fallback=true regardless of quant type.
+- fb1 (16 candidates: j16/j32/j64/j128 x q4_k/q5_k/q6_k/q8_0): M=127 (any
+  M % 128 != 0), K=256, N=128 -- deterministically forces fallback=true
+  regardless of quant type, so the same shape is repeated once per type.
 - mmf f16 nwarps: M=32 (MMF_ROWS_PER_BLOCK), K=256 (RDNA4/wave32 F16
   alignment), N swept exhaustively across [1, 16] -- one case per width.
   BigCherry's MMF candidate identity is mmf:<type>:w<width>:nw<nwarps>, with
@@ -52,6 +62,11 @@ STATE = "validated"
 
 from bigcherry.patcher import Edit, FilePatch
 
+_FB1_TYPE_CASES = "\n".join(
+    "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_%s, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));" % t
+    for t in ("Q4_K", "Q5_K", "Q6_K", "Q8_0")
+)
+
 _MMF_WIDTH_CASES = "\n".join(
     "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, %d, 256, {1, 1}, {1, 1}));" % n
     for n in range(1, 17)
@@ -62,6 +77,12 @@ _CASES = """
     // nwarps candidates a real-model workload structurally never reaches.
     // See patches/1100_hi70_direct_op_evidence.py for the full rationale.
     //
+    // fb1: M=127 (%%128 != 0) forces mmq.cu's fallback=true regardless of
+    // quant type -- one case per type so any acceptance run's own tune pass
+    // can regenerate complete fb1 evidence without depending on which real
+    // models happen to be locally available.
+%s
+    //
     // BigCherry's MMF candidate identity is mmf:<type>:w<width>:nw<nwarps> --
     // width (N here) is an independent axis from nwarps, not implied by it
     // (confirmed via gpt-auto-agent review, 2026-08-19). should_use_mmf()'s
@@ -71,9 +92,8 @@ _CASES = """
     // this covers every mmf:f16:wN:nw1..nw8 candidate regardless of which
     // exact width(s) turn out to be the ones a real replay-full catalog run
     // actually enumerates.
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));
 %s
-""" % _MMF_WIDTH_CASES
+""" % (_FB1_TYPE_CASES, _MMF_WIDTH_CASES)
 
 PATCH = FilePatch(
     path="tests/test-backend-ops.cpp",
