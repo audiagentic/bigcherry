@@ -504,6 +504,22 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(native, [100.0, 100.0])
         self.assertEqual(winner, [90.0, 80.0])
 
+    def test_confirmation_reduction_tolerates_six_decimal_near_ties(self):
+        # RE28: two rounds whose full-precision timings differ by less than
+        # what %.3f serialization could preserve (a real, pre-fix producer
+        # bug) must NOT collide once the producer emits six decimals -- the
+        # C++ sign test and this offline reduction have to agree on which
+        # rounds are genuine ties.
+        confirmation = {
+            "rounds": 2,
+            "wins": 1,
+            "native_us": [61.520123, 100.0],
+            "winner_us": [61.520987, 90.0],
+        }
+        native, winner = tune_promotion._paired_rounds(confirmation)
+        self.assertEqual(native, [61.520123, 100.0])
+        self.assertEqual(winner, [61.520987, 90.0])
+
     def test_effect_keeps_tied_samples_like_cpp_median(self):
         confirmation = {
             "rounds": 8,
