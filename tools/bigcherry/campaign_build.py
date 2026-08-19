@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -513,9 +514,26 @@ def execute_build_stage(
         exe_variant = build_dir / (binary_relative_path + ".exe")
         if exe_variant.is_file():
             binary = exe_variant
+    # A freshly linked Windows executable can be momentarily invisible to
+    # file queries (filter drivers / AV scanning the new image file) -- the
+    # first local run hit exactly this: ninja linked bin\llama-bench.exe and
+    # is_file() still returned False 24 ms later. Retry briefly before
+    # failing, and say in the error which candidates were probed.
+    candidates = (binary,)
+    if os.name == "nt":
+        candidates = (binary, build_dir / (binary_relative_path + ".exe"))
+    for _attempt in range(10):
+        if binary.is_file():
+            break
+        time.sleep(0.5)
+        for candidate in candidates:
+            if candidate.is_file():
+                binary = candidate
+                break
     if not binary.is_file():
         raise CampaignBuildError(
-            f"build stage did not produce the expected binary: {binary}"
+            "build stage did not produce the expected binary; probed: "
+            + "; ".join(str(candidate) for candidate in candidates)
         )
 
     return publish_build_outputs(
