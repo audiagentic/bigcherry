@@ -76,6 +76,36 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(lanes[1].source_name, "src-b")
         self.assertEqual(lanes[1].inputs, (("inventory", Path("inv.json")),))
 
+    def test_plan_threads_experiment_onto_every_lane(self):
+        # RE26 prep: one experiment name on the request applies to every
+        # lane it plans -- isolated single-patch benching needs the SAME
+        # experiment across the whole standard lane set, not a per-lane
+        # mix that could silently omit it from one lane.
+        cfg = _cfg()
+        request = CampaignRequest(
+            selectors=(
+                campaign_config.CampaignLaneSelector(source="src-a", build="stock", platform="linux-multi"),
+                campaign_config.CampaignLaneSelector(source="src-b", build="tune", platform="linux-multi"),
+            ),
+            architectures=("gfx1100",),
+            inputs_by_build={"tune": (("inventory", Path("inv.json")),)},
+            experiment="rd19-only",
+        )
+        lanes = plan(request, cfg)
+        self.assertEqual(len(lanes), 2)
+        self.assertTrue(all(lane.experiment == "rd19-only" for lane in lanes))
+
+    def test_plan_defaults_experiment_to_none(self):
+        cfg = _cfg()
+        request = CampaignRequest(
+            selectors=(
+                campaign_config.CampaignLaneSelector(source="src-a", build="stock", platform="linux-multi"),
+            ),
+            architectures=("gfx1100",),
+        )
+        lanes = plan(request, cfg)
+        self.assertIsNone(lanes[0].experiment)
+
     def test_plan_expands_named_profile(self):
         cfg = _cfg()
         request = CampaignRequest(profile_name="standard", architectures=("gfx1100",))

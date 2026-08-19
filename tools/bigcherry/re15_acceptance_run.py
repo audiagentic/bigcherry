@@ -35,6 +35,7 @@ from .artifacts import ArtifactStore
 from .campaign_lane import (
     CampaignLaneError,
     CampaignLaneExecutionSpec,
+    CampaignLaneResult,
     execute_campaign_lane,
     smoke_environment_for_hip_devices,
 )
@@ -45,14 +46,36 @@ from .releases import ReleaseRecord
 from .runtime_smoke import RuntimeSmokeSpec
 
 
-def _source_root(context: ProjectContext) -> Path:
-    sources_root = context.work_root / "sources"
-    candidates = [p for p in sources_root.iterdir() if (p / "ggml" / "include" / "ggml.h").is_file()]
-    if not candidates:
-        raise SystemExit(f"no materialized source tree with ggml/include/ggml.h under {sources_root}")
-    if len(candidates) > 1:
-        raise SystemExit(f"ambiguous materialized source trees under {sources_root}: {candidates}")
-    return candidates[0]
+def _source_root(context: ProjectContext, lane: CampaignLaneResult) -> Path:
+    """The EXACT materialized source directory this lane's build actually
+    compiled from -- not a directory-scanning guess.
+
+    Pre-RE26 fix: this used to glob context.work_root/sources for "the"
+    tree carrying ggml/include/ggml.h, on the assumption exactly one would
+    ever exist. That broke the moment more than one materialized tree
+    accumulates in the shared cache (any session that has run more than
+    one build against this work_root, which is now the common case, not a
+    rare one) -- SystemExit("ambiguous materialized source trees ..."),
+    real-hardware-confirmed 2026-08-19. materialize_source() already
+    writes materialization_plan_id into the source-metadata record it
+    publishes as source_metadata_ref (the SAME identity
+    campaign_build.materialize_source() used to name the directory), so
+    read it back instead of re-deriving or guessing.
+    """
+    metadata = json.loads(lane.source_metadata_ref.path.read_text(encoding="utf-8"))
+    plan_id = metadata.get("materialization_plan_id")
+    if not isinstance(plan_id, str) or not plan_id:
+        raise SystemExit(
+            f"lane source-metadata artifact {lane.source_metadata_ref.artifact_id!r} "
+            "has no materialization_plan_id -- cannot locate its materialized source tree"
+        )
+    source_root = context.work_root / "sources" / plan_id
+    if not (source_root / "ggml" / "include" / "ggml.h").is_file():
+        raise SystemExit(
+            f"materialized source tree {source_root} (from lane source_slice_id "
+            f"{lane.source_slice_id!r}) is missing or incomplete"
+        )
+    return source_root
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -220,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
 
         provenance.require_promotable(replay_lane.runtime_bundle_ref.provenance, kind="runtime-bundle")
 
-        source_root = _source_root(context)
+        source_root = _source_root(context, replay_lane)
         replay_export_result = lifecycle.execute_replay_export_stage(
             context=context, store=store, run_id=run_id,
             promoted_winners=promotion_result.promoted_winners_ref, manifest=replay_lane.manifest_ref,

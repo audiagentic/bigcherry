@@ -62,6 +62,12 @@ class CampaignLane:
     c_compiler: str | None = None
     cxx_compiler: str | None = None
     smoke_environment: tuple[tuple[str, str], ...] | None = None
+    #: RE26 prep: names a [experiment.<name>] entry in recipes.toml (an
+    #: exact extra patch list, per campaign_resolution.resolve_lane's own
+    #: experiment= parameter) -- for benching ONE experimental patch in
+    #: isolation against a source's normal framework patch-set, without
+    #: needing a dedicated recipe/group per patch.
+    experiment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +93,12 @@ class CampaignRequest:
     c_compiler: str | None = None
     cxx_compiler: str | None = None
     smoke_environment: tuple[tuple[str, str], ...] | None = None
+    #: RE26 prep: applies to every lane this request plans -- a request is
+    #: already a single coherent build ask (one profile or one set of
+    #: explicit lanes), so one experiment name per request, not per lane,
+    #: matches how --experiment is meant to be used (isolate one patch
+    #: across the standard lane set, not mix-and-match per lane).
+    experiment: str | None = None
 
 
 def lane_id(lane: CampaignLane) -> str:
@@ -173,6 +185,7 @@ def plan(
             binary_relative_path=request.binary_relative_path,
             c_compiler=request.c_compiler, cxx_compiler=request.cxx_compiler,
             smoke_environment=request.smoke_environment,
+            experiment=request.experiment,
         ))
     return tuple(lanes)
 
@@ -185,6 +198,7 @@ def _to_spec(lane: CampaignLane) -> CampaignLaneExecutionSpec:
         binary_relative_path=lane.binary_relative_path,
         c_compiler=lane.c_compiler, cxx_compiler=lane.cxx_compiler,
         smoke_environment=lane.smoke_environment,
+        experiment=lane.experiment,
     )
 
 

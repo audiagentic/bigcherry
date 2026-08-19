@@ -28,6 +28,7 @@ from . import patchset
 from . import recipes
 from . import releases
 from . import source_audit
+from . import sources
 from . import upstream
 
 UPSTREAM_URL = "https://github.com/ggml-org/llama.cpp"
@@ -670,6 +671,7 @@ def cmd_build_new(args: argparse.Namespace) -> int:
         inputs_by_build=inputs_by_build, validation_by_build=validation_by_build,
         c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
         smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
+        experiment=args.experiment,
     )
     try:
         lanes = plan(request, cfg)
@@ -1046,6 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selection_args(patches_cmd)
     patches_cmd.set_defaults(func=cmd_patches)
 
+    sources.register(sub)
+
     repin = sub.add_parser(
         "repin", help="move recipes.toml's pin to the newest upstream release")
     repin.add_argument(
@@ -1162,6 +1166,12 @@ def build_parser() -> argparse.ArgumentParser:
     new_build_cmd.add_argument("--c-compiler", default=None)
     new_build_cmd.add_argument("--cxx-compiler", default=None)
     new_build_cmd.add_argument("--run-id", default=None)
+    new_build_cmd.add_argument(
+        "--experiment", default=None,
+        help="name of a [experiment.<name>] entry in recipes.toml (an exact "
+             "extra patch list) -- for benching one experimental patch in "
+             "isolation against the source's normal patch-set, e.g. "
+             "'--source bigcherry-native --experiment rd19-only'")
     new_build_cmd.set_defaults(func=cmd_build_new)
 
     from . import autotune_schema as _schema
