@@ -117,6 +117,11 @@ class CampaignLaneExecutionSpec:
     #: test-backend-ops alongside the tune lane's llama-bench) -- names
     #: only, resolved relative to binary_relative_path's own directory.
     extra_cmake_targets: tuple[str, ...] = ()
+    #: RE26 prep: names a [experiment.<name>] entry in recipes.toml, per
+    #: campaign_resolution.resolve_lane's own experiment= parameter -- for
+    #: benching one experimental patch in isolation. None means "just the
+    #: source's normal patch-set", identical to today's behavior.
+    experiment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -252,6 +257,7 @@ def _execute_materialize_phase(
         # otherwise lose this directory entirely and silently fall back to
         # the wrong global default (GPT-auto-agent review, 2026-08-17).
         catalog_directory=context.patches_root,
+        experiment=spec.experiment,
     )
     resolved_revision = UpstreamRepository(context.upstream_repo).resolve_ref(
         source_plan.upstream_revision
