@@ -1,0 +1,135 @@
+{
+  "artifact_version": 1,
+  "audit": {},
+  "bigcherry_revision": "03b10e579bb2af61fa1d95171a01391c33b97161",
+  "first_seen": "2026-08-19T07:03:20.419884+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "replay-diagnostics-option": "applied"
+      },
+      "ggml/src/ggml-backend-meta.cpp": {
+        "meta-reduce-telemetry-fallback": "applied",
+        "meta-reduce-telemetry-hook-field": "applied",
+        "meta-reduce-telemetry-hook-resolve": "applied",
+        "meta-reduce-telemetry-hook-type": "applied",
+        "meta-reduce-telemetry-include": "applied",
+        "meta-reduce-telemetry-node-declaration": "applied",
+        "meta-reduce-telemetry-node-scope": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "pool-alloc-requested-size-member": "applied",
+        "pool-workspace-members": "applied",
+        "pool-workspace-note-alloc": "applied",
+        "pool-workspace-note-free": "applied"
+      },
+      "ggml/src/ggml-cuda/cpy.cu": {
+        "cpy-iq4_nl_to_q": "already-applied",
+        "cpy-q4_0_from_q": "already-applied",
+        "cpy-q4_0_to_q": "already-applied",
+        "cpy-q4_1_from_q": "already-applied",
+        "cpy-q4_1_to_q": "already-applied",
+        "cpy-q5_0_from_q": "already-applied",
+        "cpy-q5_0_to_q": "already-applied",
+        "cpy-q5_1_from_q": "already-applied",
+        "cpy-q5_1_to_q": "already-applied",
+        "cpy-q8_0_from_q": "already-applied",
+        "cpy-q8_0_to_q": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "ggml-cuda-can-fuse-block": "already-applied",
+        "ggml-cuda-should-fuse-fn": "already-applied",
+        "ggml-cuda-try-fuse-block": "already-applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-tuner.cu": {
+        "emit-result-canonical-json": "already-applied",
+        "format-result-canonical-json": "already-applied",
+        "result-canonical-json": "already-applied",
+        "set-result-canonical-json": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "q2k-mma-unroll-guard": "applied",
+        "q6k-mma-float-promotion": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-case-forward": "applied",
+        "mmq-case-signature": "applied",
+        "mmq-helpers-and-switch": "applied",
+        "mmq-instantiation-macro": "applied",
+        "mmq-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-cuda/rope.cu": {
+        "rope-cu-fused-kernel": "already-applied"
+      },
+      "ggml/src/ggml-cuda/rope.cuh": {
+        "rope-cuh-decl": "already-applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-unsafe-math-opt-in": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "hi70-direct-op-corpus": "applied"
+      },
+      "tools/server/server-context.cpp": {
+        "checkpoint-erase-diverged-content": "applied",
+        "checkpoint-restore-reset-log-level": "applied",
+        "checkpoint-search-exact-vs-range": "applied",
+        "create-checkpoint-log-level": "applied",
+        "create-checkpoint-pos-min-exact-clamp": "applied",
+        "ctx-tgt-state-exact-and-checkpoint-adopt": "applied",
+        "remember-divergence-pos-next-lcp": "applied"
+      },
+      "tools/server/server-task.cpp": {
+        "server-prompt-cache-load-n-reuse-min": "applied",
+        "server-prompt-cache-load-selection-rule": "applied",
+        "server-prompt-cache-n-reusable": "applied"
+      },
+      "tools/server/server.cpp": {
+        "server-shutdown-cstdlib": "applied",
+        "server-shutdown-response": "applied",
+        "server-shutdown-route": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "",
+  "revision": "unknown",
+  "stage": "patched",
+  "tree_state": "07e907fb07ef6d3c",
+  "updated_at": "2026-08-19T07:03:20.419884+00:00"
+}
