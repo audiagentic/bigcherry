@@ -571,8 +571,8 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
         const ggml_hip_candidate_descriptor * winner = nullptr;
         ggml_hip_variant_params variant = {};
-        if (ggml_hip_replay_lookup(dispatch_digest, signature_digest,
-                                   &winner, &variant)) {
+        if (ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
+                                   &winner, &variant) == GGML_HIP_RESOLVE_EXACT) {
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;

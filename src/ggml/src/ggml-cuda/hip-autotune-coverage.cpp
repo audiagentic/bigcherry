@@ -93,11 +93,25 @@ void ggml_hip_coverage_report() {
         //
         // `stale` says the winners were measured against a different candidate
         // set: still valid, possibly no longer best (HI23).
+        //
+        // schema_version 2 restores the pre-reset (2c2fe7c) per-lookup
+        // resolution classification -- see the enum in hip-autotune-replay.h
+        // for what each bucket means. "misses" here is the unconditional
+        // per-lookup MISS count from ggml_hip_replay_lookup(), distinct from
+        // ggml_hip_replay_miss_count() (miss_log_calls below), which is only
+        // populated when GGML_HIP_DISPATCH_MISS=native-record is set.
         fprintf(out,
-                ",\n  \"replay\": {\"entries\": %zu, \"misses\": %zu, "
-                "\"stale\": %s}",
+                ",\n  \"replay\": {\"schema_version\": 2, \"entries\": %zu, "
+                "\"miss_log_calls\": %zu, \"exact\": %zu, "
+                "\"candidate_unavailable\": %zu, \"rerun_required\": %zu, "
+                "\"incompatible\": %zu, \"misses\": %zu, \"stale\": %s}",
                 ggml_hip_replay_entry_count(),
                 ggml_hip_replay_miss_count(),
+                ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_EXACT),
+                ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE),
+                ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_RERUN_REQUIRED),
+                ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_INCOMPATIBLE),
+                ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_MISS),
                 ggml_hip_replay_is_stale() ? "true" : "false");
 #endif
         fprintf(out, "\n}\n");
@@ -112,11 +126,17 @@ void ggml_hip_coverage_report() {
 #ifdef GGML_HIP_DISPATCH_REPLAY
     // Stated alongside coverage because the two are routinely conflated: full
     // coverage with every lookup missing is a correct, entirely untuned run.
-    GGML_LOG_INFO("bigcherry:   replay cache %zu winner(s), %zu miss(es)%s\n",
-                  ggml_hip_replay_entry_count(),
-                  ggml_hip_replay_miss_count(),
-                  ggml_hip_replay_is_stale()
-                      ? " -- tuned against a different candidate set" : "");
+    GGML_LOG_INFO(
+        "bigcherry:   replay v2 %zu winner(s); exact=%zu unavailable=%zu "
+        "rerun-required=%zu incompatible=%zu miss=%zu%s\n",
+        ggml_hip_replay_entry_count(),
+        ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_EXACT),
+        ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE),
+        ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_RERUN_REQUIRED),
+        ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_INCOMPATIBLE),
+        ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_MISS),
+        ggml_hip_replay_is_stale()
+            ? " -- tuned against a different candidate set" : "");
 #endif
     for (int i = 0; i < GGML_HIP_FAMILY_COUNT; ++i) {
         if (executed[i] == 0) {
