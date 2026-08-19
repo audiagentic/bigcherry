@@ -20,6 +20,7 @@ patches = [
   "0830_split_reduce_telemetry",
   "0900_pool_workspace_metrics",
   "1000_rdna4_mmq_q2k_q6k_fix",
+  "1100_hi70_direct_op_evidence",
 ]
 required-state = "validated"
 
