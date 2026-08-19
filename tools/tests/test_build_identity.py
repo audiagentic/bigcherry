@@ -83,6 +83,25 @@ class RuntimeBundleTests(unittest.TestCase):
             for path in artifacts:
                 self.assertFalse(path.is_symlink())
 
+    def test_resolve_runtime_artifacts_includes_extra_binaries(self):
+        # RE26: a lane can request additional executables (e.g.
+        # test-backend-ops alongside the tune lane's llama-bench) that share
+        # the same runtime bundle -- they must appear in the resolved
+        # artifact set alongside the main binary and its shared libs.
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory) / "bin"
+            bin_dir.mkdir()
+            binary = bin_dir / "llama-bench"
+            binary.write_bytes(b"launcher")
+            hip_so = bin_dir / "libggml-hip.so.0.19.0"
+            hip_so.write_bytes(b"hip-dispatch-logic")
+            extra = bin_dir / "test-backend-ops"
+            extra.write_bytes(b"direct-op-corpus")
+
+            artifacts = resolve_runtime_artifacts(binary, extra_binaries=(extra,))
+
+            self.assertEqual(set(artifacts), {binary, hip_so, extra})
+
     def test_runtime_bundle_hash_changes_when_any_dependent_library_changes(self):
         # The exact gpt-auto-agent finding: a reuse check based only on the
         # requested launcher's hash could accept a cache hit even though

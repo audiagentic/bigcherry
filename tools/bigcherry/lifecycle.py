@@ -431,6 +431,168 @@ def execute_tune_stage(
     return TuneStageResult(measurements_ref=measurements_ref, database_ref=database_ref)
 
 
+def execute_direct_op_evidence_stage(
+    *,
+    context: ProjectContext,
+    store: ArtifactStore,
+    run_id: str,
+    runtime_bundle: LaneInputValue,
+    prior_tune: TuneStageResult,
+    corpus_op_filter: str,
+    environment: dict[str, str] | None = None,
+    project_revision: str = "",
+    local_provenance_class: provenance.ProvenanceClass = "production",
+) -> TuneStageResult:
+    """RE26: HI70's direct-op correctness corpus (patches/1100_hi70_direct_op_evidence.py),
+    run as part of the SAME continuous acceptance run that already ran
+    ``execute_tune_stage`` against a real workload, instead of a separate,
+    manually-merged diagnostic pass outside the harness.
+
+    Why this exists at all: some candidates (MMQ fb1, MMF narrow-batch) need
+    a tensor shape or batch width no real single-stream workload structurally
+    produces (see HI70's notes for the full evidence trail) -- no amount of
+    real-workload tuning ever measures them. The corpus supplies deterministic
+    evidence for exactly those candidates via test-backend-ops, which must
+    therefore travel in the SAME runtime bundle as the tune lane's own
+    entrypoint (RE26's builds.py/campaign_workers.py changes make that so),
+    so this stage runs against the identical compiled candidate catalog the
+    real-workload tune pass just measured against -- not a different
+    session's binary, which is exactly the fragility that made the earlier
+    manual-merge approach unreliable (see RE15's 2026-08-19 notes).
+
+    ggml_hip_atomic_begin() overwrites (not appends) GGML_HIP_DISPATCH_DB's
+    target file on every process invocation (HI48's crash-safety design),
+    so this cannot just point at execute_tune_stage's own measurements path
+    and expect accumulation -- it writes to its own path, then this function
+    merges both JSONL result streams (one header, both result sets) before
+    re-ingesting into the working dispatch-db and publishing updated
+    measurements/database artifacts of the SAME kind execute_tune_stage
+    produces, so a caller can substitute this result for ``prior_tune``
+    ahead of promotion with no other code change.
+    """
+    bundle_ref = _rehydrate(store, runtime_bundle, expected_kind="runtime-bundle")
+    manifest, _entrypoint_path = _verify_runtime_bundle(store, bundle_ref)
+    if "test-backend-ops" not in manifest["members"]:
+        raise LifecycleError(
+            "runtime bundle has no 'test-backend-ops' member -- the tune "
+            "lane must build it as an extra cmake target (RE26) before this "
+            "stage can run the direct-op evidence corpus"
+        )
+    direct_op_binary = bundle_ref.path.parent / "test-backend-ops"
+    if not direct_op_binary.is_file():
+        raise LifecycleError(
+            f"runtime bundle member 'test-backend-ops' verified but missing "
+            f"on disk at {direct_op_binary}"
+        )
+
+    prior_measurements_ref = _rehydrate(
+        store, prior_tune.measurements_ref, expected_kind="tuning-measurements")
+    prior_db_ref = _rehydrate(store, prior_tune.database_ref, expected_kind="dispatch-db")
+
+    stage_root = context.work_root / "runs" / run_id / "tune-direct-op"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    working_db = stage_root / "dispatch.sqlite"
+    working_db.write_bytes(prior_db_ref.path.read_bytes())
+
+    corpus_measurements_base = stage_root / "corpus"
+    env = dict(os.environ)
+    env.update(environment or {})
+    env["GGML_HIP_DISPATCH_MODE"] = "tune"
+    env["GGML_CUDA_DISABLE_GRAPHS"] = "1"
+    env["GGML_HIP_DISPATCH_DB"] = str(corpus_measurements_base)
+    argv = [str(direct_op_binary), "test", "-o", "MUL_MAT", "-p", corpus_op_filter]
+    completed = subprocess.run(argv, capture_output=True, text=True, env=env)
+    if completed.returncode != 0:
+        raise LifecycleError(
+            f"direct-op evidence corpus exited {completed.returncode}: "
+            f"{completed.stderr[-2000:]}"
+        )
+
+    corpus_measurements_path = Path(str(corpus_measurements_base) + ".measurements.jsonl")
+    if not corpus_measurements_path.is_file():
+        raise LifecycleError(
+            f"direct-op evidence corpus did not produce {corpus_measurements_path}"
+        )
+
+    # Merge: one header (from the real-workload tune pass; both runs share
+    # the same compiled catalog so their headers should agree -- checked,
+    # not assumed), plus every result row from both files.
+    prior_header: str | None = None
+    prior_results: list[str] = []
+    for line in prior_measurements_ref.path.read_text(encoding="utf-8").splitlines(keepends=True):
+        if json.loads(line).get("kind") == "header":
+            prior_header = line
+        else:
+            prior_results.append(line)
+    if prior_header is None:
+        raise LifecycleError(
+            f"{prior_measurements_ref.path} has no header row -- not a valid "
+            "measurements artifact"
+        )
+    prior_manifest_hash = json.loads(prior_header).get("manifest_hash")
+
+    corpus_results: list[str] = []
+    for line in corpus_measurements_path.read_text(encoding="utf-8").splitlines(keepends=True):
+        parsed = json.loads(line)
+        if parsed.get("kind") == "header":
+            corpus_manifest_hash = parsed.get("manifest_hash")
+            if corpus_manifest_hash != prior_manifest_hash:
+                raise LifecycleError(
+                    f"direct-op corpus manifest_hash {corpus_manifest_hash!r} "
+                    f"disagrees with the real-workload tune pass's "
+                    f"{prior_manifest_hash!r} -- test-backend-ops and the tune "
+                    f"entrypoint must be built from the SAME compiled catalog "
+                    f"for this merge to be evidence-valid"
+                )
+            continue
+        corpus_results.append(line)
+
+    combined_path = stage_root / "combined.measurements.jsonl"
+    combined_path.write_text(
+        prior_header + "".join(prior_results) + "".join(corpus_results), encoding="utf-8"
+    )
+
+    bundle_doc = _parent_doc(bundle_ref)
+    prior_measurements_doc = _parent_doc(prior_measurements_ref)
+    identity = _identity_from_provenance(bundle_doc, run_id=run_id)
+    inventory_module.load_measurements(
+        combined_path, working_db, paths.SQL / "dispatch-db.sql", identity=identity
+    )
+
+    entries, parent_ids = provenance.lane_input_provenance(
+        {"runtime-bundle": bundle_ref, "tuning-measurements": prior_measurements_ref,
+         "dispatch-db": prior_db_ref}
+    )
+    doc = provenance.derive(
+        parents=(bundle_doc, prior_measurements_doc),
+        parent_artifact_ids=parent_ids,
+        project_revision=project_revision,
+        source=bundle_doc.source,
+        build=provenance.BuildProvenance(
+            build_plan_id=bundle_doc.build.build_plan_id,
+            effective_build_id=bundle_doc.build.effective_build_id,
+            inputs=entries,
+        ),
+        workload=prior_measurements_doc.workload,
+        run_id=run_id,
+        producer_stage="tune-direct-op",
+        local_class=local_provenance_class,
+    )
+    measurements_ref = store.publish_file_ref(
+        f"runs/{run_id}/tune-direct-op/measurements.jsonl",
+        combined_path,
+        kind="tuning-measurements",
+        provenance=doc,
+    )
+    database_ref = store.publish_file_ref(
+        f"runs/{run_id}/tune-direct-op/dispatch.sqlite",
+        working_db,
+        kind="dispatch-db",
+        provenance=doc,
+    )
+    return TuneStageResult(measurements_ref=measurements_ref, database_ref=database_ref)
+
+
 # ------------------------------------------------------------------ promotion
 
 

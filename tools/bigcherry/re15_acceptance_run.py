@@ -67,6 +67,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hip-visible-devices", required=True,
                          help="MUST be 2 or 3 on Brutus -- never 0/1 (production traffic)")
     parser.add_argument("--split-mode", default="none")
+    parser.add_argument(
+        "--direct-op-corpus-filter",
+        default="m=127,n=128,k=256|m=32,.*,k=256",
+        help="RE26: test-backend-ops -p filter selecting HI70's direct-op "
+             "correctness corpus (patches/1100_hi70_direct_op_evidence.py) "
+             "-- covers candidates (MMQ fb1, MMF narrow-batch) no real "
+             "workload can reach. Pass '' to skip this stage entirely.",
+    )
     args = parser.parse_args(argv)
 
     if args.hip_visible_devices in ("0", "1"):
@@ -84,12 +92,14 @@ def main(argv: list[str] | None = None) -> int:
     environment = smoke_environment_for_hip_devices(args.hip_visible_devices)
     architectures = (args.arch,)
 
-    def _spec(build_name: str, inputs: tuple[tuple[str, object], ...] = ()) -> CampaignLaneExecutionSpec:
+    def _spec(build_name: str, inputs: tuple[tuple[str, object], ...] = (),
+              extra_cmake_targets: tuple[str, ...] = ()) -> CampaignLaneExecutionSpec:
         return CampaignLaneExecutionSpec(
             source_name=args.source, build_name=build_name, platform_name=args.platform,
             architectures=architectures, inputs=inputs,
             validation=RuntimeSmokeSpec(model_path=args.model, split_mode=args.split_mode),
             smoke_environment=environment,
+            extra_cmake_targets=extra_cmake_targets,
         )
 
     try:
@@ -143,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         # D: tune
         print("--- D: build + run tune lane ---")
         tune_lane = execute_campaign_lane(
-            _spec("tune", inputs=(("inventory", inventory_result.inventory_ref),)),
+            _spec("tune", inputs=(("inventory", inventory_result.inventory_ref),),
+                  extra_cmake_targets=("test-backend-ops",) if args.direct_op_corpus_filter else ()),
             cfg=cfg, context=context, store=store, run_id=f"{run_id}-tune-build")
         manifest["tune_build"] = {
             "build_plan_id": tune_lane.build_plan_id,
@@ -162,6 +173,21 @@ def main(argv: list[str] | None = None) -> int:
         manifest["measurements_artifact_id"] = tune_result.measurements_ref.artifact_id
         manifest["dispatch_db_artifact_id_d"] = tune_result.database_ref.artifact_id
         print(f"    measurements: {tune_result.measurements_ref.artifact_id}")
+
+        # D2: HI70 direct-op evidence corpus (RE26) -- candidates no real
+        # workload can ever reach (MMQ fb1, MMF narrow-batch). Same
+        # continuous run, same compiled catalog as the tune pass above.
+        if args.direct_op_corpus_filter:
+            print("--- D2: run HI70 direct-op evidence corpus ---")
+            tune_result = lifecycle.execute_direct_op_evidence_stage(
+                context=context, store=store, run_id=run_id,
+                runtime_bundle=tune_lane.runtime_bundle_ref, prior_tune=tune_result,
+                corpus_op_filter=args.direct_op_corpus_filter,
+                environment=dict(environment), local_provenance_class="production",
+            )
+            manifest["direct_op_measurements_artifact_id"] = tune_result.measurements_ref.artifact_id
+            manifest["direct_op_dispatch_db_artifact_id"] = tune_result.database_ref.artifact_id
+            print(f"    direct-op-evidence measurements: {tune_result.measurements_ref.artifact_id}")
 
         # E: promotion
         print("--- E: promote winners ---")
