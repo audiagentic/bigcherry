@@ -309,7 +309,8 @@ def main(argv: list[str] | None = None) -> int:
                 "binary_artifact_id", "replay_cache_artifact_id"}))
         metric_patterns = {"pp": re.compile(r'"avg_ts"\s*:\s*([0-9.]+)')}
         report_ref = comparisons.run_comparison(
-            plan, store=store, run_id=run_id, model_args=["-p", "512", "-n", "128", "-r", "3", "-o", "json"],
+            plan, store=store, run_id=run_id,
+            model_args=["-m", args.model, "-p", "512", "-n", "128", "-r", "3", "-o", "json"],
             output=context.work_root / "runs" / run_id / "compare-out", pairs=6,
             metric_patterns=metric_patterns, structured=False, practical_threshold_pct=0.5,
             resamples=5000, decision_grade=True, campaign_plan_id="re15-acceptance",
