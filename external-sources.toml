@@ -68,16 +68,16 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "cb05a6aec20b374cbeb7382c8d0314386b6ee062"
   title = "CUDA: read BF16 K/V natively in flash-attn tile kernel with FP32 accumulation"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   patch = "1202_rd04_bf16_flash_attn_tile"
-  note = "representative of the seven-commit net range 8623179e1^..0581c532c; ported 2026-08-18 as a single net patch (35 edits, 5 files); fattn-tile.cu/.cuh and fattn.cu byte-identical to the fork at 0581c532c; isolated bench pending"
+  note = "representative of the seven-commit net range 8623179e1^..0581c532c; ported 2026-08-18 as a single net patch (35 edits, 5 files); fattn-tile.cu/.cuh and fattn.cu byte-identical to the fork at 0581c532c. ISOLATED BENCH 2026-08-20 (local 7900 GRE gfx1100, ROCm 7.1, Ministral-3-14B Q4_K_M, bf16 KV + FA, pp512/tg128, 5 interleaved control/test rounds, campaign lanes rd04-local-v7 vs rd04-local-t3): tg128 test +3.39% (median 48.25 vs 46.67 t/s, no overlap between arms); pp512 test -3.51% (median 1188.33 vs 1231.51 t/s, control variance 1147-1259). Net: decode gain, prompt cost; cross-arch repeat (Brutus) pending before any promotion decision. Also fixed in fffc2ee: common.cuh helper placement bug (helpers were injected inside a function body)"
 
   [[sources.tracked]]
   commit = "b619acd3c0519cb5e446bd95659034feadcb5570"
   original = "0d66ba3964fb922b31ba84ff5785ddc73b8afedd"
   title = "CUDA: merge packed-BF16 tile kernel (BF16 Q + v_dot2) into the FP32-accum path"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
@@ -85,7 +85,7 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "a1c082a30bcd456d1d658801cc9915e1f7993542"
   title = "CUDA: make packed BF16 PV the only native-BF16 VKQ path"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
@@ -93,7 +93,7 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "ff58c5be0f5badf5c73eda3aa539d68569baaa3e"
   title = "CUDA: tidy native-BF16 tile kernel formatting"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "formatting; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
@@ -101,7 +101,7 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "4febe47deef82d3dcfaa4ceb9dffa931545acca6"
   title = "CUDA: native-BF16 tile kernel for all head sizes, BF16 KQ buffer"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
@@ -109,7 +109,7 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "24b089926345aa2de630d1e216ce995f753677b9"
   title = "CUDA: fattn-tile BF16 cleanup: KQ_cs 8, merged tile loads, head-112 tests"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
@@ -117,7 +117,7 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "444fea6b3be566957f9da26200450b95c70846d9"
   title = "CUDA: mark v_perm operand order verified on RDNA3/RDNA4"
   plan-item = "RD04"
-  status = "ported-untested"
+  status = "ported-benched"
   note = "evidence only; BigCherry must re-verify v_perm itself; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]

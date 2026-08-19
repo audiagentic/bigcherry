@@ -38,6 +38,10 @@ REGISTRY_NAME = "external-sources.toml"
 # Valid statuses for a tracked logical change.
 TRACKED_STATUSES = (
     "ported-untested",
+    # Benched in isolation on one arch (control/test pair) but not yet
+    # cross-arch repeated or reviewed for promotion. Between untested and
+    # validated; added 2026-08-20 for the first RD isolated bench (RD04).
+    "ported-benched",
     "ported-validated",
     "planned",
     "superseded",
