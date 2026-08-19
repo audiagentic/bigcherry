@@ -117,7 +117,9 @@ def build_directory(
     return context.work_root / "builds" / source_slice_id / plan.build_plan_id
 
 
-def resolve_runtime_artifacts(binary: Path) -> tuple[Path, ...]:
+def resolve_runtime_artifacts(
+    binary: Path, *, extra_binaries: tuple[Path, ...] = ()
+) -> tuple[Path, ...]:
     """Every regular (non-symlink) file this build's own compile step
     produced alongside ``binary`` -- llama.cpp's CMake build places every
     project shared library directly next to its executables (libggml*.so*,
@@ -133,9 +135,19 @@ def resolve_runtime_artifacts(binary: Path) -> tuple[Path, ...]:
     the actual HIP dispatch implementation (libggml-hip.so) changed --
     RE09's own investigation established that the meaningful logic lives
     there, not in the small launcher stub.
+
+    ``extra_binaries`` (RE26): a lane can request additional compiled
+    executables from the SAME build_dir/configure (e.g. test-backend-ops
+    alongside the tune lane's llama-bench) that need to travel in the same
+    runtime bundle as ``binary`` -- they share its shared-library closure,
+    so they belong in the same content-addressed bundle rather than a
+    second, redundant one. Callers are responsible for having actually
+    requested these as cmake build targets; this function only resolves
+    and includes them, it does not build them.
     """
     directory = binary.parent
     artifacts = [binary]
+    artifacts.extend(extra_binaries)
     for candidate in sorted(directory.glob("*.so*")):
         if candidate.is_file() and not candidate.is_symlink():
             artifacts.append(candidate)

@@ -958,13 +958,30 @@ def load_measurements(
             digest_hex = result.get("hardware")
             if not isinstance(digest_hex, str) or len(digest_hex) != 32:
                 if legacy_hardware_id is None:
+                    # RE26: a second load_measurements() call against a DB
+                    # this function (or an earlier call in the same
+                    # process) already seeded the placeholder row into --
+                    # legitimate now that a tune pass and a direct-op
+                    # evidence pass both load into the SAME working DB in
+                    # one run. Look it up first; only insert if genuinely
+                    # absent. Without this, the second call's blind INSERT
+                    # hit the hardware_digest UNIQUE constraint (the
+                    # all-zero digest can only exist once).
                     cursor = connection.execute(
-                        "INSERT INTO hardware (hardware_digest, architecture, "
-                        "architecture_code, wave_size, compute_units, feature_flags, "
-                        "canonical_json) VALUES (X'00000000000000000000000000000000', "
-                        "'unknown-incomplete', 0, 0, 0, 0, '{\"complete\":false}')"
+                        "SELECT hardware_id FROM hardware "
+                        "WHERE hardware_digest = X'00000000000000000000000000000000'"
                     )
-                    legacy_hardware_id = cursor.lastrowid
+                    row = cursor.fetchone()
+                    if row is not None:
+                        legacy_hardware_id = row[0]
+                    else:
+                        cursor = connection.execute(
+                            "INSERT INTO hardware (hardware_digest, architecture, "
+                            "architecture_code, wave_size, compute_units, feature_flags, "
+                            "canonical_json) VALUES (X'00000000000000000000000000000000', "
+                            "'unknown-incomplete', 0, 0, 0, 0, '{\"complete\":false}')"
+                        )
+                        legacy_hardware_id = cursor.lastrowid
                 return legacy_hardware_id
             try:
                 raw = bytes.fromhex(digest_hex)

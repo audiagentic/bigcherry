@@ -112,6 +112,11 @@ class CampaignLaneExecutionSpec:
     #: identities until RE18 -- avoids a second API change just to expose
     #: an argument that already exists one layer down.
     gpu_resource_ids: tuple[str, ...] = ()
+    #: RE26: additional executables to build from the same configure and
+    #: publish into the same runtime bundle as binary_relative_path (e.g.
+    #: test-backend-ops alongside the tune lane's llama-bench) -- names
+    #: only, resolved relative to binary_relative_path's own directory.
+    extra_cmake_targets: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -657,7 +662,8 @@ def _execute_build_phase(
         workload_id=workload_id,
         lane_inputs=input_refs,
         has_generate_stage=variant_set is not None,
-        cmake_targets=(Path(spec.binary_relative_path).name,),
+        cmake_targets=(Path(spec.binary_relative_path).name, *spec.extra_cmake_targets),
+        extra_binary_names=spec.extra_cmake_targets,
         # RE25.2: full typed lineage for the artifacts this worker publishes
         # -- the same source provenance and project identity every other
         # stage in this lane carries.

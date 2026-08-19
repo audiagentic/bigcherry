@@ -188,6 +188,7 @@ def make_build_worker(
     lane_inputs: dict[str, ArtifactRef] | None = None,
     has_generate_stage: bool = True,
     cmake_targets: tuple[str, ...] = (),
+    extra_binary_names: tuple[str, ...] = (),
     source_provenance: provenance.SourceProvenance | None = None,
     project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
@@ -202,6 +203,13 @@ def make_build_worker(
     inventory's real, verified path for ``GGML_HIP_AUTOTUNE_SIGNATURE_FILE``,
     independent of whether generation happened, so it is threaded through
     here rather than re-derived from generate's stage inputs.
+
+    ``extra_binary_names`` (RE26): additional executables built alongside
+    ``binary_relative_path`` from the same configure (e.g. test-backend-ops
+    alongside the tune lane's llama-bench), published into the SAME runtime
+    bundle as ``binary`` since they share its shared-library closure. The
+    caller is responsible for including these names in ``cmake_targets`` too
+    -- this parameter only controls bundle membership, not what gets built.
     """
     lane_inputs = lane_inputs or {}
 
@@ -254,6 +262,11 @@ def make_build_worker(
         build_dir = build_directory(context, source_slice_id, build_plan)
         build_dir.mkdir(parents=True, exist_ok=True)
         binary = build_dir / binary_relative_path
+        # RE26: extra executables live next to `binary` (same bin/ dir --
+        # cmake places every target's output there), resolved once here so
+        # every downstream resolve_runtime_artifacts() call site (reuse-hash
+        # check, fresh-build metadata, publish loop) sees the same set.
+        extra_binaries = tuple(binary.parent / name for name in extra_binary_names)
         # toolchain_request is a tuple of tuples; metadata is read back from
         # JSON, which only knows lists. Normalize once, to the same
         # JSON-round-tripped shape on both the write and the reuse-check
@@ -289,11 +302,18 @@ def make_build_worker(
                 # a library modified since the metadata was written (even
                 # with the launcher itself untouched) is caught here.
                 current_runtime_hash = None
-                if binary.is_file():
+                # A cached build_dir from before this lane requested
+                # extra_binary_names has the main binary but not the
+                # extras -- that is a genuine cache miss (this exact
+                # cmake_targets set was never built here), not corruption,
+                # so only compute a comparable hash when every expected
+                # member is actually present.
+                if binary.is_file() and all(p.is_file() for p in extra_binaries):
                     current_runtime_hash = runtime_bundle_hash(
                         {
                             artifact.name: binary_hash(artifact)
-                            for artifact in resolve_runtime_artifacts(binary)
+                            for artifact in resolve_runtime_artifacts(
+                                binary, extra_binaries=extra_binaries)
                         }
                     )
                 validate_reuse(
@@ -365,6 +385,11 @@ def make_build_worker(
                 raise campaign_build.CampaignBuildError(
                     f"build did not produce the expected binary: {binary}"
                 )
+            for extra in extra_binaries:
+                if not extra.is_file():
+                    raise campaign_build.CampaignBuildError(
+                        f"build did not produce the expected extra binary: {extra}"
+                    )
             if has_generate_stage:
                 # Verify again, after compiling: a pass before configure
                 # alone would still miss a modification that happened WHILE
@@ -378,7 +403,8 @@ def make_build_worker(
             )
             runtime_artifacts = {
                 artifact.name: binary_hash(artifact)
-                for artifact in resolve_runtime_artifacts(binary)
+                for artifact in resolve_runtime_artifacts(
+                    binary, extra_binaries=extra_binaries)
             }
             metadata = {
                 "source_slice_id": source_slice_id,
@@ -519,13 +545,19 @@ def make_build_worker(
         # already trusts, so a downstream consumer has one self-describing
         # reference instead of having to re-derive the bundle shape itself.
         bundle_members: dict[str, str] = {}
-        for artifact in resolve_runtime_artifacts(binary):
+        for artifact in resolve_runtime_artifacts(binary, extra_binaries=extra_binaries):
             member_relative = f"{prefix}/{artifact.name}"
             member_digest = store.publish_file(member_relative, artifact)
             if not store.verify(member_relative, member_digest):
                 raise campaign_build.CampaignBuildError(
                     f"published {member_relative} failed verification"
                 )
+            member_path = store.root / member_relative
+            if artifact == binary or artifact in extra_binaries:
+                # RE26: an extra binary (e.g. test-backend-ops) is itself
+                # something a later stage runs, not a passive shared
+                # library -- same reasoning as binary_ref's own chmod above.
+                member_path.chmod(member_path.stat().st_mode | stat.S_IXUSR)
             bundle_members[artifact.name] = member_digest
         computed_runtime_bundle_hash = runtime_bundle_hash(bundle_members)
         bundle_manifest = {

@@ -690,6 +690,161 @@ class TuneStageTests(unittest.TestCase):
                 fake_run.assert_not_called()
 
 
+_CORPUS_RESULT = {
+    "kind": "result",
+    "dispatch": "f" * 32,
+    "winner": "mmq:q5_k:j16:fb1:t128:o2:i64:sram-q8_1:k256:sk0:v1",
+    "improvement_pct": 40.0,
+    "generated": 4,
+    "eligible": 4,
+    "measured": 4,
+    "reason": "",
+    "candidates": [
+        {
+            "name": "mmq:q5_k:j16:fb1:t128:o2:i64:sram-q8_1:k256:sk0:v1",
+            "status": "ok",
+            "median_us": 1.2,
+            "mad_us": 0.01,
+            "p95_us": 1.3,
+            "host_median_us": 0.3,
+        }
+    ],
+}
+# Same manifest_hash as TUNING_HEADER: RE26's merge deliberately rejects a
+# mismatch (see execute_direct_op_evidence_stage's docstring) -- this is
+# what "the corpus ran against the SAME compiled catalog" looks like.
+_CORPUS_JSONL = _jsonl(TUNING_HEADER, _CORPUS_RESULT)
+_MISMATCHED_CORPUS_JSONL = _jsonl(
+    dict(TUNING_HEADER, manifest_hash="a-different-catalog"), _CORPUS_RESULT
+)
+
+
+def _bundle_with_direct_op_member(fx: "_Fixture") -> ArtifactLocator:
+    """RE26: publish a second bundle member (test-backend-ops) alongside
+    the fixture's default entrypoint.py, mirroring what campaign_workers.py's
+    extra_binary_names now does for a real tune lane build."""
+    extra_path = fx.directory / "test-backend-ops"
+    extra_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    prefix = "builds/s1/bp1"
+    extra_digest = fx.store.publish_file(f"{prefix}/test-backend-ops", extra_path)
+    manifest = {
+        "entrypoint": "entrypoint.py",
+        "members": {
+            "entrypoint.py": fx.store.digest(
+                (fx.directory / "entrypoint.py").read_bytes()
+            ),
+            "test-backend-ops": extra_digest,
+        },
+    }
+    bundle_ref = fx.store.publish_json_ref(
+        f"{prefix}/runtime-bundle-direct-op.json",
+        manifest, kind="runtime-bundle", provenance=fx.seed_doc,
+    )
+    return ArtifactLocator(bundle_ref.artifact_id)
+
+
+class DirectOpEvidenceStageTests(unittest.TestCase):
+    def _inventory(self, fx: _Fixture):
+        record_ref = _record(fx)
+        return lifecycle.execute_inventory_stage(
+            context=fx.context, store=fx.store, run_id=fx.run_id,
+            record=ArtifactLocator(record_ref.artifact_id),
+            local_provenance_class="development",
+        )
+
+    def test_merges_corpus_evidence_with_the_real_workload_tune_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            inv = self._inventory(fx)
+            with patch(
+                "bigcherry.lifecycle.subprocess.run", _fake_run(tune_jsonl=_TUNE_JSONL)
+            ):
+                tune_result = lifecycle.execute_tune_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    dispatch_db=ArtifactLocator(inv.database_ref.artifact_id),
+                    spec=fx.spec, local_provenance_class="development",
+                )
+
+            direct_op_bundle = _bundle_with_direct_op_member(fx)
+            with patch(
+                "bigcherry.lifecycle.subprocess.run", _fake_run(tune_jsonl=_CORPUS_JSONL)
+            ):
+                merged = lifecycle.execute_direct_op_evidence_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=direct_op_bundle, prior_tune=tune_result,
+                    corpus_op_filter="m=127,n=128,k=256",
+                    local_provenance_class="development",
+                )
+
+            self.assertEqual(merged.measurements_ref.kind, "tuning-measurements")
+            merged_text = merged.measurements_ref.path.read_text(encoding="utf-8")
+            rows = [json.loads(line) for line in merged_text.splitlines()]
+            self.assertEqual(sum(r["kind"] == "header" for r in rows), 1)
+            dispatches = {r["dispatch"] for r in rows if r["kind"] == "result"}
+            self.assertEqual(dispatches, {"e" * 32, "f" * 32})
+
+            # The merged sqlite DB carries evidence from both passes.
+            conn = sqlite3.connect(str(merged.database_ref.path))
+            try:
+                names = {
+                    row[0] for row in conn.execute(
+                        "SELECT stable_name FROM candidate"
+                    ).fetchall()
+                }
+            finally:
+                conn.close()
+            self.assertIn(
+                "mmq:q5_k:j16:fb1:t128:o2:i64:sram-q8_1:k256:sk0:v1", names)
+
+    def test_rejects_a_bundle_with_no_direct_op_binary_member(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            inv = self._inventory(fx)
+            with patch(
+                "bigcherry.lifecycle.subprocess.run", _fake_run(tune_jsonl=_TUNE_JSONL)
+            ):
+                tune_result = lifecycle.execute_tune_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    dispatch_db=ArtifactLocator(inv.database_ref.artifact_id),
+                    spec=fx.spec, local_provenance_class="development",
+                )
+            with self.assertRaises(lifecycle.LifecycleError):
+                lifecycle.execute_direct_op_evidence_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    prior_tune=tune_result, corpus_op_filter="m=127,n=128,k=256",
+                    local_provenance_class="development",
+                )
+
+    def test_rejects_a_corpus_run_against_a_different_compiled_catalog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            inv = self._inventory(fx)
+            with patch(
+                "bigcherry.lifecycle.subprocess.run", _fake_run(tune_jsonl=_TUNE_JSONL)
+            ):
+                tune_result = lifecycle.execute_tune_stage(
+                    context=fx.context, store=fx.store, run_id=fx.run_id,
+                    runtime_bundle=ArtifactLocator(fx.bundle_ref.artifact_id),
+                    dispatch_db=ArtifactLocator(inv.database_ref.artifact_id),
+                    spec=fx.spec, local_provenance_class="development",
+                )
+            direct_op_bundle = _bundle_with_direct_op_member(fx)
+            with patch(
+                "bigcherry.lifecycle.subprocess.run",
+                _fake_run(tune_jsonl=_MISMATCHED_CORPUS_JSONL),
+            ):
+                with self.assertRaises(lifecycle.LifecycleError):
+                    lifecycle.execute_direct_op_evidence_stage(
+                        context=fx.context, store=fx.store, run_id=fx.run_id,
+                        runtime_bundle=direct_op_bundle, prior_tune=tune_result,
+                        corpus_op_filter="m=127,n=128,k=256",
+                        local_provenance_class="development",
+                    )
+
+
 class PromotionAndReplayExportTests(unittest.TestCase):
     def test_promotion_stage_publishes_promoted_winners(self):
         with tempfile.TemporaryDirectory() as directory:
