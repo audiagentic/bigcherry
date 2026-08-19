@@ -504,6 +504,15 @@ def execute_build_stage(
     runner(cmake_build_args(build_dir, targets=cmake_targets), source_root)
 
     binary = build_dir / binary_relative_path
+    # First production run on a windows platform (RD04 local bench, 2026-08-
+    # 19): cmake target names are extension-less ("llama-bench") but the
+    # produced Windows binary is "llama-bench.exe", so the platform-declared
+    # binary_relative_path alone never exists on win32. Accept the .exe
+    # variant on Windows only; the linux paths are byte-for-byte unchanged.
+    if not binary.is_file() and os.name == "nt":
+        exe_variant = build_dir / (binary_relative_path + ".exe")
+        if exe_variant.is_file():
+            binary = exe_variant
     if not binary.is_file():
         raise CampaignBuildError(
             f"build stage did not produce the expected binary: {binary}"
