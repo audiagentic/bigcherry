@@ -31,11 +31,17 @@ speculative decoding at all.
 Shapes, per HI70's gpt-auto-agent deep-dive recommendation:
 - q5_k fb1 (4 candidates: j16/j32/j64/j128): M=127 (any M % 128 != 0), K=256,
   N=128 -- deterministically forces fallback=true regardless of quant type.
-- mmf f16 nwarps (8 candidates: nw1..nw8): M=32 (MMF_ROWS_PER_BLOCK), K=256
-  (RDNA4/wave32 F16 alignment), N swept across [2, 4, 8, 16] to cover
-  should_use_mmf()'s whole [1, 16] eligibility window in one corpus rather
-  than betting on a single N landing on every nwarps config's own screening
-  path.
+- mmf f16 nwarps: M=32 (MMF_ROWS_PER_BLOCK), K=256 (RDNA4/wave32 F16
+  alignment), N swept exhaustively across [1, 16] -- one case per width.
+  BigCherry's MMF candidate identity is mmf:<type>:w<width>:nw<nwarps>, with
+  width an INDEPENDENT axis from nwarps (confirmed via gpt-auto-agent
+  review), so a partial N spread only proves evidence for whichever widths
+  it happens to hit. should_use_mmf()'s policy gate is exactly
+  `src1_ncols > 16 -> ineligible`, so [1, 16] is the complete eligible
+  range -- sweeping all of it, rather than guessing which single width a
+  given restricted inventory needs, is the only way this corpus reliably
+  covers every mmf:f16:wN:nw1..nw8 candidate a real replay-full run might
+  enumerate.
 
 This is a correctness-evidence corpus, not a performance benchmark -- run in
 `test` mode (CPU-referenced), not `perf`.
@@ -46,16 +52,28 @@ STATE = "validated"
 
 from bigcherry.patcher import Edit, FilePatch
 
+_MMF_WIDTH_CASES = "\n".join(
+    "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, %d, 256, {1, 1}, {1, 1}));" % n
+    for n in range(1, 17)
+)
+
 _CASES = """
     // bigcherry (HI70): deterministic direct-op corpus for MMQ fb1 / MMF
     // nwarps candidates a real-model workload structurally never reaches.
     // See patches/1100_hi70_direct_op_evidence.py for the full rationale.
+    //
+    // BigCherry's MMF candidate identity is mmf:<type>:w<width>:nw<nwarps> --
+    // width (N here) is an independent axis from nwarps, not implied by it
+    // (confirmed via gpt-auto-agent review, 2026-08-19). should_use_mmf()'s
+    // policy gate is `src1_ncols > 16 -> ineligible`, so N=1..16 is the
+    // complete eligible range; sweep it exhaustively here rather than
+    // guessing which single width RE15's own restricted inventory needed --
+    // this covers every mmf:f16:wN:nw1..nw8 candidate regardless of which
+    // exact width(s) turn out to be the ones a real replay-full catalog run
+    // actually enumerates.
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, 2, 256, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, 4, 256, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, 8, 256, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 32, 16, 256, {1, 1}, {1, 1}));
-"""
+%s
+""" % _MMF_WIDTH_CASES
 
 PATCH = FilePatch(
     path="tests/test-backend-ops.cpp",
