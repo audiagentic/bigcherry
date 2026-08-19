@@ -9,6 +9,7 @@
 #include "hip-autotune-dispatch.cuh"
 #include "hip-autotune-signature.h"
 
+#include <atomic>
 #include <mutex>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,16 +24,6 @@ namespace {
 // justification attached. Past this many distinct keys we keep counting but
 // stop remembering which ones.
 constexpr size_t MAX_TRACKED_MISSES = 4096;
-
-struct Winner {
-    const ggml_hip_candidate_descriptor * candidate;
-    ggml_hip_variant_params               variant;
-    ggml_hip_digest                       signature_digest;
-    ggml_hip_digest                       manifest_hash;
-    ggml_hip_digest                       source_revision_digest;
-    uint32_t                              generation;
-    bool                                  fresh;
-};
 
 // A recorded miss.
 //
@@ -77,6 +68,22 @@ struct DigestEqual {
     }
 };
 
+// An entry whose stable name this build's registry does not recognise, or
+// whose implementation_version has drifted, still occupies a slot here
+// (with candidate == nullptr / stale_impl == true) rather than being
+// dropped at load time -- a lookup that reaches such a slot must classify
+// as CANDIDATE_UNAVAILABLE, not fall through indistinguishably to MISS.
+struct Winner {
+    const ggml_hip_candidate_descriptor * candidate; // nullptr: unregistered
+    bool                                   stale_impl_version;
+    ggml_hip_variant_params               variant;
+    ggml_hip_digest                       signature_digest;
+    ggml_hip_digest                       manifest_hash;
+    ggml_hip_digest                       source_revision_digest;
+    uint32_t                              generation;
+    bool                                  fresh;
+};
+
 std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
 std::unordered_map<ggml_hip_digest, Miss, DigestHash, DigestEqual>   g_misses;
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
@@ -85,6 +92,13 @@ std::mutex g_hits_mutex;
 #endif
 std::mutex g_misses_mutex;
 uint64_t   g_misses_total = 0;
+std::atomic<size_t> g_outcomes[GGML_HIP_RESOLVE_COUNT] {};
+// Whole-cache/entry-table level rejection reason, applied to every lookup
+// once set: RERUN_REQUIRED for an obsolete-but-recognisable producer
+// (format/ABI/schema drift), INCOMPATIBLE for a structurally wrong or
+// corrupt file. Defaults to MISS (no cache configured is a plain miss, not
+// a failure).
+ggml_hip_resolution_v2 g_load_failure = GGML_HIP_RESOLVE_MISS;
 bool       g_loaded = false;
 // The loaded cache was tuned against a different candidate set. Kept as state
 // rather than only logged so the coverage report can say so too -- a log line
@@ -211,9 +225,15 @@ bool source_revision_matches(const uint8_t * stored) {
     return memcmp(digest.bytes, stored, GGML_HIP_DIGEST_BYTES) == 0;
 }
 
-void reject(const char * path, const char * why) {
+ggml_hip_resolution_v2 counted(ggml_hip_resolution_v2 outcome) {
+    g_outcomes[outcome].fetch_add(1, std::memory_order_relaxed);
+    return outcome;
+}
+
+void reject(const char * path, const char * why, ggml_hip_resolution_v2 outcome) {
     // Deliberately a warning, not a fatal error: an unusable cache means this
     // process runs upstream's own selection, which is correct, merely untuned.
+    g_load_failure = outcome;
     GGML_LOG_WARN("bigcherry: ignoring replay cache '%s': %s. "
                   "Falling back to native selection.\n", path, why);
 }
@@ -235,33 +255,33 @@ bool ggml_hip_replay_init() {
 
         const std::vector<uint8_t> bytes = read_file(path);
         if (bytes.size() < HDR_SIZE) {
-            reject(path, "file is shorter than its header");
+            reject(path, "file is shorter than its header", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
         const uint8_t * data = bytes.data();
         bool stale = false;
 
         if (read_u32(data + HDR_MAGIC) != GGML_HIP_REPLAY_MAGIC) {
-            reject(path, "bad magic -- not a bigcherry replay cache");
+            reject(path, "bad magic -- not a bigcherry replay cache", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
         if (read_u32(data + HDR_FORMAT) != GGML_HIP_REPLAY_VERSION) {
-            reject(path, "container format version mismatch");
+            reject(path, "container format version mismatch", GGML_HIP_RESOLVE_RERUN_REQUIRED);
             return;
         }
         if (read_u32(data + HDR_ARTIFACT) != GGML_HIP_AUTOTUNE_ARTIFACT_VERSION) {
-            reject(path, "artifact version mismatch");
+            reject(path, "artifact version mismatch", GGML_HIP_RESOLVE_RERUN_REQUIRED);
             return;
         }
         // Standards 5.3: a signature schema change reinterprets hashed fields,
         // so every stored key from an older build is meaningless, not merely
         // stale.
         if (read_u16(data + HDR_SIG_SCHEMA) != GGML_HIP_SIGNATURE_SCHEMA_VERSION) {
-            reject(path, "signature schema version mismatch");
+            reject(path, "signature schema version mismatch", GGML_HIP_RESOLVE_RERUN_REQUIRED);
             return;
         }
         if (read_u16(data + HDR_HW_SCHEMA) != GGML_HIP_HARDWARE_SCHEMA_VERSION) {
-            reject(path, "hardware key schema version mismatch");
+            reject(path, "hardware key schema version mismatch", GGML_HIP_RESOLVE_RERUN_REQUIRED);
             return;
         }
         // v4 moves producer identity to each entry. A global mismatch is no
@@ -274,18 +294,18 @@ bool ggml_hip_replay_init() {
         const uint32_t string_bytes = read_u32(data + HDR_STRING_BYTES);
         const size_t   entries_at   = HDR_SIZE;
         if ((size_t) entry_count > (SIZE_MAX - entries_at) / ENT_SIZE) {
-            reject(path, "entry table size overflows");
+            reject(path, "entry table size overflows", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
         const size_t entries_bytes = (size_t) entry_count * ENT_SIZE;
         if (string_bytes > SIZE_MAX - entries_at - entries_bytes) {
-            reject(path, "string table size overflows");
+            reject(path, "string table size overflows", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
         const size_t strings_at   = entries_at + entries_bytes;
         const size_t expected     = strings_at + string_bytes;
         if (bytes.size() != expected) {
-            reject(path, "file is truncated");
+            reject(path, "file is truncated", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
 
@@ -295,7 +315,7 @@ bool ggml_hip_replay_init() {
                          data + entries_at, expected - entries_at,
                          GGML_HIP_PERSON_DISPATCH);
         if (memcmp(content.bytes, data + HDR_CONTENT, GGML_HIP_DIGEST_BYTES) != 0) {
-            reject(path, "content checksum mismatch -- the file is corrupt");
+            reject(path, "content checksum mismatch -- the file is corrupt", GGML_HIP_RESOLVE_INCOMPATIBLE);
             return;
         }
 
@@ -308,7 +328,7 @@ bool ggml_hip_replay_init() {
 
             const uint32_t name_offset = read_u32(entry + ENT_NAME_OFF);
             if (name_offset >= string_bytes) {
-                reject(path, "entry names a string outside the string table");
+                reject(path, "entry names a string outside the string table", GGML_HIP_RESOLVE_INCOMPATIBLE);
                 g_winners.clear();
                 return;
             }
@@ -316,35 +336,39 @@ bool ggml_hip_replay_init() {
             // strcmp below would walk off the end.
             if (memchr(strings + name_offset, '\0',
                        string_bytes - name_offset) == nullptr) {
-                reject(path, "string table is not NUL-terminated");
+                reject(path, "string table is not NUL-terminated", GGML_HIP_RESOLVE_INCOMPATIBLE);
                 g_winners.clear();
                 return;
             }
 
             const ggml_hip_candidate_descriptor * candidate =
                 ggml_hip_registry_find(strings + name_offset);
-            if (candidate == nullptr) {
-                ++unknown;
-                continue;
-            }
 
             ggml_hip_digest key;
             memcpy(key.bytes, entry + ENT_DISPATCH, GGML_HIP_DIGEST_BYTES);
 
-            // An implementation_version mismatch means this one entry no
-            // longer describes what the candidate actually does in this
-            // build; it is unsafe to use. It is not evidence about any other
-            // entry, including other generations of the same build or
-            // entries retained from other builds -- skip only this entry so
-            // a single stale winner cannot take the rest of the cache with
-            // it (previously this cleared g_winners entirely).
-            if (read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version) {
+            // An unregistered candidate or an implementation_version
+            // mismatch means this one entry cannot be used, but a lookup
+            // that reaches its key/signature must still say so explicitly
+            // (CANDIDATE_UNAVAILABLE) rather than falling through to MISS,
+            // which would misreport "never tuned" as the reason. So the
+            // slot is still recorded, just with candidate == nullptr (or
+            // stale_impl_version set) rather than being dropped. It is not
+            // evidence about any other entry, including other generations
+            // of the same build or entries retained from other builds --
+            // only this one slot is marked unusable (previously an
+            // implementation_version mismatch cleared g_winners entirely).
+            bool stale_impl = candidate != nullptr &&
+                read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version;
+            if (candidate == nullptr) {
+                ++unknown;
+            } else if (stale_impl) {
                 ++stale_impl_version;
-                continue;
             }
 
             Winner winner = {};
-            winner.candidate = candidate;
+            winner.candidate          = stale_impl ? nullptr : candidate;
+            winner.stale_impl_version = stale_impl;
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);
@@ -366,7 +390,7 @@ bool ggml_hip_replay_init() {
                     ggml_hip_digest_equal(prior.manifest_hash, winner.manifest_hash) &&
                     ggml_hip_digest_equal(prior.source_revision_digest,
                                           winner.source_revision_digest)) {
-                    reject(path, "duplicate generation identity");
+                    reject(path, "duplicate generation identity", GGML_HIP_RESOLVE_INCOMPATIBLE);
                     g_winners.clear();
                     return;
                 }
@@ -407,31 +431,74 @@ bool ggml_hip_replay_init() {
     return g_loaded;
 }
 
-bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
+ggml_hip_resolution_v2 ggml_hip_replay_lookup(
+                            const ggml_hip_digest & dispatch_digest,
                             const ggml_hip_digest & signature_digest,
+                            const ggml_hip_dispatch_signature_v1 & sig,
+                            const ggml_hip_hardware_key_v1 & hw,
                             const ggml_hip_candidate_descriptor ** out_candidate,
                             ggml_hip_variant_params * out_variant) {
-    ggml_hip_replay_init();
+    if (!ggml_hip_replay_init()) {
+        // No cache configured is a plain miss; a cache that failed to load
+        // carries the specific reason recorded by reject() during init.
+        return counted(g_load_failure);
+    }
 
     const auto found = g_winners.find(dispatch_digest);
     if (found == g_winners.end()) {
-        return false;
+        return counted(GGML_HIP_RESOLVE_MISS);
     }
+
+    bool saw_signature_match     = false;
+    bool saw_stale_generation    = false;
+    bool saw_candidate_rejected  = false;
+
     // Entries are stored newest-generation-first per key (the exporter sorts
-    // descending by generation), so the first signature match here is always
+    // descending by generation), so the first usable match here is always
     // the newest available winner for this dispatch key.
     for (const Winner & winner : found->second) {
         if (!ggml_hip_digest_equal(winner.signature_digest, signature_digest)) {
             continue;
         }
+        saw_signature_match = true;
         if (g_require_revision_match && !winner.fresh) {
+            saw_stale_generation = true;
+            continue;
+        }
+        // EXACT requires more than "the digest matched": the candidate must
+        // still be registered, must support this architecture, and must
+        // accept this exact signature -- checked here, not after the caller
+        // has already committed to the binding, so a candidate that
+        // resolves but then fails these checks is never silently counted
+        // as a hit (the blind spot the pre-reset design closed).
+        if (winner.candidate == nullptr ||
+            !ggml_hip_candidate_supports_arch(*winner.candidate, hw) ||
+            !winner.candidate->can_execute(winner.candidate, sig, hw)) {
+            saw_candidate_rejected = true;
             continue;
         }
         *out_candidate = winner.candidate;
         *out_variant   = winner.variant;
-        return true;
+        return counted(GGML_HIP_RESOLVE_EXACT);
     }
-    return false;
+
+    if (saw_candidate_rejected) {
+        return counted(GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE);
+    }
+    if (saw_stale_generation) {
+        // Only non-fresh generations exist for this key+signature while
+        // revision matching is required: a tune rerun against the current
+        // build is what would produce a usable entry.
+        return counted(GGML_HIP_RESOLVE_RERUN_REQUIRED);
+    }
+    if (saw_signature_match) {
+        // Unreachable given the loop above (every signature match falls
+        // into one of the two branches), kept as a defensive fallback.
+        return counted(GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE);
+    }
+    // The dispatch key has entries, but none share this lookup's signature
+    // digest: the cache and this binary disagree about what the key means.
+    return counted(GGML_HIP_RESOLVE_INCOMPATIBLE);
 }
 
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
@@ -562,6 +629,23 @@ size_t ggml_hip_replay_entry_count() {
 
 size_t ggml_hip_replay_miss_count() {
     return (size_t) g_misses_total;
+}
+
+size_t ggml_hip_replay_resolution_count(ggml_hip_resolution_v2 outcome) {
+    return outcome < GGML_HIP_RESOLVE_COUNT
+        ? g_outcomes[outcome].load(std::memory_order_relaxed) : 0;
+}
+
+const char * ggml_hip_replay_resolution_name(ggml_hip_resolution_v2 outcome) {
+    switch (outcome) {
+        case GGML_HIP_RESOLVE_EXACT:                 return "exact";
+        case GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE: return "candidate_unavailable";
+        case GGML_HIP_RESOLVE_RERUN_REQUIRED:        return "rerun_required";
+        case GGML_HIP_RESOLVE_INCOMPATIBLE:          return "incompatible";
+        case GGML_HIP_RESOLVE_MISS:                  return "misses";
+        case GGML_HIP_RESOLVE_COUNT:                 break;
+    }
+    return "unknown";
 }
 
 bool ggml_hip_replay_is_stale() {

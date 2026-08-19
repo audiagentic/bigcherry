@@ -64,18 +64,67 @@ struct ggml_hip_replay_entry {
     uint32_t generation;
 };
 
+// Recovery note (RE27): this five-way classification and the always-on
+// counters below restore what existed pre-reset (commit 2c2fe7c) and that
+// the Python coverage validator (ab_benchmark.validate_replay_coverage())
+// was already written and tested against. It was never a speculative v2
+// design -- the runtime producer was simply lost in the reset. Semantics,
+// per the recovery reconciliation against v4's multi-generation cache:
+//   exact                  -- a winner resolved AND is actually usable now:
+//                              candidate registered, supports this arch,
+//                              can_execute() accepts this signature, and the
+//                              stored variant matches the compiled candidate.
+//   miss                   -- the cache loaded fine (or no cache was
+//                              configured); this dispatch key simply has no
+//                              stored entry at all.
+//   rerun_required          -- the cache (or the matching entries for this
+//                              key) is from an obsolete-but-recognisable
+//                              producer: format/ABI/schema mismatch at
+//                              load time, or (v4 multi-generation specific)
+//                              entries exist for this key+signature but all
+//                              are non-fresh while revision matching is
+//                              required. A tune rerun against the current
+//                              build would fix it.
+//   incompatible            -- malformed/corrupt/structurally wrong cache
+//                              (bad magic, truncation, checksum, entry
+//                              provenance), or a fresh matching entry whose
+//                              signature digest disagrees with this lookup's.
+//   candidate_unavailable   -- the key (and, where applicable, signature)
+//                              matched a stored winner, but it cannot be
+//                              used: unregistered candidate, architecture
+//                              rejection, can_execute() rejection, or a
+//                              variant-identity mismatch against the
+//                              compiled candidate.
+// incompatible/rerun_required are frequently whole-cache-level failures
+// (see g_load_failure in the .cpp) surfaced as a per-lookup outcome purely
+// for uniform coverage accounting -- see ggml_hip_coverage_report().
+enum ggml_hip_resolution_v2 : uint8_t {
+    GGML_HIP_RESOLVE_EXACT = 0,
+    GGML_HIP_RESOLVE_CANDIDATE_UNAVAILABLE,
+    GGML_HIP_RESOLVE_RERUN_REQUIRED,
+    GGML_HIP_RESOLVE_INCOMPATIBLE,
+    GGML_HIP_RESOLVE_MISS,
+    GGML_HIP_RESOLVE_COUNT,
+};
+
 // Load the cache named by GGML_HIP_DISPATCH_CACHE, if any. Safe to call more
 // than once; the first call wins. Returns false when no usable cache was
 // loaded, which is not an error -- it means native selection.
 bool ggml_hip_replay_init();
 
-// Resolve a dispatch key to a stored winner.
+// Resolve a dispatch key to a stored winner. sig/hw are needed to run the
+// same arch/can_execute/variant checks that decide EXACT vs
+// CANDIDATE_UNAVAILABLE -- classification happens here, not after the
+// caller has already committed to a binding, so a candidate that resolves
+// but then fails those checks is never silently counted as a hit.
 //
-// Returns false on a miss, on a cache that failed validation, and when the
-// stored winner names a candidate this binary does not contain. The caller then
-// uses native selection.
-bool ggml_hip_replay_lookup(const ggml_hip_digest & dispatch_digest,
+// Only GGML_HIP_RESOLVE_EXACT sets *out_candidate/*out_variant; every other
+// outcome leaves them untouched and the caller uses native selection.
+ggml_hip_resolution_v2 ggml_hip_replay_lookup(
+                            const ggml_hip_digest & dispatch_digest,
                             const ggml_hip_digest & signature_digest,
+                            const ggml_hip_dispatch_signature_v1 & sig,
+                            const ggml_hip_hardware_key_v1 & hw,
                             const ggml_hip_candidate_descriptor ** out_candidate,
                             ggml_hip_variant_params * out_variant);
 
@@ -104,6 +153,16 @@ void ggml_hip_replay_flush_hits();
 // Counts for diagnostics and tests.
 size_t ggml_hip_replay_entry_count();
 size_t ggml_hip_replay_miss_count();
+
+// Per-outcome resolution counters. Always tracked in every replay build --
+// five relaxed atomics incremented once per ggml_hip_replay_lookup() call,
+// the same cost class as the existing dispatched/executed coverage
+// counters (standards: the resolver binds a dispatch key once per process
+// and reuses the binding, so this is not a per-launch increment). Not
+// gated by GGML_HIP_REPLAY_DIAGNOSTICS -- that flag is reserved for the
+// heavier per-key hit log, never for this aggregate.
+size_t ggml_hip_replay_resolution_count(ggml_hip_resolution_v2 outcome);
+const char * ggml_hip_replay_resolution_name(ggml_hip_resolution_v2 outcome);
 
 // True when the loaded cache contains one or more retained generations whose
 // provenance does not match this build. Such entries remain available to a
