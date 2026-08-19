@@ -60,6 +60,7 @@ rebuild.
 from __future__ import annotations
 
 import json
+import os
 import stat
 import subprocess
 from pathlib import Path
@@ -262,6 +263,25 @@ def make_build_worker(
         build_dir = build_directory(context, source_slice_id, build_plan)
         build_dir.mkdir(parents=True, exist_ok=True)
         binary = build_dir / binary_relative_path
+
+        def _resolve_binary(candidate: Path) -> Path:
+            # First production run on a windows platform (local RD04
+            # control lane, 2026-08-19): cmake/ninja target names are
+            # extension-less ("llama-bench") but the produced image file
+            # is "llama-bench.exe", so the plain path never exists on
+            # win32. Every is_file() gate in this worker (reuse check,
+            # post-build check) was therefore permanently false on a
+            # windows platform: each lane run forced a full recompile and
+            # then failed the post-build check even though the .exe sat
+            # right next to it. Accept the .exe variant on Windows only;
+            # linux paths are byte-for-byte unchanged.
+            if not candidate.is_file() and os.name == "nt":
+                exe_variant = candidate.with_name(candidate.name + ".exe")
+                if exe_variant.is_file():
+                    return exe_variant
+            return candidate
+
+        binary = _resolve_binary(binary)
         # RE26: extra executables live next to `binary` (same bin/ dir --
         # cmake places every target's output there), resolved once here so
         # every downstream resolve_runtime_artifacts() call site (reuse-hash
@@ -277,7 +297,14 @@ def make_build_worker(
         # (a shared configure cache across targets is legitimate), and a
         # single metadata file would describe only whichever target was
         # built first.
-        metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
+        # Keyed on the TARGET name (binary_relative_path), not the resolved
+        # binary file name: on windows the resolved name carries .exe only
+        # once the file exists, so keying on binary.name would make the
+        # metadata file (and with it the whole reuse gate) move between the
+        # first build and every later run. Linux: identical to before.
+        metadata_path = build_dir / (
+            f"bigcherry-build-metadata-{Path(binary_relative_path).name}.json"
+        )
 
         metadata: dict[str, Any] | None = None
         reused = False
@@ -381,9 +408,11 @@ def make_build_worker(
                 check=True,
             )
 
+            binary = _resolve_binary(binary)
             if not binary.is_file():
                 raise campaign_build.CampaignBuildError(
-                    f"build did not produce the expected binary: {binary}"
+                    f"build did not produce the expected binary: {binary} "
+                    f"(also probed {binary.with_name(binary.name + '.exe')})"
                 )
             for extra in extra_binaries:
                 if not extra.is_file():
