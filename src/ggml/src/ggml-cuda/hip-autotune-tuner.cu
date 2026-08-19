@@ -1286,6 +1286,17 @@ bool launch_and_fetch(const ggml_hip_candidate_descriptor * candidate,
 // offline without a GPU. NaN (a round where the candidate failed to launch)
 // serialises as `null` -- JSON has no NaN literal, and dropping the entry
 // entirely would silently reintroduce the round-misalignment bug E1 fixes.
+//
+// RE28: six decimal places, not three. The paired sign test that produces
+// confirmation_wins/confirmation_rounds runs at full double precision; an
+// offline reader (tune_promotion.py's _paired_rounds()) deliberately
+// recomputes the same tie/win test from these persisted values rather than
+// trusting the declared counts blindly. At %.3f, two rounds whose true
+// timings differ by under half a nanosecond-scale microsecond fraction can
+// round to the identical displayed value, turning a real (non-tied) round
+// into an apparent tie on replay and failing that cross-check even though
+// the producer's own accounting was correct. Six decimals keeps collisions
+// below any timing precision this measurement stack can actually resolve.
 std::string samples_json(const std::vector<double> & v) {
     std::string out = "[";
     for (size_t i = 0; i < v.size(); ++i) {
@@ -1294,7 +1305,7 @@ std::string samples_json(const std::vector<double> & v) {
             out += "null";
         } else {
             char buf[32];
-            snprintf(buf, sizeof(buf), "%.3f", v[i]);
+            snprintf(buf, sizeof(buf), "%.6f", v[i]);
             out += buf;
         }
     }
