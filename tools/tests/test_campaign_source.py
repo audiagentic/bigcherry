@@ -78,6 +78,21 @@ class CampaignSourceTests(unittest.TestCase):
         plan = source_plan_for(self.cfg, "bigcherry")
         self.assertGreater(len(plan.patch_ids), 0)
 
+    def test_experiment_lane_relaxes_materialize_state_gate(self):
+        # The --experiment path exists to bench 'untested' patches. resolve_lane
+        # enforces the base set's 'validated' state at planning and admits the
+        # experiment module with required_state=None; SourcePlan must not re-
+        # apply 'validated' to the merged module list at materialize time, or
+        # the lane is rejected moments after planning approved it. Base lanes
+        # keep the strict gate (covered by
+        # test_bigcherry_source_composes_patch_sets_via_resolve_lane).
+        plan = source_plan_for(
+            self.cfg, "bigcherry-native", catalog=self.catalog,
+            experiment="rd19-only")
+        self.assertEqual(plan.classification, "experimental")
+        self.assertIsNone(plan.required_state)
+        self.assertIn("1200_rd19_single_gpu_meta_bypass", plan.patch_ids)
+
 
 class ExplicitRefTests(unittest.TestCase):
     """A source with no patch-sets never touches the physical catalog inside

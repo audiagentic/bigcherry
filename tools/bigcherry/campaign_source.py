@@ -181,11 +181,25 @@ def source_plan_for(
     except campaign_resolution.ResolutionError as exc:
         raise CampaignSourceError(str(exc)) from exc
 
+    # Experimental lanes: resolve_lane() already enforced the base patch set's
+    # declared state at planning time (validated) and admitted the experiment
+    # module(s) with required_state=None (they are typically 'untested' --
+    # that is the whole point of the --experiment path). Re-applying the base
+    # set's state to the whole merged module list at materialize time would
+    # reject the lane moments after planning approved it, so the strict
+    # state gate is relaxed to None for experimental classification only.
+    # Content identity is still provenance-enforced: materialize re-derives
+    # each module's content hash from the catalog and records it in the
+    # source metadata. Base (non-experimental) lanes keep the strict gate.
+    plan_required_state = (
+        None if lane.patch_set.classification == "experimental"
+        else lane.patch_set.required_state
+    )
     return workspace.SourcePlan(
         upstream_revision=revision,
         overlay_enabled=source.overlay,
         patch_ids=lane.patch_set.module_ids,
-        required_state=lane.patch_set.required_state,
+        required_state=plan_required_state,
         # RE03 (RV48 audit): resolve_lane already computed this reviewed
         # logical-composition identity -- carry it through instead of
         # discarding it here, so materialize() can persist it into source
