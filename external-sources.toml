@@ -284,19 +284,22 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   title = "cuda : make flash-attn decode and speculative verify batches bit-identical"
   plan-item = "RD26"
   status = "planned"
-  note = "new in snapshot v2; determinism/correctness cluster (see RD26)"
+  note = "new in snapshot v2; determinism/correctness cluster (see RD26). DEFERRED: its fattn-tile.cuh/fattn.cu pre-images require 1202 (type_KV template) and 1203 (WMMA gating); port only after both are benched and retained"
 
   [[sources.tracked]]
   commit = "b2655d381b9575d644ebef794869165ede14b3a3"
   title = "cuda : make non-flash attention decode and verify batches bit-identical"
   plan-item = "RD26"
-  status = "planned"
+  status = "ported-untested"
+  patch = "1210_rd26_bitidentical_decode_verify_standalone"
+  note = "representative of the base-standalone RD26a hunks (b2655d381 + d152888fc); ported 2026-08-19; the full determinism property needs all five cluster commits"
 
   [[sources.tracked]]
   commit = "d152888fc34419c69fb946581f29f927a475b5fa"
   title = "cpu : make decode and speculative verify batches bit-identical"
   plan-item = "RD26"
-  status = "planned"
+  status = "ported-untested"
+  note = "covered by 1210_rd26_bitidentical_decode_verify_standalone (representative commit b2655d381)"
 
   [[sources.tracked]]
   commit = "10b83d6b27520d19bed96e8701a8997c59c951f5"

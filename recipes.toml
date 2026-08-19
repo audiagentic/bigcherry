@@ -66,6 +66,9 @@ patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
 [experiment.rd22-only]
 patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
 
+[experiment.rd26a-only]
+patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
+
 [source.llama-native]
 ref = "pinned"
 overlay = false
