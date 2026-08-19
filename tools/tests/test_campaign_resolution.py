@@ -43,17 +43,20 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
-    def test_base_is_exactly_the_fourteen_validated_core_modules(self):
+    def test_base_is_exactly_the_fifteen_validated_core_modules(self):
         lane = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
         expected = tuple(
             module.patch_id for module in self.catalog
             if module.state == "validated"
         )
-        self.assertEqual(len(expected), 14)
+        # HI70: patches/1100_hi70_direct_op_evidence.py added a 15th
+        # validated core module (deterministic direct-op correctness corpus
+        # for MMQ fb1 / MMF nwarps candidates).
+        self.assertEqual(len(expected), 15)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
             sum(module.group == "core" for module in self.catalog if module.state == "validated"),
-            13,
+            14,
         )
         self.assertEqual(lane.promoted_enhancements, ())
 
@@ -66,7 +69,7 @@ class CampaignResolutionTests(unittest.TestCase):
         lane = campaign_resolution.resolve_lane(
             "bigcherry-native", cfg, self.catalog, experiment="one-fix"
         )
-        self.assertEqual(len(lane.patch_set.module_ids), 15)
+        self.assertEqual(len(lane.patch_set.module_ids), 16)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn("1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids)
         self.assertEqual(lane.patch_set.classification, "experimental")
