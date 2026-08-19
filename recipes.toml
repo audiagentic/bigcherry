@@ -42,6 +42,30 @@ patches = ["1200_rd19_single_gpu_meta_bypass"]
 [experiment.rd20-only]
 patches = ["1201_rd20_attn_gate_tp_split"]
 
+[experiment.rd04-only]
+patches = ["1202_rd04_bf16_flash_attn_tile"]
+
+[experiment.rd05-07-only]
+patches = ["1203_rd050607_rdna4_wmma_fa_q6k_mmq"]
+
+[experiment.rd08-only]
+patches = ["1204_rd08_q6k_mmvq_vdr2"]
+
+[experiment.rd12-only]
+patches = ["1205_rd12_paired_mmvq_dual_output"]
+
+[experiment.rd13-only]
+patches = ["1206_rd13_mul_mat_add_view_fusion"]
+
+[experiment.rd17-only]
+patches = ["1207_rd17_moe_topk_down_fold"]
+
+[experiment.rd21-only]
+patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
+
+[experiment.rd22-only]
+patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
+
 [source.llama-native]
 ref = "pinned"
 overlay = false

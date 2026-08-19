@@ -68,58 +68,66 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "cb05a6aec20b374cbeb7382c8d0314386b6ee062"
   title = "CUDA: read BF16 K/V natively in flash-attn tile kernel with FP32 accumulation"
   plan-item = "RD04"
-  status = "planned"
+  status = "ported-untested"
+  patch = "1202_rd04_bf16_flash_attn_tile"
+  note = "representative of the seven-commit net range 8623179e1^..0581c532c; ported 2026-08-18 as a single net patch (35 edits, 5 files); fattn-tile.cu/.cuh and fattn.cu byte-identical to the fork at 0581c532c; isolated bench pending"
 
   [[sources.tracked]]
   commit = "b619acd3c0519cb5e446bd95659034feadcb5570"
   original = "0d66ba3964fb922b31ba84ff5785ddc73b8afedd"
   title = "CUDA: merge packed-BF16 tile kernel (BF16 Q + v_dot2) into the FP32-accum path"
   plan-item = "RD04"
-  status = "planned"
+  status = "ported-untested"
+  note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "00b07f0042efa8dc1594764229c840ef390eba64"
   original = "a1c082a30bcd456d1d658801cc9915e1f7993542"
   title = "CUDA: make packed BF16 PV the only native-BF16 VKQ path"
   plan-item = "RD04"
-  status = "planned"
+  status = "ported-untested"
+  note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "f18c14b10b3b81aae7b0ab3c6ed4a5914c990d66"
   original = "ff58c5be0f5badf5c73eda3aa539d68569baaa3e"
   title = "CUDA: tidy native-BF16 tile kernel formatting"
   plan-item = "RD04"
-  status = "planned"
-  note = "evidence/cleanup only; folds into the RD04 implementation arm"
+  status = "ported-untested"
+  note = "formatting; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "cfc1927349aec9b01cd841d095484cf628179a22"
   original = "4febe47deef82d3dcfaa4ceb9dffa931545acca6"
   title = "CUDA: native-BF16 tile kernel for all head sizes, BF16 KQ buffer"
   plan-item = "RD04"
-  status = "planned"
+  status = "ported-untested"
+  note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "947070cf0235630b3ddd05dc7fcd6632a1bfb346"
   original = "24b089926345aa2de630d1e216ce995f753677b9"
   title = "CUDA: fattn-tile BF16 cleanup: KQ_cs 8, merged tile loads, head-112 tests"
   plan-item = "RD04"
-  status = "planned"
+  status = "ported-untested"
+  note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "0581c532cfd4ba37000fb2eff25659d92bb1115b"
   original = "444fea6b3be566957f9da26200450b95c70846d9"
   title = "CUDA: mark v_perm operand order verified on RDNA3/RDNA4"
   plan-item = "RD04"
-  status = "planned"
-  note = "evidence only; BigCherry must re-verify v_perm itself"
+  status = "ported-untested"
+  note = "evidence only; BigCherry must re-verify v_perm itself; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
 
   [[sources.tracked]]
   commit = "0153d580dbc2caa8f29b55ad8ddc7088b4c457dd"
   original = "36270950deb0ba979b131fd49fed721ed1256aec"
   title = "CUDA: fuse mul_mat + add through a view node"
   plan-item = "RD13"
-  status = "planned"
+  status = "ported-untested"
+  patch = "1206_rd13_mul_mat_add_view_fusion"
+  note = "ported 2026-08-18; isolated bench pending"
 
   [[sources.tracked]]
   commit = "299f6eaf73b5eeb888bd94eaa66122d003136e6a"
@@ -157,7 +165,9 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "817cb6ba178933f5b62399097f5848c79f4f34e8"
   title = "CUDA: fold the MoE topk-weights MUL into the down projection"
   plan-item = "RD17"
-  status = "planned"
+  status = "ported-untested"
+  patch = "1207_rd17_moe_topk_down_fold"
+  note = "ported 2026-08-18 (9 edits, 3 files); isolated bench pending"
 
   [[sources.tracked]]
   commit = "381bba6be1ea42a8f38924fe5616aa89704605db"
@@ -189,7 +199,8 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   title = "cuda : gfx1151 mmvq table with nwarps=2 for Q8_0 decode"
   plan-item = "RD21"
   status = "deferred-hardware"
-  note = "needs gfx1151 hardware (not on Brutus); also needs RD25 (8cdf1ab08) to avoid the known MTP batch-vs-seq inconsistency"
+  patch = "1208_rd21_gfx1151_mmvq_nwarps_table"
+  note = "needs gfx1151 hardware (not on Brutus); also needs RD25 (8cdf1ab08) to avoid the known MTP batch-vs-seq inconsistency. Patch materialized 2026-08-18; bench blocked on hardware"
 
   [[sources.tracked]]
   commit = "507f2e26719b33a7c82429609bc7806aa60f27e6"
@@ -197,23 +208,26 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   title = "cuda : back out integrated-GPU host buffers on HIP (PR #24233)"
   plan-item = "RD22"
   status = "deferred-hardware"
-  note = "integrated-GPU scoped; Brutus device 2 (gfx1201 integrated) may satisfy the hardware prerequisite - re-assess before it stays parked"
+  patch = "1209_rd22_integrated_gpu_host_buffer_backout"
+  note = "integrated-GPU scoped; Brutus device 2 (gfx1201 integrated) may satisfy the hardware prerequisite - re-assess before it stays parked. Patch materialized 2026-08-18; bench blocked on hardware"
 
   [[sources.tracked]]
   commit = "1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"
   original = "18fc188f6eb93c2cdea116fa9b7d6a6b5fdb595e"
   title = "cuda : RDNA4 WMMA flash-attn and Q6_K mmq prefill performance work"
-  plan-item = "RD05"
-  status = "planned"
-  note = "mixed commit; split across RD05 (WMMA correctness barriers), RD06 (RDNA4 WMMA config) and RD07 (Q6_K MMQ fold/hoist). RD07 co-tenants BigCherry 0300/1000 and must be re-verified against HI71's dense-shape-aware eligibility, not merged textually"
+  plan-item = "RD05/RD06/RD07"
+  status = "ported-untested"
+  patch = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
+  note = "mixed commit; split across RD05 (WMMA correctness barriers), RD06 (RDNA4 WMMA config) and RD07 (Q6_K MMQ fold/hoist). RD07 co-tenants BigCherry 0300/1000 and must be re-verified against HI71's dense-shape-aware eligibility, not merged textually. Ported 2026-08-18 (17 edits, 6 files); isolated bench pending"
 
   [[sources.tracked]]
   commit = "4591cc9806d24c5151a35007d24b69550df93e32"
   original = "d4aaf63b7b7a89639871a1835ceec40644722519"
   title = "cuda : Q6_K mmvq VDR=2 decode kernel"
   plan-item = "RD08"
-  status = "planned"
-  note = "co-tenants BigCherry 0600/0650; audit whether RD25 (8cdf1ab08) applies to this kernel"
+  status = "ported-untested"
+  patch = "1204_rd08_q6k_mmvq_vdr2"
+  note = "co-tenants BigCherry 0600/0650; audit whether RD25 (8cdf1ab08) applies to this kernel. Ported 2026-08-18 (7 edits, 4 files); isolated bench pending"
 
   [[sources.tracked]]
   commit = "3c48ecd635022522b41a622aae28b565497abef5"
@@ -229,8 +243,9 @@ ggml-org/llama.cpp master at tip 6d0549831."""
   original = "ba9e339eaec9fafb9ae7d151bf95c82d13061a62"
   title = "cuda : fuse paired mmvq matmuls over a shared activation"
   plan-item = "RD12"
-  status = "planned"
-  note = "MUST include RD25 (8cdf1ab08): the frozen version has a known MTP batch-vs-seq inconsistency"
+  status = "ported-untested"
+  patch = "1205_rd12_paired_mmvq_dual_output"
+  note = "MUST include RD25 (8cdf1ab08): the frozen version has a known MTP batch-vs-seq inconsistency. Ported 2026-08-18 (8 edits, 3 files); isolated bench pending"
 
   [[sources.tracked]]
   commit = "3b200b259c48a688929cae6bfe1048a60543bc67"
