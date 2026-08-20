@@ -753,3 +753,174 @@ def require_generalisation_policy(
     merged = dict(floor)
     merged.update(policy_thresholds)
     return merged
+
+
+# --------------------------------------------------------------- promotion (EC09)
+
+
+def evaluate_promotion_gate(
+    contract: ExperimentContract, *, correctness_gate: dict[str, object],
+    aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """EC09: the final pass/fail, combining EC07's correctness gate, EC06's
+    aggregated effects against contract.acceptance's own thresholds, and
+    (when supplied) EC08's generalisation proof. This is ADDITIONAL to
+    every existing BigCherry promotion gate (promotion.py/tune_promotion.py's
+    production-class provenance, decision-grade report, replay coverage,
+    etc.) -- a contract-backed promotion must still clear those, this
+    function does not replace or re-check them.
+
+    Handles the asymmetric correctness-first case explicitly (guide
+    Appendix A: RD20/RD22/RD26-class contracts have no expected throughput
+    gain): a contract whose acceptance.target_kernel_gain_pct and
+    end_to_end_gain_pct are both None can still promote on correctness +
+    the regression budget alone -- performance checks are skipped when the
+    contract never declared a performance claim, not treated as failures.
+    max_control_regression_pct is always checked: EC01's parser requires
+    it on every contract, so there is always a declared regression budget
+    to hold aggregated_effects to, regardless of whether a gain was
+    claimed."""
+    reasons: list[str] = []
+
+    if not correctness_gate.get("passed"):
+        missing = correctness_gate.get("missing_checks") or []
+        failed = correctness_gate.get("failed_checks") or []
+        reasons.append(
+            f"correctness gate failed (missing={list(missing)}, failed={list(failed)})"
+        )
+
+    acceptance = contract.acceptance
+    if acceptance.target_kernel_gain_pct is not None:
+        measured = aggregated_effects.get("target_kernel_gain_pct")
+        if not isinstance(measured, (int, float)) or measured < acceptance.target_kernel_gain_pct:
+            reasons.append(
+                f"target_kernel_gain_pct {measured} below required "
+                f"{acceptance.target_kernel_gain_pct}"
+            )
+    if acceptance.end_to_end_gain_pct is not None:
+        measured = aggregated_effects.get("end_to_end_gain_pct")
+        if not isinstance(measured, (int, float)) or measured < acceptance.end_to_end_gain_pct:
+            reasons.append(
+                f"end_to_end_gain_pct {measured} below required "
+                f"{acceptance.end_to_end_gain_pct}"
+            )
+
+    measured_regression = aggregated_effects.get("max_control_regression_pct")
+    if (not isinstance(measured_regression, (int, float))
+            or measured_regression > acceptance.max_control_regression_pct):
+        reasons.append(
+            f"max_control_regression_pct {measured_regression} exceeds budget "
+            f"{acceptance.max_control_regression_pct}"
+        )
+
+    if generalisation_result is not None and not generalisation_result.get("passed"):
+        reasons.append("generalisation proof did not pass")
+
+    return {
+        "passed": not reasons,
+        "reasons": reasons,
+        "contract_id": contract.id,
+        "contract_hash": contract.contract_hash,
+    }
+
+
+# ---------------------------------------------------------------- reporting (EC10)
+
+
+def render_report(
+    contract: ExperimentContract, *, correctness_gate: dict[str, object],
+    aggregated_effects: dict[str, object], promotion_gate: dict[str, object],
+    generalisation_result: dict[str, object] | None = None,
+) -> str:
+    """EC10: one human-readable report per contract, covering both wins AND
+    rejections as first-class results (guide section 12 step 12: "Report
+    failures and losing envelopes as first-class results; rejected
+    optimizations are useful evidence.") -- this function never
+    short-circuits on a failing promotion_gate; every section renders
+    regardless of outcome."""
+    lines: list[str] = []
+    lines.append(f"# Experiment Contract report: {contract.id}")
+    lines.append("")
+    lines.append(f"**{contract.title}**")
+    lines.append("")
+
+    lines.append("## Hypothesis")
+    lines.append(f"- family: {contract.hypothesis.family}")
+    lines.append(f"- expected_effect: {contract.hypothesis.expected_effect}")
+    lines.append(f"- rationale: {contract.hypothesis.rationale}")
+    lines.append("")
+
+    lines.append("## Source")
+    lines.append(f"- source_id: {contract.source.source_id}")
+    lines.append(f"- commits: {', '.join(contract.source.commits)}")
+    lines.append(f"- atomic_part: {contract.source.atomic_part}")
+    lines.append(f"- contract_hash: {contract.contract_hash}")
+    lines.append("")
+
+    lines.append("## Scope")
+    lines.append(f"- backend: {contract.scope.backend}")
+    lines.append(f"- architectures: {', '.join(contract.scope.architectures)}")
+    if contract.scope.weight_types:
+        lines.append(f"- weight_types: {', '.join(contract.scope.weight_types)}")
+    lines.append("")
+
+    lines.append("## Winners (positive lanes)")
+    lines.append(f"- models: {', '.join(contract.positive.models)}")
+    lines.append(f"- workloads: {', '.join(contract.positive.workloads)}")
+    target_gain = aggregated_effects.get("target_kernel_gain_pct")
+    e2e_gain = aggregated_effects.get("end_to_end_gain_pct")
+    lines.append(f"- measured target_kernel_gain_pct: {target_gain}")
+    lines.append(f"- measured end_to_end_gain_pct: {e2e_gain}")
+    lines.append("")
+
+    lines.append("## Non-trigger / losing envelope (boundary)")
+    if contract.boundary.dimensions:
+        for name, values in contract.boundary.dimensions:
+            lines.append(f"- {name}: {', '.join(str(v) for v in values)}")
+    else:
+        lines.append("- (no boundary dimensions declared)")
+    lines.append("")
+
+    lines.append("## Controls")
+    lines.append(f"- models: {', '.join(contract.controls.models)}")
+    lines.append(f"- workloads: {', '.join(contract.controls.workloads)}")
+    regression = aggregated_effects.get("max_control_regression_pct")
+    lines.append(f"- measured max_control_regression_pct (worst control): {regression}")
+    lines.append("")
+
+    lines.append("## Correctness")
+    if contract.correctness.required_checks:
+        lines.append(f"- required: {', '.join(contract.correctness.required_checks)}")
+    else:
+        lines.append("- required: (none declared)")
+    lines.append(f"- gate passed: {correctness_gate.get('passed')}")
+    missing = correctness_gate.get("missing_checks") or []
+    failed = correctness_gate.get("failed_checks") or []
+    if missing:
+        lines.append(f"- missing: {', '.join(missing)}")
+    if failed:
+        lines.append(f"- failed: {', '.join(failed)}")
+    lines.append("")
+
+    lines.append("## Generalised rule")
+    if generalisation_result is None:
+        lines.append("- (no generalisation attempted for this contract)")
+    else:
+        lines.append(f"- passed: {generalisation_result.get('passed')}")
+        for key in ("proven_groups", "added_coverage_pct", "median_regret_pct", "upper95_regret_pct"):
+            if key in generalisation_result:
+                lines.append(f"- {key}: {generalisation_result[key]}")
+    lines.append("")
+
+    lines.append("## Promotion decision")
+    lines.append(f"- passed: {promotion_gate.get('passed')}")
+    reasons = promotion_gate.get("reasons") or []
+    if reasons:
+        lines.append("- blocked by:")
+        for reason in reasons:
+            lines.append(f"  - {reason}")
+    else:
+        lines.append("- no blocking reasons")
+    lines.append("")
+
+    return "\n".join(lines)

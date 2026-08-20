@@ -534,3 +534,121 @@ class GeneralisationHandoffTests(unittest.TestCase):
             if name == "min_holdout_calls":
                 continue
             self.assertEqual(result[name], value)
+
+
+class PromotionGateTests(unittest.TestCase):
+    PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+    FAILING_CORRECTNESS = {"passed": False, "missing_checks": ["greedy_parity"], "failed_checks": []}
+
+    def test_performance_contract_promotes_when_all_thresholds_met(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1, "max_control_regression_pct": 1,
+        })
+        effects = {"target_kernel_gain_pct": 6.0, "end_to_end_gain_pct": 1.5,
+                   "max_control_regression_pct": 0.5}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertTrue(gate["passed"])
+        self.assertEqual(gate["reasons"], [])
+
+    def test_fails_when_target_gain_below_threshold(self):
+        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        effects = {"target_kernel_gain_pct": 3.0, "max_control_regression_pct": 0.5}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("target_kernel_gain_pct" in r for r in gate["reasons"]))
+
+    def test_fails_when_regression_budget_exceeded(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 2.5}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("max_control_regression_pct" in r for r in gate["reasons"]))
+
+    def test_fails_when_correctness_gate_failed_even_with_great_performance(self):
+        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        effects = {"target_kernel_gain_pct": 50.0, "max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.FAILING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("correctness gate failed" in r for r in gate["reasons"]))
+
+    def test_correctness_only_contract_promotes_on_correctness_alone(self):
+        # Guide Appendix A: RD20/RD22/RD26-class contracts -- no performance
+        # claim, correctness + regression budget only.
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.2}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertTrue(gate["passed"])
+
+    def test_missing_generalisation_proof_blocks_when_supplied_and_failed(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            generalisation_result={"passed": False})
+        self.assertFalse(gate["passed"])
+
+    def test_generalisation_proof_absent_does_not_block(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            generalisation_result=None)
+        self.assertTrue(gate["passed"])
+
+
+class RenderReportTests(unittest.TestCase):
+    PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+
+    def test_report_has_all_nine_sections_for_a_promoted_contract(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1, "max_control_regression_pct": 1,
+        })
+        effects = {"target_kernel_gain_pct": 6.0, "end_to_end_gain_pct": 1.5,
+                   "max_control_regression_pct": 0.2}
+        correctness = self.PASSING_CORRECTNESS
+        promotion = ec.evaluate_promotion_gate(
+            contract, correctness_gate=correctness, aggregated_effects=effects)
+        report = ec.render_report(
+            contract, correctness_gate=correctness, aggregated_effects=effects,
+            promotion_gate=promotion)
+        for heading in ("Hypothesis", "Source", "Scope", "Winners", "Non-trigger",
+                        "Controls", "Correctness", "Generalised rule", "Promotion decision"):
+            self.assertIn(heading, report)
+        self.assertIn("passed: True", report)
+
+    def test_report_renders_fully_even_for_a_rejected_contract(self):
+        # guide section 12 step 12: rejected optimizations are useful
+        # evidence -- the report must not short-circuit.
+        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        effects = {"target_kernel_gain_pct": 1.0, "max_control_regression_pct": 3.0}
+        correctness = self.PASSING_CORRECTNESS
+        promotion = ec.evaluate_promotion_gate(
+            contract, correctness_gate=correctness, aggregated_effects=effects)
+        self.assertFalse(promotion["passed"])
+        report = ec.render_report(
+            contract, correctness_gate=correctness, aggregated_effects=effects,
+            promotion_gate=promotion)
+        for heading in ("Hypothesis", "Source", "Scope", "Winners", "Non-trigger",
+                        "Controls", "Correctness", "Generalised rule", "Promotion decision"):
+            self.assertIn(heading, report)
+        self.assertIn("blocked by:", report)
+        self.assertIn(contract.id, report)
+
+    def test_report_shows_boundary_dimensions_when_declared(self):
+        contract = _minimal_contract(
+            acceptance={"max_control_regression_pct": 1},
+            boundary={"dimensions": {"physical_m": [1, 2, 4]}},
+        )
+        effects = {"max_control_regression_pct": 0.0}
+        promotion = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        report = ec.render_report(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            promotion_gate=promotion)
+        self.assertIn("physical_m", report)
+        self.assertIn("1, 2, 4", report)
