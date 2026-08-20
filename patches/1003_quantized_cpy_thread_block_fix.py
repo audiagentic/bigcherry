@@ -20,11 +20,22 @@ without independent re-derivation of the fix itself.
 Not gated to CUDA-only (no ``GGML_USE_HIP`` guard), applies to HIP builds
 as-is. ``cpy.cu`` is untouched by any other patch in this project (core or
 upstream-fixes), so this is a clean, zero-file-conflict backport.
+
+REJECTED (PIN_REBASE_REVIEW_B10502.md action A3): source commit 69bf6437
+is an ancestor of this project's own pinned base -- it was already mainline
+before this patch was ever ported. Verified: every edit is "already-applied"
+against a pristine checkout at both the b10362 and b10502 pins. This patch
+has been a silent no-op since the day it was ported, not a functional
+change. Left in the tree (not deleted) for provenance, but STATE=rejected
+so it is never selected by a default recipe -- a no-op patch whose guard
+matches upstream's own text becomes a loud rebase failure the moment
+upstream evolves that text for an unrelated reason.
 """
 
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "upstream-fixes"
+STATE = "rejected"
 
 # (id_suffix, num_blocks_expr, qk_const, template_class, direction)
 # direction: "to_q" has an extra `ne % QK == 0` assert above (not part of the

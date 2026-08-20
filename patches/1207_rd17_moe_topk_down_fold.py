@@ -62,6 +62,20 @@ Maintenance (future pin bumps / fork movement):
     upstream-touched; re-derive from the tracked fork commit in
     external-sources.toml and run `python -m bigcherry sources check`
     before every pin bump.
+
+KNOWN INCOMPATIBILITY (PIN_REBASE_REVIEW_B10502.md action A2, pre-existing,
+not caused by any pin bump): this patch's struct anchor (_HOST_OLD/_DEV_OLD
+above) is the exact 2-line `gate_scale` -> `glu_op` span that
+1205_rd12_paired_mmvq_dual_output.py inserts its own `dst_gate` field
+between. A selection containing BOTH 1205 and 1207 fails to apply --
+verified failing identically on b10362 and b10502, so this is not a rebase
+regression. Not fixed here: every [experiment.*] entry in recipes.toml
+names exactly one 12xx patch (the whole point of the isolated single-patch-
+vs-native bench design -- see recipes.toml's own comment on that section),
+so no production selection ever combines 1205 and 1207 today. If a future
+combined rd12+rd17 bench is ever wanted, this patch's struct edits need an
+alternative, 1205-aware anchor (e.g. via `applies_if`) before that lane can
+be planned.
 """
 
 import re
