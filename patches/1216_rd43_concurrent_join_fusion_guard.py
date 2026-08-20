@@ -80,8 +80,15 @@ PROVENANCE = {
     "snapshot-head": "58ab0a5f2ce3f426d657d55647846b03fbc1a20b",
     "snapshot-base": "58ab0a5f2ce3f426d657d55647846b03fbc1a20b",
     "adaptations": [
-        "None -- the target region is byte-identical between the fork's "
-        "PR #71 base and our b10502 pin, and untouched by patch 1215.",
+        "Target region byte-identical between the fork's PR #71 base and "
+        "our b10502 pin, untouched by patch 1215.",
+        "Added a GGML_ASSERT immediately after the exec_node_idx lookup "
+        "(GPT review, 2026-08-20): the fork's own implementation left "
+        "join_idx at -1 silently if the lookup ever missed, which would "
+        "make the fusion cap below a silent no-op -- the exact hazard "
+        "this patch exists to close. Fails loud at the lookup instead of "
+        "only downstream if a fusion happens to reach far enough to "
+        "cross the join.",
     ],
 }
 
@@ -119,9 +126,18 @@ _TRY_FUSE_OLD = """                int nodes_to_skip = ggml_cuda_try_fuse(cuda_c
 _TRY_FUSE_NEW = """                int join_idx = -1;
                 if (is_concurrent_event_active) {
                     auto it = exec_node_idx.find(concurrent_event->join_node);
-                    if (it != exec_node_idx.end()) {
-                        join_idx = it->second;
-                    }
+                    // A concurrent event's own join_node must always be a
+                    // real node in this same graph -- it was set from a node
+                    // in this exact cgraph elsewhere in this function. If the
+                    // lookup ever misses, that invariant is broken and the
+                    // fusion-cap below would silently do nothing (join_idx
+                    // stays -1), the exact hazard this patch exists to
+                    // close. Fail loud immediately rather than deferring to
+                    // the downstream assert, which only fires if a fusion
+                    // actually reaches far enough to cross the join.
+                    GGML_ASSERT(it != exec_node_idx.end() &&
+                                "concurrent event join_node missing from this graph's node index");
+                    join_idx = it->second;
                 }
 
                 const int saved_n_nodes = cgraph->n_nodes;
