@@ -796,7 +796,7 @@ def _add_selection_args(parser: argparse.ArgumentParser) -> None:
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="named build definition from recipes.toml (default: all patches)",
+        help="named build definition from config/recipes.toml (default: all patches)",
     )
     parser.add_argument(
         "--groups",
@@ -1009,7 +1009,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="take the ref from this recipe in recipes.toml",
+        help="take the ref from this recipe in config/recipes.toml",
     )
     pull.add_argument(
         "--full",
@@ -1051,7 +1051,7 @@ def build_parser() -> argparse.ArgumentParser:
     sources.register(sub)
 
     repin = sub.add_parser(
-        "repin", help="move recipes.toml's pin to the newest upstream release")
+        "repin", help="move config/recipes.toml's pin to the newest upstream release")
     repin.add_argument(
         "--ref", default=None,
         help="pin to this ref instead of querying for the newest release")
@@ -1134,7 +1134,7 @@ def build_parser() -> argparse.ArgumentParser:
     new_build_cmd.add_argument("--source", default="bigcherry")
     new_build_cmd.add_argument(
         "--profile", default=None,
-        help="named campaign profile from recipes.toml's [campaign.<name>] "
+        help="named campaign profile from config/recipes.toml's [campaign.<name>] "
              "(e.g. 'standard')")
     new_build_cmd.add_argument(
         "--lane", action="append", default=None, metavar="SOURCE:BUILD:PLATFORM",
@@ -1168,7 +1168,7 @@ def build_parser() -> argparse.ArgumentParser:
     new_build_cmd.add_argument("--run-id", default=None)
     new_build_cmd.add_argument(
         "--experiment", default=None,
-        help="name of a [experiment.<name>] entry in recipes.toml (an exact "
+        help="name of a [experiment.<name>] entry in config/recipes.toml (an exact "
              "extra patch list) -- for benching one experimental patch in "
              "isolation against the source's normal patch-set, e.g. "
              "'--source bigcherry-native --experiment rd19-only'")

@@ -54,7 +54,7 @@ _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def registry_path(override: str | Path | None = None) -> Path:
-    return Path(override) if override is not None else paths.REPO_ROOT / REGISTRY_NAME
+    return Path(override) if override is not None else paths.EXTERNAL_SOURCES
 
 
 def load_registry(path: str | Path | None = None) -> dict:

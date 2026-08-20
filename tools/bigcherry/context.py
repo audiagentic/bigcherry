@@ -47,7 +47,7 @@ class ProjectContext:
         config = _absolute(
             config_path
             or os.environ.get("BIGCHERRY_CONFIG_PATH")
-            or project / "recipes.toml"
+            or project / "config" / "recipes.toml"
         )
         artifacts = _absolute(
             artifacts_root

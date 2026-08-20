@@ -33,7 +33,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from bigcherry import config
+from bigcherry import config, paths
 from bigcherry.artifacts import ArtifactStore
 from bigcherry.campaign_lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
 from bigcherry.context import ProjectContext
@@ -114,7 +114,7 @@ def main() -> int:
     # partway through can lose every one of this process's own print()
     # calls while still showing the child's output. Line-buffer instead.
     sys.stdout.reconfigure(line_buffering=True)
-    cfg = config.load("recipes.toml")
+    cfg = config.load(paths.RECIPES)
     context = ProjectContext.resolve()
     store = ArtifactStore(context.artifacts_root)
 
