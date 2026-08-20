@@ -45,6 +45,25 @@ Porting notes:
     comparison against vendor/llama.cpp. Order-independent relative to
     1215/1216; listed after them only to keep the AMD-STREAM chain's
     patch numbers in dependency order.
+  - DEVIATES FROM THE FORK by design (bug found in GPT-auto-agent review,
+    2026-08-20): the fork's own PR #56 caches the RDNA3.5 architecture
+    check inside a function-local `static` initializer that captures
+    `cuda_ctx` by value. C++ function-local `static` semantics run the
+    initializer exactly ONCE per process, on the first call -- capturing
+    `cuda_ctx` does not make it re-evaluate per device. On a process that
+    sees more than one GPU architecture (this project's own Brutus fleet:
+    gfx1100/gfx1201/gfx1030 simultaneously), the first device to call this
+    function would silently fix the default for every other device too.
+    `ggml_backend_cuda_graph_optimize` immediately returns a few lines
+    below if `ggml_backend_cuda_get_device_count() != 1`, so this bug is
+    UNREACHABLE today in this exact call path (the function only ever
+    proceeds past the check in a single-visible-device process, where
+    `cuda_ctx->device` cannot vary between calls) -- but it is still wrong
+    as written and would silently become live if that guard is ever
+    loosened by a future patch. Fixed here rather than ported faithfully:
+    only the env-var override is cached process-wide (correct -- the
+    environment does not change mid-process); the architecture check
+    itself runs on every call, uncached.
   - This patch alone does NOT make graph-opt safe to enable: it depends
     on RD39-RD43 (patches 1215+1216) already being applied to actually be
     correct once triggered. Per the plan item's own acceptance criteria,
@@ -84,8 +103,12 @@ PROVENANCE = {
     "snapshot-head": "58ab0a5f2ce3f426d657d55647846b03fbc1a20b",
     "snapshot-base": "58ab0a5f2ce3f426d657d55647846b03fbc1a20b",
     "adaptations": [
-        "None -- the target region is byte-identical between the fork's "
-        "PR #56 base and our b10502 pin, and untouched by patches 1215/1216.",
+        "Fixed a real multi-device bug in the fork's own implementation: "
+        "its function-local static caches the architecture check "
+        "process-wide from the first caller, not per-device. Only the "
+        "env-var override is cached here; the architecture check runs on "
+        "every call. See the porting notes above for the full analysis "
+        "and why the bug is currently unreachable but was fixed anyway.",
     ],
 }
 
@@ -102,14 +125,22 @@ _ENABLE_TAIL = """);
     }();
 """
 
-_ENABLE_NEW = """    static bool enable_graph_optimization = [cuda_ctx] {
+_ENABLE_NEW = """    // Only the env-var override is safe to cache process-wide (the
+    // environment does not change mid-process). The architecture check
+    // must run on every call, uncached -- a function-local `static`
+    // capturing cuda_ctx does NOT re-evaluate per device; it runs its
+    // initializer once, on the first caller, for the whole process. On a
+    // process that sees more than one GPU architecture the first device
+    // to call this would silently fix the default for every other device
+    // too (see the patch module's porting notes for the full analysis;
+    // this deviates from the fork's own PR #56, which has this bug).
+    static const int env_graph_opt_override = [] {
         const char * env = getenv("GGML_CUDA_GRAPH_OPT");
-        if (env != nullptr) {
-            return atoi(env) == 1;
-        }
-        const int cc = ggml_cuda_info().devices[cuda_ctx->device].cc;
-        return GGML_CUDA_CC_IS_RDNA3_5(cc);
+        return env != nullptr ? (atoi(env) == 1 ? 1 : 0) : -1;
     }();
+    const bool enable_graph_optimization = env_graph_opt_override >= 0
+        ? (env_graph_opt_override != 0)
+        : GGML_CUDA_CC_IS_RDNA3_5(ggml_cuda_info().devices[cuda_ctx->device].cc);
 """
 
 
@@ -127,7 +158,7 @@ PATCH = FilePatch(
                       "override everywhere",
             mode="replace",
             text=_ENABLE_NEW,
-            guard=r"return GGML_CUDA_CC_IS_RDNA3_5\(cc\);",
+            guard=r"env_graph_opt_override >= 0",
         ),
     ),
 )
