@@ -108,6 +108,12 @@ def scan_rejects(measurements_path: Path) -> list[str]:
 
 
 def main() -> int:
+    # Redirected stdout (a log file, not a TTY) is fully buffered by
+    # default -- a subprocess.run() child's own output bypasses that
+    # buffer entirely (it writes straight to the shared fd), so a crash
+    # partway through can lose every one of this process's own print()
+    # calls while still showing the child's output. Line-buffer instead.
+    sys.stdout.reconfigure(line_buffering=True)
     cfg = config.load("recipes.toml")
     context = ProjectContext.resolve()
     store = ArtifactStore(context.artifacts_root)
