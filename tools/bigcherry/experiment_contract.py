@@ -204,7 +204,34 @@ class CorrectnessRequirements:
 
 
 @dataclass(frozen=True)
+class SourceEvidence:
+    """EC17: what the EXTERNAL source actually reported -- kept structurally
+    separate from `Acceptance` (BigCherry's OWN required thresholds).
+    Purely documentary/provenance: does not drive any promotion-gate logic
+    by itself (see source_evidence_mismatch_warning below for the one
+    consistency check that DOES read it, which only ever flags, never
+    blocks). `metric` is deliberately not a closed enum -- source reports
+    genuinely vary (kernel_us, pp512, tg128, end_to_end_tps, ...) and
+    forcing them into a fixed vocabulary would either lose real precision
+    or invite a wrong-but-close mapping. This is the fix for a real
+    external-review finding: a source-reported +7.4% end-to-end number is
+    a reason to investigate, not a requirement that BigCherry's own kernel
+    acceptance threshold be numerically identical -- they are different
+    measurements, on different hardware, with different methodology."""
+    metric: str
+    value_pct: float
+    hardware: str
+    workload: str
+
+
+@dataclass(frozen=True)
 class Acceptance:
+    """BigCherry's OWN required thresholds -- a contract's promotion gate is
+    evaluated against these, never against SourceEvidence directly. These
+    may or may not numerically match what an external source reported
+    (see SourceEvidence's docstring); source_evidence_mismatch_warning
+    flags a large or backwards divergence for a human to look at, but a
+    mismatch is never by itself a parse error or a promotion blocker."""
     target_kernel_gain_pct: float | None
     end_to_end_gain_pct: float | None
     max_control_regression_pct: float | None
@@ -224,6 +251,7 @@ class ExperimentContract:
     boundary: Boundary
     correctness: CorrectnessRequirements
     acceptance: Acceptance
+    source_evidence: SourceEvidence | None = None
 
     @property
     def contract_hash(self) -> str:
@@ -270,6 +298,15 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             "end_to_end_gain_pct": contract.acceptance.end_to_end_gain_pct,
             "max_control_regression_pct": contract.acceptance.max_control_regression_pct,
         },
+        "source_evidence": (
+            {
+                "metric": contract.source_evidence.metric,
+                "value_pct": contract.source_evidence.value_pct,
+                "hardware": contract.source_evidence.hardware,
+                "workload": contract.source_evidence.workload,
+            }
+            if contract.source_evidence is not None else None
+        ),
     }
 
 
@@ -443,9 +480,35 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             f"Appendix A: RD20/RD22/RD26-class contracts still need a regression budget)"
         )
 
+    source_evidence: SourceEvidence | None = None
+    source_evidence_raw = data.get("source-evidence")
+    if source_evidence_raw is not None:
+        se_where = f"{where}.source-evidence"
+        se_data = _table(source_evidence_raw, se_where)
+        se_metric = _required_string(se_data.get("metric"), f"{se_where}.metric")
+        se_value = se_data.get("value_pct")
+        if isinstance(se_value, bool) or not isinstance(se_value, (int, float)):
+            raise ExperimentContractError(f"{se_where}.value_pct must be a number")
+        se_value = float(se_value)
+        if not math.isfinite(se_value):
+            raise ExperimentContractError(
+                f"{se_where}.value_pct must be a finite number -- {se_value!r} given"
+            )
+        se_hardware = _required_string(se_data.get("hardware"), f"{se_where}.hardware")
+        se_workload = _required_string(se_data.get("workload"), f"{se_where}.workload")
+        unknown_se = sorted(set(se_data) - {"metric", "value_pct", "hardware", "workload"})
+        if unknown_se:
+            raise ExperimentContractError(
+                f"{se_where} names unknown field(s): {', '.join(unknown_se)}"
+            )
+        source_evidence = SourceEvidence(
+            metric=se_metric, value_pct=se_value, hardware=se_hardware, workload=se_workload,
+        )
+
     unknown_top = sorted(set(data) - {
         "title", "source", "hypothesis", "target", "prerequisites", "scope",
         "positive", "controls", "boundary", "correctness", "acceptance",
+        "source-evidence",
     })
     if unknown_top:
         raise ExperimentContractError(f"{where}: unknown field(s): {', '.join(unknown_top)}")
@@ -454,8 +517,48 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         id=contract_id, title=title, source=source, hypothesis=hypothesis, target=target,
         prerequisites=prerequisites, scope=scope, positive=positive, controls=controls,
         boundary=boundary, correctness=CorrectnessRequirements(required_checks),
-        acceptance=acceptance,
+        acceptance=acceptance, source_evidence=source_evidence,
     )
+
+
+def source_evidence_mismatch_warning(contract: ExperimentContract) -> str | None:
+    """EC17: non-fatal consistency check between a contract's SourceEvidence
+    (what the external source reported) and its own Acceptance threshold
+    (what BigCherry requires). Never raises, never blocks parsing or
+    promotion -- returns a human-readable warning string when the numbers
+    look structurally inconsistent, or None when there's nothing to flag
+    (including when source_evidence is absent, or acceptance has no
+    target_kernel_gain_pct to compare against -- a correctness-only
+    contract has nothing numeric to check here).
+
+    Flags two cases: (1) acceptance requires MORE gain than the source
+    itself ever reported -- an impossible-to-meet bar, since BigCherry is
+    asking to exceed the only evidence that the optimization works at all;
+    (2) acceptance is set far below what the source reported (more than a
+    2x gap) -- not wrong, but worth a human noticing the gate is much
+    looser than the hypothesis being tested, in case that's accidental
+    rather than a deliberate conservative choice."""
+    if contract.source_evidence is None:
+        return None
+    target = contract.acceptance.target_kernel_gain_pct
+    if target is None:
+        return None
+    source_value = contract.source_evidence.value_pct
+    if target > source_value:
+        return (
+            f"acceptance.target_kernel_gain_pct ({target}%) exceeds the source's own "
+            f"reported gain ({source_value}% {contract.source_evidence.metric} on "
+            f"{contract.source_evidence.hardware}) -- this threshold can never be met "
+            f"even if the port perfectly reproduces the source's result"
+        )
+    if source_value > 0 and target < source_value / 2:
+        return (
+            f"acceptance.target_kernel_gain_pct ({target}%) is less than half the "
+            f"source's reported gain ({source_value}% {contract.source_evidence.metric} "
+            f"on {contract.source_evidence.hardware}) -- confirm this conservative gate "
+            f"is deliberate, not an oversight"
+        )
+    return None
 
 
 # ------------------------------------------------------------------- registry
@@ -991,6 +1094,17 @@ def render_report(
     lines.append(f"- atomic_part: {contract.source.atomic_part}")
     lines.append(f"- contract_hash: {contract.contract_hash}")
     lines.append("")
+
+    if contract.source_evidence is not None:
+        lines.append("## Source evidence (EC17 -- what the external source reported)")
+        lines.append(f"- metric: {contract.source_evidence.metric}")
+        lines.append(f"- value_pct: {contract.source_evidence.value_pct}")
+        lines.append(f"- hardware: {contract.source_evidence.hardware}")
+        lines.append(f"- workload: {contract.source_evidence.workload}")
+        mismatch = source_evidence_mismatch_warning(contract)
+        if mismatch is not None:
+            lines.append(f"- WARNING: {mismatch}")
+        lines.append("")
 
     lines.append("## Scope")
     lines.append(f"- backend: {contract.scope.backend}")
