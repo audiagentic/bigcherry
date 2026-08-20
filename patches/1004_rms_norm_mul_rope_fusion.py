@@ -34,6 +34,18 @@ Checked for anchor conflicts against this project's own three existing
 `ggml_cuda_can_fuse`/`ggml_cuda_try_fuse` (~line 2650-3950) -- they touch
 `ggml_backend_cuda_free`, `ggml_cuda_mul_mat_id`, and pool alloc/free
 functions instead. No real overlap, despite all four patches sharing a file.
+
+REJECTED (PIN_REBASE_REVIEW_B10502.md action A3): the full fusion (kernel,
+`should_fuse`, dispatch wiring, including the VIEW/SET_ROWS op list) already
+existed in this project's own pinned base before this patch was ever
+ported -- verified: all 5 edits are "already-applied" against a pristine
+checkout at both the b10362 and b10502 pins. Silent no-op since porting,
+not a functional change. Left in the tree for provenance, STATE=rejected
+so a default recipe never selects it. Anchor liability flagged for the next
+pin bump: upstream's rope files churn again post-b10502 (`fe8156f7`
+#27120, `ggml_rope_set_offset`) -- if this patch is ever un-rejected instead
+of staying retired, re-verify its anchors against whichever base is current
+first.
 """
 
 import re
@@ -41,6 +53,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "upstream-fixes"
+STATE = "rejected"
 
 
 def re_escape_literal(s: str) -> str:

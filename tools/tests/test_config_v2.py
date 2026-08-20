@@ -93,8 +93,13 @@ states = ["validated"]
             config.load(path)
 
     def test_shipped_v2_preserves_legacy_execution_properties(self):
+        # Asserts the shape survives loading, not a specific pin value --
+        # the real recipes.toml's `pinned` moves every time the project
+        # rebases to a newer llama.cpp release (see
+        # docs/reference/PIN_REBASE_REVIEW_B10502.md), which this test
+        # must not need editing for.
         loaded = config.load(Path(__file__).resolve().parents[2] / "recipes.toml")
-        self.assertEqual(loaded.pinned, "b10362")
+        self.assertTrue(loaded.pinned)
         self.assertEqual(loaded.sources["llama-native"].patch_sets, ())
         self.assertEqual(loaded.sources["bigcherry-native"].patch_sets, ("framework",))
         self.assertEqual(loaded.sources["bigcherry"].patch_sets, ("framework", "validated-enhancements"))
