@@ -176,14 +176,105 @@ class VkSchemaTablesTests(unittest.TestCase):
                       "vk_observation", "vk_measurement", "vk_winner"):
             self.assertIn(name, tables)
 
-    def test_schema_version_unchanged_at_4(self):
-        # Additive orthogonal namespace, not a reinterpretation of any
-        # existing hashed field -- schema_version must NOT bump (see the
-        # comment block above the vk_* tables in dispatch-db.sql).
+    def test_schema_version_bumped_to_5_on_fresh_db(self):
+        # A fresh database (no schema_meta row) resolves to '5' via the
+        # INSERT OR IGNORE near the top of dispatch-db.sql.
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "4")
+        self.assertEqual(row[0], "5")
+
+    def test_real_schema_4_database_migrates_to_5_in_place(self):
+        # The scenario the migration exists for: a REAL pre-existing
+        # database, at schema 4, with real HIP data already in it and none
+        # of the vk_* tables. Re-applying the current dispatch-db.sql (the
+        # same executescript every record/tune/replay lifecycle call makes)
+        # must move it to '5' without touching or losing that data.
+        legacy = sqlite3.connect(":memory:")
+        try:
+            legacy.execute(
+                "CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            legacy.executemany(
+                "INSERT INTO schema_meta(key, value) VALUES (?, ?)",
+                [("schema_version", "4"), ("signature_schema", "1"),
+                 ("hardware_schema", "1"), ("transform_schema", "1")],
+            )
+            # Real schema-4 `build` shape (unchanged at schema 5 -- only the
+            # new vk_* tables were added), not a simplified stand-in, so
+            # re-applying the current schema file's CREATE TABLE IF NOT
+            # EXISTS (a no-op against an already-existing table) doesn't
+            # leave later statements referencing columns this mock lacks.
+            legacy.execute(
+                "CREATE TABLE build ("
+                "    build_id            INTEGER PRIMARY KEY,"
+                "    source_revision     TEXT    NOT NULL,"
+                "    source_dirty        INTEGER NOT NULL DEFAULT 0,"
+                "    manifest_hash       TEXT    NOT NULL,"
+                "    bigcherry_revision  TEXT,"
+                "    signature_schema    INTEGER NOT NULL,"
+                "    hardware_schema     INTEGER NOT NULL,"
+                "    variant_set         TEXT    NOT NULL,"
+                "    rocm_version        TEXT,"
+                "    hip_version         TEXT,"
+                "    compiler            TEXT,"
+                "    build_descriptor_hash TEXT,"
+                "    source_slice_id      TEXT,"
+                "    build_plan_id        TEXT,"
+                "    effective_build_id   TEXT,"
+                "    campaign_run_id      TEXT,"
+                "    workload_id          TEXT,"
+                "    dispatch_abi        TEXT,"
+                "    identity_scope       TEXT    NOT NULL DEFAULT 'legacy-imported',"
+                "    created_at          TEXT    NOT NULL DEFAULT (datetime('now')),"
+                "    CHECK (identity_scope IN ('campaign', 'legacy-imported')),"
+                "    CHECK (identity_scope = 'legacy-imported' OR ("
+                "        source_slice_id IS NOT NULL"
+                "        AND build_plan_id IS NOT NULL"
+                "        AND effective_build_id IS NOT NULL"
+                "    ))"
+                ")"
+            )
+            legacy.execute(
+                "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+                "hardware_schema, variant_set) VALUES "
+                "('realhistoricalrevision0001', 'realhash', 1, 1, 'inventory')"
+            )
+            legacy.commit()
+
+            # Re-apply the real, current schema file -- exactly what every
+            # lifecycle.py DB-touching call does on every real run.
+            legacy.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+
+            version = legacy.execute(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            self.assertEqual(version, "5")
+
+            # The pre-existing real row survived, untouched.
+            preserved = legacy.execute(
+                "SELECT source_revision, manifest_hash FROM build"
+            ).fetchone()
+            self.assertEqual(preserved, ("realhistoricalrevision0001", "realhash"))
+
+            # And the new vk_* tables now exist alongside it.
+            tables = {
+                row[0] for row in legacy.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            self.assertIn("vk_hardware", tables)
+        finally:
+            legacy.close()
+
+    def test_migration_is_idempotent_once_already_at_5(self):
+        # Re-running the schema script against an already-migrated database
+        # must not error and must leave it at '5'.
+        self.conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+        row = self.conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+        ).fetchone()
+        self.assertEqual(row[0], "5")
 
     def test_hip_tables_and_constraints_unaffected(self):
         # A HIP candidate insert must still enforce the original HIP-only
