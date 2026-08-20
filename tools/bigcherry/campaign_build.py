@@ -59,7 +59,9 @@ def resolve_build_environment() -> tuple[tuple[str, str], ...]:
     colliding with one built under a different environment.
     """
     return tuple(
-        (name, os.environ[name]) for name in _BUILD_RELEVANT_ENV_VARS if name in os.environ
+        (name, os.environ[name])
+        for name in _BUILD_RELEVANT_ENV_VARS
+        if name in os.environ
     )
 
 
@@ -94,12 +96,15 @@ def toolchain_request_for_platform(
         values["CMAKE_C_COMPILER"] = platform.c_compiler
     if platform.cxx_compiler:
         values["CMAKE_CXX_COMPILER"] = platform.cxx_compiler
-    values.update(resolve_toolchain_versions(platform.c_compiler, platform.cxx_compiler))
+    values.update(
+        resolve_toolchain_versions(platform.c_compiler, platform.cxx_compiler)
+    )
     return tuple(sorted(values.items()))
 
 
 def resolve_toolchain_versions(
-    c_compiler: str | None, cxx_compiler: str | None,
+    c_compiler: str | None,
+    cxx_compiler: str | None,
 ) -> dict[str, str]:
     """Real, content-level toolchain identity, not just a requested path.
 
@@ -144,7 +149,9 @@ def resolve_toolchain_versions(
     return values
 
 
-def _resolve_compiler_path(explicit: str | None, fallback_names: tuple[str, ...]) -> Path | None:
+def _resolve_compiler_path(
+    explicit: str | None, fallback_names: tuple[str, ...]
+) -> Path | None:
     if explicit:
         candidate = Path(explicit)
         return candidate.resolve() if candidate.exists() else None
@@ -157,7 +164,9 @@ def _resolve_compiler_path(explicit: str | None, fallback_names: tuple[str, ...]
 
 def _version_probe(argv: list[str]) -> str | None:
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10)
+        completed = subprocess.run(
+            argv, capture_output=True, text=True, check=True, timeout=10
+        )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
     first_line = completed.stdout.splitlines()[0].strip() if completed.stdout else None
@@ -248,9 +257,17 @@ def cmake_configure_args(
         if rocm_root is not None:
             existing = options.get("CMAKE_PREFIX_PATH", "")
             prefix_path = rocm_root.as_posix()
-            options["CMAKE_PREFIX_PATH"] = f"{existing};{prefix_path}" if existing else prefix_path
+            options["CMAKE_PREFIX_PATH"] = (
+                f"{existing};{prefix_path}" if existing else prefix_path
+            )
     return [
-        "cmake", "-S", str(source_root), "-B", str(build_dir), "-G", "Ninja",
+        "cmake",
+        "-S",
+        str(source_root),
+        "-B",
+        str(build_dir),
+        "-G",
+        "Ninja",
         *(f"-D{key}={value}" for key, value in sorted(options.items())),
     ]
 
@@ -302,16 +319,21 @@ def materialize_source(
         cached = json.loads(metadata_path.read_text(encoding="utf-8"))
         cached_plan = cached.get("plan", {})
         cached_patches = sorted(
-            (item["patch_id"], item["content_hash"]) for item in cached_plan.get("patches", []))
+            (item["patch_id"], item["content_hash"])
+            for item in cached_plan.get("patches", [])
+        )
         current_patches = sorted(
-            (item["patch_id"], item["content_hash"]) for item in identity["patches"])
-        if (cached_plan.get("upstream_revision") != identity["upstream_revision"] or
-                cached_plan.get("overlay_enabled") != identity["overlay_enabled"] or
-                cached_patches != current_patches or
-                cached_plan.get("required_state") != identity["required_state"] or
-                cached.get("overlay_content_hash") != identity["overlay_content_hash"] or
-                cached_plan.get("patch_set_id") != identity.get("patch_set_id") or
-                cached_plan.get("classification") != identity.get("classification")):
+            (item["patch_id"], item["content_hash"]) for item in identity["patches"]
+        )
+        if (
+            cached_plan.get("upstream_revision") != identity["upstream_revision"]
+            or cached_plan.get("overlay_enabled") != identity["overlay_enabled"]
+            or cached_patches != current_patches
+            or cached_plan.get("required_state") != identity["required_state"]
+            or cached.get("overlay_content_hash") != identity["overlay_content_hash"]
+            or cached_plan.get("patch_set_id") != identity.get("patch_set_id")
+            or cached_plan.get("classification") != identity.get("classification")
+        ):
             raise CampaignBuildError(
                 f"source directory {destination} exists with metadata for a "
                 f"different plan than requested (plan id collision or stale "
@@ -324,7 +346,8 @@ def materialize_source(
         # fail closed rather than be silently compiled.
         try:
             actual_tree_oid = git_tree_oid(
-                destination, allowed_untracked=set(cached.get("allowed_untracked", ())))
+                destination, allowed_untracked=set(cached.get("allowed_untracked", ()))
+            )
         except SourceIdentityError as exc:
             raise CampaignBuildError(
                 f"cached source directory {destination} failed re-verification: {exc}"
@@ -349,12 +372,17 @@ def materialize_source(
         # request, and fail closed on any disagreement -- treating the
         # persisted record as an assertion to re-prove, not an authority.
         recomputed_source_slice_id = source_identity.source_slice_id(
-            upstream_revision=identity["upstream_revision"], tree_oid=actual_tree_oid,
+            upstream_revision=identity["upstream_revision"],
+            tree_oid=actual_tree_oid,
             object_format=cached.get("git_object_format", "sha1"),
         )
         recomputed_source_plan_id = campaign_source.source_plan_id(plan)
         for label, recomputed, cached_value in (
-            ("source_slice_id", recomputed_source_slice_id, cached.get("source_slice_id")),
+            (
+                "source_slice_id",
+                recomputed_source_slice_id,
+                cached.get("source_slice_id"),
+            ),
             ("source_plan_id", recomputed_source_plan_id, cached.get("source_plan_id")),
             ("materialization_plan_id", plan_id, cached.get("materialization_plan_id")),
         ):
@@ -490,15 +518,25 @@ def execute_build_stage(
             f"match build_plan.source_slice_id {build_plan.source_slice_id!r}"
         )
 
-    source_root = context.work_root / "sources" / campaign_source.materialization_plan_id(
-        campaign_source.resolve_materialization_identity(context, source_plan))
+    source_root = (
+        context.work_root
+        / "sources"
+        / campaign_source.materialization_plan_id(
+            campaign_source.resolve_materialization_identity(context, source_plan)
+        )
+    )
     build_dir = builds.build_directory(context, source_slice_id, build_plan)
     build_dir.mkdir(parents=True, exist_ok=True)
 
     configure_args = cmake_configure_args(
-        build, platform, source_root, build_dir,
-        generated_root=generated_root, inventory=inventory,
-        c_compiler=c_compiler, cxx_compiler=cxx_compiler,
+        build,
+        platform,
+        source_root,
+        build_dir,
+        generated_root=generated_root,
+        inventory=inventory,
+        c_compiler=c_compiler,
+        cxx_compiler=cxx_compiler,
     )
     runner(configure_args, source_root)
     runner(cmake_build_args(build_dir, targets=cmake_targets), source_root)
