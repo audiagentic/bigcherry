@@ -6,10 +6,20 @@ test_build_flip.py (RE21) already covers the broadened unsupported-flag
 surface (--recipe/--groups/--states/--variant-set/--force/--target/
 --dry-run all rejected with exit 2 on the new `build` parser) and the
 exit-1-vs-exit-2 distinction -- not duplicated here. This file covers the
-remaining four checks from RE22's acceptance list: legacy poisoning,
-exact canonical lane-set production, fault isolation at the CLI/result
-level (not just aggregate counts), and the static/structural guarantee
-that the new path never touches legacy tree-state mechanics.
+remaining checks from RE22's acceptance list: exact canonical lane-set
+production, fault isolation at the CLI/result level (not just aggregate
+counts), and the static/structural guarantee that the new path never
+touches legacy tree-state mechanics.
+
+RE23 note: this file used to also carry a `PoisonedLegacyTests` class that
+poisoned ``bigcherry.__main__.cmd_build`` and proved `build` never called
+it. RE23 deleted `cmd_build`/`legacy-build` entirely once the cutover's
+compatibility gates were satisfied, so that check became structurally
+impossible to write (there is no longer a legacy function to poison) --
+the intent survives in NoLegacyTreeStateMechanicsTests below, which proves
+the same thing at the level of "the symbol doesn't exist anywhere the new
+path could reference it", a stronger guarantee than "it exists but wasn't
+called this one time".
 """
 
 from __future__ import annotations
@@ -42,37 +52,6 @@ def _build_args(**overrides):
         else:
             argv += [flag, str(value)]
     return parser.parse_args(argv)
-
-
-class PoisonedLegacyTests(unittest.TestCase):
-    """Check 1: poison legacy cmd_build; `build` must never invoke it."""
-
-    def test_build_all_never_invokes_legacy_cmd_build(self):
-        args = _build_args(all=True)
-
-        class FakeLane:
-            def __init__(self, name):
-                self.source_name, self.build_name, self.platform_name = name.split(":")
-
-        class FakeResult:
-            build_plan_id = "bp1"
-            workload_id = None
-
-        def fake_plan(request, cfg):
-            return (FakeLane("bigcherry:tune:linux-multi"),)
-
-        def fake_run_campaign(lanes, *, cfg, context, store, run_id):
-            return {"bigcherry:tune:linux-multi": FakeResult()}
-
-        def poisoned_cmd_build(_args):
-            raise AssertionError("legacy cmd_build must never be invoked by `build`")
-
-        with patch("bigcherry.campaign_planner.plan", side_effect=fake_plan), \
-             patch("bigcherry.campaign_planner.run_campaign", side_effect=fake_run_campaign), \
-             patch("bigcherry.config.load"), \
-             patch("bigcherry.__main__.cmd_build", side_effect=poisoned_cmd_build):
-            code = cli.cmd_build_new(args)
-        self.assertEqual(code, 0)
 
 
 class ExactCanonicalLaneSetTests(unittest.TestCase):
@@ -177,6 +156,23 @@ class NoLegacyTreeStateMechanicsTests(unittest.TestCase):
             self.assertNotIn(
                 "_build_dir(", source,
                 f"{name}.py must never call legacy __main__._build_dir")
+
+    def test_legacy_mechanics_are_actually_gone_from_main(self):
+        # RE23 acceptance itself, not just "the new path never referenced
+        # them": the symbols must not exist anywhere in __main__.py at all.
+        import bigcherry.__main__ as main_module
+        for symbol in ("cmd_build", "_ensure_tree_state", "_reset_tree",
+                       "_build_dir", "GENERATED_IN_TREE", "_verify_tree",
+                       "_generate_for", "_cmake_configure_args",
+                       "_build_one_recipe"):
+            self.assertFalse(
+                hasattr(main_module, symbol),
+                f"RE23 deleted {symbol}; it must not exist on __main__ anymore")
+        parser = cli.build_parser()
+        subparsers_action = next(
+            a for a in parser._actions
+            if a.dest == "command" or hasattr(a, "choices") and a.choices)
+        self.assertNotIn("legacy-build", subparsers_action.choices)
 
     def test_new_campaign_work_root_never_overlaps_legacy_checkout_root(self):
         # Legacy mutates paths.llama_root()'s default (REPO_ROOT/vendor/

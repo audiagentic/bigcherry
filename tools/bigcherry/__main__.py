@@ -13,8 +13,6 @@ meaningful against a manifest generated from that same tree.
 from __future__ import annotations
 
 import argparse
-import dataclasses
-import hashlib
 import json
 import subprocess
 import sys
@@ -215,9 +213,10 @@ def _apply_selection(
 ) -> bool:
     """Install the overlay and apply one patch selection. True if all placed.
 
-    Shared by ``apply`` and by ``build``, which re-applies when it has to flip
-    the tree between recipes -- so both paths produce the same tree and the
-    same record, rather than build growing a second, subtly different apply.
+    Used by ``apply``, the mutable-checkout diagnostic/development path
+    (RE14 non-goal: raw-Path/mutable-checkout compatibility stays an
+    explicit imported-legacy/development boundary for ad-hoc tuning; only
+    the ``build`` command's own tree-flipping mechanics were retired, RE23).
     """
     record = _record_for(root)
     if not force and not record.audit.get("passed"):
@@ -297,37 +296,6 @@ def cmd_repin(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_dir(recipe: recipes.Recipe, build: recipes.Build, root: Path) -> Path:
-    """One directory per (recipe, build). The variants are mutually exclusive
-    at compile time, so they must never share a configure cache.
-
-    Also isolated by `root`: a build against a non-default --llama-root (a
-    release_validate.py probe checkout, say) must never share a directory
-    with the default checkout's build of the same recipe/build name, or two
-    builds running against different checkouts would clobber each other's
-    configure cache and compiled output. The default checkout keeps its
-    original unsuffixed directory name for backward compatibility with
-    existing builds on disk.
-    """
-    name = f"{recipe.name}-{build.name}"
-    if root != paths.llama_root():
-        name += "-" + hashlib.blake2b(str(root).encode("utf-8"), digest_size=4).hexdigest()
-    return paths.REPO_ROOT / "build" / name
-
-
-#: Files ``generate`` writes into the checkout. Listed explicitly rather than
-#: globbed: the overlay puts similarly-named sources in the same directory,
-#: and a glob that swept those up would delete the dispatch layer itself.
-GENERATED_IN_TREE = (
-    "hip-autotune-registry.inc",
-    "hip-autotune-build-hash.h",
-    "hip-autotune-arch.h",
-    "hip-autotune-manifest.json",
-    "hip-autotune-build-descriptor.json",
-    "hip-autotune-mmvq-instances.inc",
-)
-
-
 def _overlay_relative_paths() -> list[Path]:
     """Paths the overlay writes, relative to the checkout root."""
     return [source.relative_to(paths.SRC_OVERLAY)
@@ -335,263 +303,6 @@ def _overlay_relative_paths() -> list[Path]:
             if source.is_file()]
 
 
-def _reset_tree(root: Path, ref: str, *, dry_run: bool) -> int:
-    """Return the checkout to pristine upstream at ``ref``.
-
-    Deliberately not ``git clean``. Everything this project adds is known --
-    tracked edits come out with ``git checkout``, and the untracked files are
-    the overlay walk plus the generated list above. Sweeping with ``git clean``
-    would also take unrelated untracked files, which on this SMB share
-    includes ``.fuse_hidden*`` litter and anything the operator left there.
-    """
-    removed = 0
-    targets = [root / rel for rel in _overlay_relative_paths()]
-    targets += [paths.cuda_dir(root) / name for name in GENERATED_IN_TREE]
-    for target in targets:
-        if target.is_file():
-            removed += 1
-            if not dry_run:
-                target.unlink()
-
-    if not dry_run:
-        # Tracked files back to the ref. Scoped to the worktree so it cannot
-        # move HEAD if the ref were ever a branch name.
-        _run(["git", "-C", str(root), "checkout", "--force", ref, "--", "."])
-    return removed
-
-
-def _ensure_tree_state(
-        root: Path,
-        recipe: recipes.Recipe,
-        *,
-        dry_run: bool,
-        force: bool,
-        assume_state: str | None = None,
-) -> bool:
-    """Make the checkout match what ``recipe`` needs. True if it now does.
-
-    Skips entirely when the tree already carries this exact selection, which
-    is what keeps the default set to one flip instead of three: two of its
-    three recipes want the same patches, so only the unpatched one costs a
-    rebuild.
-
-    ``assume_state`` lets a dry run carry the state it would have produced
-    into the next recipe, so the preview reports the flips a real run would
-    do rather than one per recipe.
-    """
-    wanted = recipes.tree_state_key(recipe.ref, recipe.groups, recipe.states)
-    if assume_state is not None:
-        current, clean = assume_state, True
-    else:
-        record = _record_for(root)
-        current = record.tree_state
-        clean = bool(record.patches.get("applied_cleanly"))
-    if current == wanted and clean:
-        print(f"    tree already at {wanted} -- no reset")
-        return True
-
-    print(f"    tree {current or 'unknown'} -> {wanted}: "
-          f"resetting to {recipe.ref} and re-applying")
-    removed = _reset_tree(root, recipe.ref, dry_run=dry_run)
-    print(f"    removed {removed} overlay/generated file(s)")
-    if dry_run:
-        return True
-
-    ok = _apply_selection(root, recipe.groups, recipe.states, force=force)
-    record = _record_for(root)
-    record.tree_state = wanted if ok else ""
-    record.save()
-    return ok
-
-
-def _verify_tree(root: Path, needs_patches: bool) -> list[str]:
-    """Preconditions for building. Returns the reasons it cannot proceed.
-
-    Checked once, before anything is configured or generated, because the
-    whole point of the pipeline is that a broken tree stops it rather than
-    producing binaries nobody can explain.
-    """
-    record = _record_for(root)
-    problems = []
-
-    if not record.audit.get("passed"):
-        failed = record.audit.get("failed_checks") or []
-        detail = f": {', '.join(failed)}" if failed else " (never run)"
-        problems.append(f"source audit has not passed{detail}")
-
-    if needs_patches:
-        if record.stage not in ("patched", "generated", "built", "tested",
-                                "tuned", "validated"):
-            problems.append(
-                f"tree is at stage {record.stage!r}, not patched -- run `apply`")
-        broken = record.patches.get("failed_edits") or []
-        if broken:
-            # Patch drift against a new release is the expected failure here,
-            # and the fix is to update the named anchor -- so name them.
-            problems.append(
-                f"{len(broken)} patch edit(s) did not apply: {', '.join(broken)}")
-    return problems
-
-
-def _generate_for(
-        build: recipes.Build, root: Path, *,
-        variant_set: str | None,
-        inventory: str | None,
-        winners: str | None,
-        generated_root: Path | None,
-        dry_run: bool,
-) -> list[str]:
-    """The `generate` invocation this build needs, as a command.
-
-    Generation is per-variant and rewrites a single shared file in the
-    checkout (`ggml-cuda/hip-autotune-registry.inc`), so it must run
-    immediately before the build that consumes it. Two variants cannot share
-    one registry, which is also why these builds must stay sequential.
-    """
-    chosen = variant_set or build.variant_set
-    if not chosen:
-        return []
-    cmd = [sys.executable, "-m", "bigcherry", "generate", "--variant-set", chosen]
-    if root != paths.llama_root(None):
-        cmd += ["--llama-root", str(root)]
-    if inventory:
-        cmd += ["--inventory", inventory]
-    if winners:
-        cmd += ["--winners", winners]
-    if generated_root is not None:
-        cmd += ["--generated-root", str(generated_root)]
-    if dry_run:
-        cmd += ["--dry-run"]
-    return cmd
-
-
-def _cmake_configure_args(
-        recipe: recipes.Recipe,
-        build: recipes.Build,
-        platform: recipes.Platform,
-        root: Path,
-        build_dir: Path,
-        *,
-        variant_set: str | None = None,
-        inventory: str | None = None,
-        c_compiler: str | None = None,
-        cxx_compiler: str | None = None,
-        generated_root: Path | None = None,
-) -> list[str]:
-    options = {
-        "CMAKE_BUILD_TYPE": "Release",
-        **platform.options,
-        **build.options,
-        "AMDGPU_TARGETS": platform.targets,
-    }
-    # CLI override beats the build's declared set, so a custom run does not
-    # need a recipe of its own.
-    chosen = variant_set or build.variant_set
-    if chosen:
-        options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = chosen
-        if generated_root is not None:
-            options["GGML_HIP_AUTOTUNE_GENERATED_DIR"] = str(generated_root.resolve())
-        # Only meaningful alongside a variant set. A stock build has no
-        # dispatch layer, and handing it autotune options would describe a
-        # binary that cannot use them.
-        if inventory:
-            options["GGML_HIP_AUTOTUNE_SIGNATURE_FILE"] = str(
-                Path(inventory).resolve())
-    # A CLI override beats the platform's declared toolchain -- same
-    # rationale as variant_set above, e.g. pointing a checkout that has no
-    # local ROCm install at a toolchain that lives elsewhere.
-    resolved_c_compiler = c_compiler or platform.c_compiler
-    resolved_cxx_compiler = cxx_compiler or platform.cxx_compiler
-    if resolved_c_compiler:
-        options["CMAKE_C_COMPILER"] = resolved_c_compiler
-    if resolved_cxx_compiler:
-        options["CMAKE_CXX_COMPILER"] = resolved_cxx_compiler
-    # An LLVM toolchain on Windows needs an RC compiler too (MSVC's Windows
-    # SDK rc.exe is not assumed present); llvm-rc ships alongside clang in
-    # the same bin/, so derive it rather than adding a third override flag.
-    if resolved_c_compiler:
-        llvm_rc = Path(resolved_c_compiler).parent / "llvm-rc.exe"
-        if llvm_rc.is_file():
-            # as_posix(), not str(): CMake embeds this value literally into
-            # CMakeRCCompiler.cmake, and a raw Windows backslash there is an
-            # invalid escape sequence in CMake's string syntax.
-            options["CMAKE_RC_COMPILER"] = llvm_rc.as_posix()
-        # The HIP package config (hip-config.cmake) lives under the same
-        # install root as the compiler (<root>/bin/clang.exe, package config
-        # under <root>/lib/cmake/hip/) -- derive it so a ROCm install found
-        # via --c-compiler is also usable for find_package(hip).
-        rocm_root = Path(resolved_c_compiler).parent.parent
-        if (rocm_root / "lib" / "cmake" / "hip" / "hip-config.cmake").is_file():
-            existing = options.get("CMAKE_PREFIX_PATH", "")
-            prefix_path = rocm_root.as_posix()
-            options["CMAKE_PREFIX_PATH"] = (
-                f"{existing};{prefix_path}" if existing else prefix_path)
-    return [
-        "cmake", "-S", str(root), "-B", str(build_dir), "-G", "Ninja",
-        *(f"-D{key}={value}" for key, value in sorted(options.items())),
-    ]
-
-
-def _build_one_recipe(
-        config: recipes.Config,
-        recipe: recipes.Recipe,
-        args: argparse.Namespace,
-        root: Path,
-) -> tuple[int, int]:
-    """Build every variant of one recipe. Returns (attempted, failed)."""
-    platform = config.platform_for(recipe)
-    names = args.build or list(recipe.builds)
-    if not names:
-        raise recipes.RecipeError(
-            f"recipe {recipe.name!r} lists no builds; pass --build explicitly")
-    selected = [config.build(name) for name in names]
-
-    print(f"    platform {platform.name} [{platform.targets}]")
-    print(f"    builds   {', '.join(b.name for b in selected)}")
-
-    missing = [b.name for b in selected
-               if b.needs == "inventory" and not args.inventory]
-    if missing:
-        raise recipes.RecipeError(
-            f"recipe {recipe.name!r}: builds {', '.join(missing)} need "
-            f"--inventory <inv.json> (produced by a record run)")
-
-    failed = 0
-    for build in selected:
-        build_dir = _build_dir(recipe, build, root)
-        generate = _generate_for(
-            build, root, variant_set=args.variant_set,
-            inventory=args.inventory, winners=args.winners,
-            generated_root=build_dir / "generated" if (args.variant_set or build.variant_set) else None,
-            dry_run=args.dry_run)
-        configure = _cmake_configure_args(
-            recipe, build, platform, root, build_dir,
-            variant_set=args.variant_set, inventory=args.inventory,
-            c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
-            generated_root=build_dir / "generated" if (args.variant_set or build.variant_set) else None)
-        compile_cmd = ["cmake", "--build", str(build_dir), "-j"]
-        if args.target:
-            compile_cmd += ["--target", *args.target]
-
-        print(f"\n=== {recipe.name}/{build.name} -> {build_dir} ===")
-        if build.description:
-            print(f"    {build.description}")
-        if args.dry_run:
-            for cmd in (generate, configure, compile_cmd):
-                if cmd:
-                    print("    " + " ".join(cmd))
-            continue
-        try:
-            if generate:
-                _run(generate)
-            _run(configure)
-            _run(compile_cmd)
-        except subprocess.CalledProcessError as exc:
-            # Keep going: one variant failing should still leave the others
-            # available, and the summary names every casualty.
-            print(f"    FAILED ({exc.returncode})", file=sys.stderr)
-            failed += 1
-    return len(selected), failed
 
 
 def cmd_build_new(args: argparse.Namespace) -> int:
@@ -693,100 +404,6 @@ def cmd_build_new(args: argparse.Namespace) -> int:
     if failed:
         print(f"build: {failed}/{len(results)} lane(s) failed", file=sys.stderr)
         return 1
-    return 0
-
-
-def cmd_build(args: argparse.Namespace) -> int:
-    """Verify the tree, then generate and build every variant requested.
-
-    This is a pipeline, not a one-shot compile: it checks the tree is sound,
-    regenerates the candidate registry for each variant, and builds them all.
-    """
-    try:
-        config = recipes.load_config()
-        if args.all:
-            chosen = [r for r in config.recipes.values() if r.default]
-            if not chosen:
-                raise recipes.RecipeError(
-                    "no recipes are marked `default = true` for --all")
-        else:
-            chosen = [config.recipe(name) for name in (args.recipe or [])]
-            if not chosen:
-                raise recipes.RecipeError("pass --recipe <name> or --all")
-    except recipes.RecipeError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    # groups/states override the chosen recipe(s) axis by axis, same as
-    # apply's --groups/--states -- e.g. to build against a recipe's ref and
-    # builds while skipping a group with a known-broken patch.
-    override_groups = patchset.parse_filter(getattr(args, "groups", None))
-    override_states = patchset.parse_filter(getattr(args, "states", None))
-    if override_groups is not None or override_states is not None:
-        chosen = [
-            dataclasses.replace(
-                recipe,
-                groups=override_groups if override_groups is not None else recipe.groups,
-                states=override_states if override_states is not None else recipe.states,
-            )
-            for recipe in chosen
-        ]
-
-    root = paths.llama_root(args.llama_root)
-
-    # Group recipes that need the same tree so it is flipped once, not once
-    # per recipe. The default set is three recipes but two states: `upstream`
-    # wants no patches, the two bigcherry recipes want the same ones.
-    chosen.sort(key=lambda r: (
-        recipes.tree_state_key(r.ref, r.groups, r.states), r.name))
-
-    # Verify once, up front. A recipe that applies no patches (stock upstream)
-    # still needs a clean audit, but must not be blocked on patches it does
-    # not want.
-    needs_patches = any(r.groups != frozenset() for r in chosen)
-    problems = _verify_tree(root, needs_patches)
-    if problems and not args.force:
-        print("refusing to build:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
-        print("\nfix the tree (see PATCH_DRIFT triage after a failed apply), "
-              "or pass --force.", file=sys.stderr)
-        return 2
-    if problems:
-        print("warning: building a tree with unresolved problems (--force):")
-        for problem in problems:
-            print(f"  - {problem}")
-        print()
-
-    attempted = failures = 0
-    simulated: str | None = _record_for(root).tree_state if args.dry_run else None
-    for recipe in chosen:
-        try:
-            print(f"\n### recipe {recipe.name} (ref {recipe.ref})")
-            if not _ensure_tree_state(
-                    root, recipe, dry_run=args.dry_run, force=args.force,
-                    assume_state=simulated):
-                print(f"    tree could not be prepared -- skipping "
-                      f"{recipe.name}", file=sys.stderr)
-                failures += 1
-                continue
-            if args.dry_run:
-                simulated = recipes.tree_state_key(
-                    recipe.ref, recipe.groups, recipe.states)
-            did, bad = _build_one_recipe(config, recipe, args, root)
-        except recipes.RecipeError as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        attempted += did
-        failures += bad
-
-    if args.dry_run:
-        return 0
-    print()
-    if failures:
-        print(f"{failures} of {attempted} variant(s) failed", file=sys.stderr)
-        return 1
-    print(f"built {attempted} variant(s) across {len(chosen)} recipe(s)")
     return 0
 
 
@@ -1057,79 +674,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="pin to this ref instead of querying for the newest release")
     repin.set_defaults(func=cmd_repin)
 
-    build_cmd = sub.add_parser(
-        "legacy-build",
-        help="compatibility/diagnostic path: configure and build the variants "
-             "a recipe asks for (mutable shared checkout, legacy recipes/"
-             "groups/states) -- prefer `build` unless you need a flag only "
-             "this command supports")
-    build_cmd.add_argument("--llama-root", default=None)
-    build_cmd.add_argument(
-        "--recipe", action="append", default=None, choices=recipes.names() or None,
-        help="recipe to build (repeatable)")
-    build_cmd.add_argument(
-        "--all", action="store_true",
-        help="build every recipe marked `default = true` -- the standard "
-             "comparison set")
-    build_cmd.add_argument(
-        "--build", action="append", default=None,
-        help="build only this variant (repeatable); default is the recipe's list")
-    build_cmd.add_argument(
-        "--target", action="append", default=None,
-        help="cmake target to build (repeatable), e.g. ggml-hip")
-    from . import autotune_schema as _variant_schema
-    build_cmd.add_argument(
-        "--variant-set", default=None, choices=_variant_schema.VARIANT_SETS,
-        help="candidate set to compile in, overriding the build's own")
-    build_cmd.add_argument(
-        "--inventory", default=None,
-        help="signature inventory JSON from a record run; required by builds "
-             "declaring needs = \"inventory\"")
-    build_cmd.add_argument(
-        "--winners", default=None,
-        help="winners JSONL from a tuning run, for replay-slim generation")
-    build_cmd.add_argument(
-        "--force", action="store_true",
-        help="build despite a failed audit or unapplied patches")
-    build_cmd.add_argument(
-        "--dry-run", action="store_true",
-        help="print the cmake commands without running them")
-    build_cmd.add_argument(
-        "--c-compiler", default=None,
-        help="override the platform's CMAKE_C_COMPILER (e.g. a different "
-             "ROCm install's clang)")
-    build_cmd.add_argument(
-        "--cxx-compiler", default=None,
-        help="override the platform's CMAKE_CXX_COMPILER (e.g. a different "
-             "ROCm install's clang++)")
-    build_cmd.add_argument(
-        "--groups", default=None,
-        help="comma-separated patch groups, overriding the recipe's "
-             "(e.g. 'core'). Empty string selects none.",
-    )
-    build_cmd.add_argument(
-        "--states", default=None,
-        help=f"comma-separated patch states, overriding the recipe's "
-             f"({', '.join(patchset.STATES)}).",
-    )
-    build_cmd.set_defaults(func=cmd_build)
-
-    # RE21: `build` is the new multi-lane planner/runner (RE18) and nothing
+    # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
     # else -- a canonical-v2 interface only, never a translation layer for
-    # legacy --recipe/--groups/--states/--variant-set/--force/--target (those
-    # select compat recipes and mutate patch-selection axes; canonical v2
-    # sources instead name exact patch sets directly). Any such flag is
-    # simply not defined on this parser, so argparse itself rejects it with
-    # exit 2 ("unrecognized arguments") -- fail closed, no silent routing to
-    # legacy-build. --inventory/--winners DO translate (they distribute to
-    # whichever standard lanes declare that need, per Build.needs), since
-    # they are canonical v2 concepts (CampaignLaneExecutionSpec.inputs), not
-    # legacy ones.
+    # the retired mutable-checkout recipe model (--recipe/--groups/--states/
+    # --variant-set/--force/--target selected compat recipes and mutated
+    # patch-selection axes on one shared checkout; canonical v2 sources
+    # instead name exact patch sets directly, each build isolated by
+    # content-addressed identity). Any such flag is simply not defined on
+    # this parser, so argparse itself rejects it with exit 2 ("unrecognized
+    # arguments") -- fail closed, never silent routing anywhere.
+    # --inventory/--winners DO translate (they distribute to whichever
+    # standard lanes declare that need, per Build.needs), since they are
+    # canonical v2 concepts (CampaignLaneExecutionSpec.inputs), not legacy
+    # ones. The `legacy-build` compatibility/diagnostic command that used
+    # to exist alongside this was deleted in RE23 once the cutover's
+    # objective compatibility gates (RE15's real-hardware acceptance chain,
+    # both platform suites, RE24's adversarial matrix) were all satisfied.
     new_build_cmd = sub.add_parser(
         "build",
-        help="build via the new multi-lane campaign engine (canonical v2 "
-             "identities only -- see `legacy-build` for --recipe/--groups/"
-             "--states/--variant-set/--force/--target)")
+        help="build via the multi-lane campaign engine (canonical v2 "
+             "identities only)")
     new_build_cmd.add_argument("--llama-root", default=None)
     new_build_cmd.add_argument("--source", default="bigcherry")
     new_build_cmd.add_argument(
