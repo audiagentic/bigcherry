@@ -33,7 +33,14 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "4"
+CURRENT_DB_SCHEMA_VERSION = "5"
+#: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
+#: hardware/signature/candidate/observation/measurement/winner), purely
+#: additive -- zero changes to any schema-4 table/column/index. Real
+#: existing schema-4 databases migrate to 5 in place via the unconditional
+#: UPDATE at the end of sql/dispatch-db.sql; no data is lost or reshaped.
+#: See that file's schema_meta comment for why this differs from the
+#: "guess at an unlisted intermediate shape" case readers must still reject.
 
 
 @dataclass(frozen=True)

@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- recognise (standards: current-only, no silent migration) rather than
 -- guess at an unlisted intermediate shape.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '4'),
+    ('schema_version',    '5'),
     ('signature_schema',  '1'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -441,9 +441,22 @@ CREATE INDEX IF NOT EXISTS transform_gap_pattern_idx
 -- Effort & Risk section warns about. Parallel `vk_*` tables cost a small
 -- amount of duplication but leave every existing HIP table, CHECK, index and
 -- reader completely untouched -- zero regression surface by construction.
--- schema_version stays '4': this is an additive orthogonal namespace, not a
--- reinterpretation of any existing hashed/identity field (see the comment on
--- schema_meta above for when a bump IS required).
+-- schema_version bumped 4 -> 5 (GPT review + user directive, 2026-08-20:
+-- an old schema-4 database with no vk_* tables and a new schema-4 database
+-- with six Vulkan tables were materially different shapes carrying the same
+-- version -- a real gap, not acceptable to leave silently unversioned).
+-- See the migration statement below the INSERT block for how real existing
+-- databases move from 4 to 5 IN PLACE, keeping every row of real HIP data.
+-- This is NOT the "guess at an unlisted intermediate shape" case
+-- schema_meta's own comment above warns readers against: the 4->5 delta is
+-- fully known, additive-only (six new tables, zero changes to any existing
+-- table/column/index), and versioned explicitly here -- unlike the lost
+-- schema 2-8 DDL, there is nothing to guess. A reader must still reject any
+-- schema_version it does not recognise; this migration exists so a real
+-- database that WAS at the recognised prior version (4) becomes the new
+-- recognised version (5) without losing its history, rather than every
+-- existing production dispatch database silently failing
+-- `_require_current_schema`'s exact-match check the moment this code ships.
 --
 -- No Vulkan patch, dispatch hook, or measurement code exists yet (RE30 is
 -- still pre-implementation past this scaffolding) -- these tables have no
@@ -643,3 +656,29 @@ CREATE TABLE IF NOT EXISTS vk_winner (
 
 CREATE UNIQUE INDEX IF NOT EXISTS vk_winner_dispatch_idx
     ON vk_winner(dispatch_digest, objective);
+
+-- ------------------------------------------------------------- migration 4->5
+--
+-- Placed at the END of the script, deliberately: schema_version only flips
+-- forward once every table it names (the six vk_* tables above) has
+-- actually been created by the CREATE TABLE IF NOT EXISTS statements that
+-- precede this point, so no reader can ever observe schema_version='5' on a
+-- database that is mid-migration and still missing a vk_* table.
+--
+-- The INSERT OR IGNORE near the top of this file only takes effect on a
+-- brand-new database (no schema_meta row yet). A REAL EXISTING database
+-- still carrying '4' needs this explicit, unconditional UPDATE to move
+-- forward in place -- an INSERT OR IGNORE would silently no-op against an
+-- existing '4' row and leave every production dispatch database
+-- permanently stuck on the old version the moment
+-- inventory.CURRENT_DB_SCHEMA_VERSION becomes '5' in Python, since
+-- `_require_current_schema` rejects any exact-mismatch on read.
+--
+-- No existing row in build/hardware/signature/candidate/observation/
+-- measurement/winner is touched, dropped, or reshaped by this migration --
+-- schema 4 -> 5 is purely additive (six new vk_* tables, zero changes to
+-- any table/column/index that existed at schema 4). This is NOT the
+-- "guess at an unlisted intermediate shape" case schema_meta's own comment
+-- warns readers against: the delta is fully known and versioned explicitly
+-- here. Idempotent: matches zero rows once a database is already at '5'.
+UPDATE schema_meta SET value = '5' WHERE key = 'schema_version' AND value = '4';
