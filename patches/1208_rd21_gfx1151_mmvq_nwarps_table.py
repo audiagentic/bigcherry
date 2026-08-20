@@ -97,13 +97,16 @@ PROVENANCE = {
 
 
 # --- hunk 1: enum entry ------------------------------------------------
+# Upstream b10502 (#26843, DGX Spark) appended MMVQ_PARAMETERS_GB10 after
+# RDNA4 -- RDNA4 now carries a trailing comma. RDNA3_5 still slots between
+# RDNA3_0 and RDNA4 (fork order); GB10 (NVIDIA-only) is left untouched.
 _ENUM_OLD = """    MMVQ_PARAMETERS_RDNA3_0,
-    MMVQ_PARAMETERS_RDNA4
+    MMVQ_PARAMETERS_RDNA4,
 """
 
 _ENUM_NEW = """    MMVQ_PARAMETERS_RDNA3_0,
     MMVQ_PARAMETERS_RDNA3_5,
-    MMVQ_PARAMETERS_RDNA4
+    MMVQ_PARAMETERS_RDNA4,
 """
 
 # --- hunk 2: device-side table resolution ------------------------------
