@@ -33,14 +33,21 @@ upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """Personal RDNA-tuning fork cited by plan items RD69-RD76 (the FORK-*
 cluster in the backlog batch). Standalone project (fork:false relative to
 llama.cpp -- not a GitHub-fork relationship), MIT-licensed, dual RX 9070 XT
-(RDNA4) focus, ROCm/HIP + Vulkan, PyQt6 GUI, MTP speculative decoding.
+(RDNA4) focus, ROCm/HIP + Vulkan, PyQt6 GUI, MTP speculative decoding. An
+extremely detailed personal research log (17500+ commits, dated experiment
+docs under docs/research/experiments/E*, HYPOTHESES.md tracking H*-numbered
+hypotheses with explicit accept/reject verdicts) -- NOT a curated patch
+series; most commits are exploratory, many document REJECTED ideas with
+real negative data. Treat every candidate as needing the same "recheck
+before port" scrutiny as any other external source, more so given the
+volume of dead ends recorded here by the author's own hand.
 Verified real and active 2026-08-20 via `gh api repos/MrLordCat/llama.cpp-with-GUI`
-(confirms the rename to llama.cpp-rdna-lab transparently). Registered to
-unblock RD69-RD76's `external-sources.toml` prerequisite gap; no
-[[sources.tracked]] entries yet -- RD69-RD76's own notes/code_samples don't
-cite a specific commit or file path to port, so there is nothing concrete to
-track until someone manually diffs this fork against upstream and identifies
-real atomic changes."""
+(confirms the rename to llama.cpp-rdna-lab transparently). Diffed against
+RD69-RD76's hypotheses 2026-08-20 (bare clone, keyword/grep search across
+full history) -- 5 of 8 items matched to a real, identifiable commit (see
+tracked entries below); RD70/RD74/RD75 found NO matching fork-original
+commit after a genuine search, see their own plan-item notes for what was
+searched and ruled out."""
 
 [[sources.snapshots]]
 label = "master-2026-08-20"
@@ -49,6 +56,41 @@ base = "276121b7ed3414ac55c9c4d4dc170cb7cd2bba70"
 reviewed-at = "2026-08-20"
 active = true
 note = "base == head deliberately, same convention as amd-ecosystem-llama-cpp: no single reviewed commit range has been chosen yet since no specific change has been identified to port. This head is just the point-in-time master tip observed when the registry gap was closed."
+
+[[sources.tracked]]
+commit = "c399423cb1e6c93149edf64f88256929133abe0e"
+title = "vulkan: guard AMD large matmul variants"
+plan-item = "RD69"
+status = "excluded"
+note = "REAL match for RD69's 'large cooperative-matrix Vulkan route' hypothesis (GGML_VK_FORCE_AMD_LARGE_MATMUL / GGML_VK_AMD_LARGE_MATMUL_VARIANT). CRITICAL: the fork's own extensive testing (E075/E076, referenced in this commit) found the naive wm32-wn32 large-matmul variant produces CORRUPTED output ('all-slash' generation) -- an invalid coopmat geometry that skipped real output work, not a genuine speedup. This commit adds a correctness guard so an invalid geometry cannot silently benchmark; after the guard, every VALID large-matmul variant tested showed NO measurable win over baseline at 32k context. RD69's premise (larger coopmat pipelines outperforming conservative routes) is falsified by the fork's own data, not confirmed. Recommend closing/rejecting RD69 rather than porting."
+
+[[sources.tracked]]
+commit = "41a8ca7858bc9540415f37877dde5cc70e435f63"
+title = "perf(mtp): keep NextN hidden states on device"
+plan-item = "RD71"
+status = "planned"
+note = "REAL, strong match for RD71's 'Independent NextN/MTP tensor placement' hypothesis. Adds LLAMA_MTP_DEVICE_HANDOFF: keeps NextN hidden-state rows backend-resident instead of round-tripping through host memory between target/draft contexts, with LLAMA_MTP_DEVICE_HANDOFF=0 as a rollback. Fork's own measured data (experiment E282, 2026-07-14): +44.1% prompt-TPS recovery in one direct negative-control comparison (1392.85 vs 966.91 tok/s), +31.83% decode in a longer real-prompt lane. 512 lines across common/speculative.cpp, src/llama-context.{cpp,h}, src/llama-graph.{cpp,h}, model files. Not merged upstream (no PR reference, fork-original)."
+
+[[sources.tracked]]
+commit = "1fcc05daf22eec3203d17867c75b08a1d4385853"
+title = "Improve Vulkan dual MTP placement"
+plan-item = "RD72"
+status = "planned"
+note = "REAL, strong match for RD72's 'four-copy Vulkan MTP handoff' hypothesis (experiment E274, 2026-07-09). Routes LLM_TENSOR_NEXTN_* tensors to the first Vulkan device for layer-split multi-GPU models (LLAMA_VK_MTP_NEXTN_MAIN_DEVICE override), disables Vulkan pipeline parallelism for NextN/MTP models (LLAMA_VK_MTP_PIPELINE_PARALLEL override) because it produced 'sched copies=4', and reduces the default MTP prefill tail window from 8192 to 512 tokens. Fork's own measured data: pre-fix sched copies=4 reduced to sched copies=1 after the fix; final long-prompt delta vs spec=none: aggregate +3.63%, prompt +2.85%, decode +24.53%. Depends on the same NextN placement territory as RD71 (commit 41a8ca78) -- read both together before porting, they may overlap or supersede each other (E274 predates E282 by 5 days). Not merged upstream."
+
+[[sources.tracked]]
+commit = "7f2e7e4a3ebf8e3b5aade75743c267f5ad7df199"
+title = "perf(hip): stable shape-fingerprint key for cuda-graph cache"
+plan-item = "RD73"
+status = "planned"
+note = "REAL match for RD73's 'warm speculative verification widths' hypothesis, though the actual mechanism differs from the item's literal framing (item says 'prebuild widths 1..n_max+1'; this commit instead fixes the cuda-graph cache KEY so recurring verify shapes reliably hit the SAME cache slot and get graph replay -- same practical outcome, different implementation). Root cause found: the graph cache was keyed by a cgraph node pointer, unstable across scheduler runs, so speculative verify decodes minted a fresh never-warmed graph slot almost every round. Fixed by keying on an FNV-1a shape fingerprint (node count + first/last node op/name/dims) instead. Fork's own measured data: verify ubatch sync 150ms -> 57ms on a 3.8k-node Qwen3.6-27B graph. Small (34 lines, one file: ggml/src/ggml-cuda/ggml-cuda.cu). Not merged upstream."
+
+[[sources.tracked]]
+commit = "5aa2f049906ef8f3e60a75d620f19adaf37e12a7"
+title = "hip: add rocWMMA include path + safe fallback for FATTN"
+plan-item = "RD76"
+status = "planned"
+note = "REAL, exact match for RD76's 'restore/benchmark rocWMMA FlashAttention on RDNA4' hypothesis. Small (29 lines), self-contained CMake-only change: GGML_HIP_ROCWMMA_FATTN already exists as an upstream llama.cpp build option (default OFF) but silently fails to find rocWMMA headers on a typical Windows/ROCm install; this commit adds real header auto-detection (checks GGML_HIP_ROCWMMA_INCLUDE_DIR then ROCM_PATH/include) plus a safe fallback warning instead of a hard build failure. Genuinely low-risk and portable -- build-system only, no kernel code touched. Does not itself prove RD76's performance hypothesis (that needs the actual gfx1201 rocWMMA-vs-native FA benchmark RD76 describes); this just makes the build option reliably usable to run that comparison. Not merged upstream."
 
 [[sources]]
 id = "amd-ecosystem-llama-cpp"
