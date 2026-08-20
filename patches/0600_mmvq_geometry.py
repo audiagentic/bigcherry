@@ -36,16 +36,21 @@ _KERNEL_TEMPLATE = """// bigcherry (HI09): nwarps and rows_per_block become expl
 // Zero means "derive as upstream does", and both default to zero, so every
 // pre-existing instantiation is bit-for-bit the one it was before -- including
 // its launch bounds. Only generated variants name them.
+//
+// halve_iters (upstream, DGX Spark / MMVQ_PARAMETERS_GB10 only -- see
+// calc_nwarps) is threaded through unchanged so upstream's own automatic
+// heuristic still works on every path this patch does not touch; BigCherry's
+// generated instances always pass explicit geometry and never set it.
 template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false,
-          int nwarps_explicit = 0, int rows_per_block_explicit = 0>
+          bool halve_iters = false, int nwarps_explicit = 0, int rows_per_block_explicit = 0>
 __launch_bounds__((nwarps_explicit != 0 ? nwarps_explicit
-                                        : calc_nwarps(type, ncols_dst, get_device_table_id()))
+                                        : calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters))
                   *ggml_cuda_get_physical_warp_size(), 1)
 static __global__ void mul_mat_vec_q("""
 
 _KERNEL_GEOMETRY = """    constexpr int nwarps = nwarps_explicit != 0
         ? nwarps_explicit
-        : calc_nwarps(type, ncols_dst, table_id);
+        : calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
     constexpr int rows_per_cuda_block = rows_per_block_explicit != 0
         ? rows_per_block_explicit
         : calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
@@ -63,7 +68,7 @@ _KERNEL_GEOMETRY = """    constexpr int nwarps = nwarps_explicit != 0
 
 _SWITCH_FUSION_TEMPLATE = """// bigcherry (HI09): forwards an explicit geometry to the kernel. Defaulted to
 // zero, so existing callers keep the native geometry.
-template<ggml_type type, int c_ncols_dst, bool small_k = false,
+template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false,
          int nwarps_explicit = 0, int rows_per_block_explicit = 0>
 static void mul_mat_vec_q_switch_fusion("""
 
@@ -74,10 +79,10 @@ template<ggml_type type>
 static std::pair<dim3, dim3> calc_launch_params(
         const int ncols_dst, const int nrows_x, const int nchannels_dst, const int nsamples_or_ntokens,
         const int warp_size, const mmvq_parameter_table_id table_id, const bool small_k = false,
-        const int nwarps_explicit = 0, const int rows_per_block_explicit = 0) {
+        const bool halve_iters = false, const int nwarps_explicit = 0, const int rows_per_block_explicit = 0) {
     const int nwarps = nwarps_explicit != 0
         ? nwarps_explicit
-        : calc_nwarps(type, ncols_dst, table_id);
+        : calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
     const int rpb = rows_per_block_explicit != 0
         ? rows_per_block_explicit
         : calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);"""
@@ -98,11 +103,15 @@ void ggml_hip_mmvq_launch_instance(const ggml_hip_mmvq_launch_args & args) {
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
     const mmvq_parameter_table_id table_id = get_device_table_id(cc);
 
+    // Generated instances always name an explicit geometry, so upstream's
+    // automatic halve_iters heuristic (DGX Spark / MMVQ_PARAMETERS_GB10
+    // only) never applies here -- pass its default explicitly rather than
+    // silently inheriting whatever position it ends up at upstream.
     const std::pair<dim3, dim3> dims = calc_launch_params<type>(
         width, args.nrows_x, args.nchannels_dst, args.nsamples_or_ntokens,
-        args.warp_size, table_id, small_k, nwarps, rows_per_block);
+        args.warp_size, table_id, small_k, /*halve_iters=*/false, nwarps, rows_per_block);
 
-    mul_mat_vec_q_switch_fusion<type, width, small_k, nwarps, rows_per_block>(
+    mul_mat_vec_q_switch_fusion<type, width, small_k, /*halve_iters=*/false, nwarps, rows_per_block>(
         args.vx, args.vy, args.ids, args.fusion, args.dst,
         args.ncols_x, args.nchannels_y, args.stride_row_x, args.stride_col_y,
         args.stride_col_dst, args.channel_ratio, args.stride_channel_x,
@@ -142,8 +151,9 @@ PATCH = FilePatch(
         Edit(
             id="mmvq-kernel-template",
             anchor=r"^template <ggml_type type, int ncols_dst, bool has_fusion, "
-                   r"bool small_k = false>\n"
-                   r"__launch_bounds__\(calc_nwarps\(type, ncols_dst, get_device_table_id\(\)\)"
+                   r"bool small_k = false, bool halve_iters = false>\n"
+                   r"__launch_bounds__\(calc_nwarps\(type, ncols_dst, get_device_table_id\(\), "
+                   r"small_k, halve_iters\)"
                    r"\*ggml_cuda_get_physical_warp_size\(\), 1\)\n"
                    r"static __global__ void mul_mat_vec_q\(",
             rationale="the MMVQ kernel's template header and launch bounds",
@@ -153,7 +163,8 @@ PATCH = FilePatch(
         ),
         Edit(
             id="mmvq-kernel-geometry",
-            anchor=r"    constexpr int nwarps = calc_nwarps\(type, ncols_dst, table_id\);\n"
+            anchor=r"    constexpr int nwarps = calc_nwarps\(type, ncols_dst, table_id, "
+                   r"small_k, halve_iters\);\n"
                    r"    constexpr int rows_per_cuda_block = "
                    r"calc_rows_per_block\(ncols_dst, table_id, small_k, nwarps\);",
             rationale="the two constexpr locals the kernel derives its geometry from",
@@ -168,8 +179,8 @@ PATCH = FilePatch(
                    r"        const int ncols_dst, const int nrows_x, const int nchannels_dst, "
                    r"const int nsamples_or_ntokens,\n"
                    r"        const int warp_size, const mmvq_parameter_table_id table_id, "
-                   r"const bool small_k = false\) \{\n"
-                   r"    const int nwarps = calc_nwarps\(type, ncols_dst, table_id\);\n"
+                   r"const bool small_k = false, const bool halve_iters = false\) \{\n"
+                   r"    const int nwarps = calc_nwarps\(type, ncols_dst, table_id, small_k, halve_iters\);\n"
                    r"    const int rpb = calc_rows_per_block\(ncols_dst, table_id, small_k, nwarps\);",
             rationale="calc_launch_params, which must agree with the compiled geometry",
             mode="replace",
@@ -178,7 +189,8 @@ PATCH = FilePatch(
         ),
         Edit(
             id="mmvq-switch-fusion-template",
-            anchor=r"^template<ggml_type type, int c_ncols_dst, bool small_k = false>\n"
+            anchor=r"^template<ggml_type type, int c_ncols_dst, bool small_k = false, "
+                   r"bool halve_iters = false>\n"
                    r"static void mul_mat_vec_q_switch_fusion\(",
             rationale="the fusion dispatcher that instantiates the kernel",
             mode="replace",
@@ -207,13 +219,13 @@ PATCH = FilePatch(
         Edit(
             id="mmvq-kernel-forward",
             # Both kernel instantiations, inside mul_mat_vec_q_switch_fusion.
-            anchor=r"mul_mat_vec_q<type, c_ncols_dst, (true|false), small_k>",
+            anchor=r"mul_mat_vec_q<type, c_ncols_dst, (true|false), small_k, halve_iters>",
             rationale="the two kernel instantiations in the fusion dispatcher",
             mode="replace_all",
             expect_matches=2,
-            text=r"mul_mat_vec_q<type, c_ncols_dst, \1, small_k, "
+            text=r"mul_mat_vec_q<type, c_ncols_dst, \1, small_k, halve_iters, "
                  r"nwarps_explicit, rows_per_block_explicit>",
-            guard=r"small_k, nwarps_explicit, rows_per_block_explicit>",
+            guard=r"small_k, halve_iters, nwarps_explicit, rows_per_block_explicit>",
         ),
     ),
 )
