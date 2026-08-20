@@ -131,6 +131,24 @@ class ParseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
             ec.parse_contract(doc, contract_id="X")
 
+    def test_nan_threshold_rejected(self):
+        doc = _base_doc()
+        doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=float("nan"))
+        with self.assertRaisesRegex(ec.ExperimentContractError, "target_kernel_gain_pct"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_infinite_threshold_rejected(self):
+        doc = _base_doc()
+        doc["acceptance"] = {"max_control_regression_pct": float("inf")}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_negative_infinite_threshold_rejected(self):
+        doc = _base_doc()
+        doc["acceptance"] = {"max_control_regression_pct": float("-inf")}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+            ec.parse_contract(doc, contract_id="X")
+
 
 class ContractHashTests(unittest.TestCase):
     def test_hash_is_stable_across_reparse(self):
