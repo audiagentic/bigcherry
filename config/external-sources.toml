@@ -26,6 +26,96 @@
 version = 1
 
 [[sources]]
+id = "mrlordcat-rdna-lab"
+repo = "https://github.com/MrLordCat/llama.cpp-rdna-lab"
+locator = "master (renamed from llama.cpp-with-GUI; GitHub redirects the old name transparently)"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """Personal RDNA-tuning fork cited by plan items RD69-RD76 (the FORK-*
+cluster in the backlog batch). Standalone project (fork:false relative to
+llama.cpp -- not a GitHub-fork relationship), MIT-licensed, dual RX 9070 XT
+(RDNA4) focus, ROCm/HIP + Vulkan, PyQt6 GUI, MTP speculative decoding.
+Verified real and active 2026-08-20 via `gh api repos/MrLordCat/llama.cpp-with-GUI`
+(confirms the rename to llama.cpp-rdna-lab transparently). Registered to
+unblock RD69-RD76's `external-sources.toml` prerequisite gap; no
+[[sources.tracked]] entries yet -- RD69-RD76's own notes/code_samples don't
+cite a specific commit or file path to port, so there is nothing concrete to
+track until someone manually diffs this fork against upstream and identifies
+real atomic changes."""
+
+[[sources.snapshots]]
+label = "master-2026-08-20"
+head = "276121b7ed3414ac55c9c4d4dc170cb7cd2bba70"
+base = "276121b7ed3414ac55c9c4d4dc170cb7cd2bba70"
+reviewed-at = "2026-08-20"
+active = true
+note = "base == head deliberately, same convention as amd-ecosystem-llama-cpp: no single reviewed commit range has been chosen yet since no specific change has been identified to port. This head is just the point-in-time master tip observed when the registry gap was closed."
+
+[[sources]]
+id = "amd-ecosystem-llama-cpp"
+repo = "https://github.com/AMD-Ecosystem/llama.cpp"
+locator = "master (multiple open PRs, tracked individually -- not a single branch snapshot)"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """AMD's own optimization fork, referenced across ggml-org/llama.cpp
+GitHub discussions #26349 (Set2), #26378 (Set4), #26379 (Set5), #26380 (Set6).
+Unlike stew675-rdna-boosts (one rebasing branch), work here lands as discrete
+PRs against the fork's own master, each independently open/closed/merged.
+Reviewed 2026-08-20 (validation pass for RD28-RD53): 13 fork PRs checked via
+`gh api repos/AMD-Ecosystem/llama.cpp/pulls/<n>`; none merged into
+ggml-org/llama.cpp mainline as of that review (git cherry / PR search), so
+none are ancestral to the b10502 pin. Merge SHAs recorded per tracked entry
+below are the AMD-Ecosystem fork's OWN merge commits, not upstream identity --
+re-check before every pin bump per the sources id="amd-ecosystem-llama-cpp"
+`python -m bigcherry sources check` convention."""
+
+[[sources.snapshots]]
+label = "master-2026-08-20"
+head = "58ab0a5f2ce3f426d657d55647846b03fbc1a20b"
+base = "58ab0a5f2ce3f426d657d55647846b03fbc1a20b"
+reviewed-at = "2026-08-20"
+active = true
+note = "base == head deliberately: not a frozen review-range snapshot like stew675's branch (head..base diff), since this fork moves continuously and work is tracked per-PR, not per-branch-range. This head is just the point-in-time master tip observed during the RD28-RD53 validation pass; each tracked PR below carries its own merge SHA as its real identity, independent of this snapshot."
+
+[[sources.tracked]]
+commit = "367c4d04f409f89db2512d4d035915ccaa84c42d"
+title = "ggml-cuda: overlap the MoE shared expert on a separate stream"
+plan-item = "RD39/RD40/RD41/RD42"
+status = "ported-untested"
+patch = "1215_rd394041_amd_stream_moe_overlap"
+note = "PR #36. Honor active HIP stream (RD39), per-(device,stream) cuBLAS handles (RD40), dedicated concurrent-branch scratch buffer (RD41), MoE shared-expert overlap on aux stream (RD42) -- one net patch, see the patch module docstring for why. Ported 2026-08-20 (10 edits, 2 files); isolated bench pending. Apply before 1216/1217."
+
+[[sources.tracked]]
+commit = "0f0db6292a90beb3a0f753baaa766c1454799a50"
+title = "ggml-cuda: keep the concurrent-region join node out of op-fusion"
+plan-item = "RD43"
+status = "ported-untested"
+patch = "1216_rd43_concurrent_join_fusion_guard"
+note = "PR #71. Correctness prerequisite before graph-opt/concurrency (RD39-RD42) is exercised broadly: caps op-fusion at a concurrent region's join node. Ported 2026-08-20 (2 edits, 1 file); isolated bench pending. Depends on 1215."
+
+[[sources.tracked]]
+commit = "6e9f948a0d8b99db2bce0a83fc021efc2064ef9b"
+title = "ggml-cuda: enable GGML_CUDA_GRAPH_OPT by default on RDNA3.5"
+plan-item = "RD44"
+status = "deferred-hardware"
+patch = "1217_rd44_graph_opt_default_rdna35"
+note = "PR #56. Policy/default flip, last in the AMD-STREAM chain. Needs gfx1151 hardware (not on Brutus) for the performance claim; behavior-neutral on gfx1100/gfx1201/gfx1030. Ported 2026-08-20 (1 edit, 1 file); depends on 1215+1216."
+
+[[sources.tracked]]
+commit = "f6ea7bced112691b188bd8bf21fde8ee9ee543fe"
+title = "ssm_conv: channels-major input mode to drop the delta-net transpose"
+plan-item = "RD49"
+status = "planned"
+note = "SKIPPED this pass (2026-08-20): not self-contained -- changes ggml_ssm_conv API across 9 backend files plus stride-math rewrite in src/models/delta-net-base.cpp shared by qwen35/qwen35moe/qwen3next. Needs dedicated correctness-first follow-up, not a mechanical port. Cross-reference RD24 (planned) and RD27 (existing item) -- all three touch the SSM/GDN preprocessing pipeline."
+
+[[sources.tracked]]
+commit = "2b9497ff2ea22e5e94aa275b48efaf1dc10f57f2"
+title = "CUDA: fused chunked gated_delta_net kernel (RDNA3.5)"
+plan-item = "RD50"
+status = "ported-untested"
+patch = "1221_rd50_gdn_chunked_recurrence"
+note = "ported 2026-08-20 (2 edits, 1 file, new-file content folded into gated_delta_net.cu -- patcher has no new-file primitive). RD51 (DPP row-shift reduction), RD52 (native exp2 decay) and RD53 (launch-bounds/VGPR occupancy tuning) are all the SAME commit (2b9497ff) as this row -- inline, RDNA3.5-gated micro-decisions inside the single kernel body, not independently anchorable hunks. Subsumed into this one patch rather than filed as separate tracked rows (the registry's commit-uniqueness constraint forbids duplicating this SHA); see the patch module docstring for the bake-in rationale, same discipline as 1208's RD25 bake-in. Isolated bench pending; gfx1100/gfx1201 (Brutus) can only validate the fallback path is untouched, not the RDNA3.5 performance claim."
+
+
+[[sources]]
 id = "stew675-rdna-boosts"
 repo = "https://github.com/stew675/llama.cpp"
 locator = "rdna-boosts"

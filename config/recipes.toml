@@ -69,7 +69,35 @@ patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
 [experiment.rd26a-only]
 patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 
+[experiment.rd39-42-only]
+patches = ["1215_rd394041_amd_stream_moe_overlap"]
+
+[experiment.rd43-only]
+patches = ["1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"]
+
+[experiment.rd44-only]
+patches = [
+  "1215_rd394041_amd_stream_moe_overlap",
+  "1216_rd43_concurrent_join_fusion_guard",
+  "1217_rd44_graph_opt_default_rdna35",
+]
+
+[experiment.rd50-only]
+patches = ["1221_rd50_gdn_chunked_recurrence"]
+
 [source.llama-native]
+ref = "pinned"
+overlay = false
+patch-sets = []
+
+# RE30 phase 1 stub: proves the backend-adapter split (campaign_build.py's
+# cmake_configure_args(backend=...)) has a real config-level target to
+# resolve against. patch-sets is deliberately empty -- no Vulkan patch
+# exists yet (RE30 phases 2+ need real Vulkan hardware evidence first).
+# NOT wired into [campaign.standard] or any compat.recipe -- nothing in the
+# campaign engine passes backend="vulkan" through to cmake_configure_args
+# yet, so a lane naming this source would still configure as HIP today.
+[source.vulkan-stock]
 ref = "pinned"
 overlay = false
 patch-sets = []
@@ -119,6 +147,11 @@ options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "full-max"
 needs = []
 
+[build.vulkan-stock]
+description = "Vulkan backend, no patches, no tuning (RE30 phase 1 stub)."
+options = { GGML_VULKAN = "ON" }
+needs = []
+
 [platform.linux-multi]
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
@@ -130,6 +163,17 @@ cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
+
+[platform.vulkan-linux]
+description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
+# "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
+# the legacy recipes.py loader requires a non-empty list for every platform
+# regardless of backend, so this is a placeholder, not a real GPU target --
+# cmake_configure_args(backend="vulkan") ignores platform.targets entirely
+# (see campaign_build._backend_configure_options). Replace with real
+# device/ICD identity in a later RE30 phase.
+targets = ["vulkan-stub"]
+options = { LLAMA_BUILD_TESTS = "ON" }
 
 # RE14/RE19: the canonical replacement for legacy `build --all`, expressed
 # directly in v2 source/build/platform identities -- NOT derived from
