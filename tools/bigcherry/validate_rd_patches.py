@@ -1,22 +1,26 @@
-"""One-shot: build each RD-prefixed experimental patch in isolation (one
-multi-arch audit build covering every non-production architecture Brutus
-has free) and run the project's own documented correctness recipe
-(docs/reference/TEST.md) against it on EACH of those architectures in
-turn -- native baseline, then a screen=1/final=1 tune-mode pass
+"""One-shot: build each RD-prefixed experimental patch in isolation --
+ALWAYS a full multi-arch build, covering every architecture
+recipes.toml's [platform.linux-multi] declares (today: gfx1100, gfx1201,
+gfx1030), so this never needs re-tuning when that list changes -- and run
+the project's own documented correctness recipe (docs/reference/TEST.md)
+against it on every architecture this host can SAFELY exercise at
+runtime: native baseline, then a screen=1/final=1 tune-mode pass
 (correctness-only, not a timing run) so every registered candidate
 (including whatever the patch adds) actually gets exercised and its
 GPU-vs-CPU-reference comparison checked.
 
-Device/arch map on Brutus (rocm-smi --showproductname), NOT hardcoded
-elsewhere in this project because it is host-specific: device 0/1 are
-gfx1100 (7900 XTX) and carry live production traffic -- never touched
-here. Device 2 is gfx1201, device 3 is gfx1030; both idle and safe.
-gfx1100 coverage for these patches comes from a separate local-GPU run,
-not from this script.
-
-The build is ONE multi-arch compile (AMDGPU_TARGETS covers both archs at
-once, same binary), not two separate builds -- only the runtime
-correctness pass repeats per device via HIP_VISIBLE_DEVICES.
+The build always compiles kernels for every platform-declared arch (that
+part is safe regardless of what's running -- AMDGPU_TARGETS is a compile-
+time flag, it does not touch a GPU). RUNTIME testing is the part that
+must stay scoped to hardware this host can safely use right now: Brutus's
+device 0/1 are gfx1100 (7900 XTX) and carry live production traffic, so
+DEVICE_BY_ARCH below deliberately does NOT map gfx1100 to anything --
+those kernels get built and shipped in the same binary, just not run
+here. Device 2 is gfx1201, device 3 is gfx1030 (rocm-smi
+--showproductname); both idle and safe. gfx1100 coverage for these
+patches comes from a separate local-GPU run, not from this script. If a
+future host adds another safe device for an architecture not listed
+here, add it to DEVICE_BY_ARCH -- the build side needs no change.
 
 Not a permanent tool -- a one-shot validation harness, same status as
 re15_tamper_evidence.py.
@@ -34,7 +38,10 @@ from bigcherry.artifacts import ArtifactStore
 from bigcherry.campaign_lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
 from bigcherry.context import ProjectContext
 
-ARCHITECTURES = ("gfx1201", "gfx1030")
+# Deliberately excludes gfx1100 -- see module docstring: those kernels
+# still get built (main() always builds for the platform's full declared
+# target list) but are never runtime-tested from this host, because the
+# only gfx1100 devices here carry live production traffic.
 DEVICE_BY_ARCH = {"gfx1201": "2", "gfx1030": "3"}
 
 EXPERIMENTS_AND_OPS = {
@@ -105,13 +112,20 @@ def main() -> int:
     context = ProjectContext.resolve()
     store = ArtifactStore(context.artifacts_root)
 
+    # Always the platform's full declared target list -- never a
+    # hand-maintained subset here, so a future arch added to
+    # [platform.linux-multi] is picked up automatically.
+    build_architectures = cfg.platforms["linux-multi"].targets
+    print(f"building for: {build_architectures}; runtime-testing on: "
+          f"{tuple(DEVICE_BY_ARCH)}")
+
     overall_ok = True
     for name, ops in EXPERIMENTS_AND_OPS.items():
         print(f"=== {name} ===")
         try:
             spec = CampaignLaneExecutionSpec(
                 source_name="bigcherry", build_name="audit", platform_name="linux-multi",
-                architectures=ARCHITECTURES, extra_cmake_targets=("test-backend-ops",),
+                architectures=build_architectures, extra_cmake_targets=("test-backend-ops",),
                 experiment=name,
             )
             result = execute_campaign_lane(spec, cfg=cfg, context=context, store=store)
@@ -137,7 +151,7 @@ def main() -> int:
         work_dir.mkdir(parents=True, exist_ok=True)
 
         patch_ok = True
-        for arch in ARCHITECTURES:
+        for arch in DEVICE_BY_ARCH:
             device = DEVICE_BY_ARCH[arch]
             for op in ops:
                 try:
