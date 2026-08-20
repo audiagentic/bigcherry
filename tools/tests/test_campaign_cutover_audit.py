@@ -187,6 +187,59 @@ class PatchByteSpoofingTests(unittest.TestCase):
             self.assertNotEqual(first.source_slice_id, second.source_slice_id)
 
 
+class PatchBackendApplicabilityTests(unittest.TestCase):
+    """RE30 P0-3 (external review, 2026-08-20): a patch's declared catalog
+    backend must be checked against the REAL backend a lane is about to
+    compile with -- resolve_lane() only ever validated patch-set-name/state
+    policy, never an individual patch's applicability, so a hip-only patch
+    selected onto a vulkan source previously compiled without complaint."""
+
+    def test_hip_only_patch_on_a_vulkan_source_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory), with_patch=True)
+            (harness.context.patches_root / "catalog.toml").write_text(
+                "version = 1\n\n"
+                "[[patch]]\n"
+                'id = "0001_marker"\n'
+                'kind = "enhancement"\n'
+                'origin = "local"\n'
+                'backend = "hip"\n'
+                'state = "validated"\n',
+                encoding="utf-8",
+            )
+            from dataclasses import replace
+
+            harness.cfg = replace(
+                harness.cfg,
+                sources={
+                    "test-source": replace(
+                        harness.cfg.sources["test-source"], backend="vulkan"
+                    )
+                },
+            )
+
+            with self.assertRaises(CampaignLaneError) as ctx:
+                harness.run(run_id="run1")
+            self.assertIn("patch applicability check failed", str(ctx.exception))
+            self.assertIn("backend mismatch", str(ctx.exception))
+
+    def test_hip_patch_on_a_hip_source_still_compiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory), with_patch=True)
+            (harness.context.patches_root / "catalog.toml").write_text(
+                "version = 1\n\n"
+                "[[patch]]\n"
+                'id = "0001_marker"\n'
+                'kind = "enhancement"\n'
+                'origin = "local"\n'
+                'backend = "hip"\n'
+                'state = "validated"\n',
+                encoding="utf-8",
+            )
+            result = harness.run(run_id="run1")
+            self.assertIsNotNone(result.binary_ref)
+
+
 class CachedTreeTamperTests(unittest.TestCase):
     """RE24 item 2: modify a file inside an already-cached source worktree
     -> reuse fails closed (RE04 fix)."""

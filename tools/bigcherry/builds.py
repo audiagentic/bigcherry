@@ -54,6 +54,17 @@ class BuildPlan:
     inputs_hash reuse-miss check existed specifically to paper over this
     gap post hoc; this field closes it at the identity layer instead.
     Empty for a build with no generate stage (stock).
+
+    ``backend`` (RE-backend-identity, external review 2026-08-20): explicit
+    identity for which backend adapter produced ``cmake_options`` --
+    defaults to ``"hip"`` so this field's addition alone does not change
+    any existing HIP BuildPlan's identity (only threading the real
+    backend-injected options into ``cmake_options``, done at the same time
+    in the caller, changes HIP identity -- see campaign_lane.py). Without
+    this field, two BuildPlans differing only in which backend adapter
+    computed their (possibly textually-similar) cmake_options could not be
+    distinguished by inspection alone, even though build_plan_id already
+    differs once cmake_options genuinely differs.
     """
 
     source_slice_id: str
@@ -61,6 +72,7 @@ class BuildPlan:
     platform: str
     targets: tuple[str, ...]
     cmake_options: tuple[tuple[str, str], ...] = ()
+    backend: str = "hip"
     variant_set: str | None = None
     catalog_architectures: tuple[str, ...] = ()
     #: (need_name, content_hash) pairs, sorted by need_name -- one entry
@@ -173,6 +185,12 @@ _EFFECTIVE_CONFIGURE_PREFIXES = (
     "CMAKE_BUILD_TYPE",
     "AMDGPU_TARGETS",
     "GGML_HIP",
+    # RE-backend-identity (external review, 2026-08-20): Vulkan's real
+    # configure options were silently excluded from effective-build
+    # identity -- a Vulkan-relevant CMake change would not change
+    # effective_build_id, breaking the same reuse-safety guarantee the
+    # HIP prefixes above exist for.
+    "GGML_VULKAN",
 )
 
 
