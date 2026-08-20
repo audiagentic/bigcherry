@@ -26,10 +26,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// "BCVK". Distinct magic from HIP's GGML_HIP_REPLAY_MAGIC ("BCHY") so a
+// "BCVK", little-endian byte order (same convention as HIP's
+// GGML_HIP_REPLAY_MAGIC == 0x59484342u == bytes "BCHY"): the constant's
+// low byte is the string's first character. Distinct magic from HIP's so a
 // Vulkan replay cache can never be loaded by a HIP reader or vice versa
 // (RE30 detailed_solution: "give Vulkan replay a distinct magic/version").
-#define GGML_VK_REPLAY_MAGIC   0x4B435642u
+// GPT review (2026-08-20) caught the original constant (0x4B435642)
+// actually serializing to bytes "BVCK", not "BCVK" -- fixed here.
+#define GGML_VK_REPLAY_MAGIC   0x4B564342u
 #define GGML_VK_REPLAY_VERSION 1
 
 // Header of the on-disk Vulkan replay cache. Fixed size, little-endian, no

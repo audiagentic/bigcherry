@@ -1,4 +1,4 @@
-// bigcherry: stable ABI types for Vulkan measured dispatch (RE30 phase 2).
+// bigcherry: Vulkan measured-dispatch identity types (RE30 phase 2).
 //
 // Mirrors src/ggml/src/ggml-cuda/hip-autotune-types.h's identity model
 // rather than inventing a divergent shape, per RE30's own design notes.
@@ -6,6 +6,22 @@
 // convention (not upstream ggml-vulkan.cpp's internal lowercase vk_*
 // types, which are a different, unrelated naming scheme for unrelated
 // implementation-detail structs).
+//
+// ABI STABILITY (GPT review finding, 2026-08-20 -- corrected from an
+// earlier draft that called this "stable ABI types"): only the PERSISTENT
+// identity types (ggml_vk_dispatch_signature_v1, ggml_vk_hardware_key_v1,
+// the digest/replay-entry shapes) get a real stability promise, the same
+// one HIP's schema_version fields make -- bump the version when a hashed
+// field changes, never reinterpret silently. `ggml_vk_candidate_descriptor`
+// and `ggml_vk_can_execute_fn`'s signature are explicitly PROVISIONAL: this
+// header's hardware key deliberately omits extensions/limits/driver
+// version (they travel as canonical JSON, not a fixed struct -- see
+// ggml_vk_hardware_key_v1 below), so `can_execute` cannot yet evaluate the
+// real Vulkan eligibility question ("does this device support the
+// extension/limits this candidate needs"). Phase 3 will very likely need
+// to widen what `can_execute`/`ggml_vk_candidate_descriptor` receive, which
+// may not be an additive change. Do not treat this struct as frozen ABI
+// before that decision is made with real Vulkan capability data in hand.
 //
 // UNINTEGRATED SCAFFOLDING (2026-08-20): this header is not included by
 // any .cpp/.cu file yet, defines no runtime hook, and is not wired into
@@ -27,6 +43,7 @@
 
 #pragma once
 
+#include <stddef.h> // size_t (ggml_vk_workspace_fn's return type)
 #include <stdint.h>
 
 // Gated the same way HIP's autotune headers are gated on GGML_USE_HIP +
@@ -138,6 +155,20 @@ enum ggml_vk_conversion_route {
     GGML_VK_CONVERSION_TILED_TRANSPOSE  = 2, // e.g. RD68b: tiled 0<->2 transpose
 };
 
+// Mirrors ggml_hip_fusion_kind's role: whether/how this dispatch fuses a
+// following op into the same launch (standards-5 hard signature identity --
+// GPT review, 2026-08-20, caught this struct having no field for the
+// "fusion" the vk_signature SQL table's own comment already documents;
+// added here so the persistent schema and the runtime struct describe the
+// same identity, matching the HIP side's fusion/glu_op split).
+enum ggml_vk_fusion_kind {
+    GGML_VK_FUSION_NONE      = 0,
+    GGML_VK_FUSION_BIAS      = 1,
+    GGML_VK_FUSION_GATE      = 2,
+    GGML_VK_FUSION_GATE_BIAS = 3,
+    GGML_VK_FUSION_GLU       = 4,
+};
+
 struct ggml_vk_dispatch_signature_v1 {
     uint16_t schema_version;  // GGML_VK_SIGNATURE_SCHEMA_VERSION
     uint16_t op;              // ggml_op
@@ -147,6 +178,7 @@ struct ggml_vk_dispatch_signature_v1 {
     uint8_t  output_precision;
     uint8_t  accumulation_precision;
     uint8_t  layout;          // ggml_vk_layout
+    uint8_t  fusion;          // ggml_vk_fusion_kind
     uint16_t flags;           // ggml_vk_signature_flag
 
     int64_t  ne0[4];          // device-local src0 extents
