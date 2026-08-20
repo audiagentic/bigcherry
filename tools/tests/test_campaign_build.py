@@ -88,6 +88,29 @@ class CmakeArgsTests(unittest.TestCase):
         args = cmake_build_args(Path("/build"), targets=("llama-server",))
         self.assertEqual(args, ["cmake", "--build", str(Path("/build")), "-j", "--target", "llama-server"])
 
+    def test_default_backend_is_hip_unchanged(self):
+        """RE30 phase 1 regression proof: adding the ``backend`` kwarg must
+        not change a single byte of output for any existing (HIP) caller."""
+        build, platform = self._build_platform()
+        explicit = cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="hip")
+        default = cmake_configure_args(build, platform, Path("/src"), Path("/build"))
+        self.assertEqual(explicit, default)
+        self.assertIn("-DAMDGPU_TARGETS=gfx1100;gfx1030", " ".join(default))
+
+    def test_vulkan_backend_omits_amdgpu_targets_and_sets_ggml_vulkan(self):
+        build = campaign_config.Build(name="vulkan-stock", options=(), variant_set=None, needs=frozenset())
+        platform = campaign_config.Platform(name="p", targets=(), options=())
+        args = cmake_configure_args(
+            build, platform, Path("/src"), Path("/build"), backend="vulkan")
+        joined = " ".join(args)
+        self.assertNotIn("AMDGPU_TARGETS", joined)
+        self.assertIn("-DGGML_VULKAN=ON", joined)
+
+    def test_unknown_backend_is_rejected(self):
+        build, platform = self._build_platform()
+        with self.assertRaises(ValueError):
+            cmake_configure_args(build, platform, Path("/src"), Path("/build"), backend="cuda")
+
 
 class ToolchainRequestTests(unittest.TestCase):
     # resolve_toolchain_versions() is mocked away in these two -- they test

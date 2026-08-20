@@ -107,6 +107,13 @@ class PatchModule:
     requires: tuple[str, ...] = ()
     conflicts: tuple[str, ...] = ()
     group_explicit: bool = True
+    # RE30 phase 1: carried explicitly so callers resolving a nested (future
+    # backend-scoped) catalog don't have to infer the catalog root from
+    # ``catalog[0].path.parent`` -- that inference silently points at a
+    # module's own subdirectory once discovery becomes recursive, not the
+    # catalog root every other module in the same catalog shares.
+    catalog_root: Path | None = None
+    relative_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -152,6 +159,27 @@ def _module_order(stem: str) -> int:
     return int(match.group(1)) if match else 2**31
 
 
+def discover_modules(root: Path) -> list[Path]:
+    """Recursively discover patch module ``.py`` files under ``root``.
+
+    Excludes any path whose relative-to-root component starts with ``_``
+    (helpers, ``__pycache__``) at any depth -- not just the filename, so a
+    future nested catalog directory (e.g. a ``_shared/`` helper folder) is
+    excluded the same way a leading-underscore file is today. For today's
+    flat ``patches/`` layout this returns exactly what ``directory.glob(
+    "*.py")`` did; it only starts differing once nested catalog directories
+    (e.g. a future ``patches/vulkan/``) exist.
+    """
+    if not root.is_dir():
+        return []
+    found = []
+    for path in root.rglob("*.py"):
+        if any(part.startswith("_") for part in path.relative_to(root).parts):
+            continue
+        found.append(path)
+    return sorted(found)
+
+
 def describe(directory=None) -> list[PatchInfo]:
     """Describe every patch module (name, group, state, upstream) without importing."""
     directory = directory or paths.PATCHES
@@ -159,9 +187,7 @@ def describe(directory=None) -> list[PatchInfo]:
         return []
 
     result = []
-    for path in sorted(directory.glob("*.py")):
-        if path.name.startswith("_"):
-            continue
+    for path in discover_modules(directory):
         info = PatchInfo(
             name=path.stem,
             path=path,
@@ -179,14 +205,19 @@ def catalog(directory=None) -> list[PatchModule]:
     if not directory.is_dir():
         return []
     result: list[PatchModule] = []
-    for path in sorted(directory.glob("*.py")):
-        if path.name.startswith("_"):
-            continue
+    seen_ids: dict[str, Path] = {}
+    for path in discover_modules(directory):
+        patch_id = path.stem
+        if patch_id in seen_ids:
+            raise ValueError(
+                f"duplicate patch ID {patch_id!r}: {seen_ids[patch_id]} and {path}"
+            )
+        seen_ids[patch_id] = path
         result.append(
             PatchModule(
-                patch_id=path.stem,
+                patch_id=patch_id,
                 path=path,
-                order=_module_order(path.stem),
+                order=_module_order(patch_id),
                 group=module_group(path),
                 state=module_state(path),
                 upstream=module_upstream(path),
@@ -194,6 +225,8 @@ def catalog(directory=None) -> list[PatchModule]:
                 requires=_constant_strings(path, "REQUIRES"),
                 conflicts=_constant_strings(path, "CONFLICTS"),
                 group_explicit=_literal_constant(path, "GROUP") is not None,
+                catalog_root=directory,
+                relative_path=path.relative_to(directory),
             )
         )
     return sorted(result, key=lambda module: (module.order, module.patch_id))
@@ -311,10 +344,7 @@ def load_patches(
         return []
 
     patches: list[FilePatch] = []
-    for path in sorted(directory.glob("*.py")):
-        if path.name.startswith("_"):
-            continue
-
+    for path in discover_modules(directory):
         # Filter by group and state metadata (without loading the module)
         patch_group = module_group(path)
         patch_state = module_state(path)

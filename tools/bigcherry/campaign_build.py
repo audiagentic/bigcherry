@@ -211,6 +211,30 @@ def _default_runner(args: list[str], cwd: Path) -> None:
     subprocess.run(args, cwd=cwd, check=True)
 
 
+def _backend_configure_options(
+    backend: str,
+    platform: campaign_config.Platform,
+) -> dict[str, str]:
+    """Backend-specific cmake options that don't belong in a shared dict
+    literal (RE30 phase 1: the split this project's Vulkan evaluation
+    flagged as a prerequisite -- ``AMDGPU_TARGETS`` is HIP-specific and must
+    not be emitted, even empty, for a non-HIP backend).
+
+    Only ``"hip"`` (the default, unchanged) and ``"vulkan"`` (a stub -- no
+    Vulkan patches or tuning subsystem exist yet, this just lets a Vulkan
+    *stock* build configure) are known. Any other value is a caller bug.
+    """
+    if backend == "hip":
+        return {"AMDGPU_TARGETS": ";".join(platform.targets)}
+    if backend == "vulkan":
+        # Stock lane only (RE30 phase 1): GGML_VULKAN=ON if the caller
+        # hasn't already set it via build/platform options. No SDK/glslc
+        # identity capture yet -- that needs a real Vulkan toolchain to
+        # design against, deferred to a later phase.
+        return {"GGML_VULKAN": "ON"}
+    raise ValueError(f"unknown backend {backend!r} (expected 'hip' or 'vulkan')")
+
+
 def cmake_configure_args(
     build: campaign_config.Build,
     platform: campaign_config.Platform,
@@ -221,6 +245,7 @@ def cmake_configure_args(
     inventory: Path | None = None,
     c_compiler: str | None = None,
     cxx_compiler: str | None = None,
+    backend: str = "hip",
 ) -> list[str]:
     """The cmake configure argv for one v2 ``config.Build``/``config.Platform``.
 
@@ -228,12 +253,19 @@ def cmake_configure_args(
     precedence, same GGML_HIP_AUTOTUNE_* wiring) but reads the v2 config
     types (tuple-based options, tuple-based targets) instead of the legacy
     ``recipes.py`` dataclasses, since the new path never touches those.
+
+    ``backend`` defaults to ``"hip"`` -- the only backend that existed
+    before RE30 phase 1 -- so every existing caller is byte-for-byte
+    unchanged. Passing ``backend="vulkan"`` swaps in the Vulkan stub options
+    (see ``_backend_configure_options``) instead of ``AMDGPU_TARGETS``; no
+    caller does this yet (no Vulkan lane is wired into the campaign engine),
+    it exists so a future phase has a real, tested seam to call into.
     """
     options: dict[str, str] = {
         "CMAKE_BUILD_TYPE": "Release",
         **dict(platform.options),
         **dict(build.options),
-        "AMDGPU_TARGETS": ";".join(platform.targets),
+        **_backend_configure_options(backend, platform),
     }
     if build.variant_set:
         options["GGML_HIP_AUTOTUNE_VARIANT_SET"] = build.variant_set
