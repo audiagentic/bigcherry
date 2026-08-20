@@ -90,17 +90,22 @@ ref = "pinned"
 overlay = false
 patch-sets = []
 
-# RE30 phase 1 stub: proves the backend-adapter split (campaign_build.py's
-# cmake_configure_args(backend=...)) has a real config-level target to
-# resolve against. patch-sets is deliberately empty -- no Vulkan patch
-# exists yet (RE30 phases 2+ need real Vulkan hardware evidence first).
-# NOT wired into [campaign.standard] or any compat.recipe -- nothing in the
-# campaign engine passes backend="vulkan" through to cmake_configure_args
-# yet, so a lane naming this source would still configure as HIP today.
+# RE30 phase 3: Vulkan IS wired end-to-end now -- source.backend threads
+# through campaign_lane.py -> campaign_workers.make_build_worker ->
+# campaign_build.cmake_configure_args(backend=...), so a lane naming this
+# source configures GGML_VULKAN=ON for real via the standard `build`/
+# `campaign-build` CLI entrypoints, not just a manual cmake invocation.
+# patch-sets stays empty -- no Vulkan patch exists yet. NOT wired into
+# [campaign.standard] (that profile is HIP's canonical production set);
+# select this source explicitly via `--lane vulkan-stock:vulkan-stock:
+# vulkan-linux` (or `campaign-build --source vulkan-stock --build
+# vulkan-stock --platform vulkan-linux`) until a real Vulkan campaign
+# profile is defined.
 [source.vulkan-stock]
 ref = "pinned"
 overlay = false
 patch-sets = []
+backend = "vulkan"
 
 [source.bigcherry-native]
 ref = "pinned"

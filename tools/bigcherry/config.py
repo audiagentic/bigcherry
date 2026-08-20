@@ -57,12 +57,18 @@ class PatchSet:
     required_state: str
 
 
+#: RE30: which cmake_configure_args backend adapter a source's lanes use.
+#: "hip" is the default so every source predating RE30 phase 1 is unchanged.
+BACKENDS: tuple[str, ...] = ("hip", "vulkan")
+
+
 @dataclass(frozen=True)
 class Source:
     name: str
     ref: str
     overlay: bool
     patch_sets: tuple[str, ...]
+    backend: str = "hip"
 
 
 @dataclass(frozen=True)
@@ -181,7 +187,13 @@ def load(path: str | Path) -> Config:
             raise ConfigError(
                 f"source.{name} must use exact patch-sets, not groups/states selectors"
             )
-        sources[name] = Source(name, ref, overlay, patch_refs)
+        backend = data.get("backend", "hip")
+        if backend not in BACKENDS:
+            raise ConfigError(
+                f"source.{name}.backend={backend!r} must be one of "
+                f"{', '.join(BACKENDS)}"
+            )
+        sources[name] = Source(name, ref, overlay, patch_refs, backend)
 
     builds: dict[str, Build] = {}
     for name, body in _table(raw.get("build"), "build").items():
