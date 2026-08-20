@@ -380,6 +380,7 @@ def cmd_build_new(args: argparse.Namespace) -> int:
         selectors=selectors, profile_name=profile_name,
         architectures=architectures,
         inputs_by_build=inputs_by_build, validation_by_build=validation_by_build,
+        binary_relative_path=args.binary_relative_path,
         c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
         smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
         experiment=args.experiment,
@@ -727,6 +728,13 @@ def build_parser() -> argparse.ArgumentParser:
     new_build_cmd.add_argument(
         "--hip-visible-devices", default="0",
         help="only meaningful together with --model")
+    new_build_cmd.add_argument(
+        "--binary-relative-path", default="bin/llama-bench",
+        help="which binary each planned lane builds/publishes as its "
+             "primary artifact, e.g. 'bin/llama-server' for a real "
+             "production/deployment build -- matches campaign-build's own "
+             "flag of the same name (re14_real_run.py); every lane in the "
+             "request gets the same value, there is no per-lane override")
     new_build_cmd.add_argument("--c-compiler", default=None)
     new_build_cmd.add_argument("--cxx-compiler", default=None)
     new_build_cmd.add_argument("--run-id", default=None)

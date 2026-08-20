@@ -58,6 +58,52 @@ options = { GGML_HIP = "ON" }
             frozenset({"inventory", "promoted-winners"}),
         )
 
+    def test_source_backend_defaults_to_hip(self):
+        # RE30 phase 3: every source predating the backend field must be
+        # byte-for-byte unchanged.
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[source.llama-native]
+ref = "pinned"
+overlay = false
+patch-sets = []
+"""
+        )
+        loaded = config.load(path)
+        self.assertEqual(loaded.sources["llama-native"].backend, "hip")
+
+    def test_source_backend_vulkan_parses(self):
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[source.vulkan-stock]
+ref = "pinned"
+overlay = false
+patch-sets = []
+backend = "vulkan"
+"""
+        )
+        loaded = config.load(path)
+        self.assertEqual(loaded.sources["vulkan-stock"].backend, "vulkan")
+
+    def test_unknown_source_backend_rejected(self):
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[source.bad]
+ref = "pinned"
+overlay = false
+patch-sets = []
+backend = "cuda"
+"""
+        )
+        with self.assertRaisesRegex(config.ConfigError, "backend"):
+            config.load(path)
+
     def test_unknown_patch_set_fails(self):
         path = _write(
             """

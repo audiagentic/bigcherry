@@ -703,6 +703,7 @@ def _execute_build_phase(
         source_provenance=materialized.source_provenance,
         project_revision=project_revision,
         local_provenance_class=local_provenance_class,
+        backend=cfg.sources[spec.source_name].backend,
     )
     smoke_worker = None
     validation_spec = spec.validation
