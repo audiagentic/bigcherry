@@ -176,15 +176,16 @@ class VkSchemaTablesTests(unittest.TestCase):
                       "vk_observation", "vk_measurement", "vk_winner"):
             self.assertIn(name, tables)
 
-    def test_schema_version_bumped_to_5_on_fresh_db(self):
-        # A fresh database (no schema_meta row) resolves to '5' via the
-        # INSERT OR IGNORE near the top of dispatch-db.sql.
+    def test_schema_version_bumped_to_current_on_fresh_db(self):
+        # A fresh database (no schema_meta row) resolves to the current
+        # version ('6' as of HI67 slices 2/3) via the INSERT OR IGNORE near
+        # the top of dispatch-db.sql.
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "5")
+        self.assertEqual(row[0], "6")
 
-    def test_real_schema_4_database_migrates_to_5_in_place(self):
+    def test_real_schema_4_database_migrates_to_current_in_place(self):
         # The scenario the migration exists for: a REAL pre-existing
         # database, at schema 4, with real HIP data already in it and none
         # of the vk_* tables. Re-applying the current dispatch-db.sql (the
@@ -249,7 +250,7 @@ class VkSchemaTablesTests(unittest.TestCase):
             version = legacy.execute(
                 "SELECT value FROM schema_meta WHERE key = 'schema_version'"
             ).fetchone()[0]
-            self.assertEqual(version, "5")
+            self.assertEqual(version, "6")
 
             # The pre-existing real row survived, untouched.
             preserved = legacy.execute(
@@ -267,14 +268,14 @@ class VkSchemaTablesTests(unittest.TestCase):
         finally:
             legacy.close()
 
-    def test_migration_is_idempotent_once_already_at_5(self):
+    def test_migration_is_idempotent_once_already_at_current(self):
         # Re-running the schema script against an already-migrated database
-        # must not error and must leave it at '5'.
+        # must not error and must leave it at the current version.
         self.conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "5")
+        self.assertEqual(row[0], "6")
 
     def test_hip_tables_and_constraints_unaffected(self):
         # A HIP candidate insert must still enforce the original HIP-only
