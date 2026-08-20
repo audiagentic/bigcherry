@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- recognise (standards: current-only, no silent migration) rather than
 -- guess at an unlisted intermediate shape.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '5'),
+    ('schema_version',    '6'),
     ('signature_schema',  '1'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -657,6 +657,99 @@ CREATE TABLE IF NOT EXISTS vk_winner (
 CREATE UNIQUE INDEX IF NOT EXISTS vk_winner_dispatch_idx
     ON vk_winner(dispatch_digest, objective);
 
+-- ==========================================================================
+-- HI67 slices 2/3 (RV49 contract, RV77 GPT-adjudicated implementation
+-- design, 2026-08-20/21): CPU-reference correctness evidence.
+--
+-- The tuner's existing native-relative acceptance (measurement.nmse/
+-- max_abs_err above, compared against a candidate's OWN native run) does not
+-- bound end-to-end correctness -- native itself has its own floating-point
+-- error relative to the true CPU-reference computation, so a candidate can
+-- look "close to native" while both have drifted from the truth (the real
+-- q4_1 k=32 RDNA2 intermittent failure this schema exists to close, RV08).
+--
+-- correctness_evidence is production PROMOTION proof, keyed on the same
+-- normalized build/hardware/signature/candidate identities every other
+-- table here uses -- deliberately NOT a parallel source_slice_id/
+-- architecture/stable-name text-key namespace (RV77 Q2 change 1): one
+-- source slice can back multiple build plans/manifests, so build_id is the
+-- real namespace boundary, not source_slice_id alone.
+--
+-- Per-seed observations live in correctness_evidence_seed, not just an
+-- aggregated seeds_json array plus worst-of-seeds numbers on the parent row
+-- (RV77 Q2 change 2) -- a consumer must be able to verify every declared
+-- seed actually ran, native and candidate used the same seed set, and no
+-- failed seed was silently dropped from the aggregate. reference_digest
+-- (from patches/1222_hi67_deterministic_test_backend_ops_seed.py's
+-- BIGCHERRY_REF_DIGEST output) proves the native and candidate runs for one
+-- seed actually compared against the same CPU-reference input.
+--
+-- contract_version/threshold_t/headroom_fraction on the parent row are
+-- PRODUCER-RECORDED METADATA ONLY (RV77 Q2 change 4) -- promotion code must
+-- independently know the currently-required contract_version/T/headroom and
+-- reject evidence whose recorded parameters differ, never trust these
+-- columns as authority. A row's own claimed policy is provenance, not
+-- permission.
+-- ==========================================================================
+
+-- ------------------------------------------------------- correctness_evidence
+-- One row per (build, hardware, signature, candidate): the worst-of-seeds
+-- verdict a promotion decision actually consumes. e_n_nmse/e_c_nmse/
+-- max_abs_native/max_abs_candidate here are DERIVED from the child
+-- correctness_evidence_seed rows (the worst value across all of them, per
+-- the RV49 contract's "use the WORST result across >=3 deterministic
+-- seeds, not an average" rule) -- an index for promotion queries, not a
+-- second source of truth; the seed rows are the actual evidence.
+
+CREATE TABLE IF NOT EXISTS correctness_evidence (
+    correctness_evidence_id INTEGER PRIMARY KEY,
+    build_id             INTEGER NOT NULL REFERENCES build(build_id),
+    hardware_id          INTEGER NOT NULL REFERENCES hardware(hardware_id),
+    signature_id         INTEGER NOT NULL REFERENCES signature(signature_id),
+    candidate_id         INTEGER NOT NULL REFERENCES candidate(candidate_id),
+    native_candidate_id  INTEGER NOT NULL REFERENCES candidate(candidate_id),
+    contract_version     TEXT    NOT NULL,   -- e.g. 'hi67-rv49-v1'; producer-recorded, see header note
+    threshold_t          REAL    NOT NULL,   -- producer-recorded upstream correctness threshold for this op
+    headroom_fraction    REAL    NOT NULL,   -- producer-recorded; default 0.5 per RV49
+    e_n_nmse             REAL    NOT NULL,   -- worst-of-seeds NMSE(R,N), derived from seed rows
+    e_c_nmse             REAL    NOT NULL,   -- worst-of-seeds NMSE(R,C), derived from seed rows
+    max_abs_native       REAL    NOT NULL,   -- worst-of-seeds max_abs(N,R), derived from seed rows
+    max_abs_candidate    REAL    NOT NULL,   -- worst-of-seeds max_abs(C,R), derived from seed rows
+    seed_count           INTEGER NOT NULL,   -- number of correctness_evidence_seed rows this aggregates
+    tool_version          TEXT    NOT NULL,
+    computed_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, hardware_id, signature_id, candidate_id, contract_version),
+    CHECK (seed_count >= 3)
+);
+
+CREATE INDEX IF NOT EXISTS correctness_evidence_lookup_idx
+    ON correctness_evidence(build_id, hardware_id, signature_id, candidate_id);
+
+-- -------------------------------------------------------- correctness_evidence_seed
+-- One row per deterministic seed a correctness_evidence row aggregates.
+-- reference_digest is the BIGCHERRY_REF_DIGEST value the forced-native and
+-- forced-candidate test-backend-ops invocations both printed for this seed
+-- -- the evidence generator must assert they match before writing this row
+-- (RV77 Q1 hard gate: two separate process invocations are only a valid
+-- joint R/N/C measurement if both actually saw the same CPU-reference
+-- input).
+
+CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
+    correctness_evidence_seed_id INTEGER PRIMARY KEY,
+    correctness_evidence_id  INTEGER NOT NULL REFERENCES correctness_evidence(correctness_evidence_id),
+    seed                      INTEGER NOT NULL,
+    reference_digest          TEXT    NOT NULL,
+    e_n_nmse                  REAL    NOT NULL,
+    e_c_nmse                  REAL    NOT NULL,
+    max_abs_native            REAL    NOT NULL,
+    max_abs_candidate         REAL    NOT NULL,
+    native_execution_status   TEXT    NOT NULL,   -- ok|failed|timeout
+    candidate_execution_status TEXT   NOT NULL,   -- ok|failed|timeout
+    UNIQUE (correctness_evidence_id, seed),
+    CHECK (native_execution_status IN ('ok', 'failed', 'timeout')),
+    CHECK (candidate_execution_status IN ('ok', 'failed', 'timeout'))
+);
+
 -- ------------------------------------------------------------- migration 4->5
 --
 -- Placed at the END of the script, deliberately: schema_version only flips
@@ -682,3 +775,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS vk_winner_dispatch_idx
 -- warns readers against: the delta is fully known and versioned explicitly
 -- here. Idempotent: matches zero rows once a database is already at '5'.
 UPDATE schema_meta SET value = '5' WHERE key = 'schema_version' AND value = '4';
+
+-- ------------------------------------------------------------- migration 5->6
+--
+-- Same discipline as 4->5 above: placed after the correctness_evidence /
+-- correctness_evidence_seed CREATE TABLE statements, so schema_version never
+-- flips to '6' on a database still missing either table. Purely additive --
+-- two new tables, zero changes to any table/column/index that existed at
+-- schema 5 (including the six vk_* tables 4->5 added). Idempotent: matches
+-- zero rows once a database is already at '6'.
+UPDATE schema_meta SET value = '6' WHERE key = 'schema_version' AND value = '5';

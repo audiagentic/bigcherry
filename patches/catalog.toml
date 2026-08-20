@@ -310,3 +310,19 @@ backend = "hip"
 state = "untested"
 external-source = "amd-ecosystem-llama-cpp"
 plan-item = "RD50/RD51/RD52/RD53"
+
+[[patch]]
+id = "1222_hi67_deterministic_test_backend_ops_seed"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI67"
+
+[[patch]]
+id = "1223_hi67_machine_readable_correctness_metrics"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI67"
