@@ -381,7 +381,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                     )
                 },
             )
-            fake_generate, fake_build, fake_smoke = harness.fake_workers()
+            _, fake_build, fake_smoke = harness.fake_workers()
             captured: dict[str, object] = {}
 
             def capturing_build_worker(**kwargs):
@@ -391,7 +391,7 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
             with (
                 patch(
                     "bigcherry.campaign_lane.campaign_workers.make_generate_worker",
-                    side_effect=fake_generate,
+                    side_effect=Re25ProvenanceLineageTests._fake_generate_worker(),
                 ),
                 patch(
                     "bigcherry.campaign_lane.campaign_workers.make_build_worker",
