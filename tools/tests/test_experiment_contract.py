@@ -119,6 +119,18 @@ class ParseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ec.ExperimentContractError, "duplicates"):
             ec.parse_contract(doc, contract_id="X")
 
+    def test_negative_gain_threshold_rejected(self):
+        doc = _base_doc()
+        doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=-5)
+        with self.assertRaisesRegex(ec.ExperimentContractError, "target_kernel_gain_pct"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_negative_regression_budget_rejected(self):
+        doc = _base_doc()
+        doc["acceptance"] = {"max_control_regression_pct": -1}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+            ec.parse_contract(doc, contract_id="X")
+
 
 class ContractHashTests(unittest.TestCase):
     def test_hash_is_stable_across_reparse(self):
@@ -294,11 +306,59 @@ max_control_regression_pct = 1
             ec.load_contracts(path)
 
     def test_shipped_registry_loads_cleanly(self):
-        # The real repo-root experiment-contracts.toml must always parse,
-        # even while empty (EC02's backfill work populates it later).
+        # The real repo-root experiment-contracts.toml parses and its own
+        # source_ids all cross-check clean against the real external-sources
+        # registry (EC02's backfill populates it with real [contract.*]
+        # entries; this stays true before and after that population).
         from bigcherry import paths
-        registry = ec.load_contracts(paths.EXPERIMENT_CONTRACTS)
-        self.assertEqual(len(registry), 0)
+        registry = ec.load_contracts(
+            paths.EXPERIMENT_CONTRACTS,
+            known_source_ids=ec.known_source_ids_from_external_sources(),
+        )
+        self.assertGreaterEqual(len(registry), 0)
+
+
+class KnownSourceIdsFromExternalSourcesTests(unittest.TestCase):
+    def test_real_registry_yields_known_ids(self):
+        ids = ec.known_source_ids_from_external_sources()
+        self.assertIn("stew675-rdna-boosts", ids)
+        self.assertIn("amd-ecosystem-llama-cpp", ids)
+
+    def test_explicit_path_used_over_default(self):
+        path = _write("""
+[[sources]]
+id = "only-one"
+repo = "https://example.invalid/x"
+locator = "l"
+
+[[sources.snapshots]]
+label = "v1"
+head = "0000000000000000000000000000000000000000"
+base = "0000000000000000000000000000000000000000"
+active = true
+""")
+        ids = ec.known_source_ids_from_external_sources(path)
+        self.assertEqual(ids, frozenset({"only-one"}))
+
+    def test_missing_file_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.known_source_ids_from_external_sources("/no/such/external-sources.toml")
+
+    def test_load_contracts_rejects_shipped_registry_against_real_sources_if_broken(self):
+        # Cross-checking the shipped registry (used above) proves the two
+        # files stay mutually consistent -- this test documents *why*:
+        # a contract citing a source_id that isn't registered would be
+        # caught here, not silently accepted.
+        from bigcherry import paths
+        registry = ec.load_contracts(
+            paths.EXPERIMENT_CONTRACTS,
+            known_source_ids=ec.known_source_ids_from_external_sources(),
+        )
+        for contract in registry:
+            self.assertIn(
+                contract.source.source_id,
+                ec.known_source_ids_from_external_sources(),
+            )
 
 
 if __name__ == "__main__":

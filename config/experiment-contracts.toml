@@ -3,5 +3,178 @@
 # Schema, field semantics, and rationale: docs/reference/BigCherry_Experiment_Contract_Implementation_Guide.md
 # and docs/planning/active/ec-contracts/EC01.md.
 #
-# Empty until EC02's backfill work populates entries for the existing
-# 1200-1210 RD-prefixed transforms (see docs/planning/active/ec-contracts/EC02.md).
+# EC02 backfill (2026-08-20): of the 15 materialized 1200-1221 RD-prefixed
+# transforms, only the 5 below have a hypothesis.family that fits the CLOSED
+# five-value matmul-dispatch-family enum (autotune_schema.FAMILIES --
+# mmvq/mmq/mmvf/mmf/blas, "a major algorithmic [matmul] path", per this
+# guide's own non-negotiable "never redefined here" rule). The other 10
+# materialized patches (RD19/RD20/RD04/RD05/RD06/RD13/RD22/RD26/RD39-42/RD43/
+# RD44/RD50) are genuinely NOT matmul-family-dispatch optimizations -- they
+# touch graph fusion detection, flash-attention (its own algorithmic path,
+# outside the 5-value enum), tensor-parallel topology, device-graph
+# scheduling, or SSM/GDN kernels. Forcing one of the 5 family values onto
+# them would misrepresent what they actually are. See EC02's plan-item notes
+# for the full per-patch accounting and the schema-scope finding this
+# produced (a real gap for a future EC/RE item, not an oversight here).
+
+[contract.RD08-Q6K-MMVQ-VDR2]
+title = "RD08: Q6_K mmvq VDR=2 decode kernel (amortized dp4a loads)"
+
+[contract.RD08-Q6K-MMVQ-VDR2.source]
+source_id = "stew675-rdna-boosts"
+commits = ["4591cc9806d24c5151a35007d24b69550df93e32"]
+atomic_part = "1204_rd08_q6k_mmvq_vdr2"
+
+[contract.RD08-Q6K-MMVQ-VDR2.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Processes both 8-element chunks of a Q6_K vec_dot per call (4 dp4a ops instead of 2, half the loop iterations for the same row) -- fork claims bit-identical output to the VDR=1 kernel with modest decode gains since decode is DRAM-bound, not compute-bound."
+
+[contract.RD08-Q6K-MMVQ-VDR2.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.correctness]
+bit_identical = "required"
+
+[contract.RD08-Q6K-MMVQ-VDR2.acceptance]
+target_kernel_gain_pct = 0.3
+max_control_regression_pct = 1
+
+[contract.RD12-PAIRED-MMVQ-DUAL]
+title = "RD12: fuse paired mmvq matmuls (K/V projections) over a shared activation"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.source]
+source_id = "stew675-rdna-boosts"
+commits = ["44b51c66a210053b12bdfcf1183a6b175878b9c8"]
+atomic_part = "1205_rd12_paired_mmvq_dual_output"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "K and V projections in an attention layer run two mmvq matmuls over the same activation with the same output shape; fusing them into one launch (second weight as a fusion 'gate' writing a separate dst_gate output) amortizes the shared-activation load. Fork claims bit-identical vs unfused, small positive tg64 numbers."
+
+[contract.RD12-PAIRED-MMVQ-DUAL.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.correctness]
+bit_identical = "required"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.acceptance]
+target_kernel_gain_pct = 0.3
+max_control_regression_pct = 1
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD]
+title = "RD17: fold MoE top-k routing weights into the down-projection MMVQ epilogue"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["5e545b7da39f5abfb2b607922013009c38fd5cd0"]
+atomic_part = "1207_rd17_moe_topk_down_fold"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Folds the MoE top-k routing-weight MUL into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["moe_decode", "moe_prefill"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.correctness]
+ppl_equality = "required"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.acceptance]
+target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+
+[contract.RD21-GFX1151-MMVQ-NWARPS]
+title = "RD21: gfx1151 (RDNA3_5) mmvq nwarps=2 table for Q8_0 decode"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1818c3b3704a623e33d73b6cb0b633400ef70b14"]
+atomic_part = "1208_rd21_gfx1151_mmvq_nwarps_table"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.hypothesis]
+family = "mmvq"
+expected_effect = "performance"
+rationale = "gfx1151 (Strix Halo iGPU, RDNA3_5) previously fell into the RDNA2 mmvq table; a dedicated table with nwarps=2 for Q8_0 decode matmuls was fork-swept at ~+0.6% decode. HARDWARE-DEFERRED: no gfx1151 device exists on Brutus (gfx1100/gfx1201/gfx1030 only) -- this contract's positive-lane performance claim CANNOT be evaluated until gfx1151 hardware is available; only the no-regression/non-selection proof on existing hardware is currently runnable (RD21's own acceptance standard: no unsupported extrapolation)."
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+weight_types = ["q8_0"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.correctness]
+backend_reference = "required"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.acceptance]
+target_kernel_gain_pct = 0.6
+max_control_regression_pct = 1
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD]
+title = "RD07: Q6_K MMQ prefill fold/hoist (from the RD05/RD06/RD07 combined patch)"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1203_rd050607_rdna4_wmma_fa_q6k_mmq (RD07 sub-piece only -- RD05/RD06 are RDNA4 WMMA flash-attention correctness/config work, outside the mmq family and NOT covered by this contract)"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Q6_K MMQ fold/hoist prefill performance work, one of three logically separate changes materialized atomically in patch 1203 (guide Appendix B rule: one patch file is not necessarily one hypothesis). CO-TENANCY WARNING: RD07 co-tenants BigCherry framework patches 0300/1000 in the same MMQ code region and must be re-verified against HI71's dense-shape-aware eligibility rules, not assumed to merge textually clean forever."
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.correctness]
+backend_reference = "required"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.acceptance]
+max_control_regression_pct = 1

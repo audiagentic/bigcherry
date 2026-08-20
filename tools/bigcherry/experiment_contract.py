@@ -111,7 +111,13 @@ def _percent(raw: object, where: str) -> float | None:
         return None
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise ExperimentContractError(f"{where} must be a number")
-    return float(raw)
+    value = float(raw)
+    if value < 0:
+        raise ExperimentContractError(
+            f"{where} must be >= 0 (a negative gain/regression-budget threshold "
+            f"is not a meaningful requirement -- {value!r} given)"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -399,6 +405,34 @@ def _topological_order(contracts: dict[str, ExperimentContract]) -> tuple[str, .
     for contract_id in sorted(contracts):
         visit(contract_id, ())
     return tuple(order)
+
+
+def known_source_ids_from_external_sources(
+    path: str | Path | None = None,
+) -> frozenset[str]:
+    """Real cross-check input for ``load_contracts(known_source_ids=...)``:
+    every ``[[sources]] id`` currently registered in
+    ``config/external-sources.toml`` (``paths.EXTERNAL_SOURCES`` by default).
+    Kept as a separate, explicit call rather than an automatic default inside
+    ``load_contracts`` -- a caller who wants the real registry cross-check
+    (the CLI, a promotion gate) asks for it explicitly; a caller building or
+    testing a contract in isolation (this module's own unit tests) is not
+    forced to also maintain a real external-sources.toml fixture."""
+    import tomllib as _tomllib
+
+    resolved = Path(path) if path is not None else None
+    if resolved is None:
+        from . import paths
+        resolved = paths.EXTERNAL_SOURCES
+    try:
+        raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ExperimentContractError(f"no external-sources registry at {resolved}") from None
+    except _tomllib.TOMLDecodeError as exc:
+        raise ExperimentContractError(f"{resolved}: {exc}") from None
+    return frozenset(
+        entry["id"] for entry in raw.get("sources", []) if isinstance(entry, dict) and entry.get("id")
+    )
 
 
 def load_contracts(path: str | Path, *,
