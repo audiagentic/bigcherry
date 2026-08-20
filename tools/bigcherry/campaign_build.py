@@ -257,9 +257,11 @@ def cmake_configure_args(
     ``backend`` defaults to ``"hip"`` -- the only backend that existed
     before RE30 phase 1 -- so every existing caller is byte-for-byte
     unchanged. Passing ``backend="vulkan"`` swaps in the Vulkan stub options
-    (see ``_backend_configure_options``) instead of ``AMDGPU_TARGETS``; no
-    caller does this yet (no Vulkan lane is wired into the campaign engine),
-    it exists so a future phase has a real, tested seam to call into.
+    (see ``_backend_configure_options``) instead of ``AMDGPU_TARGETS``.
+    ``campaign_workers.make_build_worker`` and ``campaign_lane.py``'s
+    ``BuildPlan.cmake_options`` construction both resolve this from
+    ``config.Source.backend`` (RE30's real ``vulkan-stock`` source uses it
+    today, e.g. via ``bigcherry build --lane vulkan-stock:...``).
     """
     options: dict[str, str] = {
         "CMAKE_BUILD_TYPE": "Release",

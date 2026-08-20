@@ -30,12 +30,15 @@ required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
 # its own [experiment.<name>] entry so `bigcherry build --experiment <name>`
-# adds EXACTLY that one patch on top of a source's normal framework
-# patch-set (resolve_lane's experiment= is additive, not a replacement --
-# see campaign_resolution.py) -- the isolated single-patch-vs-native bench
-# unit. Deliberately one patch per entry, not grouped, so benching two
-# patches together is always an explicit choice (a second --experiment
-# name), never an accident of a shared group.
+# adds those patches on top of a source's normal framework patch-set
+# (resolve_lane's experiment= is additive, not a replacement -- see
+# campaign_resolution.py) -- the isolated single-patch(-chain)-vs-native
+# bench unit. Most entries below are still exactly one patch, so benching
+# two independent patches together stays an explicit choice (a second
+# --experiment name), never an accident of a shared group; a REQUIRES
+# dependency chain (e.g. rd44-only below, which pulls in its two
+# prerequisites) is not "two patches together" in that sense -- it is one
+# patch's own declared closure, expanded by expand_composition().
 [experiment.rd19-only]
 patches = ["1200_rd19_single_gpu_meta_bypass"]
 
