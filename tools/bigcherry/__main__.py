@@ -1271,8 +1271,12 @@ def cmd_experiment_list(args: argparse.Namespace) -> int:
         return 0
     for contract_id in sorted(registry.contracts):
         contract = registry[contract_id]
+        target_label = (
+            f"{contract.target.kind}:{contract.target.family}"
+            if contract.target.family is not None else contract.target.kind
+        )
         print(
-            f"  {contract_id:<20} family={contract.hypothesis.family:<6} "
+            f"  {contract_id:<20} target={target_label:<20} "
             f"source={contract.source.source_id} -- {contract.title}"
         )
     return 0
