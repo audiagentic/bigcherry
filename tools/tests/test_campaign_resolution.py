@@ -177,5 +177,160 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             self.assertNotEqual(lane_1.patch_set.patch_set_id, lane_2.patch_set.patch_set_id)
 
 
+class EmptyBaseExperimentResolutionTests(unittest.TestCase):
+    """External patch-management review, 2026-08-20: resolve_lane() used to
+    return on an empty-base source (no patch_sets, e.g. a clean Vulkan
+    stock lane) before `experiment` was ever consulted, silently dropping
+    any requested experiment instead of resolving it."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.patches_root = Path(self.directory.name) / "patches"
+        _write_patch(self.patches_root, "0001_a", marker_text="a")
+        self.catalog = patchset.catalog(directory=self.patches_root)
+        experiment = config.Experiment(
+            name="exp-a", patches=("0001_a",),
+            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+        )
+        self.cfg = config.Config(
+            pinned="unused",
+            patch_sets={},
+            sources={
+                "clean": config.Source(
+                    name="clean", ref="pinned", overlay=False, patch_sets=()),
+            },
+            builds={}, platforms={}, experiments={"exp-a": experiment}, campaigns={},
+            path=Path(self.directory.name) / "recipes.toml",
+        )
+
+    def test_empty_base_no_experiment_resolves_empty(self):
+        lane = campaign_resolution.resolve_lane(
+            "clean", self.cfg, self.catalog, catalog_directory=self.patches_root)
+        self.assertEqual(lane.patch_set.module_ids, ())
+        self.assertEqual(lane.patch_set.classification, "upstream")
+
+    def test_empty_base_with_experiment_resolves_exactly_the_experiment(self):
+        lane = campaign_resolution.resolve_lane(
+            "clean", self.cfg, self.catalog, experiment="exp-a",
+            catalog_directory=self.patches_root)
+        self.assertEqual(lane.patch_set.module_ids, ("0001_a",))
+        self.assertEqual(lane.patch_set.classification, "experimental")
+
+    def test_empty_base_with_unknown_experiment_fails_closed(self):
+        with self.assertRaisesRegex(campaign_resolution.ResolutionError, "unknown experiment"):
+            campaign_resolution.resolve_lane(
+                "clean", self.cfg, self.catalog, experiment="not-real",
+                catalog_directory=self.patches_root)
+
+
+class MultiSetIndependentRequiredStateTests(unittest.TestCase):
+    """External patch-management review, 2026-08-20: a multi-patch-set
+    source used to flatten every set into one synthetic list and validate
+    ALL of it under only the first set's required_state -- silently wrong
+    once two named sets in the same source genuinely diverge."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.patches_root = Path(self.directory.name) / "patches"
+        _write_patch(self.patches_root, "0001_a", marker_text="a")
+        _write_patch(self.patches_root, "0002_b", marker_text="b")
+
+    def _catalog_with_states(self, state_a: str, state_b: str) -> list[patchset.PatchModule]:
+        (self.patches_root / "0001_a.py").write_text(
+            (self.patches_root / "0001_a.py").read_text(encoding="utf-8").replace(
+                "STATE = 'validated'", f"STATE = {state_a!r}"),
+            encoding="utf-8",
+        )
+        (self.patches_root / "0002_b.py").write_text(
+            (self.patches_root / "0002_b.py").read_text(encoding="utf-8").replace(
+                "STATE = 'validated'", f"STATE = {state_b!r}"),
+            encoding="utf-8",
+        )
+        return patchset.catalog(directory=self.patches_root)
+
+    def test_diverging_policies_validate_each_set_independently(self):
+        # set-a requires 'validated' and 0001_a really is validated; set-b
+        # requires 'untested' and 0002_b really is untested. Under the OLD
+        # buggy behaviour (first set's policy applied to everything), set-b
+        # would incorrectly be validated against 'validated' too -- which
+        # 0002_b would actually still pass here, so use the inverse: make
+        # 0001_a untested (fails set-a's own 'validated' requirement) while
+        # 0002_b stays validated (passes set-b's 'untested' requirement
+        # trivially) is not a clean signal either. Instead assert the
+        # positive case directly: each set's own real state is honoured.
+        catalog = self._catalog_with_states("validated", "untested")
+        cfg = config.Config(
+            pinned="unused",
+            patch_sets={
+                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
+                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="untested"),
+            },
+            sources={
+                "multi": config.Source(
+                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+            },
+            builds={}, platforms={}, experiments={}, campaigns={},
+            path=Path(self.directory.name) / "recipes.toml",
+        )
+        lane = campaign_resolution.resolve_lane(
+            "multi", cfg, catalog, catalog_directory=self.patches_root)
+        self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
+        # Two genuinely different policies were used -- the composite
+        # required_state is honestly ambiguous, not silently the first
+        # set's value.
+        self.assertIsNone(lane.patch_set.required_state)
+
+    def test_diverging_policy_rejects_a_module_that_fails_its_own_sets_policy(self):
+        # 0001_a is only 'untested' but set-a demands 'validated' -- under
+        # the OLD bug this couldn't even be expressed (everything used
+        # source.patch_sets[0]'s policy, so as long as the FIRST set's
+        # patches matched the first policy, nothing failed); now each set
+        # is validated against its own declared policy independently and
+        # this must fail.
+        catalog = self._catalog_with_states("untested", "validated")
+        cfg = config.Config(
+            pinned="unused",
+            patch_sets={
+                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
+                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+            },
+            sources={
+                "multi": config.Source(
+                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+            },
+            builds={}, platforms={}, experiments={}, campaigns={},
+            path=Path(self.directory.name) / "recipes.toml",
+        )
+        with self.assertRaisesRegex(ValueError, "does not satisfy required state"):
+            campaign_resolution.resolve_lane(
+                "multi", cfg, catalog, catalog_directory=self.patches_root)
+
+    def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
+        # Today's only real production shape (bigcherry: framework +
+        # validated-enhancements, both 'validated') -- required_state must
+        # resolve to the shared string, not None, so patch_set_id does not
+        # silently change for every currently-configured multi-set source.
+        catalog = self._catalog_with_states("validated", "validated")
+        cfg = config.Config(
+            pinned="unused",
+            patch_sets={
+                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
+                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+            },
+            sources={
+                "multi": config.Source(
+                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+            },
+            builds={}, platforms={}, experiments={}, campaigns={},
+            path=Path(self.directory.name) / "recipes.toml",
+        )
+        lane = campaign_resolution.resolve_lane(
+            "multi", cfg, catalog, catalog_directory=self.patches_root)
+        self.assertEqual(lane.patch_set.required_state, "validated")
+        self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
+
+
 if __name__ == "__main__":
     unittest.main()
