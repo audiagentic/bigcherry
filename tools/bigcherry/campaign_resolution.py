@@ -72,7 +72,7 @@ def resolve_patch_set(
     # directory entirely for a genuinely EMPTY custom catalog (a context
     # with zero patch files), which would otherwise silently fall back to
     # the wrong global default.
-    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
+    resolved_catalog_directory = catalog_directory or ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
     selected = patchset.resolve_exact(
         ids, directory=resolved_catalog_directory,
         required_state=required_state_override or declared.required_state,
@@ -155,7 +155,7 @@ def resolve_lane(
         # comment on why this must participate in patch_set_id.
         composition_names=tuple(source.patch_sets),
     )
-    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
+    resolved_catalog_directory = catalog_directory or ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
     if experiment:
         extra = cfg.experiments[experiment].patches
         extra_selection = patchset.resolve_exact(

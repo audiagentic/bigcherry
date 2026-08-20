@@ -423,3 +423,223 @@ CREATE INDEX IF NOT EXISTS transform_gap_sig_idx
     ON transform_gap(build_id, signature_digest);
 CREATE INDEX IF NOT EXISTS transform_gap_pattern_idx
     ON transform_gap(native_family, pattern_description);
+
+-- ============================================================================
+-- Vulkan autotune tables (RE30 phase 2, 2026-08-20).
+--
+-- Deliberately PARALLEL tables, not a `backend` discriminator column added to
+-- the HIP tables above. Rationale (see RE30's schema-design decision in the
+-- plan item): the HIP tables' CHECK constraints, UNIQUE indexes and every
+-- existing Python reader (inventory.py, replay_cache.py, tune_journal.py,
+-- rank_replay.py, ...) are written assuming HIP-only content -- e.g.
+-- candidate.family's CHECK enumerates {mmq,mmvf,mmf,mmvq,blas} and
+-- winner/measurement carry no field a Vulkan pipeline-recipe identity would
+-- naturally fill (push-constant layout, SPIR-V fingerprint, coopmat class).
+-- A discriminator column would force every one of those constraints and
+-- readers to become backend-conditional to stay correct, which is exactly
+-- the "silently relabelled and corrupts compatibility" risk RE30's own
+-- Effort & Risk section warns about. Parallel `vk_*` tables cost a small
+-- amount of duplication but leave every existing HIP table, CHECK, index and
+-- reader completely untouched -- zero regression surface by construction.
+-- schema_version stays '4': this is an additive orthogonal namespace, not a
+-- reinterpretation of any existing hashed/identity field (see the comment on
+-- schema_meta above for when a bump IS required).
+--
+-- No Vulkan patch, dispatch hook, or measurement code exists yet (RE30 is
+-- still pre-implementation past this scaffolding) -- these tables have no
+-- writer today. They exist so the identity/persistence shape is settled and
+-- reviewable before any Vulkan record/tune/replay code is written against it.
+-- ============================================================================
+
+-- ------------------------------------------------------------- vk_hardware
+-- Executing GPU+driver *class* for Vulkan, mirroring hardware's role: no
+-- device ordinal (same standards-10 sharing rule as HIP). Vulkan identity
+-- needs more axes than HIP's architecture_code because ICDs vary more than
+-- ROCm's gfx target strings do (RE30 detailed_solution).
+
+CREATE TABLE IF NOT EXISTS vk_hardware (
+    vk_hardware_id     INTEGER PRIMARY KEY,
+    hardware_digest     BLOB    NOT NULL UNIQUE,  -- blake2b(person=llama-vk-hardware)
+    vendor_id           INTEGER NOT NULL,
+    device_id           INTEGER NOT NULL,
+    device_class        TEXT    NOT NULL,         -- stable class/UUID, not a PCI ordinal
+    driver_version       TEXT    NOT NULL,
+    api_version          TEXT    NOT NULL,         -- Vulkan API version, e.g. "1.3.280"
+    subgroup_size        INTEGER NOT NULL,
+    subgroup_ops_mask    INTEGER NOT NULL,         -- bitmask of supported subgroup operations
+    extensions_json      TEXT    NOT NULL,         -- sorted JSON array of enabled extension names
+    limits_json          TEXT    NOT NULL,         -- relevant VkPhysicalDeviceLimits fields
+    shader_toolchain_digest BLOB NOT NULL,          -- glslc/SPIR-V/source fingerprint
+    canonical_json       TEXT    NOT NULL,         -- full-key collision check, mirrors hardware.canonical_json
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- -------------------------------------------------------------- vk_signature
+-- Canonical device-local Vulkan operation description, mirroring `signature`.
+-- Carries fields signature.canonical_json has no room for: layout/alignment,
+-- conversion/quantisation route and split-K/fusion condition are Vulkan
+-- pipeline-recipe identity, not HIP kernel-variant identity (RE30
+-- detailed_solution's signature field list).
+
+CREATE TABLE IF NOT EXISTS vk_signature (
+    vk_signature_id     INTEGER PRIMARY KEY,
+    signature_digest     BLOB    NOT NULL UNIQUE,   -- blake2b(person=llama-vk-tune)
+    base_digest          BLOB    NOT NULL,
+    schema_version       INTEGER NOT NULL,
+    op                   TEXT    NOT NULL,
+    src0_type            TEXT    NOT NULL,
+    src1_type            TEXT    NOT NULL,
+    dst_type             TEXT    NOT NULL,
+    output_precision     TEXT    NOT NULL,
+    accumulation_precision TEXT  NOT NULL,
+    m                    INTEGER NOT NULL,
+    n                    INTEGER NOT NULL,
+    k                    INTEGER NOT NULL,
+    layout               TEXT    NOT NULL,          -- e.g. "row_major", "col_major", "coopmat"
+    alignment_class       INTEGER NOT NULL,
+    batching              TEXT    NOT NULL DEFAULT 'none',
+    conversion_route      TEXT    NOT NULL DEFAULT 'none',  -- quantise/dequantise path taken
+    split_k               INTEGER NOT NULL DEFAULT 0,
+    fusion                TEXT    NOT NULL DEFAULT 'none',
+    is_refined            INTEGER NOT NULL DEFAULT 0,
+    canonical_json        TEXT    NOT NULL,
+    created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS vk_signature_base_idx ON vk_signature(base_digest);
+
+-- --------------------------------------------------------------- vk_candidate
+-- A Vulkan candidate is a complete executable *pipeline recipe*
+-- (preparation + main pipeline + optional reduction), never a bare dispatch
+-- -- see RE30 detailed_solution's "pinned upstream seam" note on why a
+-- partial-recipe candidate would time a false winner. pipeline_stage_count
+-- records how many command-buffer stages the recipe comprises so a reader
+-- can tell a fused single-dispatch candidate from a multi-stage one without
+-- re-parsing config_json.
+
+CREATE TABLE IF NOT EXISTS vk_candidate (
+    vk_candidate_id         INTEGER PRIMARY KEY,
+    build_id                 INTEGER NOT NULL REFERENCES build(build_id),
+    stable_name               TEXT    NOT NULL,
+    family                    TEXT    NOT NULL,      -- mul_mat|mul_mat_id (grows as families are added)
+    source_class              TEXT    NOT NULL,       -- mirrors ggml_hip_source_class's vocabulary
+    implementation_version     INTEGER NOT NULL,
+    pipeline_stage_count       INTEGER NOT NULL DEFAULT 1,
+    shader_module_digests_json TEXT    NOT NULL,      -- JSON array, one SPIR-V digest per stage
+    graph_safe                 INTEGER NOT NULL,
+    deterministic               INTEGER NOT NULL,
+    config_json                 TEXT    NOT NULL,
+    UNIQUE (build_id, stable_name),
+    CHECK (family IN ('mul_mat', 'mul_mat_id')),
+    CHECK (source_class IN ('native_wrapper','existing_runtime',
+                            'existing_alternative','new_generated_variant',
+                            'vendor_auto','vendor_explicit'))
+);
+
+-- ------------------------------------------------------------- vk_observation
+-- Vulkan record mode, mirroring `observation` exactly in shape.
+
+CREATE TABLE IF NOT EXISTS vk_observation (
+    vk_observation_id    INTEGER PRIMARY KEY,
+    build_id              INTEGER NOT NULL REFERENCES build(build_id),
+    vk_hardware_id         INTEGER NOT NULL REFERENCES vk_hardware(vk_hardware_id),
+    vk_signature_id         INTEGER NOT NULL REFERENCES vk_signature(vk_signature_id),
+    native_stable_name      TEXT    NOT NULL,
+    calls                    INTEGER NOT NULL DEFAULT 0,
+    est_bytes                INTEGER NOT NULL DEFAULT 0,
+    est_flops                INTEGER NOT NULL DEFAULT 0,
+    sites_json                TEXT    NOT NULL DEFAULT '[]',
+    diagnostics_json          TEXT    NOT NULL DEFAULT '{}',
+    source_slice_id           TEXT,
+    workload_id                TEXT,
+    campaign_run_id            TEXT,
+    first_seen                 TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_seen                  TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, vk_hardware_id, vk_signature_id)
+);
+
+CREATE INDEX IF NOT EXISTS vk_observation_hot_idx
+    ON vk_observation(build_id, vk_hardware_id, calls DESC);
+
+-- ------------------------------------------------------------- vk_measurement
+-- One row per (dispatch key, candidate, objective) tuning attempt, mirroring
+-- `measurement`. RE30 detailed_solution's tuning-transaction rules (create
+-- pipelines outside timing, warm up, submit/wait once per timed sample,
+-- fail closed on device-lost/timestamp failure, validate against native
+-- output) apply to how a future writer fills this table, not to its shape.
+
+CREATE TABLE IF NOT EXISTS vk_measurement (
+    vk_measurement_id     INTEGER PRIMARY KEY,
+    build_id               INTEGER NOT NULL REFERENCES build(build_id),
+    vk_hardware_id          INTEGER NOT NULL REFERENCES vk_hardware(vk_hardware_id),
+    vk_signature_id          INTEGER REFERENCES vk_signature(vk_signature_id),
+    dispatch_digest          BLOB,
+    vk_candidate_id           INTEGER NOT NULL REFERENCES vk_candidate(vk_candidate_id),
+    run_id                    INTEGER REFERENCES tuning_run(run_id),
+    objective                 TEXT    NOT NULL DEFAULT 'latency',
+    stage                     TEXT    NOT NULL,     -- screen|final
+    accepted                  INTEGER NOT NULL,
+    reject_reason             TEXT,
+    samples                   INTEGER NOT NULL DEFAULT 0,
+    median_us                 REAL,
+    p95_us                    REAL,
+    min_us                    REAL,
+    stddev_us                 REAL,
+    pipeline_creation_us       REAL,     -- excluded from the timed sample; recorded for diagnosis
+    command_buffer_us          REAL,     -- the actual timed quantity (RE30: "timestamp the full recipe")
+    workspace_bytes            INTEGER NOT NULL DEFAULT 0,
+    nmse                       REAL,
+    max_abs_err                 REAL,
+    max_rel_err                 REAL,
+    samples_json                 TEXT,
+    source_slice_id              TEXT,
+    build_plan_id                 TEXT,
+    effective_build_id            TEXT,
+    workload_id                    TEXT,
+    campaign_run_id                TEXT,
+    measured_at                     TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, vk_hardware_id, vk_candidate_id, objective, stage, dispatch_digest)
+);
+
+CREATE INDEX IF NOT EXISTS vk_measurement_dispatch_idx
+    ON vk_measurement(build_id, dispatch_digest, objective);
+
+-- ----------------------------------------------------------------- vk_winner
+-- Result of Vulkan winner selection, mirroring `winner`. dispatch_digest is
+-- exported into the Vulkan replay artifact, whose header carries its own
+-- distinct magic/version (RE30 detailed_solution) so it can never be loaded
+-- by a HIP replay reader or vice versa.
+
+CREATE TABLE IF NOT EXISTS vk_winner (
+    vk_winner_id           INTEGER PRIMARY KEY,
+    build_id                 INTEGER NOT NULL REFERENCES build(build_id),
+    vk_hardware_id            INTEGER NOT NULL REFERENCES vk_hardware(vk_hardware_id),
+    vk_signature_id            INTEGER REFERENCES vk_signature(vk_signature_id),
+    objective                  TEXT    NOT NULL DEFAULT 'latency',
+    dispatch_digest             BLOB    NOT NULL,
+    vk_candidate_id              INTEGER NOT NULL REFERENCES vk_candidate(vk_candidate_id),
+    run_id                        INTEGER REFERENCES tuning_run(run_id),
+    stable_name                    TEXT    NOT NULL,
+    native_stable_name              TEXT    NOT NULL,
+    is_native                        INTEGER NOT NULL,
+    improvement_pct                  REAL    NOT NULL DEFAULT 0.0,
+    median_us                         REAL    NOT NULL,
+    p95_us                             REAL    NOT NULL,
+    workspace_bytes                     INTEGER NOT NULL DEFAULT 0,
+    reason                               TEXT,
+    confidence                           REAL,
+    seeded                                INTEGER NOT NULL DEFAULT 0,
+    validated                              INTEGER NOT NULL DEFAULT 0,
+    promotion_status                        TEXT,
+    q_value                                  REAL,
+    source_slice_id                           TEXT,
+    build_plan_id                              TEXT,
+    effective_build_id                          TEXT,
+    workload_id                                  TEXT,
+    campaign_run_id                               TEXT,
+    decided_at                                     TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (build_id, vk_hardware_id, objective, dispatch_digest)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS vk_winner_dispatch_idx
+    ON vk_winner(dispatch_digest, objective);
