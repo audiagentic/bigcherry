@@ -252,6 +252,114 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
                 self.assertEqual(contract.target.family, family)
                 self.assertEqual(contract.hypothesis.family, family)
 
+    def test_all_seventeen_contracts_in_the_real_registry_parse(self):
+        # EC17 regression proof: adding [source-evidence] as an optional
+        # section must not break any of the 5 original (EC02) or 12
+        # EC16-backfilled contracts already committed to
+        # config/experiment-contracts.toml.
+        from bigcherry import paths as _paths
+        registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
+        self.assertEqual(len(registry.contracts), 17)
+
+
+class SourceEvidenceTests(unittest.TestCase):
+    """EC17: [source-evidence] is optional, structurally separate from
+    [acceptance], and never blocks parsing on a mismatch."""
+
+    def test_source_evidence_absent_by_default(self):
+        contract = ec.parse_contract(_base_doc(), contract_id="X")
+        self.assertIsNone(contract.source_evidence)
+        self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
+
+    def test_source_evidence_parses_when_present(self):
+        doc = _base_doc()
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 7.4,
+            "hardware": "gfx1151", "workload": "Qwen3.6-35B-A3B Q4_K_M",
+        }
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertIsNotNone(contract.source_evidence)
+        self.assertEqual(contract.source_evidence.metric, "tg128")
+        self.assertEqual(contract.source_evidence.value_pct, 7.4)
+        self.assertEqual(contract.source_evidence.hardware, "gfx1151")
+        self.assertEqual(contract.source_evidence.workload, "Qwen3.6-35B-A3B Q4_K_M")
+
+    def test_source_evidence_unknown_field_rejected(self):
+        doc = _base_doc()
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 7.4, "hardware": "gfx1151",
+            "workload": "w", "bogus": "x",
+        }
+        with self.assertRaisesRegex(ec.ExperimentContractError, "bogus"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_source_evidence_non_finite_value_rejected(self):
+        doc = _base_doc()
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": float("nan"),
+            "hardware": "gfx1151", "workload": "w",
+        }
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_mismatch_warning_when_acceptance_exceeds_source(self):
+        # Acceptance requiring MORE than the source itself ever reported --
+        # an impossible-to-meet bar.
+        doc = _base_doc()
+        doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=10)
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 5.0,
+            "hardware": "gfx1100", "workload": "w",
+        }
+        contract = ec.parse_contract(doc, contract_id="X")
+        warning = ec.source_evidence_mismatch_warning(contract)
+        self.assertIsNotNone(warning)
+        self.assertIn("exceeds", warning)
+
+    def test_mismatch_warning_when_acceptance_far_below_source(self):
+        doc = _base_doc()
+        doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=1)
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 10.0,
+            "hardware": "gfx1100", "workload": "w",
+        }
+        contract = ec.parse_contract(doc, contract_id="X")
+        warning = ec.source_evidence_mismatch_warning(contract)
+        self.assertIsNotNone(warning)
+        self.assertIn("less than half", warning)
+
+    def test_no_warning_when_acceptance_reasonably_aligned_with_source(self):
+        doc = _base_doc()
+        doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=4)
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 5.0,
+            "hardware": "gfx1100", "workload": "w",
+        }
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
+
+    def test_no_warning_when_acceptance_has_no_target_kernel_gain(self):
+        # Correctness-only contract: nothing numeric to compare.
+        doc = _base_doc()
+        doc["acceptance"] = {"max_control_regression_pct": 1}
+        doc["source-evidence"] = {
+            "metric": "tg128", "value_pct": 5.0,
+            "hardware": "gfx1100", "workload": "w",
+        }
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
+
+    def test_real_rd21_contract_source_evidence_matches_its_own_acceptance(self):
+        # RD21's real backfilled contract: source-evidence and acceptance
+        # were set to the SAME real documented number (~+0.6% decode) --
+        # must not spuriously warn.
+        from bigcherry import paths as _paths
+        registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
+        contract = registry["RD21-GFX1151-MMVQ-NWARPS"]
+        self.assertIsNotNone(contract.source_evidence)
+        self.assertEqual(contract.source_evidence.value_pct, 0.6)
+        self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
+
 
 class ContractHashTests(unittest.TestCase):
     def test_hash_is_stable_across_reparse(self):

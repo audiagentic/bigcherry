@@ -143,6 +143,12 @@ workloads = ["decode"]
 [contract.RD21-GFX1151-MMVQ-NWARPS.correctness]
 backend_reference = "required"
 
+[contract.RD21-GFX1151-MMVQ-NWARPS.source-evidence]
+metric = "decode_tps"
+value_pct = 0.6
+hardware = "gfx1151"
+workload = "Q8_0 decode (fork sweep)"
+
 [contract.RD21-GFX1151-MMVQ-NWARPS.acceptance]
 target_kernel_gain_pct = 0.6
 max_control_regression_pct = 1
