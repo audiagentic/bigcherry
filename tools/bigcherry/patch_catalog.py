@@ -15,6 +15,8 @@ This module is read-only, additive metadata -- it does not change what
 
 from __future__ import annotations
 
+import hashlib
+import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +41,28 @@ class CatalogEntry:
     plan_item: str | None = None
     requires_options: tuple[str, ...] = ()
     forbids_options: tuple[str, ...] = ()
+    # RE40 (external patch-management review, 2026-08-20): genuinely new
+    # descriptive fields -- NOT `requires`/`conflicts`. Those already exist
+    # as a real, ENFORCED mechanism (patchset.PatchModule.requires/conflicts,
+    # read from each patch module's own REQUIRES/CONFLICTS constants and
+    # validated by patchset.resolve_exact(), which resolve_lane's
+    # experiment= path already calls) -- adding a second, metadata-only
+    # requires/conflicts pair here would create two disagreeing sources of
+    # truth for the same relationship. This catalog stays purely
+    # descriptive/additive, per its own module docstring.
+    #
+    # `plan_ids` is plural and additive alongside the older singular
+    # `plan_item` (kept for backward compat -- every existing entry that set
+    # `plan-item` still works unchanged); a patch can genuinely serve more
+    # than one RD/EX/HI plan item. `backends` is plural alongside the older
+    # singular `backend` for the same reason (a future patch may span
+    # hip+vulkan). `subsystems`/`hardware` are free-form descriptive tags,
+    # not validated against a closed vocabulary -- explicitly NOT a folder
+    # axis (RE41: patches/ stays flat, this is browsability metadata only).
+    plan_ids: tuple[str, ...] = ()
+    backends: tuple[str, ...] = ()
+    subsystems: tuple[str, ...] = ()
+    hardware: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -137,6 +161,13 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
         state = record.get("state")
         if state not in patchset.STATES:
             raise ValueError(f"{path}: {patch_id}: state must be one of {patchset.STATES}, got {state!r}")
+        for field, valid in (("backends", BACKENDS),):
+            for value in record.get(field) or ():
+                if value not in valid:
+                    raise ValueError(
+                        f"{path}: {patch_id}: {field} entries must be one of "
+                        f"{valid}, got {value!r}"
+                    )
         entries[patch_id] = CatalogEntry(
             patch_id=patch_id,
             kind=kind,
@@ -149,6 +180,10 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
             plan_item=record.get("plan-item"),
             requires_options=tuple(record.get("requires-options") or ()),
             forbids_options=tuple(record.get("forbids-options") or ()),
+            plan_ids=tuple(record.get("plan-ids") or ()),
+            backends=tuple(record.get("backends") or ()),
+            subsystems=tuple(record.get("subsystems") or ()),
+            hardware=tuple(record.get("hardware") or ()),
         )
     return entries
 
@@ -181,3 +216,61 @@ def cross_check(
                 f"module STATE {module_state!r}"
             )
     return problems
+
+
+# ------------------------------------------------------------------ snapshot
+
+
+@dataclass(frozen=True)
+class CatalogSnapshot:
+    """RE39 (external patch-management review, 2026-08-20): one immutable
+    read of BOTH catalogs -- ``patchset.catalog()`` (GROUP/STATE/REQUIRES/
+    CONFLICTS, authoritative for selection) and ``patch_catalog.load_catalog()``
+    (kind/origin/backend/plan_ids/..., descriptive metadata) -- bundled
+    together and keyed consistently by patch_id, so one command/campaign
+    invocation reads the patches/ tree and patches/catalog.toml exactly
+    once instead of each caller independently re-scanning and re-parsing.
+
+    Not yet threaded through resolve_lane/materialize_source/build planning
+    (that is a larger, separate plumbing change touching many call sites --
+    left for a follow-up pass rather than risking those paths' existing
+    identity/test guarantees in this one). This phase covers the CLI
+    surface that visibly double-reads today (``cmd_patches``, which called
+    ``patchset.describe()`` and ``patch_catalog.load_catalog()``
+    separately) and gives the rest of the codebase a real, tested
+    construction point to adopt incrementally.
+    """
+
+    root: Path
+    modules: tuple["patchset.PatchModule", ...]
+    metadata: dict[str, CatalogEntry]
+    digest: str
+
+    @property
+    def by_id(self) -> dict[str, "patchset.PatchModule"]:
+        return {module.patch_id: module for module in self.modules}
+
+    def entry_for(self, patch_id: str) -> CatalogEntry | None:
+        return self.metadata.get(patch_id)
+
+
+def build_snapshot(
+    *,
+    patches_dir: Path | None = None,
+    catalog_path: Path | None = None,
+) -> CatalogSnapshot:
+    """Build one ``CatalogSnapshot`` -- the single real filesystem read this
+    phase covers. ``patches_dir``/``catalog_path`` default to the real
+    project locations (``paths.PATCHES``/``paths.PATCH_CATALOG``)."""
+    root = patches_dir or paths.PATCHES
+    modules = tuple(patchset.catalog(root))
+    metadata = load_catalog(catalog_path)
+    payload = {
+        "modules": [(m.patch_id, m.content_hash) for m in modules],
+        "metadata": sorted(metadata.keys()),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    digest = hashlib.blake2b(
+        b"bigcherry/catalog-snapshot/v1\0" + encoded, digest_size=16
+    ).hexdigest()
+    return CatalogSnapshot(root=root, modules=modules, metadata=metadata, digest=digest)

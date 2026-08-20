@@ -85,6 +85,12 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "untested"
 
+# RE40 (external patch-management review, 2026-08-20): see 1205's matching
+# CONFLICTS declaration -- shared struct anchor, cannot compose today
+# (docs/reference/PIN_REBASE_REVIEW_B10502.md section 2.2). Reciprocal
+# entry so patchset.resolve_exact() catches the pair either way round.
+CONFLICTS = ("1205_rd12_paired_mmvq_dual_output",)
+
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",
     "plan-item": "RD17",

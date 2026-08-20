@@ -22,6 +22,7 @@ from . import __version__
 from . import doctor
 from . import paths
 from . import patch_catalog
+from . import patch_lifecycle
 from . import patcher
 from . import patchset
 from . import recipes
@@ -475,9 +476,17 @@ def cmd_patches(args: argparse.Namespace) -> int:
     because this filtering already answers the "which patches form the
     framework / are HIP vs Vulkan / came from an external fork" questions a
     directory move would otherwise exist to answer, with zero path churn.
+
+    RE39: reads patches/ and patches/catalog.toml exactly once via a single
+    CatalogSnapshot, instead of the two independent scans (patchset.describe()
+    + patch_catalog.load_catalog()) this command used to make.
     """
-    infos = patchset.describe()
-    if not infos:
+    try:
+        snapshot = patch_catalog.build_snapshot()
+    except ValueError as exc:
+        print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        return 2
+    if not snapshot.modules:
         print("no patches found", file=sys.stderr)
         return 1
 
@@ -488,13 +497,6 @@ def cmd_patches(args: argparse.Namespace) -> int:
         return 2
 
     catalog_filter_active = bool(args.kind or args.backend or args.origin)
-    catalog: dict[str, patch_catalog.CatalogEntry] = {}
-    if catalog_filter_active:
-        try:
-            catalog = patch_catalog.load_catalog()
-        except ValueError as exc:
-            print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
-            return 2
 
     root = paths.llama_root(args.llama_root)
     print(f"selection: {label}")
@@ -505,8 +507,8 @@ def cmd_patches(args: argparse.Namespace) -> int:
     print()
 
     rows, problems, selected = [], [], 0
-    for info in infos:
-        entry = catalog.get(info.name)
+    for module in snapshot.modules:
+        entry = snapshot.entry_for(module.patch_id)
         if catalog_filter_active:
             if entry is None:
                 continue
@@ -517,28 +519,28 @@ def cmd_patches(args: argparse.Namespace) -> int:
             if args.origin and entry.origin != args.origin:
                 continue
 
-        taken = ((groups is None or info.group in groups)
-                 and (states is None or info.state in states))
+        taken = ((groups is None or module.group in groups)
+                 and (states is None or module.state in states))
         selected += taken
 
         note = ""
-        if info.upstream:
-            landed = patchset.upstream_landed(info.upstream, root)
+        if module.upstream:
+            landed = patchset.upstream_landed(module.upstream, root)
             if landed is True:
-                note = f"upstream {info.upstream[:8]} landed -- redundant here"
+                note = f"upstream {module.upstream[:8]} landed -- redundant here"
             elif landed is False:
-                note = f"upstream {info.upstream[:8]} not in this checkout"
+                note = f"upstream {module.upstream[:8]} not in this checkout"
             else:
-                note = f"upstream {info.upstream[:8]} unknown"
+                note = f"upstream {module.upstream[:8]} unknown"
 
-        if not info.state_valid:
+        if module.state not in patchset.STATES:
             problems.append(
-                f"{info.name}: STATE={info.state!r} is not one of "
+                f"{module.patch_id}: STATE={module.state!r} is not one of "
                 f"{', '.join(patchset.STATES)} -- no recipe will select it")
 
         catalog_label = f"{entry.kind}/{entry.backend}" if entry is not None else ""
-        rows.append(("[x]" if taken else "[ ]", info.name, info.group,
-                     info.state, catalog_label, note))
+        rows.append(("[x]" if taken else "[ ]", module.patch_id, module.group,
+                     module.state, catalog_label, note))
 
     if not rows:
         print("no patches match the given --kind/--backend/--origin filter")
@@ -551,10 +553,27 @@ def cmd_patches(args: argparse.Namespace) -> int:
         print(f"{line}  {note}".rstrip())
 
     print(f"\n{selected} of {len(rows)} shown selected"
-          + ("" if not catalog_filter_active else f" ({len(infos)} total in catalog)"))
+          + ("" if not catalog_filter_active else f" ({len(snapshot.modules)} total in catalog)"))
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
     return 1 if problems else 0
+
+
+def cmd_patch_status(args: argparse.Namespace) -> int:
+    """EC19: computed plan/patch lifecycle status -- see patch_lifecycle.py
+    for exactly which signals are real vs reported as unknown."""
+    statuses = patch_lifecycle.compute_all()
+    if args.item:
+        statuses = {k: v for k, v in statuses.items() if k == args.item}
+        if not statuses:
+            print(f"no lifecycle signal found for plan-item {args.item!r}", file=sys.stderr)
+            return 1
+    if not statuses:
+        print("no plan-items with any tracked/materialized/contracted signal found",
+              file=sys.stderr)
+        return 1
+    print(patch_lifecycle.render_table(statuses))
+    return 0
 
 
 # ----------------------------------------------------------------- generate
@@ -718,6 +737,19 @@ def build_parser() -> argparse.ArgumentParser:
              "upstream-pr|external-fork)",
     )
     patches_cmd.set_defaults(func=cmd_patches)
+
+    patch_status_cmd = sub.add_parser(
+        "patch-status",
+        help="EC19: computed plan/patch/contract lifecycle status, not "
+             "hand-maintained prose -- source-pinned/materialized/build-state/"
+             "contracted per RD/EX/HI plan item",
+    )
+    patch_status_cmd.add_argument(
+        "--item", default=None,
+        help="show only this plan-item (e.g. RD21) instead of every item "
+             "with any signal",
+    )
+    patch_status_cmd.set_defaults(func=cmd_patch_status)
 
     sources.register(sub)
 

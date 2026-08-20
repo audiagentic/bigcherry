@@ -72,6 +72,14 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "untested"
 
+# RE40 (external patch-management review, 2026-08-20): the porting notes
+# below already said "Apply this patch after 1215" in prose -- REQUIRES
+# makes that real and enforced. patchset.resolve_exact() (the layer
+# resolve_lane's experiment= path already calls) raises if 1216 is selected
+# without 1215 also explicitly selected. Backfilled safely: every current
+# config/recipes.toml entry naming 1216 already includes 1215.
+REQUIRES = ("1215_rd394041_amd_stream_moe_overlap",)
+
 PROVENANCE = {
     "source-id": "amd-ecosystem-llama-cpp",
     "plan-item": "RD43",
