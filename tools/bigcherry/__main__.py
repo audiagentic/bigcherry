@@ -576,6 +576,48 @@ def cmd_patch_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_patch_explain(args: argparse.Namespace) -> int:
+    """RE43 (external patch-management review, Section 16): everything
+    known about one patch -- source, plan, requires/conflicts, which
+    recipes/experiments select it, state, content hash, files touched."""
+    try:
+        snapshot = patch_catalog.build_snapshot()
+    except ValueError as exc:
+        print(f"patch explain: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        return 2
+    from . import config as campaign_config
+    try:
+        cfg = campaign_config.load(paths.RECIPES)
+    except (campaign_config.ConfigError, OSError):
+        cfg = None
+    try:
+        info = patch_catalog.explain(args.patch_id, snapshot, cfg)
+    except KeyError as exc:
+        print(f"patch explain: {exc}", file=sys.stderr)
+        return 1
+    print(patch_catalog.render_explanation(info))
+    return 0
+
+
+def cmd_patch_graph(args: argparse.Namespace) -> int:
+    """RE43 (external patch-management review, Section 16): textual
+    REQUIRES/CONFLICTS dependency topology. --roots restricts the view to
+    a real dependency closure (patchset.expand_composition); with no
+    roots, shows every patch that has any requires/conflicts edge."""
+    try:
+        snapshot = patch_catalog.build_snapshot()
+    except ValueError as exc:
+        print(f"patch graph: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        return 2
+    roots = tuple(args.roots or ())
+    try:
+        print(patch_catalog.dependency_graph(snapshot, roots=roots))
+    except ValueError as exc:
+        print(f"patch graph: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 # ----------------------------------------------------------------- generate
 
 
@@ -750,6 +792,26 @@ def build_parser() -> argparse.ArgumentParser:
              "with any signal",
     )
     patch_status_cmd.set_defaults(func=cmd_patch_status)
+
+    patch_explain_cmd = sub.add_parser(
+        "patch-explain",
+        help="RE43: everything known about one patch -- source, plan, "
+             "requires/conflicts, which recipes/experiments select it, "
+             "state, content hash, files touched",
+    )
+    patch_explain_cmd.add_argument("patch_id", help="e.g. 1217_rd44_graph_opt_default_rdna35")
+    patch_explain_cmd.set_defaults(func=cmd_patch_explain)
+
+    patch_graph_cmd = sub.add_parser(
+        "patch-graph",
+        help="RE43: textual REQUIRES/CONFLICTS dependency topology",
+    )
+    patch_graph_cmd.add_argument(
+        "--roots", action="append", default=None,
+        help="restrict to this patch's real dependency closure (repeatable); "
+             "omit to show every patch with any requires/conflicts edge",
+    )
+    patch_graph_cmd.set_defaults(func=cmd_patch_graph)
 
     sources.register(sub)
 

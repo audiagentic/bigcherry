@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths, patchset
@@ -274,3 +274,145 @@ def build_snapshot(
         b"bigcherry/catalog-snapshot/v1\0" + encoded, digest_size=16
     ).hexdigest()
     return CatalogSnapshot(root=root, modules=modules, metadata=metadata, digest=digest)
+
+
+# ------------------------------------------------------------------- explain
+
+
+@dataclass(frozen=True)
+class PatchExplanation:
+    """RE43 (external patch-management review, Section 16): everything
+    ``bigcherry patches explain <id>`` shows, assembled from data this
+    project already has -- CatalogSnapshot (selection + descriptive
+    metadata), each patch module's own PROVENANCE dict (source/plan-item),
+    and config/recipes.toml's real patch-set/experiment membership. Read-
+    only; does not duplicate any of those as a second authority."""
+
+    patch_id: str
+    content_hash: str
+    group: str
+    state: str
+    kind: str | None
+    origin: str | None
+    backend: str | None
+    plan_item: str | None
+    plan_ids: tuple[str, ...]
+    source_id: str | None
+    upstream_ref: str | None
+    requires: tuple[str, ...]
+    conflicts: tuple[str, ...]
+    selected_by_patch_sets: tuple[str, ...]
+    selected_by_experiments: tuple[str, ...]
+    files_touched: tuple[str, ...] = field(default_factory=tuple)
+
+
+def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplanation:
+    """Assemble a :class:`PatchExplanation` for one patch. Raises
+    ``KeyError`` if ``patch_id`` is not in ``snapshot`` -- callers get a
+    real error, not a silently empty explanation for a typo'd id."""
+    from . import sources as sources_module
+
+    module = snapshot.by_id.get(patch_id)
+    if module is None:
+        raise KeyError(f"no such patch: {patch_id!r}")
+    entry = snapshot.entry_for(patch_id)
+    prov = sources_module._patch_provenance(module.path) or {}
+
+    selected_patch_sets: list[str] = []
+    selected_experiments: list[str] = []
+    if cfg is not None:
+        for name, patch_set in cfg.patch_sets.items():
+            if patch_id in patch_set.patches:
+                selected_patch_sets.append(name)
+        for name, experiment in cfg.experiments.items():
+            if patch_id in experiment.patches:
+                selected_experiments.append(name)
+
+    files_touched: tuple[str, ...] = ()
+    try:
+        loaded = patchset._load_module(module.path)
+        files_touched = tuple(sorted({
+            patch.path for patch in getattr(loaded, "PATCHES", ())
+        }))
+    except Exception:
+        # Explain is read-only reporting, not a patch-application path --
+        # a module that fails to import (syntax error mid-edit, missing
+        # optional dependency) should still explain what the catalog/
+        # PROVENANCE data alone can show, not crash the whole command.
+        files_touched = ()
+
+    return PatchExplanation(
+        patch_id=patch_id,
+        content_hash=module.content_hash,
+        group=module.group,
+        state=module.state,
+        kind=entry.kind if entry else None,
+        origin=entry.origin if entry else None,
+        backend=entry.backend if entry else None,
+        plan_item=prov.get("plan-item"),
+        plan_ids=entry.plan_ids if entry else (),
+        source_id=prov.get("source-id"),
+        upstream_ref=module.upstream,
+        requires=module.requires,
+        conflicts=module.conflicts,
+        selected_by_patch_sets=tuple(sorted(selected_patch_sets)),
+        selected_by_experiments=tuple(sorted(selected_experiments)),
+        files_touched=files_touched,
+    )
+
+
+def render_explanation(info: PatchExplanation) -> str:
+    lines = [
+        f"patch:          {info.patch_id}",
+        f"content hash:   {info.content_hash}",
+        f"group / state:  {info.group} / {info.state}",
+        f"kind:           {info.kind or 'unknown (not in patches/catalog.toml)'}",
+        f"origin:         {info.origin or 'unknown'}",
+        f"backend:        {info.backend or 'unknown'}",
+        f"source id:      {info.source_id or '-'}",
+        f"plan item:      {info.plan_item or '-'}"
+        + (f" (also: {', '.join(info.plan_ids)})" if info.plan_ids else ""),
+        f"upstream ref:   {info.upstream_ref or '-'}",
+        f"requires:       {', '.join(info.requires) or '(none)'}",
+        f"conflicts:      {', '.join(info.conflicts) or '(none)'}",
+        f"selected by patch-sets: {', '.join(info.selected_by_patch_sets) or '(none)'}",
+        f"selected by experiments: {', '.join(info.selected_by_experiments) or '(none)'}",
+    ]
+    if info.files_touched:
+        lines.append(f"files touched:  {', '.join(info.files_touched)}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------- graph
+
+
+def dependency_graph(snapshot: "CatalogSnapshot", *, roots: tuple[str, ...] = ()) -> str:
+    """A textual REQUIRES/CONFLICTS topology (RE43 Section 16: "a textual
+    graph is sufficient initially"). ``roots`` restricts output to just
+    those patches and everything they transitively require (their real
+    dependency closure, via ``patchset.expand_composition``); an empty
+    ``roots`` shows every patch that has any requires/conflicts edge at
+    all, skipping isolated nodes so the graph stays readable."""
+    by_id = snapshot.by_id
+    if roots:
+        expansion = patchset.expand_composition(roots, directory=snapshot.root)
+        patch_ids = expansion.expanded
+    else:
+        patch_ids = tuple(sorted(
+            patch_id for patch_id, module in by_id.items()
+            if module.requires or module.conflicts
+            or any(patch_id in other.requires or patch_id in other.conflicts
+                   for other in by_id.values())
+        ))
+
+    lines: list[str] = []
+    for patch_id in patch_ids:
+        module = by_id.get(patch_id)
+        if module is None:
+            continue
+        lines.append(patch_id)
+        for target in module.requires:
+            lines.append(f"  requires -> {target}")
+        for target in module.conflicts:
+            lines.append(f"  conflicts x {target}")
+    return "\n".join(lines) if lines else "(no REQUIRES/CONFLICTS edges in the catalog)"
