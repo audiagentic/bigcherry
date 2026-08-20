@@ -150,6 +150,109 @@ class ParseContractTests(unittest.TestCase):
             ec.parse_contract(doc, contract_id="X")
 
 
+class TargetClassificationTests(unittest.TestCase):
+    """EC16: the orthogonal target.kind/target.family classification."""
+
+    def test_legacy_shape_no_target_section_derives_kernel_family(self):
+        contract = ec.parse_contract(_base_doc(), contract_id="X")
+        self.assertEqual(contract.target.kind, "kernel_family")
+        self.assertEqual(contract.target.family, "mmq")
+        self.assertEqual(contract.hypothesis.family, "mmq")
+
+    def test_legacy_shape_missing_hypothesis_family_rejected(self):
+        doc = _base_doc()
+        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "hypothesis.family"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_explicit_kernel_family_target_matches_hypothesis(self):
+        doc = _base_doc()
+        doc["target"] = {"kind": "kernel_family", "family": "mmq"}
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertEqual(contract.target.kind, "kernel_family")
+        self.assertEqual(contract.target.family, "mmq")
+        self.assertEqual(contract.hypothesis.family, "mmq")
+
+    def test_explicit_kernel_family_target_disagreeing_with_hypothesis_rejected(self):
+        doc = _base_doc()
+        doc["target"] = {"kind": "kernel_family", "family": "mmvq"}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "disagrees"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_kernel_family_target_without_family_rejected(self):
+        doc = _base_doc()
+        doc["target"] = {"kind": "kernel_family"}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "target.family"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_non_kernel_family_target_drops_hypothesis_family_requirement(self):
+        doc = _base_doc()
+        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        doc["target"] = {"kind": "attention"}
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertEqual(contract.target.kind, "attention")
+        self.assertIsNone(contract.target.family)
+        self.assertIsNone(contract.hypothesis.family)
+
+    def test_non_kernel_family_target_rejects_family_field(self):
+        doc = _base_doc()
+        doc["target"] = {"kind": "attention", "family": "mmq"}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "target.family"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_non_kernel_family_target_rejects_leftover_hypothesis_family(self):
+        doc = _base_doc()
+        doc["target"] = {"kind": "graph_fusion"}
+        # hypothesis.family="mmq" is still present from _base_doc() -- must
+        # be explicitly removed for a non-kernel_family target, not silently
+        # ignored (that would let a contract carry conflicting classification).
+        with self.assertRaisesRegex(ec.ExperimentContractError, "hypothesis.family must be absent"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_unknown_target_kind_rejected(self):
+        doc = _base_doc()
+        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        doc["target"] = {"kind": "not_a_real_kind"}
+        with self.assertRaisesRegex(ec.ExperimentContractError, "target.kind"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_all_target_kinds_parse(self):
+        for kind in ec.TARGET_KINDS:
+            with self.subTest(kind=kind):
+                doc = _base_doc()
+                if kind == "kernel_family":
+                    doc["target"] = {"kind": kind, "family": "mmq"}
+                else:
+                    doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+                    doc["target"] = {"kind": kind}
+                contract = ec.parse_contract(doc, contract_id="X")
+                self.assertEqual(contract.target.kind, kind)
+
+
+class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
+    """EC16 must not break the 5 contracts EC02 already backfilled into
+    config/experiment-contracts.toml -- none of those TOML entries were
+    rewritten; they must still parse via the legacy (no [target] section)
+    path exactly as before."""
+
+    def test_all_five_existing_contracts_still_parse(self):
+        from bigcherry import paths as _paths
+        registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
+        expected = {
+            "RD07-Q6K-MMQ-PREFILL-FOLD": "mmq",
+            "RD08-Q6K-MMVQ-VDR2": "mmvq",
+            "RD12-PAIRED-MMVQ-DUAL": "mmvq",
+            "RD17-MOE-TOPK-DOWN-FOLD": "mmvq",
+            "RD21-GFX1151-MMVQ-NWARPS": "mmvq",
+        }
+        for contract_id, family in expected.items():
+            with self.subTest(contract_id=contract_id):
+                contract = registry[contract_id]
+                self.assertEqual(contract.target.kind, "kernel_family")
+                self.assertEqual(contract.target.family, family)
+                self.assertEqual(contract.hypothesis.family, family)
+
+
 class ContractHashTests(unittest.TestCase):
     def test_hash_is_stable_across_reparse(self):
         first = ec.parse_contract(_base_doc(), contract_id="X")

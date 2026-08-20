@@ -61,6 +61,27 @@ ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
 )
 
+# EC16: orthogonal experiment-target classification, separate from
+# hypothesis.family. FAMILIES stays exactly the 5 runtime kernel-dispatch
+# families (EC02's own "never redefined here" rule) -- most materialized
+# optimizations are NOT matmul-family-dispatch work (flash-attention, graph
+# fusion, TP topology, orchestration/stream scheduling, SSM/GDN kernels,
+# hardware-workaround correctness fixes, cross-batch determinism), and
+# forcing them into FAMILIES would misrepresent runtime candidate identity
+# elsewhere in the tuning system. `target.family` is populated only when
+# `target.kind == "kernel_family"`, and is still validated against FAMILIES
+# in that case -- this enum grows the *contract's* classification, never
+# the runtime family list. Vocabulary matches the guide's own Appendix A
+# patch-table language (orchestration perf / multi-GPU correctness / FA
+# precision+performance / graph fusion / hardware correctness / determinism
+# partial) rather than inventing divergent terms; "ssm_gdn" is a new
+# addition for the GatedDeltaNet cluster (RD50+), not in the guide's
+# original 1200-1210 table but following the same pattern.
+TARGET_KINDS: tuple[str, ...] = (
+    "kernel_family", "attention", "graph_fusion", "tp_topology",
+    "orchestration", "hardware_correctness", "determinism", "ssm_gdn",
+)
+
 
 class ExperimentContractError(ValueError):
     pass
@@ -131,9 +152,27 @@ class SourceRef:
 
 @dataclass(frozen=True)
 class Hypothesis:
-    family: str
+    # EC16: optional now -- a contract with an explicit [target] section
+    # (target.kind != "kernel_family") has no matmul-family identity to
+    # name here. Still required, and still validated against FAMILIES,
+    # for any contract that does NOT supply [target] (the legacy shape
+    # EC02's 5 backfilled contracts use unchanged -- see parse_contract).
+    family: str | None
     expected_effect: str
     rationale: str
+
+
+@dataclass(frozen=True)
+class Target:
+    """EC16: orthogonal experiment-target classification (see TARGET_KINDS).
+    Independent of hypothesis.family -- a contract's `target` says WHAT KIND
+    of optimization this is; hypothesis.family (when kind=="kernel_family")
+    says WHICH of the 5 runtime kernel-dispatch families it targets. Every
+    contract has exactly one Target, either read from an explicit [target]
+    section or derived from a legacy hypothesis.family for backward
+    compatibility (see parse_contract)."""
+    kind: str
+    family: str | None  # populated only when kind == "kernel_family"
 
 
 @dataclass(frozen=True)
@@ -177,6 +216,7 @@ class ExperimentContract:
     title: str
     source: SourceRef
     hypothesis: Hypothesis
+    target: Target
     prerequisites: tuple[str, ...]
     scope: Scope
     positive: EvaluationSet
@@ -208,6 +248,10 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             "family": contract.hypothesis.family,
             "expected_effect": contract.hypothesis.expected_effect,
             "rationale": contract.hypothesis.rationale,
+        },
+        "target": {
+            "kind": contract.target.kind,
+            "family": contract.target.family,
         },
         "prerequisites": list(contract.prerequisites),
         "scope": {
@@ -256,8 +300,58 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     )
 
     hyp_data = _table(data.get("hypothesis"), f"{where}.hypothesis")
+    target_raw = data.get("target")
+
+    # EC16: [target] is the new, orthogonal classification. A contract
+    # written before EC16 (or one that's still simple matmul-family work)
+    # may omit [target] entirely -- in that case hypothesis.family is
+    # REQUIRED, validated against FAMILIES exactly as before EC16, and
+    # target is derived from it (kind="kernel_family"). A contract that
+    # DOES supply [target] is explicit about its own classification;
+    # hypothesis.family becomes optional there (required+validated only
+    # when target.kind == "kernel_family", and in that case must equal
+    # target.family -- one family, not two possibly-disagreeing sources
+    # of truth).
+    if target_raw is None:
+        family = _required_string(
+            hyp_data.get("family"), f"{where}.hypothesis.family", choices=FAMILIES)
+        target = Target(kind="kernel_family", family=family)
+    else:
+        target_data = _table(target_raw, f"{where}.target")
+        kind = _required_string(target_data.get("kind"), f"{where}.target.kind", choices=TARGET_KINDS)
+        if kind == "kernel_family":
+            target_family = _required_string(
+                target_data.get("family"), f"{where}.target.family", choices=FAMILIES)
+        else:
+            if target_data.get("family") is not None:
+                raise ExperimentContractError(
+                    f"{where}.target.family must be absent when target.kind "
+                    f"!= \"kernel_family\" (got kind={kind!r}) -- family is "
+                    f"only meaningful for matmul-dispatch-family targets"
+                )
+            target_family = None
+        target = Target(kind=kind, family=target_family)
+
+        raw_hyp_family = hyp_data.get("family")
+        if kind == "kernel_family":
+            if raw_hyp_family is not None and raw_hyp_family != target_family:
+                raise ExperimentContractError(
+                    f"{where}.hypothesis.family={raw_hyp_family!r} disagrees "
+                    f"with {where}.target.family={target_family!r} -- a "
+                    f"kernel_family contract must not name two different "
+                    f"families"
+                )
+            family = target_family
+        else:
+            if raw_hyp_family is not None:
+                raise ExperimentContractError(
+                    f"{where}.hypothesis.family must be absent when "
+                    f"target.kind != \"kernel_family\" (got kind={kind!r})"
+                )
+            family = None
+
     hypothesis = Hypothesis(
-        family=_required_string(hyp_data.get("family"), f"{where}.hypothesis.family", choices=FAMILIES),
+        family=family,
         expected_effect=_required_string(
             hyp_data.get("expected_effect"), f"{where}.hypothesis.expected_effect",
             choices=EXPECTED_EFFECTS,
@@ -350,14 +444,14 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         )
 
     unknown_top = sorted(set(data) - {
-        "title", "source", "hypothesis", "prerequisites", "scope",
+        "title", "source", "hypothesis", "target", "prerequisites", "scope",
         "positive", "controls", "boundary", "correctness", "acceptance",
     })
     if unknown_top:
         raise ExperimentContractError(f"{where}: unknown field(s): {', '.join(unknown_top)}")
 
     return ExperimentContract(
-        id=contract_id, title=title, source=source, hypothesis=hypothesis,
+        id=contract_id, title=title, source=source, hypothesis=hypothesis, target=target,
         prerequisites=prerequisites, scope=scope, positive=positive, controls=controls,
         boundary=boundary, correctness=CorrectnessRequirements(required_checks),
         acceptance=acceptance,
@@ -880,8 +974,13 @@ def render_report(
     lines.append(f"**{contract.title}**")
     lines.append("")
 
+    lines.append("## Target")
+    lines.append(f"- kind: {contract.target.kind}")
+    if contract.target.family is not None:
+        lines.append(f"- family: {contract.target.family}")
+    lines.append("")
+
     lines.append("## Hypothesis")
-    lines.append(f"- family: {contract.hypothesis.family}")
     lines.append(f"- expected_effect: {contract.hypothesis.expected_effect}")
     lines.append(f"- rationale: {contract.hypothesis.rationale}")
     lines.append("")
