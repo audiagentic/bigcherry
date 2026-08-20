@@ -122,6 +122,33 @@ class CampaignLaneExecutionSpec:
     #: benching one experimental patch in isolation. None means "just the
     #: source's normal patch-set", identical to today's behavior.
     experiment: str | None = None
+    #: EC04: Experiment Contract lane metadata (tools/bigcherry/
+    #: experiment_contract.py). Deliberately provenance-only -- these five
+    #: fields must NEVER be read by anything that computes build_plan_id,
+    #: effective_build_id, source_slice_id, or a runtime signature/dispatch
+    #: digest (see the Experiment Contract guide's non-negotiable
+    #: architecture: "keep runtime candidate identity separate from source
+    #: provenance and from experiment identity"). _to_spec()/materialize/
+    #: generate/build/smoke never read them; they exist purely so EC05's
+    #: evidence binding and EC10's reporting know which part of a contract
+    #: a given lane's result is proving. contract_id/optimization_id name
+    #: the ExperimentContract.id and .source.atomic_part; role is one of
+    #: "positive"/"control"/"boundary"/"holdout"; workload_tag is one of
+    #: experiment_contract.WORKLOAD_TAGS; model_ref is a free-form
+    #: recipe/model reference string, not a runtime dispatch identity.
+    contract_id: str | None = None
+    optimization_id: str | None = None
+    role: str | None = None
+    workload_tag: str | None = None
+    model_ref: str | None = None
+    #: Set only when role == "boundary": which swept dimension (e.g.
+    #: "physical_m", from the contract's boundary.dimensions) and which
+    #: single value along it this lane probes. Stored as a string
+    #: regardless of the dimension's native type (int/float/str in the
+    #: contract) -- this is metadata for reporting, never parsed back into
+    #: a typed value anything dispatch-relevant reads.
+    boundary_dimension: str | None = None
+    boundary_value: str | None = None
 
 
 @dataclass(frozen=True)

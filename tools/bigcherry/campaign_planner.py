@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from . import config as campaign_config
+from . import experiment_contract
 from .artifacts import ArtifactStore
 from .campaign_lane import (CampaignLaneExecutionSpec, CampaignLaneResult,
                             LaneInputValue, execute_campaign_lane)
@@ -68,6 +69,16 @@ class CampaignLane:
     #: isolation against a source's normal framework patch-set, without
     #: needing a dedicated recipe/group per patch.
     experiment: str | None = None
+    #: EC04: mirrors CampaignLaneExecutionSpec's own contract fields --
+    #: see that dataclass's docstring for the identity-separation
+    #: invariant these five fields must never violate.
+    contract_id: str | None = None
+    optimization_id: str | None = None
+    role: str | None = None
+    workload_tag: str | None = None
+    model_ref: str | None = None
+    boundary_dimension: str | None = None
+    boundary_value: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,7 +113,19 @@ class CampaignRequest:
 
 
 def lane_id(lane: CampaignLane) -> str:
-    return f"{lane.source_name}:{lane.build_name}:{lane.platform_name}"
+    base = f"{lane.source_name}:{lane.build_name}:{lane.platform_name}"
+    if lane.contract_id is None:
+        return base
+    # Contract-expanded lanes (EC03) legitimately share one source/build/
+    # platform tuple across many roles/workloads/models/boundary points --
+    # the whole point of expansion is many lanes over one build shape.
+    # Fold in every EC04 field that distinguishes them so run_campaign()'s
+    # duplicate-lane check and results dict stay meaningful instead of
+    # silently colliding every contract lane onto one key.
+    return ":".join((
+        base, lane.contract_id, lane.role or "", lane.workload_tag or "",
+        lane.model_ref or "", lane.boundary_dimension or "", lane.boundary_value or "",
+    ))
 
 
 def _resolve_architectures(
@@ -190,6 +213,92 @@ def plan(
     return tuple(lanes)
 
 
+def expand_contract(
+    contract: experiment_contract.ExperimentContract,
+    *,
+    cfg: campaign_config.Config,
+    source_name: str,
+    build_name: str,
+    platform_name: str,
+    architectures: tuple[str, ...] = (),
+    inputs: tuple[tuple[str, LaneInputValue], ...] = (),
+    validation: RuntimeSmokeSpec | None = None,
+    binary_relative_path: str = "bin/llama-bench",
+    c_compiler: str | None = None,
+    cxx_compiler: str | None = None,
+    smoke_environment: tuple[tuple[str, str], ...] | None = None,
+    experiment: str | None = None,
+) -> tuple[CampaignLane, ...]:
+    """EC03: expand one Experiment Contract into positive, control and
+    boundary lanes -- one CampaignLane per (model, workload) pair in
+    ``contract.positive``, one per pair in ``contract.controls``, and one
+    per value in each of ``contract.boundary.dimensions``.
+
+    All expanded lanes share the SAME source/build/platform/architectures
+    (and therefore the same build_plan_id/effective_build_id) -- a contract
+    plans many EVALUATION ROLES over one build shape, it does not plan
+    separate builds. This is exactly the "keep runtime candidate identity
+    separate from experiment identity" non-negotiable from the Experiment
+    Contract guide: contract_id/role/workload_tag/model_ref/boundary_* are
+    the only things that vary between these lanes' specs (see
+    CampaignLaneExecutionSpec's own docstring for the identity-separation
+    invariant).
+
+    Does not itself execute anything -- pass the result to run_campaign()
+    exactly like plan()'s output, or execute individual lanes via
+    execute_campaign_lane(_to_spec(lane), ...).
+    """
+    if source_name not in cfg.sources:
+        raise CampaignPlannerError(f"unknown source {source_name!r}")
+    if build_name not in cfg.builds:
+        raise CampaignPlannerError(f"unknown build {build_name!r}")
+    if platform_name not in cfg.platforms:
+        raise CampaignPlannerError(f"unknown platform {platform_name!r}")
+    platform_cfg = cfg.platforms[platform_name]
+    resolved_architectures = _resolve_architectures(architectures, platform_cfg)
+
+    def _make(
+        *, role: str, workload_tag: str | None = None, model_ref: str | None = None,
+        boundary_dimension: str | None = None, boundary_value: object | None = None,
+    ) -> CampaignLane:
+        return CampaignLane(
+            source_name=source_name, build_name=build_name, platform_name=platform_name,
+            architectures=resolved_architectures, inputs=inputs, validation=validation,
+            binary_relative_path=binary_relative_path, c_compiler=c_compiler,
+            cxx_compiler=cxx_compiler, smoke_environment=smoke_environment,
+            experiment=experiment,
+            contract_id=contract.id, optimization_id=contract.source.atomic_part,
+            role=role, workload_tag=workload_tag, model_ref=model_ref,
+            boundary_dimension=boundary_dimension,
+            boundary_value=None if boundary_value is None else str(boundary_value),
+        )
+
+    lanes: list[CampaignLane] = []
+    for model in contract.positive.models:
+        for workload in contract.positive.workloads:
+            lanes.append(_make(role="positive", workload_tag=workload, model_ref=model))
+    for model in contract.controls.models:
+        for workload in contract.controls.workloads:
+            lanes.append(_make(role="control", workload_tag=workload, model_ref=model))
+    for dimension_name, values in contract.boundary.dimensions:
+        for value in values:
+            lanes.append(_make(
+                role="boundary", boundary_dimension=dimension_name, boundary_value=value,
+            ))
+
+    seen_ids: set[str] = set()
+    for lane in lanes:
+        lid = lane_id(lane)
+        if lid in seen_ids:
+            raise CampaignPlannerError(
+                f"duplicate contract lane {lid!r} -- contract "
+                f"{contract.id!r}'s positive/controls/boundary sections "
+                f"produced two identical lanes"
+            )
+        seen_ids.add(lid)
+    return tuple(lanes)
+
+
 def _to_spec(lane: CampaignLane) -> CampaignLaneExecutionSpec:
     return CampaignLaneExecutionSpec(
         source_name=lane.source_name, build_name=lane.build_name,
@@ -199,6 +308,9 @@ def _to_spec(lane: CampaignLane) -> CampaignLaneExecutionSpec:
         c_compiler=lane.c_compiler, cxx_compiler=lane.cxx_compiler,
         smoke_environment=lane.smoke_environment,
         experiment=lane.experiment,
+        contract_id=lane.contract_id, optimization_id=lane.optimization_id,
+        role=lane.role, workload_tag=lane.workload_tag, model_ref=lane.model_ref,
+        boundary_dimension=lane.boundary_dimension, boundary_value=lane.boundary_value,
     )
 
 

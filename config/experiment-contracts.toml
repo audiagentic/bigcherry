@@ -1,0 +1,7 @@
+# BigCherry Experiment Contracts (EC01/EC02). One [contract.<id>] table per
+# contract, loaded by tools/bigcherry/experiment_contract.py:load_contracts().
+# Schema, field semantics, and rationale: docs/reference/BigCherry_Experiment_Contract_Implementation_Guide.md
+# and docs/planning/active/ec-contracts/EC01.md.
+#
+# Empty until EC02's backfill work populates entries for the existing
+# 1200-1210 RD-prefixed transforms (see docs/planning/active/ec-contracts/EC02.md).
