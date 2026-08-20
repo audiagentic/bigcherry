@@ -971,6 +971,29 @@ Only if measured remaining BLAS runtime justifies the complexity.
 
 # Part II — HI18: SPLIT_REDUCE
 
+> **Status pointer (2026-08-20, PH01 review triage):** This Part II predates
+> HI18's implementation progress. §38's stage checklist is the *original
+> decomposition* — read it as plan, not current status. The authoritative
+> current state is `HI18.md` (Validation/Notes), summarised here:
+> - **REDUCE-0 (telemetry):** done — reduction-signature contract + strict
+>   offline loader (37/37 suite), unknown peer access fail-closed for promotion.
+> - **REDUCE-1 (explicit AUTO/RCCL/META per-call seam):** done — implemented
+>   without mutating the shared comm context; Brutus tensor-split RCCL and
+>   forced-meta canaries emit strict-loader-clean signature evidence with
+>   requested/effective telemetry.
+> - **REDUCE-2 (valid timer):** in progress, exit gate **not met**. The earlier
+>   "complete-path timing proven at 57e9c9f" claim was superseded by a
+>   timing-status correction: current `elapsed_us` is a host-side
+>   submission/control interval, **not** a Standards 7.1 complete-path timing.
+>   Remaining work is the `GGML_HIP_REDUCE_TIMING=sync` device-synchronised
+>   producer path (`timing_mode=device_synchronized`) before the loader accepts
+>   promotable timing evidence.
+> - **REDUCE-3 … REDUCE-8:** not started (correctness/microbenchmark matrix,
+>   end-to-end holdout, HIP-internal spike/provider/tuning, RCCL policy).
+>
+> Do not read the future-tense exit gates below as already-passed acceptance;
+> they remain the design intent for each stage.
+
 ## 20. Main conclusion
 
 HI18's execution-plan idea is good, but the current HIP candidate set needs correction.

@@ -4,6 +4,10 @@ cmake-build-*/
 out/
 CMakeCache.txt
 CMakeFiles/
+*_cache/
+AGENTS.md
+CLAUDE.md
+package-lock.json
 
 # -- Compiled objects / binaries --
 *.o
