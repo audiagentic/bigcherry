@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import statistics
 import tomllib
 from dataclasses import dataclass
@@ -112,10 +113,11 @@ def _percent(raw: object, where: str) -> float | None:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise ExperimentContractError(f"{where} must be a number")
     value = float(raw)
-    if value < 0:
+    if not math.isfinite(value) or value < 0:
         raise ExperimentContractError(
-            f"{where} must be >= 0 (a negative gain/regression-budget threshold "
-            f"is not a meaningful requirement -- {value!r} given)"
+            f"{where} must be a finite number >= 0 (a negative, NaN, or "
+            f"infinite gain/regression-budget threshold is not a meaningful "
+            f"requirement -- {value!r} given)"
         )
     return value
 
