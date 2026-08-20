@@ -1,4 +1,12 @@
-"""RE14 parity arm loaders: legacy (plain files) and new (ArtifactStore)."""
+"""RE14 parity arm loader: real campaign-published (ArtifactStore) output.
+
+RE23 note: this file used to also cover ``load_legacy_arm`` (plain files at
+conventional legacy-checkout paths) and cross-arm (legacy vs new) integration
+tests. That loader and its tests were retired in RE23 along with the legacy
+build path itself; the real-file integration coverage below now compares two
+independently-published new-path arms instead, which still exercises
+check_parity's fail-closed behavior against real on-disk/store artifacts
+(the loader-independent parts of what those tests proved)."""
 
 from __future__ import annotations
 
@@ -12,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry.artifacts import ArtifactError, ArtifactStore  # noqa: E402
 from bigcherry.parity import ParityError, check_parity  # noqa: E402
-from bigcherry.parity_loaders import load_legacy_arm, load_new_arm  # noqa: E402
+from bigcherry.parity_loaders import load_new_arm  # noqa: E402
 
 _MANIFEST = {
     "source_revision": "a" * 40, "variant_set": "workload-max",
@@ -21,28 +29,6 @@ _MANIFEST = {
     ],
     "build_descriptor": {"descriptor_hash": "d1"},
 }
-_DESCRIPTOR = {"descriptor_hash": "d1"}
-
-
-class LoadLegacyArmTests(unittest.TestCase):
-    def test_reads_real_files_into_a_campaign_arm(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            manifest_path = root / "hip-autotune-manifest.json"
-            manifest_path.write_text(json.dumps(_MANIFEST), encoding="utf-8")
-            descriptor_path = root / "hip-autotune-build-descriptor.json"
-            descriptor_path.write_text(json.dumps(_DESCRIPTOR), encoding="utf-8")
-            binary_path = root / "llama-bench"
-            binary_path.write_bytes(b"fake-binary-bytes")
-
-            arm = load_legacy_arm(
-                "legacy", manifest_path=manifest_path, descriptor_path=descriptor_path,
-                binary_path=binary_path)
-            self.assertEqual(arm.name, "legacy")
-            self.assertEqual(arm.manifest["manifest_hash"], "m1")
-            self.assertEqual(arm.descriptor["descriptor_hash"], "d1")
-            self.assertEqual(arm.candidate_names, frozenset({"mmq:native:v1", "mmvq:native:v1"}))
-            self.assertEqual(len(arm.binary_hash), 64)  # sha256 hex
 
 
 class LoadNewArmTests(unittest.TestCase):
@@ -124,33 +110,32 @@ class LoadNewArmTests(unittest.TestCase):
 
 
 class ParityGateRealFileIntegrationTests(unittest.TestCase):
-    """RE14 step 6: prove the loaders + check_parity combination fails
+    """RE14 step 6: prove the loader + check_parity combination fails
     closed against real on-disk artifacts, not just in-memory CampaignArm
-    objects (test_parity.py already covers the pure-function cases)."""
+    objects (test_parity.py already covers the pure-function cases). Both
+    arms are independently-published ArtifactStores (RE23: the legacy-arm
+    loader this used to also exercise is gone) -- what matters here is that
+    check_parity's fail-closed behavior holds against real files/stores, not
+    which loader produced them."""
 
     def test_matching_real_arms_pass(self):
-        with tempfile.TemporaryDirectory() as legacy_dir, \
-             tempfile.TemporaryDirectory() as new_dir:
-            legacy_root = Path(legacy_dir)
-            (legacy_root / "hip-autotune-manifest.json").write_text(
-                json.dumps(_MANIFEST), encoding="utf-8")
-            (legacy_root / "hip-autotune-build-descriptor.json").write_text(
-                json.dumps(_DESCRIPTOR), encoding="utf-8")
-            (legacy_root / "llama-bench").write_bytes(b"identical-binary-bytes")
-            legacy_arm = load_legacy_arm(
-                "legacy",
-                manifest_path=legacy_root / "hip-autotune-manifest.json",
-                descriptor_path=legacy_root / "hip-autotune-build-descriptor.json",
-                binary_path=legacy_root / "llama-bench")
+        with tempfile.TemporaryDirectory() as dir_a, \
+             tempfile.TemporaryDirectory() as dir_b:
+            store_a = ArtifactStore(Path(dir_a))
+            hash_a = store_a.publish_json("manifest.json", _MANIFEST)
+            store_a.publish_bytes("llama-bench", b"identical-binary-bytes")
+            arm_a = load_new_arm(
+                "a", store=store_a, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_a)
 
-            store = ArtifactStore(Path(new_dir))
-            manifest_hash = store.publish_json("manifest.json", _MANIFEST)
-            store.publish_bytes("llama-bench", b"identical-binary-bytes")
-            new_arm = load_new_arm(
-                "new", store=store, manifest_relative="manifest.json",
-                binary_relative="llama-bench", manifest_content_hash=manifest_hash)
+            store_b = ArtifactStore(Path(dir_b))
+            hash_b = store_b.publish_json("manifest.json", _MANIFEST)
+            store_b.publish_bytes("llama-bench", b"identical-binary-bytes")
+            arm_b = load_new_arm(
+                "b", store=store_b, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_b)
 
-            report = check_parity(legacy_arm, new_arm, label="tune")
+            report = check_parity(arm_a, arm_b, label="tune")
             self.assertEqual(report.missing_candidates, frozenset())
             self.assertEqual(report.extra_candidates, frozenset())
 
@@ -160,57 +145,47 @@ class ParityGateRealFileIntegrationTests(unittest.TestCase):
         # different binary. This must reject even though every JSON field
         # matches -- a gate that only checked manifest/descriptor content
         # would rubber-stamp a real build divergence.
-        with tempfile.TemporaryDirectory() as legacy_dir, \
-             tempfile.TemporaryDirectory() as new_dir:
-            legacy_root = Path(legacy_dir)
-            (legacy_root / "hip-autotune-manifest.json").write_text(
-                json.dumps(_MANIFEST), encoding="utf-8")
-            (legacy_root / "hip-autotune-build-descriptor.json").write_text(
-                json.dumps(_DESCRIPTOR), encoding="utf-8")
-            (legacy_root / "llama-bench").write_bytes(b"legacy-binary-bytes")
-            legacy_arm = load_legacy_arm(
-                "legacy",
-                manifest_path=legacy_root / "hip-autotune-manifest.json",
-                descriptor_path=legacy_root / "hip-autotune-build-descriptor.json",
-                binary_path=legacy_root / "llama-bench")
+        with tempfile.TemporaryDirectory() as dir_a, \
+             tempfile.TemporaryDirectory() as dir_b:
+            store_a = ArtifactStore(Path(dir_a))
+            hash_a = store_a.publish_json("manifest.json", _MANIFEST)
+            store_a.publish_bytes("llama-bench", b"arm-a-binary-bytes")
+            arm_a = load_new_arm(
+                "a", store=store_a, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_a)
 
-            store = ArtifactStore(Path(new_dir))
-            manifest_hash = store.publish_json("manifest.json", _MANIFEST)
-            store.publish_bytes("llama-bench", b"different-binary-bytes")
-            new_arm = load_new_arm(
-                "new", store=store, manifest_relative="manifest.json",
-                binary_relative="llama-bench", manifest_content_hash=manifest_hash)
+            store_b = ArtifactStore(Path(dir_b))
+            hash_b = store_b.publish_json("manifest.json", _MANIFEST)
+            store_b.publish_bytes("llama-bench", b"arm-b-binary-bytes")
+            arm_b = load_new_arm(
+                "b", store=store_b, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_b)
 
             with self.assertRaises(ParityError) as ctx:
-                check_parity(legacy_arm, new_arm, label="tune")
+                check_parity(arm_a, arm_b, label="tune")
             self.assertIn("binary_hash", str(ctx.exception))
 
     def test_real_descriptor_divergence_fails_closed(self):
-        with tempfile.TemporaryDirectory() as legacy_dir, \
-             tempfile.TemporaryDirectory() as new_dir:
-            legacy_root = Path(legacy_dir)
-            (legacy_root / "hip-autotune-manifest.json").write_text(
-                json.dumps(_MANIFEST), encoding="utf-8")
-            (legacy_root / "hip-autotune-build-descriptor.json").write_text(
-                json.dumps(_DESCRIPTOR), encoding="utf-8")
-            (legacy_root / "llama-bench").write_bytes(b"identical-binary-bytes")
-            legacy_arm = load_legacy_arm(
-                "legacy",
-                manifest_path=legacy_root / "hip-autotune-manifest.json",
-                descriptor_path=legacy_root / "hip-autotune-build-descriptor.json",
-                binary_path=legacy_root / "llama-bench")
+        with tempfile.TemporaryDirectory() as dir_a, \
+             tempfile.TemporaryDirectory() as dir_b:
+            store_a = ArtifactStore(Path(dir_a))
+            hash_a = store_a.publish_json("manifest.json", _MANIFEST)
+            store_a.publish_bytes("llama-bench", b"identical-binary-bytes")
+            arm_a = load_new_arm(
+                "a", store=store_a, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_a)
 
             divergent_manifest = dict(_MANIFEST)
             divergent_manifest["build_descriptor"] = {"descriptor_hash": "d2"}
-            store = ArtifactStore(Path(new_dir))
-            manifest_hash = store.publish_json("manifest.json", divergent_manifest)
-            store.publish_bytes("llama-bench", b"identical-binary-bytes")
-            new_arm = load_new_arm(
-                "new", store=store, manifest_relative="manifest.json",
-                binary_relative="llama-bench", manifest_content_hash=manifest_hash)
+            store_b = ArtifactStore(Path(dir_b))
+            hash_b = store_b.publish_json("manifest.json", divergent_manifest)
+            store_b.publish_bytes("llama-bench", b"identical-binary-bytes")
+            arm_b = load_new_arm(
+                "b", store=store_b, manifest_relative="manifest.json",
+                binary_relative="llama-bench", manifest_content_hash=hash_b)
 
             with self.assertRaises(ParityError) as ctx:
-                check_parity(legacy_arm, new_arm, label="tune")
+                check_parity(arm_a, arm_b, label="tune")
             self.assertIn("descriptor.descriptor_hash", str(ctx.exception))
 
 
