@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry import campaign_resolution, config, patchset  # noqa: E402
+from bigcherry import campaign_resolution, config, patchset, paths  # noqa: E402
 
 
 def _write_patch(patches_root: Path, patch_id: str, *, marker_text: str) -> None:
@@ -35,7 +35,7 @@ def _write_patch(patches_root: Path, patch_id: str, *, marker_text: str) -> None
 class CampaignResolutionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.cfg = config.load(Path(__file__).resolve().parents[2] / "recipes.toml")
+        cls.cfg = config.load(paths.RECIPES)
         cls.catalog = patchset.catalog()
 
     def test_upstream_has_no_bigcherry_modules(self):

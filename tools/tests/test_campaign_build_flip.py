@@ -82,7 +82,7 @@ class ExactCanonicalLaneSetTests(unittest.TestCase):
 
     def test_build_all_produces_exactly_the_standard_profile_lanes(self):
         args = _build_args(all=True)
-        cfg = campaign_config.load(Path(paths.REPO_ROOT) / "recipes.toml")
+        cfg = campaign_config.load(paths.RECIPES)
         expected = {
             f"{sel.source}:{sel.build}:{sel.platform}"
             for sel in cfg.campaigns["standard"].lanes

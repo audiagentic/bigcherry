@@ -17,6 +17,10 @@ PATCHES = REPO_ROOT / "patches"
 SQL = REPO_ROOT / "sql"
 DOCS = REPO_ROOT / "docs"
 ARTIFACTS = REPO_ROOT / "artifacts"
+CONFIG = REPO_ROOT / "config"
+RECIPES = CONFIG / "recipes.toml"
+EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
+EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 
 _ENV_LLAMA_ROOT = "BIGCHERRY_LLAMA_ROOT"
 

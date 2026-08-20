@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry import config  # noqa: E402
+from bigcherry import config, paths  # noqa: E402
 
 
 def _write(text: str) -> Path:
@@ -98,7 +98,7 @@ states = ["validated"]
         # rebases to a newer llama.cpp release (see
         # docs/reference/PIN_REBASE_REVIEW_B10502.md), which this test
         # must not need editing for.
-        loaded = config.load(Path(__file__).resolve().parents[2] / "recipes.toml")
+        loaded = config.load(paths.RECIPES)
         self.assertTrue(loaded.pinned)
         self.assertEqual(loaded.sources["llama-native"].patch_sets, ())
         self.assertEqual(loaded.sources["bigcherry-native"].patch_sets, ("framework",))

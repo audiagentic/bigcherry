@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from . import paths
 
-RECIPES_PATH = paths.REPO_ROOT / "recipes.toml"
+RECIPES_PATH = paths.RECIPES
 FOLLOW_PIN = "pinned"
 NEEDS = ("none", "inventory", "winners")
 
