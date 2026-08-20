@@ -273,6 +273,79 @@ def resolve_exact(
     return ResolvedPatchSet(selected, required_state)
 
 
+@dataclass(frozen=True)
+class CompositionExpansion:
+    """RE42: what a caller asked for, versus what REQUIRES pulled in with
+    it. Kept separate deliberately -- a caller/CLI can show "you asked for
+    X, this also pulls in Y, Z because X requires them" rather than
+    silently expanding, matching this project's standing rule that a
+    dependency can never be silently added without being visible."""
+
+    requested: tuple[str, ...]
+    expanded: tuple[str, ...]
+
+    @property
+    def pulled_in(self) -> tuple[str, ...]:
+        requested = set(self.requested)
+        return tuple(patch_id for patch_id in self.expanded if patch_id not in requested)
+
+
+def expand_composition(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    directory: Path | None = None,
+) -> CompositionExpansion:
+    """Compute the full REQUIRES closure of ``patch_ids``, in a stable
+    topological order (dependencies before dependents, then canonical
+    ``(order, patch_id)`` as a tie-breaker).
+
+    This is a NEW layer ABOVE ``resolve_exact()`` (RE42, external
+    patch-management review 2026-08-20) -- ``resolve_exact()`` stays the
+    fail-closed exact layer that requires every dependency to already be in
+    the explicitly-selected set; this function is what a caller uses to
+    COMPUTE that complete set from a minimal request, so
+    ``config/recipes.toml`` authors stop hand-listing full dependency
+    chains. Nothing calls this automatically yet -- ``resolve_lane`` is
+    unchanged and does not auto-expand, so no existing recipe/experiment's
+    behavior or identity changes by this function merely existing.
+
+    Raises ``ValueError`` on an unknown patch ID or a REQUIRES cycle
+    (reported with the exact cycle path, not just "a cycle exists").
+    """
+    modules = {module.patch_id: module for module in catalog(directory)}
+    requested = tuple(patch_ids)
+    unknown = sorted(set(requested) - set(modules))
+    if unknown:
+        raise ValueError(f"unknown patch module(s): {', '.join(unknown)}")
+
+    order: list[str] = []
+    seen: set[str] = set()
+    in_progress: list[str] = []
+
+    def visit(patch_id: str) -> None:
+        if patch_id in seen:
+            return
+        if patch_id in in_progress:
+            cycle = " -> ".join(in_progress[in_progress.index(patch_id):] + [patch_id])
+            raise ValueError(f"REQUIRES cycle detected: {cycle}")
+        in_progress.append(patch_id)
+        for dependency in modules[patch_id].requires:
+            if dependency not in modules:
+                raise ValueError(
+                    f"{patch_id} REQUIRES unknown module {dependency!r}"
+                )
+            visit(dependency)
+        in_progress.pop()
+        seen.add(patch_id)
+        order.append(patch_id)
+
+    for patch_id in requested:
+        visit(patch_id)
+
+    expanded = tuple(sorted(order, key=lambda pid: (modules[pid].order, pid)))
+    return CompositionExpansion(requested=requested, expanded=expanded)
+
+
 def load_resolved(selection: ResolvedPatchSet) -> list[FilePatch]:
     """Load only the already-resolved canonical modules, in catalog order."""
     patches: list[FilePatch] = []

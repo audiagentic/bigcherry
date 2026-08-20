@@ -95,6 +95,13 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "untested"
 
+# RE40 (external patch-management review, 2026-08-20): "depends on RD39-RD43
+# (patches 1215+1216) already being applied" was documented prose; REQUIRES
+# makes it real and enforced (patchset.resolve_exact(), already called by
+# resolve_lane's experiment= path). Backfilled safely: config/recipes.toml's
+# only entry naming 1217 already includes both 1215 and 1216.
+REQUIRES = ("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard")
+
 PROVENANCE = {
     "source-id": "amd-ecosystem-llama-cpp",
     "plan-item": "RD44",
