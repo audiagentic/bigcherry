@@ -21,6 +21,7 @@ from pathlib import Path
 from . import __version__
 from . import doctor
 from . import paths
+from . import patch_catalog
 from . import patcher
 from . import patchset
 from . import recipes
@@ -466,7 +467,15 @@ def _resolve_selection(
 
 
 def cmd_patches(args: argparse.Namespace) -> int:
-    """Show every patch, its metadata, and whether a selection takes it."""
+    """Show every patch, its metadata, and whether a selection takes it.
+
+    --kind/--backend/--origin filter against patches/catalog.toml (RE30
+    phase 1's declarative metadata) -- the metadata substitute for browsing
+    a physical folder split. RE41 decided patches/ stays flat indefinitely
+    because this filtering already answers the "which patches form the
+    framework / are HIP vs Vulkan / came from an external fork" questions a
+    directory move would otherwise exist to answer, with zero path churn.
+    """
     infos = patchset.describe()
     if not infos:
         print("no patches found", file=sys.stderr)
@@ -478,13 +487,36 @@ def cmd_patches(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    catalog_filter_active = bool(args.kind or args.backend or args.origin)
+    catalog: dict[str, patch_catalog.CatalogEntry] = {}
+    if catalog_filter_active:
+        try:
+            catalog = patch_catalog.load_catalog()
+        except ValueError as exc:
+            print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+            return 2
+
     root = paths.llama_root(args.llama_root)
     print(f"selection: {label}")
     print(f"checkout:  {root}")
+    if catalog_filter_active:
+        print(f"catalog:   kind={args.kind or 'any'} backend={args.backend or 'any'} "
+              f"origin={args.origin or 'any'}")
     print()
 
     rows, problems, selected = [], [], 0
     for info in infos:
+        entry = catalog.get(info.name)
+        if catalog_filter_active:
+            if entry is None:
+                continue
+            if args.kind and entry.kind != args.kind:
+                continue
+            if args.backend and entry.backend != args.backend:
+                continue
+            if args.origin and entry.origin != args.origin:
+                continue
+
         taken = ((groups is None or info.group in groups)
                  and (states is None or info.state in states))
         selected += taken
@@ -504,16 +536,22 @@ def cmd_patches(args: argparse.Namespace) -> int:
                 f"{info.name}: STATE={info.state!r} is not one of "
                 f"{', '.join(patchset.STATES)} -- no recipe will select it")
 
+        catalog_label = f"{entry.kind}/{entry.backend}" if entry is not None else ""
         rows.append(("[x]" if taken else "[ ]", info.name, info.group,
-                     info.state, note))
+                     info.state, catalog_label, note))
 
-    widths = [max(len(r[i]) for r in rows) for i in range(4)]
-    for mark, name, group, state, note in rows:
+    if not rows:
+        print("no patches match the given --kind/--backend/--origin filter")
+        return 0
+
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    for mark, name, group, state, catalog_label, note in rows:
         line = (f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  "
-                f"{state:<{widths[3]}}")
+                f"{state:<{widths[3]}}  {catalog_label:<{widths[4]}}")
         print(f"{line}  {note}".rstrip())
 
-    print(f"\n{selected} of {len(infos)} selected")
+    print(f"\n{selected} of {len(rows)} shown selected"
+          + ("" if not catalog_filter_active else f" ({len(infos)} total in catalog)"))
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
     return 1 if problems else 0
@@ -664,6 +702,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patches_cmd.add_argument("--llama-root", default=None)
     _add_selection_args(patches_cmd)
+    patches_cmd.add_argument(
+        "--kind", default=None, choices=patch_catalog.KINDS,
+        help="filter to patches/catalog.toml's kind (framework|upstream-backport|"
+             "enhancement) -- the metadata substitute for a physical folder split "
+             "(RE41: patches/ stays flat, this filter is the browsability answer)",
+    )
+    patches_cmd.add_argument(
+        "--backend", default=None, choices=patch_catalog.BACKENDS,
+        help="filter to patches/catalog.toml's backend (hip|vulkan|agnostic)",
+    )
+    patches_cmd.add_argument(
+        "--origin", default=None, choices=patch_catalog.ORIGINS,
+        help="filter to patches/catalog.toml's origin (local|upstream-commit|"
+             "upstream-pr|external-fork)",
+    )
     patches_cmd.set_defaults(func=cmd_patches)
 
     sources.register(sub)
