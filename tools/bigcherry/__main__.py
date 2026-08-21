@@ -109,8 +109,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
         # about to run the one git operation ourselves, i.e. right here.
         stale = upstream.clear_stale_locks(root)
         if stale:
-            print(f"cleared {len(stale)} stale git lock(s) from an earlier "
-                  f"interrupted run")
+            print(
+                f"cleared {len(stale)} stale git lock(s) from an earlier "
+                f"interrupted run"
+            )
 
         print(f"fetching into {root}")
         fetch = ["git", "-C", str(root), "fetch", "--no-tags"]
@@ -206,12 +208,12 @@ def _copy_overlay(root: Path, *, dry_run: bool) -> list[str]:
 
 
 def _apply_selection(
-        root: Path,
-        groups: frozenset[str] | None,
-        states: frozenset[str] | None,
-        *,
-        force: bool = False,
-        dry_run: bool = False,
+    root: Path,
+    groups: frozenset[str] | None,
+    states: frozenset[str] | None,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
 ) -> bool:
     """Install the overlay and apply one patch selection. True if all placed.
 
@@ -222,9 +224,11 @@ def _apply_selection(
     """
     record = _record_for(root)
     if not force and not record.audit.get("passed"):
-        print("refusing to patch a tree that has not passed a strict audit.\n"
-              "  run `python -m bigcherry audit` first, or pass --force.",
-              file=sys.stderr)
+        print(
+            "refusing to patch a tree that has not passed a strict audit.\n"
+            "  run `python -m bigcherry audit` first, or pass --force.",
+            file=sys.stderr,
+        )
         return False
 
     # An anchored edit extends an overlay source; install overlays before
@@ -234,7 +238,8 @@ def _apply_selection(
     results = patcher.apply_all(patches, root, dry_run=dry_run)
     ok = all(r.ok for r in results)
     intended_tree_state = recipes.tree_state_key(
-        record.release_tag or record.revision, groups, states)
+        record.release_tag or record.revision, groups, states
+    )
     selection_changed = record.tree_state != intended_tree_state
     tree_mutated = bool(written) or any(result.changed for result in results)
 
@@ -250,10 +255,12 @@ def _apply_selection(
         record = _record_for(root)
         record.patches = releases.summarise_patches(results)
         releases.record_apply_result(
-            record, ok, mutated=selection_changed or tree_mutated)
+            record, ok, mutated=selection_changed or tree_mutated
+        )
         if not ok:
             record.notes = "patches failed: " + ", ".join(
-                record.patches["failed_edits"])
+                record.patches["failed_edits"]
+            )
         elif record.notes.startswith("patches failed:"):
             record.notes = ""
         # Key what the tree now carries, so `build` can tell whether it needs
@@ -292,19 +299,21 @@ def cmd_repin(args: argparse.Namespace) -> int:
         print(f"already pinned to {target}")
         return 0
     print(f"pinned: {old} -> {target}")
-    print("recipes following the pin now build from it; recipes naming their "
-          "own ref are unchanged.")
+    print(
+        "recipes following the pin now build from it; recipes naming their "
+        "own ref are unchanged."
+    )
     print("next: python -m bigcherry pull --recipe <name>")
     return 0
 
 
 def _overlay_relative_paths() -> list[Path]:
     """Paths the overlay writes, relative to the checkout root."""
-    return [source.relative_to(paths.SRC_OVERLAY)
-            for source in sorted(paths.SRC_OVERLAY.rglob("*"))
-            if source.is_file()]
-
-
+    return [
+        source.relative_to(paths.SRC_OVERLAY)
+        for source in sorted(paths.SRC_OVERLAY.rglob("*"))
+        if source.is_file()
+    ]
 
 
 def cmd_build_new(args: argparse.Namespace) -> int:
@@ -321,19 +330,25 @@ def cmd_build_new(args: argparse.Namespace) -> int:
     from . import config as campaign_config
     from .artifacts import ArtifactStore
     from .campaign_lane import smoke_environment_for_hip_devices
-    from .campaign_planner import CampaignPlannerError, CampaignRequest, plan, run_campaign
+    from .campaign_planner import (
+        CampaignPlannerError,
+        CampaignRequest,
+        plan,
+        run_campaign,
+    )
     from .context import ProjectContext
     from .runtime_smoke import RuntimeSmokeSpec
 
     if sum(bool(x) for x in (args.lane, args.all, args.profile)) != 1:
         print(
-            "build: pass exactly one of --profile, --all, or --lane "
-            "(repeatable)", file=sys.stderr)
+            "build: pass exactly one of --profile, --all, or --lane (repeatable)",
+            file=sys.stderr,
+        )
         return 2
 
     context = ProjectContext.resolve(
-        work_root=None,
-        upstream_repo=Path(args.llama_root) if args.llama_root else None)
+        work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
+    )
     try:
         cfg = campaign_config.load(context.config_path)
     except campaign_config.ConfigError as exc:
@@ -354,7 +369,8 @@ def cmd_build_new(args: argparse.Namespace) -> int:
             if len(parts) != 3:
                 print(
                     f"build: --lane {raw!r} must be SOURCE:BUILD:PLATFORM",
-                    file=sys.stderr)
+                    file=sys.stderr,
+                )
                 return 2
             parsed.append(campaign_config.CampaignLaneSelector(*parts))
         selectors = tuple(parsed)
@@ -362,8 +378,7 @@ def cmd_build_new(args: argparse.Namespace) -> int:
     architectures = tuple(args.arch.split(",")) if args.arch else ()
     inventory = Path(args.inventory) if args.inventory else None
     winners = Path(args.winners) if args.winners else None
-    validation = (
-        RuntimeSmokeSpec(model_path=Path(args.model)) if args.model else None)
+    validation = RuntimeSmokeSpec(model_path=Path(args.model)) if args.model else None
     inputs_by_build = {}
     validation_by_build = {}
     for build_name, build_cfg in cfg.builds.items():
@@ -379,11 +394,14 @@ def cmd_build_new(args: argparse.Namespace) -> int:
             validation_by_build[build_name] = validation
 
     request = CampaignRequest(
-        selectors=selectors, profile_name=profile_name,
+        selectors=selectors,
+        profile_name=profile_name,
         architectures=architectures,
-        inputs_by_build=inputs_by_build, validation_by_build=validation_by_build,
+        inputs_by_build=inputs_by_build,
+        validation_by_build=validation_by_build,
         binary_relative_path=args.binary_relative_path,
-        c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
+        c_compiler=args.c_compiler,
+        cxx_compiler=args.cxx_compiler,
         smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
         experiment=args.experiment,
     )
@@ -393,7 +411,9 @@ def cmd_build_new(args: argparse.Namespace) -> int:
         print(f"build: {exc}", file=sys.stderr)
         return 2
 
-    results = run_campaign(lanes, cfg=cfg, context=context, store=store, run_id=args.run_id)
+    results = run_campaign(
+        lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
+    )
 
     failed = 0
     for lid in sorted(results):
@@ -402,8 +422,10 @@ def cmd_build_new(args: argparse.Namespace) -> int:
             print(f"{lid}: FAILED -- {result}", file=sys.stderr)
             failed += 1
         else:
-            print(f"{lid}: ok build_plan_id={result.build_plan_id} "
-                  f"workload_id={result.workload_id}")
+            print(
+                f"{lid}: ok build_plan_id={result.build_plan_id} "
+                f"workload_id={result.workload_id}"
+            )
     if failed:
         print(f"build: {failed}/{len(results)} lane(s) failed", file=sys.stderr)
         return 1
@@ -422,18 +444,18 @@ def _add_selection_args(parser: argparse.ArgumentParser) -> None:
         "--groups",
         default=None,
         help="comma-separated patch groups, overriding the recipe's "
-             "(e.g. 'core'). Empty string selects none.",
+        "(e.g. 'core'). Empty string selects none.",
     )
     parser.add_argument(
         "--states",
         default=None,
         help=f"comma-separated patch states, overriding the recipe's "
-             f"({', '.join(patchset.STATES)}).",
+        f"({', '.join(patchset.STATES)}).",
     )
 
 
 def _resolve_selection(
-        args: argparse.Namespace,
+    args: argparse.Namespace,
 ) -> tuple[frozenset[str] | None, frozenset[str] | None, str]:
     """Patch selection from ``--recipe``, with ``--groups``/``--states`` on top.
 
@@ -502,8 +524,10 @@ def cmd_patches(args: argparse.Namespace) -> int:
     print(f"selection: {label}")
     print(f"checkout:  {root}")
     if catalog_filter_active:
-        print(f"catalog:   kind={args.kind or 'any'} backend={args.backend or 'any'} "
-              f"origin={args.origin or 'any'}")
+        print(
+            f"catalog:   kind={args.kind or 'any'} backend={args.backend or 'any'} "
+            f"origin={args.origin or 'any'}"
+        )
     print()
 
     rows, problems, selected = [], [], 0
@@ -519,8 +543,9 @@ def cmd_patches(args: argparse.Namespace) -> int:
             if args.origin and entry.origin != args.origin:
                 continue
 
-        taken = ((groups is None or module.group in groups)
-                 and (states is None or module.state in states))
+        taken = (groups is None or module.group in groups) and (
+            states is None or module.state in states
+        )
         selected += taken
 
         note = ""
@@ -536,11 +561,20 @@ def cmd_patches(args: argparse.Namespace) -> int:
         if module.state not in patchset.STATES:
             problems.append(
                 f"{module.patch_id}: STATE={module.state!r} is not one of "
-                f"{', '.join(patchset.STATES)} -- no recipe will select it")
+                f"{', '.join(patchset.STATES)} -- no recipe will select it"
+            )
 
         catalog_label = f"{entry.kind}/{entry.backend}" if entry is not None else ""
-        rows.append(("[x]" if taken else "[ ]", module.patch_id, module.group,
-                     module.state, catalog_label, note))
+        rows.append(
+            (
+                "[x]" if taken else "[ ]",
+                module.patch_id,
+                module.group,
+                module.state,
+                catalog_label,
+                note,
+            )
+        )
 
     if not rows:
         print("no patches match the given --kind/--backend/--origin filter")
@@ -548,12 +582,20 @@ def cmd_patches(args: argparse.Namespace) -> int:
 
     widths = [max(len(r[i]) for r in rows) for i in range(5)]
     for mark, name, group, state, catalog_label, note in rows:
-        line = (f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  "
-                f"{state:<{widths[3]}}  {catalog_label:<{widths[4]}}")
+        line = (
+            f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  "
+            f"{state:<{widths[3]}}  {catalog_label:<{widths[4]}}"
+        )
         print(f"{line}  {note}".rstrip())
 
-    print(f"\n{selected} of {len(rows)} shown selected"
-          + ("" if not catalog_filter_active else f" ({len(snapshot.modules)} total in catalog)"))
+    print(
+        f"\n{selected} of {len(rows)} shown selected"
+        + (
+            ""
+            if not catalog_filter_active
+            else f" ({len(snapshot.modules)} total in catalog)"
+        )
+    )
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
     return 1 if problems else 0
@@ -566,11 +608,16 @@ def cmd_patch_status(args: argparse.Namespace) -> int:
     if args.item:
         statuses = {k: v for k, v in statuses.items() if k == args.item}
         if not statuses:
-            print(f"no lifecycle signal found for plan-item {args.item!r}", file=sys.stderr)
+            print(
+                f"no lifecycle signal found for plan-item {args.item!r}",
+                file=sys.stderr,
+            )
             return 1
     if not statuses:
-        print("no plan-items with any tracked/materialized/contracted signal found",
-              file=sys.stderr)
+        print(
+            "no plan-items with any tracked/materialized/contracted signal found",
+            file=sys.stderr,
+        )
         return 1
     print(patch_lifecycle.render_table(statuses))
     return 0
@@ -583,9 +630,13 @@ def cmd_patch_explain(args: argparse.Namespace) -> int:
     try:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
-        print(f"patch explain: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        print(
+            f"patch explain: could not load patches/catalog.toml: {exc}",
+            file=sys.stderr,
+        )
         return 2
     from . import config as campaign_config
+
     try:
         cfg = campaign_config.load(paths.RECIPES)
     except (campaign_config.ConfigError, OSError):
@@ -607,7 +658,9 @@ def cmd_patch_graph(args: argparse.Namespace) -> int:
     try:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
-        print(f"patch graph: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        print(
+            f"patch graph: could not load patches/catalog.toml: {exc}", file=sys.stderr
+        )
         return 2
     roots = tuple(args.roots or ())
     try:
@@ -720,7 +773,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref",
         default=None,
         help="tag, branch or sha to check out (e.g. b1234), or 'latest' for "
-             "the newest upstream release. Overrides --recipe.",
+        "the newest upstream release. Overrides --recipe.",
     )
     pull.add_argument(
         "--recipe",
@@ -764,42 +817,51 @@ def build_parser() -> argparse.ArgumentParser:
     patches_cmd.add_argument("--llama-root", default=None)
     _add_selection_args(patches_cmd)
     patches_cmd.add_argument(
-        "--kind", default=None, choices=patch_catalog.KINDS,
+        "--kind",
+        default=None,
+        choices=patch_catalog.KINDS,
         help="filter to patches/catalog.toml's kind (framework|upstream-backport|"
-             "enhancement) -- the metadata substitute for a physical folder split "
-             "(RE41: patches/ stays flat, this filter is the browsability answer)",
+        "enhancement) -- the metadata substitute for a physical folder split "
+        "(RE41: patches/ stays flat, this filter is the browsability answer)",
     )
     patches_cmd.add_argument(
-        "--backend", default=None, choices=patch_catalog.BACKENDS,
+        "--backend",
+        default=None,
+        choices=patch_catalog.BACKENDS,
         help="filter to patches/catalog.toml's backend (hip|vulkan|agnostic)",
     )
     patches_cmd.add_argument(
-        "--origin", default=None, choices=patch_catalog.ORIGINS,
+        "--origin",
+        default=None,
+        choices=patch_catalog.ORIGINS,
         help="filter to patches/catalog.toml's origin (local|upstream-commit|"
-             "upstream-pr|external-fork)",
+        "upstream-pr|external-fork)",
     )
     patches_cmd.set_defaults(func=cmd_patches)
 
     patch_status_cmd = sub.add_parser(
         "patch-status",
         help="EC19: computed plan/patch/contract lifecycle status, not "
-             "hand-maintained prose -- source-pinned/materialized/build-state/"
-             "contracted per RD/EX/HI plan item",
+        "hand-maintained prose -- source-pinned/materialized/build-state/"
+        "contracted per RD/EX/HI plan item",
     )
     patch_status_cmd.add_argument(
-        "--item", default=None,
+        "--item",
+        default=None,
         help="show only this plan-item (e.g. RD21) instead of every item "
-             "with any signal",
+        "with any signal",
     )
     patch_status_cmd.set_defaults(func=cmd_patch_status)
 
     patch_explain_cmd = sub.add_parser(
         "patch-explain",
         help="RE43: everything known about one patch -- source, plan, "
-             "requires/conflicts, which recipes/experiments select it, "
-             "state, content hash, files touched",
+        "requires/conflicts, which recipes/experiments select it, "
+        "state, content hash, files touched",
     )
-    patch_explain_cmd.add_argument("patch_id", help="e.g. 1217_rd44_graph_opt_default_rdna35")
+    patch_explain_cmd.add_argument(
+        "patch_id", help="e.g. 1217_rd44_graph_opt_default_rdna35"
+    )
     patch_explain_cmd.set_defaults(func=cmd_patch_explain)
 
     patch_graph_cmd = sub.add_parser(
@@ -807,19 +869,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="RE43: textual REQUIRES/CONFLICTS dependency topology",
     )
     patch_graph_cmd.add_argument(
-        "--roots", action="append", default=None,
+        "--roots",
+        action="append",
+        default=None,
         help="restrict to this patch's real dependency closure (repeatable); "
-             "omit to show every patch with any requires/conflicts edge",
+        "omit to show every patch with any requires/conflicts edge",
     )
     patch_graph_cmd.set_defaults(func=cmd_patch_graph)
 
     sources.register(sub)
 
     repin = sub.add_parser(
-        "repin", help="move config/recipes.toml's pin to the newest upstream release")
+        "repin", help="move config/recipes.toml's pin to the newest upstream release"
+    )
     repin.add_argument(
-        "--ref", default=None,
-        help="pin to this ref instead of querying for the newest release")
+        "--ref",
+        default=None,
+        help="pin to this ref instead of querying for the newest release",
+    )
     repin.set_defaults(func=cmd_repin)
 
     # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
@@ -840,57 +907,78 @@ def build_parser() -> argparse.ArgumentParser:
     # both platform suites, RE24's adversarial matrix) were all satisfied.
     new_build_cmd = sub.add_parser(
         "build",
-        help="build via the multi-lane campaign engine (canonical v2 "
-             "identities only)")
+        help="build via the multi-lane campaign engine (canonical v2 identities only)",
+    )
     new_build_cmd.add_argument("--llama-root", default=None)
     new_build_cmd.add_argument("--source", default="bigcherry")
     new_build_cmd.add_argument(
-        "--profile", default=None,
+        "--profile",
+        default=None,
         help="named campaign profile from config/recipes.toml's [campaign.<name>] "
-             "(e.g. 'standard')")
+        "(e.g. 'standard')",
+    )
     new_build_cmd.add_argument(
-        "--lane", action="append", default=None, metavar="SOURCE:BUILD:PLATFORM",
+        "--lane",
+        action="append",
+        default=None,
+        metavar="SOURCE:BUILD:PLATFORM",
         help="explicit lane selector (repeatable); alternative to --profile, "
-             "not combinable with it")
+        "not combinable with it",
+    )
     new_build_cmd.add_argument(
-        "--all", action="store_true",
-        help="build the canonical standard profile -- shorthand for "
-             "--profile standard")
+        "--all",
+        action="store_true",
+        help="build the canonical standard profile -- shorthand for --profile standard",
+    )
     new_build_cmd.add_argument(
-        "--arch", default=None,
+        "--arch",
+        default=None,
         help="comma-separated architectures, overriding each lane's "
-             "platform.targets (must be a non-empty subset)")
+        "platform.targets (must be a non-empty subset)",
+    )
     new_build_cmd.add_argument(
-        "--inventory", default=None,
+        "--inventory",
+        default=None,
         help="signature inventory JSON, distributed to any planned lane "
-             "whose build declares needs = [\"inventory\", ...]")
+        'whose build declares needs = ["inventory", ...]',
+    )
     new_build_cmd.add_argument(
-        "--winners", default=None,
+        "--winners",
+        default=None,
         help="promoted-winners JSONL, distributed to any planned lane whose "
-             "build declares needs including \"promoted-winners\"")
+        'build declares needs including "promoted-winners"',
+    )
     new_build_cmd.add_argument(
-        "--model", default=None,
+        "--model",
+        default=None,
         help="gguf model path -- if given, every planned lane runs a real "
-             "runtime-smoke validation against it")
+        "runtime-smoke validation against it",
+    )
     new_build_cmd.add_argument(
-        "--hip-visible-devices", default="0",
-        help="only meaningful together with --model")
+        "--hip-visible-devices",
+        default="0",
+        help="only meaningful together with --model",
+    )
     new_build_cmd.add_argument(
-        "--binary-relative-path", default="bin/llama-bench",
+        "--binary-relative-path",
+        default="bin/llama-bench",
         help="which binary each planned lane builds/publishes as its "
-             "primary artifact, e.g. 'bin/llama-server' for a real "
-             "production/deployment build -- matches campaign-build's own "
-             "flag of the same name (re14_real_run.py); every lane in the "
-             "request gets the same value, there is no per-lane override")
+        "primary artifact, e.g. 'bin/llama-server' for a real "
+        "production/deployment build -- matches campaign-build's own "
+        "flag of the same name (re14_real_run.py); every lane in the "
+        "request gets the same value, there is no per-lane override",
+    )
     new_build_cmd.add_argument("--c-compiler", default=None)
     new_build_cmd.add_argument("--cxx-compiler", default=None)
     new_build_cmd.add_argument("--run-id", default=None)
     new_build_cmd.add_argument(
-        "--experiment", default=None,
+        "--experiment",
+        default=None,
         help="name of a [experiment.<name>] entry in config/recipes.toml (an exact "
-             "extra patch list) -- for benching one experimental patch in "
-             "isolation against the source's normal patch-set, e.g. "
-             "'--source bigcherry-native --experiment rd19-only'")
+        "extra patch list) -- for benching one experimental patch in "
+        "isolation against the source's normal patch-set, e.g. "
+        "'--source bigcherry-native --experiment rd19-only'",
+    )
     new_build_cmd.set_defaults(func=cmd_build_new)
 
     from . import autotune_schema as _schema
@@ -918,7 +1006,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="measurements JSONL from a tuning run (required for replay-slim)",
     )
     generate.add_argument(
-        "--generated-root", default=None,
+        "--generated-root",
+        default=None,
         help="build-local directory for generated compile inputs",
     )
     generate.add_argument("--dry-run", action="store_true")
@@ -933,52 +1022,74 @@ def build_parser() -> argparse.ArgumentParser:
     experiment_cmd = sub.add_parser(
         "experiment-contract",
         help="Experiment Contract validate/list/plan/run/report (EC01-EC11) -- "
-             "not to be confused with `experiment`, HI47's managed bundle runner")
-    experiment_sub = experiment_cmd.add_subparsers(dest="experiment_command", required=True)
+        "not to be confused with `experiment`, HI47's managed bundle runner",
+    )
+    experiment_sub = experiment_cmd.add_subparsers(
+        dest="experiment_command", required=True
+    )
 
     def _add_contracts_arg(p: argparse.ArgumentParser) -> None:
         p.add_argument(
-            "--contracts", default=None,
-            help="path to the contract registry TOML (default: config/experiment-contracts.toml)")
+            "--contracts",
+            default=None,
+            help="path to the contract registry TOML (default: config/experiment-contracts.toml)",
+        )
 
     def _add_lane_args(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--config", default=None, help="path to recipes.toml (default: config/recipes.toml)")
-        p.add_argument("--source", required=True, help="config.Source name to expand the contract against")
+        p.add_argument(
+            "--config",
+            default=None,
+            help="path to recipes.toml (default: config/recipes.toml)",
+        )
+        p.add_argument(
+            "--source",
+            required=True,
+            help="config.Source name to expand the contract against",
+        )
         p.add_argument("--build", required=True, help="config.Build name")
         p.add_argument("--platform", required=True, help="config.Platform name")
 
     experiment_validate = experiment_sub.add_parser(
-        "validate", help="schema-check a contract (or every contract) without running anything")
+        "validate",
+        help="schema-check a contract (or every contract) without running anything",
+    )
     _add_contracts_arg(experiment_validate)
     experiment_validate.add_argument("contract_id", nargs="?", default=None)
     experiment_validate.set_defaults(func=cmd_experiment_validate)
 
-    experiment_list = experiment_sub.add_parser("list", help="list every registered contract")
+    experiment_list = experiment_sub.add_parser(
+        "list", help="list every registered contract"
+    )
     _add_contracts_arg(experiment_list)
     experiment_list.set_defaults(func=cmd_experiment_list)
 
     experiment_plan = experiment_sub.add_parser(
-        "plan", help="show the campaign lanes a contract would expand into (dry-run)")
+        "plan", help="show the campaign lanes a contract would expand into (dry-run)"
+    )
     _add_contracts_arg(experiment_plan)
     _add_lane_args(experiment_plan)
     experiment_plan.add_argument("contract_id")
     experiment_plan.set_defaults(func=cmd_experiment_plan)
 
     experiment_run = experiment_sub.add_parser(
-        "run", help="execute a contract's full lane set through run_campaign()")
+        "run", help="execute a contract's full lane set through run_campaign()"
+    )
     _add_contracts_arg(experiment_run)
     _add_lane_args(experiment_run)
     experiment_run.add_argument("contract_id")
     experiment_run.set_defaults(func=cmd_experiment_run)
 
     experiment_report = experiment_sub.add_parser(
-        "report", help="render a contract's report from a stored evidence JSON file")
+        "report", help="render a contract's report from a stored evidence JSON file"
+    )
     _add_contracts_arg(experiment_report)
     experiment_report.add_argument("contract_id")
     experiment_report.add_argument(
-        "--evidence-file", required=True,
+        "--evidence-file",
+        required=True,
         help="JSON with correctness_gate/aggregated_effects/generalisation_result "
-             "(and optionally promotion_gate) keys")
+        "(and optionally promotion_gate) keys",
+    )
     experiment_report.set_defaults(func=cmd_experiment_report)
 
     doctor_cmd = sub.add_parser(
@@ -988,41 +1099,70 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_cmd.set_defaults(func=cmd_doctor)
 
     tune_journal_cmd = sub.add_parser(
-        "tune-journal", help="crash-safe tuning journal status/compaction (HI48)")
+        "tune-journal", help="crash-safe tuning journal status/compaction (HI48)"
+    )
     tune_journal_cmd.set_defaults(
-        func=lambda args: _tune_journal_main(args.tune_journal_args))
+        func=lambda args: _tune_journal_main(args.tune_journal_args)
+    )
     tune_journal_cmd.add_argument("tune_journal_args", nargs=argparse.REMAINDER)
 
     tune_promote_cmd = sub.add_parser(
         "tune-promote",
-        help="apply experiment-wide BH promotion to fresh-confirmation evidence (HI34)")
+        help="apply experiment-wide BH promotion to fresh-confirmation evidence (HI34)",
+    )
     tune_promote_cmd.add_argument("measurements")
     tune_promote_cmd.add_argument("--output", required=True)
     tune_promote_cmd.add_argument("--q", type=float, default=0.05)
     tune_promote_cmd.add_argument("--threshold-pct", type=float, default=1.0)
     tune_promote_cmd.add_argument("--resamples", type=int, default=10_000)
-    tune_promote_cmd.set_defaults(func=lambda args: _tune_promote_main([
-        args.measurements, "--output", args.output, "--q", str(args.q),
-        "--threshold-pct", str(args.threshold_pct), "--resamples", str(args.resamples),
-    ]))
+    tune_promote_cmd.set_defaults(
+        func=lambda args: _tune_promote_main(
+            [
+                args.measurements,
+                "--output",
+                args.output,
+                "--q",
+                str(args.q),
+                "--threshold-pct",
+                str(args.threshold_pct),
+                "--resamples",
+                str(args.resamples),
+            ]
+        )
+    )
 
     tune_null_fdr_cmd = sub.add_parser(
         "tune-null-fdr",
-        help="deterministic global-null BH simulation, for auditing the promotion gate")
+        help="deterministic global-null BH simulation, for auditing the promotion gate",
+    )
     tune_null_fdr_cmd.add_argument("--output", required=True)
     tune_null_fdr_cmd.add_argument("--experiments", type=int, default=5000)
     tune_null_fdr_cmd.add_argument("--hypotheses", type=int, required=True)
     tune_null_fdr_cmd.add_argument("--q", type=float, default=0.05)
     tune_null_fdr_cmd.add_argument("--seed", type=int, required=True)
-    tune_null_fdr_cmd.set_defaults(func=lambda args: _tune_null_fdr_main([
-        "--output", args.output, "--experiments", str(args.experiments),
-        "--hypotheses", str(args.hypotheses), "--q", str(args.q), "--seed", str(args.seed),
-    ]))
+    tune_null_fdr_cmd.set_defaults(
+        func=lambda args: _tune_null_fdr_main(
+            [
+                "--output",
+                args.output,
+                "--experiments",
+                str(args.experiments),
+                "--hypotheses",
+                str(args.hypotheses),
+                "--q",
+                str(args.q),
+                "--seed",
+                str(args.seed),
+            ]
+        )
+    )
 
     experiment_cmd = sub.add_parser(
-        "experiment", help="managed experiment bundle: run or validate (HI47)")
+        "experiment", help="managed experiment bundle: run or validate (HI47)"
+    )
     experiment_cmd.set_defaults(
-        func=lambda args: _experiment_main(args.experiment_args))
+        func=lambda args: _experiment_main(args.experiment_args)
+    )
     experiment_cmd.add_argument("experiment_args", nargs=argparse.REMAINDER)
 
     # RE14: the new, content-addressed, isolated-worktree campaign path,
@@ -1034,22 +1174,30 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_build_cmd = sub.add_parser(
         "campaign-build",
         help="RE14: build via the new isolated/content-addressed campaign "
-             "path (not yet the default -- see `build` for the normal path)")
+        "path (not yet the default -- see `build` for the normal path)",
+    )
     campaign_build_cmd.set_defaults(
-        func=lambda args: _campaign_build_main(args.campaign_build_args))
+        func=lambda args: _campaign_build_main(args.campaign_build_args)
+    )
     campaign_build_cmd.add_argument("campaign_build_args", nargs=argparse.REMAINDER)
 
     from . import compare_tunes as _compare_tunes
-    compare = sub.add_parser("compare-tunes", help="compare two current tuning runs by signature")
+
+    compare = sub.add_parser(
+        "compare-tunes", help="compare two current tuning runs by signature"
+    )
     compare.add_argument("before")
     compare.add_argument("after")
-    compare.add_argument("--record", default=None, help="record JSONL for call-weighted impact")
+    compare.add_argument(
+        "--record", default=None, help="record JSONL for call-weighted impact"
+    )
     compare.add_argument("--output", default=None, help="JSON report path")
 
     def _run_compare(args):
         try:
             result = _compare_tunes.compare(
-                Path(args.before), Path(args.after),
+                Path(args.before),
+                Path(args.after),
                 record=Path(args.record) if args.record else None,
             )
         except (OSError, ValueError, _compare_tunes.CompareError) as exc:
@@ -1060,6 +1208,7 @@ def build_parser() -> argparse.ArgumentParser:
             Path(args.output).write_text(rendered + "\n", encoding="utf-8")
         print(rendered)
         return 0
+
     compare.set_defaults(func=_run_compare)
 
     ab = sub.add_parser(
@@ -1081,73 +1230,139 @@ def build_parser() -> argparse.ArgumentParser:
     ab.add_argument("--stock-cmake-cache", default=None)
     ab.add_argument("--patched-cmake-cache", default=None)
     ab.add_argument("command", nargs=argparse.REMAINDER)
-    ab.set_defaults(func=lambda args: _ab_benchmark_main([
-        "--cache", args.cache, "--output", args.output, "--pairs", str(args.pairs),
-        "--schedule-seed", str(args.schedule_seed),
-        "--practical-threshold-pct", str(args.practical_threshold_pct),
-        *(["--structured"] if args.structured else []),
-        *(["--decision-grade"] if args.decision_grade else []),
-        "--settle-seconds", str(args.settle_seconds),
-        *(["--cwd", args.cwd] if args.cwd else []),
-        *(item for spec in args.metric for item in ["--metric", spec]),
-        *(item for name in args.lower_is_better for item in ["--lower-is-better", name]),
-        *(["--stock-binary", args.stock_binary] if args.stock_binary else []),
-        *(["--stock-cmake-cache", args.stock_cmake_cache] if args.stock_cmake_cache else []),
-        *(["--patched-cmake-cache", args.patched_cmake_cache] if args.patched_cmake_cache else []),
-        "--", *args.command,
-    ]))
+    ab.set_defaults(
+        func=lambda args: _ab_benchmark_main(
+            [
+                "--cache",
+                args.cache,
+                "--output",
+                args.output,
+                "--pairs",
+                str(args.pairs),
+                "--schedule-seed",
+                str(args.schedule_seed),
+                "--practical-threshold-pct",
+                str(args.practical_threshold_pct),
+                *(["--structured"] if args.structured else []),
+                *(["--decision-grade"] if args.decision_grade else []),
+                "--settle-seconds",
+                str(args.settle_seconds),
+                *(["--cwd", args.cwd] if args.cwd else []),
+                *(item for spec in args.metric for item in ["--metric", spec]),
+                *(
+                    item
+                    for name in args.lower_is_better
+                    for item in ["--lower-is-better", name]
+                ),
+                *(["--stock-binary", args.stock_binary] if args.stock_binary else []),
+                *(
+                    ["--stock-cmake-cache", args.stock_cmake_cache]
+                    if args.stock_cmake_cache
+                    else []
+                ),
+                *(
+                    ["--patched-cmake-cache", args.patched_cmake_cache]
+                    if args.patched_cmake_cache
+                    else []
+                ),
+                "--",
+                *args.command,
+            ]
+        )
+    )
 
     validate_release_cmd = sub.add_parser(
         "probe-release",
-        help="probe patch compatibility against a ref in an isolated checkout (HI46)")
+        help="probe patch compatibility against a ref in an isolated checkout (HI46)",
+    )
     validate_release_cmd.add_argument("--run-id", required=True)
     validate_release_cmd.add_argument("--staging-root", default=None)
     validate_release_cmd.add_argument("--ref", default="master")
     validate_release_cmd.add_argument("--recipe", default="bigcherry")
     validate_release_cmd.add_argument("--inventory", default=None)
-    validate_release_cmd.set_defaults(func=lambda args: _validate_release_main([
-        "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
-        *(["--inventory", args.inventory] if args.inventory else []),
-        *(["--staging-root", args.staging_root] if args.staging_root else []),
-    ]))
+    validate_release_cmd.set_defaults(
+        func=lambda args: _validate_release_main(
+            [
+                "--run-id",
+                args.run_id,
+                "--ref",
+                args.ref,
+                "--recipe",
+                args.recipe,
+                *(["--inventory", args.inventory] if args.inventory else []),
+                *(["--staging-root", args.staging_root] if args.staging_root else []),
+            ]
+        )
+    )
 
     validate_ref_cmd = sub.add_parser(
         "validate-ref",
-        help="alias for the isolated patch/build compatibility probe (HI46)")
+        help="alias for the isolated patch/build compatibility probe (HI46)",
+    )
     validate_ref_cmd.add_argument("--run-id", required=True)
     validate_ref_cmd.add_argument("--staging-root", default=None)
     validate_ref_cmd.add_argument("--ref", default="master")
     validate_ref_cmd.add_argument("--recipe", default="bigcherry")
     validate_ref_cmd.add_argument("--inventory", default=None)
     validate_ref_cmd.add_argument("--promoted-winners", default=None)
-    validate_ref_cmd.set_defaults(func=lambda args: _validate_release_main([
-        "--run-id", args.run_id, "--ref", args.ref, "--recipe", args.recipe,
-        *( ["--inventory", args.inventory] if args.inventory else []),
-        *( ["--promoted-winners", args.promoted_winners] if args.promoted_winners else []),
-        *( ["--staging-root", args.staging_root] if args.staging_root else []),
-    ]))
+    validate_ref_cmd.set_defaults(
+        func=lambda args: _validate_release_main(
+            [
+                "--run-id",
+                args.run_id,
+                "--ref",
+                args.ref,
+                "--recipe",
+                args.recipe,
+                *(["--inventory", args.inventory] if args.inventory else []),
+                *(
+                    ["--promoted-winners", args.promoted_winners]
+                    if args.promoted_winners
+                    else []
+                ),
+                *(["--staging-root", args.staging_root] if args.staging_root else []),
+            ]
+        )
+    )
 
     rank_replay_cmd = sub.add_parser(
         "rank-replay",
         help="report/replay ranking-policy decisions recorded in a measurements file (HI50)",
     )
     rank_replay_cmd.add_argument("measurements")
-    rank_replay_cmd.add_argument("--dispatch", help="full per-policy candidate detail for one dispatch")
-    rank_replay_cmd.add_argument("--verify-parity", action="store_true",
-                             help="assert the production policy's pick matches provisional_winner")
-    rank_replay_cmd.add_argument("--policy-module",
-                             help="registry name, dotted module path, or .py file of a "
-                                  "not-yet-installed policy to replay alongside the recorded ones")
+    rank_replay_cmd.add_argument(
+        "--dispatch", help="full per-policy candidate detail for one dispatch"
+    )
+    rank_replay_cmd.add_argument(
+        "--verify-parity",
+        action="store_true",
+        help="assert the production policy's pick matches provisional_winner",
+    )
+    rank_replay_cmd.add_argument(
+        "--policy-module",
+        help="registry name, dotted module path, or .py file of a "
+        "not-yet-installed policy to replay alongside the recorded ones",
+    )
     rank_replay_cmd.add_argument("--output", help="write the JSON report here too")
-    rank_replay_cmd.add_argument("--json", action="store_true", help="print JSON instead of a text summary")
-    rank_replay_cmd.set_defaults(func=lambda args: _rank_replay_main([
-        args.measurements,
-        *(["--dispatch", args.dispatch] if args.dispatch else []),
-        *(["--verify-parity"] if args.verify_parity else []),
-        *(["--policy-module", args.policy_module] if args.policy_module else []),
-        *(["--output", args.output] if args.output else []),
-        *(["--json"] if args.json else []),
-    ]))
+    rank_replay_cmd.add_argument(
+        "--json", action="store_true", help="print JSON instead of a text summary"
+    )
+    rank_replay_cmd.set_defaults(
+        func=lambda args: _rank_replay_main(
+            [
+                args.measurements,
+                *(["--dispatch", args.dispatch] if args.dispatch else []),
+                *(["--verify-parity"] if args.verify_parity else []),
+                *(
+                    ["--policy-module", args.policy_module]
+                    if args.policy_module
+                    else []
+                ),
+                *(["--output", args.output] if args.output else []),
+                *(["--json"] if args.json else []),
+            ]
+        )
+    )
 
     resource = sub.add_parser(
         "resource-report", help="parse and policy-check a compiler resource stream"
@@ -1163,21 +1378,44 @@ def build_parser() -> argparse.ArgumentParser:
     resource.add_argument("--manifest-hash", required=True)
     resource.add_argument("--reject-lds-gt", type=int, default=None)
     resource.add_argument("--warn-occupancy-lt", type=float, default=None)
-    resource.set_defaults(func=lambda args: _resource_report_main([
-        args.raw, "--symbol-map", args.symbol_map, "--output", args.output,
-        "--compiler-family", args.compiler_family,
-        "--compiler-major", str(args.compiler_major),
-        "--compiler-version", args.compiler_version,
-        "--architecture", args.architecture,
-        "--source-revision", args.source_revision,
-        "--manifest-hash", args.manifest_hash,
-        *(["--reject-lds-gt", str(args.reject_lds_gt)] if args.reject_lds_gt is not None else []),
-        *(["--warn-occupancy-lt", str(args.warn_occupancy_lt)] if args.warn_occupancy_lt is not None else []),
-    ]))
+    resource.set_defaults(
+        func=lambda args: _resource_report_main(
+            [
+                args.raw,
+                "--symbol-map",
+                args.symbol_map,
+                "--output",
+                args.output,
+                "--compiler-family",
+                args.compiler_family,
+                "--compiler-major",
+                str(args.compiler_major),
+                "--compiler-version",
+                args.compiler_version,
+                "--architecture",
+                args.architecture,
+                "--source-revision",
+                args.source_revision,
+                "--manifest-hash",
+                args.manifest_hash,
+                *(
+                    ["--reject-lds-gt", str(args.reject_lds_gt)]
+                    if args.reject_lds_gt is not None
+                    else []
+                ),
+                *(
+                    ["--warn-occupancy-lt", str(args.warn_occupancy_lt)]
+                    if args.warn_occupancy_lt is not None
+                    else []
+                ),
+            ]
+        )
+    )
 
     binsize = sub.add_parser(
         "candidate-binary-size",
-        help="per-candidate device .text size from a built HIP library")
+        help="per-candidate device .text size from a built HIP library",
+    )
     binsize.add_argument("library")
     binsize.add_argument("--manifest", required=True)
     binsize.add_argument("--output", required=True)
@@ -1186,18 +1424,36 @@ def build_parser() -> argparse.ArgumentParser:
     binsize.add_argument("--objdump", default=None)
     binsize.add_argument("--readelf", default=None)
     binsize.add_argument("--allow-unresolved", action="store_true")
-    binsize.set_defaults(func=lambda args: _candidate_binary_size_main([
-        args.library, "--manifest", args.manifest, "--output", args.output,
-        *(["--workdir", args.workdir] if args.workdir else []),
-        *(["--symbol-map-dir", args.symbol_map_dir] if args.symbol_map_dir else []),
-        *(["--objdump", args.objdump] if args.objdump else []),
-        *(["--readelf", args.readelf] if args.readelf else []),
-        *(["--allow-unresolved"] if args.allow_unresolved else []),
-    ]))
+    binsize.set_defaults(
+        func=lambda args: _candidate_binary_size_main(
+            [
+                args.library,
+                "--manifest",
+                args.manifest,
+                "--output",
+                args.output,
+                *(["--workdir", args.workdir] if args.workdir else []),
+                *(
+                    ["--symbol-map-dir", args.symbol_map_dir]
+                    if args.symbol_map_dir
+                    else []
+                ),
+                *(["--objdump", args.objdump] if args.objdump else []),
+                *(["--readelf", args.readelf] if args.readelf else []),
+                *(["--allow-unresolved"] if args.allow_unresolved else []),
+            ]
+        )
+    )
 
     from . import report as _report
 
     _report.build_parser(sub)
+
+    from . import impact as _impact
+    from . import kernel_fraction as _kernel_fraction
+
+    _impact.build_parser(sub)
+    _kernel_fraction.build_parser(sub)
 
     # Inventory: convert record JSONL → SQLite + inventory JSON, or load tuning measurements.
     inventory = sub.add_parser(
@@ -1330,31 +1586,37 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
 
 def _tune_journal_main(argv: list[str]) -> int:
     from . import tune_journal
+
     return tune_journal.main(argv)
 
 
 def _tune_promote_main(argv: list[str]) -> int:
     from . import tune_promotion
+
     return tune_promotion.main(argv)
 
 
 def _tune_null_fdr_main(argv: list[str]) -> int:
     from . import tune_promotion
+
     return tune_promotion.null_fdr_main(argv)
 
 
 def _experiment_main(argv: list[str]) -> int:
     from . import experiment_bundle
+
     return experiment_bundle.main(argv)
 
 
 def _ab_benchmark_main(argv: list[str]) -> int:
     from . import ab_benchmark
+
     return ab_benchmark.main(argv)
 
 
 def _campaign_build_main(argv: list[str]) -> int:
     from . import re14_real_run
+
     # REMAINDER captures a leading "--" (needed so the outer parser doesn't
     # try to consume flags like --upstream-repo itself) literally as part
     # of argv -- strip it before forwarding, same as ab_benchmark.main()
@@ -1366,21 +1628,25 @@ def _campaign_build_main(argv: list[str]) -> int:
 
 def _resource_report_main(argv: list[str]) -> int:
     from . import resource_report
+
     return resource_report.main(argv)
 
 
 def _validate_release_main(argv: list[str]) -> int:
     from . import release_validate
+
     return release_validate.main(argv)
 
 
 def _rank_replay_main(argv: list[str]) -> int:
     from . import rank_replay
+
     return rank_replay.main(argv)
 
 
 def _candidate_binary_size_main(argv: list[str]) -> int:
     from . import candidate_binary_size
+
     return candidate_binary_size.main(argv)
 
 
@@ -1389,7 +1655,10 @@ def _candidate_binary_size_main(argv: list[str]) -> int:
 
 def _load_contract_registry(args: argparse.Namespace):
     from . import experiment_contract as ec
-    contracts_path = Path(args.contracts) if args.contracts else paths.EXPERIMENT_CONTRACTS
+
+    contracts_path = (
+        Path(args.contracts) if args.contracts else paths.EXPERIMENT_CONTRACTS
+    )
     return ec, ec.load_contracts(contracts_path)
 
 
@@ -1399,6 +1668,7 @@ def cmd_experiment_validate(args: argparse.Namespace) -> int:
     cheap check before any real campaign work (same discipline as
     `patcher.apply_all(dry_run=True)` before a real build)."""
     from . import experiment_contract as ec
+
     try:
         _, registry = _load_contract_registry(args)
     except ec.ExperimentContractError as exc:
@@ -1406,16 +1676,22 @@ def cmd_experiment_validate(args: argparse.Namespace) -> int:
         return 1
     ids = [args.contract_id] if args.contract_id else sorted(registry.contracts)
     if args.contract_id and args.contract_id not in registry.contracts:
-        print(f"experiment-contract validate: no such contract {args.contract_id!r}", file=sys.stderr)
+        print(
+            f"experiment-contract validate: no such contract {args.contract_id!r}",
+            file=sys.stderr,
+        )
         return 1
     for contract_id in ids:
         contract = registry[contract_id]
-        print(f"  [ OK ] {contract_id}: {contract.title} (hash {contract.contract_hash})")
+        print(
+            f"  [ OK ] {contract_id}: {contract.title} (hash {contract.contract_hash})"
+        )
     return 0
 
 
 def cmd_experiment_list(args: argparse.Namespace) -> int:
     from . import experiment_contract as ec
+
     try:
         _, registry = _load_contract_registry(args)
     except ec.ExperimentContractError as exc:
@@ -1428,7 +1704,8 @@ def cmd_experiment_list(args: argparse.Namespace) -> int:
         contract = registry[contract_id]
         target_label = (
             f"{contract.target.kind}:{contract.target.family}"
-            if contract.target.family is not None else contract.target.kind
+            if contract.target.family is not None
+            else contract.target.kind
         )
         print(
             f"  {contract_id:<20} target={target_label:<20} "
@@ -1444,6 +1721,7 @@ def cmd_experiment_plan(args: argparse.Namespace) -> int:
     from . import config as campaign_config
     from . import experiment_contract as ec
     from .campaign_planner import CampaignPlannerError, expand_contract
+
     try:
         _, registry = _load_contract_registry(args)
         contract = registry[args.contract_id]
@@ -1454,7 +1732,10 @@ def cmd_experiment_plan(args: argparse.Namespace) -> int:
     try:
         cfg = campaign_config.load(context_config_path)
         lanes = expand_contract(
-            contract, cfg=cfg, source_name=args.source, build_name=args.build,
+            contract,
+            cfg=cfg,
+            source_name=args.source,
+            build_name=args.build,
             platform_name=args.platform,
         )
     except (campaign_config.ConfigError, CampaignPlannerError) as exc:
@@ -1469,7 +1750,9 @@ def cmd_experiment_plan(args: argparse.Namespace) -> int:
             detail += f" model={lane.model_ref}"
         if lane.boundary_dimension:
             detail += f" {lane.boundary_dimension}={lane.boundary_value}"
-        print(f"    {lane.source_name}:{lane.build_name}:{lane.platform_name} ({detail})")
+        print(
+            f"    {lane.source_name}:{lane.build_name}:{lane.platform_name} ({detail})"
+        )
     return 0
 
 
@@ -1487,6 +1770,7 @@ def cmd_experiment_run(args: argparse.Namespace) -> int:
     from .artifacts import ArtifactStore
     from .campaign_planner import CampaignPlannerError, expand_contract, run_campaign
     from .context import ProjectContext
+
     try:
         _, registry = _load_contract_registry(args)
         contract = registry[args.contract_id]
@@ -1497,7 +1781,10 @@ def cmd_experiment_run(args: argparse.Namespace) -> int:
     try:
         cfg = campaign_config.load(Path(args.config) if args.config else paths.RECIPES)
         lanes = expand_contract(
-            contract, cfg=cfg, source_name=args.source, build_name=args.build,
+            contract,
+            cfg=cfg,
+            source_name=args.source,
+            build_name=args.build,
             platform_name=args.platform,
         )
     except (campaign_config.ConfigError, CampaignPlannerError) as exc:
@@ -1521,6 +1808,7 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     this command does not itself run anything, matching how `report`
     stays a pure rendering step over already-collected evidence)."""
     from . import experiment_contract as ec
+
     try:
         _, registry = _load_contract_registry(args)
         contract = registry[args.contract_id]
@@ -1530,18 +1818,28 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     try:
         evidence = json.loads(Path(args.evidence_file).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"experiment-contract report: cannot read {args.evidence_file}: {exc}", file=sys.stderr)
+        print(
+            f"experiment-contract report: cannot read {args.evidence_file}: {exc}",
+            file=sys.stderr,
+        )
         return 1
     correctness_gate = evidence.get("correctness_gate", {})
     aggregated_effects = evidence.get("aggregated_effects", {})
     promotion_gate = evidence.get("promotion_gate") or ec.evaluate_promotion_gate(
-        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
+        contract,
+        correctness_gate=correctness_gate,
+        aggregated_effects=aggregated_effects,
         generalisation_result=evidence.get("generalisation_result"),
     )
-    print(ec.render_report(
-        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
-        promotion_gate=promotion_gate, generalisation_result=evidence.get("generalisation_result"),
-    ))
+    print(
+        ec.render_report(
+            contract,
+            correctness_gate=correctness_gate,
+            aggregated_effects=aggregated_effects,
+            promotion_gate=promotion_gate,
+            generalisation_result=evidence.get("generalisation_result"),
+        )
+    )
     return 0 if promotion_gate.get("passed") else 1
 
 
