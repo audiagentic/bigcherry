@@ -42,3 +42,5 @@ CMAKE = FilePatch(
         ),
     ),
 )
+
+PATCHES = [CMAKE]
