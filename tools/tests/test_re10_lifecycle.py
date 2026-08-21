@@ -25,11 +25,97 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bigcherry import correctness_evidence as ce  # noqa: E402
 from bigcherry import lifecycle  # noqa: E402
+from bigcherry import paths  # noqa: E402
 from bigcherry import provenance  # noqa: E402
 from bigcherry.artifacts import ArtifactLocator, ArtifactStore  # noqa: E402
 from bigcherry.context import ProjectContext  # noqa: E402
 from bigcherry.runtime_smoke import RuntimeSmokeSpec  # noqa: E402
+
+
+def _correctness_gated_dispatch_db_bytes(tmp_path: Path, *, dispatch_hex: str) -> bytes:
+    """HI67 slice 3: a real schema-6 dispatch DB carrying passing
+    correctness_evidence for the given dispatch's (signature, hardware,
+    candidate) identity, matching the row shape
+    test_promotion_stage_publishes_promoted_winners' JSONL fixture uses."""
+    db_path = tmp_path / "gate.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript((paths.SQL / "dispatch-db.sql").read_text(encoding="utf-8"))
+    hardware_hex = "33" * 16
+    conn.execute(
+        "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+        "hardware_schema, variant_set) VALUES (?, ?, 1, 1, 'inventory')",
+        ("b" * 40, "a" * 32),
+    )
+    build_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO hardware (hardware_digest, architecture, architecture_code, "
+        "wave_size, compute_units, feature_flags, canonical_json) VALUES "
+        "(?, 'gfx1100', 1, 32, 96, 0, '{}')",
+        (bytes.fromhex(hardware_hex),),
+    )
+    hardware_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO signature (signature_digest, base_digest, schema_version, op, "
+        "src0_type, src1_type, dst_type, m, n, k, canonical_json) VALUES "
+        "(?, x'02', 1, 'MUL_MAT', 'q8_0', 'f32', 'f32', 1, 1, 1, '{}')",
+        (bytes.fromhex(dispatch_hex),),
+    )
+    signature_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'native', 'mmq', 'native_wrapper', "
+        "1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    native_candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'candidate', 'mmq', "
+        "'existing_alternative', 1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+        "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', "
+        "'final', 1)",
+        (build_id, hardware_id, signature_id, bytes.fromhex(dispatch_hex), candidate_id),
+    )
+    seeds = [
+        ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
+                         max_abs_native=0.001, max_abs_candidate=0.0009,
+                         native_execution_status="ok", candidate_execution_status="ok")
+        for i in (1, 2, 3)
+    ]
+    aggregate = ce.aggregate_seed_evidence(seeds, threshold_t=5e-4)
+    conn.execute(
+        "INSERT INTO correctness_evidence (build_id, hardware_id, signature_id, "
+        "candidate_id, native_candidate_id, contract_version, threshold_t, "
+        "headroom_fraction, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+        "seed_count, tool_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'v1')",
+        (build_id, hardware_id, signature_id, candidate_id, native_candidate_id,
+         aggregate.contract_version, aggregate.threshold_t, aggregate.headroom_fraction,
+         aggregate.e_n_nmse, aggregate.e_c_nmse, aggregate.max_abs_native,
+         aggregate.max_abs_candidate, len(aggregate.seed_rows)),
+    )
+    evidence_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for row in aggregate.seed_rows:
+        conn.execute(
+            "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
+            "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+            "native_execution_status, candidate_execution_status) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
+             row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
+             row.candidate_execution_status),
+        )
+    conn.commit()
+    conn.close()
+    return db_path.read_bytes()
 
 RECORD_HEADER = {
     "kind": "header",
@@ -861,6 +947,7 @@ class PromotionAndReplayExportTests(unittest.TestCase):
                     "dispatch": "a" * 32,
                     "native": "native",
                     "signature": "a" * 32,
+                    "hardware": "33" * 16,
                     "winner": "candidate",
                     "promotion_status": "pending_bh",
                     "provisional_winner": "candidate",
@@ -890,11 +977,21 @@ class PromotionAndReplayExportTests(unittest.TestCase):
                 kind="tuning-measurements",
                 provenance=fx.seed_doc,
             )
+            # HI67 slice 3: dispatch_db is a required promotion input, carrying
+            # real correctness_evidence for this row's (signature, hardware,
+            # candidate) identity, or the correctness gate rejects it.
+            dispatch_db_ref = fx.store.publish_bytes_ref(
+                "runs/run1/tune/dispatch.sqlite",
+                _correctness_gated_dispatch_db_bytes(Path(directory), dispatch_hex="a" * 32),
+                kind="dispatch-db",
+                provenance=fx.seed_doc,
+            )
             result = lifecycle.execute_promotion_stage(
                 context=fx.context,
                 store=fx.store,
                 run_id=fx.run_id,
                 measurements=ArtifactLocator(measurements_ref.artifact_id),
+                dispatch_db=ArtifactLocator(dispatch_db_ref.artifact_id),
                 resamples=1000,
                 local_provenance_class="development",
             )

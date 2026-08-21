@@ -216,6 +216,12 @@ def main(argv: list[str] | None = None) -> int:
         print("--- E: promote winners ---")
         promotion_result = lifecycle.execute_promotion_stage(
             context=context, store=store, run_id=run_id, measurements=tune_result.measurements_ref,
+            # HI67 slice 3: the FINAL tune-stage DB for this run -- tune_result
+            # was rebound above by the direct-op stage when that ran, so this
+            # is already whichever database these measurements actually live
+            # in, never inventory_result.database_ref (an earlier, different
+            # artifact).
+            dispatch_db=tune_result.database_ref,
             local_provenance_class="production",
         )
         manifest["promoted_winners_artifact_id"] = promotion_result.promoted_winners_ref.artifact_id

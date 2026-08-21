@@ -11,15 +11,18 @@ actually emits today.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
 import random
+import sqlite3
 from pathlib import Path
 from typing import Any
 
 from .tune_journal import atomic_write, canonical
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
+from . import promotion_correctness_gate
 from . import ranking_policy
 
 SCHEMA_VERSION = 1
@@ -564,10 +567,41 @@ def simulate_null_fdr(
     }
 
 
+def _evaluate_row_correctness(
+    conn: sqlite3.Connection, row: dict[str, Any]
+) -> tuple[bool, str]:
+    """HI67 slice 3: resolve one row's real DB identity and evaluate the
+    RV49 correctness contract against it. Always returns a decision --
+    never raises -- so one row's unresolvable identity or missing evidence
+    fails closed as a rejection for THAT row, not a crash of the whole
+    promotion run."""
+    dispatch_hex = row.get("dispatch")
+    signature_hex = row.get("signature")
+    hardware_hex = row.get("hardware")
+    native_name = row.get("native")
+    candidate_name = row.get("provisional_winner")
+    if not all(isinstance(v, str) and v for v in
+               (dispatch_hex, signature_hex, hardware_hex, native_name, candidate_name)):
+        # Most commonly: this row's tuner run predates the row-level
+        # "hardware" field (HI37 territory) -- with no digest to resolve
+        # against, there is nothing to check evidence for.
+        return False, "rejected_no_correctness_evidence"
+    try:
+        identity = promotion_correctness_gate.resolve_promotion_identity(
+            conn, dispatch_hex=dispatch_hex, signature_hex=signature_hex,
+            hardware_hex=hardware_hex, native_name=native_name,
+            candidate_name=candidate_name,
+        )
+    except promotion_correctness_gate.CorrectnessGateError:
+        return False, "rejected_no_correctness_evidence"
+    return promotion_correctness_gate.evaluate_correctness_gate(conn, identity)
+
+
 def promote(
     measurements: Path,
     output: Path,
     *,
+    dispatch_db: Path,
     q: float = 0.05,
     threshold_pct: float = 1.0,
     resamples: int = 10_000,
@@ -614,6 +648,27 @@ def promote(
         hypotheses.append((dispatch, float(p_value)))
     adjusted = benjamini_hochberg(hypotheses) if hypotheses else {}
     accepted = {digest for digest, value in adjusted.items() if value <= q}
+
+    # HI67 slice 3 (RV49/RV77): a real dispatch_db is a REQUIRED promotion
+    # input -- a non-native winner must clear CPU-reference correctness
+    # evidence (correctness_evidence/correctness_evidence_seed, schema 6)
+    # as a hard AND with the statistical BH/bootstrap criteria below.
+    # Resolved in one tightly-scoped read-only pass (this function only
+    # ever SELECTs identity a real inventory.load_measurements() ingestion
+    # already wrote; it never inserts/upserts) so the connection does not
+    # need to stay open across the rest of this function's several
+    # early-raise validation paths.
+    correctness_results: dict[str, tuple[bool, str]] = {}
+    with contextlib.closing(
+        sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+    ) as dispatch_conn:
+        for row in results:
+            provisional = row.get("provisional_winner")
+            if isinstance(provisional, str) and provisional != row.get("native"):
+                correctness_results[row["dispatch"]] = _evaluate_row_correctness(
+                    dispatch_conn, row
+                )
+
     promoted_count = 0
     for row in results:
         provisional = row.get("provisional_winner")
@@ -635,12 +690,21 @@ def promote(
             resamples=resamples,
         )
         original_status = row["promotion_status"]
-        passed = (
+        statistically_passed = (
             original_status == "pending_bh"
             and row["dispatch"] in accepted
             and observed_effect >= threshold_pct
             and low > 0.0
         )
+        # HI67 slice 3: correctness is a HARD AND, never a rescue. It is
+        # only even evaluated (and can only ever REJECT, never promote) once
+        # the statistical criteria already passed -- an already-BH-rejected
+        # row keeps its own statistical rejection reason, not a correctness
+        # one, so the audit trail says why it was ACTUALLY first rejected.
+        correctness_passed, correctness_status = (
+            correctness_results.get(row["dispatch"], (False, "rejected_no_correctness_evidence"))
+        )
+        passed = statistically_passed and correctness_passed
         row["promotion"] = {
             "schema_version": SCHEMA_VERSION,
             "q": q,
@@ -663,8 +727,15 @@ def promote(
                 rejection_status = "rejected_effect"
             elif low <= 0.0:
                 rejection_status = "rejected_ci"
-            else:
+            elif not statistically_passed:
                 rejection_status = "rejected_bh"
+            else:
+                # Statistical criteria passed -- rejected purely on the
+                # correctness gate (RV49). correctness_status is always one
+                # of rejected_no_correctness_evidence/rejected_correctness_
+                # contract/rejected_correctness here, never "" (empty only
+                # means correctness_passed was True).
+                rejection_status = correctness_status
             row["promotion_status"] = rejection_status
             row["winner"] = row["native"]
             row["improvement_pct"] = 0.0
@@ -673,6 +744,9 @@ def promote(
                 "rejected_effect": "native retained below the declared effect threshold",
                 "rejected_ci": "native retained because the confidence interval crosses zero",
                 "rejected_bh": "native retained by experiment-wide promotion policy",
+                "rejected_no_correctness_evidence": "native retained: no CPU-reference correctness evidence for this candidate",
+                "rejected_correctness_contract": "native retained: correctness evidence contract/identity mismatch",
+                "rejected_correctness": "native retained: candidate failed the CPU-reference correctness headroom rule",
             }[rejection_status]
     promoted_header = dict(header)
     promoted_header["promotion_policy"] = {
@@ -706,6 +780,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry tune-promote")
     parser.add_argument("measurements", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--dispatch-db", type=Path, required=True,
+        help="dispatch database (schema 6+) this measurements file was ingested "
+             "into -- required so a non-native winner's CPU-reference correctness "
+             "evidence (HI67) can be checked as a hard AND with the statistical "
+             "promotion criteria",
+    )
     parser.add_argument("--q", type=float, default=0.05)
     parser.add_argument("--threshold-pct", type=float, default=1.0)
     parser.add_argument("--resamples", type=int, default=10_000)
@@ -714,6 +795,7 @@ def main(argv: list[str] | None = None) -> int:
         result = promote(
             args.measurements,
             args.output,
+            dispatch_db=args.dispatch_db,
             q=args.q,
             threshold_pct=args.threshold_pct,
             resamples=args.resamples,
