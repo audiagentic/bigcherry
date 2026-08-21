@@ -227,4 +227,36 @@ const char * ggml_hip_replay_resolution_name(ggml_hip_resolution_v2 outcome);
 // matching older binary but never become a stale production decision here.
 bool ggml_hip_replay_is_stale();
 
+// The loader's whole-cache rejection classification, if any. Meaningful when
+// ggml_hip_replay_init() returned false: GGML_HIP_RESOLVE_RERUN_REQUIRED for
+// an obsolete-but-recognisable producer, GGML_HIP_RESOLVE_INCOMPATIBLE for a
+// structurally wrong or corrupt file, GGML_HIP_RESOLVE_MISS when no cache was
+// configured. A loaded cache has no failure. Exposed so the offline inspect
+// tool can report the same reason the production lookups would surface, not
+// a reimplementation's guess at it.
+ggml_hip_resolution_v2 ggml_hip_replay_load_failure();
+
+// One winner slot as the loader's own tables hold it -- the exact state a
+// production lookup consumes, exposed for inspection only. The lookup hot
+// path never touches this API.
+struct ggml_hip_replay_winner_info {
+    const char * candidate_name;      // registry name, or the file's string for an unregistered entry
+    bool         registered;          // this build's registry knows the name
+    bool         stale_impl_version;  // implementation_version drifted from the registry
+    bool         unrecognized_match;  // match_kind this build does not recognise
+    bool         fresh;               // entry provenance matches this build exactly
+    uint32_t     generation;
+    uint16_t     transform_id;        // 0 = GGML_HIP_TRANSFORM_NONE
+    uint8_t      match_kind;          // see ggml_hip_replay_match_kind
+};
+
+// Visit every winner slot of the loaded cache, all keys and all generations.
+// Returns the number of slots visited (0 when no usable cache was loaded);
+// `visit` returning false stops early. Used by the offline inspect tool; no
+// production code calls it.
+size_t ggml_hip_replay_foreach_winner(
+    bool (*visit)(const ggml_hip_digest & dispatch_digest,
+                  const ggml_hip_replay_winner_info * info, void * user),
+    void * user);
+
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

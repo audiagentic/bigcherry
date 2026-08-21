@@ -30,48 +30,83 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         code, out, _ = _run(["patches", "--states", "validated,untested,rejected"])
         self.assertEqual(code, 0)
         self.assertNotIn("catalog:", out)
-        self.assertIn("36 of 36 shown selected", out)
+        self.assertIn("37 of 37 shown selected", out)
 
     def test_kind_framework_shows_only_framework_patches(self):
-        code, out, _ = _run([
-            "patches", "--kind", "framework", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--kind",
+                "framework",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("catalog:   kind=framework backend=any origin=any", out)
         self.assertIn("0100_cmake_options", out)
         self.assertNotIn("1200_rd19_single_gpu_meta_bypass", out)
-        self.assertIn("(36 total in catalog)", out)
+        self.assertIn("(37 total in catalog)", out)
 
     def test_backend_vulkan_currently_matches_nothing(self):
         # Real state of the catalog today: zero Vulkan patches exist (RE30
         # phase 3 hasn't started). The filter must say so plainly, not
         # silently print an empty table indistinguishable from an error.
-        code, out, _ = _run([
-            "patches", "--backend", "vulkan", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--backend",
+                "vulkan",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
-        self.assertIn("no patches match the given --kind/--backend/--origin filter", out)
+        self.assertIn(
+            "no patches match the given --kind/--backend/--origin filter", out
+        )
 
     def test_backend_hip_matches_every_current_patch(self):
-        code, out, _ = _run([
-            "patches", "--backend", "hip", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--backend",
+                "hip",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
-        self.assertIn("36 of 36 shown selected (36 total in catalog)", out)
+        self.assertIn("37 of 37 shown selected (37 total in catalog)", out)
 
     def test_origin_external_fork_matches_only_rdna_boost_patches(self):
-        code, out, _ = _run([
-            "patches", "--origin", "external-fork", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--origin",
+                "external-fork",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("1221_rd50_gdn_chunked_recurrence", out)
         self.assertNotIn("0100_cmake_options", out)
 
     def test_combined_filters_are_conjunctive(self):
-        code, out, _ = _run([
-            "patches", "--kind", "enhancement", "--backend", "hip",
-            "--origin", "external-fork", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--kind",
+                "enhancement",
+                "--backend",
+                "hip",
+                "--origin",
+                "external-fork",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("1221_rd50_gdn_chunked_recurrence", out)
         self.assertNotIn("0100_cmake_options", out)
@@ -82,9 +117,15 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             parser.parse_args(["patches", "--kind", "not-a-real-kind"])
 
     def test_catalog_label_column_shows_kind_and_backend(self):
-        code, out, _ = _run([
-            "patches", "--kind", "framework", "--states", "validated,untested,rejected",
-        ])
+        code, out, _ = _run(
+            [
+                "patches",
+                "--kind",
+                "framework",
+                "--states",
+                "validated,untested,rejected",
+            ]
+        )
         self.assertEqual(code, 0)
         self.assertIn("framework/hip", out)
 

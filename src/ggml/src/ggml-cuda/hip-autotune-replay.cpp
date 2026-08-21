@@ -84,6 +84,13 @@ struct Winner {
     bool                                  fresh;
     uint16_t                               transform_id; // 0 = GGML_HIP_TRANSFORM_NONE
     uint8_t                                match_kind;    // see ggml_hip_replay_match_kind
+    // The stable name as written in the file's string table. For a registered
+    // candidate the registry's own name is the canonical one (and any
+    // divergence from it is itself a finding worth reporting); for an
+    // unregistered one this is the only surviving copy of the name, because
+    // the file's string table does not outlive ggml_hip_replay_init. Load-
+    // time cost only; the lookup hot path never reads it.
+    std::string                            stored_name;
 };
 
 std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
@@ -389,6 +396,7 @@ bool ggml_hip_replay_init() {
             Winner winner = {};
             winner.candidate          = (stale_impl || unrecognized_match) ? nullptr : candidate;
             winner.stale_impl_version = stale_impl;
+            winner.stored_name        = strings + name_offset;
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);
@@ -703,6 +711,43 @@ const char * ggml_hip_replay_resolution_name(ggml_hip_resolution_v2 outcome) {
 bool ggml_hip_replay_is_stale() {
     ggml_hip_replay_init();
     return g_stale;
+}
+
+ggml_hip_resolution_v2 ggml_hip_replay_load_failure() {
+    // The loader's own classification, unchanged: MISS when nothing was
+    // configured or no cache was found, RERUN_REQUIRED / INCOMPATIBLE when a
+    // cache was rejected. Callers check ggml_hip_replay_init()'s return first
+    // and treat a loaded cache as having no failure.
+    return g_load_failure;
+}
+
+size_t ggml_hip_replay_foreach_winner(
+        bool (*visit)(const ggml_hip_digest & dispatch_digest,
+                      const ggml_hip_replay_winner_info * info, void * user),
+        void * user) {
+    if (visit == nullptr || !ggml_hip_replay_init()) {
+        return 0;
+    }
+    size_t visited = 0;
+    for (const auto & [digest, generations] : g_winners) {
+        for (const Winner & winner : generations) {
+            ggml_hip_replay_winner_info info = {};
+            info.candidate_name = winner.candidate != nullptr
+                ? winner.candidate->stable_name : winner.stored_name.c_str();
+            info.registered = winner.candidate != nullptr;
+            info.stale_impl_version = winner.stale_impl_version;
+            info.unrecognized_match = winner.match_kind != GGML_HIP_REPLAY_MATCH_EXACT;
+            info.fresh = winner.fresh;
+            info.generation = winner.generation;
+            info.transform_id = winner.transform_id;
+            info.match_kind = winner.match_kind;
+            ++visited;
+            if (!visit(digest, &info, user)) {
+                return visited;
+            }
+        }
+    }
+    return visited;
 }
 
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH
