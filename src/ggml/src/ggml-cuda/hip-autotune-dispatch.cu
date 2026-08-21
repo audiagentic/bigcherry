@@ -38,6 +38,9 @@
 #ifdef GGML_HIP_DISPATCH_REPLAY
 #include "hip-autotune-replay.h"
 #endif
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+#include "hip-autotune-transform.cuh"
+#endif
 
 // The generated table. Included exactly once, here, after the family entry
 // points it references have been declared.
@@ -252,6 +255,13 @@ struct Binding {
     const ggml_hip_candidate_descriptor * candidate;
     ggml_hip_variant_params               variant;
     bool                                  from_cache;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI31: see ggml_hip_resolved_dispatch's own comment (hip-autotune-
+    // types.h) -- same nullptr-means-direct contract, carried through the
+    // process cache so a warm-path hit does not lose which transform (if
+    // any) a cold-path resolve installed.
+    const ggml_hip_routing_transformation * transform = nullptr;
+#endif
 };
 
 // The resolver is entered for every matmul. Keep a small per-thread binding
@@ -407,6 +417,45 @@ void ggml_hip_log_tune_kept_native(const ggml_hip_digest & dispatch_digest,
 
 // ---------------------------------------------------------------- resolution
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI31: the second-layer validation ggml_hip_replay_lookup()'s own contract
+// (hip-autotune-replay.h) requires every caller to run before trusting a
+// transformed replay entry -- the loader only has the ORIGINAL signature
+// and cannot itself apply the transform. Also reused by the final
+// blacklist/arch safety net further down: a transformed binding needs
+// this SAME re-validation there, never the plain can_execute(original sig)
+// check that net runs for an untransformed one (checking a transformed
+// candidate against the untransformed signature is exactly the wrong
+// question -- see hip-autotune-replay.h's comment on the same point).
+static bool transformed_candidate_still_valid(
+        const ggml_hip_candidate_descriptor * candidate,
+        const ggml_hip_routing_transformation * transform,
+        const ggml_hip_dispatch_signature_v1 & sig,
+        const ggml_hip_launch_context & lc,
+        const ggml_hip_hardware_key_v1 & hw) {
+    if (candidate == nullptr || transform == nullptr) {
+        return false;
+    }
+    if (!transform->equivalence_verified) {
+        return false;
+    }
+    if (!ggml_hip_transform_signature_is_eligible(sig) || !transform->can_apply(sig)) {
+        return false;
+    }
+    ggml_hip_transform_ctx ctx = {};
+    ggml_hip_dispatch_signature_v1 transformed_sig = {};
+    ggml_hip_launch_context transformed_lc;
+    if (!transform->apply(lc, &ctx, &transformed_sig, &transformed_lc)) {
+        return false;
+    }
+    if (candidate->family != transform->target_family) {
+        return false;
+    }
+    return ggml_hip_candidate_supports_arch(*candidate, hw) &&
+           candidate->can_execute(candidate, transformed_sig, hw);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
@@ -429,6 +478,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         resolved.candidate  = thread_binding.candidate;
         resolved.variant    = thread_binding.variant;
         resolved.from_cache = thread_binding.from_cache;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        resolved.transform  = thread_binding.transform;
+#endif
         return resolved;
     }
 
@@ -575,20 +627,35 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         const bool exact = ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
                                                    &winner, &variant, &transform_id)
                             == GGML_HIP_RESOLVE_EXACT;
-        // HI31 (interim, this slice): ggml_hip_replay_lookup()'s EXACT is
-        // NECESSARY but not SUFFICIENT for a transformed entry (transform_id
-        // != 0) -- see that function's declaration in hip-autotune-replay.h.
-        // The second-layer validation (resolve the transform, confirm
-        // equivalence_verified, apply() to get the real transformed
-        // signature, re-check can_execute against THAT) and the Binding
-        // extension needed to actually dispatch through it are not wired up
-        // yet, so a transformed entry is deliberately treated as unusable
-        // here rather than half-validated -- falls back to native and
-        // records a miss, exactly like any other unusable entry.
-        if (exact && transform_id == 0) {
+        // HI31: ggml_hip_replay_lookup()'s EXACT is NECESSARY but not
+        // SUFFICIENT for a transformed entry (transform_id != 0) -- see that
+        // function's declaration in hip-autotune-replay.h. The loader only
+        // has the ORIGINAL signature; the second-layer validation (resolve
+        // the transform, confirm equivalence_verified, apply() to get the
+        // real transformed signature, re-check can_execute against THAT)
+        // happens here, where the real ggml_hip_launch_context is available.
+        bool usable = exact;
+        const ggml_hip_routing_transformation * winner_transform = nullptr;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        if (exact && transform_id != 0) {
+            winner_transform = ggml_hip_transform_find((ggml_hip_transform_id) transform_id);
+            usable = transformed_candidate_still_valid(winner, winner_transform, sig, lc, hw);
+        }
+#else
+        // No transform machinery compiled into this build at all: a
+        // transformed entry can never be validated, so it is unusable here
+        // regardless of what the loader returned.
+        if (exact && transform_id != 0) {
+            usable = false;
+        }
+#endif
+        if (usable) {
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+            binding.transform  = winner_transform;
+#endif
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
             ggml_hip_replay_record_hit(dispatch_digest, signature_digest, winner);
 #endif
@@ -603,6 +670,21 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
     // A stored winner that cannot run on this hardware, or that has since been
     // blacklisted, must not be launched merely because it was once the winner.
+    // HI31: a transformed binding needs the transform-aware re-validation
+    // (checking the candidate against the TRANSFORMED signature), never the
+    // plain can_execute(original sig) check below -- that check would
+    // reject a legitimately transformed candidate for the same reason the
+    // transform existed in the first place.
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    if (binding.transform != nullptr) {
+        if (!transformed_candidate_still_valid(binding.candidate, binding.transform, sig, lc, hw)) {
+            binding.candidate  = native.candidate;
+            binding.variant    = native.variant;
+            binding.from_cache = false;
+            binding.transform  = nullptr;
+        }
+    } else
+#endif
     if (binding.candidate != nullptr
             && (!ggml_hip_candidate_supports_arch(*binding.candidate, hw)
                 || !binding.candidate->can_execute(binding.candidate, sig, hw))) {
@@ -619,16 +701,78 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.candidate  = binding.candidate;
     resolved.variant    = binding.variant;
     resolved.from_cache = binding.from_cache;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    resolved.transform   = binding.transform;
+#endif
     if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
         g_thread_bindings.insert(ctx.device, sig, binding);
     }
     return resolved;
 }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI31: apply()'s only documented failure mode is "can_apply should already
+// have prevented this -- a bug, not a routine outcome" (hip-autotune-types.h).
+// GGML_ASSERT always aborts in this codebase (it is not compiled out under
+// NDEBUG, unlike C's assert()), so using it here would turn one bad
+// transform into a crashed inference process -- exactly the outcome a
+// "fail closed" policy exists to avoid. Instead: log once per signature
+// (so the supposedly-impossible case leaves real evidence, not silence)
+// and fail closed to a FRESH native selection recomputed from `lc` --
+// never `bound.candidate`, which names the transformed candidate and is
+// the wrong thing to launch untransformed.
+static void launch_native_fallback_after_transform_failure(
+        const ggml_hip_routing_transformation * transform,
+        const ggml_hip_launch_context & lc) {
+    static std::mutex once_mutex;
+    static std::set<std::string> logged;
+    {
+        std::lock_guard<std::mutex> lock(once_mutex);
+        if (logged.insert(transform->name).second) {
+            GGML_LOG_WARN(
+                "bigcherry: transform '%s' failed to apply at dispatch time "
+                "(can_apply() should have prevented this) -- falling back "
+                "to native selection for this signature\n", transform->name);
+        }
+    }
+    const ggml_hip_native_selection native =
+        ggml_hip_native_select(*lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst);
+    if (!native.valid || native.candidate == nullptr) {
+        return; // Nothing safe to launch; upstream's own dispatch never ran.
+    }
+    ggml_hip_candidate_descriptor native_effective = *native.candidate;
+    native_effective.variant = native.variant;
+    native_effective.launch(&native_effective, lc);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 void ggml_hip_dispatch_launch(const ggml_hip_resolved_dispatch & bound,
                               const ggml_hip_launch_context & lc) {
     GGML_ASSERT(bound.candidate != nullptr);
     GGML_ASSERT(bound.candidate->launch != nullptr);
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI31: nullptr is the fast path -- no allocation, no signature rebuild,
+    // no tensor-header rewrite, no registry lookup, no extra sync, one
+    // predictable branch. Feature-off builds (below) never see this check
+    // at all, so the ordinary path is compile-time unchanged there.
+    if (bound.transform != nullptr) {
+        ggml_hip_transform_ctx ctx = {};
+        ggml_hip_launch_context transformed_lc;
+        if (bound.transform->apply(lc, &ctx, /*out_sig=*/nullptr, &transformed_lc)) {
+            ggml_hip_transform_launch(bound.transform, bound.candidate,
+                                      bound.variant, &ctx, transformed_lc);
+        } else {
+            launch_native_fallback_after_transform_failure(bound.transform, lc);
+        }
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+        if (ggml_hip_dispatch_mode() == GGML_HIP_DISPATCH_MODE_RECORD) {
+            ggml_hip_record_end_observation();
+        }
+#endif
+        return;
+    }
+#endif // GGML_HIP_ROUTING_TRANSFORM
 
     // The descriptor carries the variant for a fixed candidate, but a resolved
     // dispatch may override it (a tuner probe, a seeded winner). Launching

@@ -141,7 +141,15 @@ def test_forced_record_binds_resolved_candidate_and_clears_metadata_tls():
     assert "resolved.from_cache = false;" in resolve
     assert "} else {" in resolve
     assert "ggml_hip_record_end_observation();" in launch
-    assert launch.index("effective.launch(&effective, lc);") < launch.index(
+    # HI31: ggml_hip_record_end_observation() now also appears earlier in
+    # this function, inside the (separately return-terminated) transformed-
+    # route branch -- that occurrence pairs with its own
+    # ggml_hip_transform_launch() call, not with the ordinary path's
+    # effective.launch() below. rindex here deliberately picks the LAST
+    # occurrence (the ordinary path's own, at the end of the function) so
+    # this still checks the one invariant it was written for: the ordinary
+    # ("no transform") launch call happens before ITS observation-end call.
+    assert launch.index("effective.launch(&effective, lc);") < launch.rindex(
         "ggml_hip_record_end_observation();")
     assert "g_has_active_key = false;" in RECORD
 
