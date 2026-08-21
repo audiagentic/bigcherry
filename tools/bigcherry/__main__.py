@@ -124,8 +124,10 @@ def cmd_pull(args: argparse.Namespace) -> int:
     # RE48: never move the checkout while a pin-transition marker exists
     # but is uncommitted (the bump's declaration commit is still missing).
     marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
-    if marker_path.is_file() and \
-            pin_transition.committed_state(marker_path) != "committed-clean":
+    if (
+        marker_path.is_file()
+        and pin_transition.committed_state(marker_path) != "committed-clean"
+    ):
         print(
             "refusing: releases/pin-transition.json (the pin-transition "
             "marker) is uncommitted.",
@@ -676,20 +678,27 @@ def cmd_build_new(args: argparse.Namespace) -> int:
             artifacts_dir=context.project_root / "artifacts",
         )
         pin_failures, pin_mid_rebase = pin_status.campaign_preflight(
-            context.upstream_repo, pin_repo_paths)
+            context.upstream_repo, pin_repo_paths
+        )
     except Exception as exc:
         print(f"build: pin preflight error: {exc}", file=sys.stderr)
         return 1
     if pin_failures:
         for reason in pin_failures:
             print(f"build: pin preflight FAIL: {reason}", file=sys.stderr)
-        print("build: run `bigcherry pin-status` for the full report and see "
-              "docs/reference/PIN_BUMP.md (fail closed)", file=sys.stderr)
+        print(
+            "build: run `bigcherry pin-status` for the full report and see "
+            "docs/reference/PIN_BUMP.md (fail closed)",
+            file=sys.stderr,
+        )
         return 1
     if pin_mid_rebase:
-        print("WARNING: tree is mid-rebase (a declared bump is in flight); "
-              "proceeding because the pipeline's source identity is "
-              "revision-bound.", file=sys.stderr)
+        print(
+            "WARNING: tree is mid-rebase (a declared bump is in flight); "
+            "proceeding because the pipeline's source identity is "
+            "revision-bound.",
+            file=sys.stderr,
+        )
 
     architectures = tuple(args.arch.split(",")) if args.arch else ()
     inventory = Path(args.inventory) if args.inventory else None
@@ -1074,6 +1083,30 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------- main
 
 
+def cmd_replay_inspect(args: argparse.Namespace) -> int:
+    """HI15/HI16: registry + cache inspection through the real C++ loader."""
+    from . import replay_inspect
+
+    tool = replay_inspect.find_tool(args.tool)
+    report = replay_inspect.run_tool(
+        tool,
+        cache=Path(args.cache) if args.cache else None,
+        interpreter=args.tool_interpreter or None,
+    )
+    if args.manifest:
+        report["manifest"] = replay_inspect.manifest_agreement(
+            report, Path(args.manifest)
+        )
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(replay_inspect.format_report(report))
+    # The C++ exit code is the report's own classification; carry it through
+    # so the tool composes as a gate (0 ok, 1 registry anomaly, 3 cache
+    # rejected, 4 loaded-but-nothing-usable).
+    return report["_exit"]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bigcherry", description=__doc__)
     parser.add_argument("--version", action="version", version=__version__)
@@ -1238,6 +1271,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-remotes", action="store_true", help="probe every configured tree"
     )
     pin_status_cmd.set_defaults(func=cmd_pin_status)
+
+    replay_inspect_cmd = sub.add_parser(
+        "replay-inspect",
+        help=(
+            "HI15/HI16: inspect the registry and a replay cache through the "
+            "real C++ loader; --manifest adds catalog<->registry agreement"
+        ),
+    )
+    replay_inspect_cmd.add_argument(
+        "cache",
+        nargs="?",
+        default=None,
+        help="replay cache to inspect (omit for registry only)",
+    )
+    replay_inspect_cmd.add_argument(
+        "--manifest",
+        default=None,
+        help="build manifest JSON; check catalog<->registry agreement",
+    )
+    replay_inspect_cmd.add_argument(
+        "--tool",
+        default=None,
+        help="path to the hip-autotune-inspect binary "
+        "(default: $BIGCHERRY_INSPECT_TOOL, then build dirs)",
+    )
+    replay_inspect_cmd.add_argument(
+        "--tool-interpreter",
+        nargs="*",
+        default=None,
+        metavar="ARG",
+        help="command prefix for invoking the tool (e.g. a python script "
+        "stand-in); the tool path is appended to it",
+    )
+    replay_inspect_cmd.add_argument(
+        "--json", action="store_true", help="machine-readable report"
+    )
+    replay_inspect_cmd.set_defaults(func=cmd_replay_inspect)
 
     # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
     # else -- a canonical-v2 interface only, never a translation layer for
@@ -1462,6 +1532,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tune_promote_cmd.add_argument("measurements")
     tune_promote_cmd.add_argument("--output", required=True)
+    tune_promote_cmd.add_argument(
+        "--dispatch-db",
+        required=True,
+        help="dispatch database (schema 6+) this measurements file was ingested "
+        "into, e.g. via `bigcherry inventory tuning` -- required so a "
+        "non-native winner's CPU-reference correctness evidence (HI67) "
+        "can be checked as a hard AND with the statistical promotion "
+        "criteria",
+    )
     tune_promote_cmd.add_argument("--q", type=float, default=0.05)
     tune_promote_cmd.add_argument("--threshold-pct", type=float, default=1.0)
     tune_promote_cmd.add_argument("--resamples", type=int, default=10_000)
@@ -1471,6 +1550,8 @@ def build_parser() -> argparse.ArgumentParser:
                 args.measurements,
                 "--output",
                 args.output,
+                "--dispatch-db",
+                args.dispatch_db,
                 "--q",
                 str(args.q),
                 "--threshold-pct",
