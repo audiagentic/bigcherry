@@ -615,12 +615,35 @@ def read_winners(measurements: Path) -> set[str]:
 
 
 def read_correctness_evidence(measurements: Path) -> dict[str, dict[str, Any]]:
-    """Reduce successful candidate checks into production manifest evidence.
+    """Reduce successful candidate checks into manifest evidence.
 
     Replay candidates must carry evidence from the exact tune artifact that
     selected them.  The tuner records per-signature error metrics; retain the
     worst observed finite metrics for each candidate and bind them to the
     producer's signature/build namespace.
+
+    HI67 (RV49/RV77): this reduces NATIVE-RELATIVE deltas (candidate GPU
+    output vs native GPU output on the SAME hardware) -- a cheap local
+    screening check, and NOT the CPU-reference production correctness proof
+    RV49's contract requires (native itself has its own floating-point error
+    relative to the true CPU-reference computation, so "close to native"
+    does not bound absolute correctness -- see tools/bigcherry/correctness_
+    evidence.py's module docstring for the full contract, and the real
+    q4_1 k=32 RDNA2 case, RV08, this gap already caused). The tolerances
+    below (nmse<=1e-6, max_abs<=1e-2) are this screening check's own
+    thresholds, called `delta_nmse_vs_native` conceptually, not an RV49
+    threshold_t/headroom_fraction pair.
+
+    tools/bigcherry/tune_promotion.py's promotion stage already requires the
+    REAL RV49 evidence (correctness_evidence/correctness_evidence_seed,
+    schema 6, via promotion_correctness_gate.py) as a hard AND with its
+    statistical criteria before a winner can be promoted. This function's
+    consumer (build_manifest()'s PRODUCTION_VARIANT_SETS gate, below) has
+    NOT yet been switched to require that same RV49 evidence -- doing so
+    needs build_manifest() to gain a dispatch_db input and resolve manifest
+    candidates' identity against it, a separate, larger integration than
+    promotion's (a different pipeline stage, a different identity-resolution
+    shape) and is tracked as follow-up scope, not implemented here.
     """
     evidence: dict[str, dict[str, Any]] = {}
     header: dict[str, Any] = {}

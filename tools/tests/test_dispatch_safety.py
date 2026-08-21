@@ -203,12 +203,16 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         end = source.index("// E3: max()", start)
         function = source[start:end]
 
-        self.assertIn("g_host_sync_overhead_valid = false;", function)
+        # HI64: cache storage moved from two module-global doubles to a
+        # per-device PerDeviceState<HostSyncOverheadCache> (see the class's
+        # own comment) -- the reset-on-incomplete-lifecycle contract this
+        # test checks is unchanged, just spelled as a .store() call now.
+        self.assertIn("g_host_sync_overhead.store(HostSyncOverheadCache{});", function)
         self.assertIn("if (!destroy_ok || samples.empty())", function)
         self.assertIn("if (!std::isfinite(overhead) || overhead < 0.0)", function)
         self.assertLess(
             function.index("const bool destroy_ok = destroy_events();"),
-            function.index("g_host_sync_overhead_valid = true;"),
+            function.index("g_host_sync_overhead.store(HostSyncOverheadCache{overhead, true});"),
         )
 
     def test_blas_observation_telemetry_uses_existing_workspace_hook(self):
@@ -412,7 +416,10 @@ class TestDispatchSafetyContracts(unittest.TestCase):
 
     def test_measurement_failure_poison_suppresses_later_gpu_work(self):
         tuner = TUNER.read_text(encoding="utf-8")
-        self.assertIn("std::atomic<bool> g_tuner_poisoned{false};", tuner)
+        # HI64: g_tuner_poisoned moved from a single std::atomic<bool> to a
+        # PerDeviceState<bool> (per-device poison scoping) -- every .load()/
+        # .store() call site below is unchanged by that move.
+        self.assertIn("PerDeviceState<bool> g_tuner_poisoned(false);", tuner)
         failure_helper = tuner.index(
             "static void disable_smi_after_measurement_failure()"
         )
@@ -590,6 +597,147 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("signature_digest", summary)
         self.assertIn("hardware_digest", summary)
         self.assertLess(summary.index("signature_digest"), summary.index("winner"))
+
+
+class TestHi64PerDevicePoisonScoping(unittest.TestCase):
+    """HI64 (RV49 F6 scope extension, 2026-08-17 GPT adjudication): a
+    transient fault on one HIP device must not poison tuning on every other
+    device sharing the process. g_tuner_poisoned/g_smi_runtime_disabled/
+    g_host_sync_overhead moved from process-global flags to a
+    PerDeviceState<T> template keyed by the current hipGetDevice() value."""
+
+    def test_per_device_state_class_keys_by_current_device(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("template <typename T>\nclass PerDeviceState {")
+        end = tuner.index("};", tuner.index("std::unordered_map<int, T> values_;", start)) + 2
+        cls = tuner[start:end]
+        self.assertIn("static int current_device()", cls)
+        self.assertIn("hipGetDevice(&device)", cls)
+        self.assertIn("std::lock_guard<std::mutex> lock(mutex_);", cls)
+        self.assertIn("std::unordered_map<int, T> values_;", cls)
+        # store() and load() both resolve the CURRENT device internally --
+        # no caller anywhere passes a device in, so every existing
+        # .load()/.store() call site needed zero changes.
+        load_start = cls.index("T load(")
+        load_end = cls.index("void store(")
+        self.assertIn("current_device()", cls[load_start:load_end])
+
+    def test_no_time_based_or_implicit_auto_clear(self):
+        # GPT requirement 2: no time-based expiry, no clear-after-one-
+        # success. PerDeviceState never removes a key once set -- store()
+        # only ever inserts/overwrites, load() never deletes, and grepping
+        # the whole file confirms no .erase(/.clear( call exists on any of
+        # the three PerDeviceState instances.
+        tuner = TUNER.read_text(encoding="utf-8")
+        for symbol in ("g_tuner_poisoned", "g_smi_runtime_disabled", "g_host_sync_overhead"):
+            self.assertNotIn(f"{symbol}.erase(", tuner)
+            self.assertNotIn(f"{symbol}.clear(", tuner)
+
+    def test_tuner_never_calls_hip_device_reset(self):
+        # GPT requirement 3: the tuner must never call hipDeviceReset()
+        # itself -- could invalidate allocations owned by llama.cpp. Strip
+        # line comments first -- this file's own HI64 documentation
+        # mentions the symbol by name to explain why it is absent.
+        tuner = TUNER.read_text(encoding="utf-8")
+        code_lines = [
+            line for line in tuner.splitlines() if not line.strip().startswith("//")
+        ]
+        self.assertNotIn("hipDeviceReset(", "\n".join(code_lines))
+
+    def test_three_globals_are_per_device_scoped(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn("PerDeviceState<bool> g_tuner_poisoned(false);", tuner)
+        self.assertIn("PerDeviceState<bool> g_smi_runtime_disabled(false);", tuner)
+        self.assertIn(
+            "PerDeviceState<HostSyncOverheadCache> g_host_sync_overhead(HostSyncOverheadCache{});",
+            tuner,
+        )
+
+    def test_host_sync_overhead_header_report_reads_through_per_device_load(self):
+        # ggml_hip_tuner_flush()'s JSON header must report the calling
+        # device's cache, not a stale value some other device happened to
+        # compute first under the old process-global scheme.
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        flush = flush[: flush.index("\n}\n", flush.index("kind\\\":\\\"header"))]
+        self.assertIn("const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();", flush)
+        self.assertIn("sync_overhead.us, sync_overhead.valid", flush)
+
+
+class TestHi29TransformRecording(unittest.TestCase):
+    """HI29: transform-attempt / transform-gap recording, written to a
+    separate <GGML_HIP_DISPATCH_DB>.transforms.jsonl alongside the ordinary
+    measurements.jsonl, guarded by GGML_HIP_ROUTING_TRANSFORM. Kept
+    structurally separate from Result -- offline agent-driven pattern
+    analysis across many signatures, not per-signature dispatch identity."""
+
+    def test_record_structs_and_accumulators_declared(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn("struct TransformAttemptRecord {", tuner)
+        self.assertIn("struct TransformGapRecord {", tuner)
+        self.assertIn("struct TransformTriedEntry {", tuner)
+        self.assertIn("std::vector<TransformAttemptRecord> g_transform_attempts;", tuner)
+        self.assertIn("std::vector<TransformGapRecord>     g_transform_gaps;", tuner)
+        self.assertIn("std::mutex                          g_transform_mutex;", tuner)
+
+    def test_record_functions_are_mutex_guarded(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        attempt_fn = tuner.index("void ggml_hip_record_transform_attempt(")
+        attempt_end = tuner.index("}", attempt_fn)
+        attempt_body = tuner[attempt_fn:attempt_end]
+        self.assertIn("std::lock_guard<std::mutex> lock(g_transform_mutex);", attempt_body)
+        self.assertIn("g_transform_attempts.push_back(record);", attempt_body)
+
+        gap_fn = tuner.index("void ggml_hip_record_transform_gap(")
+        gap_end = tuner.index("}", gap_fn)
+        gap_body = tuner[gap_fn:gap_end]
+        self.assertIn("std::lock_guard<std::mutex> lock(g_transform_mutex);", gap_body)
+        self.assertIn("g_transform_gaps.push_back(record);", gap_body)
+
+    def test_recording_machinery_is_guarded_behind_routing_transform_flag(self):
+        # Everything HI29 added must be compiled out when
+        # GGML_HIP_ROUTING_TRANSFORM is off -- same discipline as HI27/HI28's
+        # own guard (standards 12.2: a production replay build carries no
+        # symbol it does not dispatch through).
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("#ifdef GGML_HIP_ROUTING_TRANSFORM\n// bigcherry (HI29)")
+        end = tuner.index("#endif // GGML_HIP_ROUTING_TRANSFORM", start)
+        block = tuner[start:end]
+        self.assertIn("struct TransformAttemptRecord {", block)
+        self.assertIn("struct TransformGapRecord {", block)
+        self.assertIn("void ggml_hip_record_transform_attempt(", block)
+        self.assertIn("void ggml_hip_record_transform_gap(", block)
+
+    def test_flush_writes_a_separate_transforms_file_with_atomic_crash_safety(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        transform_block_start = flush.index("#ifdef GGML_HIP_ROUTING_TRANSFORM")
+        transform_block = flush[transform_block_start:]
+        self.assertIn('std::string transforms_path = std::string(path) + ".transforms.jsonl";', transform_block)
+        self.assertIn("ggml_hip_atomic_begin(transforms_path.c_str(), transforms_atomic)", transform_block)
+        self.assertIn("ggml_hip_atomic_commit(transforms_atomic)", transform_block)
+        # Separate atomic file from measurements.jsonl -- one crash-safety
+        # unit each, so a transforms-file write failure cannot corrupt or
+        # block the (already-committed, by this point) measurements file.
+        measurements_commit = flush.index("ggml_hip_atomic_commit(measurements_atomic)")
+        self.assertLess(measurements_commit, transform_block_start)
+
+    def test_gap_record_serializes_every_tried_transform_with_its_reason(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        gap_loop_start = flush.index("for (const TransformGapRecord & r : g_transform_gaps)")
+        gap_loop = flush[gap_loop_start : gap_loop_start + 1200]
+        self.assertIn('transformations_tried', gap_loop)
+        self.assertIn("r.tried[i].transform_id", gap_loop)
+        self.assertIn("r.tried[i].rejection_reason.c_str()", gap_loop)
+
+    def test_attempt_record_carries_both_timings_and_correctness_metrics(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        struct_start = tuner.index("struct TransformAttemptRecord {")
+        struct_end = tuner.index("\n};", struct_start)
+        struct_body = tuner[struct_start:struct_end]
+        for field in ("original_us", "transformed_us", "improvement_pct", "nmse", "max_abs_error"):
+            self.assertIn(field, struct_body)
 
 
 if __name__ == "__main__":

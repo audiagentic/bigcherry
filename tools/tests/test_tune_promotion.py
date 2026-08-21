@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,107 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bigcherry import correctness_evidence as ce  # noqa: E402
 from bigcherry import tune_promotion  # noqa: E402
+
+SCHEMA_SQL = Path(__file__).resolve().parents[2] / "sql" / "dispatch-db.sql"
+HARDWARE_HEX = "33" * 16
+
+
+def empty_dispatch_db(root: Path) -> Path:
+    """A real, schema-migrated dispatch DB with no rows -- the fixture for
+    every existing test that never expected a real promotion (HI67 slice 3
+    made dispatch_db a required promote() input; these rows have no
+    correctness evidence, so they can only ever be rejected on the
+    correctness gate if they'd otherwise have promoted -- see
+    correctness_gated_dispatch_db() for the fixture that DOES promote)."""
+    path = root / "dispatch.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+    conn.close()
+    return path
+
+
+def correctness_gated_dispatch_db(root: Path, *, dispatch_hex: str) -> Path:
+    """A dispatch DB carrying real, passing correctness_evidence for the
+    given dispatch's (signature, hardware, candidate) identity -- for tests
+    that need a row to actually reach 'promoted' post-HI67."""
+    path = root / "dispatch.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+    conn.execute(
+        "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+        "hardware_schema, variant_set) VALUES (?, ?, 1, 1, 'inventory')",
+        ("a" * 40, "a" * 32),
+    )
+    build_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO hardware (hardware_digest, architecture, architecture_code, "
+        "wave_size, compute_units, feature_flags, canonical_json) VALUES "
+        "(?, 'gfx1100', 1, 32, 96, 0, '{}')",
+        (bytes.fromhex(HARDWARE_HEX),),
+    )
+    hardware_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO signature (signature_digest, base_digest, schema_version, op, "
+        "src0_type, src1_type, dst_type, m, n, k, canonical_json) VALUES "
+        "(?, x'02', 1, 'MUL_MAT', 'q8_0', 'f32', 'f32', 1, 1, 1, '{}')",
+        (bytes.fromhex(dispatch_hex),),
+    )
+    signature_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'native', 'mmq', 'native_wrapper', "
+        "1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    native_candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'candidate', 'mmq', "
+        "'existing_alternative', 1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+        "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', "
+        "'final', 1)",
+        (build_id, hardware_id, signature_id, bytes.fromhex(dispatch_hex), candidate_id),
+    )
+    seeds = [
+        ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
+                         max_abs_native=0.001, max_abs_candidate=0.0009,
+                         native_execution_status="ok", candidate_execution_status="ok")
+        for i in (1, 2, 3)
+    ]
+    aggregate = ce.aggregate_seed_evidence(seeds, threshold_t=5e-4)
+    conn.execute(
+        "INSERT INTO correctness_evidence (build_id, hardware_id, signature_id, "
+        "candidate_id, native_candidate_id, contract_version, threshold_t, "
+        "headroom_fraction, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+        "seed_count, tool_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'v1')",
+        (build_id, hardware_id, signature_id, candidate_id, native_candidate_id,
+         aggregate.contract_version, aggregate.threshold_t, aggregate.headroom_fraction,
+         aggregate.e_n_nmse, aggregate.e_c_nmse, aggregate.max_abs_native,
+         aggregate.max_abs_candidate, len(aggregate.seed_rows)),
+    )
+    evidence_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for row in aggregate.seed_rows:
+        conn.execute(
+            "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
+            "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+            "native_execution_status, candidate_execution_status) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
+             row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
+             row.candidate_execution_status),
+        )
+    conn.commit()
+    conn.close()
+    return path
 
 
 def result(dispatch: str, p: float, winner: float) -> dict:
@@ -20,6 +121,7 @@ def result(dispatch: str, p: float, winner: float) -> dict:
         "dispatch": dispatch,
         "native": "native",
         "signature": signature,
+        "hardware": HARDWARE_HEX,
         "winner": "candidate",
         "promotion_status": "pending_bh",
         "provisional_winner": "candidate",
@@ -83,7 +185,9 @@ class PromotionTests(unittest.TestCase):
                 "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
                 encoding="utf-8",
             )
-            report = tune_promotion.promote(source, output, resamples=1000)
+            report = tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root), resamples=1000
+            )
             self.assertEqual(report["hypotheses"], 1)
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(promoted[1]["promotion_status"], "confirmation_rejected")
@@ -101,7 +205,9 @@ class PromotionTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 tune_promotion.PromotionError, "does not match"
             ):
-                tune_promotion.promote(source, output, resamples=1000)
+                tune_promotion.promote(
+                    source, output, dispatch_db=empty_dispatch_db(root), resamples=1000
+                )
 
     def test_rejection_reason_is_classified(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -112,7 +218,10 @@ class PromotionTests(unittest.TestCase):
                 "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
                 encoding="utf-8",
             )
-            tune_promotion.promote(source, output, threshold_pct=1.0, resamples=1000)
+            tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root),
+                threshold_pct=1.0, resamples=1000,
+            )
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
 
@@ -128,7 +237,11 @@ class PromotionTests(unittest.TestCase):
             source.write_text(
                 "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
             )
-            report = tune_promotion.promote(source, output, resamples=1000)
+            report = tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                resamples=1000,
+            )
             promoted = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(report["promoted"], 1)
             self.assertEqual(promoted[1]["promotion_status"], "promoted")
@@ -181,7 +294,9 @@ class PromotionTests(unittest.TestCase):
             row.pop("promotion_status")
             source.write_text(json.dumps(self.HEADER) + "\n" + json.dumps(row) + "\n")
             with self.assertRaisesRegex(tune_promotion.PromotionError, "pending_bh"):
-                tune_promotion.promote(source, root / "out")
+                tune_promotion.promote(
+                    source, root / "out", dispatch_db=empty_dispatch_db(root)
+                )
 
     def test_promotion_is_deterministic_for_same_input(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -195,8 +310,13 @@ class PromotionTests(unittest.TestCase):
             source.write_text(
                 "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
             )
-            first = tune_promotion.promote(source, root / "out1.jsonl", resamples=1000)
-            second = tune_promotion.promote(source, root / "out2.jsonl", resamples=1000)
+            db = empty_dispatch_db(root)
+            first = tune_promotion.promote(
+                source, root / "out1.jsonl", dispatch_db=db, resamples=1000
+            )
+            second = tune_promotion.promote(
+                source, root / "out2.jsonl", dispatch_db=db, resamples=1000
+            )
             self.assertEqual(first["content_hash"], second["content_hash"])
 
     def test_ranking_coverage_ignores_synthetic_twin(self):
@@ -550,6 +670,64 @@ class PromotionTests(unittest.TestCase):
         ]
         header = dict(self.HEADER, production_policy="latency-v1")
         tune_promotion._validate_policy_identity(row, header)
+
+
+class CorrectnessGateIntegrationTests(unittest.TestCase):
+    """HI67 slice 3: the correctness gate is a HARD AND with the existing
+    BH/bootstrap statistical criteria, exercised through the real promote()
+    entry point end to end (not just promotion_correctness_gate.py in
+    isolation)."""
+
+    HEADER = PromotionTests.HEADER
+
+    def _promote_one_row(self, root: Path, dispatch_db: Path):
+        source, output = root / "source.jsonl", root / "promoted.jsonl"
+        row = result("a" * 32, 0.001, 95.0)  # statistically a clean promotion
+        source.write_text(
+            "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+            encoding="utf-8",
+        )
+        report = tune_promotion.promote(
+            source, output, dispatch_db=dispatch_db, resamples=1000
+        )
+        rows = [json.loads(line) for line in output.read_text().splitlines()]
+        return report, rows[1]
+
+    def test_statistically_clean_promotion_is_rejected_without_correctness_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report, row = self._promote_one_row(root, empty_dispatch_db(root))
+            self.assertEqual(report["promoted"], 0)
+            self.assertEqual(row["promotion_status"], "rejected_no_correctness_evidence")
+            self.assertEqual(row["winner"], "native")
+
+    def test_statistically_clean_promotion_passes_with_valid_correctness_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = correctness_gated_dispatch_db(root, dispatch_hex="a" * 32)
+            report, row = self._promote_one_row(root, db)
+            self.assertEqual(report["promoted"], 1)
+            self.assertEqual(row["promotion_status"], "promoted")
+
+    def test_statistical_rejection_reason_is_preserved_over_correctness_status(self):
+        # A row that fails the STATISTICAL gate must keep its own rejection
+        # reason (rejected_effect here), never get relabeled with a
+        # correctness-gate status -- correctness only ever narrows an
+        # otherwise-passing row, it does not explain an already-failing one.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 99.5)  # improvement below default threshold_pct
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root),
+                threshold_pct=1.0, resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
 
 
 if __name__ == "__main__":

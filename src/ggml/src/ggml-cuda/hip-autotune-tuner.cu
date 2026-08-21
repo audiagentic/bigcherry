@@ -11,6 +11,7 @@
 #include "hip-autotune-journal.h"
 #include "hip-autotune-signature.h"
 #include "hip-autotune-smi.h"
+#include "hip-autotune-transform.cuh"
 
 #include <algorithm>
 #include <atomic>
@@ -260,6 +261,79 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// bigcherry (HI29): transform-attempt / transform-gap recording, written
+// alongside the ordinary measurements.jsonl (see ggml_hip_tuner_flush()'s
+// .transforms.jsonl block). A transform-attempt row is written whenever
+// HI30's tuner integration tries a routing transformation (HI27/HI28)
+// against a signature; a transform-gap row is written when none of the
+// registered transforms worked. Kept structurally separate from Result --
+// these are diagnostic records for offline (agent-driven) pattern analysis
+// across many signatures, not the primary dispatch-identity/promotion
+// evidence Result already carries for the signature that was actually
+// tuned.
+struct TransformAttemptRecord {
+    ggml_hip_digest        original_sig = {};
+    ggml_hip_digest        hardware     = {};
+    ggml_hip_transform_id  transform_id = GGML_HIP_TRANSFORM_NONE;
+    std::string            transform_name;
+    std::string            source;                 // "predefined" | "discovered"
+    std::string            original_native_family;
+    std::string            result;                 // "success" | "rejected"
+    std::string            rejection_reason;        // empty on success
+    std::string            transformed_winner;      // candidate stable_name, empty if rejected
+    double                 original_us      = 0.0;
+    double                 transformed_us   = 0.0;
+    double                 improvement_pct  = 0.0;
+    double                 nmse             = 0.0;
+    double                 max_abs_error    = 0.0;
+};
+
+// One (transform, rejection reason) pair -- part of a TransformGapRecord's
+// "everything HI30 tried and why none of it worked" trail.
+struct TransformTriedEntry {
+    ggml_hip_transform_id transform_id;
+    std::string           rejection_reason;
+};
+
+struct TransformGapRecord {
+    ggml_hip_digest                    sig          = {};
+    ggml_hip_digest                    hardware     = {};
+    std::string                        native_family;
+    int64_t                            est_bytes = 0;
+    std::vector<TransformTriedEntry>   tried;
+};
+
+std::vector<TransformAttemptRecord> g_transform_attempts;
+std::vector<TransformGapRecord>     g_transform_gaps;
+std::mutex                          g_transform_mutex;
+
+// bigcherry family enum -> the lowercase name candidate/catalog code already
+// uses elsewhere (config/recipes.toml patch-set naming, catalog.toml
+// backend fields) -- kept local since no shared helper does this today.
+const char * transform_family_name(int family) {
+    switch (family) {
+        case GGML_HIP_FAMILY_MMVQ: return "mmvq";
+        case GGML_HIP_FAMILY_MMQ:  return "mmq";
+        case GGML_HIP_FAMILY_MMVF: return "mmvf";
+        case GGML_HIP_FAMILY_MMF:  return "mmf";
+        case GGML_HIP_FAMILY_BLAS: return "blas";
+        default:                   return "?";
+    }
+}
+
+void ggml_hip_record_transform_attempt(const TransformAttemptRecord & record) {
+    std::lock_guard<std::mutex> lock(g_transform_mutex);
+    g_transform_attempts.push_back(record);
+}
+
+void ggml_hip_record_transform_gap(const TransformGapRecord & record) {
+    std::lock_guard<std::mutex> lock(g_transform_mutex);
+    g_transform_gaps.push_back(record);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 // GPU measurements are process-global device state.  Serialize the complete
 // cold-path experiment so concurrent first encounters cannot perturb one
 // another or publish different winners for the same dispatch key.
@@ -270,10 +344,58 @@ std::mutex g_mutex;
 // single-flight semantics: one measurement/publish, then all waiters observe
 // the committed winner.
 std::mutex g_single_flight_mutex;
+
+// bigcherry (HI64, RV49 F6 scope extension, 2026-08-17 GPT adjudication):
+// poison/cache state keyed by the CURRENT hipGetDevice() value, not a
+// single process-global flag -- a transient fault on one GPU (e.g. a WDDM
+// TDR-class hiccup) must not disable tuning on every OTHER device sharing
+// this process. Every existing .load()/.store() call site keeps working
+// unchanged; only the storage moves from one flag to one-per-device.
+//
+// Deliberately NO auto-clear of any kind (no time-based expiry, no
+// clear-after-one-successful-operation): a device that poisoned stays
+// poisoned for the rest of the process. Per GPT's own requirement, recovery
+// may only happen once the surrounding backend can PROVE the HIP context/
+// device execution generation was recreated -- ggml-cuda.cu exposes no such
+// generation/reset signal today, so that recovery path is explicitly NOT
+// implemented here; a poisoned device requires a fresh process, exactly as
+// before this change. This file still never calls hipDeviceReset() itself.
+template <typename T>
+class PerDeviceState {
+public:
+    explicit PerDeviceState(T initial) : initial_(initial) {}
+
+    T load(std::memory_order = std::memory_order_relaxed) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const int device = current_device();
+        const auto it = values_.find(device);
+        return it != values_.end() ? it->second : initial_;
+    }
+
+    void store(T value, std::memory_order = std::memory_order_relaxed) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        values_[current_device()] = value;
+    }
+
+private:
+    static int current_device() {
+        int device = -1;
+        // No resolvable device -- bucket under a shared sentinel key rather
+        // than silently reading/writing some other device's state on this
+        // caller's behalf.
+        return hipGetDevice(&device) == hipSuccess && device >= 0 ? device : -1;
+    }
+
+    T initial_;
+    mutable std::mutex mutex_;
+    std::unordered_map<int, T> values_;
+};
+
 // A failed HIP measurement can leave the context poisoned. Once that happens,
 // no later candidate, correctness copy, final round, determinism check, or
-// device query may be treated as valid in this process.
-std::atomic<bool> g_tuner_poisoned{false};
+// device query may be treated as valid for THAT DEVICE in this process --
+// other devices' tuning is unaffected (see PerDeviceState's comment above).
+PerDeviceState<bool> g_tuner_poisoned(false);
 
 // UTC, second resolution, ISO-ish -- only used to name a journal experiment
 // uniquely per process, not parsed back by anything, so exact format is not
@@ -597,10 +719,11 @@ static bool hip_event_destroy_checked(hipEvent_t & event, const char * what) {
 // A failed HIP timing transaction can poison the context even after its
 // pending error is consumed. SMI capture calls ggml_cuda_get_device(), which
 // is deliberately fail-fast on that condition, so disable further SMI reads
-// for this process once any timing failure is observed. Measurements remain
-// valid as explicit unavailable evidence; timing failures themselves still
-// reject the affected round/signature.
-std::atomic<bool> g_smi_runtime_disabled{false};
+// for THIS DEVICE once any timing failure is observed on it -- other
+// devices keep capturing SMI normally (see PerDeviceState's comment above).
+// Measurements remain valid as explicit unavailable evidence; timing
+// failures themselves still reject the affected round/signature.
+PerDeviceState<bool> g_smi_runtime_disabled(false);
 
 static void disable_smi_after_measurement_failure() {
     g_tuner_poisoned.store(true, std::memory_order_relaxed);
@@ -1184,22 +1307,28 @@ void record_retime_observation(Result & result, const CounterbalancedRound & rou
 // E3: the floor cost of one timed sample with no work in it -- two event
 // records, a synchronize, and the two host clock reads. Subtracting it is
 // what makes a host-side number comparable with a GPU-side one. Measured
-// once per process on the tuning stream; cheap, and constant enough that a
-// per-signature recalibration would only add noise. Cached at namespace
-// scope (not function-local) so `ggml_hip_tuner_flush` can report it in the
-// measurements header for audit.
-double g_host_sync_overhead_us = -1.0;
-bool g_host_sync_overhead_valid = false;
+// once per DEVICE for the process lifetime, not once per process (bigcherry
+// HI64: a value measured on one GPU is not this file's business to hand out
+// as another GPU's overhead, and keeping it process-global left exactly the
+// kind of cross-device collateral GPT's poison-scoping review flagged --
+// requirement 5, "make SMI-disable state and the cached host-sync-overhead
+// device-local too"). Cached at namespace scope (not function-local) so
+// `ggml_hip_tuner_flush` can report it in the measurements header for audit.
+struct HostSyncOverheadCache {
+    double us = -1.0;
+    bool valid = false;
+};
+PerDeviceState<HostSyncOverheadCache> g_host_sync_overhead(HostSyncOverheadCache{});
 
 double host_sync_overhead_us(cudaStream_t stream) {
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
         return 0.0;
     }
-    if (g_host_sync_overhead_valid && g_host_sync_overhead_us >= 0.0) {
-        return g_host_sync_overhead_us;
+    HostSyncOverheadCache cached = g_host_sync_overhead.load();
+    if (cached.valid && cached.us >= 0.0) {
+        return cached.us;
     }
-    g_host_sync_overhead_us = -1.0;
-    g_host_sync_overhead_valid = false;
+    g_host_sync_overhead.store(HostSyncOverheadCache{});
 
     hipEvent_t a = nullptr;
     hipEvent_t b = nullptr;
@@ -1210,8 +1339,7 @@ double host_sync_overhead_us(cudaStream_t stream) {
     };
     auto fail_measurement = [&]() {
         disable_smi_after_measurement_failure();
-        g_host_sync_overhead_us = -1.0;
-        g_host_sync_overhead_valid = false;
+        g_host_sync_overhead.store(HostSyncOverheadCache{});
         return 0.0;
     };
     if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
@@ -1240,9 +1368,8 @@ double host_sync_overhead_us(cudaStream_t stream) {
     if (!std::isfinite(overhead) || overhead < 0.0) {
         return fail_measurement();
     }
-    g_host_sync_overhead_us = overhead;
-    g_host_sync_overhead_valid = true;
-    return g_host_sync_overhead_us;
+    g_host_sync_overhead.store(HostSyncOverheadCache{overhead, true});
+    return overhead;
 }
 
 // E3: max(), not a mode switch -- whichever resource is binding is the one
@@ -2789,6 +2916,7 @@ void ggml_hip_tuner_flush() {
     FILE * file = measurements_atomic.file;
 
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
+    const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();
 
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
@@ -2807,7 +2935,7 @@ void ggml_hip_tuner_flush() {
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
-            g_host_sync_overhead_us, g_host_sync_overhead_valid ? "true" : "false", config.final_samples,
+            sync_overhead.us, sync_overhead.valid ? "true" : "false", config.final_samples,
             config.warmup_launches, config.screen_samples,
             config.confirmation_samples, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
@@ -2944,6 +3072,82 @@ void ggml_hip_tuner_flush() {
 
     GGML_LOG_INFO("bigcherry: wrote %zu tuning result(s) to '%s'\n",
                   g_results.size(), measurements_path.c_str());
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // bigcherry (HI29): a separate file, separate schema, separate consumer
+    // (offline agent-driven pattern analysis across many gaps, not a human
+    // reading one tuner run) -- same GGML_HIP_DISPATCH_DB prefix and the
+    // same crash-safety mechanism (HI48 atomic same-directory temp file +
+    // rename) as measurements.jsonl above, so a killed run leaves either the
+    // previous good file or nothing, never a truncated one masquerading as
+    // complete.
+    {
+        std::lock_guard<std::mutex> transform_lock(g_transform_mutex);
+        if (!g_transform_attempts.empty() || !g_transform_gaps.empty()) {
+            std::string transforms_path = std::string(path) + ".transforms.jsonl";
+            ggml_hip_atomic_file transforms_atomic;
+            if (!ggml_hip_atomic_begin(transforms_path.c_str(), transforms_atomic)) {
+                GGML_LOG_WARN("bigcherry: cannot write '%s'\n", transforms_path.c_str());
+                return;
+            }
+            FILE * tfile = transforms_atomic.file;
+
+            fprintf(tfile,
+                    "{\"kind\":\"header\",\"artifact_version\":%d,"
+                    "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\"}\n",
+                    GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
+                    GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
+                    GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR);
+
+            for (const TransformAttemptRecord & r : g_transform_attempts) {
+                fprintf(tfile,
+                        "{\"kind\":\"transform-attempt\","
+                        "\"original_sig\":\"%s\",\"hardware\":\"%s\","
+                        "\"transformation_id\":%d,\"transformation_name\":\"%s\","
+                        "\"source\":\"%s\",\"original_native_family\":\"%s\","
+                        "\"result\":\"%s\",\"rejection_reason\":\"%s\","
+                        "\"transformed_winner\":\"%s\","
+                        "\"original_us\":%.3f,\"transformed_us\":%.3f,"
+                        "\"improvement_pct\":%.3f,\"nmse\":%.6g,\"max_abs_error\":%.6g}\n",
+                        ggml_hip_digest_hex(r.original_sig).c_str(),
+                        ggml_hip_digest_hex(r.hardware).c_str(),
+                        (int) r.transform_id, r.transform_name.c_str(),
+                        r.source.c_str(), r.original_native_family.c_str(),
+                        r.result.c_str(), r.rejection_reason.c_str(),
+                        r.transformed_winner.c_str(),
+                        r.original_us, r.transformed_us,
+                        r.improvement_pct, r.nmse, r.max_abs_error);
+            }
+
+            for (const TransformGapRecord & r : g_transform_gaps) {
+                fprintf(tfile,
+                        "{\"kind\":\"transform-gap\","
+                        "\"sig\":\"%s\",\"hardware\":\"%s\","
+                        "\"native_family\":\"%s\",\"est_bytes\":%lld,"
+                        "\"transformations_tried\":[",
+                        ggml_hip_digest_hex(r.sig).c_str(),
+                        ggml_hip_digest_hex(r.hardware).c_str(),
+                        r.native_family.c_str(), (long long) r.est_bytes);
+                for (size_t i = 0; i < r.tried.size(); ++i) {
+                    fprintf(tfile, "%s{\"id\":%d,\"reason\":\"%s\"}",
+                            i == 0 ? "" : ",",
+                            (int) r.tried[i].transform_id,
+                            r.tried[i].rejection_reason.c_str());
+                }
+                fprintf(tfile, "]}\n");
+            }
+
+            if (!ggml_hip_atomic_commit(transforms_atomic)) {
+                GGML_LOG_WARN("bigcherry: atomic transforms replacement failed for '%s'\n",
+                              transforms_path.c_str());
+                return;
+            }
+            GGML_LOG_INFO("bigcherry: wrote %zu transform-attempt(s), %zu transform-gap(s) to '%s'\n",
+                          g_transform_attempts.size(), g_transform_gaps.size(),
+                          transforms_path.c_str());
+        }
+    }
+#endif // GGML_HIP_ROUTING_TRANSFORM
 }
 
 #endif // GGML_USE_HIP && GGML_HIP_AUTOTUNE
