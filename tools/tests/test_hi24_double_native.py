@@ -44,9 +44,18 @@ class DoubleNativeContractTests(unittest.TestCase):
 
     def test_native_lookup_explicitly_excludes_twin(self):
         # Role identity, not descriptor identity: the twin shares native's
-        # descriptor and must never be mistaken for the baseline.
+        # descriptor and must never be mistaken for the baseline. HI30 adds a
+        # further exclusion (guarded by GGML_HIP_ROUTING_TRANSFORM): a
+        # transformed Measurement can also share native's candidate pointer
+        # and must not be mistaken for the untransformed baseline either.
         self.assertIn(
-            "if (!m->is_native_twin && m->candidate == native.candidate) {\n"
+            "if (!m->is_native_twin && m->candidate == native.candidate\n",
+            self.tuner,
+        )
+        self.assertIn(
+            "                && m->transform == nullptr\n"
+            "#endif\n"
+            "                ) {\n"
             "            native_m = m; break;",
             self.tuner,
         )

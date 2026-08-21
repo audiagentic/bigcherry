@@ -110,9 +110,15 @@ class PreSampleModeContractTests(unittest.TestCase):
         self.assertGreater(record_start, rewarm)
         # The rewarm block itself: launch -> checked error -> sync -> return.
         block = self.tuner[rewarm : rewarm + 900]
-        launch = block.find("effective.launch(&effective, lc);")
+        # HI30: the raw launch is now issued through do_launch(), which
+        # transparently routes through a routing transformation when one is
+        # in play (GGML_HIP_ROUTING_TRANSFORM) and falls back to the same
+        # effective.launch(&effective, lc) otherwise.
+        launch = block.find("if (!do_launch()) {")
         sync = block.find("hipStreamSynchronize(lc.stream)")
-        ok_ret = block.find("return false;")
+        # The launch's own failure path returns before the sync exists to
+        # check; the sync's failure path is the one that must come after it.
+        ok_ret = block.find("return false;", sync)
         self.assertGreater(launch, 0)
         self.assertGreater(sync, launch, "rewarm must be synchronized")
         self.assertGreater(ok_ret, sync)
