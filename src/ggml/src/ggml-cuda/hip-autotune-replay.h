@@ -29,7 +29,16 @@
 // payload's compatibility is checked separately against the manifest hash and
 // the ABI schema versions.
 #define GGML_HIP_REPLAY_MAGIC   0x59484342u
-#define GGML_HIP_REPLAY_VERSION 4
+// HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform).
+// A v4 cache is rejected outright as RERUN_REQUIRED by the existing format-
+// version check below -- no dual-layout reader, matching this project's
+// fail-closed exact-version-match policy for every other schema field here
+// (signature_schema, hardware_schema). Transformed entries additionally
+// require EXACT manifest/source provenance even in GGML_HIP_DISPATCH_REPLAY_
+// REVISION_MATCH=0 mode: transforms carry no implementation_version of their
+// own yet to validate safely against a relaxed match (see hip-autotune-
+// replay.cpp's loader).
+#define GGML_HIP_REPLAY_VERSION 5
 
 // Header of the on-disk cache. Fixed size, little-endian, no padding assumed --
 // fields are read individually rather than by struct overlay, so the file is
@@ -62,6 +71,16 @@ struct ggml_hip_replay_entry {
     uint8_t  manifest_hash[GGML_HIP_DIGEST_BYTES];
     uint8_t  source_revision_digest[GGML_HIP_DIGEST_BYTES];
     uint32_t generation;
+    // HI31 (v5): 0 = GGML_HIP_TRANSFORM_NONE, a plain candidate winner.
+    // Raw uint16 rather than ggml_hip_transform_id -- that enum only exists
+    // under GGML_HIP_ROUTING_TRANSFORM, but the wire format and the loader
+    // in hip-autotune-replay.cpp are unconditionally compiled either way (a
+    // cache built with transforms may still be read by a build without the
+    // feature, which must then reject every non-zero entry, never crash or
+    // silently drop the field). Deliberately NOT folded into the dispatch
+    // digest: the digest identifies the operation being decided, transform
+    // is the stored decision -- a separate fact about the same key.
+    uint16_t transform_id;
 };
 
 // Recovery note (RE27): this five-way classification and the always-on
@@ -118,15 +137,37 @@ bool ggml_hip_replay_init();
 // caller has already committed to a binding, so a candidate that resolves
 // but then fails those checks is never silently counted as a hit.
 //
-// Only GGML_HIP_RESOLVE_EXACT sets *out_candidate/*out_variant; every other
-// outcome leaves them untouched and the caller uses native selection.
+// Only GGML_HIP_RESOLVE_EXACT sets *out_candidate/*out_variant/*out_transform_id;
+// every other outcome leaves them untouched and the caller uses native
+// selection.
+//
+// HI31: *out_transform_id != 0 (GGML_HIP_TRANSFORM_NONE) means the stored
+// winner was reached via a routing transform (HI27/HI28), NOT the plain
+// candidate the caller's `sig` describes. This function only validates
+// candidate registration and architecture support for such an entry --
+// it deliberately does NOT run `winner.candidate->can_execute(candidate,
+// sig, hw)` against the ORIGINAL signature for a transformed entry, since
+// that is exactly the wrong check (the candidate was never expected to
+// accept the untransformed shape; that mismatch is the whole reason the
+// transform exists). EXACT here is therefore NECESSARY but not SUFFICIENT
+// for a transformed entry: the caller (ggml_hip_dispatch_resolve(), which
+// has the real ggml_hip_launch_context this loader does not) MUST still
+// resolve the transform, confirm transform->equivalence_verified, call
+// transform->apply() to obtain the actual transformed signature, and
+// check *out_candidate->can_execute(*out_candidate, transformed_sig, hw)
+// before treating this as a valid binding -- exactly as it already must
+// for a freshly-tuned transformed winner. A build without
+// GGML_HIP_ROUTING_TRANSFORM compiled in must instead treat any nonzero
+// *out_transform_id as unusable and fail to native selection; it has no
+// way to run that second-layer check at all.
 ggml_hip_resolution_v2 ggml_hip_replay_lookup(
                             const ggml_hip_digest & dispatch_digest,
                             const ggml_hip_digest & signature_digest,
                             const ggml_hip_dispatch_signature_v1 & sig,
                             const ggml_hip_hardware_key_v1 & hw,
                             const ggml_hip_candidate_descriptor ** out_candidate,
-                            ggml_hip_variant_params * out_variant);
+                            ggml_hip_variant_params * out_variant,
+                            uint16_t * out_transform_id);
 
 // Record a miss. Bounded: after a fixed number of distinct keys the log stops
 // growing, because an unbounded miss log in a long-running server is a leak

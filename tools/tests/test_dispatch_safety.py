@@ -739,6 +739,28 @@ class TestHi29TransformRecording(unittest.TestCase):
         for field in ("original_us", "transformed_us", "improvement_pct", "nmse", "max_abs_error"):
             self.assertIn(field, struct_body)
 
+    def test_measurements_jsonl_result_row_carries_the_winning_transform(self):
+        # HI31 prerequisite: the production measurements.jsonl artifact
+        # (not just the diagnostic journal) must carry which transform (if
+        # any) the FINAL winner reached its candidate through, or
+        # tune_promotion.py's promoted-winners output and replay_cache.py's
+        # exporter would have no way to know a v5 replay entry needs a
+        # transform_id at all.
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        result_row = flush[: flush.index("for (const auto & entry : g_results)") + 4000]
+        self.assertIn('\\"winner_transform\\":\\"%s\\"', result_row)
+        self.assertIn('\\"winner_transform_id\\":%d', result_row)
+        self.assertIn("winner_transform_name(r)", result_row)
+        self.assertIn("winner_transform_id(r)", result_row)
+        # And the helper itself must return "" when the feature is compiled
+        # out, not merely omit the field -- the JSON schema must stay
+        # identical across both build configurations.
+        helper_start = tuner.index("static const char * winner_transform_name(")
+        helper_end = tuner.index("\n}", helper_start)
+        helper_body = tuner[helper_start:helper_end]
+        self.assertIn('return "";', helper_body)
+
 
 if __name__ == "__main__":
     unittest.main()

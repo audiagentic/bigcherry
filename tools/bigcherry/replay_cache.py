@@ -38,7 +38,11 @@ from . import autotune_catalog
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
-REPLAY_VERSION = 4
+# HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform,
+# ENT_TRANSFORM below) -- mirrors hip-autotune-replay.h/.cpp byte for byte.
+# A v4 cache is rejected outright by the C++ loader's exact format-version
+# check; there is no dual-layout reader on either side.
+REPLAY_VERSION = 5
 ARTIFACT_VERSION = 1
 SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
@@ -180,8 +184,9 @@ REPLAY_HEADER_SIZE = 56
 ENT_MANIFEST = 54
 ENT_SOURCE_REVISION = ENT_MANIFEST + DIGEST_BYTES
 ENT_GENERATION = ENT_SOURCE_REVISION + DIGEST_BYTES
-ENT_SIZE = ENT_GENERATION + 4
-assert ENT_SIZE == 90
+ENT_TRANSFORM = ENT_GENERATION + 4
+ENT_SIZE = ENT_TRANSFORM + 2
+assert ENT_SIZE == 92
 
 
 def source_revision_digest(source_revision: str) -> str:
@@ -300,6 +305,7 @@ def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "manifest_hash": entry[ENT_MANIFEST:ENT_SOURCE_REVISION].hex(),
             "source_revision_digest": entry[ENT_SOURCE_REVISION:ENT_GENERATION].hex(),
             "generation": struct.unpack_from("<I", entry, ENT_GENERATION)[0],
+            "transform_id": struct.unpack_from("<H", entry, ENT_TRANSFORM)[0],
             "wire_entry": entry,
         })
     return header, entries
@@ -523,6 +529,15 @@ def build(
         record = dict(record)
         record["portable_key"] = digest_hex
         record["generation"] = generation
+        # HI31: the tuner's measurements.jsonl row (winner_transform_id) and
+        # read_cache()'s retained-entry dict (transform_id) name this fact
+        # differently -- normalize onto "transform_id" here so the packing
+        # loop below has one field to read regardless of which of
+        # current_entries/existing_entries a record came from. A seed
+        # override entry (built by hand above, no tuner row behind it) has
+        # neither key and defaults to 0 -- an operator-authored seed always
+        # names a plain candidate, never a transform.
+        record["transform_id"] = int(record.get("winner_transform_id", 0) or 0)
         record["provenance"] = {
             "source_revision": producer_revision,
             "manifest_hash": manifest_hash,
@@ -630,6 +645,10 @@ def build(
         packed += entry_manifest
         packed += entry_revision
         packed += struct.pack("<I", record["generation"])
+        transform_id = int(record.get("transform_id", 0) or 0)
+        if not 0 <= transform_id <= 0xFFFF:
+            raise SystemExit(f"winner {digest_hex} transform_id out of range: {transform_id}")
+        packed += struct.pack("<H", transform_id)
 
     entry_count = len(packed) // ENT_SIZE
     payload = bytes(packed) + bytes(string_blob)

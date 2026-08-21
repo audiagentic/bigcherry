@@ -120,6 +120,36 @@ static std::string measurement_name(const Measurement & m) {
     return name;
 }
 
+// HI30/HI31: which transform (if any) the FINAL winner reached its
+// candidate through -- distinct from measurement_name()'s per-measurement
+// "#xform:" suffix, this is the one durable fact ggml_hip_tuner_flush()'s
+// measurements.jsonl row must carry so tune_promotion.py's promoted-winners
+// output and replay_cache.py's exporter (HI31) know which transform_id to
+// pack into the v5 replay entry. Previously only the diagnostic journal
+// (journal_result_summary()) carried this -- the actual production artifact
+// silently dropped it, which would have made every transformed winner
+// replay as its bare candidate against the wrong (untransformed) signature.
+static const char * winner_transform_name(const Result & r) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    return r.winner_transform != nullptr ? r.winner_transform->name : "";
+#else
+    (void) r;
+    return "";
+#endif
+}
+
+// The numeric id alongside the name (above): replay_cache.py packs this
+// directly into the v5 replay entry's transform_id field without needing
+// its own name -> id mapping of the transform registry.
+static int winner_transform_id(const Result & r) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    return r.winner_transform != nullptr ? (int) r.winner_transform->id : 0;
+#else
+    (void) r;
+    return 0;
+#endif
+}
+
 // HI50: whether the noise canary (same-kernel pair, see below) confirmed
 // this signature's timings are trustworthy. NOT_AVAILABLE means no canary
 // pair existed to check (e.g. no MMQ J-best twin); UNRESOLVED means a pair
@@ -3268,7 +3298,9 @@ void ggml_hip_tuner_flush() {
         fprintf(file,
                 "{\"kind\":\"result\",\"dispatch\":\"%s\","
                 "\"signature\":\"%s\",\"hardware\":\"%s\","
-                "\"canonical\":%s,\"winner\":\"%s\",\"native\":\"%s\","
+                "\"canonical\":%s,\"winner\":\"%s\","
+                "\"winner_transform\":\"%s\",\"winner_transform_id\":%d,"
+                "\"native\":\"%s\","
                 "\"improvement_pct\":%.3f,\"confidence\":%.4f,"
                 "\"generated\":%d,\"applicable\":%d,\"eligible\":%d,"
                 "\"measured\":%d,\"reason\":\"%s\","
@@ -3297,6 +3329,8 @@ void ggml_hip_tuner_flush() {
                 // this keeps future stub paths from breaking every consumer.
                 r.canonical_json.empty() ? "null" : r.canonical_json.c_str(),
                 r.winner ? r.winner->stable_name : "",
+                winner_transform_name(r),
+                winner_transform_id(r),
                 r.native_name.c_str(),
                 r.improvement_pct, r.confidence,
                 r.generated, r.applicable, r.eligible, r.measured,
