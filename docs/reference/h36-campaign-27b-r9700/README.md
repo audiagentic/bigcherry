@@ -53,8 +53,7 @@ Not in git (too large; on Brutus at
 | `kf-decode/brutus/*_kernel_trace.csv` | 508 MB | HI35 decode trace (p0 n256 r3). Stale 22dc605 binary — **validated by S1b** (see below). |
 | `kf-decode-b10502/*_kernel_trace.csv` | 512 MB | S1b equivalence trace, b10502 record build, same command (p0 n256 r3). |
 
-`miss-s7b.jsonl` / `cov-s7b.json` (parallel-2 holdout) will be appended to
-this table when the S7b addon completes.
+| `miss-s7b.jsonl` / `cov-s7b.json` | S7b | parallel-2 holdout: 18,173/18,173 executed, 28 exact, **80 misses** (38 mmq, 10 mmvq, 31 blas, 1 mmvf) — committed small artifacts |
 
 ## Results summary (2026-08-21)
 
@@ -80,8 +79,9 @@ hypotheses; 17 signatures keep native; 2 confirmation-rejected.
 executed from the cache, 0 misses, 58 exact hits over 59 entries,
 `rerun_required=0`, `stale=false`. **PASS.**
 
-**S7 holdout miss-log (12k prompt, different workload):** 39 misses, all
-call-count 1 (single-prompt bench; production multi-turn would repeat them).
+**S7 holdout miss-logs (two shape-perturbing workloads):** the long-prompt-12k
+run gave 39 misses and the parallel-2 run (S7b) gave 80. All miss call-counts
+are 1 (per-request bench; production multi-turn would repeat them).
 what_if against run-A tuned winners with the offline safe keys
 (mmq: family+types+K+M; mmvq: family+types+full ne0):
 
@@ -90,6 +90,14 @@ what_if against run-A tuned winners with the offline safe keys
 | mmvq | 11 | **11 (100%)** | width-3 decode signatures resolved by same-ne0 tuned siblings — the width-invariance the conditional GO relies on, confirmed on 27B |
 | blas | 26 | 0 | **new finding:** 12k-context workload surfaces tiny native GEMMs (64×64 / 256×256) never seen at ctx 8192; not in record inventory (`uses_blas: false`). Reinforces the blas NO-GO; they stay native (zero risk) |
 | mmvf | 2 | 0 | no mmvf candidates exist for this q8_0 workload (nothing to generalise from) — consistent with the NO-GO |
+
+**S7b (parallel-2) what_if, same keys:** mmq 38/38 (100%) — batched-decode
+signatures absent from the parallel-1 record, resolved by the K+M key;
+mmvq 10/10 (100%); blas 0/31; mmvf 0/1.
+
+**Combined holdout: 59 GO-family misses across both holdouts (11 mmvq + 38
+mmq + 10 mmvq), all 59 converted — 100%. The unresolvable set is exactly the
+NO-GO families (blas 57, mmvf 3).**
 
 ## S1b equivalence trace — STALE S1 TRACES VALIDATED (2026-08-21)
 
