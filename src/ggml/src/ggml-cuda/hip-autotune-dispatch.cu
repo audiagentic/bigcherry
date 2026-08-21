@@ -571,8 +571,21 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
         const ggml_hip_candidate_descriptor * winner = nullptr;
         ggml_hip_variant_params variant = {};
-        if (ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
-                                   &winner, &variant) == GGML_HIP_RESOLVE_EXACT) {
+        uint16_t transform_id = 0;
+        const bool exact = ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
+                                                   &winner, &variant, &transform_id)
+                            == GGML_HIP_RESOLVE_EXACT;
+        // HI31 (interim, this slice): ggml_hip_replay_lookup()'s EXACT is
+        // NECESSARY but not SUFFICIENT for a transformed entry (transform_id
+        // != 0) -- see that function's declaration in hip-autotune-replay.h.
+        // The second-layer validation (resolve the transform, confirm
+        // equivalence_verified, apply() to get the real transformed
+        // signature, re-check can_execute against THAT) and the Binding
+        // extension needed to actually dispatch through it are not wired up
+        // yet, so a transformed entry is deliberately treated as unusable
+        // here rather than half-validated -- falls back to native and
+        // records a miss, exactly like any other unusable entry.
+        if (exact && transform_id == 0) {
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;

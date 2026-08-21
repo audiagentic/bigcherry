@@ -82,6 +82,7 @@ struct Winner {
     ggml_hip_digest                       source_revision_digest;
     uint32_t                              generation;
     bool                                  fresh;
+    uint16_t                               transform_id; // 0 = GGML_HIP_TRANSFORM_NONE
 };
 
 std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
@@ -168,7 +169,11 @@ constexpr size_t ENT_SRC0_TYPE = ENT_SMALL_K + 1;
 constexpr size_t ENT_MANIFEST  = ENT_SRC0_TYPE + 1;
 constexpr size_t ENT_REVISION  = ENT_MANIFEST + GGML_HIP_DIGEST_BYTES;
 constexpr size_t ENT_GENERATION = ENT_REVISION + GGML_HIP_DIGEST_BYTES;
-constexpr size_t ENT_SIZE      = ENT_GENERATION + 4;
+// HI31 (v5): 0 = GGML_HIP_TRANSFORM_NONE. See hip-autotune-replay.h's
+// ggml_hip_replay_entry::transform_id comment for why this is a raw
+// uint16, not the (feature-gated) enum type.
+constexpr size_t ENT_TRANSFORM = ENT_GENERATION + 4;
+constexpr size_t ENT_SIZE      = ENT_TRANSFORM + 2;
 
 std::vector<uint8_t> read_file(const char * path) {
     std::vector<uint8_t> bytes;
@@ -383,6 +388,7 @@ bool ggml_hip_replay_init() {
             memcpy(winner.source_revision_digest.bytes, entry + ENT_REVISION,
                    GGML_HIP_DIGEST_BYTES);
             winner.generation = read_u32(entry + ENT_GENERATION);
+            winner.transform_id = read_u16(entry + ENT_TRANSFORM);
 
             auto & generations = g_winners[key];
             for (const Winner & prior : generations) {
@@ -437,7 +443,8 @@ ggml_hip_resolution_v2 ggml_hip_replay_lookup(
                             const ggml_hip_dispatch_signature_v1 & sig,
                             const ggml_hip_hardware_key_v1 & hw,
                             const ggml_hip_candidate_descriptor ** out_candidate,
-                            ggml_hip_variant_params * out_variant) {
+                            ggml_hip_variant_params * out_variant,
+                            uint16_t * out_transform_id) {
     if (!ggml_hip_replay_init()) {
         // No cache configured is a plain miss; a cache that failed to load
         // carries the specific reason recorded by reject() during init.
@@ -461,24 +468,44 @@ ggml_hip_resolution_v2 ggml_hip_replay_lookup(
             continue;
         }
         saw_signature_match = true;
-        if (g_require_revision_match && !winner.fresh) {
+        // HI31: a transformed entry (transform_id != 0) always requires
+        // exact revision match, even when GGML_HIP_DISPATCH_REPLAY_REVISION_
+        // MATCH=0 relaxes that for plain candidates -- transforms carry no
+        // implementation_version of their own yet to validate safely
+        // against a relaxed match (see hip-autotune-replay.h).
+        const bool must_be_fresh = winner.transform_id != 0 || g_require_revision_match;
+        if (must_be_fresh && !winner.fresh) {
             saw_stale_generation = true;
             continue;
         }
         // EXACT requires more than "the digest matched": the candidate must
-        // still be registered, must support this architecture, and must
-        // accept this exact signature -- checked here, not after the caller
-        // has already committed to the binding, so a candidate that
-        // resolves but then fails these checks is never silently counted
-        // as a hit (the blind spot the pre-reset design closed).
+        // still be registered and must support this architecture -- checked
+        // here, not after the caller has already committed to the binding,
+        // so a candidate that resolves but then fails these checks is never
+        // silently counted as a hit (the blind spot the pre-reset design
+        // closed).
+        //
+        // HI31: can_execute() against `sig` is run ONLY for a plain entry
+        // (transform_id == 0). For a transformed entry, `sig` is the
+        // ORIGINAL untransformed signature -- checking the candidate
+        // against it is exactly the wrong question (the candidate was
+        // never expected to accept that shape; that mismatch is why the
+        // transform exists). This function has no way to compute the
+        // actual transformed signature (it only has `sig`/`hw`, not the
+        // real ggml_hip_launch_context transform->apply() needs), so EXACT
+        // here is NECESSARY but not SUFFICIENT for a transformed entry --
+        // see this function's declaration in hip-autotune-replay.h for the
+        // caller's required second-layer validation.
         if (winner.candidate == nullptr ||
             !ggml_hip_candidate_supports_arch(*winner.candidate, hw) ||
-            !winner.candidate->can_execute(winner.candidate, sig, hw)) {
+            (winner.transform_id == 0 &&
+             !winner.candidate->can_execute(winner.candidate, sig, hw))) {
             saw_candidate_rejected = true;
             continue;
         }
-        *out_candidate = winner.candidate;
-        *out_variant   = winner.variant;
+        *out_candidate     = winner.candidate;
+        *out_variant       = winner.variant;
+        *out_transform_id  = winner.transform_id;
         return counted(GGML_HIP_RESOLVE_EXACT);
     }
 

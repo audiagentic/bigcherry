@@ -40,14 +40,56 @@ class ReplayCacheWireTests(unittest.TestCase):
         ]) + "\n", encoding="utf-8")
         return root, manifest, ggml_h, measurements
 
-    def test_v4_output_round_trips_wire_fields_and_digest(self):
+    def test_transform_id_round_trips_through_build_and_read_cache(self):
+        # HI31: a winner reached through a routing transform (HI27/HI28)
+        # must carry its transform_id through build()'s packing and back out
+        # through read_cache() -- the whole point of the v5 wire bump.
+        root = Path(tempfile.mkdtemp())
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({
+            "source_revision": "b" * 40,
+            "manifest_hash": "a" * 32,
+            "candidates": [{
+                "stable_name": "mmvf:f32:w1", "family": "mmvf",
+                "source_class": "existing_alternative", "implementation_version": 1,
+                "config": {"block_size": 1, "width": 1, "accumulator": "f32",
+                          "type": "f32"},
+            }],
+        }), encoding="utf-8")
+        ggml_h = root / "ggml.h"
+        ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+        measurements = root / "measurements.jsonl"
+        measurements.write_text("\n".join([
+            json.dumps({"kind": "header", "source_revision": "b" * 40,
+                        "manifest_hash": "a" * 32}),
+            json.dumps({"kind": "result", "dispatch": "A" * 32,
+                        "signature": "C" * 32, "winner": "mmvf:f32:w1",
+                        "winner_transform": "transpose_weight_for_mmvf",
+                        "winner_transform_id": 1,
+                        "native": "blas:native:v1",
+                        "promotion_status": "promoted"}),
+        ]) + "\n", encoding="utf-8")
+
+        blob = replay_cache.build(measurements, manifest, ggml_h)
+        _, entries = replay_cache.read_cache(blob)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["transform_id"], 1)
+
+    def test_plain_winner_has_zero_transform_id(self):
+        _, manifest, ggml_h, measurements = self._fixture()
+        blob = replay_cache.build(measurements, manifest, ggml_h)
+        _, entries = replay_cache.read_cache(blob)
+        self.assertEqual(entries[0]["transform_id"], 0)
+
+    def test_v5_output_round_trips_wire_fields_and_digest(self):
         _, manifest, ggml_h, measurements = self._fixture()
         blob = replay_cache.build(measurements, manifest, ggml_h)
 
         self.assertEqual(len(blob), replay_cache.REPLAY_HEADER_SIZE + replay_cache.ENT_SIZE + 15)
         magic, version, artifact = struct.unpack_from("<III", blob)
         self.assertEqual((magic, version, artifact),
-                         (replay_cache.MAGIC, 4, replay_cache.ARTIFACT_VERSION))
+                         (replay_cache.MAGIC, replay_cache.REPLAY_VERSION,
+                          replay_cache.ARTIFACT_VERSION))
         self.assertEqual(struct.unpack_from("<HHII", blob, 12), (1, 1, 1, 15))
         payload = blob[replay_cache.REPLAY_HEADER_SIZE:]
         expected = hashlib.blake2b(
@@ -98,14 +140,15 @@ class ReplayCacheWireTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "duplicate generation identity"):
             replay_cache.validate_blob(bytes(duplicate), manifest_hash="a" * 32)
 
-    def test_v4_header_and_entry_sizes_are_explicit_wire_contract(self):
+    def test_v5_header_and_entry_sizes_are_explicit_wire_contract(self):
         self.assertEqual(replay_cache.REPLAY_HEADER_SIZE, 56)
-        self.assertEqual(replay_cache.ENT_SIZE, 90)
+        self.assertEqual(replay_cache.ENT_SIZE, 92)
         # Header: 3x u32, 2x u16, 2x u32, then two 16-byte digests.
         self.assertEqual(struct.calcsize("<IIIHHII16s16s"), 56)
         # Entry: two digests, name offset, implementation ABI, three i32
-        # variants, and four byte-sized variant fields.
-        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB16s16sI"), 90)
+        # variants, four byte-sized variant fields, generation, and (HI31,
+        # v5) a trailing u16 transform_id.
+        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB16s16sIH"), 92)
 
     def test_deterministic_round_trip_is_independent_of_measurement_order(self):
         root, manifest, ggml_h, measurements = self._fixture()
@@ -185,7 +228,7 @@ class ReplayCacheWireTests(unittest.TestCase):
         header = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
         for check in (
-                "GGML_HIP_REPLAY_VERSION 4",
+                "GGML_HIP_REPLAY_VERSION 5",
                 "GGML_HIP_REPLAY_MAGIC   0x59484342u",
                 "signature schema version mismatch",
                 "hardware key schema version mismatch",
@@ -270,14 +313,14 @@ class ReplayCacheWireTests(unittest.TestCase):
             replay_cache.select_newest_winners([
                 {**common, "winner": "a"}, {**common, "winner": "b"}])
 
-    def test_cpp_reader_has_the_same_v4_boundary_and_fail_closed_checks(self):
+    def test_cpp_reader_has_the_same_v5_boundary_and_fail_closed_checks(self):
         source = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(encoding="utf-8")
         header = (Path(__file__).resolve().parents[2] /
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
-        self.assertIn("#define GGML_HIP_REPLAY_VERSION 4", header)
+        self.assertIn("#define GGML_HIP_REPLAY_VERSION 5", header)
         self.assertIn("constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES", source)
-        self.assertIn("constexpr size_t ENT_SIZE      = ENT_GENERATION + 4", source)
+        self.assertIn("constexpr size_t ENT_SIZE      = ENT_TRANSFORM + 2", source)
         for check in ("file is truncated", "content checksum mismatch", "duplicate generation identity",
                       "implementation_version that no longer matches"):
             self.assertIn(check, source)
