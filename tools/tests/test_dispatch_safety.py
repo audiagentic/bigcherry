@@ -762,5 +762,113 @@ class TestHi29TransformRecording(unittest.TestCase):
         self.assertIn('return "";', helper_body)
 
 
+class TestHi31DispatchTransformIntegration(unittest.TestCase):
+    """HI31: Binding/ggml_hip_resolved_dispatch carry a transform pointer,
+    the replay resolution path re-validates a transformed entry against the
+    real transformed signature (never the original), and the dispatch-time
+    launch routes through ggml_hip_transform_launch() for a transformed
+    binding while the ordinary path stays exactly as it was."""
+
+    def test_resolved_dispatch_and_binding_both_carry_a_transform_pointer(self):
+        header = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h").read_text(encoding="utf-8")
+        struct_start = header.index("struct ggml_hip_resolved_dispatch {")
+        struct_end = header.index("\n};", struct_start)
+        struct_body = header[struct_start:struct_end]
+        self.assertIn("const ggml_hip_routing_transformation * transform = nullptr;", struct_body)
+        self.assertIn("struct ggml_hip_routing_transformation;", header[: struct_start])
+
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        binding_start = dispatch.index("struct Binding {")
+        binding_end = dispatch.index("\n};", binding_start)
+        binding_body = dispatch[binding_start:binding_end]
+        self.assertIn("const ggml_hip_routing_transformation * transform = nullptr;", binding_body)
+
+    def test_replay_resolution_revalidates_against_transformed_signature(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        helper_start = dispatch.index("static bool transformed_candidate_still_valid(")
+        helper_end = dispatch.index("\n}", helper_start)
+        helper = dispatch[helper_start:helper_end]
+        self.assertIn("transform->equivalence_verified", helper)
+        self.assertIn("ggml_hip_transform_signature_is_eligible(sig)", helper)
+        self.assertIn("transform->can_apply(sig)", helper)
+        self.assertIn("transform->apply(lc, &ctx, &transformed_sig, &transformed_lc)", helper)
+        self.assertIn("candidate->family != transform->target_family", helper)
+        # The final can_execute check must run against the TRANSFORMED
+        # signature, never the original -- the whole point of this helper.
+        self.assertIn("candidate->can_execute(candidate, transformed_sig, hw)", helper)
+        self.assertNotIn("candidate->can_execute(candidate, sig, hw)", helper)
+
+    def test_replay_block_calls_the_shared_transform_validator(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        replay_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {")
+        replay_end = dispatch.index("\n    }\n#endif", replay_start)
+        replay_block = dispatch[replay_start:replay_end]
+        self.assertIn("ggml_hip_transform_find((ggml_hip_transform_id) transform_id)", replay_block)
+        self.assertIn("transformed_candidate_still_valid(winner, winner_transform, sig, lc, hw)", replay_block)
+        self.assertIn("binding.transform  = winner_transform;", replay_block)
+
+    def test_blacklist_safety_net_uses_transform_aware_revalidation(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        net_start = dispatch.index("// A stored winner that cannot run on this hardware")
+        net_end = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", net_start)
+        net = dispatch[net_start:net_end]
+        self.assertIn("if (binding.transform != nullptr) {", net)
+        self.assertIn(
+            "transformed_candidate_still_valid(binding.candidate, binding.transform, sig, lc, hw)",
+            net,
+        )
+        self.assertIn("binding.transform  = nullptr;", net)
+
+    def test_thread_cache_hit_and_final_resolved_propagate_transform(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        self.assertIn("resolved.transform  = thread_binding.transform;", resolve)
+        self.assertIn("resolved.transform   = binding.transform;", resolve)
+
+    def test_dispatch_launch_routes_a_transformed_binding_through_transform_launch(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        launch = dispatch[dispatch.index("void ggml_hip_dispatch_launch(") :]
+        launch = launch[: launch.index("// ------------------------------------------------------------- entry point")]
+        self.assertIn("if (bound.transform != nullptr) {", launch)
+        self.assertIn(
+            "bound.transform->apply(lc, &ctx, /*out_sig=*/nullptr, &transformed_lc)",
+            launch,
+        )
+        self.assertIn(
+            "ggml_hip_transform_launch(bound.transform, bound.candidate,\n"
+            "                                      bound.variant, &ctx, transformed_lc);",
+            launch,
+        )
+        self.assertIn("launch_native_fallback_after_transform_failure(bound.transform, lc);", launch)
+        # Ordinary path must still be reachable and unchanged in shape.
+        self.assertIn("effective.launch(&effective, lc);", launch)
+
+    def test_apply_failure_fallback_never_uses_ggml_assert(self):
+        # GGML_ASSERT always aborts in this codebase (not compiled out under
+        # NDEBUG) -- using it for "transform apply() unexpectedly failed"
+        # would turn one bad transform into a crashed inference process,
+        # exactly what the fail-closed-to-native design exists to avoid.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        fn_start = dispatch.index("static void launch_native_fallback_after_transform_failure(")
+        fn_end = dispatch.index("\n}", fn_start)
+        fn_body = dispatch[fn_start:fn_end]
+        self.assertNotIn("GGML_ASSERT", fn_body)
+        self.assertIn("ggml_hip_native_select(*lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst)", fn_body)
+        self.assertIn("logged.insert(transform->name).second", fn_body)
+
+    def test_tune_mode_never_installs_a_transform_into_the_live_binding(self):
+        # HI67 slice 1's contract (tune mode stays native) must still hold
+        # after HI31: the TUNE branch never writes into `binding` at all,
+        # transformed or otherwise -- it only logs what it would have won.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        tune_start = resolve.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        tune_end = resolve.index("\n    }\n#endif", tune_start)
+        tune_block = resolve[tune_start:tune_end]
+        self.assertNotIn("binding.candidate", tune_block)
+        self.assertNotIn("binding.transform", tune_block)
+        self.assertIn("ggml_hip_tuner_resolve(", tune_block)
+
+
 if __name__ == "__main__":
     unittest.main()
