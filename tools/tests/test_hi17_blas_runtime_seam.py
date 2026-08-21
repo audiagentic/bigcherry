@@ -68,11 +68,13 @@ def test_native_only_plan_is_fail_closed_without_changing_variant_or_replay():
     assert "ggml_hip_variant_params" not in TYPES[TYPES.index(
         "struct ggml_hip_blas_plan_v1"):TYPES.index(
         "struct ggml_hip_launch_context")]
-    # HI31 (v5): ENT_SIZE now derives from ENT_TRANSFORM (the new per-entry
-    # transform_id field), not ENT_GENERATION directly -- still nothing
-    # BLAS-plan-shaped leaked into the replay entry layout.
+    # HI31/HI74 (v5): ENT_SIZE now derives from ENT_TRANSFORM/ENT_MATCH_KIND
+    # (the new per-entry transform_id/match_kind fields), not ENT_GENERATION
+    # directly -- still nothing BLAS-plan-shaped leaked into the replay
+    # entry layout.
     assert "constexpr size_t ENT_TRANSFORM = ENT_GENERATION + 4" in REPLAY
-    assert "constexpr size_t ENT_SIZE      = ENT_TRANSFORM + 2" in REPLAY
+    assert "constexpr size_t ENT_MATCH_KIND = ENT_TRANSFORM + 2" in REPLAY
+    assert "constexpr size_t ENT_SIZE      = ENT_MATCH_KIND + 1" in REPLAY
     assert "ggml_hip_blas_plan_matches_call" in DISPATCH
     assert "call->plan = nullptr" in apply
     assert "call->numerical_class" in matcher

@@ -142,13 +142,13 @@ class ReplayCacheWireTests(unittest.TestCase):
 
     def test_v5_header_and_entry_sizes_are_explicit_wire_contract(self):
         self.assertEqual(replay_cache.REPLAY_HEADER_SIZE, 56)
-        self.assertEqual(replay_cache.ENT_SIZE, 92)
+        self.assertEqual(replay_cache.ENT_SIZE, 93)
         # Header: 3x u32, 2x u16, 2x u32, then two 16-byte digests.
         self.assertEqual(struct.calcsize("<IIIHHII16s16s"), 56)
         # Entry: two digests, name offset, implementation ABI, three i32
-        # variants, four byte-sized variant fields, generation, and (HI31,
-        # v5) a trailing u16 transform_id.
-        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB16s16sIH"), 92)
+        # variants, four byte-sized variant fields, generation, (HI31, v5)
+        # a u16 transform_id, and (HI74, v5) a trailing u8 match_kind.
+        self.assertEqual(struct.calcsize("<16s16sIHiiiBBBB16s16sIHB"), 93)
 
     def test_deterministic_round_trip_is_independent_of_measurement_order(self):
         root, manifest, ggml_h, measurements = self._fixture()
@@ -320,7 +320,7 @@ class ReplayCacheWireTests(unittest.TestCase):
                   "src/ggml/src/ggml-cuda/hip-autotune-replay.h").read_text(encoding="utf-8")
         self.assertIn("#define GGML_HIP_REPLAY_VERSION 5", header)
         self.assertIn("constexpr size_t HDR_SIZE         = HDR_CONTENT + GGML_HIP_DIGEST_BYTES", source)
-        self.assertIn("constexpr size_t ENT_SIZE      = ENT_TRANSFORM + 2", source)
+        self.assertIn("constexpr size_t ENT_SIZE      = ENT_MATCH_KIND + 1", source)
         for check in ("file is truncated", "content checksum mismatch", "duplicate generation identity",
                       "implementation_version that no longer matches"):
             self.assertIn(check, source)

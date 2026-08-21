@@ -29,15 +29,17 @@
 // payload's compatibility is checked separately against the manifest hash and
 // the ABI schema versions.
 #define GGML_HIP_REPLAY_MAGIC   0x59484342u
-// HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform).
-// A v4 cache is rejected outright as RERUN_REQUIRED by the existing format-
-// version check below -- no dual-layout reader, matching this project's
-// fail-closed exact-version-match policy for every other schema field here
-// (signature_schema, hardware_schema). Transformed entries additionally
-// require EXACT manifest/source provenance even in GGML_HIP_DISPATCH_REPLAY_
-// REVISION_MATCH=0 mode: transforms carry no implementation_version of their
-// own yet to validate safely against a relaxed match (see hip-autotune-
-// replay.cpp's loader).
+// HI31/HI74: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no
+// transform) and a match_kind discriminator (uint8, see
+// ggml_hip_replay_match_kind below). A v4 cache is rejected outright as
+// RERUN_REQUIRED by the existing format-version check below -- no dual-
+// layout reader, matching this project's fail-closed exact-version-match
+// policy for every other schema field here (signature_schema,
+// hardware_schema). Transformed entries additionally require EXACT
+// manifest/source provenance even in GGML_HIP_DISPATCH_REPLAY_REVISION_
+// MATCH=0 mode: transforms carry no implementation_version of their own yet
+// to validate safely against a relaxed match (see hip-autotune-replay.cpp's
+// loader).
 #define GGML_HIP_REPLAY_VERSION 5
 
 // Header of the on-disk cache. Fixed size, little-endian, no padding assumed --
@@ -53,6 +55,18 @@ struct ggml_hip_replay_header {
     uint32_t string_bytes;
     uint8_t  manifest_hash[GGML_HIP_DIGEST_BYTES];
     uint8_t  content_digest[GGML_HIP_DIGEST_BYTES]; // over entries + strings
+};
+
+// HI74: which key form this entry was matched by. EXACT is the only kind
+// any producer emits today; the rest of the range is reserved so a future
+// generalised-entry feature (HI36b, e.g. matching on a coarser MMQ K-multiple
+// or MMVQ ne0 class rather than the exact dispatch digest) has an extension
+// point that does not force a v6 wire-format bump by itself. An unrecognised
+// value is a REJECT (INCOMPATIBLE), never a silent reinterpretation as EXACT
+// -- see hip-autotune-replay.cpp's loader.
+enum ggml_hip_replay_match_kind : uint8_t {
+    GGML_HIP_REPLAY_MATCH_EXACT = 0,
+    // 1-255 reserved for future match kinds (HI36b).
 };
 
 // One stored winner.
@@ -81,6 +95,9 @@ struct ggml_hip_replay_entry {
     // digest: the digest identifies the operation being decided, transform
     // is the stored decision -- a separate fact about the same key.
     uint16_t transform_id;
+    // HI74 (v5): see ggml_hip_replay_match_kind above. Every producer today
+    // writes GGML_HIP_REPLAY_MATCH_EXACT; the loader rejects anything else.
+    uint8_t  match_kind;
 };
 
 // Recovery note (RE27): this five-way classification and the always-on

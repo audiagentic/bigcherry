@@ -185,8 +185,15 @@ ENT_MANIFEST = 54
 ENT_SOURCE_REVISION = ENT_MANIFEST + DIGEST_BYTES
 ENT_GENERATION = ENT_SOURCE_REVISION + DIGEST_BYTES
 ENT_TRANSFORM = ENT_GENERATION + 4
-ENT_SIZE = ENT_TRANSFORM + 2
-assert ENT_SIZE == 92
+# HI74: match_kind discriminator -- see ggml_hip_replay_match_kind in
+# hip-autotune-replay.h. Every producer here writes MATCH_KIND_EXACT; the
+# field exists so a future generalised-entry feature (HI36b) has an
+# extension point that does not force a v6 wire-format bump by itself.
+ENT_MATCH_KIND = ENT_TRANSFORM + 2
+ENT_SIZE = ENT_MATCH_KIND + 1
+assert ENT_SIZE == 93
+
+MATCH_KIND_EXACT = 0
 
 
 def source_revision_digest(source_revision: str) -> str:
@@ -306,6 +313,7 @@ def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "source_revision_digest": entry[ENT_SOURCE_REVISION:ENT_GENERATION].hex(),
             "generation": struct.unpack_from("<I", entry, ENT_GENERATION)[0],
             "transform_id": struct.unpack_from("<H", entry, ENT_TRANSFORM)[0],
+            "match_kind": entry[ENT_MATCH_KIND],
             "wire_entry": entry,
         })
     return header, entries
@@ -649,6 +657,10 @@ def build(
         if not 0 <= transform_id <= 0xFFFF:
             raise SystemExit(f"winner {digest_hex} transform_id out of range: {transform_id}")
         packed += struct.pack("<H", transform_id)
+        match_kind = int(record.get("match_kind", MATCH_KIND_EXACT) or MATCH_KIND_EXACT)
+        if not 0 <= match_kind <= 0xFF:
+            raise SystemExit(f"winner {digest_hex} match_kind out of range: {match_kind}")
+        packed += struct.pack("<B", match_kind)
 
     entry_count = len(packed) // ENT_SIZE
     payload = bytes(packed) + bytes(string_blob)
