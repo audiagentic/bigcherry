@@ -83,6 +83,7 @@ struct Winner {
     uint32_t                              generation;
     bool                                  fresh;
     uint16_t                               transform_id; // 0 = GGML_HIP_TRANSFORM_NONE
+    uint8_t                                match_kind;    // see ggml_hip_replay_match_kind
 };
 
 std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
@@ -173,7 +174,9 @@ constexpr size_t ENT_GENERATION = ENT_REVISION + GGML_HIP_DIGEST_BYTES;
 // ggml_hip_replay_entry::transform_id comment for why this is a raw
 // uint16, not the (feature-gated) enum type.
 constexpr size_t ENT_TRANSFORM = ENT_GENERATION + 4;
-constexpr size_t ENT_SIZE      = ENT_TRANSFORM + 2;
+// HI74 (v5): see ggml_hip_replay_match_kind in hip-autotune-replay.h.
+constexpr size_t ENT_MATCH_KIND = ENT_TRANSFORM + 2;
+constexpr size_t ENT_SIZE      = ENT_MATCH_KIND + 1;
 
 std::vector<uint8_t> read_file(const char * path) {
     std::vector<uint8_t> bytes;
@@ -327,6 +330,7 @@ bool ggml_hip_replay_init() {
         const char * strings = (const char *) (data + strings_at);
         size_t unknown = 0;
         size_t stale_impl_version = 0;
+        size_t unrecognized_match_kind = 0;
 
         for (uint32_t i = 0; i < entry_count; ++i) {
             const uint8_t * entry = data + entries_at + (size_t) i * ENT_SIZE;
@@ -365,14 +369,25 @@ bool ggml_hip_replay_init() {
             // implementation_version mismatch cleared g_winners entirely).
             bool stale_impl = candidate != nullptr &&
                 read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version;
+            // HI74: an entry whose match_kind this loader does not recognise
+            // must be rejected, never silently reinterpreted as EXACT (that
+            // would validate a future generalised-entry key form as if it
+            // were a plain exact digest match). Marked unusable the same
+            // way as an unregistered candidate -- this one slot only, not
+            // the whole cache.
+            const bool unrecognized_match =
+                entry[ENT_MATCH_KIND] != GGML_HIP_REPLAY_MATCH_EXACT;
             if (candidate == nullptr) {
                 ++unknown;
             } else if (stale_impl) {
                 ++stale_impl_version;
             }
+            if (unrecognized_match) {
+                ++unrecognized_match_kind;
+            }
 
             Winner winner = {};
-            winner.candidate          = stale_impl ? nullptr : candidate;
+            winner.candidate          = (stale_impl || unrecognized_match) ? nullptr : candidate;
             winner.stale_impl_version = stale_impl;
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
@@ -389,6 +404,7 @@ bool ggml_hip_replay_init() {
                    GGML_HIP_DIGEST_BYTES);
             winner.generation = read_u32(entry + ENT_GENERATION);
             winner.transform_id = read_u16(entry + ENT_TRANSFORM);
+            winner.match_kind   = entry[ENT_MATCH_KIND];
 
             auto & generations = g_winners[key];
             for (const Winner & prior : generations) {
@@ -432,6 +448,15 @@ bool ggml_hip_replay_init() {
                           "this build's candidate registry and were skipped; "
                           "other entries in the cache were retained\n",
                           stale_impl_version);
+        }
+        if (unrecognized_match_kind) {
+            // HI74: expected once generalised entries (HI36b) exist and this
+            // binary predates that feature -- not a corruption signal, so a
+            // warning, not a reject().
+            GGML_LOG_WARN("bigcherry: %zu cache entry/entries use a "
+                          "match_kind this build does not recognise and "
+                          "were skipped; other entries in the cache were "
+                          "retained\n", unrecognized_match_kind);
         }
     });
     return g_loaded;
