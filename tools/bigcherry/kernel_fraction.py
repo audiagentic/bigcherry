@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -93,6 +94,18 @@ def _pick(header: list[str], candidates: tuple[str, ...]) -> str | None:
     return None
 
 
+def _parse_agent(value: str | None) -> int | None:
+    """rocprofv3 agent ids appear as a bare number (older builds) or as
+    'Agent N' (newer builds); both carry the same device index."""
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    match = re.search(r"(\d+)\s*$", text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
     """Parse one or more rocprofv3 kernel-trace CSVs into spans + rows.
 
@@ -165,7 +178,7 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                         "kernel": kernel,
                         "family": classify(kernel),
                         "dur_ns": dur,
-                        "agent": int(float(agent)) if agent not in (None, "") else None,
+                        "agent": _parse_agent(agent),
                     }
                 )
 

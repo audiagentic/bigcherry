@@ -139,6 +139,42 @@ Analysis script: `tmp/h35-s1b-equivalence.py` (gitignored; the inputs are
 the two 512 MB CSVs on Brutus — `kf-decode/brutus/*` stale, `kf-decode-b10502/*`
 b10502 — too large for git, checksums below).
 
+## HI35 Part 2 — kernel-fraction ceiling bands, PUBLISHED (2026-08-21)
+
+Full family-level `bigcherry kernel-fraction` report over the validated traces
+(committed `kf/` copies; header-keyed parse, family attribution per standards
+7.1). This is the adjudicated point-3 publication (ceiling_low = known matmul
+share × busy; ceiling_high = (known + unmapped) × busy; band >2pp would mean
+the method is not precise enough).
+
+**Decode** (27B Q8_0 dense + built-in MTP, ctx 8192, R9700 gfx1201,
+p0/n256/r3): matmul 95.3% of GPU kernel time (mmvq 94.2% + quantize_q8_1 1.1%),
+unmapped 1.6%, GPU busy 77.8% (b10502) / 77.7% (stale):
+
+| | ceiling_low | ceiling_high | band |
+| --- | --- | --- | --- |
+| decode (b10502) | **74.1%** | **75.4%** | **1.2pp ≤ 2.0pp → precise enough** |
+| decode (stale 22dc605) | 74.0% | 75.3% | 1.2pp (pin-invariant within 0.1pp) |
+| prefill | 39.5% | 47.7% | **8.2pp > 2.0pp → NOT precise enough** |
+
+The prefill band fails the precision bar: 14.9% of prefill kernel time is
+unmapped (the family pattern table does not cover the prefill kernel set), so
+the prefill matmul share is understated and only a lower bound. Decode — the
+phase the tuning items target — meets the bar.
+
+The S1b table above quotes **73.2%**; that variant matched matmul kernels only
+(`mul_mat_vec_q`, no `quantize_q8_1`). Standards 7.1 counts the activation
+quantisation as part of the matmul path, so the 7.1-compliant lower bound is
+74.1%. Both are the same measurement with a 1.1pp attribution difference; the
+7.1-compliant band is the published one. The pin-invariance gate (Δ0.018pp)
+holds identically for both variants.
+
+**Consequence for prioritisation:** on this workload a 10% matmul saving is
+worth at most 7.4–7.5% of decode wall before Amdahl's law meets the
+CPU-bound remainder; the mmvq dominance (94.2% of kernel time) is exactly why
+HI36a GO'd mmq/mmvq generalisation and the S7b batched-decode misses are the
+highest-value coverage gap on the machine.
+
 ## Checksums (sha256)
 
 ```text
