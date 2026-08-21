@@ -1,0 +1,21 @@
+{
+  "source_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+  "manifest_hash": "6fab7febbbdb6bf25b0a19b5e7710b5a",
+  "signatures_observed": 69,
+  "mmq_types": [
+    "q8_0"
+  ],
+  "mmvq_types": [
+    "q8_0"
+  ],
+  "mmvf_types": [],
+  "mmf_types": [],
+  "widths": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "uses_blas": false
+}
