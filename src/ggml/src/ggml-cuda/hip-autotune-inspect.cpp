@@ -298,13 +298,15 @@ int main(int argc, char ** argv) {
             }
         }
 #endif
-        return (!registry.anomalies.empty()) ? 1
+        // Computed as if/else (not a ternary across an #ifdef) so the
+        // statement-terminator can't land on only one branch.
+        int rc = 0;
 #ifdef GGML_HIP_DISPATCH_REPLAY
-               : (cache_configured && !cache_loaded) ? 3
-               : (cache_configured && winners.empty() ? 4 : 0)
-#else
-               : 0;
+        if (cache_configured && !cache_loaded) rc = 3;
+        else if (cache_configured && winners.empty()) rc = 4;
 #endif
+        if (!registry.anomalies.empty()) rc = 1;
+        return rc;
     }
 
     // --json
@@ -314,7 +316,7 @@ int main(int argc, char ** argv) {
     std::printf("\"descriptor_hash\":\"%s\",", GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR);
     std::printf("\"variant_set\":\"%s\",", GGML_HIP_AUTOTUNE_VARIANT_SET_STR);
     std::printf("\"artifact_version\":%d,", GGML_HIP_AUTOTUNE_ARTIFACT_VERSION);
-    std::printf("\"candidate_count\":%zu},", GGML_HIP_AUTOTUNE_CANDIDATE_COUNT);
+    std::printf("\"candidate_count\":%d},", GGML_HIP_AUTOTUNE_CANDIDATE_COUNT);
     std::printf("\"registry\":{\"count\":%zu,\"by_family\":{", registry.count);
     bool first = true;
     for (const auto & [family, n] : registry.by_family) {
@@ -363,11 +365,11 @@ int main(int argc, char ** argv) {
     }
 #endif
     std::printf("}\n");
-    return (!registry.anomalies.empty()) ? 1
+    int rc = 0;
 #ifdef GGML_HIP_DISPATCH_REPLAY
-           : (cache_configured && !cache_loaded) ? 3
-           : (cache_configured && winners.empty() ? 4 : 0)
-#else
-           : 0;
+    if (cache_configured && !cache_loaded) rc = 3;
+    else if (cache_configured && winners.empty()) rc = 4;
 #endif
+    if (!registry.anomalies.empty()) rc = 1;
+    return rc;
 }
