@@ -6,9 +6,10 @@ import json
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import cast
 
-from . import config as campaign_config
-from . import patchset, paths, recipes
+from . import (config as campaign_config, patchset, paths, pin_status,
+               recipes)
 from .context import ProjectContext
 
 
@@ -88,19 +89,32 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         },
         "upstream": {
             "legacy_checkout": str(paths.llama_root()),
-            "pinned_sha": _resolve_upstream(paths.llama_root(), str(raw.get("pinned", ""))),
+            "pinned_sha": _resolve_upstream(
+                paths.llama_root(), str(raw.get("pinned", ""))
+            ),
             "host_local_object_repo": str(context.upstream_repo),
         },
         "patch_catalog": patch_rows,
         "classification": {
-            "framework_candidates": [item.patch_id for item in catalog if item.state == "validated"],
-            "validated_core_group": [item.patch_id for item in catalog if item.group == "core" and item.state == "validated"],
-            "validated_noncore_group": [item.patch_id for item in catalog if item.group != "core" and item.state == "validated"],
+            "framework_candidates": [
+                item.patch_id for item in catalog if item.state == "validated"
+            ],
+            "validated_core_group": [
+                item.patch_id
+                for item in catalog
+                if item.group == "core" and item.state == "validated"
+            ],
+            "validated_noncore_group": [
+                item.patch_id
+                for item in catalog
+                if item.group != "core" and item.state == "validated"
+            ],
             "promoted_enhancements": [],
             "classification_status": "owner-review-required",
             "reason": "validated state/group alone does not establish enhancement promotion",
         },
         "source_plans": recipes_report,
+        "pin_status": _pin_status_section(context),
         "known_aliases": {
             "bigcherry-native_vs_bigcherry": {
                 "legacy_selector_equal": True,
@@ -118,14 +132,49 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
     return report
 
 
+def _pin_status_section(context: ProjectContext) -> dict[str, object]:
+    """RE48: the local pin verdict as a diagnostic section.
+
+    Append-only and informational: doctor's exit code is unchanged (0), and
+    the gate is `pin-status --strict` / `--complete`, not doctor."""
+    repo_paths = pin_status.RepoPaths(
+        repo_root=context.project_root,
+        llama_root=paths.llama_root(),
+        releases_dir=context.project_root / "releases",
+        artifacts_dir=context.project_root / "artifacts",
+    )
+    status = pin_status.local_status(repo_paths)
+    return {
+        "verdict": status.verdict,
+        "pinned_ref": status.pinned_ref,
+        "pinned_sha": status.pinned_sha,
+        "vendor_head": status.vendor_head,
+        "marker_state": status.marker_state,
+        "reasons": list(status.reasons),
+    }
+
+
 def main(*, as_json: bool = False, context: ProjectContext | None = None) -> int:
     report = build_report(context)
     if as_json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
+        config_report = cast("dict[str, object]", report["config"])
+        patch_rows = cast("list[object]", report["patch_catalog"])
         print(f"BigCherry revision: {report['bigcherry_revision']}")
-        print(f"Config: v{report['config']['version']} pinned={report['config']['pinned']}")
-        print(f"Patch modules: {len(report['patch_catalog'])}")
+        print(
+            f"Config: v{config_report['version']} pinned={config_report['pinned']}"
+        )
+        print(f"Patch modules: {len(patch_rows)}")
         print("Promoted enhancement set: none (owner/reviewer classification required)")
-        print("bigcherry-native vs bigcherry: legacy selectors equal; no source delta claimed")
+        print(
+            "bigcherry-native vs bigcherry: legacy selectors equal; no source delta claimed"
+        )
+        pin_status_report = cast("dict[str, object]", report["pin_status"])
+        verdict = pin_status_report["verdict"]
+        vendor = str(pin_status_report["vendor_head"] or "none")[:12]
+        print(
+            f"Pin status: {verdict} "
+            f"(pin {pin_status_report['pinned_ref']} vs vendor {vendor})"
+        )
     return 0
