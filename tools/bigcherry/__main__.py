@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ from . import patch_catalog
 from . import patch_lifecycle
 from . import patcher
 from . import patchset
+from . import pin_status
+from . import pin_transition
 from . import recipes
 from . import releases
 from . import source_audit
@@ -69,8 +72,72 @@ def _record_for(root: Path) -> releases.ReleaseRecord:
 # --------------------------------------------------------------------- pull
 
 
+_PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
+
+
+def _uncommitted_pin_change() -> str | None:
+    """RE48 enforcement hook A: the working-tree pin, when it differs from
+    the committed config.
+
+    A pin change that has not been committed is not yet a declared bump --
+    the transition (pin commit + marker) is the declaration. Moving the
+    checkout over an uncommitted pin change is exactly the manual path that
+    produces drift, so pull refuses until it is committed (or reverted).
+    """
+    try:
+        text = paths.RECIPES.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    working = _PIN_LINE.search(text)
+    if working is None:
+        return None
+    committed = _git_out(
+        paths.REPO_ROOT,
+        "show",
+        "HEAD:" + str(paths.RECIPES.relative_to(paths.REPO_ROOT)).replace("\\", "/"),
+    )
+    match = _PIN_LINE.search(committed) if committed else None
+    committed_pin = match.group(1) if match else None
+    if committed_pin is not None and committed_pin != working.group(1):
+        return working.group(1)
+    return None
+
+
 def cmd_pull(args: argparse.Namespace) -> int:
     root = paths.llama_root(args.llama_root)
+
+    # RE48: never move the checkout over an uncommitted pin change.
+    uncommitted_pin = _uncommitted_pin_change()
+    if uncommitted_pin is not None and args.ref:
+        print(
+            f"refusing: the pin in config/recipes.toml is uncommitted "
+            f"(working tree pins {uncommitted_pin!r}).",
+            file=sys.stderr,
+        )
+        print(
+            "commit the pin move (and the repin transition marker, if one "
+            "was written) first, then pull -- or revert the pin change.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # RE48: never move the checkout while a pin-transition marker exists
+    # but is uncommitted (the bump's declaration commit is still missing).
+    marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
+    if marker_path.is_file() and \
+            pin_transition.committed_state(marker_path) != "committed-clean":
+        print(
+            "refusing: releases/pin-transition.json (the pin-transition "
+            "marker) is uncommitted.",
+            file=sys.stderr,
+        )
+        print(
+            "commit it together with config/recipes.toml first (see "
+            "docs/reference/PIN_BUMP.md), then pull -- or delete it if the "
+            "bump was abandoned.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Ref resolution order: explicit --ref, else the recipe's, else stay put.
     # `latest` resolves against the remote here so what gets recorded is the
@@ -286,24 +353,242 @@ def cmd_apply(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _resolve_pin_sha(ref: str) -> str:
+    """Resolve a pin ref to a full commit SHA in the vendor clone.
+
+    RE48: the transition marker is SHA-keyed; an unresolvable ref fails the
+    repin rather than writing a marker the verdict engine cannot match."""
+    root = paths.llama_root()
+    if not (root / ".git").exists():
+        raise upstream.UpstreamError(
+            f"vendor checkout missing at {root}; run 'python -m bigcherry pull' "
+            "before repinning"
+        )
+    checkout_ref = upstream.ensure_ref(root, ref)
+    resolved = ref if checkout_ref == ref else checkout_ref
+    return upstream._git(root, "rev-parse", f"{resolved}^{{commit}}").strip()
+
+
 def cmd_repin(args: argparse.Namespace) -> int:
-    """Move the pin to the newest upstream release."""
+    """Move the pin to the newest upstream release and declare the transition.
+
+    RE48/RV78: repin now writes the pin-transition marker (releases/
+    pin-transition.json) atomically with the recipes.toml rewrite. Commit
+    both together -- the committed marker is what makes the in-flight state
+    'mid-rebase' instead of 'drift' (see docs/reference/PIN_BUMP.md)."""
     try:
         target = args.ref or upstream.latest_release()
+    except upstream.UpstreamError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    try:
         old = recipes.repin(target)
-    except (upstream.UpstreamError, recipes.RecipeError) as exc:
+    except recipes.RecipeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     if old == target:
         print(f"already pinned to {target}")
         return 0
+
+    try:
+        from_sha = _resolve_pin_sha(old)
+        to_sha = _resolve_pin_sha(target)
+        declaring = upstream._git(paths.REPO_ROOT, "rev-parse", "HEAD")
+    except upstream.UpstreamError as exc:
+        print(
+            f"pin moved ({old} -> {target}) but the transition marker "
+            f"could not be resolved: {exc}",
+            file=sys.stderr,
+        )
+        print(
+            "restore the previous pin or re-run repin; a pin move without "
+            "a marker reads as drift in pin-status.",
+            file=sys.stderr,
+        )
+        return 1
+
+    pin_transition.write(from_sha, to_sha, target, declaring)
     print(f"pinned: {old} -> {target}")
     print(
         "recipes following the pin now build from it; recipes naming their "
         "own ref are unchanged."
     )
-    print("next: python -m bigcherry pull --recipe <name>")
+    print(f"transition marker: {pin_transition.MARKER_PATH} ({old} -> {target})")
+    print(
+        "next: COMMIT recipes.toml + the marker together, then "
+        "python -m bigcherry pull --recipe <name>"
+    )
+    return 0
+
+
+def _pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
+    """Local RepoPaths + config trees + the llama root, from the real config."""
+    from . import config as campaign_config
+
+    cfg = campaign_config.load(paths.RECIPES)
+    repo_paths = pin_status.RepoPaths(
+        repo_root=paths.REPO_ROOT,
+        llama_root=paths.llama_root(),
+        releases_dir=paths.REPO_ROOT / "releases",
+        artifacts_dir=paths.REPO_ROOT / "artifacts",
+    )
+    return repo_paths, cfg, list(cfg.trees)
+
+
+def _render_pin_status(report, trees) -> str:
+    lines: list[str] = []
+    local = report.local
+    lines.append("pin-status: local")
+    pinned = (
+        f"{local.pinned_ref} -> {local.pinned_sha[:12]}"
+        if local.pinned_sha
+        else (local.pinned_ref or "(none)")
+    )
+    lines.append(f"  pin           {pinned}")
+    vendor = f"{local.vendor_head[:12]}" if local.vendor_head else "(absent)"
+    if local.vendor_tags:
+        vendor += f" (tag {', '.join(local.vendor_tags)})"
+    if local.vendor_head:
+        vendor += (
+            f"  [{local.vendor_modified} modified, {local.vendor_untracked} untracked]"
+        )
+    lines.append(f"  vendor HEAD   {vendor}")
+    if local.records:
+        recs = ", ".join(
+            f"{r[:12]} {s}"
+            for r, s in sorted(local.records.items(), key=lambda kv: kv[0])
+        )
+        lines.append(f"  releases      {recs}")
+    if local.descriptors:
+        desc = ", ".join(f"{d[:12]}" for d in local.descriptors)
+        lines.append(f"  descriptors   {desc}")
+    lines.append(f"  bigcherry     {(local.bigcherry_head or '?')[:12]}")
+    if local.marker:
+        lines.append(
+            f"  marker        {local.marker.from_sha[:12]} -> "
+            f"{local.marker.to_sha[:12]} ({local.marker.tag}) "
+            f"[{local.marker_state}]"
+        )
+    lines.append(
+        f"  VERDICT       {local.verdict}"
+        + (f"  ({'; '.join(local.reasons)})" if local.reasons else "")
+    )
+
+    for status in report.remotes:
+        lines.append(f"\npin-status: {status.name} (remote)")
+        if not status.reachable:
+            lines.append(f"  VERDICT       unreachable  ({'; '.join(status.reasons)})")
+            continue
+        lines.append(f"  vendor HEAD   {(status.vendor_head or 'none')[:12]}")
+        lines.append(
+            f"  pin           {status.pinned_ref or 'none'} "
+            f"-> {(status.pinned_sha or '?')[:12]}"
+        )
+        lines.append(f"  bigcherry     {(status.bigcherry_head or 'none')[:12]}")
+        lines.append(
+            f"  VERDICT       {status.verdict}"
+            + (f"  ({'; '.join(status.reasons)})" if status.reasons else "")
+        )
+
+    if report.remotes:
+        if report.converged == True:  # noqa: E712 -- tri-state: None = no remotes
+            lines.append("\nAGGREGATE  converged")
+        elif report.converged == False:  # noqa: E712
+            lines.append(
+                f"\nAGGREGATE  DIVERGED  ({'; '.join(report.aggregate_reasons)})"
+            )
+    return "\n".join(lines)
+
+
+def cmd_pin_status(args: argparse.Namespace) -> int:
+    """RE48: name the pin state. Reads only -- never mutates."""
+    try:
+        repo_paths, cfg, trees = _pin_status_paths()
+    except Exception as exc:  # ConfigError, RecipeError, OSError
+        print(f"pin-status: config error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.remote:
+        trees = [t for t in trees if t.name == args.remote]
+        if not trees:
+            print(
+                f"pin-status: no configured tree named {args.remote!r}", file=sys.stderr
+            )
+            return 2
+    elif not args.all_remotes:
+        trees = []
+
+    try:
+        report = pin_status.build_report(repo_paths, tuple(trees))
+    except Exception as exc:
+        print(f"pin-status: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        document = {
+            "local": {
+                "pinned_ref": report.local.pinned_ref,
+                "pinned_sha": report.local.pinned_sha,
+                "vendor_head": report.local.vendor_head,
+                "vendor_tags": list(report.local.vendor_tags),
+                "vendor_modified": report.local.vendor_modified,
+                "vendor_untracked": report.local.vendor_untracked,
+                "marker": report.local.marker.to_json()
+                if report.local.marker
+                else None,
+                "marker_state": report.local.marker_state,
+                "records": report.local.records,
+                "descriptors": list(report.local.descriptors),
+                "bigcherry_head": report.local.bigcherry_head,
+                "verdict": report.local.verdict,
+                "reasons": list(report.local.reasons),
+            },
+            "remotes": [
+                {
+                    "name": s.name,
+                    "reachable": s.reachable,
+                    "vendor_head": s.vendor_head,
+                    "pinned_ref": s.pinned_ref,
+                    "pinned_sha": s.pinned_sha,
+                    "bigcherry_head": s.bigcherry_head,
+                    "verdict": s.verdict,
+                    "reasons": list(s.reasons),
+                }
+                for s in report.remotes
+            ],
+            "converged": report.converged,
+            "aggregate_reasons": list(report.aggregate_reasons),
+        }
+        print(json.dumps(document, indent=2, sort_keys=True))
+    else:
+        print(_render_pin_status(report, trees))
+
+    if args.complete:
+        failures = pin_status.complete_failures(report, tuple(trees))
+        document = {"pass": not failures, "reasons": failures}
+        if args.json:
+            pass  # JSON already emitted above
+        else:
+            print(f"\nCOMPLETION  {'PASS' if not failures else 'FAIL'}")
+            for reason in failures:
+                print(f"  - {reason}")
+        return 1 if failures else 0
+
+    if args.strict:
+        failures = pin_status.strict_failure(report)
+        if failures:
+            for reason in failures:
+                print(f"pin-status --strict FAIL: {reason}", file=sys.stderr)
+            return 1
+        if report.local.verdict == pin_status.VERDICT_MID_REBASE:
+            print(
+                "WARNING: tree is mid-rebase (a declared bump is in "
+                "flight); proceeding only because the pipeline's source "
+                "identity is revision-bound.",
+                file=sys.stderr,
+            )
+        return 0
     return 0
 
 
@@ -354,6 +639,7 @@ def cmd_build_new(args: argparse.Namespace) -> int:
     except campaign_config.ConfigError as exc:
         print(f"build: {exc}", file=sys.stderr)
         return 2
+
     store = ArtifactStore(context.work_root / "artifacts-store")
 
     selectors: tuple[campaign_config.CampaignLaneSelector, ...] = ()
@@ -374,6 +660,36 @@ def cmd_build_new(args: argparse.Namespace) -> int:
                 return 2
             parsed.append(campaign_config.CampaignLaneSelector(*parts))
         selectors = tuple(parsed)
+
+    # RE48 preflight: never start a lane from a tree whose pin state is
+    # drift / uncommitted-transition / unresolvable (fail closed, no
+    # bypass). mid-rebase is allowed with a warning: the pipeline's source
+    # identity is revision-bound. A campaign-only tree with no git checkout
+    # at the clone source has nothing to guard (its lanes bind their own
+    # source identity). Placed AFTER the exit-2 request-syntax checks above
+    # so a malformed request reports its syntax error, not the tree state.
+    try:
+        pin_repo_paths = pin_status.RepoPaths(
+            repo_root=context.project_root,
+            llama_root=context.upstream_repo,
+            releases_dir=context.project_root / "releases",
+            artifacts_dir=context.project_root / "artifacts",
+        )
+        pin_failures, pin_mid_rebase = pin_status.campaign_preflight(
+            context.upstream_repo, pin_repo_paths)
+    except Exception as exc:
+        print(f"build: pin preflight error: {exc}", file=sys.stderr)
+        return 1
+    if pin_failures:
+        for reason in pin_failures:
+            print(f"build: pin preflight FAIL: {reason}", file=sys.stderr)
+        print("build: run `bigcherry pin-status` for the full report and see "
+              "docs/reference/PIN_BUMP.md (fail closed)", file=sys.stderr)
+        return 1
+    if pin_mid_rebase:
+        print("WARNING: tree is mid-rebase (a declared bump is in flight); "
+              "proceeding because the pipeline's source identity is "
+              "revision-bound.", file=sys.stderr)
 
     architectures = tuple(args.arch.split(",")) if args.arch else ()
     inventory = Path(args.inventory) if args.inventory else None
@@ -551,12 +867,12 @@ def cmd_patches(args: argparse.Namespace) -> int:
         note = ""
         if module.upstream:
             landed = patchset.upstream_landed(module.upstream, root)
-            if landed is True:
+            if landed:
                 note = f"upstream {module.upstream[:8]} landed -- redundant here"
-            elif landed is False:
-                note = f"upstream {module.upstream[:8]} not in this checkout"
-            else:
+            elif landed is None:
                 note = f"upstream {module.upstream[:8]} unknown"
+            else:
+                note = f"upstream {module.upstream[:8]} not in this checkout"
 
         if module.state not in patchset.STATES:
             problems.append(
@@ -888,6 +1204,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="pin to this ref instead of querying for the newest release",
     )
     repin.set_defaults(func=cmd_repin)
+
+    pin_status_cmd = sub.add_parser(
+        "pin-status",
+        help=(
+            "name the pin state of this tree (and configured remotes): "
+            "consistent / mid-rebase / drift; --strict = pipeline preflight, "
+            "--complete = bump-completion gate"
+        ),
+    )
+    mode = pin_status_cmd.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--strict",
+        action="store_true",
+        help="pipeline preflight: fail on drift/unavailable/"
+        "unresolvable-pin/uncommitted-transition of the "
+        "gated tree",
+    )
+    mode.add_argument(
+        "--complete",
+        action="store_true",
+        help="bump-completion gate: every required tree "
+        "reachable, converged and consistent",
+    )
+    pin_status_cmd.add_argument(
+        "--json", action="store_true", help="machine-readable report"
+    )
+    remotes = pin_status_cmd.add_mutually_exclusive_group()
+    remotes.add_argument(
+        "--remote", default=None, help="probe only this configured tree"
+    )
+    remotes.add_argument(
+        "--all-remotes", action="store_true", help="probe every configured tree"
+    )
+    pin_status_cmd.set_defaults(func=cmd_pin_status)
 
     # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
     # else -- a canonical-v2 interface only, never a translation layer for
@@ -1510,8 +1860,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
     """Dispatch to inventory record/tuning subcommand."""
-    from . import inventory as inv_mod
     from pathlib import Path
+
+    from . import inventory as inv_mod
 
     if subcmd == "record":
         record_path = Path(args.record)

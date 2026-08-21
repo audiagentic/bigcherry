@@ -256,3 +256,22 @@ ref = "b10257"
 states = ["validated"]
 builds = ["tune", "replay"]
 platform = "linux-multi"
+
+# --- RE48: tree registry (pin-status --all-remotes / --complete) ----------------
+# local is implicit (the tree running the command); it is listed so the
+# registry is explicit. `role = "campaign"` trees get the tooling-revision
+# comparison; `required` trees must be reachable+consistent for --complete.
+[[trees]]
+name = "local"
+alias = ""
+path = ""
+role = "local"
+required = false
+
+[[trees]]
+name = "brutus"
+alias = "brutus"
+path = "/mnt/vault/development/llmhosts/bigcherry"
+role = "campaign"
+required = true
+expected-tooling-revision = ""

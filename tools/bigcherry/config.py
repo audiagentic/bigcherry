@@ -24,6 +24,13 @@ def _table(raw: object, where: str) -> dict[str, object]:
     return raw
 
 
+def _required_string(data: dict[str, object], key: str, where: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"{where}.{key} must be a non-empty string")
+    return value
+
+
 def _strings(raw: object, where: str) -> tuple[str, ...]:
     if raw is None:
         return ()
@@ -41,9 +48,7 @@ def _options(raw: object, where: str) -> tuple[tuple[str, str], ...]:
         if not isinstance(key, str) or not key:
             raise ConfigError(f"{where} contains an invalid option name")
         if isinstance(value, bool):
-            raise ConfigError(
-                f"{where}.{key} must use \"ON\"/\"OFF\", not a TOML boolean"
-            )
+            raise ConfigError(f'{where}.{key} must use "ON"/"OFF", not a TOML boolean')
         if not isinstance(value, (str, int, float)):
             raise ConfigError(f"{where}.{key} must be a scalar")
         result.append((key, str(value)))
@@ -119,6 +124,24 @@ class CampaignProfile:
 
 
 @dataclass(frozen=True)
+class Tree:
+    """RE48: a known working tree of this repo, probed by pin-status.
+
+    ``required`` trees are part of the ``--complete`` obligation (a
+    required unreachable tree fails completion); ``role = "campaign"``
+    trees additionally carry the expected-tooling-revision gate, because a
+    campaign launched on stale tooling is a silent desync (the J: tree ran
+    the 27B campaign four commits behind on 2026-08-21)."""
+
+    name: str
+    alias: str
+    path: str
+    required: bool
+    role: str
+    expected_tooling_revision: str
+
+
+@dataclass(frozen=True)
 class Config:
     pinned: str
     patch_sets: dict[str, PatchSet]
@@ -128,6 +151,9 @@ class Config:
     experiments: dict[str, Experiment]
     campaigns: dict[str, CampaignProfile]
     path: Path
+    # RE48: default () keeps every pre-RE48 `Config(...)` constructor
+    # (which never knew `trees`) source-compatible.
+    trees: tuple[Tree, ...] = ()
 
 
 def load(path: str | Path) -> Config:
@@ -145,8 +171,19 @@ def load(path: str | Path) -> Config:
             f"{path}: expected explicit version = 2; v1 requires conversion"
         )
     unknown_top_level = sorted(
-        set(raw) - {"version", "pinned", "patch-set", "source", "build", "platform",
-                    "experiment", "compat", "campaign"}
+        set(raw)
+        - {
+            "version",
+            "pinned",
+            "patch-set",
+            "source",
+            "build",
+            "platform",
+            "experiment",
+            "compat",
+            "campaign",
+            "trees",
+        }
     )
     if unknown_top_level:
         raise ConfigError(
@@ -188,7 +225,7 @@ def load(path: str | Path) -> Config:
                 f"source.{name} must use exact patch-sets, not groups/states selectors"
             )
         backend = data.get("backend", "hip")
-        if backend not in BACKENDS:
+        if not isinstance(backend, str) or backend not in BACKENDS:
             raise ConfigError(
                 f"source.{name}.backend={backend!r} must be one of "
                 f"{', '.join(BACKENDS)}"
@@ -199,10 +236,13 @@ def load(path: str | Path) -> Config:
     for name, body in _table(raw.get("build"), "build").items():
         data = _table(body, f"build.{name}")
         needs = _strings(data.get("needs"), f"build.{name}.needs")
+        variant_set = data.get("variant-set")
+        if variant_set is not None and not isinstance(variant_set, str):
+            raise ConfigError(f"build.{name}.variant-set must be a string")
         builds[name] = Build(
             name=name,
             options=_options(data.get("options"), f"build.{name}.options"),
-            variant_set=data.get("variant-set"),
+            variant_set=variant_set,
             needs=frozenset(needs),
         )
 
@@ -229,11 +269,61 @@ def load(path: str | Path) -> Config:
         experiments[name] = Experiment(
             name=name,
             patches=_strings(data.get("patches"), f"experiment.{name}.patches"),
-            cmake_options=_options(data.get("cmake-options"), f"experiment.{name}.cmake-options"),
-            runtime_env=_options(data.get("runtime-env"), f"experiment.{name}.runtime-env"),
+            cmake_options=_options(
+                data.get("cmake-options"), f"experiment.{name}.cmake-options"
+            ),
+            runtime_env=_options(
+                data.get("runtime-env"), f"experiment.{name}.runtime-env"
+            ),
             requires=_strings(data.get("requires"), f"experiment.{name}.requires"),
             conflicts=_strings(data.get("conflicts"), f"experiment.{name}.conflicts"),
         )
+    trees: list[Tree] = []
+    raw_trees = raw.get("trees")
+    if raw_trees is not None and not isinstance(raw_trees, list):
+        raise ConfigError("trees must be a list of tables")
+    _tree_keys = {
+        "name",
+        "alias",
+        "path",
+        "required",
+        "role",
+        "expected-tooling-revision",
+    }
+    for i, body in enumerate(raw_trees or []):
+        data = _table(body, f"trees[{i}]")
+        unknown = sorted(set(data) - _tree_keys)
+        if unknown:
+            raise ConfigError(f"trees[{i}] has unknown field(s): {', '.join(unknown)}")
+        name = _required_string(data, "name", f"trees[{i}]")
+        # alias/path may be given as the empty string to mean "unset" --
+        # alias defaults to the tree name, path to "." (the local tree).
+        alias = data.get("alias") or name
+        tpath = data.get("path") or "."
+        if not isinstance(alias, str) or not alias:
+            raise ConfigError(f"trees[{i}].alias must be a non-empty string")
+        if not isinstance(tpath, str) or not tpath:
+            raise ConfigError(f"trees[{i}].path must be a non-empty string")
+        role = data.get("role", "local")
+        if not isinstance(role, str) or role not in ("local", "campaign"):
+            raise ConfigError(f"trees[{i}].role={role!r} must be 'local' or 'campaign'")
+        expected = data.get("expected-tooling-revision", "")
+        if not isinstance(expected, str):
+            raise ConfigError(f"trees[{i}].expected-tooling-revision must be a string")
+        required = data.get("required", False)
+        if not isinstance(required, bool):
+            raise ConfigError(f"trees[{i}].required must be a boolean")
+        trees.append(
+            Tree(
+                name=name,
+                alias=alias,
+                path=tpath,
+                required=required,
+                role=role,
+                expected_tooling_revision=expected,
+            )
+        )
+
     campaigns: dict[str, CampaignProfile] = {}
     for name, body in _table(raw.get("campaign"), "campaign").items():
         data = _table(body, f"campaign.{name}")
@@ -246,7 +336,14 @@ def load(path: str | Path) -> Config:
             lane_source = lane_data.get("source")
             lane_build = lane_data.get("build")
             lane_platform = lane_data.get("platform")
-            if not all(isinstance(v, str) and v for v in (lane_source, lane_build, lane_platform)):
+            if (
+                not isinstance(lane_source, str)
+                or not lane_source
+                or not isinstance(lane_build, str)
+                or not lane_build
+                or not isinstance(lane_platform, str)
+                or not lane_platform
+            ):
                 raise ConfigError(
                     f"campaign.{name}.lanes[{index}] must set non-empty "
                     f"source/build/platform strings"
@@ -263,8 +360,21 @@ def load(path: str | Path) -> Config:
                 raise ConfigError(
                     f"campaign.{name}.lanes[{index}] references unknown platform {lane_platform!r}"
                 )
-            lanes.append(CampaignLaneSelector(
-                source=lane_source, build=lane_build, platform=lane_platform))
+            lanes.append(
+                CampaignLaneSelector(
+                    source=lane_source, build=lane_build, platform=lane_platform
+                )
+            )
         campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
 
-    return Config(pinned, patch_sets, sources, builds, platforms, experiments, campaigns, path)
+    return Config(
+        pinned,
+        patch_sets,
+        sources,
+        builds,
+        platforms,
+        experiments,
+        campaigns,
+        path,
+        tuple(trees),
+    )

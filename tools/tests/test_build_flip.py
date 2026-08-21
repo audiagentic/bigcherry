@@ -130,7 +130,12 @@ class CmdBuildNewRequestValidationTests(unittest.TestCase):
 
     def test_rejects_unknown_profile_via_planner_error(self):
         args = self._args(profile="does-not-exist")
-        code = cli.cmd_build_new(args)
+        # The RE48 pin preflight resolves the REAL tree these wiring tests
+        # run against; stub it so the exit code under test comes from the
+        # planner, not from the pin gate (covered by test_pin_status.py).
+        with patch("bigcherry.pin_status.campaign_preflight",
+                   return_value=([], False)):
+            code = cli.cmd_build_new(args)
         self.assertEqual(code, 2)
 
 
