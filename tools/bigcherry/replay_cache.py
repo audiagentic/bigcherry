@@ -25,24 +25,31 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
 import struct
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import autotune_catalog
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
 # HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform,
-# ENT_TRANSFORM below) -- mirrors hip-autotune-replay.h/.cpp byte for byte.
-# A v4 cache is rejected outright by the C++ loader's exact format-version
-# check; there is no dual-layout reader on either side.
+# ENT_TRANSFORM below); HI74 adds the trailing match_kind byte (ENT_MATCH_KIND
+# below). Both mirror hip-autotune-replay.h/.cpp byte for byte. A v4 cache is
+# rejected outright by the C++ loader's exact format-version check (rerun
+# required) -- the production side has no dual-layout reader. The only v4
+# reader in this module is read_cache_legacy_v4(), an OFFLINE ANALYSIS-ONLY
+# reader for historical campaign artifacts and for merging v4 exports into a
+# fresh v5 cache.
 REPLAY_VERSION = 5
+REPLAY_VERSION_V4 = 4
 ARTIFACT_VERSION = 1
 SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
@@ -193,6 +200,12 @@ ENT_MATCH_KIND = ENT_TRANSFORM + 2
 ENT_SIZE = ENT_MATCH_KIND + 1
 assert ENT_SIZE == 93
 
+# v4 entry layout: the v5 fields minus the trailing transform_id +
+# match_kind. Verified against the historical dispatch-27b.cache artifact
+# (version=4, 59 entries, implied size 90).
+ENT_SIZE_V4 = 90
+assert ENT_SIZE_V4 + 3 == ENT_SIZE
+
 MATCH_KIND_EXACT = 0
 
 
@@ -222,13 +235,22 @@ def blake2b_digest(data: bytes) -> bytes:
 
 
 def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str, int]:
-    """Preflight a v4 cache using the same bounds as the production reader.
+    """Preflight a v5 cache using the same bounds as the production reader.
 
     This is deliberately a structural check only: candidate ABI validation
     remains the C++ registry's responsibility.  Running it before publishing
     an export catches accidental truncation, stale manifest binding, and
     duplicate/unterminated entries while the producer still has a useful
     error path.  It does not change or rewrite the wire bytes.
+
+    A v4 cache fails here at the format-version check: production replay
+    treats v4 as rerun-required, and a producer must never rewrite a v4
+    file as if it understood it.  A v5 entry carrying a match_kind this
+    tool does not recognise (anything but MATCH_KIND_EXACT) is rejected the
+    same way -- reinterpreting a future generalised-entry key form as a
+    plain exact match is exactly the misparse the discriminator exists to
+    prevent (HI74 fail-closed contract, mirroring the C++ loader's
+    per-entry skip).
     """
     if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
         raise SystemExit("replay cache is shorter than its header")
@@ -236,7 +258,10 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     if magic != MAGIC:
         raise SystemExit("replay cache has bad magic")
     if version != REPLAY_VERSION:
-        raise SystemExit("replay cache format version mismatch")
+        raise SystemExit(
+            "replay cache format version mismatch "
+            f"(found {version}, this tool produces and consumes "
+            f"{REPLAY_VERSION} only)")
     if artifact != ARTIFACT_VERSION:
         raise SystemExit("replay cache artifact version mismatch")
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
@@ -274,6 +299,13 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
         if identity in seen:
             raise SystemExit("replay cache contains duplicate generation identity")
         seen.add(identity)
+        match_kind = entry[ENT_MATCH_KIND]
+        if match_kind != MATCH_KIND_EXACT:
+            raise SystemExit(
+                "replay cache entry "
+                f"{dispatch.hex()[:16]}... carries match_kind {match_kind}, "
+                "which this tool does not recognise; refusing to reinterpret "
+                "a future key form as an exact match")
         name_offset = struct.unpack_from("<I", entry, 32)[0]
         if name_offset >= string_bytes:
             raise SystemExit("replay cache entry names a string outside the table")
@@ -283,7 +315,7 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
 
 
 def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Read v4 entries for a deterministic merge without trusting bad bytes."""
+    """Read v5 entries for a deterministic merge without trusting bad bytes."""
     validate_blob(blob)
     _, version, artifact = struct.unpack_from("<III", blob)
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
@@ -316,6 +348,93 @@ def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "match_kind": entry[ENT_MATCH_KIND],
             "wire_entry": entry,
         })
+    return header, entries
+
+
+def read_cache_legacy_v4(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Offline analysis-only reader for historical v4 caches.
+
+    NOT a production reader. The C++ loader rejects v4 outright as
+    rerun-required and never reads it; this exists so the Python tools can
+    still inspect historical campaign artifacts (e.g. dispatch-27b.cache) and
+    so a v4 export can be merged into a fresh v5 cache without the operator
+    having to hand-convert bytes. It shares every structural bound with
+    :func:`validate_blob` (same header fields, same checksum, same bounds and
+    duplicate/string checks) and only differs in the v4 entry size and the
+    absence of the trailing transform_id/match_kind fields.
+
+    Returned entries carry ``transform_id=0`` and ``match_kind=None`` because
+    the v4 wire format had no such fields -- a v4 entry was always an exact
+    match. ``wire_entry`` is the raw 90-byte v4 entry; it must not be
+    repacked into a v5 cache as-is (see the retained-entry guard in
+    :func:`build`), it is only exposed for inspection.
+    """
+    if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
+        raise SystemExit("replay cache is shorter than its header")
+    magic, version, artifact = struct.unpack_from("<III", blob)
+    if magic != MAGIC:
+        raise SystemExit("replay cache has bad magic")
+    if version != REPLAY_VERSION_V4:
+        raise SystemExit(
+            "read_cache_legacy_v4 expects a v4 cache, found version "
+            f"{version}")
+    if artifact != ARTIFACT_VERSION:
+        raise SystemExit("replay cache artifact version mismatch")
+    sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
+        "<HHII", blob, 12)
+    if sig_schema != SIGNATURE_SCHEMA_VERSION:
+        raise SystemExit("replay cache signature schema version mismatch")
+    if hw_schema != HARDWARE_SCHEMA_VERSION:
+        raise SystemExit("replay cache hardware schema version mismatch")
+    entries_bytes = entry_count * ENT_SIZE_V4
+    strings_at = REPLAY_HEADER_SIZE + entries_bytes
+    expected = strings_at + string_bytes
+    if strings_at < REPLAY_HEADER_SIZE or expected < strings_at:
+        raise SystemExit("replay cache table size overflows")
+    if len(blob) != expected:
+        raise SystemExit("replay cache file is truncated or has trailing bytes")
+    payload = blob[REPLAY_HEADER_SIZE:]
+    if blob[40:56] != blake2b_digest(payload):
+        raise SystemExit("replay cache content checksum mismatch")
+
+    strings = blob[strings_at:expected]
+    seen: set[tuple[bytes, bytes, bytes, int]] = set()
+    entries: list[dict[str, Any]] = []
+    for index in range(entry_count):
+        entry = blob[REPLAY_HEADER_SIZE + index * ENT_SIZE_V4:
+                     REPLAY_HEADER_SIZE + (index + 1) * ENT_SIZE_V4]
+        dispatch = entry[:DIGEST_BYTES]
+        manifest = entry[ENT_MANIFEST:ENT_SOURCE_REVISION]
+        revision = entry[ENT_SOURCE_REVISION:ENT_GENERATION]
+        generation = struct.unpack_from("<I", entry, ENT_GENERATION)[0]
+        identity = (dispatch, manifest, revision, generation)
+        if identity in seen:
+            raise SystemExit("replay cache contains duplicate generation identity")
+        seen.add(identity)
+        name_offset = struct.unpack_from("<I", entry, 32)[0]
+        if name_offset >= string_bytes:
+            raise SystemExit("replay cache entry names a string outside the table")
+        name_end = strings.index(b"\0", name_offset)
+        entries.append({
+            "portable_key": dispatch.hex(),
+            "dispatch": dispatch.hex(),
+            "signature": entry[DIGEST_BYTES:2 * DIGEST_BYTES].hex(),
+            "winner": strings[name_offset:name_end].decode("utf-8"),
+            "manifest_hash": manifest.hex(),
+            "source_revision_digest": revision.hex(),
+            "generation": generation,
+            # v4 has no transform/match fields; an exact match by construction.
+            "transform_id": 0,
+            "match_kind": None,
+            "wire_entry": entry,
+        })
+    header = {
+        "version": version,
+        "artifact_version": artifact,
+        "signature_schema": sig_schema,
+        "hardware_schema": hw_schema,
+        "manifest_hash": blob[24:40].hex(),
+    }
     return header, entries
 
 
@@ -402,7 +521,9 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
     """
     violations = []
     for digest_hex, record in entries.items():
-        if record.get("measurement_failure") is True:
+        # Fail closed: any truthy encoding of the failure marker counts,
+        # not only a strict boolean True.
+        if bool(record.get("measurement_failure")):
             violations.append((digest_hex, record.get("winner"),
                                "measurement_failure"))
             continue
@@ -554,7 +675,19 @@ def build(
 
     existing_entries: list[dict[str, Any]] = []
     if merge_into is not None:
-        _, existing_entries = read_cache(merge_into.read_bytes())
+        merge_blob = merge_into.read_bytes()
+        merge_version = (
+            struct.unpack_from("<I", merge_blob, 4)[0]
+            if len(merge_blob) >= 8 else None)
+        if merge_version == REPLAY_VERSION_V4:
+            # A historical v4 export can be folded into a fresh v5 cache. v4
+            # entries have no transform/match fields and are exact by
+            # construction; the legacy reader maps them to transform_id=0.
+            # Their raw 90-byte wire entries are never repacked into v5 -- the
+            # retained-entry guard below rejects them fail-closed.
+            _, existing_entries = read_cache_legacy_v4(merge_blob)
+        else:
+            _, existing_entries = read_cache(merge_blob)
         # A re-tune of the same build/generation replaces that generation's
         # winners rather than creating an input-order-dependent conflict.
         existing_entries = [
@@ -672,7 +805,7 @@ def build(
     header += bytes.fromhex(manifest_hash)
     header += blake2b_digest(payload)
     if len(header) != REPLAY_HEADER_SIZE:
-        raise AssertionError("replay header layout drifted from the v4 wire format")
+        raise AssertionError("replay header layout drifted from the v5 wire format")
 
     blob = bytes(header) + payload
     validate_blob(blob, manifest_hash=manifest_hash)
@@ -715,8 +848,11 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
             raise SystemExit(f"seed file has unknown top-level fields: {sorted(unknown)}")
         if document.get("version", 1) != 1:
             raise SystemExit("unsupported seed file version")
+        seed_provenance = document.get("provenance")
+        if not isinstance(seed_provenance, dict):
+            raise SystemExit("seed file is missing its provenance object")
         provenance = validate_provenance_namespace(
-            document.get("provenance"), where="seed provenance")
+            seed_provenance, where="seed provenance")
         expected_revision = manifest.get("source_revision")
         if (not isinstance(expected_revision, str) or
                 provenance["source_revision"] != expected_revision.lower() or
@@ -753,8 +889,12 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
         if _digest_hex(supplied_candidate_digest, "seed override candidate digest") != candidate_digest:
             raise SystemExit(f"seed override candidate identity does not match manifest for '{stable_name}'")
         if "provenance" in value:
+            override_provenance = value["provenance"]
+            if not isinstance(override_provenance, dict):
+                raise SystemExit(
+                    f"seed override '{stable_name}' has a non-object provenance")
             provenance = validate_provenance_namespace(
-                value["provenance"], where="seed override provenance")
+                override_provenance, where="seed override provenance")
             if (provenance["manifest_hash"] != manifest_hash or
                     (isinstance(manifest.get("source_revision"), str) and
                      provenance["source_revision"] != manifest["source_revision"].lower())):
@@ -835,10 +975,8 @@ def main(argv: list[str] | None = None) -> None:
             os.fsync(handle.fileno())
         os.replace(temp_name, args.output)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
         raise
     print(f"wrote {args.output} ({len(blob)} bytes)")
     print("Load it with GGML_HIP_DISPATCH_CACHE=<path> GGML_HIP_DISPATCH_MODE=replay")

@@ -39,6 +39,7 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
 | `tune-t2.jsonl.journal.jsonl` | S5 run B | tuner journal for run B |
 | `t1-promoted.measurements.jsonl` | S6 | `tune-promote` over run A: 42 hypotheses → 40 promoted, 17 native, 2 confirmation-rejected |
 | `dispatch-27b.cache` | S6 | v4 replay cache exported from the promoted file (59 entries, manifest `f3dc3027`) |
+| `dispatch-27b-v5.cache` | HI74 (2026-08-21) | first real v5 replay artifact: the same promoted file re-exported with the v5 tooling (93-byte entries). 59/59 entries field-identical to the v4 cache; every entry's first 90 wire bytes match the v4 original (the v5 layout is append-only: `transform_id=0` + `match_kind=EXACT`) |
 | `cov-baseline.json` | S7 baseline | same-workload replay coverage: **19077/19077 executed, 0 misses, 58 exact / 59 entries** |
 | `cov-misslog.json` | S7 miss-log | 12k-prompt replay: 58 exact, **39 misses recorded** |
 | `miss-misslog.jsonl` | S7 miss-log | the 39 uncached calls: 11 mmvq (width-3 decode), 26 blas (tiny native GEMMs), 2 mmvf |
@@ -187,6 +188,7 @@ b95d0eb797a308b0793968a874c68b60cab90c1fa6827e576098e45e179bf97e  tune-t2.jsonl.
 536eaada3eb0afdd47fa68b30d5abc7a913e27a31134d4282df43b5ffa2d5f31  tune-t2.jsonl.measurements.jsonl
 93d9228c14c5f3f944083fec584f6cea187988bba0072788d30f3eebd8d2b4dc  t1-promoted.measurements.jsonl
 826aac996e7d3451c08c4f570705ce1d4001898e00c9a6209564bc5f07d1218f  dispatch-27b.cache
+1ed60d4dae948423bd7a0eea2a95933bf693bcd34a9ca1c6cb5ebaad555adb6f  dispatch-27b-v5.cache
 5469063a0b4046779a8a1c4a9e1e6167c80c817edeab8c08b270b50fce92b80a  cov-baseline.json
 d6fc6067fb7332b4f9d6281824c465aae9dd849e7555f328a3d5c83d57b19c5a  cov-misslog.json
 7ab84a0c7da246eedd26f56b98ae760881e1a1c63e40f44b736f90e3328e5382  miss-misslog.jsonl
