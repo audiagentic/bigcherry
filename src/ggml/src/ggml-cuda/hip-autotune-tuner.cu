@@ -56,6 +56,15 @@ namespace {
 struct Measurement {
     const ggml_hip_candidate_descriptor * candidate = nullptr;
     ggml_hip_reject_reason reason      = GGML_HIP_REJECT_NONE;
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: route identity is (candidate, variant, transform_id), not
+    // candidate alone -- a transformed measurement runs a different amount
+    // of work than the same candidate's direct route, and must never be
+    // confused with it in the schedule, the JSONL, or winner selection.
+    // nullptr means "direct route, no transform" everywhere below.
+    const ggml_hip_routing_transformation * transform = nullptr;
+#endif
     bool     measured                  = false;
     double   median_us                 = 0.0;
     double   mad_us                    = 0.0;   // standards: GPU times are
@@ -98,8 +107,17 @@ struct Measurement {
 // name (standards 2.1), so no real candidate can collide with it. One helper
 // everywhere the JSONL or the schedule names a measurement instance.
 static std::string measurement_name(const Measurement & m) {
-    return std::string(m.candidate ? m.candidate->stable_name : "")
+    std::string name = std::string(m.candidate ? m.candidate->stable_name : "")
            + (m.is_native_twin ? "#twin" : "");
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: a transformed route is a different route identity from the same
+    // candidate's direct one -- '#' is not legal in a stable name, so this
+    // cannot collide with a real candidate or with the #twin suffix above.
+    if (m.transform != nullptr) {
+        name += "#xform:" + std::string(m.transform->name);
+    }
+#endif
+    return name;
 }
 
 // HI50: whether the noise canary (same-kernel pair, see below) confirmed
@@ -127,6 +145,17 @@ const char * canary_state_name(ggml_hip_canary_state_v1 state) {
 
 struct Result {
     const ggml_hip_candidate_descriptor * winner = nullptr;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: route identity is (candidate, variant, transform_id), not
+    // candidate alone. nullptr means winner reached the destination directly
+    // (or is native); a real value here means `winner` was only reachable
+    // through this routing transformation.
+    const ggml_hip_routing_transformation * winner_transform = nullptr;
+    // HI30: transforms tried during the registry scan that produced no
+    // measurable Measurement at all, with why -- consumed by record_result()
+    // to emit HI29's TransformGapRecord for this signature.
+    std::vector<std::pair<ggml_hip_transform_id, std::string>> transform_scan_gaps;
+#endif
     std::string native_name;   // recorded once, up front -- promotion needs
                                 // "did this row change from native" without
                                 // relying on winner->stable_name still being
@@ -428,6 +457,10 @@ std::string journal_result_summary(
         ggml_hip_digest_hex(result.hardware_digest) +
         "\",\"winner\":\"" +
         (result.winner != nullptr ? result.winner->stable_name : "(none)") +
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        "\",\"winner_transform\":\"" +
+        (result.winner_transform != nullptr ? result.winner_transform->name : "") +
+#endif
         "\",\"native\":\"" + result.native_name +
         "\",\"promotion_status\":\"" + result.promotion_status +
         "\",\"reason\":\"" + result.reason +
@@ -476,7 +509,96 @@ void open_tuning_journal_once(const ggml_hip_digest & hardware_digest) {
     }
 }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI30: derives HI29's transform-attempt/transform-gap diagnostics from the
+// finished Result, at the one choke point every resolve() exit already
+// funnels through (record_result). Keeping this out of resolve() itself
+// means every early-return path gets correct diagnostics for free instead
+// of needing its own recorder call, and the records always describe what
+// was actually measured -- never a claim made before the outcome is known.
+void record_transform_diagnostics(const Result & result) {
+    bool any_transform_measurement = false;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform != nullptr) { any_transform_measurement = true; break; }
+    }
+    if (!any_transform_measurement && result.transform_scan_gaps.empty()) {
+        return;
+    }
+
+    const Measurement * native_measurement = nullptr;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr && !m.is_native_twin &&
+                m.candidate != nullptr && m.candidate->stable_name == result.native_name) {
+            native_measurement = &m;
+            break;
+        }
+    }
+    const std::string native_family = native_measurement != nullptr
+        ? transform_family_name((int) native_measurement->candidate->family) : "?";
+
+    // Best measured candidate per transform id actually attempted.
+    std::unordered_map<int, const Measurement *> best_by_transform;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr) continue;
+        if (!m.measured) continue;
+        const int id = (int) m.transform->id;
+        const auto it = best_by_transform.find(id);
+        if (it == best_by_transform.end() || m.median_us < it->second->median_us) {
+            best_by_transform[id] = &m;
+        }
+    }
+
+    std::unordered_set<int> attempted_ids;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr) continue;
+        const int id = (int) m.transform->id;
+        if (!attempted_ids.insert(id).second) continue;
+
+        TransformAttemptRecord rec;
+        rec.original_sig             = result.signature_digest;
+        rec.hardware                 = result.hardware_digest;
+        rec.transform_id             = m.transform->id;
+        rec.transform_name           = m.transform->name;
+        rec.source                   = m.transform->source == GGML_HIP_TRANSFORM_SOURCE_PREDEFINED
+                                          ? "predefined" : "discovered";
+        rec.original_native_family   = native_family;
+
+        const bool is_success = result.winner_transform != nullptr &&
+            result.winner_transform->id == m.transform->id;
+        const auto found = best_by_transform.find(id);
+        const Measurement * best = found != best_by_transform.end() ? found->second : nullptr;
+
+        rec.result             = is_success ? "success" : "rejected";
+        rec.rejection_reason   = is_success ? "" : (best != nullptr
+            ? "not selected as winner" : "no target candidate measured successfully");
+        rec.transformed_winner = best != nullptr ? best->candidate->stable_name : "";
+        rec.original_us        = native_measurement != nullptr ? native_measurement->median_us : 0.0;
+        rec.transformed_us     = best != nullptr ? best->median_us : 0.0;
+        rec.improvement_pct    = (rec.original_us > 0.0 && rec.transformed_us > 0.0)
+            ? 100.0 * (rec.original_us - rec.transformed_us) / rec.original_us : 0.0;
+        rec.nmse             = best != nullptr ? best->nmse : 0.0;
+        rec.max_abs_error    = best != nullptr ? best->max_abs_error : 0.0;
+        ggml_hip_record_transform_attempt(rec);
+    }
+
+    if (!result.transform_scan_gaps.empty()) {
+        TransformGapRecord gap;
+        gap.sig           = result.signature_digest;
+        gap.hardware      = result.hardware_digest;
+        gap.native_family = native_family;
+        gap.est_bytes     = 0;
+        for (const auto & entry : result.transform_scan_gaps) {
+            gap.tried.push_back({entry.first, entry.second});
+        }
+        ggml_hip_record_transform_gap(gap);
+    }
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 void record_result(const ggml_hip_digest & dispatch_digest, const Result & result) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    record_transform_diagnostics(result);
+#endif
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_results.emplace(dispatch_digest, result);
@@ -884,7 +1006,16 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
                      bool isolate_workspace = false,
                      size_t * pool_peak_bytes = nullptr,
-                     const char * protocol_stage = nullptr) {
+                     const char * protocol_stage = nullptr
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                     // HI30: every launch this function issues -- warmup,
+                     // rewarm, and timed samples alike -- must run the exact
+                     // same transformed route the caller is measuring, so
+                     // the tuner can never rank a candidate against work it
+                     // did not actually dispatch.
+                     , const ggml_hip_routing_transformation * transform = nullptr
+#endif
+                     ) {
     const char * stage = protocol_stage != nullptr
         ? protocol_stage : (isolate_workspace ? "isolated_workspace" : "final");
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
@@ -917,6 +1048,32 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 
     ggml_hip_candidate_descriptor effective = *candidate;
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // Stack-allocated for the life of this call (standards: no heap
+    // allocation on a measurement hot path). Reused across every launch
+    // below -- apply() rewrites it in place each time, exactly as the
+    // dispatcher (HI31) will on the runtime path.
+    ggml_hip_transform_ctx xform_ctx;
+    auto do_launch = [&]() -> bool {
+        if (transform == nullptr) {
+            effective.launch(&effective, lc);
+            return true;
+        }
+        ggml_hip_launch_context out_lc;
+        if (!transform->apply(lc, &xform_ctx, nullptr, &out_lc)) {
+            return false;
+        }
+        ggml_hip_transform_launch(transform, &effective, effective.variant,
+                                  &xform_ctx, out_lc);
+        return true;
+    };
+#else
+    auto do_launch = [&]() -> bool {
+        effective.launch(&effective, lc);
+        return true;
+    };
+#endif
+
 #ifdef GGML_HIP_WORKSPACE_METRICS
     size_t workspace_baseline = 0;
     if (workspace_ctx != nullptr && isolate_workspace) {
@@ -932,7 +1089,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 
     trace_workspace_event(stage, "warmup_begin", candidate->stable_name);
     for (int i = 0; i < warmup; ++i) {
-        effective.launch(&effective, lc);
+        if (!do_launch()) {
+            destroy_events();
+            disable_smi_after_measurement_failure();
+            return false;
+        }
     }
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
@@ -976,7 +1137,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // hipEventSynchronize(stop).
         if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM) {
             trace_workspace_event(stage, "rewarm_begin", candidate->stable_name);
-            effective.launch(&effective, lc);
+            if (!do_launch()) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
             if (!hip_ok(hipGetLastError(), "rewarm launch")
                     || hipStreamSynchronize(lc.stream) != hipSuccess) {
                 destroy_events();
@@ -995,7 +1160,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // Several launches per sample when one kernel is below event
         // resolution; the mean of the batch is the sample.
         for (int i = 0; i < launches_per_sample; ++i) {
-            effective.launch(&effective, lc);
+            if (!do_launch()) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
         }
         if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
             destroy_events();
@@ -1220,7 +1389,11 @@ CounterbalancedRound run_counterbalanced_round(
             if (!time_candidate(candidates[index]->candidate, lc, 0, 1,
                                 launches_per_sample, pre_sample,
                                 one_gpu, one_host,
-                                nullptr, false, nullptr, protocol_stage) ||
+                                nullptr, false, nullptr, protocol_stage
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                                , candidates[index]->transform
+#endif
+                                ) ||
                     one_gpu.empty() || one_host.empty()) {
                 complete = false;
                 // A failed HIP launch may leave an asynchronous error pending
@@ -1387,12 +1560,31 @@ double effective_us_of(double median_us, double host_median_us, double sync_over
 bool launch_and_fetch(const ggml_hip_candidate_descriptor * candidate,
                       const ggml_hip_launch_context & lc,
                       void * dst_device, size_t dst_bytes,
-                      std::vector<float> & out_host) {
+                      std::vector<float> & out_host
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                      , const ggml_hip_routing_transformation * transform = nullptr
+#endif
+                      ) {
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
         return false;
     }
     ggml_hip_candidate_descriptor effective = *candidate;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    if (transform != nullptr) {
+        ggml_hip_transform_ctx xform_ctx;
+        ggml_hip_launch_context out_lc;
+        if (!transform->apply(lc, &xform_ctx, nullptr, &out_lc)) {
+            disable_smi_after_measurement_failure();
+            return false;
+        }
+        ggml_hip_transform_launch(transform, &effective, effective.variant,
+                                  &xform_ctx, out_lc);
+    } else {
+        effective.launch(&effective, lc);
+    }
+#else
     effective.launch(&effective, lc);
+#endif
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
         disable_smi_after_measurement_failure();
         return false;
@@ -2002,6 +2194,100 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: routing transformations compete only when nothing already
+    // reached this signature by the direct route (2026-08-21 adjudication).
+    // "Reached" means a real, unmodified candidate screened in above --
+    // BLAS is excluded from that set deliberately: BLAS auto-selection is
+    // upstream's fallback of last resort, not evidence a fast family already
+    // fits, and is exactly the case these transforms exist to challenge.
+    // Fused patterns are excluded entirely (standards 11.1, same rule the
+    // registry loop above already applies to direct candidates).
+    if (!fused) {
+        std::unordered_set<int> direct_eligible_families;
+        for (const Measurement & m : result.measurements) {
+            if (m.reason == GGML_HIP_REJECT_NONE) {
+                direct_eligible_families.insert((int) m.candidate->family);
+            }
+        }
+        const bool blas_only = direct_eligible_families.size() == 1 &&
+            direct_eligible_families.count((int) GGML_HIP_FAMILY_BLAS) != 0;
+        const bool transform_trigger = direct_eligible_families.empty() || blas_only;
+
+        if (transform_trigger) {
+            for (int t = 0; t < ggml_hip_transform_count(); ++t) {
+                const ggml_hip_routing_transformation * transform = ggml_hip_transform_at(t);
+                if (transform == nullptr || !transform->equivalence_verified) {
+                    continue;
+                }
+                if (!ggml_hip_transform_signature_is_eligible(sig) ||
+                        !transform->can_apply(sig)) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "signature not eligible for this transform"});
+                    continue;
+                }
+
+                // Apply once against the real launch context to get the exact
+                // transformed signature every target candidate below is
+                // screened against -- the central HI30 invariant: what is
+                // scanned here is the same transformed shape that will later
+                // be measured through ggml_hip_transform_launch().
+                ggml_hip_transform_ctx   probe_ctx;
+                ggml_hip_dispatch_signature_v1 out_sig{};
+                ggml_hip_launch_context  probe_lc{};
+                if (!transform->apply(lc_in, &probe_ctx, &out_sig, &probe_lc)) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "transform apply() failed"});
+                    continue;
+                }
+
+                bool any_target_eligible = false;
+                for (size_t i = 0; i < ggml_hip_registry_size(); ++i) {
+                    const ggml_hip_candidate_descriptor * candidate = ggml_hip_registry_at(i);
+                    if (candidate->family != transform->target_family) {
+                        continue;
+                    }
+                    if (!ggml_hip_candidate_supports_arch(*candidate, hw)) {
+                        continue;
+                    }
+                    const bool type_ok = candidate->variant.src0_type == 0
+                                      || candidate->variant.src0_type == out_sig.src0_type;
+                    if (!type_ok || !candidate->can_execute(candidate, out_sig, hw)) {
+                        continue;
+                    }
+
+                    const size_t candidate_bytes = candidate->workspace(candidate, out_sig);
+                    const size_t overhead_bytes  = transform->overhead_bytes(sig);
+                    if (candidate_bytes > std::numeric_limits<size_t>::max() - overhead_bytes) {
+                        continue;   // overflow; not eligible rather than wrap
+                    }
+                    const size_t workspace_bytes = candidate_bytes + overhead_bytes;
+                    if (config.max_workspace_bytes != 0
+                            && workspace_bytes > config.max_workspace_bytes) {
+                        continue;
+                    }
+
+                    any_target_eligible = true;
+                    ++result.generated;
+                    ++result.applicable;
+                    ++result.eligible;
+
+                    Measurement m;
+                    m.candidate       = candidate;
+                    m.transform       = transform;
+                    m.workspace_bytes = workspace_bytes;
+                    m.reason          = GGML_HIP_REJECT_NONE;
+                    result.measurements.push_back(m);
+                }
+                if (!any_target_eligible) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "no eligible candidate in target family"});
+                }
+            }
+        }
+    }
+#endif
+
     std::vector<Measurement *> screening;
     for (Measurement & m : result.measurements) {
         if (m.reason == GGML_HIP_REJECT_NONE) {
@@ -2012,8 +2298,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     Measurement * native_m = nullptr;
     for (Measurement * m : screening) {
         // Role identity, not descriptor identity: the twin shares native's
-        // descriptor and must never be mistaken for the baseline.
-        if (!m->is_native_twin && m->candidate == native.candidate) {
+        // descriptor and must never be mistaken for the baseline. HI30: a
+        // transformed Measurement can legitimately share native's candidate
+        // pointer (the transform's target family may include it) and must
+        // not be mistaken for the untransformed baseline either.
+        if (!m->is_native_twin && m->candidate == native.candidate
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                && m->transform == nullptr
+#endif
+                ) {
             native_m = m; break;
         }
     }
@@ -2147,7 +2440,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
                             config.pre_sample_mode,
-                            gpu, host, &ctx, true, &m->pool_peak_bytes)) {
+                            gpu, host, &ctx, true, &m->pool_peak_bytes, nullptr
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                            , m->transform
+#endif
+                            )) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
             result.reason = "screening measurement failed; tuning experiment poisoned";
@@ -2748,9 +3045,17 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<float> second(dst_floats);
         const bool launched =
             launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                             dst_bytes, first) &&
+                             dst_bytes, first
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                             , winner_m->transform
+#endif
+                             ) &&
             launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                             dst_bytes, second);
+                             dst_bytes, second
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                             , winner_m->transform
+#endif
+                             );
         if (!launched) {
             winner_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
@@ -2777,7 +3082,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // output against.
     result.provisional_winner = (winner_m == nullptr || winner_m == native_m)
         ? native.candidate->stable_name
-        : winner_m->candidate->stable_name;
+        : measurement_name(*winner_m);
 
     if (winner_m == nullptr || winner_m == native_m) {
         result.winner            = native.candidate;
@@ -2841,6 +3146,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             result.reason            = "native retained (fresh confirmation rejected provisional winner)";
         } else {
             result.winner            = winner_m->candidate;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+            result.winner_transform  = winner_m->transform;
+#endif
             result.improvement_pct   = result.confirmation_effect_pct;
             result.promotion_status  = "pending_bh";
             result.reason            = "fresh confirmation passed; experiment-wide BH pending, " +
