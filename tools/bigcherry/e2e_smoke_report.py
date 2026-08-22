@@ -30,6 +30,20 @@ BENCH_SCHEMA_VERSION = 2
 BENCH_CONFIGS = ("stock", "native", "replay")
 BENCH_WORKLOADS = ("pp", "tg")
 
+# HI82 item 8: the "native" bench arm is the TUNE build run in native
+# dispatch mode, not a fourth build -- see e2e_smoke_campaign.py's s6_bench().
+BENCH_CONFIG_BUILD_ROLES = {"stock": "stock", "native": "tune", "replay": "replay"}
+
+# Mirrors builds.CompletedBuildEvidence.campaign_identity()'s exact keys
+# (also enforced structurally in e2e_smoke_campaign.py's
+# _require_completed_build_identity_shape()) -- kept in sync deliberately
+# rather than imported, since this module must stay usable as a standalone
+# report reader over a bench.json produced by any campaign run.
+BENCH_BUILD_IDENTITY_REQUIRED_KEYS = (
+    "effective_build_id", "compile_verification_id", "compile_commands_digest",
+    "hip_compile_commands_digest", "runtime_bundle_hash", "runtime_artifacts",
+)
+
 
 def _load_json(path: Path) -> Any:
     path = Path(path)
@@ -103,6 +117,26 @@ def _validate_bench(value: Any, *, source: Path) -> Mapping[str, Any]:
         config = _require_mapping(
             configs.get(config_name), description=f"{source} configs.{config_name}"
         )
+
+        expected_role = BENCH_CONFIG_BUILD_ROLES[config_name]
+        actual_role = config.get("build_role")
+        if actual_role != expected_role:
+            raise RuntimeError(
+                f"{source}: configs.{config_name}.build_role must be {expected_role!r}, "
+                f"got {actual_role!r}"
+            )
+        build_identity = _require_mapping(
+            config.get("build_identity"), description=f"{source} configs.{config_name}.build_identity"
+        )
+        missing = [
+            key for key in BENCH_BUILD_IDENTITY_REQUIRED_KEYS if key not in build_identity
+        ]
+        if missing:
+            raise RuntimeError(
+                f"{source}: configs.{config_name}.build_identity is missing required "
+                f"field(s) {missing!r}"
+            )
+
         metrics = _require_mapping(
             config.get("metrics"), description=f"{source} configs.{config_name}.metrics"
         )

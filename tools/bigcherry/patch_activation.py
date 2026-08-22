@@ -52,8 +52,19 @@ def verdict(
         if correctness_passed is False:
             return "failed-correctness"
 
-        if correctness_passed is True or correctness_passed is None:
+        if correctness_passed is True:
             return "validated"
+
+        # correctness_passed is None: the patch's code path is proven to
+        # have executed, but no correctness check has run yet (e.g.
+        # patch_validation_campaign.py's activation probes deliberately run
+        # before patch-class-specific correctness evidence exists, since a
+        # generic campaign runner has no way to know every patch's
+        # correctness criterion). This must NOT collapse into "validated"
+        # -- doing so let activation.json literally say "validated" while
+        # correctness was genuinely unknown, found via GPT review,
+        # req_6b1466ee8369406c.
+        return "activation-verified"
 
     return "failed-activation"
 
