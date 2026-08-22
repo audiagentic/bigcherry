@@ -631,7 +631,31 @@ void record_result(const ggml_hip_digest & dispatch_digest, const Result & resul
 #endif
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        g_results.emplace(dispatch_digest, result);
+        // HI64 (2026-08-22, real dual-XTX hardware finding): g_results is
+        // keyed only by the portable dispatch_digest (hardware identity
+        // deliberately excludes device ordinal so identical GPUs can share
+        // a winner, standards 10.2) -- a blind emplace() here let a single
+        // device's fatal measurement failure permanently own that portable
+        // key, silently blocking every OTHER device sharing it (including
+        // an identical twin GPU) from ever attempting its own measurement,
+        // confirmed on real hardware: a fault injected on the first-
+        // processed device also poisoned the second device's tuning even
+        // though the second device never itself failed.
+        //
+        // Fix: a failed result is retained ONLY as fallback evidence (so an
+        // all-failed run still appears in measurements.jsonl instead of
+        // looking empty) and is replaced the first time a non-failed result
+        // arrives for the same key. A non-failed result is never replaced
+        // by a later failure -- the successful result stays authoritative.
+        // See the matching g_results.find() guard in
+        // ggml_hip_tuner_resolve_impl(), which must treat a failed entry as
+        // NOT a cache hit for this to actually let another device retry.
+        const auto found = g_results.find(dispatch_digest);
+        if (found == g_results.end()) {
+            g_results.emplace(dispatch_digest, result);
+        } else if (found->second.measurement_failure && !result.measurement_failure) {
+            found->second = result;
+        }
     }
 
     // The journal is opened at cold-path entry when the signature and hardware
@@ -2047,7 +2071,18 @@ static std::string ranking_decision_json(const PolicyTableEntry & entry,
     return out;
 }
 
-const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
+// HI64 (2026-08-22): renamed from the old public ggml_hip_tuner_resolve --
+// this is now a file-local implementation detail. The public entry point
+// below wraps this to additionally report whether the resolution ended in
+// a device-local measurement failure, without touching any of this
+// function's ~25 existing `return native.candidate;`/`return
+// result.winner;` exit sites: every one of them already goes through
+// record_result() first (or, for the cache-hit path just below, reuses an
+// entry record_result() already wrote on a prior call), so a second,
+// cheap g_results lookup after this function returns is guaranteed to see
+// the correct, just-recorded measurement_failure value for this exact
+// dispatch_digest.
+static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
         const ggml_hip_hardware_key_v1 & hw,
@@ -2061,7 +2096,14 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const auto found = g_results.find(dispatch_digest);
-        if (found != g_results.end()) {
+        // HI64: a failed/poisoned result is device-local evidence, not a
+        // portable outcome -- only a non-failed result may short-circuit
+        // resolution here. Otherwise one device's fatal measurement
+        // failure permanently blocks every other device (including an
+        // identical twin GPU) sharing this portable dispatch key from ever
+        // getting its own attempt. See record_result()'s matching
+        // failure->success replacement for the other half of this fix.
+        if (found != g_results.end() && !found->second.measurement_failure) {
             return found->second.winner;
         }
     }
@@ -3269,6 +3311,28 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
 
     record_result(dispatch_digest, result);
     return result.winner;
+}
+
+// HI64 (2026-08-22): public entry point. Every exit of
+// ggml_hip_tuner_resolve_impl() -- the cache hit above and every deeper
+// `record_result(...); return ...;` site -- leaves a fresh or reused
+// g_results[dispatch_digest] entry in place by the time control reaches
+// here, so this second lookup reliably reports the resolution's real
+// measurement_failure state without requiring the impl's ~25 exit sites to
+// each be touched individually.
+ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
+        ggml_backend_cuda_context & ctx,
+        const ggml_hip_dispatch_signature_v1 & sig,
+        const ggml_hip_hardware_key_v1 & hw,
+        const ggml_hip_digest & dispatch_digest,
+        const ggml_hip_native_selection & native,
+        const ggml_hip_launch_context & lc) {
+    ggml_hip_tuner_resolution out;
+    out.winner = ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc);
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const auto found = g_results.find(dispatch_digest);
+    out.measurement_failure = found != g_results.end() && found->second.measurement_failure;
+    return out;
 }
 
 void ggml_hip_tuner_flush() {

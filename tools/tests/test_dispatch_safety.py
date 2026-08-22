@@ -12,6 +12,7 @@ DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.
 RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
 RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+TUNER_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
 DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
 MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
@@ -379,7 +380,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         """The source-level concurrency contract prevents duplicate winners."""
         tuner = TUNER.read_text(encoding="utf-8")
         resolve_start = tuner.index(
-            "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
         )
         resolve_end = tuner.index("void ggml_hip_tuner_flush(", resolve_start)
         resolve = tuner[resolve_start:resolve_end]
@@ -516,7 +517,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         tuner = TUNER.read_text(encoding="utf-8")
         resolve = tuner[
             tuner.index(
-                "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("
+                "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
             ) :
         ]
         self.assertIn("open_tuning_journal_once(result.hardware_digest);", resolve)
@@ -574,7 +575,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         signature that dispatch stays native, while a native selection is
         silent (no log storm on long runs)."""
         branch = self._tune_branch()
-        guard = "winner != nullptr && winner != native.candidate"
+        guard = "tuning.winner != nullptr && tuning.winner != native.candidate"
         call = "ggml_hip_log_tune_kept_native("
         self.assertIn(guard, branch)
         self.assertIn(call, branch)
@@ -938,6 +939,123 @@ class TestHi67StrictForcedCandidate(unittest.TestCase):
         # not be skippable by it.
         early_return = block.index("if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {", can_execute)
         self.assertLess(strict_marker, early_return)
+
+
+class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
+    """HI64 (2026-08-22, real dual-XTX hardware finding): a fatal
+    measurement failure on one device was silently blocking tuning on a
+    second, healthy, identical GPU. Root cause was NOT PerDeviceState --
+    it was the process-global, device-ordinal-free g_bindings/g_results
+    caches (deliberately shared so identical GPUs can reuse a winner,
+    standards 10.2) treating a device-local failure as if it were a
+    portable resolution. Fix: only a non-failed result may populate those
+    shared caches; a failed one is retained solely as fallback evidence."""
+
+    def test_resolution_struct_carries_measurement_failure(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        struct_start = header.index("struct ggml_hip_tuner_resolution {")
+        struct_end = header.index("};", struct_start)
+        struct_body = header[struct_start:struct_end]
+        self.assertIn("const ggml_hip_candidate_descriptor * winner = nullptr;", struct_body)
+        self.assertIn("bool measurement_failure = false;", struct_body)
+
+    def test_public_resolve_returns_the_resolution_struct(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        self.assertIn("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", header)
+        # The old declaration returning a bare pointer must be gone from the
+        # header -- only the internal .cu-file impl keeps that signature now.
+        self.assertNotIn(
+            "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(", header
+        )
+
+    def test_impl_cache_hit_excludes_failed_results(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        impl_start = tuner.index(
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
+        )
+        impl_end = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", impl_start)
+        impl = tuner[impl_start:impl_end]
+        lookup = impl.index("g_results.find(dispatch_digest)")
+        cache_hit_guard = impl.index(
+            "found != g_results.end() && !found->second.measurement_failure", lookup
+        )
+        cache_hit_return = impl.index("return found->second.winner;", cache_hit_guard)
+        self.assertLess(lookup, cache_hit_guard)
+        self.assertLess(cache_hit_guard, cache_hit_return)
+
+    def test_public_wrapper_reports_measurement_failure_from_g_results(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        wrapper_start = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(")
+        wrapper_end = tuner.index("void ggml_hip_tuner_flush(", wrapper_start)
+        wrapper = tuner[wrapper_start:wrapper_end]
+        self.assertIn("ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc)", wrapper)
+        self.assertIn("g_results.find(dispatch_digest)", wrapper)
+        self.assertIn(
+            "found != g_results.end() && found->second.measurement_failure", wrapper
+        )
+
+    def test_record_result_replaces_failure_with_success_never_the_reverse(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("void record_result(")
+        end = tuner.index("const char * reason_name(", start)
+        record = tuner[start:end]
+        self.assertIn("const auto found = g_results.find(dispatch_digest);", record)
+        self.assertIn("if (found == g_results.end()) {", record)
+        self.assertIn("g_results.emplace(dispatch_digest, result);", record)
+        replace_guard = record.index(
+            "found->second.measurement_failure && !result.measurement_failure"
+        )
+        replace_assign = record.index("found->second = result;", replace_guard)
+        self.assertGreater(replace_assign, replace_guard)
+        # The inverse condition (a good result getting clobbered by a later
+        # failure) must never appear as a guard in this function.
+        self.assertNotIn("!found->second.measurement_failure && result.measurement_failure", record)
+
+    def test_dispatcher_derives_cacheable_flag_from_measurement_failure(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        decl = dispatch.index("bool process_binding_cacheable = true;")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {", decl)
+        emplace_guard = dispatch.index("if (process_binding_cacheable) {", tune_start)
+        emplace_call = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", emplace_guard)
+        self.assertLess(decl, tune_start)
+        self.assertLess(tune_start, emplace_guard)
+        self.assertLess(emplace_guard, emplace_call)
+
+        tune_block = dispatch[tune_start:emplace_guard]
+        self.assertIn("process_binding_cacheable = false;", tune_block)  # capture-skip site
+        self.assertIn("process_binding_cacheable = !tuning.measurement_failure;", tune_block)
+
+    def test_capture_skip_marks_binding_not_cacheable(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_branch_start = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        capture_branch_end = dispatch.index("} else {", capture_branch_start)
+        capture_branch = dispatch[capture_branch_start:capture_branch_end]
+        self.assertIn("ggml_hip_warn_tuning_skipped_under_capture();", capture_branch)
+        self.assertIn("process_binding_cacheable = false;", capture_branch)
+
+    def test_thread_local_binding_insert_is_never_gated_by_cacheable_flag(self):
+        # A device-local failure must still populate the per-device/thread
+        # cache (so THIS device/thread doesn't keep retrying a signature it
+        # already knows is poisoned) -- only the PROCESS-GLOBAL, cross-
+        # device g_bindings publish is gated.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        insert_call = dispatch.index("g_thread_bindings.insert(ctx.device, sig, binding);")
+        # Walk back to the nearest enclosing "if" -- it must be the
+        # RECORD-mode exclusion only, not process_binding_cacheable.
+        guard_start = dispatch.rindex("if (", 0, insert_call)
+        guard_line = dispatch[guard_start:insert_call]
+        self.assertIn("mode != GGML_HIP_DISPATCH_MODE_RECORD", guard_line)
+        self.assertNotIn("process_binding_cacheable", guard_line)
+
+    def test_hardware_and_dispatch_identity_remain_device_ordinal_free(self):
+        # The correct fix keeps identical GPUs sharing a portable key --
+        # adding device ordinal to the identity would silently throw away
+        # standards 10.2 (a real regression path GPT's design explicitly
+        # warned against) instead of fixing the actual defect.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        self.assertNotIn("ggml_hip_hardware_digest(hw, ctx.device)", dispatch)
+        self.assertNotIn("ggml_hip_dispatch_digest(hardware_digest, signature_digest, ctx.device", dispatch)
 
 
 if __name__ == "__main__":

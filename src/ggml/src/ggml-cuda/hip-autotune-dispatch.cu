@@ -635,6 +635,19 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
                                     workspace_bytes);
     }
 #endif
+    // HI64 (2026-08-22): whether the binding about to be installed below is
+    // safe to publish into the process-global, device-ordinal-free
+    // g_bindings cache that other devices (including an identical twin
+    // GPU sharing this exact hardware/dispatch key, standards 10.2) can
+    // hit. Defaults true -- every mode except TUNE keeps its existing
+    // behavior unchanged. TUNE mode clears it for the two cases where no
+    // real portable resolution happened: a fatal measurement failure
+    // (confirmed on real hardware to otherwise silently block a second,
+    // healthy device from ever getting its own attempt) and a capture-time
+    // skip (no measurement was even attempted, so nothing portable to
+    // publish either -- a pre-existing, related leak this same seam now
+    // also closes).
+    bool process_binding_cacheable = true;
 #ifdef GGML_HIP_AUTOTUNE
     if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {
         if (ggml_hip_stream_is_capturing(lc.stream)) {
@@ -642,6 +655,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // and a winner chosen from poisoned timings would be worse than no
             // winner at all.
             ggml_hip_warn_tuning_skipped_under_capture();
+            process_binding_cacheable = false;
         } else {
             // HI67 (F1): measure/select/record only. The tuner launches its
             // own measurement rounds through lc, so keeping this binding on
@@ -651,12 +665,13 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // correctness proof (RV08); installing an unproven winner here
             // is exactly the intermittent 5e-4 cliff failure. The binding
             // below therefore always installs native in tune mode.
-            const ggml_hip_candidate_descriptor * winner =
+            const ggml_hip_tuner_resolution tuning =
                 ggml_hip_tuner_resolve(ctx, sig, hw, dispatch_digest, native, lc);
-            if (winner != nullptr && winner != native.candidate) {
+            process_binding_cacheable = !tuning.measurement_failure;
+            if (tuning.winner != nullptr && tuning.winner != native.candidate) {
                 ggml_hip_log_tune_kept_native(
                     dispatch_digest,
-                    winner->stable_name ? winner->stable_name : "?");
+                    tuning.winner->stable_name ? tuning.winner->stable_name : "?");
             }
         }
     }
@@ -741,7 +756,10 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         binding.from_cache = false;
     }
 
-    {
+    // HI64: only a genuinely portable resolution may be published into the
+    // process-global, device-ordinal-free binding cache -- see
+    // process_binding_cacheable's declaration above for why.
+    if (process_binding_cacheable) {
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
         g_bindings.emplace(dispatch_digest, binding);
     }
