@@ -80,12 +80,12 @@ class _Base(unittest.TestCase):
                 seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=e_c_nmse,
                 max_abs_native=0.001, max_abs_candidate=max_abs_candidate,
                 native_execution_status="ok", candidate_execution_status="ok",
+                threshold_t=5e-4,
             )
             for i in range(1, seeds + 1)
         ]
         aggregate = ce.aggregate_seed_evidence(
-            rows, threshold_t=5e-4, headroom_fraction=headroom_fraction,
-            contract_version=contract_version,
+            rows, headroom_fraction=headroom_fraction, contract_version=contract_version,
         ) if seeds >= 3 else None
         if aggregate is None:
             # Deliberately write an under-seeded row directly (bypassing
@@ -106,8 +106,8 @@ class _Base(unittest.TestCase):
                 self.conn.execute(
                     "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
                     "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
-                    "native_execution_status, candidate_execution_status) VALUES "
-                    "(?, ?, ?, 1e-05, ?, 0.001, ?, 'ok', 'ok')",
+                    "native_execution_status, candidate_execution_status, threshold_t) VALUES "
+                    "(?, ?, ?, 1e-05, ?, 0.001, ?, 'ok', 'ok', 5e-4)",
                     (evidence_id, i, f"d{i}", e_c_nmse, max_abs_candidate),
                 )
             self.conn.commit()
@@ -128,11 +128,11 @@ class _Base(unittest.TestCase):
             self.conn.execute(
                 "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
                 "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
-                "native_execution_status, candidate_execution_status) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "native_execution_status, candidate_execution_status, threshold_t) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
                  row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
-                 row.candidate_execution_status),
+                 row.candidate_execution_status, row.threshold_t),
             )
         self.conn.commit()
 
