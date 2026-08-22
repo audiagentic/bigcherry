@@ -168,6 +168,59 @@ _SWITCH_OLD = """        case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1;"""
 
 _SWITCH_NEW = """        case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1_vdr2;"""
 
+# The activation marker below needs std::atomic_flag. ggml-cuda.cu (where
+# RD12's own marker lives) already #includes <atomic>; mmvq.cu does not, and
+# common.cuh/mmvq.cuh (confirmed by direct inspection of the real vendored
+# tree, 2026-08-21) pull in <cstdint>/<cstdlib>/<mutex>/<memory> but never
+# <atomic> -- relying on it arriving transitively through <mutex> would be an
+# unwarranted assumption about the standard library implementation, not a
+# portable guarantee, so this patch adds the include explicitly.
+_INCLUDES_OLD = """#include <cstdint>
+#include <type_traits>"""
+
+_INCLUDES_NEW = """#include <atomic>
+#include <cstdint>
+#include <type_traits>"""
+
+# HI83 activation marker: mul_mat_vec_q_switch_ncols_dst's `case 1:` block is
+# the real host-side launch point for the ncols_dst=1 mmvq path this patch's
+# vdr2 kernel actually serves (confirmed against the real vendored file,
+# 2026-08-21 -- this anchor is byte-identical there). `type` is this
+# function's own template parameter (ggml_type type), so the if constexpr
+# resolves at compile time and costs nothing for any other quant type. Same
+# once-per-process GGML_LOG_INFO + BIGCHERRY_PATCH_TRACE pattern as
+# patches/1205_rd12_paired_mmvq_dual_output.py's activation marker.
+#
+# The anchor is a REGEX (not a literal re.escape'd string): edits match
+# against strip_noise()'d text, which blanks comment bodies to same-length
+# whitespace while keeping the surrounding indentation and newlines intact
+# (see csource.strip_noise / _IMPL_ANCHOR's own [ ]{...} class above for the
+# same technique) -- so the literal "// static, else ..." comment text on the
+# line after "case 1: {" is invisible to anchor matching and must be matched
+# as a whitespace-only line instead. The replacement text below restores the
+# real comment (it splices into the ORIGINAL, non-stripped text).
+_ACTIVATION_ANCHOR = r"""        case 1: \{
+[ ]{60,90}
+            static constexpr int c_ncols_dst = 1;
+"""
+
+_ACTIVATION_MARKER = """        case 1: {
+            // static, else MSVC lambda capture breaks the constexpr uses below
+            static constexpr int c_ncols_dst = 1;
+
+            // bigcherry: HI83 activation-evidence instrumentation, not part
+            // of the ported fork change. Q6_K-gated so this only fires for
+            // RD08's own kernel, not every ncols_dst=1 mmvq dispatch.
+            if constexpr (type == GGML_TYPE_Q6_K) {
+                if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                    static std::atomic_flag bigcherry_rd08_logged = ATOMIC_FLAG_INIT;
+                    if (!bigcherry_rd08_logged.test_and_set(std::memory_order_relaxed)) {
+                        GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2 ncols_dst=1\\n");
+                    }
+                }
+            }
+"""
+
 # ------------------------------------------------------------- ggml-cuda.cu
 
 _CAPTURE_HEAD_OLD = """    bool cuda_graph_update_required = false;
@@ -267,6 +320,16 @@ PATCHES = [
                     "(rdna-boosts 4591cc980 / RD08)",
         edits=(
             Edit(
+                id="rd08-atomic-include",
+                anchor=re.escape(_INCLUDES_OLD),
+                rationale="mmvq.cu's activation marker below needs "
+                          "std::atomic_flag; <atomic> is not already "
+                          "included here or transitively via common.cuh",
+                mode="replace",
+                text=_INCLUDES_NEW,
+                guard=r"#include <atomic>\n#include <cstdint>",
+            ),
+            Edit(
                 id="rd08-switch-q6k",
                 anchor=re.escape(_SWITCH_OLD),
                 rationale="get_vec_dot_q_cuda: Q6_K now resolves to the "
@@ -274,6 +337,16 @@ PATCHES = [
                 mode="replace",
                 text=_SWITCH_NEW,
                 guard=r"case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1_vdr2;",
+            ),
+            Edit(
+                id="rd08-activation-marker",
+                anchor=_ACTIVATION_ANCHOR,
+                rationale="mul_mat_vec_q_switch_ncols_dst's case 1: block is "
+                          "the ncols_dst=1 host-side launch point the vdr2 "
+                          "kernel serves -- HI83 activation evidence",
+                mode="replace",
+                text=_ACTIVATION_MARKER,
+                guard=r"BIGCHERRY_PATCH_HIT patch=1204_rd08",
             ),
         ),
     ),

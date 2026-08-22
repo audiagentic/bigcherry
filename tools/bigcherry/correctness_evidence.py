@@ -65,6 +65,11 @@ _METRIC_RE = re.compile(
     r"backend1=(?P<backend1>\S+) backend2=(?P<backend2>\S+) "
     r"err=(?P<err>\S+) max_abs=(?P<max_abs>\S+) threshold=(?P<threshold>\S+) "
     r"n=(?P<n>\d+)"
+    # HI83: added by patches/1223's backend1_digest/backend2_digest extension.
+    # Optional so this parser stays usable against older builds that predate
+    # that extension (e.g. HI67 evidence captured before HI83 landed).
+    r"(?: backend1_digest=(?P<backend1_digest>[0-9a-fA-F]+)"
+    r" backend2_digest=(?P<backend2_digest>[0-9a-fA-F]+))?"
 )
 
 
@@ -86,6 +91,10 @@ class CorrectnessMetric:
     max_abs: float
     threshold: float
     n: int
+    # HI83: exact backend-output byte digests -- None against a build that
+    # predates the 1223 digest extension.
+    backend1_digest: str | None = None
+    backend2_digest: str | None = None
 
 
 def parse_ref_digests(stderr_text: str) -> list[RefDigest]:
@@ -101,6 +110,8 @@ def parse_correctness_metrics(stderr_text: str) -> list[CorrectnessMetric]:
             op=m["op"], tensor=m["tensor"], backend1=m["backend1"], backend2=m["backend2"],
             err=float(m["err"]), max_abs=float(m["max_abs"]), threshold=float(m["threshold"]),
             n=int(m["n"]),
+            backend1_digest=m["backend1_digest"].lower() if m["backend1_digest"] is not None else None,
+            backend2_digest=m["backend2_digest"].lower() if m["backend2_digest"] is not None else None,
         )
         for m in _METRIC_RE.finditer(stderr_text)
     ]

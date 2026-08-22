@@ -47,11 +47,27 @@ _METRIC_LINE = '''
                 // backend2_output) -- E_N when backend1 was forced to native,
                 // E_C when forced to a candidate (see patches/1223_hi67_machine_
                 // readable_correctness_metrics.py for the full rationale).
+                //
+                // bigcherry (HI83): backend1_digest/backend2_digest additionally
+                // let a patch-specific producer (e.g. rd08_correctness_evidence.py)
+                // compare exact backend output bytes across two SEPARATE
+                // deterministic process invocations, not just their NMSE against
+                // a shared CPU reference -- two implementations can have equal
+                // NMSE without being bit-identical. Reuses bigcherry_fnv1a() from
+                // patches/1222_hi67_deterministic_test_backend_ops_seed.py, which
+                // this patch already REQUIRES.
+                const uint64_t bigcherry_backend1_digest =
+                    bigcherry_fnv1a(f1.data(), f1.size() * sizeof(float));
+                const uint64_t bigcherry_backend2_digest =
+                    bigcherry_fnv1a(f2.data(), f2.size() * sizeof(float));
                 fprintf(stderr,
                     "BIGCHERRY_CORRECTNESS_METRIC op=%s tensor=%s backend1=%s backend2=%s "
-                    "err=%.17g max_abs=%.17g threshold=%.17g n=%zu\\n",
+                    "err=%.17g max_abs=%.17g threshold=%.17g n=%zu "
+                    "backend1_digest=%016llx backend2_digest=%016llx\\n",
                     ggml_op_desc(t1), t1->name, bn1, bn2, err,
-                    bigcherry_max_abs, ud->tc->max_err(ud->backend1), f1.size());
+                    bigcherry_max_abs, ud->tc->max_err(ud->backend1), f1.size(),
+                    (unsigned long long) bigcherry_backend1_digest,
+                    (unsigned long long) bigcherry_backend2_digest);
             }
 '''
 

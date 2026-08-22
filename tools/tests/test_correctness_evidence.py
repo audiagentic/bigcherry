@@ -27,12 +27,16 @@ def _completed(returncode: int, stderr: str):
     return result
 
 
-def _metric_line(*, tensor="dst", err, max_abs, threshold=5e-4):
-    return (
+def _metric_line(*, tensor="dst", err, max_abs, threshold=5e-4, digests=None):
+    line = (
         f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor={tensor} "
         f"backend1=HIP0 backend2=CPU err={err} max_abs={max_abs} "
-        f"threshold={threshold} n=1024\n"
+        f"threshold={threshold} n=1024"
     )
+    if digests is not None:
+        backend1_digest, backend2_digest = digests
+        line += f" backend1_digest={backend1_digest} backend2_digest={backend2_digest}"
+    return line + "\n"
 
 
 def _digest_line(*, name="dst", call_index=0, digest="deadbeef00000000", nels=1024):
@@ -53,6 +57,23 @@ class ParsingTests(unittest.TestCase):
         self.assertAlmostEqual(metrics[0].err, 1e-05)
         self.assertAlmostEqual(metrics[0].max_abs, 0.001)
         self.assertAlmostEqual(metrics[0].threshold, 5e-4)
+
+    def test_parse_correctness_metrics_without_digests_defaults_to_none(self):
+        text = _metric_line(err="1e-05", max_abs="0.001")
+        metrics = ce.parse_correctness_metrics(text)
+        self.assertEqual(len(metrics), 1)
+        self.assertIsNone(metrics[0].backend1_digest)
+        self.assertIsNone(metrics[0].backend2_digest)
+
+    def test_parse_correctness_metrics_with_digests(self):
+        text = _metric_line(
+            err="1e-05", max_abs="0.001",
+            digests=("DEADBEEF00000001", "00000000CAFEF00D"),
+        )
+        metrics = ce.parse_correctness_metrics(text)
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0].backend1_digest, "deadbeef00000001")
+        self.assertEqual(metrics[0].backend2_digest, "00000000cafef00d")
 
     def test_parsing_ignores_unrelated_lines(self):
         text = "some other stderr noise\n" + _digest_line() + "more noise\n"
