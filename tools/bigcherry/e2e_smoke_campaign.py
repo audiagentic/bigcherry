@@ -55,12 +55,12 @@ PROGRESS_INTERVAL_S = 15
 # HI82 item 9: campaign-identity-gated resume (design/implementation:
 # gpt-auto-agent, req_527bff46e32e481c).
 STATUS_SCHEMA_VERSION = 2
-CAMPAIGN_IDENTITY_SCHEMA_VERSION = 1
+CAMPAIGN_IDENTITY_SCHEMA_VERSION = 2
 
 # Manual semantic version for campaign execution logic. Bump this whenever a
 # code change can alter stage meaning/output without already changing one of
 # the explicit identity inputs below (model/build/patch/source identity).
-CAMPAIGN_SCRIPT_VERSION = "hi82-item9-v1"
+CAMPAIGN_SCRIPT_VERSION = "hi82-item8-item9-v2"
 COMPLETIONS = (
     {
         "prompt": "Explain the difference between a mutex and a semaphore in "
@@ -121,6 +121,67 @@ def _stable_json_sha256(value: object) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+# HI82 (design: GPT, req_f2b3c8914ec0498d): the canonical artifacts-directory
+# manifest (autotune_catalog.emit()'s hip-autotune-manifest.json) is an
+# evidence artifact, not a compile input -- its top-level generated_at
+# legitimately advances on every `bigcherry generate` invocation even when
+# the candidate catalog is unchanged. Hashing the raw file bytes for
+# campaign resume identity (found for real: two back-to-back identical
+# campaign runs on gfx1100 refused to resume solely because of this field)
+# conflates "when was this evidence emitted" with "does this manifest mean
+# the same thing to inventory/export/replay". Fail closed by default: only
+# this one known-volatile top-level field is excluded, so an unforeseen new
+# manifest field participates in identity until someone deliberately
+# classifies it otherwise.
+_MANIFEST_IDENTITY_VOLATILE_TOP_LEVEL_FIELDS = frozenset({"generated_at"})
+
+
+def _manifest_semantic_identity(path: Path) -> dict[str, object]:
+    """Stable identity of the manifest's campaign-relevant substance.
+
+    manifest["manifest_hash"] (autotune_catalog.manifest_hash()) and
+    manifest["build_descriptor"]["descriptor_hash"] are both already-stable,
+    narrower fingerprints (catalog-only, compiled-descriptor-only) -- neither
+    covers the complete manifest (e.g. source_revision, coverage,
+    supported_coverage are outside both). Recorded here as diagnostics only;
+    the authoritative resume key is the canonical hash of the whole manifest
+    minus the one known-volatile field.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise CampaignError(f"campaign identity input does not exist: {path}")
+
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CampaignError(f"cannot read campaign manifest {path}: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise CampaignError(f"campaign manifest root is not a JSON object: {path}")
+
+    semantic_manifest = {
+        key: value for key, value in manifest.items()
+        if key not in _MANIFEST_IDENTITY_VOLATILE_TOP_LEVEL_FIELDS
+    }
+
+    identity: dict[str, object] = {
+        "canonicalization": "canonical-json-v1",
+        "excluded_top_level_fields": sorted(_MANIFEST_IDENTITY_VOLATILE_TOP_LEVEL_FIELDS),
+        "sha256": _stable_json_sha256(semantic_manifest),
+    }
+
+    manifest_hash_value = manifest.get("manifest_hash")
+    if isinstance(manifest_hash_value, str) and manifest_hash_value:
+        identity["manifest_hash"] = manifest_hash_value
+
+    build_descriptor = manifest.get("build_descriptor")
+    if isinstance(build_descriptor, dict):
+        descriptor_hash = build_descriptor.get("descriptor_hash")
+        if isinstance(descriptor_hash, str) and descriptor_hash:
+            identity["build_descriptor_hash"] = descriptor_hash
+
+    return identity
 
 
 def _identity_differences(old: object, new: object, prefix: str = "") -> list[str]:
@@ -259,11 +320,14 @@ class Campaign:
             # independent file identity detects replacement in place.
             "model_identity": {"path": str(self.model.resolve())},
             "model_file_identity": _file_content_identity(self.model),
-            # The manifest affects dispatch-db/export semantics and must
-            # not be allowed to change underneath resumed measurements.
+            # The manifest affects dispatch-db/export semantics and must not
+            # be allowed to change underneath resumed measurements. Its
+            # canonical evidence file has an intentionally-live generated_at
+            # timestamp, so identity binds the complete semantic JSON
+            # payload (generated_at excluded) rather than the raw file bytes.
             "manifest_identity": {
                 "path": str(self.manifest.resolve()),
-                "file_identity": _file_content_identity(self.manifest),
+                "semantic_identity": _manifest_semantic_identity(self.manifest),
             },
             "patch_identity": patch_identity,
             "patched_source_tree": patched_source_tree,
@@ -826,8 +890,29 @@ class Campaign:
             }
         return result
 
+    def _bench_build_identity(self, build_role: str) -> dict[str, object] | None:
+        """The already-verified build identity for one bench arm, sourced
+        from CompletedBuildEvidence.campaign_identity() via
+        CampaignIdentityContext (patch_validation_campaign.py) -- not a
+        second, invented provenance authority. Direct standalone
+        e2e_smoke_campaign.py use has no CampaignIdentityContext, so this
+        returns None there; that campaign's resume identity is still bound
+        to executable file content by _make_campaign_identity()."""
+        if self.identity_context is None:
+            return None
+        identity = self.identity_context.build_identities.get(build_role)
+        if identity is None:
+            raise CampaignError(
+                f"S6_bench: CampaignIdentityContext has no build identity for "
+                f"required build role {build_role!r}"
+            )
+        # A new outer mapping, so attaching bench metadata elsewhere can
+        # never mutate CampaignIdentityContext's authoritative identity.
+        return dict(identity)
+
     def _run_bench_config(
         self, *, name: str, binary: Path, dispatch_mode: str | None,
+        build_role: str, build_identity: dict[str, object] | None,
         dispatch_cache: Path | None = None,
     ) -> dict[str, Any]:
         binary = Path(binary)
@@ -867,6 +952,13 @@ class Campaign:
         result: dict[str, Any] = {
             "binary": str(binary.resolve()),
             "dispatch_mode": dispatch_mode,
+            # HI82 item 8: bind this measurement arm to the exact completed
+            # build whose executable/runtime closure produced these numbers.
+            # build_role is deliberately separate from `name`: the "native"
+            # arm runs the TUNE build in native dispatch mode, so its real
+            # role is "tune", not a fourth build.
+            "build_role": build_role,
+            "build_identity": build_identity,
             "metrics": self._bench_metrics(rows),
             "rows": rows,
         }
@@ -906,16 +998,21 @@ class Campaign:
         self.write_status(stage, "running")
         stock = self._run_bench_config(
             name="stock", binary=self.stock_bench, dispatch_mode=None,
+            build_role="stock", build_identity=self._bench_build_identity("stock"),
         )
         native = self._run_bench_config(
             name="native", binary=self.tune_bench, dispatch_mode="native",
+            build_role="tune", build_identity=self._bench_build_identity("tune"),
         )
         replay = self._run_bench_config(
             name="replay", binary=self.replay_bench, dispatch_mode="replay",
+            build_role="replay", build_identity=self._bench_build_identity("replay"),
             dispatch_cache=cache,
         )
         payload: dict[str, Any] = {
-            "schema_version": 1,
+            # v2 adds explicit per-arm completed-build provenance
+            # (build_role/build_identity) -- see HI82 item 8.
+            "schema_version": 2,
             "model": str(Path(self.model).resolve()),
             "params": {
                 "n_prompt": self.bench_prompt, "n_gen": self.bench_gen,
