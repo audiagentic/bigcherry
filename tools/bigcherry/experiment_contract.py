@@ -988,20 +988,127 @@ def require_generalisation_policy(
     return merged
 
 
+# ------------------------------------------------------------ trigger proof (EC18)
+
+
+@dataclass(frozen=True)
+class TriggerEvidence:
+    """One lane's proof that the contract's target code path was actually
+    exercised during measurement, not merely that a benchmark process
+    completed. Sourced from BigCherry's existing dispatch/coverage
+    telemetry (0700 coverage_counters, 0810 replay_hit_diagnostics, 0820
+    measurement_signature_shapes, 0830 split_reduce_telemetry) -- this
+    module does not produce trigger evidence itself, only evaluates it,
+    matching EC07's CorrectnessResult precedent (the gate consumes facts,
+    it does not measure them).
+
+    At least one of candidate_launches or expected_route_selected must be
+    an int (the other may be None when not applicable to this lane's
+    target kind, e.g. a kernel-dispatch contract has no "route" concept
+    and a routing/split contract may have no per-launch counter) -- a lane
+    supplying neither is a caller error (raised, not silently ignored),
+    since that would make trigger-proof unfalsifiable."""
+    role: str
+    lane_id: str
+    candidate_launches: int | None = None
+    expected_route_selected: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.candidate_launches is None and self.expected_route_selected is None:
+            raise ExperimentContractError(
+                f"trigger evidence for lane {self.lane_id!r} supplies neither "
+                "candidate_launches nor expected_route_selected -- at least one "
+                "is required, or this lane's trigger proof is unfalsifiable"
+            )
+        for field_name, value in (
+            ("candidate_launches", self.candidate_launches),
+            ("expected_route_selected", self.expected_route_selected),
+        ):
+            if value is not None and (isinstance(value, bool) or value < 0):
+                raise ExperimentContractError(
+                    f"trigger evidence for lane {self.lane_id!r}: {field_name} "
+                    f"must be a non-negative integer, got {value!r}"
+                )
+
+
+def evaluate_trigger_proof(trigger_evidence: list[TriggerEvidence]) -> dict[str, object]:
+    """EC18: fail closed unless every POSITIVE-role lane proves its target
+    code path actually ran at least once. Scoped to positive-role lanes
+    only, mirroring aggregate_contract_effects()'s own precedent (EC06):
+    a contract's performance claim is about what its positive lanes
+    measured, so those are exactly the lanes whose measurement is
+    meaningless if the candidate path never triggered. Control lanes are
+    NOT checked here -- a control lane deliberately should not trigger the
+    candidate in most contracts, so requiring launches there would invert
+    the check; boundary lanes are exploring the edge of eligibility and
+    may legitimately not trigger on one side of that edge, so they are
+    excluded too.
+
+    An empty trigger_evidence list is itself a failure -- a contract
+    supplying no trigger evidence for its positive lanes has not
+    demonstrated anything was exercised, which is exactly the case this
+    gate exists to catch, not a vacuously-true absence of counter-
+    examples."""
+    positive = [e for e in trigger_evidence if e.role == "positive"]
+    if not positive:
+        return {
+            "passed": False,
+            "reasons": ["no positive-role trigger evidence supplied -- cannot "
+                        "prove the target code path was ever exercised"],
+            "checked_lanes": 0,
+            "untriggered_lanes": [],
+        }
+
+    untriggered: list[str] = []
+    for evidence in positive:
+        counts = [c for c in (evidence.candidate_launches, evidence.expected_route_selected)
+                  if c is not None]
+        if not any(c > 0 for c in counts):
+            untriggered.append(evidence.lane_id)
+
+    reasons = []
+    if untriggered:
+        reasons.append(
+            f"{len(untriggered)} of {len(positive)} positive-role lane(s) show zero "
+            f"candidate launches and zero expected-route selections: {', '.join(untriggered)} "
+            "-- the target code path was never exercised, so any measured effect for "
+            "these lanes is not evidence of anything"
+        )
+    return {
+        "passed": not untriggered,
+        "reasons": reasons,
+        "checked_lanes": len(positive),
+        "untriggered_lanes": untriggered,
+    }
+
+
 # --------------------------------------------------------------- promotion (EC09)
 
 
 def evaluate_promotion_gate(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
+    trigger_proof: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """EC09: the final pass/fail, combining EC07's correctness gate, EC06's
-    aggregated effects against contract.acceptance's own thresholds, and
-    (when supplied) EC08's generalisation proof. This is ADDITIONAL to
-    every existing BigCherry promotion gate (promotion.py/tune_promotion.py's
-    production-class provenance, decision-grade report, replay coverage,
-    etc.) -- a contract-backed promotion must still clear those, this
-    function does not replace or re-check them.
+    """EC09: the final pass/fail/invalid verdict, combining EC18's trigger
+    proof, EC07's correctness gate, EC06's aggregated effects against
+    contract.acceptance's own thresholds, and (when supplied) EC08's
+    generalisation proof. This is ADDITIONAL to every existing BigCherry
+    promotion gate (promotion.py/tune_promotion.py's production-class
+    provenance, decision-grade report, replay coverage, etc.) -- a
+    contract-backed promotion must still clear those, this function does
+    not replace or re-check them.
+
+    trigger_proof (EC18) is checked FIRST and short-circuits every other
+    check when it fails: a benchmark whose target code path never ran
+    cannot be evidence of pass OR fail, so its verdict is "invalid", a
+    third state distinct from both -- never silently folded into "fail"
+    (which would look like a real negative result) or "pass" (which is
+    the exact danger EC18 exists to prevent). trigger_proof is optional
+    (None) only for backward compatibility with callers/contracts that
+    predate EC18 and have not been updated to supply it yet; a caller that
+    can supply it and doesn't is choosing not to use this gate, not
+    proving anything.
 
     Handles the asymmetric correctness-first case explicitly (guide
     Appendix A: RD20/RD22/RD26-class contracts have no expected throughput
@@ -1013,6 +1120,15 @@ def evaluate_promotion_gate(
     it on every contract, so there is always a declared regression budget
     to hold aggregated_effects to, regardless of whether a gain was
     claimed."""
+    if trigger_proof is not None and not trigger_proof.get("passed"):
+        return {
+            "status": "invalid",
+            "passed": False,
+            "reasons": list(trigger_proof.get("reasons") or []),
+            "contract_id": contract.id,
+            "contract_hash": contract.contract_hash,
+        }
+
     reasons: list[str] = []
 
     if not correctness_gate.get("passed"):
@@ -1050,6 +1166,7 @@ def evaluate_promotion_gate(
         reasons.append("generalisation proof did not pass")
 
     return {
+        "status": "pass" if not reasons else "fail",
         "passed": not reasons,
         "reasons": reasons,
         "contract_id": contract.id,
@@ -1162,6 +1279,13 @@ def render_report(
     lines.append("")
 
     lines.append("## Promotion decision")
+    status = promotion_gate.get("status")
+    if status is not None:
+        lines.append(f"- status: {status}")
+        if status == "invalid":
+            lines.append("- INVALID: the target code path was not proven to have been "
+                         "exercised (EC18 trigger proof) -- this is not a pass or a fail, "
+                         "the measurement itself cannot be trusted as evidence")
     lines.append(f"- passed: {promotion_gate.get('passed')}")
     reasons = promotion_gate.get("reasons") or []
     if reasons:
