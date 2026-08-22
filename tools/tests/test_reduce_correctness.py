@@ -350,11 +350,13 @@ class JsonlWriterTests(unittest.TestCase):
         result = rc.evaluate_provider_run(manifest, device_values, reference, allowed, run)
         row = rc.case_result_to_row(
             result, source_revision="deadbeef", manifest_hash="cafef00d",
-            topology_key="n2:peer1001", peer_access="partial", element_count=8, seed=1,
+            reduction_signature_key="sig-a", topology_key="n2:peer1001",
+            peer_access="partial", element_count=8, seed=1,
         )
         self.assertEqual(row["provider"], "rccl")
         self.assertTrue(row["correct"])
         self.assertEqual(row["contract_version"], rc.CONTRACT_VERSION)
+        self.assertEqual(row["reduction_signature_key"], "sig-a")
 
         import json
         import tempfile as _tempfile
