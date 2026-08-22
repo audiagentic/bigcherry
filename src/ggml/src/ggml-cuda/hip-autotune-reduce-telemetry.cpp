@@ -30,6 +30,43 @@ thread_local std::string g_last_requested_provider;
 thread_local std::chrono::steady_clock::time_point g_reduce_start;
 thread_local bool g_reduce_timer_active = false;
 
+// HI18 test-capture state. thread_local because the standalone probe is
+// single-threaded and this must never become a second, accidental
+// cross-thread state channel alongside g_last_comm_ctx above.
+thread_local ggml_hip_reduce_test_snapshot_v1 g_reduce_test_snapshot;
+thread_local uint64_t g_reduce_test_sequence = 0;
+thread_local bool g_reduce_test_captured = false;
+
+void copy_label(char * dst, size_t dst_size, const char * src) {
+    if (src == nullptr) {
+        dst[0] = '\0';
+        return;
+    }
+    std::snprintf(dst, dst_size, "%s", src);
+}
+
+void capture_reduce_test_snapshot(
+        const int * devices, size_t device_count, ggml_tensor ** tensors,
+        const char * requested_provider, const char * effective_provider,
+        const char * handoff, size_t fallback_depth, bool provider_succeeded) {
+    ggml_hip_reduce_test_snapshot_v1 & snap = g_reduce_test_snapshot;
+    snap.version = 1;
+    snap.sequence = ++g_reduce_test_sequence;
+    snap.device_count = devices == nullptr
+        ? 0
+        : std::min<size_t>(device_count, GGML_HIP_REDUCE_TEST_CAPTURE_MAX_DEVICES);
+    for (size_t i = 0; i < snap.device_count; ++i) {
+        snap.devices[i] = devices[i];
+        snap.tensors[i] = tensors != nullptr ? tensors[i] : nullptr;
+    }
+    copy_label(snap.requested_provider, sizeof(snap.requested_provider), requested_provider);
+    copy_label(snap.effective_provider, sizeof(snap.effective_provider), effective_provider);
+    copy_label(snap.handoff, sizeof(snap.handoff), handoff);
+    snap.fallback_depth = fallback_depth;
+    snap.provider_succeeded = provider_succeeded;
+    g_reduce_test_captured = true;
+}
+
 const char * telemetry_path() {
     const char * path = std::getenv("GGML_HIP_REDUCE_TELEMETRY");
     return path != nullptr && path[0] != '\0' ? path : nullptr;
@@ -253,6 +290,9 @@ void ggml_hip_reduce_telemetry_provider(
                 provider_succeeded ? "none" : "provider_declined_handoff_meta",
                 provider_succeeded ? 0 : 1, timing);
     if (provider_succeeded) {
+        capture_reduce_test_snapshot(
+            devices, device_count, tensors, requested_provider, effective_provider,
+            "none", 0, true);
         g_reduce_timer_active = false;
     }
 }
@@ -287,6 +327,9 @@ void ggml_hip_reduce_telemetry_fallback(
     const reduce_timing timing = reduce_elapsed_us(devices, device_count, true);
     write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
                 fallback_depth, timing);
+    capture_reduce_test_snapshot(
+        devices, device_count, tensors, requested_provider, "meta",
+        handoff, fallback_depth, false);
 }
 
 void ggml_hip_reduce_telemetry_fallback_context(
@@ -308,6 +351,19 @@ void ggml_hip_reduce_telemetry_fallback_context(
             explicitly_requested_meta ? "none" : handoff,
             explicitly_requested_meta ? 0 : fallback_depth);
     g_reduce_timer_active = false;
+}
+
+void ggml_hip_reduce_test_capture_reset() {
+    g_reduce_test_snapshot = ggml_hip_reduce_test_snapshot_v1{};
+    g_reduce_test_captured = false;
+}
+
+bool ggml_hip_reduce_test_capture_snapshot(ggml_hip_reduce_test_snapshot_v1 * out) {
+    if (out == nullptr || !g_reduce_test_captured) {
+        return false;
+    }
+    *out = g_reduce_test_snapshot;
+    return true;
 }
 
 #endif

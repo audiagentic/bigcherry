@@ -113,3 +113,8 @@ no such path yet, so no conflict-checking code exists today.
 "profile" concepts already exist in this project; a role is a fourth,
 separate axis and must not collapse into any of them by accident.
 <!-- ag:managed:end -->
+
+## Source control doctrine
+
+Never use `git stash`, `git reset`, `git rebase` — this is a shared, multi-agent working tree and destructuve git commands can silently collide with another session's live edits. If work needs to be set
+aside, split it into its own deliberate check-in group or leave it uncommitted.
