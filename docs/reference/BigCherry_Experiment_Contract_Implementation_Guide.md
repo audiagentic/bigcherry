@@ -244,7 +244,7 @@ Reuse the existing generalized-key proof. Current policy defaults require at lea
 ## 15. Agent execution order
 
 1. Read `AGENTS.md` plus `docs/standards/HIP_AUTOTUNE_STANDARDS.md`.
-2. Read `docs/reference/OVERVIEW.md`, `DESIGN_DECISIONS.md`, `FAMILY_MODEL.md`, `BUILD_AND_TEST.md` and `PACK_REVIEW.md`.
+2. Read `docs/reference/OVERVIEW.md`, `DESIGN_DECISIONS.md`, `FAMILY_MODEL.md`, `BUILD.md`, `TEST.md` and `PACK_REVIEW.md`.
 3. Read `external-sources.toml` and the RD/EX plan(s) for the optimization being touched.
 4. Implement EC01-EC02 first (contract model/registry), then EC03-EC05 (campaign/evidence wiring), then EC06-EC10 (evaluation/promotion/reporting), then CLI/tests.
 5. Do not port additional RD patches merely to exercise the framework. First make existing 120x transforms expressible as contracts.
@@ -271,7 +271,8 @@ Reuse the existing generalized-key proof. Current policy defaults require at lea
 - docs/reference/OVERVIEW.md
 - docs/reference/DESIGN_DECISIONS.md
 - docs/reference/FAMILY_MODEL.md
-- docs/reference/BUILD_AND_TEST.md
+- docs/reference/BUILD.md
+- docs/reference/TEST.md
 - docs/reference/PACK_REVIEW.md
 - docs/reference/PIN_REBASE_REVIEW_B10502.md
 - external-sources.toml
