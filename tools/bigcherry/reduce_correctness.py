@@ -399,6 +399,92 @@ PROVENANCE_GATES: dict[str, dict[str, object]] = {
 }
 
 
+def load_probe_run(result_path: Path, *, manifest: dict, provider: str) -> ProviderRun:
+    """Strict ingestion of one test-hip-reduce result JSON into a
+    ProviderRun, closing the seam GPT's review flagged: the native probe
+    proves far more (probe_valid, an exact observed runtime signature, per-
+    output digests) than the original bare ProviderRun construction used --
+    a caller could silently ignore probe_valid or the process exit code and
+    still hand evaluate_provider_run() an apparently valid object. This is
+    the only sanctioned way to build a ProviderRun from a real probe
+    invocation; it fails closed on every provenance/identity mismatch
+    rather than deferring that check to evaluate_provider_run(), which
+    trusts whatever ProviderRun it is given."""
+    obj = json.loads(result_path.read_text(encoding="utf-8"))
+
+    if obj.get("schema_version") != 1:
+        raise CorrectnessError(f"{result_path}: unsupported test-hip-reduce result schema")
+    if obj.get("case_id") != manifest["case_id"]:
+        raise CorrectnessError(
+            f"{result_path}: probe case_id {obj.get('case_id')!r} does not match "
+            f"manifest {manifest['case_id']!r}"
+        )
+    if obj.get("plan") != provider:
+        raise CorrectnessError(f"{result_path}: probe plan {obj.get('plan')!r} does not match arm {provider!r}")
+    if obj.get("probe_valid") is not True:
+        raise CorrectnessError(f"{result_path}: native probe did not establish a valid reduction (probe_valid != true)")
+    if obj.get("completion_synchronized") is not True:
+        raise CorrectnessError(f"{result_path}: native probe was not completion-synchronized")
+    if obj.get("reduction_signature_matches_case") is not True:
+        raise CorrectnessError(f"{result_path}: runtime reduction signature did not match the case")
+    if obj.get("reduction_signature_key") != manifest["reduction_signature_key"]:
+        raise CorrectnessError(
+            f"{result_path}: native runtime reduction_signature_key "
+            f"{obj.get('reduction_signature_key')!r} does not match manifest "
+            f"{manifest['reduction_signature_key']!r}"
+        )
+
+    sig = obj.get("reduction_signature")
+    if not isinstance(sig, dict):
+        raise CorrectnessError(f"{result_path}: probe result has no reduction_signature")
+    if sig.get("slice_shape") != list(manifest["slice_shape"]):
+        raise CorrectnessError(f"{result_path}: probe runtime slice_shape does not match manifest")
+    if sig.get("topology_key") != manifest["topology_key"]:
+        raise CorrectnessError(f"{result_path}: probe runtime topology_key does not match manifest")
+    if sig.get("peer_access") != manifest["peer_access"]:
+        raise CorrectnessError(f"{result_path}: probe runtime peer_access does not match manifest")
+    if sig.get("element_type") != "f32":
+        raise CorrectnessError(f"{result_path}: probe runtime element_type is not f32")
+
+    outputs_obj = obj.get("outputs")
+    if not isinstance(outputs_obj, list):
+        raise CorrectnessError(f"{result_path}: probe outputs must be an array")
+    devices = tuple(obj["devices"])
+    if len(outputs_obj) != manifest["device_count"]:
+        raise CorrectnessError(
+            f"{result_path}: probe output count {len(outputs_obj)} does not match "
+            f"manifest device_count {manifest['device_count']}"
+        )
+
+    outputs: list[bytes] = []
+    for rank, output_obj in enumerate(outputs_obj):
+        if output_obj.get("device") != devices[rank]:
+            raise CorrectnessError(f"{result_path}: output rank {rank} device does not match devices[{rank}]")
+        data = Path(output_obj["path"]).read_bytes()
+        if len(data) != manifest["element_count"] * 4:
+            raise CorrectnessError(
+                f"{result_path}: output rank {rank} is {len(data)} bytes, expected "
+                f"{manifest['element_count'] * 4}"
+            )
+        digest = sha256_hex(data)
+        if digest != output_obj.get("sha256"):
+            raise CorrectnessError(f"{result_path}: output rank {rank} digest mismatch")
+        outputs.append(data)
+
+    return ProviderRun(
+        provider=provider,
+        requested_provider=obj["requested_provider"],
+        effective_provider=obj["effective_provider"],
+        provider_succeeded=obj["provider_succeeded"],
+        handoff=obj["handoff"],
+        fallback_depth=obj["fallback_depth"],
+        completion_synchronized=True,
+        devices=devices,
+        input_digests=tuple(obj["input_digests"]),
+        outputs=tuple(outputs),
+    )
+
+
 def evaluate_provider_run(
     manifest: dict,
     device_values: list[list[float]],

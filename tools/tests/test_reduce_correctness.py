@@ -33,6 +33,7 @@ def _make_manifest(device_values: list[list[float]], *, case_id="case-0001") -> 
         "pattern": "ordinary_signed",
         "generator_version": rc.GENERATOR_VERSION,
         "element_count": len(device_values[0]),
+        "slice_shape": [len(device_values[0]), 1, 1, 1],
         "device_count": len(device_values),
         "reduction_signature_key": "sig-a",
         "topology_key": "n2:peer1001",
@@ -281,6 +282,12 @@ class EvaluateProviderRunTests(unittest.TestCase):
         self.assertFalse(result.valid)
         self.assertIn("provenance gate failed", result.reason)
 
+    def test_duplicate_participant_devices_rejected(self):
+        run = _clean_run(self.manifest, self.device_values, "rccl", devices=(0, 0))
+        result = self._eval(run)
+        self.assertFalse(result.valid)
+        self.assertIn("duplicate participating devices", result.reason)
+
     def test_non_finite_output_rejected(self):
         bad = list(self.reference)
         bad[0] = float("nan")
@@ -428,6 +435,126 @@ class JsonlWriterTests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             round_tripped = json.loads(lines[0])
             self.assertEqual(round_tripped["case_id"], row["case_id"])
+
+
+class LoadProbeRunTests(unittest.TestCase):
+    """test-hip-reduce's real JSON output shape, reconstructed by hand
+    rather than requiring a compiled probe -- this layer's own correctness
+    (does load_probe_run ingest and validate that shape correctly) is
+    independent of whether a real probe binary is available."""
+
+    def setUp(self):
+        self.device_values = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        self.manifest = _make_manifest(self.device_values)
+        self.reference, _ = rc.cpu_reference(self.device_values)
+
+    def _write_result(self, tmp: Path, **overrides) -> Path:
+        out_dir = Path(tmp)
+        rank_paths = []
+        for rank in range(2):
+            data = _f32_bytes(self.reference)
+            rank_path = out_dir / f"result-rank-{rank}.f32"
+            rank_path.write_bytes(data)
+            rank_paths.append(rank_path)
+
+        obj = {
+            "schema_version": 1,
+            "case_id": self.manifest["case_id"],
+            "plan": "rccl",
+            "devices": [0, 1],
+            "device_count": 2,
+            "input_digests": list(self.manifest["input_digests"]),
+            "requested_provider": "rccl",
+            "effective_provider": "rccl",
+            "provider_succeeded": True,
+            "handoff": "none",
+            "fallback_depth": 0,
+            "completion_synchronized": True,
+            "captured": True,
+            "probe_valid": True,
+            "reduction_signature_key": self.manifest["reduction_signature_key"],
+            "expected_reduction_signature_key": self.manifest["reduction_signature_key"],
+            "reduction_signature_matches_case": True,
+            "reduction_signature": {
+                "version": 1,
+                "element_count": self.manifest["element_count"],
+                "element_type": "f32",
+                "slice_shape": self.manifest["slice_shape"],
+                "topology_key": self.manifest["topology_key"],
+                "peer_access": self.manifest["peer_access"],
+            },
+            "outputs": [
+                {
+                    "device": 0,
+                    "byte_count": len(rank_paths[0].read_bytes()),
+                    "sha256": rc.sha256_hex(rank_paths[0].read_bytes()),
+                    "path": str(rank_paths[0]),
+                },
+                {
+                    "device": 1,
+                    "byte_count": len(rank_paths[1].read_bytes()),
+                    "sha256": rc.sha256_hex(rank_paths[1].read_bytes()),
+                    "path": str(rank_paths[1]),
+                },
+            ],
+        }
+        obj.update(overrides)
+        result_path = out_dir / "result.json"
+        import json as _json
+        result_path.write_text(_json.dumps(obj))
+        return result_path
+
+    def test_loads_a_valid_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp)
+            run = rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
+            self.assertEqual(run.provider, "rccl")
+            self.assertEqual(run.devices, (0, 1))
+            self.assertEqual(len(run.outputs), 2)
+
+    def test_rejects_probe_valid_false(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp, probe_valid=False)
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
+
+    def test_rejects_signature_mismatch_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp, reduction_signature_matches_case=False)
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
+
+    def test_rejects_case_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp, case_id="some-other-case")
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
+
+    def test_rejects_plan_provider_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp)
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="meta")
+
+    def test_rejects_wrong_topology_in_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp)
+            import json as _json
+            obj = _json.loads(path.read_text())
+            obj["reduction_signature"]["topology_key"] = "n2:peer1111"
+            path.write_text(_json.dumps(obj))
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
+
+    def test_rejects_tampered_output_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_result(tmp)
+            import json as _json
+            obj = _json.loads(path.read_text())
+            obj["outputs"][0]["sha256"] = "0" * 64
+            path.write_text(_json.dumps(obj))
+            with self.assertRaises(rc.CorrectnessError):
+                rc.load_probe_run(path, manifest=self.manifest, provider="rccl")
 
 
 if __name__ == "__main__":
