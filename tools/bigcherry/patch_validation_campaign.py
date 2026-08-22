@@ -35,7 +35,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from bigcherry.build_identity import capture_build_identity
+from bigcherry.builds import capture_completed_build_evidence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LLAMA_CPP_SRC = REPO_ROOT / "vendor" / "llama.cpp"
@@ -67,6 +67,17 @@ def _hip_env(hip_path: Path) -> dict[str, str]:
     )
     env["PATH"] = os.pathsep.join([str(hip_path / "bin"), env.get("PATH", "")])
     return env
+
+
+def _requested_cmake_args(amdgpu_targets: str, extra_cmake_args: list[str]) -> list[str]:
+    """Identity-relevant CMake intent shared by configure and post-build
+    verification -- ONE definition so the two can never silently drift
+    apart (capture_completed_build_evidence() checks these same values
+    against the resolved CMakeCache.txt)."""
+    return [
+        "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
+        f"-DAMDGPU_TARGETS={amdgpu_targets}", *extra_cmake_args,
+    ]
 
 
 def generate_registry(*, source: Path, amdgpu_targets: str, generated_dir: Path) -> None:
@@ -128,26 +139,30 @@ def build_tree(
 
     env = _hip_env(hip_path)
 
-    if not (build_dir / "CMakeCache.txt").exists():
-        _print(f"configuring {name} ...")
-        args = [
-            "cmake", "-S", str(source), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
-            "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
-            f"-DAMDGPU_TARGETS={amdgpu_targets}",
-            f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
-            f"-DCMAKE_PREFIX_PATH={hip_path}",
-            # HI82 item 7: build_identity.post_build_verify() needs real
-            # compiled command lines, not just CMakeCache.txt's configured
-            # intent -- CMAKE_HIP_FLAGS is proven this session (HI81) to
-            # silently not reach the compiler on Windows/Ninja+Clang.
-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-            *extra_cmake_args,
-        ]
-        log_path = log_dir / f"{name}-configure.log"
-        with log_path.open("w", encoding="utf-8") as log_file:
-            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
-        if result.returncode != 0:
-            raise PatchCampaignError(f"{name} configure failed (see {log_path})")
+    # Always (re)configure: build directories are keyed by SOURCE identity
+    # (patched_src.name), not by cmake configuration -- skipping configure
+    # merely because CMakeCache.txt already exists would silently reuse a
+    # stale configuration if this tool is ever invoked twice against the
+    # same patch with different extra_cmake_args. CMake configure is
+    # incremental, so this is cheap; a full rebuild only happens if the
+    # resolved configuration actually changed.
+    _print(f"configuring {name} ...")
+    args = [
+        "cmake", "-S", str(source), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
+        *_requested_cmake_args(amdgpu_targets, extra_cmake_args),
+        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
+        f"-DCMAKE_PREFIX_PATH={hip_path}",
+        # HI82 item 7: builds.post_build_verify() needs real compiled
+        # command lines, not just CMakeCache.txt's configured intent --
+        # CMAKE_HIP_FLAGS is proven this session (HI81) to silently not
+        # reach the compiler on Windows/Ninja+Clang.
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
+    log_path = log_dir / f"{name}-configure.log"
+    with log_path.open("w", encoding="utf-8") as log_file:
+        result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+    if result.returncode != 0:
+        raise PatchCampaignError(f"{name} configure failed (see {log_path})")
 
     for target in targets:
         _print(f"building {name} ({target}) ...")
@@ -182,21 +197,19 @@ def ensure_stock_baseline(
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = _hip_env(hip_path)
-    if not (build_dir / "CMakeCache.txt").exists():
-        _print("configuring stock baseline ...")
-        args = [
-            "cmake", "-S", str(stock_src), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
-            "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
-            f"-DAMDGPU_TARGETS={amdgpu_targets}",
-            f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
-            f"-DCMAKE_PREFIX_PATH={hip_path}",
-            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        ]
-        log_path = log_dir / "stock-configure.log"
-        with log_path.open("w", encoding="utf-8") as log_file:
-            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
-        if result.returncode != 0:
-            raise PatchCampaignError(f"stock configure failed (see {log_path})")
+    _print("configuring stock baseline ...")
+    args = [
+        "cmake", "-S", str(stock_src), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
+        *_requested_cmake_args(amdgpu_targets, []),
+        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
+        f"-DCMAKE_PREFIX_PATH={hip_path}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
+    log_path = log_dir / "stock-configure.log"
+    with log_path.open("w", encoding="utf-8") as log_file:
+        result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+    if result.returncode != 0:
+        raise PatchCampaignError(f"stock configure failed (see {log_path})")
     for target in ("llama-bench",):
         log_path = log_dir / f"stock-build-{target}.log"
         with log_path.open("w", encoding="utf-8") as log_file:
@@ -246,12 +259,13 @@ def run(args: argparse.Namespace) -> int:
     _print(f"stock source: {stock_src}")
 
     # Build trees are keyed by --build-root, not --workdir: build_tree()/
-    # ensure_stock_baseline() skip configure when CMakeCache.txt exists and
-    # `cmake --build` is incremental, so a build tree is reusable across
-    # runs on this machine+arch as long as its SOURCE (now an isolated,
-    # content-addressed worktree, not the shared vendor/llama.cpp tree --
-    # HI82) hasn't changed identity. --workdir (record/tune/promote/replay/
-    # bench/report output) is what needs to be fresh per patch+model.
+    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
+    # `cmake --build` itself only recompiles what actually changed, so a
+    # build tree is still effectively reusable across runs on this
+    # machine+arch as long as its SOURCE (an isolated, content-addressed
+    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
+    # identity. --workdir (record/tune/promote/replay/bench/report output)
+    # is what needs to be fresh per patch+model.
     build_root: Path = (args.build_root or workdir) / patched_src.name
 
     # One shared out-of-tree registry serves both the tune and replay builds
@@ -266,58 +280,90 @@ def run(args: argparse.Namespace) -> int:
     exe = ".exe" if sys.platform == "win32" else ""
     build_env = _hip_env(args.hip_path)
 
-    tune_cmake_args = [
+    tune_extra_cmake_args = [
         "-DGGML_HIP_AUTOTUNE=ON", "-DGGML_HIP_AUTOTUNE_RECORD=ON",
         "-DGGML_HIP_ROUTING_TRANSFORM=ON",
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
+    tune_cmake_args = _requested_cmake_args(args.amdgpu_targets, tune_extra_cmake_args)
     tune_bin = build_tree(
         name="tune", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
-        extra_cmake_args=tune_cmake_args,
+        extra_cmake_args=tune_extra_cmake_args,
     )
     # HI82 item 7: refuse to hand a build to Campaign() until its actual
     # compiled command lines are proven to match configured intent -- a
     # build that silently lost a flag (the HI81 shape) must never reach
     # benchmarking. Raises BuildIdentityError uncaught, which is the
     # intended fail-closed behavior: no partial/best-effort campaign runs
-    # against an unverified build.
-    tune_build_identity = capture_build_identity(
-        build_root / "tune", source_root=patched_src, source_tree=patched_src.name,
-        architecture=args.amdgpu_targets, build_mode="tune",
-        requested_cmake_args=tune_cmake_args, generator=CMAKE_GENERATOR, build_env=build_env,
+    # against an unverified build. Reuses builds.py's existing identity/
+    # reuse contract (effective_build_id/runtime_bundle_hash) rather than
+    # a second, parallel identity authority -- see HI82 review history.
+    tune_build_evidence = capture_completed_build_evidence(
+        build_root / "tune", source_root=patched_src, architecture=args.amdgpu_targets,
+        binary=tune_bin / f"llama-server{exe}", extra_binaries=(tune_bin / f"llama-bench{exe}",),
+        requested_cmake_args=tune_cmake_args, build_env=build_env,
     )
-    _print(f"tune build identity: {tune_build_identity.identity_digest[:12]}")
+    _print(
+        f"tune build: {tune_build_evidence.effective_build_id[:12]} / "
+        f"{tune_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{tune_build_evidence.compile_verification_id[:12]}"
+    )
 
-    replay_cmake_args = [
+    replay_extra_cmake_args = [
         "-DGGML_HIP_DISPATCH_REPLAY=ON",
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
+    replay_cmake_args = _requested_cmake_args(args.amdgpu_targets, replay_extra_cmake_args)
     replay_bin = build_tree(
         name="replay", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
-        extra_cmake_args=replay_cmake_args,
+        extra_cmake_args=replay_extra_cmake_args,
     )
-    replay_build_identity = capture_build_identity(
-        build_root / "replay", source_root=patched_src, source_tree=patched_src.name,
-        architecture=args.amdgpu_targets, build_mode="replay",
-        requested_cmake_args=replay_cmake_args, generator=CMAKE_GENERATOR, build_env=build_env,
+    replay_build_evidence = capture_completed_build_evidence(
+        build_root / "replay", source_root=patched_src, architecture=args.amdgpu_targets,
+        binary=replay_bin / f"llama-server{exe}",
+        extra_binaries=(replay_bin / f"llama-bench{exe}",),
+        requested_cmake_args=replay_cmake_args, build_env=build_env,
     )
-    _print(f"replay build identity: {replay_build_identity.identity_digest[:12]}")
+    _print(
+        f"replay build: {replay_build_evidence.effective_build_id[:12]} / "
+        f"{replay_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{replay_build_evidence.compile_verification_id[:12]}"
+    )
 
     stock_build_root = (args.build_root or workdir) / stock_src.name
     stock_bin = ensure_stock_baseline(
         hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=stock_build_root, stock_src=stock_src,
     )
-    stock_build_identity = capture_build_identity(
-        stock_build_root / "stock", source_root=stock_src, source_tree=stock_src.name,
-        architecture=args.amdgpu_targets, build_mode="stock",
-        requested_cmake_args=[], generator=CMAKE_GENERATOR, build_env=build_env,
+    stock_cmake_args = _requested_cmake_args(args.amdgpu_targets, [])
+    stock_build_evidence = capture_completed_build_evidence(
+        stock_build_root / "stock", source_root=stock_src, architecture=args.amdgpu_targets,
+        binary=stock_bin / f"llama-bench{exe}", requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
     )
-    _print(f"stock build identity: {stock_build_identity.identity_digest[:12]}")
+    _print(
+        f"stock build: {stock_build_evidence.effective_build_id[:12]} / "
+        f"{stock_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{stock_build_evidence.compile_verification_id[:12]}"
+    )
 
-    from bigcherry.e2e_smoke_campaign import Campaign, CampaignError  # noqa: E402
+    from bigcherry.e2e_smoke_campaign import (  # noqa: E402
+        Campaign, CampaignError, CampaignIdentityContext,
+    )
+
+    identity_context = CampaignIdentityContext(
+        patch_name=args.patch,
+        patch_digest=psi.patch_implementation_digest(args.patch),
+        patched_source_tree=psi.git_worktree_tree(patched_src),
+        gpu_architecture=args.amdgpu_targets,
+        build_identities={
+            "tune": tune_build_evidence.campaign_identity(),
+            "replay": replay_build_evidence.campaign_identity(),
+            "stock": stock_build_evidence.campaign_identity(),
+        },
+    )
 
     campaign = Campaign(
         model=args.model,
@@ -330,6 +376,7 @@ def run(args: argparse.Namespace) -> int:
         replay_bench=replay_bin / f"llama-bench{exe}",
         bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
         bench_repetitions=args.bench_repetitions,
+        identity_context=identity_context,
     )
     try:
         campaign.run()
