@@ -108,6 +108,24 @@ One-off builds outside a recipe. `$BC` = `/mnt/vault/development/llmhosts/bigche
 
 ### Linux — all three GPUs
 
+**Vendored ROCm toolchains.** The same `vendor/rocm/<version>/` convention
+described in the Windows section below applies here — `tools/rocm-env.sh`
+works unchanged on Brutus. Two versions are already vendored under `$BC`:
+`7.2.4` (copied from `/opt/rocm-7.2.4`, currently `/opt/rocm`'s target) and
+`7.14` (copied from `/opt/rocm7140/rocm/core-7.14`, the version the older
+manual-build snippets below reference). Select one before building:
+
+```bash
+cd $BC
+source tools/rocm-env.sh --list
+source tools/rocm-env.sh 7.2.4   # sets ROCM_PATH, HIP_PATH, prepends PATH
+```
+
+Then substitute `$HIP_PATH/llvm/bin/clang{,++}` for the hardcoded
+`/opt/rocm/llvm/bin/clang{,++}` paths below if you want a non-default
+version. System-wide `/opt/rocm*` still works unmodified if you don't
+`source` a vendored version first.
+
 ```bash
 cd $BC/tools
 python3 -m bigcherry audit
@@ -139,6 +157,36 @@ combination without it. Useful targets: `ggml-hip` (fastest way to find a compil
 error), `test-backend-ops`, `llama-bench`, `llama-server`.
 
 ### Windows — workstation's 7900 GRE (gfx1100)
+
+**Vendored ROCm toolchains.** Multiple ROCm versions can live side-by-side
+under `vendor/rocm/<version>/` (gitignored — never committed, ~3GB each).
+Each is a straight copy of an AMD ROCm for Windows install tree, e.g.:
+
+```powershell
+robocopy 'C:\Program Files\AMD\ROCm\7.1' 'vendor\rocm\7.1' /E /MT:16
+```
+
+Select one for the current shell with `tools/rocm-env.ps1` (PowerShell) or
+`tools/rocm-env.sh` (bash) — must be **dot-sourced/sourced**, not run, so the
+env vars apply to your shell rather than a child process:
+
+```powershell
+. tools\rocm-env.ps1 -List     # see what's vendored
+. tools\rocm-env.ps1 7.1       # sets ROCM_PATH, HIP_PATH, prepends PATH
+```
+
+```bash
+source tools/rocm-env.sh --list
+source tools/rocm-env.sh 7.1
+```
+
+This sets `ROCM_PATH`/`HIP_PATH` (the same variables
+`tools/bigcherry/toolchain.py` captures for build-identity records), so any
+recipe or manual `cmake` invocation below that references `$env:HIP_PATH`
+picks up the selected vendored version. A system-wide ROCm install (e.g.
+`C:\Program Files\AMD\ROCm\7.1`) still works unmodified if you'd rather not
+vendor a copy — the two are interchangeable, just point `HIP_PATH` at
+whichever tree you want.
 
 ```powershell
 $env:PATH = 'C:\Program Files\AMD\ROCm\7.14\bin;' + $env:PATH

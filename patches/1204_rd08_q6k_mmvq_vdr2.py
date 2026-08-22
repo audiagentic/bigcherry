@@ -120,8 +120,6 @@ static __device__ __forceinline__ float vec_dot_q6_K_q8_1_impl_mmvq_vdr2(
 
 """
 
-_IMPL_NEW = _VDR2_IMPL + _IMPL_ANCHOR
-
 _VDR2_ENTRY = """// VDR=2 entry point: iqs must be even (the mmvq kernel strides kqs by VDR).
 // Processes 16 elements per call, splitting the ql/qh/u loads over two chunks.
 static __device__ __forceinline__ float vec_dot_q6_K_q8_1_vdr2(
@@ -235,8 +233,20 @@ PATCHES = [
                 anchor=_IMPL_ANCHOR,
                 rationale="vecdotq.cuh: the vdr2 impl goes between the "
                           "VDR=1 impl and the mmq impl (fork layout)",
-                mode="replace",
-                text=_IMPL_NEW,
+                # NOT mode="replace": _IMPL_ANCHOR is a REGEX (whitespace
+                # class + escaped paren), not literal source text -- the
+                # anchor matches real file content, but _IMPL_ANCHOR itself
+                # is not that content. A prior version of this edit built
+                # its replacement text as `_VDR2_IMPL + _IMPL_ANCHOR`, which
+                # spliced the regex SOURCE (literally "[ ]{20,40}" and
+                # "vec_dot_q6_K_q8_1_impl_mmq\(") into the file instead of
+                # the real matched whitespace + mmq-impl declaration,
+                # producing invalid C++ (confirmed via a real build attempt,
+                # 2026-08-21: "expected unqualified-id" at the injected
+                # regex text). insert_before preserves the actual matched
+                # text untouched and only adds the new impl ahead of it.
+                mode="insert_before",
+                text=_VDR2_IMPL,
                 guard=r"vec_dot_q6_K_q8_1_impl_mmvq_vdr2\(",
             ),
             Edit(

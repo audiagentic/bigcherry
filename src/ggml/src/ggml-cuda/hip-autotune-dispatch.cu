@@ -635,8 +635,13 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         // real transformed signature, re-check can_execute against THAT)
         // happens here, where the real ggml_hip_launch_context is available.
         bool usable = exact;
-        const ggml_hip_routing_transformation * winner_transform = nullptr;
 #ifdef GGML_HIP_ROUTING_TRANSFORM
+        // ggml_hip_routing_transformation is only declared (forward or in
+        // full) under this same macro in hip-autotune-types.h -- this
+        // pointer must stay inside the guard too, or a replay-only build
+        // (GGML_HIP_ROUTING_TRANSFORM off, e.g. production replay) fails to
+        // compile on the unknown type name.
+        const ggml_hip_routing_transformation * winner_transform = nullptr;
         if (exact && transform_id != 0) {
             winner_transform = ggml_hip_transform_find((ggml_hip_transform_id) transform_id);
             usable = transformed_candidate_still_valid(winner, winner_transform, sig, lc, hw);

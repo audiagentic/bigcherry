@@ -26,12 +26,35 @@ from bigcherry import pin_transition  # noqa: E402
 
 _PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
 
+# Root "init" commits in different fake trees (_fake_tree's own commit, plus
+# _upstream's b1/b2) must be byte-for-byte reproducible commit objects when
+# their tree content matches, or tests that assert two independently-created
+# trees resolve to the SAME commit hash (e.g. RemoteAndAggregateTests
+# comparing a fake "local" tree's HEAD against a separate fake "campaign"
+# tree's HEAD) become timestamp-dependent: git commit hashes include
+# author/committer timestamps at 1-second resolution, so two `git commit`
+# calls landing in different wall-clock seconds -- easy under a loaded full
+# suite run -- silently produce different hashes for identical content. Real
+# flaky failure hit this session; root-caused with GPT (req_37641bb91ff4442c).
+_GIT_COMMIT_ENV = {
+    "GIT_AUTHOR_NAME": "pin-status-test",
+    "GIT_AUTHOR_EMAIL": "pin-status-test@example.com",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000",
+    "GIT_COMMITTER_NAME": "pin-status-test",
+    "GIT_COMMITTER_EMAIL": "pin-status-test@example.com",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+}
+
 
 def _git(root: Path, *args: str) -> str:
+    env = os.environ.copy()
+    env.update(_GIT_COMMIT_ENV)
     result = subprocess.run(
         ["git", "-C", str(root), "-c", "user.email=pin-status-test@example.com",
-         "-c", "user.name=pin-status-test", *args],
-        check=True, capture_output=True, text=True,
+         "-c", "user.name=pin-status-test",
+         "-c", "commit.gpgSign=false",
+         *args],
+        check=True, capture_output=True, text=True, env=env,
     )
     return result.stdout.strip()
 
