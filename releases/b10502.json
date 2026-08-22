@@ -1,22 +1,20 @@
 {
   "artifact_version": 1,
   "audit": {
-    "failed_checks": [
-      "overlay.vendor_sync"
-    ],
-    "passed": false,
+    "failed_checks": [],
+    "passed": true,
     "strict": true,
     "summary": {
-      "errors": 1,
-      "passed": 33,
+      "errors": 0,
+      "passed": 34,
       "total": 34,
       "warnings": 0
     }
   },
-  "bigcherry_revision": "6ccee15a6fae37a9f06da1d95876df8ea9a21db0",
+  "bigcherry_revision": "1033d1c8850070199dab846b8cdd66a166474bc9",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
   "manifest_hash": "817a920fde9284bfc8cb721057f63dd1",
-  "notes": "source audit failed: overlay.vendor_sync",
+  "notes": "",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
@@ -40,10 +38,10 @@
         "pool-workspace-note-free": "already-applied"
       },
       "ggml/src/ggml-cuda/ggml-cuda.cu": {
-        "hi14-capture-begin-marker": "already-applied",
-        "hi14-capture-end-marker": "already-applied",
-        "hi14-instantiate-marker": "already-applied",
-        "hi14-replay-marker": "already-applied"
+        "hi14-capture-begin-marker": "applied",
+        "hi14-capture-end-marker": "applied",
+        "hi14-instantiate-marker": "applied",
+        "hi14-replay-marker": "applied"
       },
       "ggml/src/ggml-cuda/hip-autotune-tuner.cu": {
         "emit-result-canonical-json": "already-applied",
@@ -108,7 +106,7 @@
   "promotion": null,
   "release_tag": "b10502",
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
-  "stage": "patched",
+  "stage": "broken",
   "tree_state": "08f8837d8ed828f8",
-  "updated_at": "2026-08-22T12:17:29.977122+00:00"
+  "updated_at": "2026-08-22T17:19:31.754013+00:00"
 }
