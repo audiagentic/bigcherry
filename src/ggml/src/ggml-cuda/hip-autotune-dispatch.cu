@@ -645,9 +645,20 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // (confirmed on real hardware to otherwise silently block a second,
     // healthy device from ever getting its own attempt) and a capture-time
     // skip (no measurement was even attempted, so nothing portable to
-    // publish either -- a pre-existing, related leak this same seam now
-    // also closes).
+    // publish either).
     bool process_binding_cacheable = true;
+    // HI64 follow-up (2026-08-22, GPT review of the fix above): a SEPARATE
+    // flag for the per-device/thread g_thread_bindings cache. A fatal
+    // measurement failure correctly poisons the process for the rest of
+    // this device's lifetime, so caching native locally there is still
+    // useful -- but a capture-time skip is NOT permanent: capture ends,
+    // and the next ordinary call for this exact (device, signature) should
+    // be free to actually tune. Unconditionally caching native for it here
+    // would otherwise let one capture-time skip permanently starve that
+    // (thread, device, signature) triple of ever being measured, even
+    // after capture is long over. Defaults true; only capture-time skip
+    // clears it -- a measurement failure deliberately leaves it true.
+    bool thread_binding_cacheable = true;
 #ifdef GGML_HIP_AUTOTUNE
     if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {
         if (ggml_hip_stream_is_capturing(lc.stream)) {
@@ -656,6 +667,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // winner at all.
             ggml_hip_warn_tuning_skipped_under_capture();
             process_binding_cacheable = false;
+            thread_binding_cacheable  = false;
         } else {
             // HI67 (F1): measure/select/record only. The tuner launches its
             // own measurement rounds through lc, so keeping this binding on
@@ -770,7 +782,14 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 #ifdef GGML_HIP_ROUTING_TRANSFORM
     resolved.transform   = binding.transform;
 #endif
-    if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+    // HI64: gated on thread_binding_cacheable (capture-time skip only) --
+    // NOT on process_binding_cacheable. A device-local measurement failure
+    // deliberately still reaches this insert: this device/thread is
+    // genuinely poisoned for the rest of the process, so caching native
+    // here avoids retrying a signature already known to be unmeasurable
+    // on it, while other devices remain free via the gated process-global
+    // cache above.
+    if (mode != GGML_HIP_DISPATCH_MODE_RECORD && thread_binding_cacheable) {
         g_thread_bindings.insert(ctx.device, sig, binding);
     }
     return resolved;

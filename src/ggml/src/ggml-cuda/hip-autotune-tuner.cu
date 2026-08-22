@@ -399,9 +399,17 @@ void ggml_hip_record_transform_gap(const TransformGapRecord & record) {
 // This is deliberately process-wide rather than per-key. HIP measurements
 // mutate process-global device/workspace state, so a per-key gate would still
 // allow two different first encounters to perturb each other. Holding this
-// gate from the cache lookup through record_result() gives every dispatch key
-// single-flight semantics: one measurement/publish, then all waiters observe
-// the committed winner.
+// gate from the cache lookup through record_result() -- and, since HI64
+// (2026-08-22), through the public wrapper's own post-call measurement_
+// failure read too -- gives every dispatch key single-flight semantics.
+// That last clause matters now in a way it didn't before HI64: one
+// measurement/publish no longer means every later waiter observes the
+// SAME committed winner forever -- a device-local failure is retained only
+// as fallback evidence, and a subsequent healthy device's success replaces
+// it (record_result()'s failure->success rule). Held by
+// ggml_hip_tuner_resolve() (the public wrapper), not the internal impl, so
+// no other thread can slip a replacement into g_results between the impl
+// returning and the wrapper reading back what actually got recorded.
 std::mutex g_single_flight_mutex;
 
 // bigcherry (HI64, RV49 F6 scope extension, 2026-08-17 GPT adjudication):
@@ -2089,10 +2097,17 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         const ggml_hip_digest & dispatch_digest,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc_in) {
-    // The lock must cover both the cache lookup and the complete cold path.
-    // Locking only around the measurement would let concurrent first
-    // encounters both miss the cache and publish conflicting results.
-    std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);
+    // HI64 (2026-08-22): g_single_flight_mutex is held by the CALLER
+    // (the public ggml_hip_tuner_resolve() wrapper below), across this
+    // entire call AND its own post-call g_results re-check -- not
+    // acquired in here. Locking only around this function would let a
+    // second thread's record_result() replace this dispatch_digest's
+    // entry (failure -> success) in the window between this function
+    // returning and the wrapper reading measurement_failure back out,
+    // making the wrapper report a stale/wrong value for what actually
+    // happened on THIS invocation. The lock must still cover both the
+    // cache lookup and the complete cold path -- that part of the
+    // original rationale is unchanged, it just now starts one frame up.
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const auto found = g_results.find(dispatch_digest);
@@ -3320,6 +3335,18 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
 // here, so this second lookup reliably reports the resolution's real
 // measurement_failure state without requiring the impl's ~25 exit sites to
 // each be touched individually.
+//
+// g_single_flight_mutex is acquired HERE, not inside the impl, and held
+// across both the impl call and this function's own g_results re-check.
+// Without that, a second thread could acquire the (impl-local) lock and
+// replace this exact dispatch_digest's entry -- failure -> success, via
+// record_result() -- in the window between the impl returning and this
+// read, and this invocation would then wrongly report
+// measurement_failure=false for a call that actually failed. Today's only
+// caller (dispatch.cu's process_binding_cacheable gate) happens to stay
+// safe either way once a real success exists, but the public contract
+// promises "true only when THIS invocation hit a fatal failure" and must
+// actually mean that.
 ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
@@ -3327,6 +3354,7 @@ ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
         const ggml_hip_digest & dispatch_digest,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc) {
+    std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);
     ggml_hip_tuner_resolution out;
     out.winner = ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc);
     std::lock_guard<std::mutex> lock(g_mutex);

@@ -377,31 +377,39 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertNotIn("clock_drift_rounds", signature)
 
     def test_tuner_first_encounters_are_single_flight_through_publish(self):
-        """The source-level concurrency contract prevents duplicate winners."""
+        """The source-level concurrency contract prevents duplicate winners.
+
+        HI64 follow-up (2026-08-22): the single-flight lock moved from this
+        impl function to the public ggml_hip_tuner_resolve() wrapper (see
+        TestHi64CrossDevicePoisonLeak.
+        test_single_flight_lock_held_across_impl_call_and_failure_readback
+        for that half) -- a second thread's failure->success replacement
+        landing between the impl returning and a caller reading
+        measurement_failure back out would otherwise report a stale value
+        for what actually happened on THIS invocation. This test now covers
+        only the impl's own internal ordering, which is unaffected by where
+        the lock lives."""
         tuner = TUNER.read_text(encoding="utf-8")
         resolve_start = tuner.index(
             "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
         )
-        resolve_end = tuner.index("void ggml_hip_tuner_flush(", resolve_start)
+        # Bounded to the impl only -- NOT through ggml_hip_tuner_flush(),
+        # which would also swallow the public wrapper (declared between the
+        # two) and its own, deliberately-present single_flight_lock.
+        resolve_end = tuner.index(
+            "ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", resolve_start
+        )
         resolve = tuner[resolve_start:resolve_end]
 
         self.assertIn("std::mutex g_single_flight_mutex;", tuner)
-        self.assertIn(
-            "std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);",
-            resolve,
-        )
-        lock = resolve.index("single_flight_lock(g_single_flight_mutex)")
+        self.assertNotIn("single_flight_lock", resolve)
         lookup = resolve.index("g_results.find(dispatch_digest)")
         first_measurement = resolve.index("const ggml_hip_tuner_config & config")
         final_publish = resolve.rindex("record_result(dispatch_digest, result);")
         final_return = resolve.index("return result.winner;", final_publish)
 
-        # Every waiter is serialized before it can miss the cache; the lock is
-        # still held through the only final publish and winner return.
-        self.assertLess(lock, lookup)
         self.assertLess(lookup, first_measurement)
         self.assertLess(final_publish, final_return)
-        self.assertNotIn("single_flight_lock.unlock()", resolve)
         self.assertIn("g_results.emplace(dispatch_digest, result);", tuner)
 
     def test_final_measurement_failures_cannot_reuse_screening_medians(self):
@@ -1034,19 +1042,78 @@ class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
         self.assertIn("ggml_hip_warn_tuning_skipped_under_capture();", capture_branch)
         self.assertIn("process_binding_cacheable = false;", capture_branch)
 
-    def test_thread_local_binding_insert_is_never_gated_by_cacheable_flag(self):
-        # A device-local failure must still populate the per-device/thread
-        # cache (so THIS device/thread doesn't keep retrying a signature it
-        # already knows is poisoned) -- only the PROCESS-GLOBAL, cross-
-        # device g_bindings publish is gated.
+    def test_thread_local_binding_insert_is_never_gated_by_process_flag(self):
+        # A device-local measurement FAILURE must still populate the
+        # per-device/thread cache (so THIS device/thread doesn't keep
+        # retrying a signature it already knows is poisoned) -- only the
+        # PROCESS-GLOBAL, cross-device g_bindings publish is gated on
+        # process_binding_cacheable. The thread cache has its own,
+        # narrower gate (thread_binding_cacheable) for a different case --
+        # see test_capture_skip_also_clears_thread_binding_cacheable.
         dispatch = DISPATCH.read_text(encoding="utf-8")
         insert_call = dispatch.index("g_thread_bindings.insert(ctx.device, sig, binding);")
-        # Walk back to the nearest enclosing "if" -- it must be the
-        # RECORD-mode exclusion only, not process_binding_cacheable.
         guard_start = dispatch.rindex("if (", 0, insert_call)
         guard_line = dispatch[guard_start:insert_call]
         self.assertIn("mode != GGML_HIP_DISPATCH_MODE_RECORD", guard_line)
+        self.assertIn("thread_binding_cacheable", guard_line)
         self.assertNotIn("process_binding_cacheable", guard_line)
+
+    def test_capture_skip_also_clears_thread_binding_cacheable(self):
+        # GPT follow-up review (2026-08-22): the process-global fix alone
+        # left a real gap -- caching native into g_thread_bindings during a
+        # capture-time skip would permanently starve that exact (thread,
+        # device, signature) triple of ever being measured, even long after
+        # capture ends, since capture is not a permanent condition the way
+        # a measurement failure is.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_branch_start = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        capture_branch_end = dispatch.index("} else {", capture_branch_start)
+        capture_branch = dispatch[capture_branch_start:capture_branch_end]
+        self.assertIn("process_binding_cacheable = false;", capture_branch)
+        self.assertIn("thread_binding_cacheable  = false;", capture_branch)
+
+    def test_measurement_failure_does_not_clear_thread_binding_cacheable(self):
+        # The opposite of the capture case: a fatal measurement failure is
+        # a PERMANENT condition for this device/process, so it must leave
+        # thread_binding_cacheable alone (still true) -- unlike the
+        # capture-skip branch, nothing in the non-capturing tune branch may
+        # assign thread_binding_cacheable at all.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_check = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        else_start = dispatch.index("} else {", capture_check)
+        else_end = dispatch.index("#ifdef GGML_HIP_DISPATCH_REPLAY", else_start)
+        non_capture_branch = dispatch[else_start:else_end]
+        self.assertIn("process_binding_cacheable = !tuning.measurement_failure;", non_capture_branch)
+        self.assertNotIn("thread_binding_cacheable", non_capture_branch)
+
+    def test_single_flight_lock_held_across_impl_call_and_failure_readback(self):
+        # GPT follow-up review (2026-08-22): a race existed where the impl's
+        # own single_flight_lock released before the public wrapper's
+        # g_results re-check ran, letting a second thread's failure->success
+        # replacement land in between -- making the wrapper report
+        # measurement_failure=false for an invocation that actually failed.
+        # Fix: the lock moves to the wrapper and covers both the impl call
+        # and the re-check; the impl itself must not acquire it at all.
+        tuner = TUNER.read_text(encoding="utf-8")
+        impl_start = tuner.index(
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
+        )
+        impl_end = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", impl_start)
+        impl = tuner[impl_start:impl_end]
+        self.assertNotIn("single_flight_lock", impl)
+
+        wrapper = tuner[impl_end:]
+        wrapper_end = wrapper.index("void ggml_hip_tuner_flush(")
+        wrapper = wrapper[:wrapper_end]
+        lock_decl = wrapper.index(
+            "std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);"
+        )
+        impl_call = wrapper.index("ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc)")
+        readback = wrapper.index("g_results.find(dispatch_digest)")
+        self.assertLess(lock_decl, impl_call)
+        self.assertLess(impl_call, readback)
 
     def test_hardware_and_dispatch_identity_remain_device_ordinal_free(self):
         # The correct fix keeps identical GPUs sharing a portable key --
