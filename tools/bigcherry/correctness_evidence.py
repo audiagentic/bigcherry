@@ -117,7 +117,7 @@ def parse_correctness_metrics(stderr_text: str) -> list[CorrectnessMetric]:
     ]
 
 
-def _run_test_backend_ops(
+def run_test_backend_ops(
     binary: Path, *, op_filter: str, seed: int, dispatch_mode: str,
     forced_candidate: str | None, env: dict[str, str] | None = None,
     runner=subprocess.run,
@@ -139,12 +139,12 @@ def _run_test_backend_ops(
     return runner(argv, capture_output=True, text=True, env=run_env)
 
 
-def _find_digest_for_tensor(stderr_text: str, tensor_name: str) -> RefDigest | None:
+def find_digest_for_tensor(stderr_text: str, tensor_name: str) -> RefDigest | None:
     matches = [d for d in parse_ref_digests(stderr_text) if d.name == tensor_name]
     return matches[0] if matches else None
 
 
-def _find_metric_for_tensor(stderr_text: str, tensor_name: str) -> CorrectnessMetric | None:
+def find_metric_for_tensor(stderr_text: str, tensor_name: str) -> CorrectnessMetric | None:
     matches = [m for m in parse_correctness_metrics(stderr_text) if m.tensor == tensor_name]
     return matches[0] if matches else None
 
@@ -177,11 +177,11 @@ def collect_seed_evidence(
     code alone does not raise -- it is recorded as execution_status='failed'
     so the caller (aggregate_seed_evidence) can fail closed on ANY failed
     seed rather than only ones that also happened to omit a digest line."""
-    native_run = _run_test_backend_ops(
+    native_run = run_test_backend_ops(
         binary, op_filter=op_filter, seed=seed, dispatch_mode="native",
         forced_candidate=None, env=env, runner=runner,
     )
-    candidate_run = _run_test_backend_ops(
+    candidate_run = run_test_backend_ops(
         binary, op_filter=op_filter, seed=seed, dispatch_mode="replay",
         forced_candidate=candidate_stable_name, env=env, runner=runner,
     )
@@ -189,8 +189,8 @@ def collect_seed_evidence(
     native_status = "ok" if native_run.returncode == 0 else "failed"
     candidate_status = "ok" if candidate_run.returncode == 0 else "failed"
 
-    native_digest = _find_digest_for_tensor(native_run.stderr, target_tensor)
-    candidate_digest = _find_digest_for_tensor(candidate_run.stderr, target_tensor)
+    native_digest = find_digest_for_tensor(native_run.stderr, target_tensor)
+    candidate_digest = find_digest_for_tensor(candidate_run.stderr, target_tensor)
     if native_digest is None or candidate_digest is None:
         raise EvidenceError(
             f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {target_tensor!r} "
@@ -209,8 +209,8 @@ def collect_seed_evidence(
             f"order (RV77 Q1's hard gate)."
         )
 
-    native_metric = _find_metric_for_tensor(native_run.stderr, target_tensor)
-    candidate_metric = _find_metric_for_tensor(candidate_run.stderr, target_tensor)
+    native_metric = find_metric_for_tensor(native_run.stderr, target_tensor)
+    candidate_metric = find_metric_for_tensor(candidate_run.stderr, target_tensor)
     if native_status == "ok" and native_metric is None:
         raise EvidenceError(
             f"seed {seed}: native run exited 0 but produced no "

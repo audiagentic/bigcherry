@@ -95,7 +95,7 @@ class RunEnvironmentTests(unittest.TestCase):
             captured["env"] = kwargs["env"]
             return _completed(0, "")
 
-        ce._run_test_backend_ops(
+        ce.run_test_backend_ops(
             Path("/bin/test-backend-ops"), op_filter="m=1,n=1,k=1", seed=7,
             dispatch_mode="native", forced_candidate=None, runner=fake_runner,
         )
@@ -114,7 +114,7 @@ class RunEnvironmentTests(unittest.TestCase):
             captured["env"] = kwargs["env"]
             return _completed(0, "")
 
-        ce._run_test_backend_ops(
+        ce.run_test_backend_ops(
             Path("/bin/test-backend-ops"), op_filter="m=1,n=1,k=1", seed=7,
             dispatch_mode="replay", forced_candidate="mmq:fb1", runner=fake_runner,
         )
@@ -123,7 +123,7 @@ class RunEnvironmentTests(unittest.TestCase):
 
     def test_zero_seed_is_rejected(self):
         with self.assertRaises(ce.EvidenceError):
-            ce._run_test_backend_ops(
+            ce.run_test_backend_ops(
                 Path("/bin/x"), op_filter="", seed=0, dispatch_mode="native",
                 forced_candidate=None, runner=lambda *a, **k: _completed(0, ""),
             )
