@@ -17,7 +17,16 @@ library it links.
 from bigcherry.patcher import Edit, FilePatch  # noqa: I001
 
 GROUP = "core"
-# Not yet validated: the C++ half has not been compiled by a real HIP build.
+# Not yet "validated" under the HI83 evidence contract (no HI82 campaign
+# record exists for this patch). Build/tool evidence IS complete, on Brutus
+# production-replay config (REPLAY=ON, ROUTING=OFF) at pin 0adcc3bb:
+#   - full CMake compile + link of the hip-autotune-inspect target
+#   - --selftest: 10/10 cross-language digest vectors (C++ one-shot and
+#     streaming vs Python hashlib.blake2b)
+#   - registry self-check: 88 candidates, 0 anomalies, exit 0
+#   - real dispatch-27b-v5.cache: 59/59 winner slots loaded via the
+#     production loader, all usable on this build, exit 0
+# The validated-state flip therefore only awaits an HI82 campaign record.
 STATE = "untested"
 
 CMAKE = FilePatch(
@@ -48,6 +57,11 @@ CMAKE = FilePatch(
                 "    # ggml-base carries ggml/include (where ggml.h lives) as a PUBLIC\n"
                 "    # include dir; ggml-hip links it PRIVATE, so name it directly.\n"
                 "    target_link_libraries(hip-autotune-inspect PRIVATE ggml-hip ggml-base)\n"
+                "    # ggml-hip keeps its source include dirs private to the library,\n"
+                "    # but the inspector's headers reach into them: ggml-impl.h lives\n"
+                "    # in ggml/src and is pulled in through common.cuh.\n"
+                "    target_include_directories(hip-autotune-inspect PRIVATE\n"
+                "        ${CMAKE_CURRENT_SOURCE_DIR}/..)\n"
                 "endif()\n"
             ),
             guard=r"add_executable\(hip-autotune-inspect",
