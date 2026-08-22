@@ -23,7 +23,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-BENCH_SCHEMA_VERSION = 1
+# v2 (HI82 item 8) adds build_role/build_identity to each config -- purely
+# additive to the configs/metrics/rows shape this report reads, so bump the
+# accepted version rather than widen the check to a range.
+BENCH_SCHEMA_VERSION = 2
 BENCH_CONFIGS = ("stock", "native", "replay")
 BENCH_WORKLOADS = ("pp", "tg")
 

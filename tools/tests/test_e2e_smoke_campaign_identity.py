@@ -107,6 +107,92 @@ class CampaignIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(CampaignError, "does not recompute"):
             self._campaign().ensure_campaign_identity()
 
+    def test_manifest_generated_at_change_does_not_refuse_resume(self):
+        # HI82 (req_f2b3c8914ec0498d): the canonical manifest legitimately
+        # gets a fresh generated_at on every `bigcherry generate` call even
+        # when the candidate catalog is unchanged -- that alone must not
+        # break resume (found for real: two back-to-back identical campaign
+        # runs on gfx1100 refused to resume solely because of this field).
+        self.manifest.write_text(json.dumps({
+            "artifact_version": 1, "generated_at": "2026-08-22T00:00:00+00:00",
+            "variant_set": "test", "source_revision": "source-a",
+            "architectures": ["gfx1100"], "candidates": [],
+            "manifest_hash": "catalog-a",
+            "build_descriptor": {"descriptor_hash": "descriptor-a"},
+        }), encoding="utf-8")
+
+        first = self._campaign()
+        first.ensure_campaign_identity()
+        first_digest = first.campaign_identity_digest
+
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["generated_at"] = "2026-08-22T01:23:45+00:00"
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        second = self._campaign()
+        second.ensure_campaign_identity()
+
+        self.assertEqual(first_digest, second.campaign_identity_digest)
+
+    def test_manifest_substantive_change_refuses_resume(self):
+        self.manifest.write_text(json.dumps({
+            "artifact_version": 1, "generated_at": "2026-08-22T00:00:00+00:00",
+            "variant_set": "test", "source_revision": "source-a",
+            "architectures": ["gfx1100"], "candidates": [],
+            "manifest_hash": "same-catalog-hash",
+        }), encoding="utf-8")
+
+        self._campaign().ensure_campaign_identity()
+
+        payload = json.loads(self.manifest.read_text(encoding="utf-8"))
+        payload["source_revision"] = "source-b"
+        # manifest_hash deliberately unchanged -- proves Campaign does NOT
+        # trust that narrower fingerprint as its sole manifest identity.
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaisesRegex(CampaignError, "campaign identity mismatch"):
+            self._campaign().ensure_campaign_identity()
+
+    def test_manifest_json_formatting_does_not_change_identity(self):
+        payload = {
+            "artifact_version": 1, "generated_at": "2026-08-22T00:00:00+00:00",
+            "variant_set": "test", "source_revision": "source-a",
+            "architectures": ["gfx1100"], "candidates": [],
+        }
+        self.manifest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        first = self._campaign()
+        first.ensure_campaign_identity()
+        first_digest = first.campaign_identity_digest
+
+        # Same JSON semantics, radically different byte representation.
+        self.manifest.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+        )
+
+        second = self._campaign()
+        second.ensure_campaign_identity()
+
+        self.assertEqual(first_digest, second.campaign_identity_digest)
+
+    def test_manifest_other_semantic_field_change_refuses_resume(self):
+        payload = {
+            "artifact_version": 1, "generated_at": "2026-08-22T00:00:00+00:00",
+            "variant_set": "test", "source_revision": "source-a",
+            "architectures": ["gfx1100"], "candidates": [],
+            "coverage": {"supported": 1}, "supported_coverage": {"supported": 1},
+        }
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        self._campaign().ensure_campaign_identity()
+
+        payload["supported_coverage"] = {"supported": 2}
+        payload["generated_at"] = "2026-08-22T02:00:00+00:00"
+        self.manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaisesRegex(CampaignError, "campaign identity mismatch"):
+            self._campaign().ensure_campaign_identity()
+
     def test_standalone_cli_without_identity_context_still_binds(self):
         # identity_context=None (direct e2e_smoke_campaign CLI use, not via
         # patch_validation_campaign.py) must still produce a self-consistent,

@@ -13,7 +13,7 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "46447daac2cf3b412d3918cde9e37f0951a2d6c9",
+  "bigcherry_revision": "2f9a15701233e6ea1331320765da61a946588842",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
   "manifest_hash": "817a920fde9284bfc8cb721057f63dd1",
   "notes": "source audit failed: overlay.vendor_sync",
@@ -108,5 +108,5 @@
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
   "stage": "generated",
   "tree_state": "c383ff6fd7c91d8c",
-  "updated_at": "2026-08-22T01:31:49.270235+00:00"
+  "updated_at": "2026-08-22T01:59:19.227332+00:00"
 }
