@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,10 +10,11 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bigcherry.builds import (BuildIdentityError, BuildPlan, binary_hash,
-                              effective_build_id, parse_effective_configure,
-                              resolve_runtime_artifacts, runtime_bundle_hash,
-                              validate_reuse)  # noqa: E402
+from bigcherry import builds  # noqa: E402
+from bigcherry.builds import (BuildIdentityError, BuildPlan, CommandRequirement,
+                              binary_hash, effective_build_id, parse_effective_configure,
+                              post_build_verify, resolve_runtime_artifacts,
+                              runtime_bundle_hash, validate_reuse)  # noqa: E402
 
 
 class BuildIdentityTests(unittest.TestCase):
@@ -220,6 +222,168 @@ class ParseEffectiveConfigureTests(unittest.TestCase):
             binary.write_bytes(b"a different compile produced this")
             with self.assertRaisesRegex(BuildIdentityError, "binary hash"):
                 validate_reuse(metadata, plan, binary=binary)
+
+
+class CompileVerificationTests(unittest.TestCase):
+    """HI82: post_build_verify() proves configured intent (arch,
+    CMAKE_HIP_FLAGS) reached the real compiled command line, not just
+    CMakeCache.txt's claimed configuration -- generalizes the HI81 Windows
+    CMAKE_HIP_FLAGS-propagation gap into an automatic check."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.source = self.root / "source"
+        self.build = self.root / "build"
+        self.source.mkdir()
+        self.build.mkdir()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _cache(self, *, hip_flags: str = "") -> None:
+        (self.build / "CMakeCache.txt").write_text(
+            "\n".join((
+                "CMAKE_GENERATOR:INTERNAL=Ninja",
+                "CMAKE_HIP_ARCHITECTURES:STRING=gfx1100",
+                f"CMAKE_HIP_FLAGS:STRING={hip_flags}",
+                "",
+            )),
+            encoding="utf-8",
+        )
+
+    def _commands(self, hip_command: str) -> None:
+        payload = [
+            {
+                "directory": str(self.build),
+                "file": str(self.source / "kernel.cu"),
+                "command": hip_command,
+            },
+            {
+                "directory": str(self.build),
+                "file": str(self.source / "host.cpp"),
+                "command": f"clang++ -c {self.source / 'host.cpp'} -o {self.build / 'host.o'}",
+            },
+        ]
+        (self.build / "compile_commands.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_accepts_hip_flags_that_reached_compiler(self):
+        flag = "-funsafe-math-optimizations"
+        self._cache(hip_flags=flag)
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1100 "
+            f"{flag} -o {self.build / 'kernel.o'}"
+        )
+
+        evidence = post_build_verify(self.build, source_root=self.source, architecture="gfx1100")
+
+        self.assertEqual(evidence.command_source, "compile_commands.json")
+        self.assertEqual(evidence.hip_compile_command_count, 1)
+
+        labels = {check.label for check in evidence.checks}
+        self.assertIn("hip-architecture", labels)
+        self.assertIn("cmake-hip-flags-propagation", labels)
+
+    def test_rejects_cmake_hip_flags_that_did_not_propagate(self):
+        self._cache(hip_flags="-funsafe-math-optimizations")
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1100 "
+            f"-o {self.build / 'kernel.o'}"
+        )
+
+        with self.assertRaisesRegex(BuildIdentityError, "did not propagate"):
+            post_build_verify(self.build, source_root=self.source, architecture="gfx1100")
+
+    def test_rejects_wrong_real_architecture(self):
+        self._cache()
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1201 "
+            f"-o {self.build / 'kernel.o'}"
+        )
+
+        with self.assertRaisesRegex(BuildIdentityError, "gfx1100"):
+            post_build_verify(self.build, source_root=self.source, architecture="gfx1100")
+
+    def test_custom_required_command_token(self):
+        self._cache()
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1100 "
+            f"-DBIGCHERRY_EXAMPLE=1 -o {self.build / 'kernel.o'}"
+        )
+
+        evidence = post_build_verify(
+            self.build, source_root=self.source, architecture="gfx1100",
+            command_requirements=(
+                CommandRequirement(
+                    label="example patch flag", selector_regex=r"(?i)\.cu\b",
+                    required_tokens=("-DBIGCHERRY_EXAMPLE=1",),
+                ),
+            ),
+        )
+
+        self.assertEqual(evidence.checks[-1].label, "example patch flag")
+        self.assertEqual(evidence.checks[-1].status, "pass")
+
+    def test_custom_forbidden_command_token(self):
+        self._cache()
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1100 "
+            f"-DBIGCHERRY_BAD_FLAG=1 -o {self.build / 'kernel.o'}"
+        )
+
+        with self.assertRaisesRegex(BuildIdentityError, "forbidden_present"):
+            post_build_verify(
+                self.build, source_root=self.source, architecture="gfx1100",
+                command_requirements=(
+                    CommandRequirement(
+                        label="negative control", selector_regex=r"(?i)\.cu\b",
+                        forbidden_tokens=("-DBIGCHERRY_BAD_FLAG=1",),
+                    ),
+                ),
+            )
+
+    def test_runtime_artifacts_include_windows_dlls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            binary = bin_dir / "llama-bench.exe"
+            binary.write_bytes(b"launcher")
+            hip = bin_dir / "ggml-hip.dll"
+            hip.write_bytes(b"hip")
+            core = bin_dir / "ggml.dll"
+            core.write_bytes(b"core")
+
+            self.assertEqual(set(resolve_runtime_artifacts(binary)), {binary, hip, core})
+
+    def test_requested_config_must_match_cache(self):
+        self._cache(hip_flags="")
+        (self.build / "CMakeCache.txt").write_text(
+            "\n".join((
+                "GGML_HIP:BOOL=ON",
+                "GGML_HIP_AUTOTUNE:BOOL=OFF",
+                "AMDGPU_TARGETS:STRING=gfx1100",
+                "",
+            )),
+            encoding="utf-8",
+        )
+        self._commands(
+            f"clang++ -c {self.source / 'kernel.cu'} --offload-arch=gfx1100 "
+            f"-o {self.build / 'kernel.o'}"
+        )
+
+        with self.assertRaisesRegex(BuildIdentityError, "requested CMake configuration"):
+            post_build_verify(
+                self.build, source_root=self.source, architecture="gfx1100",
+                requested_cmake_args={
+                    "GGML_HIP": "ON", "GGML_HIP_AUTOTUNE": "ON", "AMDGPU_TARGETS": "gfx1100",
+                },
+            )
+
+    def test_ninja_link_command_is_not_hip_compile(self):
+        command = builds._Command(
+            source="", directory="/tmp/build",
+            text="clang++ objects/foo.cu.o objects/bar.cpp.o -o bin/llama-bench",
+        )
+        self.assertFalse(builds._is_hip_compile(command))
 
 
 if __name__ == "__main__":

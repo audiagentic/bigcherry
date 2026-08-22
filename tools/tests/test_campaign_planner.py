@@ -15,9 +15,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bigcherry import config as campaign_config
+from bigcherry import experiment_contract as ec
 from bigcherry.campaign_planner import (CampaignLane, CampaignPlannerError,
-                                        CampaignRequest, lane_id, plan,
-                                        run_campaign)
+                                        CampaignRequest, expand_contract,
+                                        lane_id, plan, run_campaign)
 
 
 def _cfg(**overrides) -> campaign_config.Config:
@@ -176,6 +177,97 @@ class PlanTests(unittest.TestCase):
     def test_plan_rejects_neither_selectors_nor_profile_name(self):
         with self.assertRaises(CampaignPlannerError):
             plan(CampaignRequest(), _cfg())
+
+
+def _contract(**overrides) -> ec.ExperimentContract:
+    doc = {
+        "title": "tiny-M Q8 MMQ specialization",
+        "source": {"source_id": "s", "commits": ["c"], "atomic_part": "tiny-m-q8-gate"},
+        "hypothesis": {"family": "mmq", "expected_effect": "performance", "rationale": "r"},
+        "scope": {"backend": "hip", "architectures": ["gfx1100"], "weight_types": ["q8_0"]},
+        "positive": {"models": ["model-a", "model-b"], "workloads": ["small_m"]},
+        "controls": {"models": ["model-c"], "workloads": ["decode", "prefill"]},
+        "boundary": {"dimensions": {"physical_m": [1, 2, 4]}},
+        "acceptance": {"max_control_regression_pct": 1},
+    }
+    doc.update(overrides)
+    return ec.parse_contract(doc, contract_id="RDNA-EXT-001")
+
+
+class ExpandContractTests(unittest.TestCase):
+    def test_expands_positive_control_and_boundary_lanes(self):
+        cfg = _cfg()
+        lanes = expand_contract(
+            _contract(), cfg=cfg, source_name="src-a", build_name="stock",
+            platform_name="linux-multi",
+        )
+        # positive: 2 models x 1 workload = 2; controls: 1 model x 2
+        # workloads = 2; boundary: 3 physical_m values = 3. Total 7.
+        self.assertEqual(len(lanes), 7)
+        roles = sorted(lane.role for lane in lanes)
+        self.assertEqual(roles, ["boundary"] * 3 + ["control"] * 2 + ["positive"] * 2)
+
+    def test_every_lane_shares_build_identity_inputs(self):
+        cfg = _cfg()
+        lanes = expand_contract(
+            _contract(), cfg=cfg, source_name="src-a", build_name="stock",
+            platform_name="linux-multi",
+        )
+        for lane in lanes:
+            self.assertEqual(lane.source_name, "src-a")
+            self.assertEqual(lane.build_name, "stock")
+            self.assertEqual(lane.platform_name, "linux-multi")
+            self.assertEqual(lane.architectures, ("gfx1100", "gfx1201", "gfx1030"))
+
+    def test_lanes_carry_contract_metadata_not_identity(self):
+        cfg = _cfg()
+        lanes = expand_contract(
+            _contract(), cfg=cfg, source_name="src-a", build_name="stock",
+            platform_name="linux-multi",
+        )
+        positive = [lane for lane in lanes if lane.role == "positive"]
+        self.assertEqual({lane.contract_id for lane in positive}, {"RDNA-EXT-001"})
+        self.assertEqual({lane.optimization_id for lane in positive}, {"tiny-m-q8-gate"})
+        self.assertEqual({lane.workload_tag for lane in positive}, {"small_m"})
+        self.assertEqual({lane.model_ref for lane in positive}, {"model-a", "model-b"})
+        boundary = [lane for lane in lanes if lane.role == "boundary"]
+        self.assertEqual({lane.boundary_dimension for lane in boundary}, {"physical_m"})
+        self.assertEqual({lane.boundary_value for lane in boundary}, {"1", "2", "4"})
+
+    def test_all_expanded_lane_ids_are_distinct(self):
+        cfg = _cfg()
+        lanes = expand_contract(
+            _contract(), cfg=cfg, source_name="src-a", build_name="stock",
+            platform_name="linux-multi",
+        )
+        ids = [lane_id(lane) for lane in lanes]
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_unknown_source_build_or_platform_rejected(self):
+        cfg = _cfg()
+        with self.assertRaises(CampaignPlannerError):
+            expand_contract(_contract(), cfg=cfg, source_name="ghost",
+                            build_name="stock", platform_name="linux-multi")
+        with self.assertRaises(CampaignPlannerError):
+            expand_contract(_contract(), cfg=cfg, source_name="src-a",
+                            build_name="ghost", platform_name="linux-multi")
+        with self.assertRaises(CampaignPlannerError):
+            expand_contract(_contract(), cfg=cfg, source_name="src-a",
+                            build_name="stock", platform_name="ghost")
+
+    def test_expanded_lanes_feed_run_campaign_without_collision(self):
+        cfg = _cfg()
+        lanes = expand_contract(
+            _contract(), cfg=cfg, source_name="src-a", build_name="stock",
+            platform_name="linux-multi",
+        )
+
+        def fake_execute(spec, *, cfg, context, store, run_id, allow_dirty_bigcherry=False):
+            return f"ok-{spec.role}-{spec.workload_tag}-{spec.model_ref}-{spec.boundary_value}"
+
+        with patch("bigcherry.campaign_planner.execute_campaign_lane", side_effect=fake_execute):
+            results = run_campaign(lanes, cfg=cfg, context=object(), store=object())
+        self.assertEqual(len(results), 7)
 
 
 class RunCampaignTests(unittest.TestCase):

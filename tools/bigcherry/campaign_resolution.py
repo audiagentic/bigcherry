@@ -72,7 +72,7 @@ def resolve_patch_set(
     # directory entirely for a genuinely EMPTY custom catalog (a context
     # with zero patch files), which would otherwise silently fall back to
     # the wrong global default.
-    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
+    resolved_catalog_directory = catalog_directory or ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
     selected = patchset.resolve_exact(
         ids, directory=resolved_catalog_directory,
         required_state=required_state_override or declared.required_state,
@@ -129,33 +129,84 @@ def resolve_lane(
     if source_name not in cfg.sources:
         raise ResolutionError(f"unknown source {source_name!r}")
     source = cfg.sources[source_name]
-    if not source.patch_sets:
-        empty = ResolvedPatchSet("empty", (), (), "upstream", None, _digest({"modules": []}))
-        return ResolvedLane(source_name, source_name, empty, ())
+    # `experiment` is validated up front, before the empty-patch-sets branch
+    # below, so a clean/empty-base source (e.g. a stock Vulkan lane with no
+    # framework patch-set yet) still resolves a requested experiment instead
+    # of silently dropping it (bug found via external patch-management
+    # review, 2026-08-20: this used to return unconditionally a few lines
+    # below, before `experiment` was ever consulted).
     if experiment is not None and experiment not in cfg.experiments:
         raise ResolutionError(f"unknown experiment {experiment!r}")
-    if len(source.patch_sets) != 1:
-        # The shipped enhanced set is empty, but multiple named sets must be
-        # resolved as one immutable ordered set rather than label-concatenated.
-        first = cfg.patch_sets[source.patch_sets[0]]
-        merged = tuple(item for name in source.patch_sets for item in cfg.patch_sets[name].patches)
-        temporary = config.PatchSet("__merged__", merged, first.required_state)
-        patched = dict(cfg.patch_sets)
-        patched[temporary.name] = temporary
-        cfg = config.Config(cfg.pinned, patched, cfg.sources, cfg.builds, cfg.platforms,
-                           cfg.experiments, cfg.campaigns, cfg.path)
-        base_name = temporary.name
-    else:
+    if not source.patch_sets:
+        resolved = ResolvedPatchSet("empty", (), (), "upstream", None, _digest({"modules": []}))
+    elif len(source.patch_sets) == 1:
         base_name = source.patch_sets[0]
-    resolved = resolve_patch_set(
-        base_name, cfg, catalog, classification="experimental" if experiment else "base",
-        catalog_directory=catalog_directory,
-        # The REAL ordered constituent set names, not the synthetic
-        # "__merged__" placeholder -- see resolve_patch_set()'s own
-        # comment on why this must participate in patch_set_id.
-        composition_names=tuple(source.patch_sets),
-    )
-    resolved_catalog_directory = catalog_directory or (catalog[0].path.parent if catalog else None)
+        resolved = resolve_patch_set(
+            base_name, cfg, catalog, classification="experimental" if experiment else "base",
+            catalog_directory=catalog_directory,
+            composition_names=(base_name,),
+        )
+    else:
+        # Each named set is resolved under its OWN required_state policy,
+        # not just the first set's (bug found via external patch-management
+        # review, 2026-08-20: flattening every set into one synthetic
+        # "__merged__" PatchSet before resolving silently applied only
+        # source.patch_sets[0]'s policy to every module -- correct today
+        # only because every current multi-set source happens to share one
+        # policy, and would be silently wrong the moment two named sets in
+        # the same source genuinely diverge).
+        per_set = [
+            resolve_patch_set(
+                name, cfg, catalog, classification="base",
+                catalog_directory=catalog_directory, composition_names=(name,),
+            )
+            for name in source.patch_sets
+        ]
+        claimed_by: dict[str, str] = {}
+        for resolved_set in per_set:
+            for patch_id in resolved_set.module_ids:
+                if patch_id in claimed_by:
+                    raise ResolutionError(
+                        f"patch {patch_id!r} is claimed by more than one patch-set "
+                        f"in source {source_name!r} ({claimed_by[patch_id]!r} and "
+                        f"{resolved_set.name!r})"
+                    )
+                claimed_by[patch_id] = resolved_set.name
+        by_id = {module.patch_id: module for module in catalog}
+        merged_modules = tuple(sorted(
+            (by_id[patch_id] for resolved_set in per_set for patch_id in resolved_set.module_ids),
+            key=lambda module: (module.order, module.patch_id),
+        ))
+        module_ids = tuple(module.patch_id for module in merged_modules)
+        module_hashes = tuple((module.patch_id, module.content_hash) for module in merged_modules)
+        # When every constituent set was resolved under the SAME
+        # required_state policy (today's only real case: `bigcherry`'s
+        # framework + validated-enhancements both require "validated"),
+        # the merged result still has exactly one true policy -- represent
+        # it as that shared value, not None, so patch_set_id is unchanged
+        # from before this fix for every currently-configured source.
+        # required_state only becomes None (genuinely ambiguous) once two
+        # sets in the same source actually diverge.
+        distinct_policies = {resolved_set.required_state for resolved_set in per_set}
+        merged_required_state = next(iter(distinct_policies)) if len(distinct_policies) == 1 else None
+        classification = "experimental" if experiment else "base"
+        identity = {
+            "schema_version": 1,
+            "name": "__merged__",
+            "required_state": merged_required_state,
+            "modules": module_hashes,
+            "classification": classification,
+            "composition_names": list(source.patch_sets),
+        }
+        resolved = ResolvedPatchSet(
+            name="__merged__",
+            module_ids=module_ids,
+            module_hashes=module_hashes,
+            classification=classification,
+            required_state=merged_required_state,
+            patch_set_id=_digest(identity),
+        )
+    resolved_catalog_directory = catalog_directory or ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
     if experiment:
         extra = cfg.experiments[experiment].patches
         extra_selection = patchset.resolve_exact(

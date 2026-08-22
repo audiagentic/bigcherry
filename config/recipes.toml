@@ -1,0 +1,277 @@
+# BigCherry campaign configuration v2.
+# Legacy pull/audit/build commands use only the explicit compat.recipe aliases
+# below; campaign code consumes source/build/patch-set objects directly.
+version = 2
+pinned = "b10502"
+
+[patch-set.framework]
+patches = [
+  "0100_cmake_options",
+  "0200_dispatch_hook",
+  "0300_mmq_forced_j",
+  "0400_mmvf_forced_block",
+  "0500_mmf_forced_nwarps",
+  "0600_mmvq_geometry",
+  "0650_mmvq_native_variant",
+  "0700_coverage_counters",
+  "0800_server_shutdown_endpoint",
+  "0810_replay_hit_diagnostics",
+  "0820_measurement_signature_shapes",
+  "0830_split_reduce_telemetry",
+  "0900_pool_workspace_metrics",
+  "1000_rdna4_mmq_q2k_q6k_fix",
+  "1100_hi70_direct_op_evidence",
+]
+required-state = "validated"
+
+[patch-set.validated-enhancements]
+patches = []
+required-state = "validated"
+
+# RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
+# its own [experiment.<name>] entry so `bigcherry build --experiment <name>`
+# adds those patches on top of a source's normal framework patch-set
+# (resolve_lane's experiment= is additive, not a replacement -- see
+# campaign_resolution.py) -- the isolated single-patch(-chain)-vs-native
+# bench unit. Most entries below are still exactly one patch, so benching
+# two independent patches together stays an explicit choice (a second
+# --experiment name), never an accident of a shared group; a REQUIRES
+# dependency chain (e.g. rd44-only below, which pulls in its two
+# prerequisites) is not "two patches together" in that sense -- it is one
+# patch's own declared closure, expanded by expand_composition().
+[experiment.rd19-only]
+patches = ["1200_rd19_single_gpu_meta_bypass"]
+
+[experiment.rd20-only]
+patches = ["1201_rd20_attn_gate_tp_split"]
+
+[experiment.rd04-only]
+patches = ["1202_rd04_bf16_flash_attn_tile"]
+
+[experiment.rd05-07-only]
+patches = ["1203_rd050607_rdna4_wmma_fa_q6k_mmq"]
+
+[experiment.rd08-only]
+patches = ["1204_rd08_q6k_mmvq_vdr2"]
+
+[experiment.rd12-only]
+patches = ["1205_rd12_paired_mmvq_dual_output"]
+
+[experiment.rd13-only]
+patches = ["1206_rd13_mul_mat_add_view_fusion"]
+
+[experiment.rd17-only]
+patches = ["1207_rd17_moe_topk_down_fold"]
+
+[experiment.rd21-only]
+patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
+
+[experiment.rd22-only]
+patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
+
+[experiment.rd26a-only]
+patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
+
+[experiment.rd39-42-only]
+patches = ["1215_rd394041_amd_stream_moe_overlap"]
+
+[experiment.rd43-only]
+patches = ["1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"]
+
+[experiment.rd44-only]
+patches = [
+  "1215_rd394041_amd_stream_moe_overlap",
+  "1216_rd43_concurrent_join_fusion_guard",
+  "1217_rd44_graph_opt_default_rdna35",
+]
+
+[experiment.rd50-only]
+patches = ["1221_rd50_gdn_chunked_recurrence"]
+
+[source.llama-native]
+ref = "pinned"
+overlay = false
+patch-sets = []
+
+# RE30 phase 3: Vulkan IS wired end-to-end now -- source.backend threads
+# through campaign_lane.py -> campaign_workers.make_build_worker ->
+# campaign_build.cmake_configure_args(backend=...), so a lane naming this
+# source configures GGML_VULKAN=ON for real via the standard `build`/
+# `campaign-build` CLI entrypoints, not just a manual cmake invocation.
+# patch-sets stays empty -- no Vulkan patch exists yet. NOT wired into
+# [campaign.standard] (that profile is HIP's canonical production set);
+# select this source explicitly via `--lane vulkan-stock:vulkan-stock:
+# vulkan-linux` (or `campaign-build --source vulkan-stock --build
+# vulkan-stock --platform vulkan-linux`) until a real Vulkan campaign
+# profile is defined.
+[source.vulkan-stock]
+ref = "pinned"
+overlay = false
+patch-sets = []
+backend = "vulkan"
+
+[source.bigcherry-native]
+ref = "pinned"
+overlay = true
+patch-sets = ["framework"]
+
+[source.bigcherry]
+ref = "pinned"
+overlay = true
+patch-sets = ["framework", "validated-enhancements"]
+
+[build.stock]
+description = "Unpatched-behaviour baseline: no dispatch layer at all."
+options = {}
+needs = []
+
+[build.control]
+description = "Dispatch layer compiled in, native candidates only."
+options = { GGML_HIP_AUTOTUNE = "ON" }
+variant-set = "inventory"
+needs = []
+
+[build.record]
+description = "Discovers which signatures a workload actually issues."
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_AUTOTUNE_RECORD = "ON" }
+variant-set = "inventory"
+needs = []
+
+[build.tune]
+description = "Measures candidates and writes results. The tuning workhorse."
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_WORKSPACE_METRICS = "ON" }
+variant-set = "workload-max"
+needs = ["inventory"]
+
+[build.replay]
+description = "Applies stored winners without measuring. What ships."
+options = { GGML_HIP_DISPATCH_REPLAY = "ON" }
+variant-set = "replay-full"
+needs = ["inventory", "promoted-winners"]
+
+[build.audit]
+description = "Compile-audit only: every candidate, ignoring the workload."
+options = { GGML_HIP_AUTOTUNE = "ON" }
+variant-set = "full-max"
+needs = []
+
+[build.vulkan-stock]
+description = "Vulkan backend, no patches, no tuning (RE30 phase 1 stub)."
+options = { GGML_VULKAN = "ON" }
+needs = []
+
+[platform.linux-multi]
+description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
+targets = ["gfx1100", "gfx1201", "gfx1030"]
+options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON" }
+c-compiler = "/opt/rocm/llvm/bin/clang"
+cxx-compiler = "/opt/rocm/llvm/bin/clang++"
+
+[platform.windows-gfx1100]
+description = "Local workstation, single card."
+targets = ["gfx1100"]
+options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
+
+[platform.vulkan-linux]
+description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
+# "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
+# the legacy recipes.py loader requires a non-empty list for every platform
+# regardless of backend, so this is a placeholder, not a real GPU target --
+# cmake_configure_args(backend="vulkan") ignores platform.targets entirely
+# (see campaign_build._backend_configure_options). Replace with real
+# device/ICD identity in a later RE30 phase.
+targets = ["vulkan-stub"]
+options = { LLAMA_BUILD_TESTS = "ON" }
+
+# RE14/RE19: the canonical replacement for legacy `build --all`, expressed
+# directly in v2 source/build/platform identities -- NOT derived from
+# compat.recipe.* below, which are legacy-only labels with their own
+# separate groups/states selection philosophy (compat.recipe.bigcherry-native
+# even aliases the legacy-only build name "native" to this file's real v2
+# "control" build; see recipes.py's _load_v2_compat). This profile's lane
+# set was confirmed to match today's actual default=true recipe/build
+# coverage (upstream/stock, bigcherry-native/native->control,
+# bigcherry/{record,tune,replay}) before being written down here, so
+# `build --all` under the new campaign engine means the same production
+# build roles it always has, not a silently narrower set.
+[campaign.standard]
+lanes = [
+    { source = "llama-native", build = "stock", platform = "linux-multi" },
+    { source = "bigcherry-native", build = "control", platform = "linux-multi" },
+    { source = "bigcherry", build = "record", platform = "linux-multi" },
+    { source = "bigcherry", build = "tune", platform = "linux-multi" },
+    { source = "bigcherry", build = "replay", platform = "linux-multi" },
+]
+
+# Explicit compatibility aliases for the legacy CLI. These selectors are not
+# production source composition; the v2 source definitions above are.
+[compat.recipe.dev]
+ref = "pinned"
+states = ["validated", "untested"]
+builds = ["tune", "replay", "record"]
+platform = "linux-multi"
+
+[compat.recipe.release]
+ref = "pinned"
+states = ["validated"]
+builds = ["record", "tune", "replay"]
+platform = "linux-multi"
+
+[compat.recipe.core]
+ref = "pinned"
+groups = ["core"]
+states = ["validated"]
+builds = ["tune"]
+platform = "linux-multi"
+
+[compat.recipe.upstream]
+ref = "pinned"
+groups = []
+builds = ["stock"]
+platform = "linux-multi"
+default = true
+
+[compat.recipe.bigcherry-native]
+ref = "pinned"
+states = ["validated"]
+builds = ["native"]
+platform = "linux-multi"
+default = true
+
+[compat.recipe.bigcherry]
+ref = "pinned"
+states = ["validated"]
+builds = ["record", "tune", "replay"]
+platform = "linux-multi"
+default = true
+
+[compat.recipe.workstation]
+ref = "pinned"
+states = ["validated", "untested"]
+builds = ["tune"]
+platform = "windows-gfx1100"
+
+[compat.recipe.b10257]
+ref = "b10257"
+states = ["validated"]
+builds = ["tune", "replay"]
+platform = "linux-multi"
+
+# --- RE48: tree registry (pin-status --all-remotes / --complete) ----------------
+# local is implicit (the tree running the command); it is listed so the
+# registry is explicit. `role = "campaign"` trees get the tooling-revision
+# comparison; `required` trees must be reachable+consistent for --complete.
+[[trees]]
+name = "local"
+alias = ""
+path = ""
+role = "local"
+required = false
+
+[[trees]]
+name = "brutus"
+alias = "brutus"
+path = "/mnt/vault/development/llmhosts/bigcherry"
+role = "campaign"
+required = true
+expected-tooling-revision = ""

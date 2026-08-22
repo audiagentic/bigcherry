@@ -1,3 +1,10 @@
+
+
+## Source control doctrine
+
+Never use `git stash`, `git reset`, `git rebase` — this is a shared, multi-agent working tree and destructuve git commands can silently collide with another session's live edits. If work needs to be set
+aside, split it into its own deliberate check-in group or leave it uncommitted.
+
 <!-- ag:managed:begin -->
 _Managed by AUDiaGentic — generated from component configs. Edit the owning component and re-run surface apply; edits here are overwritten._
 
@@ -62,8 +69,9 @@ Choose a prefix matching the plan name (CC → code-cleanup, LSP → lsp-mcp-enh
 ## Execution profile doctrine
 
 Execution profiles bind a provider to a specific model with optional
-execution parameters. They are stored in .audiagentic/config/
-execution-profiles.yaml.
+execution parameters. They are stored in the canonical
+.audiagentic/config/agents.yaml document alongside prompts, roles,
+agent definitions, and triggers.
 
 ## When to use
 - A job needs a predefined provider+model configuration
@@ -74,7 +82,8 @@ execution-profiles.yaml.
 ## Resolution precedence at job launch
 1. Explicit `execution-profile-id` in job request
 2. Explicit provider-id / model-id in job request
-3. Default execution profile (marked `is-default: true`)
+3. Execution profile selected by the Agent Definition
+4. Default execution profile (marked `is-default: true`)
 
 ## Naming
 Use `execution-profile-id` (NOT `profile-id`) in job requests to avoid
@@ -112,4 +121,11 @@ no such path yet, so no conflict-checking code exists today.
 `workflow-profile`, and `component-profile` — three distinct
 "profile" concepts already exist in this project; a role is a fourth,
 separate axis and must not collapse into any of them by accident.
+
+## Source control doctrine
+
+Do not invoke git or GitHub APIs directly — use the MCP tools.
+Never use `git stash` — this is a shared, multi-agent working tree and a stash
+can silently collide with another session's live edits. If work needs to be set
+aside, split it into its own deliberate check-in group or leave it uncommitted.
 <!-- ag:managed:end -->

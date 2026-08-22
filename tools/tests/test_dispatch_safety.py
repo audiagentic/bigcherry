@@ -12,6 +12,7 @@ DISPATCH = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-dispatch.
 RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
 RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+TUNER_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
 DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
 MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
@@ -203,12 +204,16 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         end = source.index("// E3: max()", start)
         function = source[start:end]
 
-        self.assertIn("g_host_sync_overhead_valid = false;", function)
+        # HI64: cache storage moved from two module-global doubles to a
+        # per-device PerDeviceState<HostSyncOverheadCache> (see the class's
+        # own comment) -- the reset-on-incomplete-lifecycle contract this
+        # test checks is unchanged, just spelled as a .store() call now.
+        self.assertIn("g_host_sync_overhead.store(HostSyncOverheadCache{});", function)
         self.assertIn("if (!destroy_ok || samples.empty())", function)
         self.assertIn("if (!std::isfinite(overhead) || overhead < 0.0)", function)
         self.assertLess(
             function.index("const bool destroy_ok = destroy_events();"),
-            function.index("g_host_sync_overhead_valid = true;"),
+            function.index("g_host_sync_overhead.store(HostSyncOverheadCache{overhead, true});"),
         )
 
     def test_blas_observation_telemetry_uses_existing_workspace_hook(self):
@@ -372,31 +377,39 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertNotIn("clock_drift_rounds", signature)
 
     def test_tuner_first_encounters_are_single_flight_through_publish(self):
-        """The source-level concurrency contract prevents duplicate winners."""
+        """The source-level concurrency contract prevents duplicate winners.
+
+        HI64 follow-up (2026-08-22): the single-flight lock moved from this
+        impl function to the public ggml_hip_tuner_resolve() wrapper (see
+        TestHi64CrossDevicePoisonLeak.
+        test_single_flight_lock_held_across_impl_call_and_failure_readback
+        for that half) -- a second thread's failure->success replacement
+        landing between the impl returning and a caller reading
+        measurement_failure back out would otherwise report a stale value
+        for what actually happened on THIS invocation. This test now covers
+        only the impl's own internal ordering, which is unaffected by where
+        the lock lives."""
         tuner = TUNER.read_text(encoding="utf-8")
         resolve_start = tuner.index(
-            "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
         )
-        resolve_end = tuner.index("void ggml_hip_tuner_flush(", resolve_start)
+        # Bounded to the impl only -- NOT through ggml_hip_tuner_flush(),
+        # which would also swallow the public wrapper (declared between the
+        # two) and its own, deliberately-present single_flight_lock.
+        resolve_end = tuner.index(
+            "ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", resolve_start
+        )
         resolve = tuner[resolve_start:resolve_end]
 
         self.assertIn("std::mutex g_single_flight_mutex;", tuner)
-        self.assertIn(
-            "std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);",
-            resolve,
-        )
-        lock = resolve.index("single_flight_lock(g_single_flight_mutex)")
+        self.assertNotIn("single_flight_lock", resolve)
         lookup = resolve.index("g_results.find(dispatch_digest)")
         first_measurement = resolve.index("const ggml_hip_tuner_config & config")
         final_publish = resolve.rindex("record_result(dispatch_digest, result);")
         final_return = resolve.index("return result.winner;", final_publish)
 
-        # Every waiter is serialized before it can miss the cache; the lock is
-        # still held through the only final publish and winner return.
-        self.assertLess(lock, lookup)
         self.assertLess(lookup, first_measurement)
         self.assertLess(final_publish, final_return)
-        self.assertNotIn("single_flight_lock.unlock()", resolve)
         self.assertIn("g_results.emplace(dispatch_digest, result);", tuner)
 
     def test_final_measurement_failures_cannot_reuse_screening_medians(self):
@@ -412,7 +425,10 @@ class TestDispatchSafetyContracts(unittest.TestCase):
 
     def test_measurement_failure_poison_suppresses_later_gpu_work(self):
         tuner = TUNER.read_text(encoding="utf-8")
-        self.assertIn("std::atomic<bool> g_tuner_poisoned{false};", tuner)
+        # HI64: g_tuner_poisoned moved from a single std::atomic<bool> to a
+        # PerDeviceState<bool> (per-device poison scoping) -- every .load()/
+        # .store() call site below is unchanged by that move.
+        self.assertIn("PerDeviceState<bool> g_tuner_poisoned(false);", tuner)
         failure_helper = tuner.index(
             "static void disable_smi_after_measurement_failure()"
         )
@@ -509,7 +525,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         tuner = TUNER.read_text(encoding="utf-8")
         resolve = tuner[
             tuner.index(
-                "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve("
+                "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
             ) :
         ]
         self.assertIn("open_tuning_journal_once(result.hardware_digest);", resolve)
@@ -567,7 +583,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         signature that dispatch stays native, while a native selection is
         silent (no log storm on long runs)."""
         branch = self._tune_branch()
-        guard = "winner != nullptr && winner != native.candidate"
+        guard = "tuning.winner != nullptr && tuning.winner != native.candidate"
         call = "ggml_hip_log_tune_kept_native("
         self.assertIn(guard, branch)
         self.assertIn(call, branch)
@@ -590,6 +606,523 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn("signature_digest", summary)
         self.assertIn("hardware_digest", summary)
         self.assertLess(summary.index("signature_digest"), summary.index("winner"))
+
+
+class TestHi64PerDevicePoisonScoping(unittest.TestCase):
+    """HI64 (RV49 F6 scope extension, 2026-08-17 GPT adjudication): a
+    transient fault on one HIP device must not poison tuning on every other
+    device sharing the process. g_tuner_poisoned/g_smi_runtime_disabled/
+    g_host_sync_overhead moved from process-global flags to a
+    PerDeviceState<T> template keyed by the current hipGetDevice() value."""
+
+    def test_per_device_state_class_keys_by_current_device(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("template <typename T>\nclass PerDeviceState {")
+        end = tuner.index("};", tuner.index("std::unordered_map<int, T> values_;", start)) + 2
+        cls = tuner[start:end]
+        self.assertIn("static int current_device()", cls)
+        self.assertIn("hipGetDevice(&device)", cls)
+        self.assertIn("std::lock_guard<std::mutex> lock(mutex_);", cls)
+        self.assertIn("std::unordered_map<int, T> values_;", cls)
+        # store() and load() both resolve the CURRENT device internally --
+        # no caller anywhere passes a device in, so every existing
+        # .load()/.store() call site needed zero changes.
+        load_start = cls.index("T load(")
+        load_end = cls.index("void store(")
+        self.assertIn("current_device()", cls[load_start:load_end])
+
+    def test_no_time_based_or_implicit_auto_clear(self):
+        # GPT requirement 2: no time-based expiry, no clear-after-one-
+        # success. PerDeviceState never removes a key once set -- store()
+        # only ever inserts/overwrites, load() never deletes, and grepping
+        # the whole file confirms no .erase(/.clear( call exists on any of
+        # the three PerDeviceState instances.
+        tuner = TUNER.read_text(encoding="utf-8")
+        for symbol in ("g_tuner_poisoned", "g_smi_runtime_disabled", "g_host_sync_overhead"):
+            self.assertNotIn(f"{symbol}.erase(", tuner)
+            self.assertNotIn(f"{symbol}.clear(", tuner)
+
+    def test_tuner_never_calls_hip_device_reset(self):
+        # GPT requirement 3: the tuner must never call hipDeviceReset()
+        # itself -- could invalidate allocations owned by llama.cpp. Strip
+        # line comments first -- this file's own HI64 documentation
+        # mentions the symbol by name to explain why it is absent.
+        tuner = TUNER.read_text(encoding="utf-8")
+        code_lines = [
+            line for line in tuner.splitlines() if not line.strip().startswith("//")
+        ]
+        self.assertNotIn("hipDeviceReset(", "\n".join(code_lines))
+
+    def test_three_globals_are_per_device_scoped(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn("PerDeviceState<bool> g_tuner_poisoned(false);", tuner)
+        self.assertIn("PerDeviceState<bool> g_smi_runtime_disabled(false);", tuner)
+        self.assertIn(
+            "PerDeviceState<HostSyncOverheadCache> g_host_sync_overhead(HostSyncOverheadCache{});",
+            tuner,
+        )
+
+    def test_host_sync_overhead_header_report_reads_through_per_device_load(self):
+        # ggml_hip_tuner_flush()'s JSON header must report the calling
+        # device's cache, not a stale value some other device happened to
+        # compute first under the old process-global scheme.
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        flush = flush[: flush.index("\n}\n", flush.index("kind\\\":\\\"header"))]
+        self.assertIn("const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();", flush)
+        self.assertIn("sync_overhead.us, sync_overhead.valid", flush)
+
+
+class TestHi29TransformRecording(unittest.TestCase):
+    """HI29: transform-attempt / transform-gap recording, written to a
+    separate <GGML_HIP_DISPATCH_DB>.transforms.jsonl alongside the ordinary
+    measurements.jsonl, guarded by GGML_HIP_ROUTING_TRANSFORM. Kept
+    structurally separate from Result -- offline agent-driven pattern
+    analysis across many signatures, not per-signature dispatch identity."""
+
+    def test_record_structs_and_accumulators_declared(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn("struct TransformAttemptRecord {", tuner)
+        self.assertIn("struct TransformGapRecord {", tuner)
+        self.assertIn("struct TransformTriedEntry {", tuner)
+        self.assertIn("std::vector<TransformAttemptRecord> g_transform_attempts;", tuner)
+        self.assertIn("std::vector<TransformGapRecord>     g_transform_gaps;", tuner)
+        self.assertIn("std::mutex                          g_transform_mutex;", tuner)
+
+    def test_record_functions_are_mutex_guarded(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        attempt_fn = tuner.index("void ggml_hip_record_transform_attempt(")
+        attempt_end = tuner.index("}", attempt_fn)
+        attempt_body = tuner[attempt_fn:attempt_end]
+        self.assertIn("std::lock_guard<std::mutex> lock(g_transform_mutex);", attempt_body)
+        self.assertIn("g_transform_attempts.push_back(record);", attempt_body)
+
+        gap_fn = tuner.index("void ggml_hip_record_transform_gap(")
+        gap_end = tuner.index("}", gap_fn)
+        gap_body = tuner[gap_fn:gap_end]
+        self.assertIn("std::lock_guard<std::mutex> lock(g_transform_mutex);", gap_body)
+        self.assertIn("g_transform_gaps.push_back(record);", gap_body)
+
+    def test_recording_machinery_is_guarded_behind_routing_transform_flag(self):
+        # Everything HI29 added must be compiled out when
+        # GGML_HIP_ROUTING_TRANSFORM is off -- same discipline as HI27/HI28's
+        # own guard (standards 12.2: a production replay build carries no
+        # symbol it does not dispatch through).
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("#ifdef GGML_HIP_ROUTING_TRANSFORM\n// bigcherry (HI29)")
+        end = tuner.index("#endif // GGML_HIP_ROUTING_TRANSFORM", start)
+        block = tuner[start:end]
+        self.assertIn("struct TransformAttemptRecord {", block)
+        self.assertIn("struct TransformGapRecord {", block)
+        self.assertIn("void ggml_hip_record_transform_attempt(", block)
+        self.assertIn("void ggml_hip_record_transform_gap(", block)
+
+    def test_flush_writes_a_separate_transforms_file_with_atomic_crash_safety(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        transform_block_start = flush.index("#ifdef GGML_HIP_ROUTING_TRANSFORM")
+        transform_block = flush[transform_block_start:]
+        self.assertIn('std::string transforms_path = std::string(path) + ".transforms.jsonl";', transform_block)
+        self.assertIn("ggml_hip_atomic_begin(transforms_path.c_str(), transforms_atomic)", transform_block)
+        self.assertIn("ggml_hip_atomic_commit(transforms_atomic)", transform_block)
+        # Separate atomic file from measurements.jsonl -- one crash-safety
+        # unit each, so a transforms-file write failure cannot corrupt or
+        # block the (already-committed, by this point) measurements file.
+        measurements_commit = flush.index("ggml_hip_atomic_commit(measurements_atomic)")
+        self.assertLess(measurements_commit, transform_block_start)
+
+    def test_gap_record_serializes_every_tried_transform_with_its_reason(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        gap_loop_start = flush.index("for (const TransformGapRecord & r : g_transform_gaps)")
+        gap_loop = flush[gap_loop_start : gap_loop_start + 1200]
+        self.assertIn('transformations_tried', gap_loop)
+        self.assertIn("r.tried[i].transform_id", gap_loop)
+        self.assertIn("r.tried[i].rejection_reason.c_str()", gap_loop)
+
+    def test_attempt_record_carries_both_timings_and_correctness_metrics(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        struct_start = tuner.index("struct TransformAttemptRecord {")
+        struct_end = tuner.index("\n};", struct_start)
+        struct_body = tuner[struct_start:struct_end]
+        for field in ("original_us", "transformed_us", "improvement_pct", "nmse", "max_abs_error"):
+            self.assertIn(field, struct_body)
+
+    def test_measurements_jsonl_result_row_carries_the_winning_transform(self):
+        # HI31 prerequisite: the production measurements.jsonl artifact
+        # (not just the diagnostic journal) must carry which transform (if
+        # any) the FINAL winner reached its candidate through, or
+        # tune_promotion.py's promoted-winners output and replay_cache.py's
+        # exporter would have no way to know a v5 replay entry needs a
+        # transform_id at all.
+        tuner = TUNER.read_text(encoding="utf-8")
+        flush = tuner[tuner.index("void ggml_hip_tuner_flush(") :]
+        result_row = flush[: flush.index("for (const auto & entry : g_results)") + 4000]
+        self.assertIn('\\"winner_transform\\":\\"%s\\"', result_row)
+        self.assertIn('\\"winner_transform_id\\":%d', result_row)
+        self.assertIn("winner_transform_name(r)", result_row)
+        self.assertIn("winner_transform_id(r)", result_row)
+        # And the helper itself must return "" when the feature is compiled
+        # out, not merely omit the field -- the JSON schema must stay
+        # identical across both build configurations.
+        helper_start = tuner.index("static const char * winner_transform_name(")
+        helper_end = tuner.index("\n}", helper_start)
+        helper_body = tuner[helper_start:helper_end]
+        self.assertIn('return "";', helper_body)
+
+
+class TestHi31DispatchTransformIntegration(unittest.TestCase):
+    """HI31: Binding/ggml_hip_resolved_dispatch carry a transform pointer,
+    the replay resolution path re-validates a transformed entry against the
+    real transformed signature (never the original), and the dispatch-time
+    launch routes through ggml_hip_transform_launch() for a transformed
+    binding while the ordinary path stays exactly as it was."""
+
+    def test_resolved_dispatch_and_binding_both_carry_a_transform_pointer(self):
+        header = (ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h").read_text(encoding="utf-8")
+        struct_start = header.index("struct ggml_hip_resolved_dispatch {")
+        struct_end = header.index("\n};", struct_start)
+        struct_body = header[struct_start:struct_end]
+        self.assertIn("const ggml_hip_routing_transformation * transform = nullptr;", struct_body)
+        self.assertIn("struct ggml_hip_routing_transformation;", header[: struct_start])
+
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        binding_start = dispatch.index("struct Binding {")
+        binding_end = dispatch.index("\n};", binding_start)
+        binding_body = dispatch[binding_start:binding_end]
+        self.assertIn("const ggml_hip_routing_transformation * transform = nullptr;", binding_body)
+
+    def test_replay_resolution_revalidates_against_transformed_signature(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        helper_start = dispatch.index("static bool transformed_candidate_still_valid(")
+        helper_end = dispatch.index("\n}", helper_start)
+        helper = dispatch[helper_start:helper_end]
+        self.assertIn("transform->equivalence_verified", helper)
+        self.assertIn("ggml_hip_transform_signature_is_eligible(sig)", helper)
+        self.assertIn("transform->can_apply(sig)", helper)
+        self.assertIn("transform->apply(lc, &ctx, &transformed_sig, &transformed_lc)", helper)
+        self.assertIn("candidate->family != transform->target_family", helper)
+        # The final can_execute check must run against the TRANSFORMED
+        # signature, never the original -- the whole point of this helper.
+        self.assertIn("candidate->can_execute(candidate, transformed_sig, hw)", helper)
+        self.assertNotIn("candidate->can_execute(candidate, sig, hw)", helper)
+
+    def test_replay_block_calls_the_shared_transform_validator(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        replay_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {")
+        replay_end = dispatch.index("\n    }\n#endif", replay_start)
+        replay_block = dispatch[replay_start:replay_end]
+        self.assertIn("ggml_hip_transform_find((ggml_hip_transform_id) transform_id)", replay_block)
+        self.assertIn("transformed_candidate_still_valid(winner, winner_transform, sig, lc, hw)", replay_block)
+        self.assertIn("binding.transform  = winner_transform;", replay_block)
+
+    def test_blacklist_safety_net_uses_transform_aware_revalidation(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        net_start = dispatch.index("// A stored winner that cannot run on this hardware")
+        net_end = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", net_start)
+        net = dispatch[net_start:net_end]
+        self.assertIn("if (binding.transform != nullptr) {", net)
+        self.assertIn(
+            "transformed_candidate_still_valid(binding.candidate, binding.transform, sig, lc, hw)",
+            net,
+        )
+        self.assertIn("binding.transform  = nullptr;", net)
+
+    def test_thread_cache_hit_and_final_resolved_propagate_transform(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        self.assertIn("resolved.transform  = thread_binding.transform;", resolve)
+        self.assertIn("resolved.transform   = binding.transform;", resolve)
+
+    def test_dispatch_launch_routes_a_transformed_binding_through_transform_launch(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        launch = dispatch[dispatch.index("void ggml_hip_dispatch_launch(") :]
+        launch = launch[: launch.index("// ------------------------------------------------------------- entry point")]
+        self.assertIn("if (bound.transform != nullptr) {", launch)
+        self.assertIn(
+            "bound.transform->apply(lc, &ctx, /*out_sig=*/nullptr, &transformed_lc)",
+            launch,
+        )
+        self.assertIn(
+            "ggml_hip_transform_launch(bound.transform, bound.candidate,\n"
+            "                                      bound.variant, &ctx, transformed_lc);",
+            launch,
+        )
+        self.assertIn("launch_native_fallback_after_transform_failure(bound.transform, lc);", launch)
+        # Ordinary path must still be reachable and unchanged in shape.
+        self.assertIn("effective.launch(&effective, lc);", launch)
+
+    def test_apply_failure_fallback_never_uses_ggml_assert(self):
+        # GGML_ASSERT always aborts in this codebase (not compiled out under
+        # NDEBUG) -- using it for "transform apply() unexpectedly failed"
+        # would turn one bad transform into a crashed inference process,
+        # exactly what the fail-closed-to-native design exists to avoid.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        fn_start = dispatch.index("static void launch_native_fallback_after_transform_failure(")
+        fn_end = dispatch.index("\n}", fn_start)
+        fn_body = dispatch[fn_start:fn_end]
+        self.assertNotIn("GGML_ASSERT", fn_body)
+        self.assertIn("ggml_hip_native_select(*lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst)", fn_body)
+        self.assertIn("logged.insert(transform->name).second", fn_body)
+
+    def test_tune_mode_never_installs_a_transform_into_the_live_binding(self):
+        # HI67 slice 1's contract (tune mode stays native) must still hold
+        # after HI31: the TUNE branch never writes into `binding` at all,
+        # transformed or otherwise -- it only logs what it would have won.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        tune_start = resolve.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        tune_end = resolve.index("\n    }\n#endif", tune_start)
+        tune_block = resolve[tune_start:tune_end]
+        self.assertNotIn("binding.candidate", tune_block)
+        self.assertNotIn("binding.transform", tune_block)
+        self.assertIn("ggml_hip_tuner_resolve(", tune_block)
+
+
+class TestHi67StrictForcedCandidate(unittest.TestCase):
+    """HI67: a CPU-reference correctness producer that asks for a specific
+    candidate via GGML_HIP_FORCE_CANDIDATE must be able to PROVE it actually
+    executed. Without GGML_HIP_FORCE_CANDIDATE_STRICT=1, an unregistered or
+    ineligible forced candidate silently falls back to normal resolution --
+    the process exit code and stderr give no signal, so a correctness
+    producer could record a valid-looking comparison for one that never
+    happened. Strict mode fails closed instead (GGML_ABORT) and, on success,
+    emits a per-dispatch machine-readable marker."""
+
+    def _forced_candidate_struct(self, dispatch: str) -> str:
+        start = dispatch.index("struct ForcedCandidate {")
+        end = dispatch.index("\n};\n", start)
+        return dispatch[start:end]
+
+    def _resolve_forced_block(self, dispatch: str) -> str:
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        start = resolve.index("if (const auto & forced = ForcedCandidate::instance();")
+        end = resolve.index("\n    }\n", start) + len("\n    }\n")
+        return resolve[start:end]
+
+    def test_strict_flag_read_from_env_alongside_stable_name(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        struct = self._forced_candidate_struct(dispatch)
+        self.assertIn("bool strict = false;", struct)
+        self.assertIn('getenv("GGML_HIP_FORCE_CANDIDATE_STRICT") != nullptr', struct)
+
+    def test_unregistered_candidate_aborts_in_strict_mode(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        struct = self._forced_candidate_struct(dispatch)
+        not_found = struct[struct.index("if (!fc.candidate) {") :]
+        not_found = not_found[: not_found.index("} else {")]
+        self.assertIn("if (fc.strict) {", not_found)
+        self.assertIn("GGML_ABORT(", not_found)
+        # The non-strict warning-and-disable path must still exist, unchanged,
+        # for ordinary (non-correctness-evidence) manual force-candidate use.
+        self.assertIn("GGML_LOG_WARN(", not_found)
+
+    def test_ineligible_candidate_aborts_in_strict_mode_not_falls_through(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        block = self._resolve_forced_block(dispatch)
+        strict_abort = block.index("} else if (forced.strict) {")
+        fallback_warn = block.index("} else {\n            // Not eligible")
+        self.assertLess(strict_abort, fallback_warn)
+        strict_branch = block[strict_abort:fallback_warn]
+        self.assertIn("GGML_ABORT(", strict_branch)
+        # The strict-mode abort branch must be checked BEFORE the silent
+        # fallback branch, not after -- else the fallback would still run
+        # first for a strict-mode caller.
+        fallback_branch = block[fallback_warn:]
+        self.assertIn("using normal resolution instead", fallback_branch)
+
+    def test_successful_strict_selection_emits_per_dispatch_marker(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        block = self._resolve_forced_block(dispatch)
+        can_execute = block.index("if (forced.candidate->can_execute(forced.candidate, sig, hw)) {")
+        strict_marker = block.index("if (forced.strict) {", can_execute)
+        marker_end = block.index("}", strict_marker)
+        marker_body = block[strict_marker:marker_end]
+        self.assertIn(
+            'GGML_LOG_INFO("BIGCHERRY_FORCE_CANDIDATE_EXECUTED stable_name=%s\\n",',
+            marker_body,
+        )
+        self.assertIn("forced.stable_name)", marker_body)
+        # Marker emission must happen before the mode-dependent early return,
+        # not be skippable by it.
+        early_return = block.index("if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {", can_execute)
+        self.assertLess(strict_marker, early_return)
+
+
+class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
+    """HI64 (2026-08-22, real dual-XTX hardware finding): a fatal
+    measurement failure on one device was silently blocking tuning on a
+    second, healthy, identical GPU. Root cause was NOT PerDeviceState --
+    it was the process-global, device-ordinal-free g_bindings/g_results
+    caches (deliberately shared so identical GPUs can reuse a winner,
+    standards 10.2) treating a device-local failure as if it were a
+    portable resolution. Fix: only a non-failed result may populate those
+    shared caches; a failed one is retained solely as fallback evidence."""
+
+    def test_resolution_struct_carries_measurement_failure(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        struct_start = header.index("struct ggml_hip_tuner_resolution {")
+        struct_end = header.index("};", struct_start)
+        struct_body = header[struct_start:struct_end]
+        self.assertIn("const ggml_hip_candidate_descriptor * winner = nullptr;", struct_body)
+        self.assertIn("bool measurement_failure = false;", struct_body)
+
+    def test_public_resolve_returns_the_resolution_struct(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        self.assertIn("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", header)
+        # The old declaration returning a bare pointer must be gone from the
+        # header -- only the internal .cu-file impl keeps that signature now.
+        self.assertNotIn(
+            "const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(", header
+        )
+
+    def test_impl_cache_hit_excludes_failed_results(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        impl_start = tuner.index(
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
+        )
+        impl_end = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", impl_start)
+        impl = tuner[impl_start:impl_end]
+        lookup = impl.index("g_results.find(dispatch_digest)")
+        cache_hit_guard = impl.index(
+            "found != g_results.end() && !found->second.measurement_failure", lookup
+        )
+        cache_hit_return = impl.index("return found->second.winner;", cache_hit_guard)
+        self.assertLess(lookup, cache_hit_guard)
+        self.assertLess(cache_hit_guard, cache_hit_return)
+
+    def test_public_wrapper_reports_measurement_failure_from_g_results(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        wrapper_start = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(")
+        wrapper_end = tuner.index("void ggml_hip_tuner_flush(", wrapper_start)
+        wrapper = tuner[wrapper_start:wrapper_end]
+        self.assertIn("ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc)", wrapper)
+        self.assertIn("g_results.find(dispatch_digest)", wrapper)
+        self.assertIn(
+            "found != g_results.end() && found->second.measurement_failure", wrapper
+        )
+
+    def test_record_result_replaces_failure_with_success_never_the_reverse(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        start = tuner.index("void record_result(")
+        end = tuner.index("const char * reason_name(", start)
+        record = tuner[start:end]
+        self.assertIn("const auto found = g_results.find(dispatch_digest);", record)
+        self.assertIn("if (found == g_results.end()) {", record)
+        self.assertIn("g_results.emplace(dispatch_digest, result);", record)
+        replace_guard = record.index(
+            "found->second.measurement_failure && !result.measurement_failure"
+        )
+        replace_assign = record.index("found->second = result;", replace_guard)
+        self.assertGreater(replace_assign, replace_guard)
+        # The inverse condition (a good result getting clobbered by a later
+        # failure) must never appear as a guard in this function.
+        self.assertNotIn("!found->second.measurement_failure && result.measurement_failure", record)
+
+    def test_dispatcher_derives_cacheable_flag_from_measurement_failure(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        decl = dispatch.index("bool process_binding_cacheable = true;")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {", decl)
+        emplace_guard = dispatch.index("if (process_binding_cacheable) {", tune_start)
+        emplace_call = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", emplace_guard)
+        self.assertLess(decl, tune_start)
+        self.assertLess(tune_start, emplace_guard)
+        self.assertLess(emplace_guard, emplace_call)
+
+        tune_block = dispatch[tune_start:emplace_guard]
+        self.assertIn("process_binding_cacheable = false;", tune_block)  # capture-skip site
+        self.assertIn("process_binding_cacheable = !tuning.measurement_failure;", tune_block)
+
+    def test_capture_skip_marks_binding_not_cacheable(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_branch_start = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        capture_branch_end = dispatch.index("} else {", capture_branch_start)
+        capture_branch = dispatch[capture_branch_start:capture_branch_end]
+        self.assertIn("ggml_hip_warn_tuning_skipped_under_capture();", capture_branch)
+        self.assertIn("process_binding_cacheable = false;", capture_branch)
+
+    def test_thread_local_binding_insert_is_never_gated_by_process_flag(self):
+        # A device-local measurement FAILURE must still populate the
+        # per-device/thread cache (so THIS device/thread doesn't keep
+        # retrying a signature it already knows is poisoned) -- only the
+        # PROCESS-GLOBAL, cross-device g_bindings publish is gated on
+        # process_binding_cacheable. The thread cache has its own,
+        # narrower gate (thread_binding_cacheable) for a different case --
+        # see test_capture_skip_also_clears_thread_binding_cacheable.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        insert_call = dispatch.index("g_thread_bindings.insert(ctx.device, sig, binding);")
+        guard_start = dispatch.rindex("if (", 0, insert_call)
+        guard_line = dispatch[guard_start:insert_call]
+        self.assertIn("mode != GGML_HIP_DISPATCH_MODE_RECORD", guard_line)
+        self.assertIn("thread_binding_cacheable", guard_line)
+        self.assertNotIn("process_binding_cacheable", guard_line)
+
+    def test_capture_skip_also_clears_thread_binding_cacheable(self):
+        # GPT follow-up review (2026-08-22): the process-global fix alone
+        # left a real gap -- caching native into g_thread_bindings during a
+        # capture-time skip would permanently starve that exact (thread,
+        # device, signature) triple of ever being measured, even long after
+        # capture ends, since capture is not a permanent condition the way
+        # a measurement failure is.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_branch_start = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        capture_branch_end = dispatch.index("} else {", capture_branch_start)
+        capture_branch = dispatch[capture_branch_start:capture_branch_end]
+        self.assertIn("process_binding_cacheable = false;", capture_branch)
+        self.assertIn("thread_binding_cacheable  = false;", capture_branch)
+
+    def test_measurement_failure_does_not_clear_thread_binding_cacheable(self):
+        # The opposite of the capture case: a fatal measurement failure is
+        # a PERMANENT condition for this device/process, so it must leave
+        # thread_binding_cacheable alone (still true) -- unlike the
+        # capture-skip branch, nothing in the non-capturing tune branch may
+        # assign thread_binding_cacheable at all.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {")
+        capture_check = dispatch.index("ggml_hip_stream_is_capturing(lc.stream)", tune_start)
+        else_start = dispatch.index("} else {", capture_check)
+        else_end = dispatch.index("#ifdef GGML_HIP_DISPATCH_REPLAY", else_start)
+        non_capture_branch = dispatch[else_start:else_end]
+        self.assertIn("process_binding_cacheable = !tuning.measurement_failure;", non_capture_branch)
+        self.assertNotIn("thread_binding_cacheable", non_capture_branch)
+
+    def test_single_flight_lock_held_across_impl_call_and_failure_readback(self):
+        # GPT follow-up review (2026-08-22): a race existed where the impl's
+        # own single_flight_lock released before the public wrapper's
+        # g_results re-check ran, letting a second thread's failure->success
+        # replacement land in between -- making the wrapper report
+        # measurement_failure=false for an invocation that actually failed.
+        # Fix: the lock moves to the wrapper and covers both the impl call
+        # and the re-check; the impl itself must not acquire it at all.
+        tuner = TUNER.read_text(encoding="utf-8")
+        impl_start = tuner.index(
+            "static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl("
+        )
+        impl_end = tuner.index("ggml_hip_tuner_resolution ggml_hip_tuner_resolve(", impl_start)
+        impl = tuner[impl_start:impl_end]
+        self.assertNotIn("single_flight_lock", impl)
+
+        wrapper = tuner[impl_end:]
+        wrapper_end = wrapper.index("void ggml_hip_tuner_flush(")
+        wrapper = wrapper[:wrapper_end]
+        lock_decl = wrapper.index(
+            "std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);"
+        )
+        impl_call = wrapper.index("ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc)")
+        readback = wrapper.index("g_results.find(dispatch_digest)")
+        self.assertLess(lock_decl, impl_call)
+        self.assertLess(impl_call, readback)
+
+    def test_hardware_and_dispatch_identity_remain_device_ordinal_free(self):
+        # The correct fix keeps identical GPUs sharing a portable key --
+        # adding device ordinal to the identity would silently throw away
+        # standards 10.2 (a real regression path GPT's design explicitly
+        # warned against) instead of fixing the actual defect.
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        self.assertNotIn("ggml_hip_hardware_digest(hw, ctx.device)", dispatch)
+        self.assertNotIn("ggml_hip_dispatch_digest(hardware_digest, signature_digest, ctx.device", dispatch)
 
 
 if __name__ == "__main__":

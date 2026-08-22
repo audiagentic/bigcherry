@@ -4,13 +4,29 @@ Environment setup, build commands, test invocations, and operational procedures.
 
 ## Environment — brutus (`10.10.100.10`)
 
-**SMB share mapping:**
+**`~/bigcherry` is the live tree — a real local git clone.** Git operations
+(fetch/checkout/status) over the old SMB-mounted path (below) were too slow
+and unreliable over the network, so brutus builds from its own local
+checkout now, not from the share. This means it can drift from what's
+pushed if someone hand-edits there: **treat it as a normal git worktree,
+not a build cache** — before building, `git status` must be clean and
+`git log -1` must match what you expect (fetch/pull first if not); after
+any hands-on edit there, commit and push before moving on, or `git stash`
+it. An uncommitted edit left sitting in `~/bigcherry` between sessions is
+easy to lose and easy to mistake for already-landed work later (this has
+happened at least once: RE27's replay-classification restore sat
+uncommitted here for two days after already being re-committed from a
+copy pulled in a prior session).
+
+**SMB share — file transfer only, never git/build:**
 
 ```text
 J:\development\llmhosts\bigcherry  ==  /mnt/vault/development/llmhosts/bigcherry
 ```
 
-No copy or sync step needed — edit on either side, build on the server.
+Still useful for copying a build artifact or doc back and forth by hand.
+Do not `git` anything against this path, and do not point cmake at it for
+a brutus build — use `~/bigcherry` for that.
 
 **Device indices:** 0,1 = gfx1100 (RX 7900 XTX), 2 = gfx1201 (RDNA4), 3 = gfx1030 (RDNA2)
 
@@ -29,11 +45,9 @@ No copy or sync step needed — edit on either side, build on the server.
   scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
-- **`~/bigcherry` on brutus is a stale copy** — ignore or delete it. The live tree is under `/mnt/vault`.
-
 ## Standard build cycle
 
-`$BC` = `/mnt/vault/development/llmhosts/bigcherry` (or `J:\development\llmhosts\bigcherry`).
+`$BC` = `~/bigcherry` on brutus.
 
 ### Linux — all three GPUs
 

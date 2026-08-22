@@ -1,0 +1,132 @@
+{
+  "patch_id": "1204_rd08_q6k_mmvq_vdr2",
+  "records": [
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "base_ref": "b10502",
+      "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+      "build_identities": {
+        "replay": {
+          "compile_commands_digest": "e2b71c4855caa8660294d5f55873440c11b1d13474e49c015f336d34a27a98bf",
+          "compile_verification_id": "458d831e9ec5a99638302fe578453799",
+          "effective_build_id": "c9ac68d81e4c634f9dd6346cf8f725c2",
+          "hip_compile_commands_digest": "b8f93907c7df90ad8f7328c860885a03685683457cc057e5b0126043971dee7f",
+          "runtime_artifacts": {
+            "ggml-base.dll": "8b97b2b5dd3101eb760e50b7be14f1ea6cc4542d4ea6ab076ebdd739d21e1fd6",
+            "ggml-cpu.dll": "10de8a6e37df585463704afc367165310d245268f2854c1a1461bfa252ea3652",
+            "ggml-hip.dll": "260dff7705c5e8725f282e97e23d8cde6949fdd5ce431ec0b127764fa64442ce",
+            "ggml.dll": "9f480af03d7abe633881fa79af428e1d3109ee42ecfdeb1d536090815df79a21",
+            "llama-bench-impl.dll": "dfa3aeeecd411d984ec25f8752850ea7791df735f8ec3b67a24bc5456502c5a0",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "d6ee2893426cfecd5a8953d242f2f5c6e8819b5d5f81c5a280a99c4905c78ec1",
+            "llama-server-impl.dll": "eef59e0847b3ce00ffe5a7967407ad5ad42deb43a409d4e7d1bd8e28c159826e",
+            "llama-server.exe": "80bbc922b3362d4a3ac42483b233515e82c22c0c391222ebe95d173d8c5c98bb",
+            "llama.dll": "94d432501d9885ef8f479a4656f16884290f0a0a3603c98b0b634ee5c62aab24",
+            "mtmd.dll": "f1c9c006ad4226230bf30fcf941a945ab46b9a0c231432c0e33157f4f9d82579"
+          },
+          "runtime_bundle_hash": "1a169827ade97d5419d6cf9892245944"
+        },
+        "stock": {
+          "compile_commands_digest": "94136cf724bb3aba162d6a3e7fb765078c19ad59f3caf3ba103e5d1d155132cf",
+          "compile_verification_id": "b5996f990f5d8ec0550ebc99b84a3944",
+          "effective_build_id": "d1087a891aad9f709fc1471a3a1ad967",
+          "hip_compile_commands_digest": "ff91495de1d9442021ab1eff49250e2e46de4e66829455de881e5e84828e09d6",
+          "runtime_artifacts": {
+            "ggml-base.dll": "a3179b50e7fcec3ae78a158b16eb3518c57991267e81c0861fde8e22416df3d6",
+            "ggml-cpu.dll": "4202a4c61b732387e2b5c35c2d8e62f695187bbb099dc2029fe46724b3dcb364",
+            "ggml-hip.dll": "c7258f28d563a5854a5a141cdbbd9d0db9a7c6aeb240208b68ce7d5c9f537de8",
+            "ggml.dll": "8b97e9a56d83b6ec7585eda0956a196f29c71404841ff89e48441b2af0522d19",
+            "llama-bench-impl.dll": "a3a65799bf60939b128b3f2aba31e4da7c42bc72500d062ba3649baa734314cd",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "c7cd150da447d29d6aedcd5a4373fc955d1f672594430961cf261e304946cc1a",
+            "llama.dll": "9ed867fe080a3505c1fc29a094db60603d01c954f7d69c0d8ab913fbc9ede74c"
+          },
+          "runtime_bundle_hash": "457303a5c3a453b2dae5eca8241a24ca"
+        },
+        "tune": {
+          "compile_commands_digest": "94bc6a2d86439e190fe24dd63b78c9536f2f89f37428425b1f6ae8bf732cf01a",
+          "compile_verification_id": "c23c8ab4d2d415ae769d1a63f62ade28",
+          "effective_build_id": "4d24343df1b880d1b9b828aa37614f3c",
+          "hip_compile_commands_digest": "894e10061357cef2cdec78b3bdb760c8d859e5fc4d4c524344ad01db05c24b82",
+          "runtime_artifacts": {
+            "ggml-base.dll": "8b97b2b5dd3101eb760e50b7be14f1ea6cc4542d4ea6ab076ebdd739d21e1fd6",
+            "ggml-cpu.dll": "10de8a6e37df585463704afc367165310d245268f2854c1a1461bfa252ea3652",
+            "ggml-hip.dll": "7a2fea381dc41ea856036f423b615e18a6f9500445fa9d04732631a3dfe750ca",
+            "ggml.dll": "9f480af03d7abe633881fa79af428e1d3109ee42ecfdeb1d536090815df79a21",
+            "llama-bench-impl.dll": "dfa3aeeecd411d984ec25f8752850ea7791df735f8ec3b67a24bc5456502c5a0",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "d6ee2893426cfecd5a8953d242f2f5c6e8819b5d5f81c5a280a99c4905c78ec1",
+            "llama-server-impl.dll": "8bed25a649aac55ad55d24850d6dae1c17700353e57f1330f8eaa87d6facb569",
+            "llama-server.exe": "80bbc922b3362d4a3ac42483b233515e82c22c0c391222ebe95d173d8c5c98bb",
+            "llama.dll": "94d432501d9885ef8f479a4656f16884290f0a0a3603c98b0b634ee5c62aab24",
+            "mtmd.dll": "f1c9c006ad4226230bf30fcf941a945ab46b9a0c231432c0e33157f4f9d82579"
+          },
+          "runtime_bundle_hash": "683808fde8fad3fd2f6f9915d5b169c9"
+        }
+      },
+      "campaign_artifacts": [
+        {
+          "path": "status.json",
+          "sha256": "6a4fb77229d75aa10575d3bc5fa9858ab97e533fa6891406e02c4da4f886e3bb"
+        },
+        {
+          "path": "bench.json",
+          "sha256": "fc5d500c6febee91740dbdae52e28574237abe78dc35da7c4efacd7adf7c05a5"
+        },
+        {
+          "path": "report.md",
+          "sha256": "e90d54b8d7937537e3c21d7f2b9c396ab2a7b132fef917fb06883d6bf925fc41"
+        },
+        {
+          "path": "tune.jsonl.measurements.jsonl",
+          "sha256": "792a369f6beab3d396171f23b19a6e8e1fada5af519a1df4305a048931e9cc8a"
+        },
+        {
+          "path": "promoted.jsonl",
+          "sha256": "fef31b4d814b94be6bd85d698991a00c1b8a5397aae393c616370a8a24761f92"
+        },
+        {
+          "path": "coverage.json",
+          "sha256": "59f9897e0c9216ed115a8fc8a12e2e0f273ef6876739e2fbe1a1e3d2a2144c87"
+        },
+        {
+          "path": "dispatch.cache",
+          "sha256": "ba0f7122265d6451ea56c08e71591e11a9e138cca53e00efe235e288fa0ee178"
+        }
+      ],
+      "campaign_identity_digest": "ad430c8b4809b80403d2e8b6623320ad079dcd6262d07dd10479f35f54afb0c6",
+      "correctness": {
+        "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+        "campaign_identity_digest": "ad430c8b4809b80403d2e8b6623320ad079dcd6262d07dd10479f35f54afb0c6",
+        "detail": "",
+        "disposition": "unknown",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "",
+        "patch_id": "1204_rd08_q6k_mmvq_vdr2",
+        "patch_validation_subject_digest": "15e530ea59fc9aa5c86816148ad5dc80396ccc5670878cd6478d324e25a06ab7",
+        "patched_source_tree": "5b2782c7cfa87609743e431ba74328f5592d1d0e",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "framework_baseline_digest": "61a2eb8e50042a6734b6aaaa3cdfa96bc359f02f5b438c4b85ebe77d8b37719c",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "patch_id": "1204_rd08_q6k_mmvq_vdr2",
+      "patch_implementation_digest": "2292a66d8452bc567e2e7ae3bf149aded531f90a862b94404c112fd388eef047",
+      "patch_validation_subject_digest": "15e530ea59fc9aa5c86816148ad5dc80396ccc5670878cd6478d324e25a06ab7",
+      "patched_source_tree": "5b2782c7cfa87609743e431ba74328f5592d1d0e",
+      "record_schema_version": 1,
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete"
+    }
+  ],
+  "schema_version": 1
+}

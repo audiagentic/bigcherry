@@ -1,0 +1,605 @@
+# BigCherry Experiment Contracts (EC01/EC02). One [contract.<id>] table per
+# contract, loaded by tools/bigcherry/experiment_contract.py:load_contracts().
+# Schema, field semantics, and rationale: docs/reference/BigCherry_Experiment_Contract_Implementation_Guide.md
+# and docs/planning/active/ec-contracts/EC01.md.
+#
+# EC02 backfill (2026-08-20): of the 15 materialized 1200-1221 RD-prefixed
+# transforms, only the 5 below have a hypothesis.family that fits the CLOSED
+# five-value matmul-dispatch-family enum (autotune_schema.FAMILIES --
+# mmvq/mmq/mmvf/mmf/blas, "a major algorithmic [matmul] path", per this
+# guide's own non-negotiable "never redefined here" rule). The other 10
+# materialized patches (RD19/RD20/RD04/RD05/RD06/RD13/RD22/RD26/RD39-42/RD43/
+# RD44/RD50) are genuinely NOT matmul-family-dispatch optimizations -- they
+# touch graph fusion detection, flash-attention (its own algorithmic path,
+# outside the 5-value enum), tensor-parallel topology, device-graph
+# scheduling, or SSM/GDN kernels. Forcing one of the 5 family values onto
+# them would misrepresent what they actually are. See EC02's plan-item notes
+# for the full per-patch accounting and the schema-scope finding this
+# produced (a real gap for a future EC/RE item, not an oversight here).
+
+[contract.RD08-Q6K-MMVQ-VDR2]
+title = "RD08: Q6_K mmvq VDR=2 decode kernel (amortized dp4a loads)"
+
+[contract.RD08-Q6K-MMVQ-VDR2.source]
+source_id = "stew675-rdna-boosts"
+commits = ["4591cc9806d24c5151a35007d24b69550df93e32"]
+atomic_part = "1204_rd08_q6k_mmvq_vdr2"
+
+[contract.RD08-Q6K-MMVQ-VDR2.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Processes both 8-element chunks of a Q6_K vec_dot per call (4 dp4a ops instead of 2, half the loop iterations for the same row) -- fork claims bit-identical output to the VDR=1 kernel with modest decode gains since decode is DRAM-bound, not compute-bound."
+
+[contract.RD08-Q6K-MMVQ-VDR2.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD08-Q6K-MMVQ-VDR2.correctness]
+bit_identical = "required"
+
+[contract.RD08-Q6K-MMVQ-VDR2.acceptance]
+target_kernel_gain_pct = 0.3
+max_control_regression_pct = 1
+
+[contract.RD12-PAIRED-MMVQ-DUAL]
+title = "RD12: fuse paired mmvq matmuls (K/V projections) over a shared activation"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.source]
+source_id = "stew675-rdna-boosts"
+commits = ["44b51c66a210053b12bdfcf1183a6b175878b9c8"]
+atomic_part = "1205_rd12_paired_mmvq_dual_output"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "K and V projections in an attention layer run two mmvq matmuls over the same activation with the same output shape; fusing them into one launch (second weight as a fusion 'gate' writing a separate dst_gate output) amortizes the shared-activation load. Fork claims bit-identical vs unfused, small positive tg64 numbers."
+
+[contract.RD12-PAIRED-MMVQ-DUAL.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD12-PAIRED-MMVQ-DUAL.correctness]
+bit_identical = "required"
+
+[contract.RD12-PAIRED-MMVQ-DUAL.acceptance]
+target_kernel_gain_pct = 0.3
+max_control_regression_pct = 1
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD]
+title = "RD17: fold MoE top-k routing weights into the down-projection MMVQ epilogue"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["5e545b7da39f5abfb2b607922013009c38fd5cd0"]
+atomic_part = "1207_rd17_moe_topk_down_fold"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Folds the MoE top-k routing-weight MUL into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["moe_decode", "moe_prefill"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.correctness]
+ppl_equality = "required"
+
+[contract.RD17-MOE-TOPK-DOWN-FOLD.acceptance]
+target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+
+[contract.RD21-GFX1151-MMVQ-NWARPS]
+title = "RD21: gfx1151 (RDNA3_5) mmvq nwarps=2 table for Q8_0 decode"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1818c3b3704a623e33d73b6cb0b633400ef70b14"]
+atomic_part = "1208_rd21_gfx1151_mmvq_nwarps_table"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.hypothesis]
+family = "mmvq"
+expected_effect = "performance"
+rationale = "gfx1151 (Strix Halo iGPU, RDNA3_5) previously fell into the RDNA2 mmvq table; a dedicated table with nwarps=2 for Q8_0 decode matmuls was fork-swept at ~+0.6% decode. HARDWARE-DEFERRED: no gfx1151 device exists on Brutus (gfx1100/gfx1201/gfx1030 only) -- this contract's positive-lane performance claim CANNOT be evaluated until gfx1151 hardware is available; only the no-regression/non-selection proof on existing hardware is currently runnable (RD21's own acceptance standard: no unsupported extrapolation)."
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+weight_types = ["q8_0"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.correctness]
+backend_reference = "required"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.source-evidence]
+metric = "decode_tps"
+value_pct = 0.6
+hardware = "gfx1151"
+workload = "Q8_0 decode (fork sweep)"
+
+[contract.RD21-GFX1151-MMVQ-NWARPS.acceptance]
+target_kernel_gain_pct = 0.6
+max_control_regression_pct = 1
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD]
+title = "RD07: Q6_K MMQ prefill fold/hoist (from the RD05/RD06/RD07 combined patch)"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1203_rd050607_rdna4_wmma_fa_q6k_mmq (RD07 sub-piece only -- RD05/RD06 are RDNA4 WMMA flash-attention correctness/config work, outside the mmq family and NOT covered by this contract)"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Q6_K MMQ fold/hoist prefill performance work, one of three logically separate changes materialized atomically in patch 1203 (guide Appendix B rule: one patch file is not necessarily one hypothesis). CO-TENANCY WARNING: RD07 co-tenants BigCherry framework patches 0300/1000 in the same MMQ code region and must be re-verified against HI71's dense-shape-aware eligibility rules, not assumed to merge textually clean forever."
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.correctness]
+backend_reference = "required"
+
+[contract.RD07-Q6K-MMQ-PREFILL-FOLD.acceptance]
+max_control_regression_pct = 1
+
+# EC16 backfill (2026-08-20): the 12 remaining logical hypotheses across the
+# 10 previously-uncovered patches, now backfillable via the [target] section
+# (target.kind orthogonal to hypothesis.family -- see experiment_contract.py's
+# TARGET_KINDS). 1203's RD05/RD06 sub-pieces get separate contracts from RD07
+# (already backfilled by EC02) per the guide's "one patch is not necessarily
+# one hypothesis" rule; RD39/RD40/RD41/RD42 get ONE combined contract (not
+# four) because they are the opposite case -- the source's own docstring says
+# they were "never meant to be enabled independently" and are causally
+# coupled, matching external-sources.toml's own single tracked entry for them.
+
+[contract.RD19-SINGLE-GPU-META-BYPASS]
+title = "RD19: skip the Meta device wrapper with a single GPU"
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.source]
+source_id = "stew675-rdna-boosts"
+commits = ["3c48ecd635022522b41a622aae28b565497abef5"]
+atomic_part = "1200_rd19_single_gpu_meta_bypass"
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.target]
+kind = "orchestration"
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.hypothesis]
+expected_effect = "performance"
+rationale = "The Meta device wrapper splits the graph into subgraphs at every partial-split node even with a single GPU, where no splitting is possible -- multiplying per-token launch overhead and clearing the Q8_1 quantize cache between subgraphs. Uses the plain device when n_devices==1; multi-GPU path untouched. Fork-reported (gfx1201, Qwen3.6-27B-Q6_K, BF16 KV, tg64): +1.4-1.8% across context depths. Fork's own number, not BigCherry-reproduced yet."
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.correctness]
+backend_reference = "required"
+
+[contract.RD19-SINGLE-GPU-META-BYPASS.acceptance]
+target_kernel_gain_pct = 1.4
+max_control_regression_pct = 1
+
+[contract.RD20-ATTN-GATE-TP-SPLIT]
+title = "RD20: align attn_gate TP split granularity with attn_q"
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.source]
+source_id = "stew675-rdna-boosts"
+commits = ["3b200b259c48a688929cae6bfe1048a60543bc67"]
+atomic_part = "1201_rd20_attn_gate_tp_split"
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.target]
+kind = "tp_topology"
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.hypothesis]
+expected_effect = "correctness"
+rationale = "CORRECTNESS, not performance (EC02 Appendix-B rule for this class): attn_gate.weight previously split at granularity 1 while the attn_q it's multiplied against split head-aligned -- with 3+ GPUs the head-aligned split can round a device's share to zero, aborting on incompatible split states. Fix gives attn_gate the same head-aligned granularity as attn_q. Needs 2+ GPU bench (Brutus 0/1 gfx1100) to prove 1/2/3+ GPU equality; the tuner cannot discover or reproduce this itself."
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["multi_gpu_copy"]
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.correctness]
+backend_reference = "required"
+
+[contract.RD20-ATTN-GATE-TP-SPLIT.acceptance]
+max_control_regression_pct = 1
+
+[contract.RD04-BF16-FLASH-ATTN-TILE]
+title = "RD04: native-BF16 flash-attn tile kernel series (net of 7 fork commits)"
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.source]
+source_id = "stew675-rdna-boosts"
+commits = ["8623179e1e49f8716de2f1237164729f44a4f41b"]
+atomic_part = "1202_rd04_bf16_flash_attn_tile"
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.target]
+kind = "attention"
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.hypothesis]
+expected_effect = "both"
+rationale = "The flash-attn TILE kernel reads BF16 K/V natively on RDNA3+ with FP32 accumulation (F16 accumulators flush small values at deep context; fork PPL 15.18 vs 15.59 F16-cache vs 14.97 F32 @ 32k). Packed BF16 PV is the only native-BF16 VKQ path. ISOLATED BENCH already run 2026-08-20 (local 7900 GRE gfx1100, Ministral-3-14B Q4_K_M, bf16 KV+FA): tg128 +3.39% (no arm overlap); pp512 characterization shows no measured prompt cost at pp>=1024 (small-batch noise, not a regression). Cross-arch repeat + correctness matrix pending before promotion."
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode", "long_context"]
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.correctness]
+backend_reference = "required"
+ppl_equality = "required"
+
+[contract.RD04-BF16-FLASH-ATTN-TILE.acceptance]
+target_kernel_gain_pct = 3.39
+max_control_regression_pct = 1
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS]
+title = "RD05: RDNA4 WMMA flash-attn correctness/synchronization barriers"
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1203_rd050607_rdna4_wmma_fa_q6k_mmq (RD05 sub-piece only -- one fork commit split into 3 contracts per the guide's Appendix-B rule; RD06 is the RDNA4 WMMA config half, RD07 is the Q6_K MMQ fold/hoist half, already backfilled by EC02)"
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.target]
+kind = "attention"
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.hypothesis]
+expected_effect = "correctness"
+rationale = "CORRECTNESS ONLY -- no performance claim (must be proven before RD06's RDNA4 WMMA config work can be trusted on top of it). Extracts race/barrier-repair semantics from the mixed commit as a standalone logical patch, independent of the RDNA4 config experiment. Per the plan item's own standard: fail closed on correctness, no performance reliance before this prerequisite passes."
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.correctness]
+backend_reference = "required"
+
+[contract.RD05-WMMA-FA-CORRECTNESS-BARRIERS.acceptance]
+max_control_regression_pct = 1
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG]
+title = "RD06: expanded RDNA4 WMMA flash-attention configurations"
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1203_rd050607_rdna4_wmma_fa_q6k_mmq (RD06 sub-piece only -- see RD05's contract for the split rationale)"
+prerequisites = ["RD05-WMMA-FA-CORRECTNESS-BARRIERS"]
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.target]
+kind = "attention"
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.hypothesis]
+expected_effect = "performance"
+rationale = "gfx1201-focused performance experiment from the configuration portions of the mixed commit, only valid once RD05's correctness barriers are proven. Per-shape/head-dimension/softcap performance work; must verify gfx1100 does not select or regress (RDNA4-specific config, not a general FA change)."
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode", "prefill"]
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.correctness]
+backend_reference = "required"
+
+[contract.RD06-RDNA4-WMMA-FA-CONFIG.acceptance]
+target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION]
+title = "RD13: fuse mul_mat + add through a view (reshape) node"
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.source]
+source_id = "stew675-rdna-boosts"
+commits = ["0153d580dbc2caa8f29b55ad8ddc7088b4c457dd"]
+atomic_part = "1206_rd13_mul_mat_add_view_fusion"
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.target]
+kind = "graph_fusion"
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.hypothesis]
+expected_effect = "both"
+rationale = "The existing mul_mat+add fusion only matched an add DIRECTLY after the matmul; SSM models (e.g. qwen35moe) insert a RESHAPE view between the output projection and the residual add, so the fusion never fired and every layer ran a separate add kernel. Accepts one RESHAPE node between matmul and add via ggml_can_fuse_subgraph, verifying the view's src[0] is the matmul node."
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["moe_decode"]
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.correctness]
+backend_reference = "required"
+
+[contract.RD13-MUL-MAT-ADD-VIEW-FUSION.acceptance]
+target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT]
+title = "RD22: back out integrated-GPU host buffers on HIP (fork divergence from PR #24233)"
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.source]
+source_id = "stew675-rdna-boosts"
+commits = ["507f2e26719b33a7c82429609bc7806aa60f27e6"]
+atomic_part = "1209_rd22_integrated_gpu_host_buffer_backout"
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.target]
+kind = "hardware_correctness"
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.hypothesis]
+expected_effect = "correctness"
+rationale = "HARDWARE-SCOPED CORRECTNESS, no performance claim. Upstream PR #24233 restored prop.integrated on HIP builds, enabling the CUDA host-buffer (zero-copy UMA weights) path on APUs; on the fork author's Strix Halo iGPU that path corrupts full-model results under async execution (PPL 5.9243 -> 8.51+ without HIP_LAUNCH_BLOCKING). Forcing integrated=false restores async-safe operation. No-op on discrete GPUs -- the host-buffer path is never selected there. Only promote with real integrated-GPU output/PPL evidence; never generalize globally from discrete-only tests."
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.correctness]
+backend_reference = "required"
+ppl_equality = "required"
+
+[contract.RD22-IGPU-HOST-BUFFER-BACKOUT.acceptance]
+max_control_regression_pct = 1
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY]
+title = "RD26a: decode vs speculative-verify bit-identity (base-standalone hunks)"
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.source]
+source_id = "stew675-rdna-boosts"
+commits = ["b2655d381b9575d644ebef794869165ede14b3a3", "d152888fc34419c69fb946581f29f927a475b5fa"]
+atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (base-standalone subset of a 5-commit determinism cluster -- fattn-tile/RDNA4-mmvq/fused-SSM pieces remain composition-gated on 1202/1203, not covered by this contract)"
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.target]
+kind = "determinism"
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.hypothesis]
+expected_effect = "correctness"
+rationale = "CORRECTNESS/DETERMINISM ONLY, no performance claim (EC02 Appendix-B rule). Makes decode (n_q=1) and speculative-verify (n_q=n_draft+1) batches produce bit-identical logits -- a soundness precondition for speculative acceptance checks. This contract covers only the base-standalone (non-FA, CPU sgemm.cpp) hunks; do not claim RD26 complete from this contract alone -- the fattn-tile/RDNA4-mmvq/fused-SSM pieces need 1202 (RD04) and 1203 (RD05/06) landed and retained first."
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["mtp_verify"]
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.correctness]
+bit_identical = "required"
+
+[contract.RD26-DECODE-VERIFY-BIT-IDENTITY.acceptance]
+max_control_regression_pct = 1
+
+[contract.RD39-42-STREAM-MOE-OVERLAP]
+title = "RD39+RD40+RD41+RD42: stream-honoring cuBLAS handles, concurrent-branch scratch, and MoE shared-expert overlap"
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["367c4d04f409f89db2512d4d035915ccaa84c42d"]
+atomic_part = "1215_rd394041_amd_stream_moe_overlap (ONE contract for all four plan items -- the source's own docstring: RD39/RD40/RD41 are declared prerequisites of each other and of RD42, causally coupled in one PR diff, 'never meant to be enabled independently'; splitting into four contracts would misrepresent this as independently-triggerable work)"
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.target]
+kind = "orchestration"
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.hypothesis]
+expected_effect = "both"
+rationale = "ggml_cuda_op_mul_mat hardcoded stream 0 on the non-split path (RD39 fix) and shared one cuBLAS handle across streams, corrupting concurrent GEMM workspace (RD40 fix); RD41 replaces fragile branch-node-lifetime interleaving with a dedicated scratch buffer; RD42 forks the MoE shared-expert onto an aux stream during decode, joined at the shared-expert+routed-branch add, gated to small batches. Upstream-fork measured (Qwen3.6-35B-A3B Q4_K_M, tg128): +7.4%. Output claimed byte-identical to sequential."
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["moe_decode"]
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.correctness]
+bit_identical = "required"
+
+[contract.RD39-42-STREAM-MOE-OVERLAP.acceptance]
+target_kernel_gain_pct = 1
+max_control_regression_pct = 1
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]
+title = "RD43: keep a concurrent-region join node out of op-fusion"
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["0f0db6292a90beb3a0f753baaa766c1454799a50"]
+atomic_part = "1216_rd43_concurrent_join_fusion_guard"
+prerequisites = ["RD39-42-STREAM-MOE-OVERLAP"]
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.target]
+kind = "orchestration"
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.hypothesis]
+expected_effect = "correctness"
+rationale = "CORRECTNESS PREREQUISITE, no direct performance claim -- required before RD39-RD42's concurrency is exercised broadly. Op-fusion could absorb RD42's join add as the preceding shared-expert mul_mat's bias-add, leaving the aux stream unjoined at cudaStreamEndCapture ('capturing stream has unjoined work'). Caps the fusion horizon at the join node's index during a concurrent region; a GGML_ASSERT fires loudly if a fusion still crosses it."
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["moe_decode"]
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.correctness]
+backend_reference = "required"
+
+[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.acceptance]
+max_control_regression_pct = 1
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35]
+title = "RD44: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5"
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["6e9f948a0d8b99db2bce0a83fc021efc2064ef9b"]
+atomic_part = "1217_rd44_graph_opt_default_rdna35"
+prerequisites = ["RD39-42-STREAM-MOE-OVERLAP", "RD43-CONCURRENT-JOIN-FUSION-GUARD"]
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.target]
+kind = "orchestration"
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.hypothesis]
+expected_effect = "performance"
+rationale = "Policy/default flip, last in the AMD-STREAM chain -- defaults the graph-optimization pass (previously opt-in via env var) to enabled on gfx1151 (RDNA3.5) specifically; every other architecture keeps prior behavior. HARDWARE-DEFERRED: needs gfx1151, which Brutus does not have (gfx1100/gfx1201/gfx1030 only) -- behavior-neutral on all three Brutus architectures (the RDNA3.5 branch cannot resolve), so only the no-regression proof is currently runnable. Upstream-fork measured (gfx1151, Qwen3.6-35B-A3B UD-Q4_K_M): tg128 +7.3%, VLM decode +8.7%."
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.correctness]
+backend_reference = "required"
+
+[contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.acceptance]
+target_kernel_gain_pct = 7.3
+max_control_regression_pct = 1
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE]
+title = "RD50: chunked fused GatedDeltaNet recurrence for RDNA3.5"
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["2b9497ff2ea22e5e94aa275b48efaf1dc10f57f2"]
+atomic_part = "1221_rd50_gdn_chunked_recurrence (RD51/RD52/RD53 subsumed -- inline RDNA3.5-gated micro-decisions inside one kernel body, not independently anchorable, per the patch module's own bake-in rationale)"
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.target]
+kind = "ssm_gdn"
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.hypothesis]
+expected_effect = "both"
+rationale = "Chunks the delta-rule recurrence (WY/UT transform) into GDN_CHUNK=32 token blocks, folding token-by-token rank-1 state updates into dense matmuls over LDS with state held in registers across a chunk. AMD reports 1.89x GDN-op speedup and up to +20% E2E at ubatch>=4096 on the restricted shape this kernel targets (scalar gate only, keep_rs==false, S_v==128, RDNA3.5 only). Additive and narrowly gated -- every other shape/arch falls through to the existing dispatch unchanged."
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["gdn_prefill"]
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.correctness]
+backend_reference = "required"
+ppl_equality = "required"
+
+[contract.RD50-GDN-CHUNKED-RECURRENCE.acceptance]
+target_kernel_gain_pct = 20
+max_control_regression_pct = 1

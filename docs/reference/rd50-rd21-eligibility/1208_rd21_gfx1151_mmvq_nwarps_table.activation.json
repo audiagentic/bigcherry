@@ -1,0 +1,15 @@
+{
+  "activation": {
+    "detail": "Eligibility predicate 'GGML_CUDA_CC_IS_RDNA3_5' was false for all available architectures ['gfx1100', 'gfx1201'], so the patch cannot activate on the hardware used by this validation. Required true architecture(s): ['gfx1151']. Supplied predicate results: true=['gfx1151'], false=['gfx1100', 'gfx1201'].",
+    "mechanism": "eligibility-gate:GGML_CUDA_CC_IS_RDNA3_5",
+    "status": "not_applicable"
+  },
+  "evidence_method": "compiled the verbatim GGML_CUDA_CC_IS_RDNA3_5 macro text from vendor/llama.cpp/ggml/src/ggml-cuda/common.cuh (lines 50-90, this session pin) with the real vendored HIP clang and evaluated it for cc = GGML_CUDA_CC_OFFSET_AMD + 0x<gfxNNNN> per architecture, matching ggml-cuda.cu device-probe cc computation.",
+  "patch": "1208_rd21_gfx1151_mmvq_nwarps_table",
+  "predicate_results": {
+    "gfx1100": false,
+    "gfx1151": true,
+    "gfx1201": false
+  },
+  "verdict": "gate-verified-blocked"
+}

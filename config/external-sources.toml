@@ -1,0 +1,460 @@
+# BigCherry external-source registry.
+#
+# Every patch that backports code from an external repository, fork branch,
+# or upstream PR is declared here so that a future agent can answer, without
+# re-deriving anything: WHERE a patch came from, WHICH reviewed snapshot it
+# came from, and HOW to check whether the source has moved, been rebased, or
+# landed in mainline (making the patch redundant on the next pin bump).
+#
+# Conventions (mirroring RD01's provenance rules):
+#   - `locator` (branch/PR names) are LOCATORS ONLY, never identity. The
+#     authoritative identities are the commit SHAs in `snapshots` and
+#     `tracked`.
+#   - `snapshots` are reviewed points of the source, newest first. Exactly
+#     one has `active = true` per source. A branch rebase or new head does
+#     NOT silently mutate an active snapshot; it is a finding that requires
+#     a new snapshot (see the stew675 v1 -> v2 history below) plus a re-audit.
+#   - `tracked` lists every logical change taken from (or intentionally
+#     skipped in) the source. Each entry links a plan item and, once
+#     ported, the patch module in patches/. Cross-checked by
+#     tools/tests/test_external_sources.py.
+#
+# `python -m bigcherry sources status`  -- offline view of this registry
+# `python -m bigcherry sources check`   -- online: branch moved / rebased /
+#                                          merged to mainline / content drift
+
+version = 1
+
+[[sources]]
+id = "mrlordcat-rdna-lab"
+repo = "https://github.com/MrLordCat/llama.cpp-rdna-lab"
+locator = "master (renamed from llama.cpp-with-GUI; GitHub redirects the old name transparently)"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """Personal RDNA-tuning fork cited by plan items RD69-RD76 (the FORK-*
+cluster in the backlog batch). Standalone project (fork:false relative to
+llama.cpp -- not a GitHub-fork relationship), MIT-licensed, dual RX 9070 XT
+(RDNA4) focus, ROCm/HIP + Vulkan, PyQt6 GUI, MTP speculative decoding. An
+extremely detailed personal research log (17500+ commits, dated experiment
+docs under docs/research/experiments/E*, HYPOTHESES.md tracking H*-numbered
+hypotheses with explicit accept/reject verdicts) -- NOT a curated patch
+series; most commits are exploratory, many document REJECTED ideas with
+real negative data. Treat every candidate as needing the same "recheck
+before port" scrutiny as any other external source, more so given the
+volume of dead ends recorded here by the author's own hand.
+Verified real and active 2026-08-20 via `gh api repos/MrLordCat/llama.cpp-with-GUI`
+(confirms the rename to llama.cpp-rdna-lab transparently). Diffed against
+RD69-RD76's hypotheses 2026-08-20 (bare clone, keyword/grep search across
+full history) -- 5 of 8 items matched to a real, identifiable commit (see
+tracked entries below); RD70/RD74/RD75 found NO matching fork-original
+commit after a genuine search, see their own plan-item notes for what was
+searched and ruled out."""
+
+[[sources.snapshots]]
+label = "master-2026-08-20"
+head = "276121b7ed3414ac55c9c4d4dc170cb7cd2bba70"
+base = "276121b7ed3414ac55c9c4d4dc170cb7cd2bba70"
+reviewed-at = "2026-08-20"
+active = true
+note = "base == head deliberately, same convention as amd-ecosystem-llama-cpp: no single reviewed commit range has been chosen yet since no specific change has been identified to port. This head is just the point-in-time master tip observed when the registry gap was closed."
+
+[[sources.tracked]]
+commit = "c399423cb1e6c93149edf64f88256929133abe0e"
+title = "vulkan: guard AMD large matmul variants"
+plan-item = "RD69"
+status = "excluded"
+note = "REAL match for RD69's 'large cooperative-matrix Vulkan route' hypothesis (GGML_VK_FORCE_AMD_LARGE_MATMUL / GGML_VK_AMD_LARGE_MATMUL_VARIANT). CRITICAL: the fork's own extensive testing (E075/E076, referenced in this commit) found the naive wm32-wn32 large-matmul variant produces CORRUPTED output ('all-slash' generation) -- an invalid coopmat geometry that skipped real output work, not a genuine speedup. This commit adds a correctness guard so an invalid geometry cannot silently benchmark; after the guard, every VALID large-matmul variant tested showed NO measurable win over baseline at 32k context. RD69's premise (larger coopmat pipelines outperforming conservative routes) is falsified by the fork's own data, not confirmed. Recommend closing/rejecting RD69 rather than porting."
+
+[[sources.tracked]]
+commit = "41a8ca7858bc9540415f37877dde5cc70e435f63"
+title = "perf(mtp): keep NextN hidden states on device"
+plan-item = "RD71"
+status = "planned"
+note = "REAL, strong match for RD71's 'Independent NextN/MTP tensor placement' hypothesis. Adds LLAMA_MTP_DEVICE_HANDOFF: keeps NextN hidden-state rows backend-resident instead of round-tripping through host memory between target/draft contexts, with LLAMA_MTP_DEVICE_HANDOFF=0 as a rollback. Fork's own measured data (experiment E282, 2026-07-14): +44.1% prompt-TPS recovery in one direct negative-control comparison (1392.85 vs 966.91 tok/s), +31.83% decode in a longer real-prompt lane. 512 lines across common/speculative.cpp, src/llama-context.{cpp,h}, src/llama-graph.{cpp,h}, model files. Not merged upstream (no PR reference, fork-original)."
+
+[[sources.tracked]]
+commit = "1fcc05daf22eec3203d17867c75b08a1d4385853"
+title = "Improve Vulkan dual MTP placement"
+plan-item = "RD72"
+status = "planned"
+note = "REAL, strong match for RD72's 'four-copy Vulkan MTP handoff' hypothesis (experiment E274, 2026-07-09). Routes LLM_TENSOR_NEXTN_* tensors to the first Vulkan device for layer-split multi-GPU models (LLAMA_VK_MTP_NEXTN_MAIN_DEVICE override), disables Vulkan pipeline parallelism for NextN/MTP models (LLAMA_VK_MTP_PIPELINE_PARALLEL override) because it produced 'sched copies=4', and reduces the default MTP prefill tail window from 8192 to 512 tokens. Fork's own measured data: pre-fix sched copies=4 reduced to sched copies=1 after the fix; final long-prompt delta vs spec=none: aggregate +3.63%, prompt +2.85%, decode +24.53%. Depends on the same NextN placement territory as RD71 (commit 41a8ca78) -- read both together before porting, they may overlap or supersede each other (E274 predates E282 by 5 days). Not merged upstream."
+
+[[sources.tracked]]
+commit = "7f2e7e4a3ebf8e3b5aade75743c267f5ad7df199"
+title = "perf(hip): stable shape-fingerprint key for cuda-graph cache"
+plan-item = "RD73"
+status = "planned"
+note = "REAL match for RD73's 'warm speculative verification widths' hypothesis, though the actual mechanism differs from the item's literal framing (item says 'prebuild widths 1..n_max+1'; this commit instead fixes the cuda-graph cache KEY so recurring verify shapes reliably hit the SAME cache slot and get graph replay -- same practical outcome, different implementation). Root cause found: the graph cache was keyed by a cgraph node pointer, unstable across scheduler runs, so speculative verify decodes minted a fresh never-warmed graph slot almost every round. Fixed by keying on an FNV-1a shape fingerprint (node count + first/last node op/name/dims) instead. Fork's own measured data: verify ubatch sync 150ms -> 57ms on a 3.8k-node Qwen3.6-27B graph. Small (34 lines, one file: ggml/src/ggml-cuda/ggml-cuda.cu). Not merged upstream."
+
+[[sources.tracked]]
+commit = "5aa2f049906ef8f3e60a75d620f19adaf37e12a7"
+title = "hip: add rocWMMA include path + safe fallback for FATTN"
+plan-item = "RD76"
+status = "planned"
+note = "REAL, exact match for RD76's 'restore/benchmark rocWMMA FlashAttention on RDNA4' hypothesis. Small (29 lines), self-contained CMake-only change: GGML_HIP_ROCWMMA_FATTN already exists as an upstream llama.cpp build option (default OFF) but silently fails to find rocWMMA headers on a typical Windows/ROCm install; this commit adds real header auto-detection (checks GGML_HIP_ROCWMMA_INCLUDE_DIR then ROCM_PATH/include) plus a safe fallback warning instead of a hard build failure. Genuinely low-risk and portable -- build-system only, no kernel code touched. Does not itself prove RD76's performance hypothesis (that needs the actual gfx1201 rocWMMA-vs-native FA benchmark RD76 describes); this just makes the build option reliably usable to run that comparison. Not merged upstream."
+
+[[sources]]
+id = "amd-ecosystem-llama-cpp"
+repo = "https://github.com/AMD-Ecosystem/llama.cpp"
+locator = "master (multiple open PRs, tracked individually -- not a single branch snapshot)"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """AMD's own optimization fork, referenced across ggml-org/llama.cpp
+GitHub discussions #26349 (Set2), #26378 (Set4), #26379 (Set5), #26380 (Set6).
+Unlike stew675-rdna-boosts (one rebasing branch), work here lands as discrete
+PRs against the fork's own master, each independently open/closed/merged.
+Reviewed 2026-08-20 (validation pass for RD28-RD53): 13 fork PRs checked via
+`gh api repos/AMD-Ecosystem/llama.cpp/pulls/<n>`; none merged into
+ggml-org/llama.cpp mainline as of that review (git cherry / PR search), so
+none are ancestral to the b10502 pin. Merge SHAs recorded per tracked entry
+below are the AMD-Ecosystem fork's OWN merge commits, not upstream identity --
+re-check before every pin bump per the sources id="amd-ecosystem-llama-cpp"
+`python -m bigcherry sources check` convention."""
+
+[[sources.snapshots]]
+label = "master-2026-08-20"
+head = "58ab0a5f2ce3f426d657d55647846b03fbc1a20b"
+base = "58ab0a5f2ce3f426d657d55647846b03fbc1a20b"
+reviewed-at = "2026-08-20"
+active = true
+note = "base == head deliberately: not a frozen review-range snapshot like stew675's branch (head..base diff), since this fork moves continuously and work is tracked per-PR, not per-branch-range. This head is just the point-in-time master tip observed during the RD28-RD53 validation pass; each tracked PR below carries its own merge SHA as its real identity, independent of this snapshot."
+
+[[sources.tracked]]
+commit = "367c4d04f409f89db2512d4d035915ccaa84c42d"
+title = "ggml-cuda: overlap the MoE shared expert on a separate stream"
+plan-item = "RD39/RD40/RD41/RD42"
+status = "ported-untested"
+patch = "1215_rd394041_amd_stream_moe_overlap"
+note = "PR #36. Honor active HIP stream (RD39), per-(device,stream) cuBLAS handles (RD40), dedicated concurrent-branch scratch buffer (RD41), MoE shared-expert overlap on aux stream (RD42) -- one net patch, see the patch module docstring for why. Ported 2026-08-20 (10 edits, 2 files); isolated bench pending. Apply before 1216/1217."
+
+[[sources.tracked]]
+commit = "0f0db6292a90beb3a0f753baaa766c1454799a50"
+title = "ggml-cuda: keep the concurrent-region join node out of op-fusion"
+plan-item = "RD43"
+status = "ported-untested"
+patch = "1216_rd43_concurrent_join_fusion_guard"
+note = "PR #71. Correctness prerequisite before graph-opt/concurrency (RD39-RD42) is exercised broadly: caps op-fusion at a concurrent region's join node. Ported 2026-08-20 (2 edits, 1 file); isolated bench pending. Depends on 1215."
+
+[[sources.tracked]]
+commit = "6e9f948a0d8b99db2bce0a83fc021efc2064ef9b"
+title = "ggml-cuda: enable GGML_CUDA_GRAPH_OPT by default on RDNA3.5"
+plan-item = "RD44"
+status = "deferred-hardware"
+patch = "1217_rd44_graph_opt_default_rdna35"
+note = "PR #56. Policy/default flip, last in the AMD-STREAM chain. Needs gfx1151 hardware (not on Brutus) for the performance claim; behavior-neutral on gfx1100/gfx1201/gfx1030. Ported 2026-08-20 (1 edit, 1 file); depends on 1215+1216."
+
+[[sources.tracked]]
+commit = "f6ea7bced112691b188bd8bf21fde8ee9ee543fe"
+title = "ssm_conv: channels-major input mode to drop the delta-net transpose"
+plan-item = "RD49"
+status = "planned"
+note = "SKIPPED this pass (2026-08-20): not self-contained -- changes ggml_ssm_conv API across 9 backend files plus stride-math rewrite in src/models/delta-net-base.cpp shared by qwen35/qwen35moe/qwen3next. Needs dedicated correctness-first follow-up, not a mechanical port. Cross-reference RD24 (planned) and RD27 (existing item) -- all three touch the SSM/GDN preprocessing pipeline."
+
+[[sources.tracked]]
+commit = "2b9497ff2ea22e5e94aa275b48efaf1dc10f57f2"
+title = "CUDA: fused chunked gated_delta_net kernel (RDNA3.5)"
+plan-item = "RD50"
+status = "ported-untested"
+patch = "1221_rd50_gdn_chunked_recurrence"
+note = "ported 2026-08-20 (2 edits, 1 file, new-file content folded into gated_delta_net.cu -- patcher has no new-file primitive). RD51 (DPP row-shift reduction), RD52 (native exp2 decay) and RD53 (launch-bounds/VGPR occupancy tuning) are all the SAME commit (2b9497ff) as this row -- inline, RDNA3.5-gated micro-decisions inside the single kernel body, not independently anchorable hunks. Subsumed into this one patch rather than filed as separate tracked rows (the registry's commit-uniqueness constraint forbids duplicating this SHA); see the patch module docstring for the bake-in rationale, same discipline as 1208's RD25 bake-in. Isolated bench pending; gfx1100/gfx1201 (Brutus) can only validate the fallback path is untouched, not the RDNA3.5 performance claim."
+
+
+[[sources]]
+id = "stew675-rdna-boosts"
+repo = "https://github.com/stew675/llama.cpp"
+locator = "rdna-boosts"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """RDNA boost/experiment branch (Stew Forster). Reviewed 2026-08-15 as
+snapshot v1 (a94d563..ed89854, 23 commits), planning items RD01-RD23.
+Re-reviewed 2026-08-18 as snapshot v2: the branch was REBASED onto newer
+mainline (base a94d563 -> 4df29be4f; pin 4801e3c is 92 commits below the
+new base) and the 23 logical changes were re-committed with new SHAs.
+git patch-id verified all 23 re-committed changes are CONTENT-IDENTICAL to
+v1, so the RD porting plans remain valid; 10 NEW commits were added on top
+(tracked below as RD24-RD27 plus two deliberately excluded MTP commits).
+All kernel files (ggml-cuda/*.cu/.cuh, mmvq, fattn, norm, unary) are still
+byte-identical between our pin and the new base; only ggml-cuda.cu (+41/-5),
+src/llama.cpp (+16/-5) and src/llama-model.cpp (+32/-3) drifted.
+Mainline dedup (git cherry, 2026-08-18): 0 of the 33 commits merged into
+ggml-org/llama.cpp master at tip 6d0549831."""
+
+[[sources.snapshots]]
+label = "v2"
+head = "9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22"
+base = "4df29be4f4c3673f428170fda944a5b19f743bb8"
+reviewed-at = "2026-08-18"
+active = true
+note = "33 commits (23 re-committed v1 changes + 10 new). Rebase detected on review: v1 head ed89854 is NOT an ancestor of this head."
+
+[[sources.snapshots]]
+label = "v1"
+head = "ed89854b2aeb0e333dd61424f14af2aedaca126e"
+base = "a94d563ed801d1da1b8c2432946de07d0231bb3d"
+reviewed-at = "2026-08-15"
+active = false
+note = "Historical. Superseded by v2 after the upstream branch rebase (2026-08-18 finding). The 23 v1 commits remain the `original` SHAs in the tracked table below."
+
+# --- tracked logical changes (snapshot v2 commit = current identity;
+# --- `original` = the v1 commit, for the 23 that exist in both) ----------
+
+[[sources.tracked]]
+commit = "8623179e1e49f8716de2f1237164729f44a4f41b"
+original = "cb05a6aec20b374cbeb7382c8d0314386b6ee062"
+title = "CUDA: read BF16 K/V natively in flash-attn tile kernel with FP32 accumulation"
+plan-item = "RD04"
+status = "ported-benched"
+patch = "1202_rd04_bf16_flash_attn_tile"
+note = "representative of the seven-commit net range 8623179e1^..0581c532c; ported 2026-08-18 as a single net patch (35 edits, 5 files); fattn-tile.cu/.cuh and fattn.cu byte-identical to the fork at 0581c532c. ISOLATED BENCH 2026-08-20 (local 7900 GRE gfx1100, ROCm 7.1, Ministral-3-14B Q4_K_M, bf16 KV + FA, pp512/tg128, 5 interleaved control/test rounds, campaign lanes rd04-local-v7 vs rd04-local-t3): tg128 test +3.39% (median 48.25 vs 46.67 t/s, no overlap between arms); pp512 test -3.51% (median 1188.33 vs 1231.51 t/s, control variance 1147-1259). PP-CHARACTERIZATION (same day, prompt-only -p<pp> -n 0, pp512/1024/2048/4096 interleaved): at pp>=1024 the two arms are indistinguishable (-0.38%/-0.08%/+0.12%, overlapping spreads) and no length-dependent attention cost appears -- the pp512 delta flips sign between independent runs, i.e. it is small-batch measurement noise, not a regression. Net: clean decode gain (+3.4%), NO measured prompt cost; cross-arch repeat (Brutus) + correctness matrix pending before any promotion decision. Also fixed in fffc2ee: common.cuh helper placement bug (helpers were injected inside a function body)"
+
+[[sources.tracked]]
+commit = "b619acd3c0519cb5e446bd95659034feadcb5570"
+original = "0d66ba3964fb922b31ba84ff5785ddc73b8afedd"
+title = "CUDA: merge packed-BF16 tile kernel (BF16 Q + v_dot2) into the FP32-accum path"
+plan-item = "RD04"
+status = "ported-benched"
+note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "00b07f0042efa8dc1594764229c840ef390eba64"
+original = "a1c082a30bcd456d1d658801cc9915e1f7993542"
+title = "CUDA: make packed BF16 PV the only native-BF16 VKQ path"
+plan-item = "RD04"
+status = "ported-benched"
+note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "f18c14b10b3b81aae7b0ab3c6ed4a5914c990d66"
+original = "ff58c5be0f5badf5c73eda3aa539d68569baaa3e"
+title = "CUDA: tidy native-BF16 tile kernel formatting"
+plan-item = "RD04"
+status = "ported-benched"
+note = "formatting; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "cfc1927349aec9b01cd841d095484cf628179a22"
+original = "4febe47deef82d3dcfaa4ceb9dffa931545acca6"
+title = "CUDA: native-BF16 tile kernel for all head sizes, BF16 KQ buffer"
+plan-item = "RD04"
+status = "ported-benched"
+note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "947070cf0235630b3ddd05dc7fcd6632a1bfb346"
+original = "24b089926345aa2de630d1e216ce995f753677b9"
+title = "CUDA: fattn-tile BF16 cleanup: KQ_cs 8, merged tile loads, head-112 tests"
+plan-item = "RD04"
+status = "ported-benched"
+note = "covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "0581c532cfd4ba37000fb2eff25659d92bb1115b"
+original = "444fea6b3be566957f9da26200450b95c70846d9"
+title = "CUDA: mark v_perm operand order verified on RDNA3/RDNA4"
+plan-item = "RD04"
+status = "ported-benched"
+note = "evidence only; BigCherry must re-verify v_perm itself; covered by net patch 1202_rd04_bf16_flash_attn_tile (representative commit 8623179e1)"
+
+[[sources.tracked]]
+commit = "0153d580dbc2caa8f29b55ad8ddc7088b4c457dd"
+original = "36270950deb0ba979b131fd49fed721ed1256aec"
+title = "CUDA: fuse mul_mat + add through a view node"
+plan-item = "RD13"
+status = "ported-untested"
+patch = "1206_rd13_mul_mat_add_view_fusion"
+note = "ported 2026-08-18; isolated bench pending"
+
+[[sources.tracked]]
+commit = "299f6eaf73b5eeb888bd94eaa66122d003136e6a"
+original = "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc"
+title = "CUDA: cache quantized Q8_1 matmul inputs per graph"
+plan-item = "RD09"
+status = "planned"
+note = "foundation for RD10/RD11/RD15 (and historically RD14); the hard prerequisite of the Q8_1 family"
+
+[[sources.tracked]]
+commit = "6be52a2416a63664abbf3d677abd62973c977f04"
+original = "9961c06d17f902b1df1932260e8e7268b6158c78"
+title = "CUDA: fuse SSM gate/beta projections into one kernel"
+plan-item = "RD14"
+status = "superseded"
+note = "superseded by RD24 (4a4da30ef): the SSM pre-scan chain fuses this 9-node pattern plus the conv L2 pair into one kernel"
+
+[[sources.tracked]]
+commit = "31eb8e95cd45ecba5b60c3bffe24abd1ce124f46"
+original = "2f0d3c56a613b415196bdf5d56b4d27c85fafacb"
+title = "CUDA: fuse shared-expert output chain into one op"
+plan-item = "RD15"
+status = "planned"
+
+[[sources.tracked]]
+commit = "5004c4a4da0b7f914143821d572c82e932112c09"
+original = "3666525e204aab8f2e0116019fad2d1c793535dd"
+title = "CUDA: fuse the SSM conv-output L2 norm pair"
+plan-item = "RD16"
+status = "superseded"
+note = "superseded by RD24 (4a4da30ef): the SSM pre-scan chain fuses this L2-norm pair into one kernel"
+
+[[sources.tracked]]
+commit = "5e545b7da39f5abfb2b607922013009c38fd5cd0"
+original = "817cb6ba178933f5b62399097f5848c79f4f34e8"
+title = "CUDA: fold the MoE topk-weights MUL into the down projection"
+plan-item = "RD17"
+status = "ported-untested"
+patch = "1207_rd17_moe_topk_down_fold"
+note = "ported 2026-08-18 (9 edits, 3 files); isolated bench pending"
+
+[[sources.tracked]]
+commit = "381bba6be1ea42a8f38924fe5616aa89704605db"
+original = "9b27962071de2ccfbbe04eefb307e001fb713b1c"
+title = "CUDA: fold the norm-input Q8_1 quantize into the rms norm kernel"
+plan-item = "RD10"
+status = "planned"
+note = "depends on RD09; conflicts with BigCherry patch 1004 at the RMS_NORM node (mutually exclusive rewrites; needs a node-ownership decision)"
+
+[[sources.tracked]]
+commit = "8473c0da78daf4f525e26c8742bf590ace765726"
+original = "6e478a115001b1a6f894e91afd9cfb34efe4fd79"
+title = "cuda : fuse IMRoPE + set-rows for BF16 KV cache"
+plan-item = "RD18"
+status = "planned"
+note = "extends BigCherry patch 1004 (IMRoPE mode + BF16 set_rows, both absent from 1004); port on top of post-1004 code, keep 1004 unpromoted as the control"
+
+[[sources.tracked]]
+commit = "fbfdf64ce367c0eaa2c4e12611170ba417490525"
+original = "5024d787291108d111c861bb6b01b38db547a09f"
+title = "cuda : write Q8_1 in the gating-MUL kernel"
+plan-item = "RD11"
+status = "planned"
+note = "depends on RD09 (writes into its cache)"
+
+[[sources.tracked]]
+commit = "1818c3b3704a623e33d73b6cb0b633400ef70b14"
+original = "9f807c21d527e061febe13a2cb29dc97bdab3f4a"
+title = "cuda : gfx1151 mmvq table with nwarps=2 for Q8_0 decode"
+plan-item = "RD21"
+status = "deferred-hardware"
+patch = "1208_rd21_gfx1151_mmvq_nwarps_table"
+note = "needs gfx1151 hardware (not on Brutus); also needs RD25 (8cdf1ab08) to avoid the known MTP batch-vs-seq inconsistency. Patch materialized 2026-08-18; bench blocked on hardware"
+
+[[sources.tracked]]
+commit = "507f2e26719b33a7c82429609bc7806aa60f27e6"
+original = "85a9069a0a01a9949ee0df8bc0668c2ee0e2af12"
+title = "cuda : back out integrated-GPU host buffers on HIP (PR #24233)"
+plan-item = "RD22"
+status = "deferred-hardware"
+patch = "1209_rd22_integrated_gpu_host_buffer_backout"
+note = "integrated-GPU scoped; Brutus device 2 (gfx1201 integrated) may satisfy the hardware prerequisite - re-assess before it stays parked. Patch materialized 2026-08-18; bench blocked on hardware"
+
+[[sources.tracked]]
+commit = "1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"
+original = "18fc188f6eb93c2cdea116fa9b7d6a6b5fdb595e"
+title = "cuda : RDNA4 WMMA flash-attn and Q6_K mmq prefill performance work"
+plan-item = "RD05/RD06/RD07"
+status = "ported-untested"
+patch = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
+note = "mixed commit; split across RD05 (WMMA correctness barriers), RD06 (RDNA4 WMMA config) and RD07 (Q6_K MMQ fold/hoist). RD07 co-tenants BigCherry 0300/1000 and must be re-verified against HI71's dense-shape-aware eligibility, not merged textually. Ported 2026-08-18 (17 edits, 6 files); isolated bench pending"
+
+[[sources.tracked]]
+commit = "4591cc9806d24c5151a35007d24b69550df93e32"
+original = "d4aaf63b7b7a89639871a1835ceec40644722519"
+title = "cuda : Q6_K mmvq VDR=2 decode kernel"
+plan-item = "RD08"
+status = "ported-untested"
+patch = "1204_rd08_q6k_mmvq_vdr2"
+note = "co-tenants BigCherry 0600/0650; audit whether RD25 (8cdf1ab08) applies to this kernel. Ported 2026-08-18 (7 edits, 4 files); isolated bench pending"
+
+[[sources.tracked]]
+commit = "3c48ecd635022522b41a622aae28b565497abef5"
+original = "a6e774d41b28c2f9f1a36e3752064ed2a26d3e4d"
+title = "llama : skip the Meta device wrapper with a single GPU"
+plan-item = "RD19"
+patch = "1200_rd19_single_gpu_meta_bypass"
+status = "ported-untested"
+note = "ported verbatim 2026-08-18; both hunks anchor byte-identical on pin 4801e3c. Isolated bench pending"
+
+[[sources.tracked]]
+commit = "44b51c66a210053b12bdfcf1183a6b175878b9c8"
+original = "ba9e339eaec9fafb9ae7d151bf95c82d13061a62"
+title = "cuda : fuse paired mmvq matmuls over a shared activation"
+plan-item = "RD12"
+status = "ported-untested"
+patch = "1205_rd12_paired_mmvq_dual_output"
+note = "MUST include RD25 (8cdf1ab08): the frozen version has a known MTP batch-vs-seq inconsistency. Ported 2026-08-18 (8 edits, 3 files); isolated bench pending"
+
+[[sources.tracked]]
+commit = "3b200b259c48a688929cae6bfe1048a60543bc67"
+original = "ed89854b2aeb0e333dd61424f14af2aedaca126e"
+title = "llama : align attn_gate TP split granularity with attn_q"
+plan-item = "RD20"
+patch = "1201_rd20_attn_gate_tp_split"
+status = "ported-untested"
+note = "ported verbatim 2026-08-18; anchor byte-identical on pin 4801e3c. Correctness fix; needs 2+ GPU bench (Brutus 0/1 gfx1100)"
+
+# --- the 10 commits added in snapshot v2 ---------------------------------
+
+[[sources.tracked]]
+commit = "0510d7cfa01c141e255f04604fafdd1d643605cd"
+title = "cuda : fold SSM conv_input concat into the qkv mmvq; rpb=2 for small-K MoE"
+plan-item = "RD27"
+status = "planned"
+note = "new in snapshot v2"
+
+[[sources.tracked]]
+commit = "4a4da30ef2986d77fb8a9181cbf6797e7f55b7c8"
+title = "cuda : fuse the SSM pre-scan chain (conv, l2_norm, gate/beta)"
+plan-item = "RD24"
+status = "planned"
+note = "new in snapshot v2; one 16-node kernel subsuming RD14 (9-node gate/beta) and RD16 (3-node L2 pair) patterns - verified by op-pattern inspection 2026-08-18"
+
+[[sources.tracked]]
+commit = "8cdf1ab081384aa1786bfff3a45e0ec341f9fd52"
+title = "cuda : fix MTP batch-vs-seq consistency for fused kernels and gfx1151 mmvq"
+plan-item = "RD25"
+status = "planned"
+note = "new in snapshot v2; CORRECTNESS fix, touches mmvq.cu - required before porting RD12/RD21 (and audit RD08)"
+
+[[sources.tracked]]
+commit = "93510434f34ef48194e8d2e6fcc4a22289c3b8d8"
+title = "cuda : make flash-attn decode and speculative verify batches bit-identical"
+plan-item = "RD26"
+status = "planned"
+note = "new in snapshot v2; determinism/correctness cluster (see RD26). DEFERRED: its fattn-tile.cuh/fattn.cu pre-images require 1202 (type_KV template) and 1203 (WMMA gating); port only after both are benched and retained"
+
+[[sources.tracked]]
+commit = "b2655d381b9575d644ebef794869165ede14b3a3"
+title = "cuda : make non-flash attention decode and verify batches bit-identical"
+plan-item = "RD26"
+status = "ported-untested"
+patch = "1210_rd26_bitidentical_decode_verify_standalone"
+note = "representative of the base-standalone RD26a hunks (b2655d381 + d152888fc); ported 2026-08-19; the full determinism property needs all five cluster commits"
+
+[[sources.tracked]]
+commit = "d152888fc34419c69fb946581f29f927a475b5fa"
+title = "cpu : make decode and speculative verify batches bit-identical"
+plan-item = "RD26"
+status = "ported-untested"
+note = "covered by 1210_rd26_bitidentical_decode_verify_standalone (representative commit b2655d381)"
+
+[[sources.tracked]]
+commit = "10b83d6b27520d19bed96e8701a8997c59c951f5"
+title = "cuda : make RDNA4 mmvq and fused SSM decode/verify batches bit-identical"
+plan-item = "RD26"
+status = "planned"
+
+[[sources.tracked]]
+commit = "6cdf5aff9b824f8e639d32fe7ce9428b6199c1ee"
+title = "cuda : make RDNA3_0 mmvq decode and verify batches bit-identical"
+plan-item = "RD26"
+status = "planned"
+
+[[sources.tracked]]
+commit = "4c548dbe8fa5368bb1767c5210a520f2db48bc03"
+title = "spec : add adaptive MTP draft depth (draft-mtp-adaptive)"
+plan-item = "-"
+status = "excluded"
+note = "new in snapshot v2; MTP speculative-decoding FEATURE (common/speculative, server) - out of scope for the RDNA kernel/boost port; do not import"
+
+[[sources.tracked]]
+commit = "9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22"
+title = "spec : rework adaptive MTP draft depth"
+plan-item = "-"
+status = "excluded"
+note = "new in snapshot v2; same exclusion as 4c548dbe8"

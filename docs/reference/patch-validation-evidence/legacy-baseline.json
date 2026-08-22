@@ -1,0 +1,21 @@
+{
+  "contract": "hi83-legacy-grandfather-v1",
+  "patches": {
+    "0100_cmake_options": "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae",
+    "0200_dispatch_hook": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
+    "0300_mmq_forced_j": "9f244037a453ff388f5ef9443306a121345fa6cca5367ad1206327c07123afee",
+    "0400_mmvf_forced_block": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
+    "0500_mmf_forced_nwarps": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
+    "0600_mmvq_geometry": "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925",
+    "0650_mmvq_native_variant": "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10",
+    "0700_coverage_counters": "38be2407a5f60810003697d69007b182233df855475944bcec0a151cf3c80774",
+    "0800_server_shutdown_endpoint": "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3",
+    "0810_replay_hit_diagnostics": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+    "0820_measurement_signature_shapes": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
+    "0830_split_reduce_telemetry": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
+    "0900_pool_workspace_metrics": "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146",
+    "1000_rdna4_mmq_q2k_q6k_fix": "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c",
+    "1100_hi70_direct_op_evidence": "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd"
+  },
+  "schema_version": 1
+}

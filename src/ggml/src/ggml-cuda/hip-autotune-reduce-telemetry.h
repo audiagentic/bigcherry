@@ -65,4 +65,44 @@ void ggml_hip_reduce_telemetry_fallback_context(
         const char * handoff,
         size_t fallback_depth);
 
+// HI18: test-only per-device output capture for the standalone correctness
+// probe (test-hip-reduce). A real high-level ggml_backend_tensor_get() on a
+// MIRRORED meta tensor only returns simple-backend-0's copy, so a probe
+// wanting every participant's own reduced output has to observe the exact
+// tensor array already passed to the provider/fallback telemetry calls
+// above, not invent a new generic meta accessor. Storage is thread_local
+// (the probe is single-threaded); only pointers/metadata are captured here,
+// never a device->host copy -- the caller does that after synchronizing.
+#define GGML_HIP_REDUCE_TEST_CAPTURE_MAX_DEVICES 16
+
+struct ggml_hip_reduce_test_snapshot_v1 {
+    uint32_t version = 1;
+    uint64_t sequence = 0;
+
+    size_t device_count = 0;
+    int devices[GGML_HIP_REDUCE_TEST_CAPTURE_MAX_DEVICES] = {};
+    ggml_tensor * tensors[GGML_HIP_REDUCE_TEST_CAPTURE_MAX_DEVICES] = {};
+
+    char requested_provider[16] = {};
+    char effective_provider[16] = {};
+    char handoff[64] = {};
+    size_t fallback_depth = 0;
+    bool provider_succeeded = false;
+
+    // The actual runtime reduction identity this call observed -- same
+    // fields make_signature() derives for the ordinary telemetry JSONL, so
+    // a probe can verify it drove the exact signature its case claims
+    // rather than trusting shape/topology by construction alone.
+    int64_t element_count = 0;
+    int64_t slice_shape[4] = {};
+    char element_type[16] = {};
+    char topology_key[128] = {};
+    char peer_access[16] = {};
+};
+
+void ggml_hip_reduce_test_capture_reset();
+
+// Returns false if no reduction has been captured since the last reset.
+bool ggml_hip_reduce_test_capture_snapshot(ggml_hip_reduce_test_snapshot_v1 * out);
+
 #endif

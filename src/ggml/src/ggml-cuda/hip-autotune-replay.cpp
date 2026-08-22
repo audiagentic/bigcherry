@@ -82,6 +82,15 @@ struct Winner {
     ggml_hip_digest                       source_revision_digest;
     uint32_t                              generation;
     bool                                  fresh;
+    uint16_t                               transform_id; // 0 = GGML_HIP_TRANSFORM_NONE
+    uint8_t                                match_kind;    // see ggml_hip_replay_match_kind
+    // The stable name as written in the file's string table. For a registered
+    // candidate the registry's own name is the canonical one (and any
+    // divergence from it is itself a finding worth reporting); for an
+    // unregistered one this is the only surviving copy of the name, because
+    // the file's string table does not outlive ggml_hip_replay_init. Load-
+    // time cost only; the lookup hot path never reads it.
+    std::string                            stored_name;
 };
 
 std::unordered_map<ggml_hip_digest, std::vector<Winner>, DigestHash, DigestEqual> g_winners;
@@ -168,7 +177,13 @@ constexpr size_t ENT_SRC0_TYPE = ENT_SMALL_K + 1;
 constexpr size_t ENT_MANIFEST  = ENT_SRC0_TYPE + 1;
 constexpr size_t ENT_REVISION  = ENT_MANIFEST + GGML_HIP_DIGEST_BYTES;
 constexpr size_t ENT_GENERATION = ENT_REVISION + GGML_HIP_DIGEST_BYTES;
-constexpr size_t ENT_SIZE      = ENT_GENERATION + 4;
+// HI31 (v5): 0 = GGML_HIP_TRANSFORM_NONE. See hip-autotune-replay.h's
+// ggml_hip_replay_entry::transform_id comment for why this is a raw
+// uint16, not the (feature-gated) enum type.
+constexpr size_t ENT_TRANSFORM = ENT_GENERATION + 4;
+// HI74 (v5): see ggml_hip_replay_match_kind in hip-autotune-replay.h.
+constexpr size_t ENT_MATCH_KIND = ENT_TRANSFORM + 2;
+constexpr size_t ENT_SIZE      = ENT_MATCH_KIND + 1;
 
 std::vector<uint8_t> read_file(const char * path) {
     std::vector<uint8_t> bytes;
@@ -322,6 +337,7 @@ bool ggml_hip_replay_init() {
         const char * strings = (const char *) (data + strings_at);
         size_t unknown = 0;
         size_t stale_impl_version = 0;
+        size_t unrecognized_match_kind = 0;
 
         for (uint32_t i = 0; i < entry_count; ++i) {
             const uint8_t * entry = data + entries_at + (size_t) i * ENT_SIZE;
@@ -360,15 +376,27 @@ bool ggml_hip_replay_init() {
             // implementation_version mismatch cleared g_winners entirely).
             bool stale_impl = candidate != nullptr &&
                 read_u16(entry + ENT_IMPL_VER) != candidate->implementation_version;
+            // HI74: an entry whose match_kind this loader does not recognise
+            // must be rejected, never silently reinterpreted as EXACT (that
+            // would validate a future generalised-entry key form as if it
+            // were a plain exact digest match). Marked unusable the same
+            // way as an unregistered candidate -- this one slot only, not
+            // the whole cache.
+            const bool unrecognized_match =
+                entry[ENT_MATCH_KIND] != GGML_HIP_REPLAY_MATCH_EXACT;
             if (candidate == nullptr) {
                 ++unknown;
             } else if (stale_impl) {
                 ++stale_impl_version;
             }
+            if (unrecognized_match) {
+                ++unrecognized_match_kind;
+            }
 
             Winner winner = {};
-            winner.candidate          = stale_impl ? nullptr : candidate;
+            winner.candidate          = (stale_impl || unrecognized_match) ? nullptr : candidate;
             winner.stale_impl_version = stale_impl;
+            winner.stored_name        = strings + name_offset;
             memcpy(winner.signature_digest.bytes, entry + ENT_SIGNATURE,
                    GGML_HIP_DIGEST_BYTES);
             winner.variant.primary   = read_i32(entry + ENT_PRIMARY);
@@ -383,6 +411,8 @@ bool ggml_hip_replay_init() {
             memcpy(winner.source_revision_digest.bytes, entry + ENT_REVISION,
                    GGML_HIP_DIGEST_BYTES);
             winner.generation = read_u32(entry + ENT_GENERATION);
+            winner.transform_id = read_u16(entry + ENT_TRANSFORM);
+            winner.match_kind   = entry[ENT_MATCH_KIND];
 
             auto & generations = g_winners[key];
             for (const Winner & prior : generations) {
@@ -427,6 +457,15 @@ bool ggml_hip_replay_init() {
                           "other entries in the cache were retained\n",
                           stale_impl_version);
         }
+        if (unrecognized_match_kind) {
+            // HI74: expected once generalised entries (HI36b) exist and this
+            // binary predates that feature -- not a corruption signal, so a
+            // warning, not a reject().
+            GGML_LOG_WARN("bigcherry: %zu cache entry/entries use a "
+                          "match_kind this build does not recognise and "
+                          "were skipped; other entries in the cache were "
+                          "retained\n", unrecognized_match_kind);
+        }
     });
     return g_loaded;
 }
@@ -437,7 +476,8 @@ ggml_hip_resolution_v2 ggml_hip_replay_lookup(
                             const ggml_hip_dispatch_signature_v1 & sig,
                             const ggml_hip_hardware_key_v1 & hw,
                             const ggml_hip_candidate_descriptor ** out_candidate,
-                            ggml_hip_variant_params * out_variant) {
+                            ggml_hip_variant_params * out_variant,
+                            uint16_t * out_transform_id) {
     if (!ggml_hip_replay_init()) {
         // No cache configured is a plain miss; a cache that failed to load
         // carries the specific reason recorded by reject() during init.
@@ -461,24 +501,44 @@ ggml_hip_resolution_v2 ggml_hip_replay_lookup(
             continue;
         }
         saw_signature_match = true;
-        if (g_require_revision_match && !winner.fresh) {
+        // HI31: a transformed entry (transform_id != 0) always requires
+        // exact revision match, even when GGML_HIP_DISPATCH_REPLAY_REVISION_
+        // MATCH=0 relaxes that for plain candidates -- transforms carry no
+        // implementation_version of their own yet to validate safely
+        // against a relaxed match (see hip-autotune-replay.h).
+        const bool must_be_fresh = winner.transform_id != 0 || g_require_revision_match;
+        if (must_be_fresh && !winner.fresh) {
             saw_stale_generation = true;
             continue;
         }
         // EXACT requires more than "the digest matched": the candidate must
-        // still be registered, must support this architecture, and must
-        // accept this exact signature -- checked here, not after the caller
-        // has already committed to the binding, so a candidate that
-        // resolves but then fails these checks is never silently counted
-        // as a hit (the blind spot the pre-reset design closed).
+        // still be registered and must support this architecture -- checked
+        // here, not after the caller has already committed to the binding,
+        // so a candidate that resolves but then fails these checks is never
+        // silently counted as a hit (the blind spot the pre-reset design
+        // closed).
+        //
+        // HI31: can_execute() against `sig` is run ONLY for a plain entry
+        // (transform_id == 0). For a transformed entry, `sig` is the
+        // ORIGINAL untransformed signature -- checking the candidate
+        // against it is exactly the wrong question (the candidate was
+        // never expected to accept that shape; that mismatch is why the
+        // transform exists). This function has no way to compute the
+        // actual transformed signature (it only has `sig`/`hw`, not the
+        // real ggml_hip_launch_context transform->apply() needs), so EXACT
+        // here is NECESSARY but not SUFFICIENT for a transformed entry --
+        // see this function's declaration in hip-autotune-replay.h for the
+        // caller's required second-layer validation.
         if (winner.candidate == nullptr ||
             !ggml_hip_candidate_supports_arch(*winner.candidate, hw) ||
-            !winner.candidate->can_execute(winner.candidate, sig, hw)) {
+            (winner.transform_id == 0 &&
+             !winner.candidate->can_execute(winner.candidate, sig, hw))) {
             saw_candidate_rejected = true;
             continue;
         }
-        *out_candidate = winner.candidate;
-        *out_variant   = winner.variant;
+        *out_candidate     = winner.candidate;
+        *out_variant       = winner.variant;
+        *out_transform_id  = winner.transform_id;
         return counted(GGML_HIP_RESOLVE_EXACT);
     }
 
@@ -651,6 +711,43 @@ const char * ggml_hip_replay_resolution_name(ggml_hip_resolution_v2 outcome) {
 bool ggml_hip_replay_is_stale() {
     ggml_hip_replay_init();
     return g_stale;
+}
+
+ggml_hip_resolution_v2 ggml_hip_replay_load_failure() {
+    // The loader's own classification, unchanged: MISS when nothing was
+    // configured or no cache was found, RERUN_REQUIRED / INCOMPATIBLE when a
+    // cache was rejected. Callers check ggml_hip_replay_init()'s return first
+    // and treat a loaded cache as having no failure.
+    return g_load_failure;
+}
+
+size_t ggml_hip_replay_foreach_winner(
+        bool (*visit)(const ggml_hip_digest & dispatch_digest,
+                      const ggml_hip_replay_winner_info * info, void * user),
+        void * user) {
+    if (visit == nullptr || !ggml_hip_replay_init()) {
+        return 0;
+    }
+    size_t visited = 0;
+    for (const auto & [digest, generations] : g_winners) {
+        for (const Winner & winner : generations) {
+            ggml_hip_replay_winner_info info = {};
+            info.candidate_name = winner.candidate != nullptr
+                ? winner.candidate->stable_name : winner.stored_name.c_str();
+            info.registered = winner.candidate != nullptr;
+            info.stale_impl_version = winner.stale_impl_version;
+            info.unrecognized_match = winner.match_kind != GGML_HIP_REPLAY_MATCH_EXACT;
+            info.fresh = winner.fresh;
+            info.generation = winner.generation;
+            info.transform_id = winner.transform_id;
+            info.match_kind = winner.match_kind;
+            ++visited;
+            if (!visit(digest, &info, user)) {
+                return visited;
+            }
+        }
+    }
+    return visited;
 }
 
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

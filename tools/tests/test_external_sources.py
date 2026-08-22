@@ -93,7 +93,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     def test_rdna_patches_not_in_production_patch_sets(self):
         """recipes.toml's framework and validated-enhancements sets are exact
         lists; the new patches must not appear in them until promoted."""
-        recipes = tomllib.loads((ROOT / "recipes.toml").read_text(encoding="utf-8"))
+        recipes = tomllib.loads((ROOT / "config" / "recipes.toml").read_text(encoding="utf-8"))
         production = set()
         for patch_set in recipes.get("patch-set", {}).values():
             production.update(patch_set.get("patches", []))

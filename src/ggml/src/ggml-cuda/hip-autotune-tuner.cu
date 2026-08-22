@@ -11,6 +11,7 @@
 #include "hip-autotune-journal.h"
 #include "hip-autotune-signature.h"
 #include "hip-autotune-smi.h"
+#include "hip-autotune-transform.cuh"
 
 #include <algorithm>
 #include <atomic>
@@ -55,6 +56,15 @@ namespace {
 struct Measurement {
     const ggml_hip_candidate_descriptor * candidate = nullptr;
     ggml_hip_reject_reason reason      = GGML_HIP_REJECT_NONE;
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: route identity is (candidate, variant, transform_id), not
+    // candidate alone -- a transformed measurement runs a different amount
+    // of work than the same candidate's direct route, and must never be
+    // confused with it in the schedule, the JSONL, or winner selection.
+    // nullptr means "direct route, no transform" everywhere below.
+    const ggml_hip_routing_transformation * transform = nullptr;
+#endif
     bool     measured                  = false;
     double   median_us                 = 0.0;
     double   mad_us                    = 0.0;   // standards: GPU times are
@@ -97,8 +107,17 @@ struct Measurement {
 // name (standards 2.1), so no real candidate can collide with it. One helper
 // everywhere the JSONL or the schedule names a measurement instance.
 static std::string measurement_name(const Measurement & m) {
-    return std::string(m.candidate ? m.candidate->stable_name : "")
+    std::string name = std::string(m.candidate ? m.candidate->stable_name : "")
            + (m.is_native_twin ? "#twin" : "");
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: a transformed route is a different route identity from the same
+    // candidate's direct one -- '#' is not legal in a stable name, so this
+    // cannot collide with a real candidate or with the #twin suffix above.
+    if (m.transform != nullptr) {
+        name += "#xform:" + std::string(m.transform->name);
+    }
+#endif
+    return name;
 }
 
 // HI50: whether the noise canary (same-kernel pair, see below) confirmed
@@ -126,6 +145,17 @@ const char * canary_state_name(ggml_hip_canary_state_v1 state) {
 
 struct Result {
     const ggml_hip_candidate_descriptor * winner = nullptr;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: route identity is (candidate, variant, transform_id), not
+    // candidate alone. nullptr means winner reached the destination directly
+    // (or is native); a real value here means `winner` was only reachable
+    // through this routing transformation.
+    const ggml_hip_routing_transformation * winner_transform = nullptr;
+    // HI30: transforms tried during the registry scan that produced no
+    // measurable Measurement at all, with why -- consumed by record_result()
+    // to emit HI29's TransformGapRecord for this signature.
+    std::vector<std::pair<ggml_hip_transform_id, std::string>> transform_scan_gaps;
+#endif
     std::string native_name;   // recorded once, up front -- promotion needs
                                 // "did this row change from native" without
                                 // relying on winner->stable_name still being
@@ -242,6 +272,36 @@ struct Result {
     bool canary_fresh_block = false;
 };
 
+// HI30/HI31: which transform (if any) the FINAL winner reached its
+// candidate through -- distinct from measurement_name()'s per-measurement
+// "#xform:" suffix, this is the one durable fact ggml_hip_tuner_flush()'s
+// measurements.jsonl row must carry so tune_promotion.py's promoted-winners
+// output and replay_cache.py's exporter (HI31) know which transform_id to
+// pack into the v5 replay entry. Previously only the diagnostic journal
+// (journal_result_summary()) carried this -- the actual production artifact
+// silently dropped it, which would have made every transformed winner
+// replay as its bare candidate against the wrong (untransformed) signature.
+static const char * winner_transform_name(const Result & r) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    return r.winner_transform != nullptr ? r.winner_transform->name : "";
+#else
+    (void) r;
+    return "";
+#endif
+}
+
+// The numeric id alongside the name (above): replay_cache.py packs this
+// directly into the v5 replay entry's transform_id field without needing
+// its own name -> id mapping of the transform registry.
+static int winner_transform_id(const Result & r) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    return r.winner_transform != nullptr ? (int) r.winner_transform->id : 0;
+#else
+    (void) r;
+    return 0;
+#endif
+}
+
 struct DigestHash {
     size_t operator()(const ggml_hip_digest & d) const {
         size_t v = 0;
@@ -260,20 +320,149 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// bigcherry (HI29): transform-attempt / transform-gap recording, written
+// alongside the ordinary measurements.jsonl (see ggml_hip_tuner_flush()'s
+// .transforms.jsonl block). A transform-attempt row is written whenever
+// HI30's tuner integration tries a routing transformation (HI27/HI28)
+// against a signature; a transform-gap row is written when none of the
+// registered transforms worked. Kept structurally separate from Result --
+// these are diagnostic records for offline (agent-driven) pattern analysis
+// across many signatures, not the primary dispatch-identity/promotion
+// evidence Result already carries for the signature that was actually
+// tuned.
+struct TransformAttemptRecord {
+    ggml_hip_digest        original_sig = {};
+    ggml_hip_digest        hardware     = {};
+    ggml_hip_transform_id  transform_id = GGML_HIP_TRANSFORM_NONE;
+    std::string            transform_name;
+    std::string            source;                 // "predefined" | "discovered"
+    std::string            original_native_family;
+    std::string            result;                 // "success" | "rejected"
+    std::string            rejection_reason;        // empty on success
+    std::string            transformed_winner;      // candidate stable_name, empty if rejected
+    double                 original_us      = 0.0;
+    double                 transformed_us   = 0.0;
+    double                 improvement_pct  = 0.0;
+    double                 nmse             = 0.0;
+    double                 max_abs_error    = 0.0;
+};
+
+// One (transform, rejection reason) pair -- part of a TransformGapRecord's
+// "everything HI30 tried and why none of it worked" trail.
+struct TransformTriedEntry {
+    ggml_hip_transform_id transform_id;
+    std::string           rejection_reason;
+};
+
+struct TransformGapRecord {
+    ggml_hip_digest                    sig          = {};
+    ggml_hip_digest                    hardware     = {};
+    std::string                        native_family;
+    int64_t                            est_bytes = 0;
+    std::vector<TransformTriedEntry>   tried;
+};
+
+std::vector<TransformAttemptRecord> g_transform_attempts;
+std::vector<TransformGapRecord>     g_transform_gaps;
+std::mutex                          g_transform_mutex;
+
+// bigcherry family enum -> the lowercase name candidate/catalog code already
+// uses elsewhere (config/recipes.toml patch-set naming, catalog.toml
+// backend fields) -- kept local since no shared helper does this today.
+const char * transform_family_name(int family) {
+    switch (family) {
+        case GGML_HIP_FAMILY_MMVQ: return "mmvq";
+        case GGML_HIP_FAMILY_MMQ:  return "mmq";
+        case GGML_HIP_FAMILY_MMVF: return "mmvf";
+        case GGML_HIP_FAMILY_MMF:  return "mmf";
+        case GGML_HIP_FAMILY_BLAS: return "blas";
+        default:                   return "?";
+    }
+}
+
+void ggml_hip_record_transform_attempt(const TransformAttemptRecord & record) {
+    std::lock_guard<std::mutex> lock(g_transform_mutex);
+    g_transform_attempts.push_back(record);
+}
+
+void ggml_hip_record_transform_gap(const TransformGapRecord & record) {
+    std::lock_guard<std::mutex> lock(g_transform_mutex);
+    g_transform_gaps.push_back(record);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 // GPU measurements are process-global device state.  Serialize the complete
 // cold-path experiment so concurrent first encounters cannot perturb one
 // another or publish different winners for the same dispatch key.
 // This is deliberately process-wide rather than per-key. HIP measurements
 // mutate process-global device/workspace state, so a per-key gate would still
 // allow two different first encounters to perturb each other. Holding this
-// gate from the cache lookup through record_result() gives every dispatch key
-// single-flight semantics: one measurement/publish, then all waiters observe
-// the committed winner.
+// gate from the cache lookup through record_result() -- and, since HI64
+// (2026-08-22), through the public wrapper's own post-call measurement_
+// failure read too -- gives every dispatch key single-flight semantics.
+// That last clause matters now in a way it didn't before HI64: one
+// measurement/publish no longer means every later waiter observes the
+// SAME committed winner forever -- a device-local failure is retained only
+// as fallback evidence, and a subsequent healthy device's success replaces
+// it (record_result()'s failure->success rule). Held by
+// ggml_hip_tuner_resolve() (the public wrapper), not the internal impl, so
+// no other thread can slip a replacement into g_results between the impl
+// returning and the wrapper reading back what actually got recorded.
 std::mutex g_single_flight_mutex;
+
+// bigcherry (HI64, RV49 F6 scope extension, 2026-08-17 GPT adjudication):
+// poison/cache state keyed by the CURRENT hipGetDevice() value, not a
+// single process-global flag -- a transient fault on one GPU (e.g. a WDDM
+// TDR-class hiccup) must not disable tuning on every OTHER device sharing
+// this process. Every existing .load()/.store() call site keeps working
+// unchanged; only the storage moves from one flag to one-per-device.
+//
+// Deliberately NO auto-clear of any kind (no time-based expiry, no
+// clear-after-one-successful-operation): a device that poisoned stays
+// poisoned for the rest of the process. Per GPT's own requirement, recovery
+// may only happen once the surrounding backend can PROVE the HIP context/
+// device execution generation was recreated -- ggml-cuda.cu exposes no such
+// generation/reset signal today, so that recovery path is explicitly NOT
+// implemented here; a poisoned device requires a fresh process, exactly as
+// before this change. This file still never calls hipDeviceReset() itself.
+template <typename T>
+class PerDeviceState {
+public:
+    explicit PerDeviceState(T initial) : initial_(initial) {}
+
+    T load(std::memory_order = std::memory_order_relaxed) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const int device = current_device();
+        const auto it = values_.find(device);
+        return it != values_.end() ? it->second : initial_;
+    }
+
+    void store(T value, std::memory_order = std::memory_order_relaxed) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        values_[current_device()] = value;
+    }
+
+private:
+    static int current_device() {
+        int device = -1;
+        // No resolvable device -- bucket under a shared sentinel key rather
+        // than silently reading/writing some other device's state on this
+        // caller's behalf.
+        return hipGetDevice(&device) == hipSuccess && device >= 0 ? device : -1;
+    }
+
+    T initial_;
+    mutable std::mutex mutex_;
+    std::unordered_map<int, T> values_;
+};
+
 // A failed HIP measurement can leave the context poisoned. Once that happens,
 // no later candidate, correctness copy, final round, determinism check, or
-// device query may be treated as valid in this process.
-std::atomic<bool> g_tuner_poisoned{false};
+// device query may be treated as valid for THAT DEVICE in this process --
+// other devices' tuning is unaffected (see PerDeviceState's comment above).
+PerDeviceState<bool> g_tuner_poisoned(false);
 
 // UTC, second resolution, ISO-ish -- only used to name a journal experiment
 // uniquely per process, not parsed back by anything, so exact format is not
@@ -306,6 +495,10 @@ std::string journal_result_summary(
         ggml_hip_digest_hex(result.hardware_digest) +
         "\",\"winner\":\"" +
         (result.winner != nullptr ? result.winner->stable_name : "(none)") +
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        "\",\"winner_transform\":\"" +
+        (result.winner_transform != nullptr ? result.winner_transform->name : "") +
+#endif
         "\",\"native\":\"" + result.native_name +
         "\",\"promotion_status\":\"" + result.promotion_status +
         "\",\"reason\":\"" + result.reason +
@@ -354,10 +547,123 @@ void open_tuning_journal_once(const ggml_hip_digest & hardware_digest) {
     }
 }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI30: derives HI29's transform-attempt/transform-gap diagnostics from the
+// finished Result, at the one choke point every resolve() exit already
+// funnels through (record_result). Keeping this out of resolve() itself
+// means every early-return path gets correct diagnostics for free instead
+// of needing its own recorder call, and the records always describe what
+// was actually measured -- never a claim made before the outcome is known.
+void record_transform_diagnostics(const Result & result) {
+    bool any_transform_measurement = false;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform != nullptr) { any_transform_measurement = true; break; }
+    }
+    if (!any_transform_measurement && result.transform_scan_gaps.empty()) {
+        return;
+    }
+
+    const Measurement * native_measurement = nullptr;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr && !m.is_native_twin &&
+                m.candidate != nullptr && m.candidate->stable_name == result.native_name) {
+            native_measurement = &m;
+            break;
+        }
+    }
+    const std::string native_family = native_measurement != nullptr
+        ? transform_family_name((int) native_measurement->candidate->family) : "?";
+
+    // Best measured candidate per transform id actually attempted.
+    std::unordered_map<int, const Measurement *> best_by_transform;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr) continue;
+        if (!m.measured) continue;
+        const int id = (int) m.transform->id;
+        const auto it = best_by_transform.find(id);
+        if (it == best_by_transform.end() || m.median_us < it->second->median_us) {
+            best_by_transform[id] = &m;
+        }
+    }
+
+    std::unordered_set<int> attempted_ids;
+    for (const Measurement & m : result.measurements) {
+        if (m.transform == nullptr) continue;
+        const int id = (int) m.transform->id;
+        if (!attempted_ids.insert(id).second) continue;
+
+        TransformAttemptRecord rec;
+        rec.original_sig             = result.signature_digest;
+        rec.hardware                 = result.hardware_digest;
+        rec.transform_id             = m.transform->id;
+        rec.transform_name           = m.transform->name;
+        rec.source                   = m.transform->source == GGML_HIP_TRANSFORM_SOURCE_PREDEFINED
+                                          ? "predefined" : "discovered";
+        rec.original_native_family   = native_family;
+
+        const bool is_success = result.winner_transform != nullptr &&
+            result.winner_transform->id == m.transform->id;
+        const auto found = best_by_transform.find(id);
+        const Measurement * best = found != best_by_transform.end() ? found->second : nullptr;
+
+        rec.result             = is_success ? "success" : "rejected";
+        rec.rejection_reason   = is_success ? "" : (best != nullptr
+            ? "not selected as winner" : "no target candidate measured successfully");
+        rec.transformed_winner = best != nullptr ? best->candidate->stable_name : "";
+        rec.original_us        = native_measurement != nullptr ? native_measurement->median_us : 0.0;
+        rec.transformed_us     = best != nullptr ? best->median_us : 0.0;
+        rec.improvement_pct    = (rec.original_us > 0.0 && rec.transformed_us > 0.0)
+            ? 100.0 * (rec.original_us - rec.transformed_us) / rec.original_us : 0.0;
+        rec.nmse             = best != nullptr ? best->nmse : 0.0;
+        rec.max_abs_error    = best != nullptr ? best->max_abs_error : 0.0;
+        ggml_hip_record_transform_attempt(rec);
+    }
+
+    if (!result.transform_scan_gaps.empty()) {
+        TransformGapRecord gap;
+        gap.sig           = result.signature_digest;
+        gap.hardware      = result.hardware_digest;
+        gap.native_family = native_family;
+        gap.est_bytes     = 0;
+        for (const auto & entry : result.transform_scan_gaps) {
+            gap.tried.push_back({entry.first, entry.second});
+        }
+        ggml_hip_record_transform_gap(gap);
+    }
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 void record_result(const ggml_hip_digest & dispatch_digest, const Result & result) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    record_transform_diagnostics(result);
+#endif
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        g_results.emplace(dispatch_digest, result);
+        // HI64 (2026-08-22, real dual-XTX hardware finding): g_results is
+        // keyed only by the portable dispatch_digest (hardware identity
+        // deliberately excludes device ordinal so identical GPUs can share
+        // a winner, standards 10.2) -- a blind emplace() here let a single
+        // device's fatal measurement failure permanently own that portable
+        // key, silently blocking every OTHER device sharing it (including
+        // an identical twin GPU) from ever attempting its own measurement,
+        // confirmed on real hardware: a fault injected on the first-
+        // processed device also poisoned the second device's tuning even
+        // though the second device never itself failed.
+        //
+        // Fix: a failed result is retained ONLY as fallback evidence (so an
+        // all-failed run still appears in measurements.jsonl instead of
+        // looking empty) and is replaced the first time a non-failed result
+        // arrives for the same key. A non-failed result is never replaced
+        // by a later failure -- the successful result stays authoritative.
+        // See the matching g_results.find() guard in
+        // ggml_hip_tuner_resolve_impl(), which must treat a failed entry as
+        // NOT a cache hit for this to actually let another device retry.
+        const auto found = g_results.find(dispatch_digest);
+        if (found == g_results.end()) {
+            g_results.emplace(dispatch_digest, result);
+        } else if (found->second.measurement_failure && !result.measurement_failure) {
+            found->second = result;
+        }
     }
 
     // The journal is opened at cold-path entry when the signature and hardware
@@ -597,10 +903,11 @@ static bool hip_event_destroy_checked(hipEvent_t & event, const char * what) {
 // A failed HIP timing transaction can poison the context even after its
 // pending error is consumed. SMI capture calls ggml_cuda_get_device(), which
 // is deliberately fail-fast on that condition, so disable further SMI reads
-// for this process once any timing failure is observed. Measurements remain
-// valid as explicit unavailable evidence; timing failures themselves still
-// reject the affected round/signature.
-std::atomic<bool> g_smi_runtime_disabled{false};
+// for THIS DEVICE once any timing failure is observed on it -- other
+// devices keep capturing SMI normally (see PerDeviceState's comment above).
+// Measurements remain valid as explicit unavailable evidence; timing
+// failures themselves still reject the affected round/signature.
+PerDeviceState<bool> g_smi_runtime_disabled(false);
 
 static void disable_smi_after_measurement_failure() {
     g_tuner_poisoned.store(true, std::memory_order_relaxed);
@@ -761,7 +1068,16 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
                     ggml_backend_cuda_context * workspace_ctx = nullptr,
                      bool isolate_workspace = false,
                      size_t * pool_peak_bytes = nullptr,
-                     const char * protocol_stage = nullptr) {
+                     const char * protocol_stage = nullptr
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                     // HI30: every launch this function issues -- warmup,
+                     // rewarm, and timed samples alike -- must run the exact
+                     // same transformed route the caller is measuring, so
+                     // the tuner can never rank a candidate against work it
+                     // did not actually dispatch.
+                     , const ggml_hip_routing_transformation * transform = nullptr
+#endif
+                     ) {
     const char * stage = protocol_stage != nullptr
         ? protocol_stage : (isolate_workspace ? "isolated_workspace" : "final");
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
@@ -794,6 +1110,32 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 
     ggml_hip_candidate_descriptor effective = *candidate;
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // Stack-allocated for the life of this call (standards: no heap
+    // allocation on a measurement hot path). Reused across every launch
+    // below -- apply() rewrites it in place each time, exactly as the
+    // dispatcher (HI31) will on the runtime path.
+    ggml_hip_transform_ctx xform_ctx;
+    auto do_launch = [&]() -> bool {
+        if (transform == nullptr) {
+            effective.launch(&effective, lc);
+            return true;
+        }
+        ggml_hip_launch_context out_lc;
+        if (!transform->apply(lc, &xform_ctx, nullptr, &out_lc)) {
+            return false;
+        }
+        ggml_hip_transform_launch(transform, &effective, effective.variant,
+                                  &xform_ctx, out_lc);
+        return true;
+    };
+#else
+    auto do_launch = [&]() -> bool {
+        effective.launch(&effective, lc);
+        return true;
+    };
+#endif
+
 #ifdef GGML_HIP_WORKSPACE_METRICS
     size_t workspace_baseline = 0;
     if (workspace_ctx != nullptr && isolate_workspace) {
@@ -809,7 +1151,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
 
     trace_workspace_event(stage, "warmup_begin", candidate->stable_name);
     for (int i = 0; i < warmup; ++i) {
-        effective.launch(&effective, lc);
+        if (!do_launch()) {
+            destroy_events();
+            disable_smi_after_measurement_failure();
+            return false;
+        }
     }
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
@@ -853,7 +1199,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // hipEventSynchronize(stop).
         if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM) {
             trace_workspace_event(stage, "rewarm_begin", candidate->stable_name);
-            effective.launch(&effective, lc);
+            if (!do_launch()) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
             if (!hip_ok(hipGetLastError(), "rewarm launch")
                     || hipStreamSynchronize(lc.stream) != hipSuccess) {
                 destroy_events();
@@ -872,7 +1222,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // Several launches per sample when one kernel is below event
         // resolution; the mean of the batch is the sample.
         for (int i = 0; i < launches_per_sample; ++i) {
-            effective.launch(&effective, lc);
+            if (!do_launch()) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
         }
         if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
             destroy_events();
@@ -1097,7 +1451,11 @@ CounterbalancedRound run_counterbalanced_round(
             if (!time_candidate(candidates[index]->candidate, lc, 0, 1,
                                 launches_per_sample, pre_sample,
                                 one_gpu, one_host,
-                                nullptr, false, nullptr, protocol_stage) ||
+                                nullptr, false, nullptr, protocol_stage
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                                , candidates[index]->transform
+#endif
+                                ) ||
                     one_gpu.empty() || one_host.empty()) {
                 complete = false;
                 // A failed HIP launch may leave an asynchronous error pending
@@ -1184,22 +1542,28 @@ void record_retime_observation(Result & result, const CounterbalancedRound & rou
 // E3: the floor cost of one timed sample with no work in it -- two event
 // records, a synchronize, and the two host clock reads. Subtracting it is
 // what makes a host-side number comparable with a GPU-side one. Measured
-// once per process on the tuning stream; cheap, and constant enough that a
-// per-signature recalibration would only add noise. Cached at namespace
-// scope (not function-local) so `ggml_hip_tuner_flush` can report it in the
-// measurements header for audit.
-double g_host_sync_overhead_us = -1.0;
-bool g_host_sync_overhead_valid = false;
+// once per DEVICE for the process lifetime, not once per process (bigcherry
+// HI64: a value measured on one GPU is not this file's business to hand out
+// as another GPU's overhead, and keeping it process-global left exactly the
+// kind of cross-device collateral GPT's poison-scoping review flagged --
+// requirement 5, "make SMI-disable state and the cached host-sync-overhead
+// device-local too"). Cached at namespace scope (not function-local) so
+// `ggml_hip_tuner_flush` can report it in the measurements header for audit.
+struct HostSyncOverheadCache {
+    double us = -1.0;
+    bool valid = false;
+};
+PerDeviceState<HostSyncOverheadCache> g_host_sync_overhead(HostSyncOverheadCache{});
 
 double host_sync_overhead_us(cudaStream_t stream) {
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
         return 0.0;
     }
-    if (g_host_sync_overhead_valid && g_host_sync_overhead_us >= 0.0) {
-        return g_host_sync_overhead_us;
+    HostSyncOverheadCache cached = g_host_sync_overhead.load();
+    if (cached.valid && cached.us >= 0.0) {
+        return cached.us;
     }
-    g_host_sync_overhead_us = -1.0;
-    g_host_sync_overhead_valid = false;
+    g_host_sync_overhead.store(HostSyncOverheadCache{});
 
     hipEvent_t a = nullptr;
     hipEvent_t b = nullptr;
@@ -1210,8 +1574,7 @@ double host_sync_overhead_us(cudaStream_t stream) {
     };
     auto fail_measurement = [&]() {
         disable_smi_after_measurement_failure();
-        g_host_sync_overhead_us = -1.0;
-        g_host_sync_overhead_valid = false;
+        g_host_sync_overhead.store(HostSyncOverheadCache{});
         return 0.0;
     };
     if (!hip_ok(hipEventCreate(&a), "hipEventCreate(overhead start)")) {
@@ -1240,9 +1603,8 @@ double host_sync_overhead_us(cudaStream_t stream) {
     if (!std::isfinite(overhead) || overhead < 0.0) {
         return fail_measurement();
     }
-    g_host_sync_overhead_us = overhead;
-    g_host_sync_overhead_valid = true;
-    return g_host_sync_overhead_us;
+    g_host_sync_overhead.store(HostSyncOverheadCache{overhead, true});
+    return overhead;
 }
 
 // E3: max(), not a mode switch -- whichever resource is binding is the one
@@ -1260,12 +1622,31 @@ double effective_us_of(double median_us, double host_median_us, double sync_over
 bool launch_and_fetch(const ggml_hip_candidate_descriptor * candidate,
                       const ggml_hip_launch_context & lc,
                       void * dst_device, size_t dst_bytes,
-                      std::vector<float> & out_host) {
+                      std::vector<float> & out_host
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                      , const ggml_hip_routing_transformation * transform = nullptr
+#endif
+                      ) {
     if (g_tuner_poisoned.load(std::memory_order_relaxed)) {
         return false;
     }
     ggml_hip_candidate_descriptor effective = *candidate;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    if (transform != nullptr) {
+        ggml_hip_transform_ctx xform_ctx;
+        ggml_hip_launch_context out_lc;
+        if (!transform->apply(lc, &xform_ctx, nullptr, &out_lc)) {
+            disable_smi_after_measurement_failure();
+            return false;
+        }
+        ggml_hip_transform_launch(transform, &effective, effective.variant,
+                                  &xform_ctx, out_lc);
+    } else {
+        effective.launch(&effective, lc);
+    }
+#else
     effective.launch(&effective, lc);
+#endif
     if (hipStreamSynchronize(lc.stream) != hipSuccess) {
         disable_smi_after_measurement_failure();
         return false;
@@ -1698,21 +2079,46 @@ static std::string ranking_decision_json(const PolicyTableEntry & entry,
     return out;
 }
 
-const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
+// HI64 (2026-08-22): renamed from the old public ggml_hip_tuner_resolve --
+// this is now a file-local implementation detail. The public entry point
+// below wraps this to additionally report whether the resolution ended in
+// a device-local measurement failure, without touching any of this
+// function's ~25 existing `return native.candidate;`/`return
+// result.winner;` exit sites: every one of them already goes through
+// record_result() first (or, for the cache-hit path just below, reuses an
+// entry record_result() already wrote on a prior call), so a second,
+// cheap g_results lookup after this function returns is guaranteed to see
+// the correct, just-recorded measurement_failure value for this exact
+// dispatch_digest.
+static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
         const ggml_hip_hardware_key_v1 & hw,
         const ggml_hip_digest & dispatch_digest,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc_in) {
-    // The lock must cover both the cache lookup and the complete cold path.
-    // Locking only around the measurement would let concurrent first
-    // encounters both miss the cache and publish conflicting results.
-    std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);
+    // HI64 (2026-08-22): g_single_flight_mutex is held by the CALLER
+    // (the public ggml_hip_tuner_resolve() wrapper below), across this
+    // entire call AND its own post-call g_results re-check -- not
+    // acquired in here. Locking only around this function would let a
+    // second thread's record_result() replace this dispatch_digest's
+    // entry (failure -> success) in the window between this function
+    // returning and the wrapper reading measurement_failure back out,
+    // making the wrapper report a stale/wrong value for what actually
+    // happened on THIS invocation. The lock must still cover both the
+    // cache lookup and the complete cold path -- that part of the
+    // original rationale is unchanged, it just now starts one frame up.
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const auto found = g_results.find(dispatch_digest);
-        if (found != g_results.end()) {
+        // HI64: a failed/poisoned result is device-local evidence, not a
+        // portable outcome -- only a non-failed result may short-circuit
+        // resolution here. Otherwise one device's fatal measurement
+        // failure permanently blocks every other device (including an
+        // identical twin GPU) sharing this portable dispatch key from ever
+        // getting its own attempt. See record_result()'s matching
+        // failure->success replacement for the other half of this fix.
+        if (found != g_results.end() && !found->second.measurement_failure) {
             return found->second.winner;
         }
     }
@@ -1760,6 +2166,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     Result result;
     result.winner = native.candidate;
     result.native_name = native.candidate ? native.candidate->stable_name : "";
+    // Default provisional_winner to native up front, once, rather than at
+    // each of the (many, growing) early-return sites below: every exit that
+    // returns before the ranking-stage pick (further down) inherits the
+    // correct value for free instead of needing its own assignment. Exits
+    // AFTER a real ranking pick has been made (confirmation/retime failures)
+    // must NOT let this default stand uncorrected -- see the comments at
+    // those sites for why overwriting a nominated challenger's identity back
+    // to native is itself a bug, not a fix.
+    result.provisional_winner = result.native_name;
     // Recomputed rather than threaded down from the resolver: the two are the
     // same values, and recomputing here keeps this function's signature stable
     // for a field the caller has no other use for. Cold path, once per
@@ -1875,6 +2290,100 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         }
     }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI30: routing transformations compete only when nothing already
+    // reached this signature by the direct route (2026-08-21 adjudication).
+    // "Reached" means a real, unmodified candidate screened in above --
+    // BLAS is excluded from that set deliberately: BLAS auto-selection is
+    // upstream's fallback of last resort, not evidence a fast family already
+    // fits, and is exactly the case these transforms exist to challenge.
+    // Fused patterns are excluded entirely (standards 11.1, same rule the
+    // registry loop above already applies to direct candidates).
+    if (!fused) {
+        std::unordered_set<int> direct_eligible_families;
+        for (const Measurement & m : result.measurements) {
+            if (m.reason == GGML_HIP_REJECT_NONE) {
+                direct_eligible_families.insert((int) m.candidate->family);
+            }
+        }
+        const bool blas_only = direct_eligible_families.size() == 1 &&
+            direct_eligible_families.count((int) GGML_HIP_FAMILY_BLAS) != 0;
+        const bool transform_trigger = direct_eligible_families.empty() || blas_only;
+
+        if (transform_trigger) {
+            for (int t = 0; t < ggml_hip_transform_count(); ++t) {
+                const ggml_hip_routing_transformation * transform = ggml_hip_transform_at(t);
+                if (transform == nullptr || !transform->equivalence_verified) {
+                    continue;
+                }
+                if (!ggml_hip_transform_signature_is_eligible(sig) ||
+                        !transform->can_apply(sig)) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "signature not eligible for this transform"});
+                    continue;
+                }
+
+                // Apply once against the real launch context to get the exact
+                // transformed signature every target candidate below is
+                // screened against -- the central HI30 invariant: what is
+                // scanned here is the same transformed shape that will later
+                // be measured through ggml_hip_transform_launch().
+                ggml_hip_transform_ctx   probe_ctx;
+                ggml_hip_dispatch_signature_v1 out_sig{};
+                ggml_hip_launch_context  probe_lc{};
+                if (!transform->apply(lc_in, &probe_ctx, &out_sig, &probe_lc)) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "transform apply() failed"});
+                    continue;
+                }
+
+                bool any_target_eligible = false;
+                for (size_t i = 0; i < ggml_hip_registry_size(); ++i) {
+                    const ggml_hip_candidate_descriptor * candidate = ggml_hip_registry_at(i);
+                    if (candidate->family != transform->target_family) {
+                        continue;
+                    }
+                    if (!ggml_hip_candidate_supports_arch(*candidate, hw)) {
+                        continue;
+                    }
+                    const bool type_ok = candidate->variant.src0_type == 0
+                                      || candidate->variant.src0_type == out_sig.src0_type;
+                    if (!type_ok || !candidate->can_execute(candidate, out_sig, hw)) {
+                        continue;
+                    }
+
+                    const size_t candidate_bytes = candidate->workspace(candidate, out_sig);
+                    const size_t overhead_bytes  = transform->overhead_bytes(sig);
+                    if (candidate_bytes > std::numeric_limits<size_t>::max() - overhead_bytes) {
+                        continue;   // overflow; not eligible rather than wrap
+                    }
+                    const size_t workspace_bytes = candidate_bytes + overhead_bytes;
+                    if (config.max_workspace_bytes != 0
+                            && workspace_bytes > config.max_workspace_bytes) {
+                        continue;
+                    }
+
+                    any_target_eligible = true;
+                    ++result.generated;
+                    ++result.applicable;
+                    ++result.eligible;
+
+                    Measurement m;
+                    m.candidate       = candidate;
+                    m.transform       = transform;
+                    m.workspace_bytes = workspace_bytes;
+                    m.reason          = GGML_HIP_REJECT_NONE;
+                    result.measurements.push_back(m);
+                }
+                if (!any_target_eligible) {
+                    result.transform_scan_gaps.push_back(
+                        {transform->id, "no eligible candidate in target family"});
+                }
+            }
+        }
+    }
+#endif
+
     std::vector<Measurement *> screening;
     for (Measurement & m : result.measurements) {
         if (m.reason == GGML_HIP_REJECT_NONE) {
@@ -1885,8 +2394,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     Measurement * native_m = nullptr;
     for (Measurement * m : screening) {
         // Role identity, not descriptor identity: the twin shares native's
-        // descriptor and must never be mistaken for the baseline.
-        if (!m->is_native_twin && m->candidate == native.candidate) {
+        // descriptor and must never be mistaken for the baseline. HI30: a
+        // transformed Measurement can legitimately share native's candidate
+        // pointer (the transform's target family may include it) and must
+        // not be mistaken for the untransformed baseline either.
+        if (!m->is_native_twin && m->candidate == native.candidate
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                && m->transform == nullptr
+#endif
+                ) {
             native_m = m; break;
         }
     }
@@ -1895,6 +2411,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         // reference and no baseline, so this signature is rejected rather than
         // producing a winner chosen against nothing.
         result.reason = "native not eligible; run rejected";
+        // provisional_winner already defaults to native (set once at
+        // Result construction, above) -- this exit is before any ranking
+        // pick exists, so the default is already correct.
         record_result(dispatch_digest, result);
         return native.candidate;
     }
@@ -2020,7 +2539,11 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
                             config.screen_samples, result.launches_per_sample,
                             config.pre_sample_mode,
-                            gpu, host, &ctx, true, &m->pool_peak_bytes)) {
+                            gpu, host, &ctx, true, &m->pool_peak_bytes, nullptr
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                            , m->transform
+#endif
+                            )) {
             m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
             result.reason = "screening measurement failed; tuning experiment poisoned";
@@ -2621,15 +3144,30 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         std::vector<float> second(dst_floats);
         const bool launched =
             launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                             dst_bytes, first) &&
+                             dst_bytes, first
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                             , winner_m->transform
+#endif
+                             ) &&
             launch_and_fetch(winner_m->candidate, lc, candidate_buf.get(),
-                             dst_bytes, second);
+                             dst_bytes, second
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+                             , winner_m->transform
+#endif
+                             );
         if (!launched) {
             winner_m->reason = GGML_HIP_REJECT_LAUNCH_FAILED;
             result.measurement_failure = true;
             result.winner = native.candidate;
             result.improvement_pct = 0.0;
             result.promotion_status = "native";
+            // GPT review (2026-08-21): this exit lands after the ranking
+            // policy has already produced ranking_decisions but before
+            // provisional_winner is ever assigned below -- native is
+            // operationally safe here (matches the inherited default) even
+            // though it doesn't capture which candidate determinism was
+            // being checked when it failed. A dedicated evaluation-audit
+            // field would be needed to record that; out of scope for now.
             result.reason = "determinism measurement failed; tuning experiment poisoned";
             capture_device_state_post();
             record_result(dispatch_digest, result);
@@ -2650,7 +3188,7 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     // output against.
     result.provisional_winner = (winner_m == nullptr || winner_m == native_m)
         ? native.candidate->stable_name
-        : winner_m->candidate->stable_name;
+        : measurement_name(*winner_m);
 
     if (winner_m == nullptr || winner_m == native_m) {
         result.winner            = native.candidate;
@@ -2682,9 +3220,22 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 result.launches_per_sample, config.pre_sample_mode, "confirmation");
             record_retime_observation(result, measured);
             if (!measured.complete) {
+                // GPT review (2026-08-21): the dispatch winner falls back to
+                // native (never ship an unconfirmed candidate), but
+                // provisional_winner is deliberately LEFT ALONE -- it was set
+                // to the challenger's name by the "HI50 ranking-stage pick"
+                // above, and that is a true, useful fact: ranking nominated
+                // this candidate; the attempt to confirm it produced invalid
+                // evidence. Overwriting it to native would both discard that
+                // fact and desync it from ranking_decisions.predicted_winner
+                // (which still names the challenger), tripping a DIFFERENT
+                // invariant in tune_promotion.py's _validate_policy_identity.
+                // promotion_status uses a distinct non-"native" terminal
+                // state so the challenger-provisional/native-status pairing
+                // reads as "evaluation aborted", not "ranking chose native".
                 result.winner = native.candidate;
                 result.improvement_pct = 0.0;
-                result.promotion_status = "native";
+                result.promotion_status = "evaluation_failed";
                 result.reason = "confirmation measurement failed; tuning experiment poisoned";
                 capture_device_state_post();
                 record_result(dispatch_digest, result);
@@ -2714,6 +3265,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             result.reason            = "native retained (fresh confirmation rejected provisional winner)";
         } else {
             result.winner            = winner_m->candidate;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+            result.winner_transform  = winner_m->transform;
+#endif
             result.improvement_pct   = result.confirmation_effect_pct;
             result.promotion_status  = "pending_bh";
             result.reason            = "fresh confirmation passed; experiment-wide BH pending, " +
@@ -2730,7 +3284,19 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     if (result.retime_status == "unresolved") {
         result.winner = native.candidate;
         result.improvement_pct = 0.0;
-        result.promotion_status = "native";
+        // GPT review (2026-08-21): provisional_winner is deliberately left
+        // untouched here (see the confirmation-failure branch above for the
+        // full rationale) -- but unlike that branch, this one can also fire
+        // when winner_m == native_m, i.e. no real challenger was ever
+        // nominated (provisional_winner already reads native, promotion_status
+        // is already "native" from the branch above). Only relabel as an
+        // aborted evaluation when a challenger's identity is actually at
+        // stake; otherwise "native" already correctly describes this exit.
+        if (result.provisional_winner != result.native_name) {
+            result.promotion_status = "evaluation_failed";
+        } else {
+            result.promotion_status = "native";
+        }
         result.reason = "clock drift retime unresolved; run rejected";
     }
 
@@ -2762,6 +3328,41 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     return result.winner;
 }
 
+// HI64 (2026-08-22): public entry point. Every exit of
+// ggml_hip_tuner_resolve_impl() -- the cache hit above and every deeper
+// `record_result(...); return ...;` site -- leaves a fresh or reused
+// g_results[dispatch_digest] entry in place by the time control reaches
+// here, so this second lookup reliably reports the resolution's real
+// measurement_failure state without requiring the impl's ~25 exit sites to
+// each be touched individually.
+//
+// g_single_flight_mutex is acquired HERE, not inside the impl, and held
+// across both the impl call and this function's own g_results re-check.
+// Without that, a second thread could acquire the (impl-local) lock and
+// replace this exact dispatch_digest's entry -- failure -> success, via
+// record_result() -- in the window between the impl returning and this
+// read, and this invocation would then wrongly report
+// measurement_failure=false for a call that actually failed. Today's only
+// caller (dispatch.cu's process_binding_cacheable gate) happens to stay
+// safe either way once a real success exists, but the public contract
+// promises "true only when THIS invocation hit a fatal failure" and must
+// actually mean that.
+ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
+        ggml_backend_cuda_context & ctx,
+        const ggml_hip_dispatch_signature_v1 & sig,
+        const ggml_hip_hardware_key_v1 & hw,
+        const ggml_hip_digest & dispatch_digest,
+        const ggml_hip_native_selection & native,
+        const ggml_hip_launch_context & lc) {
+    std::unique_lock<std::mutex> single_flight_lock(g_single_flight_mutex);
+    ggml_hip_tuner_resolution out;
+    out.winner = ggml_hip_tuner_resolve_impl(ctx, sig, hw, dispatch_digest, native, lc);
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const auto found = g_results.find(dispatch_digest);
+    out.measurement_failure = found != g_results.end() && found->second.measurement_failure;
+    return out;
+}
+
 void ggml_hip_tuner_flush() {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_results.empty()) {
@@ -2789,6 +3390,7 @@ void ggml_hip_tuner_flush() {
     FILE * file = measurements_atomic.file;
 
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
+    const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();
 
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
@@ -2807,7 +3409,7 @@ void ggml_hip_tuner_flush() {
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
-            g_host_sync_overhead_us, g_host_sync_overhead_valid ? "true" : "false", config.final_samples,
+            sync_overhead.us, sync_overhead.valid ? "true" : "false", config.final_samples,
             config.warmup_launches, config.screen_samples,
             config.confirmation_samples, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
@@ -2832,7 +3434,9 @@ void ggml_hip_tuner_flush() {
         fprintf(file,
                 "{\"kind\":\"result\",\"dispatch\":\"%s\","
                 "\"signature\":\"%s\",\"hardware\":\"%s\","
-                "\"canonical\":%s,\"winner\":\"%s\",\"native\":\"%s\","
+                "\"canonical\":%s,\"winner\":\"%s\","
+                "\"winner_transform\":\"%s\",\"winner_transform_id\":%d,"
+                "\"native\":\"%s\","
                 "\"improvement_pct\":%.3f,\"confidence\":%.4f,"
                 "\"generated\":%d,\"applicable\":%d,\"eligible\":%d,"
                 "\"measured\":%d,\"reason\":\"%s\","
@@ -2861,6 +3465,8 @@ void ggml_hip_tuner_flush() {
                 // this keeps future stub paths from breaking every consumer.
                 r.canonical_json.empty() ? "null" : r.canonical_json.c_str(),
                 r.winner ? r.winner->stable_name : "",
+                winner_transform_name(r),
+                winner_transform_id(r),
                 r.native_name.c_str(),
                 r.improvement_pct, r.confidence,
                 r.generated, r.applicable, r.eligible, r.measured,
@@ -2944,6 +3550,82 @@ void ggml_hip_tuner_flush() {
 
     GGML_LOG_INFO("bigcherry: wrote %zu tuning result(s) to '%s'\n",
                   g_results.size(), measurements_path.c_str());
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // bigcherry (HI29): a separate file, separate schema, separate consumer
+    // (offline agent-driven pattern analysis across many gaps, not a human
+    // reading one tuner run) -- same GGML_HIP_DISPATCH_DB prefix and the
+    // same crash-safety mechanism (HI48 atomic same-directory temp file +
+    // rename) as measurements.jsonl above, so a killed run leaves either the
+    // previous good file or nothing, never a truncated one masquerading as
+    // complete.
+    {
+        std::lock_guard<std::mutex> transform_lock(g_transform_mutex);
+        if (!g_transform_attempts.empty() || !g_transform_gaps.empty()) {
+            std::string transforms_path = std::string(path) + ".transforms.jsonl";
+            ggml_hip_atomic_file transforms_atomic;
+            if (!ggml_hip_atomic_begin(transforms_path.c_str(), transforms_atomic)) {
+                GGML_LOG_WARN("bigcherry: cannot write '%s'\n", transforms_path.c_str());
+                return;
+            }
+            FILE * tfile = transforms_atomic.file;
+
+            fprintf(tfile,
+                    "{\"kind\":\"header\",\"artifact_version\":%d,"
+                    "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\"}\n",
+                    GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
+                    GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
+                    GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR);
+
+            for (const TransformAttemptRecord & r : g_transform_attempts) {
+                fprintf(tfile,
+                        "{\"kind\":\"transform-attempt\","
+                        "\"original_sig\":\"%s\",\"hardware\":\"%s\","
+                        "\"transformation_id\":%d,\"transformation_name\":\"%s\","
+                        "\"source\":\"%s\",\"original_native_family\":\"%s\","
+                        "\"result\":\"%s\",\"rejection_reason\":\"%s\","
+                        "\"transformed_winner\":\"%s\","
+                        "\"original_us\":%.3f,\"transformed_us\":%.3f,"
+                        "\"improvement_pct\":%.3f,\"nmse\":%.6g,\"max_abs_error\":%.6g}\n",
+                        ggml_hip_digest_hex(r.original_sig).c_str(),
+                        ggml_hip_digest_hex(r.hardware).c_str(),
+                        (int) r.transform_id, r.transform_name.c_str(),
+                        r.source.c_str(), r.original_native_family.c_str(),
+                        r.result.c_str(), r.rejection_reason.c_str(),
+                        r.transformed_winner.c_str(),
+                        r.original_us, r.transformed_us,
+                        r.improvement_pct, r.nmse, r.max_abs_error);
+            }
+
+            for (const TransformGapRecord & r : g_transform_gaps) {
+                fprintf(tfile,
+                        "{\"kind\":\"transform-gap\","
+                        "\"sig\":\"%s\",\"hardware\":\"%s\","
+                        "\"native_family\":\"%s\",\"est_bytes\":%lld,"
+                        "\"transformations_tried\":[",
+                        ggml_hip_digest_hex(r.sig).c_str(),
+                        ggml_hip_digest_hex(r.hardware).c_str(),
+                        r.native_family.c_str(), (long long) r.est_bytes);
+                for (size_t i = 0; i < r.tried.size(); ++i) {
+                    fprintf(tfile, "%s{\"id\":%d,\"reason\":\"%s\"}",
+                            i == 0 ? "" : ",",
+                            (int) r.tried[i].transform_id,
+                            r.tried[i].rejection_reason.c_str());
+                }
+                fprintf(tfile, "]}\n");
+            }
+
+            if (!ggml_hip_atomic_commit(transforms_atomic)) {
+                GGML_LOG_WARN("bigcherry: atomic transforms replacement failed for '%s'\n",
+                              transforms_path.c_str());
+                return;
+            }
+            GGML_LOG_INFO("bigcherry: wrote %zu transform-attempt(s), %zu transform-gap(s) to '%s'\n",
+                          g_transform_attempts.size(), g_transform_gaps.size(),
+                          transforms_path.c_str());
+        }
+    }
+#endif // GGML_HIP_ROUTING_TRANSFORM
 }
 
 #endif // GGML_USE_HIP && GGML_HIP_AUTOTUNE

@@ -147,7 +147,7 @@ class RealRecipesTomlCampaignStandardTests(unittest.TestCase):
 
     def test_standard_profile_covers_the_same_roles_as_default_recipes(self):
         from bigcherry import paths
-        cfg = campaign_config.load(paths.REPO_ROOT / "recipes.toml")
+        cfg = campaign_config.load(paths.RECIPES)
         profile = cfg.campaigns["standard"]
         lane_pairs = {(lane.source, lane.build) for lane in profile.lanes}
         self.assertEqual(lane_pairs, {

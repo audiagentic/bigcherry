@@ -607,6 +607,7 @@ def execute_promotion_stage(
     store: ArtifactStore,
     run_id: str,
     measurements: LaneInputValue,
+    dispatch_db: LaneInputValue,
     q: float = 0.05,
     threshold_pct: float = 1.0,
     resamples: int = 10_000,
@@ -615,11 +616,22 @@ def execute_promotion_stage(
 ) -> PromotionStageResult:
     """Delegates to the EXISTING tune_promotion.promote() implementation
     -- it already owns evidence validation including the noise-canary
-    protocol; nothing about promotion statistics is reimplemented here."""
+    protocol; nothing about promotion statistics is reimplemented here.
+
+    HI67 slice 3 (RV49/RV77): dispatch_db is a REQUIRED descriptor-verified
+    input, not optional -- promote() uses it to gate any non-native winner
+    on CPU-reference correctness evidence (schema 6) as a hard AND with the
+    statistical criteria. Pass the FINAL tune-stage database for this run
+    (tune_result.database_ref, or the direct-op stage's replacement if that
+    ran) -- never an earlier/different artifact like inventory_result.
+    database_ref, which is not the DB these measurements were ingested into.
+    """
     measurements_ref = _rehydrate(
         store, measurements, expected_kind="tuning-measurements"
     )
     measurements_doc = _parent_doc(measurements_ref)
+    db_ref = _rehydrate(store, dispatch_db, expected_kind="dispatch-db")
+    db_doc = _parent_doc(db_ref)
 
     stage_root = context.work_root / "runs" / run_id / "promote"
     stage_root.mkdir(parents=True, exist_ok=True)
@@ -628,6 +640,7 @@ def execute_promotion_stage(
         tune_promotion.promote(
             measurements_ref.path,
             output_path,
+            dispatch_db=db_ref.path,
             q=q,
             threshold_pct=threshold_pct,
             resamples=resamples,
@@ -638,10 +651,10 @@ def execute_promotion_stage(
         ) from exc
 
     entries, parent_ids = provenance.lane_input_provenance(
-        {"tuning-measurements": measurements_ref}
+        {"tuning-measurements": measurements_ref, "dispatch-db": db_ref}
     )
     doc = provenance.derive(
-        parents=(measurements_doc,),
+        parents=(measurements_doc, db_doc),
         parent_artifact_ids=parent_ids,
         project_revision=project_revision,
         source=measurements_doc.source,

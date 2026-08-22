@@ -492,6 +492,57 @@ def check_identity_namespace_separation(ctx: AuditContext) -> None:
 
 # ----------------------------------------------------------------- build files
 
+def check_overlay_sync(ctx: AuditContext) -> None:
+    """Detect drift between the tracked overlay (src/) and the compiled tree.
+
+    ``src/`` is this repo's tracked canonical source for files ``apply``
+    mirrors onto the checkout (see ``_copy_overlay`` in __main__.py);
+    ``vendor/llama.cpp`` (gitignored) is what cmake actually compiles. Nothing
+    previously verified the two stayed in sync, so an overlay file could be
+    edited, committed, and pass every test while the compiled tree kept
+    running the old content -- a fix that looks done but was never built.
+
+    A file present only in the overlay (not yet mirrored to the checkout) is
+    NOT drift: that is the normal pre-``apply`` state for a new or
+    just-edited overlay file. Only a same-relative-path file that exists on
+    BOTH sides with DIFFERENT content is drift -- that means ``apply`` ran at
+    some point but the overlay has since moved on without a re-run.
+    """
+    overlay_root = paths.SRC_OVERLAY
+    if not overlay_root.is_dir():
+        ctx.fail("overlay.root_present", f"missing overlay root {overlay_root}")
+        return
+
+    drifted: list[str] = []
+    compared = 0
+    for source in sorted(overlay_root.rglob("*")):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(overlay_root)
+        target = ctx.root / relative
+        if not target.is_file():
+            continue  # not yet applied -- normal in-progress state, not drift
+        compared += 1
+        if source.read_bytes() != target.read_bytes():
+            drifted.append(str(relative).replace("\\", "/"))
+
+    if drifted:
+        ctx.fail(
+            "overlay.vendor_sync",
+            f"{len(drifted)} overlay file(s) differ from the compiled tree "
+            "-- run `python -m bigcherry apply` to sync, or the checkout "
+            "will silently build stale code: " + ", ".join(drifted),
+            expected="src/ and vendor/llama.cpp copies identical",
+            actual=drifted,
+        )
+    else:
+        ctx.ok(
+            "overlay.vendor_sync",
+            f"{compared} overlay file(s) mirrored onto the checkout match "
+            "byte-for-byte",
+        )
+
+
 def check_build(ctx: AuditContext) -> None:
     cmake_path = ctx.root / "ggml" / "src" / "ggml-hip" / "CMakeLists.txt"
     if not cmake_path.is_file():
@@ -604,9 +655,148 @@ ALL_CHECKS: tuple[Callable[[AuditContext], None], ...] = (
     check_mmf,
     check_mmvq,
     check_identity_namespace_separation,
+    check_overlay_sync,
     check_build,
     check_entry_points,
 )
+
+
+# --------------------------------------------------------------- Vulkan (RE30)
+
+def check_vulkan_backend_present(ctx: AuditContext) -> None:
+    """The Vulkan backend directory and its CMake seam exist.
+
+    This audit is deliberately narrow (RE30 phase 1): it can only verify
+    structural facts about a PRISTINE, unpatched checkout, because no
+    Vulkan-backend BigCherry patch exists yet to define real anchor
+    contracts against. Once phase 2+ adds Vulkan patches, this profile
+    needs the same anchor/registration checks the HIP profile has (RE30's
+    own design note: "keep this profile's checks honest about what it can
+    verify today").
+    """
+    vk_dir = paths.vulkan_dir(ctx.root)
+    if not vk_dir.is_dir():
+        ctx.fail("vulkan.backend_dir_present",
+                 f"{vk_dir} does not exist -- not a Vulkan-capable checkout")
+        return
+    ctx.ok("vulkan.backend_dir_present", f"{vk_dir} exists")
+
+    cmake_lists = vk_dir / "CMakeLists.txt"
+    if not cmake_lists.is_file():
+        ctx.fail("vulkan.cmake_seam_present",
+                 f"{cmake_lists} missing -- no CMake build seam for the Vulkan backend")
+    else:
+        ctx.ok("vulkan.cmake_seam_present", f"{cmake_lists} exists")
+
+    host = vk_dir / "ggml-vulkan.cpp"
+    if not host.is_file():
+        ctx.fail("vulkan.host_source_present", f"{host} missing")
+    else:
+        ctx.ok("vulkan.host_source_present", f"{host} exists")
+
+
+def check_vulkan_shader_discovery(ctx: AuditContext) -> None:
+    """The GLSL shader source tree and the shader-generator entry point
+    exist -- the two things a Vulkan framework patch would need to touch."""
+    shaders_dir = paths.vulkan_shaders_dir(ctx.root)
+    if not shaders_dir.is_dir():
+        ctx.fail("vulkan.shaders_dir_present", f"{shaders_dir} does not exist")
+        return
+    comp_files = sorted(shaders_dir.glob("*.comp"))
+    if not comp_files:
+        ctx.fail("vulkan.shader_sources_present",
+                 f"{shaders_dir} exists but contains no .comp shader sources")
+    else:
+        ctx.ok("vulkan.shader_sources_present",
+               f"{shaders_dir} has {len(comp_files)} .comp shader source(s)")
+
+    generator = shaders_dir / "vulkan-shaders-gen.cpp"
+    if not generator.is_file():
+        ctx.fail("vulkan.shader_generator_present", f"{generator} missing")
+    else:
+        ctx.ok("vulkan.shader_generator_present", f"{generator} exists")
+
+
+def check_vulkan_dispatch_seam(ctx: AuditContext) -> None:
+    """The pinned upstream dispatch seam RE30 identified still exists.
+
+    Narrow and structural only: confirms the named functions are still
+    present in ``ggml-vulkan.cpp`` (so RE30's design assumptions about
+    WHERE a future record/tune/replay hook attaches still hold at the
+    current pin). Does not -- cannot yet -- validate a candidate registry
+    or manifest, since none exists."""
+    vk_dir = paths.vulkan_dir(ctx.root)
+    host = vk_dir / "ggml-vulkan.cpp"
+    if not host.is_file():
+        ctx.fail("vulkan.dispatch_seam_readable", f"{host} missing, cannot check seam")
+        return
+    text = csource.read(host)
+    required_symbols = (
+        "ggml_vk_mul_mat_q_f16",
+        "ggml_vk_guess_matmul_pipeline",
+        "ggml_vk_dispatch_pipeline",
+        "ggml_vk_create_pipeline",
+    )
+    missing = [sym for sym in required_symbols if sym not in text]
+    if missing:
+        ctx.fail("vulkan.dispatch_seam_symbols_present",
+                 f"expected dispatch-seam symbols not found: {', '.join(missing)}",
+                 expected=list(required_symbols), actual=[s for s in required_symbols if s not in missing])
+    else:
+        ctx.ok("vulkan.dispatch_seam_symbols_present",
+               f"all {len(required_symbols)} expected dispatch-seam symbols present",
+               expected=list(required_symbols))
+
+
+VULKAN_CHECKS: tuple[Callable[[AuditContext], None], ...] = (
+    check_vulkan_backend_present,
+    check_vulkan_shader_discovery,
+    check_vulkan_dispatch_seam,
+)
+
+
+def vulkan_audit(root: Path) -> dict[str, Any]:
+    """The Vulkan-profile counterpart to ``audit()`` (RE30 phase 1).
+
+    Deliberately a SEPARATE function, not a flag on ``audit()``: the
+    existing strict audit is HIP/MMQ/rocBLAS-specific by design (RE30's own
+    investigation), and must never be used to bless a Vulkan overlay by
+    accident. This profile can only check structural facts about a pristine
+    checkout today -- no Vulkan BigCherry patch exists yet, so there is no
+    real anchor/registration contract to validate.
+    """
+    ctx = AuditContext(
+        root=root,
+        cuda=paths.cuda_dir(root),
+        instances=paths.template_instances_dir(root),
+    )
+    vk_dir = paths.vulkan_dir(root)
+    if not vk_dir.is_dir():
+        ctx.fail("root.is_vulkan_capable_checkout",
+                 f"{root} does not look like a Vulkan-capable checkout "
+                 f"(no ggml/src/ggml-vulkan)")
+    else:
+        for check in VULKAN_CHECKS:
+            check(ctx)
+
+    revision, dirty = git_revision(root)
+    errors = [r for r in ctx.results if not r.ok and r.severity == SEVERITY_ERROR]
+    warnings = [r for r in ctx.results if not r.ok and r.severity == SEVERITY_WARNING]
+    return {
+        "artifact_version": ARTIFACT_VERSION,
+        "profile": "vulkan",
+        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "root": str(root),
+        "source_revision": revision,
+        "source_dirty": dirty,
+        "summary": {
+            "total": len(ctx.results),
+            "passed": sum(1 for r in ctx.results if r.ok),
+            "errors": len(errors),
+            "warnings": len(warnings),
+        },
+        "checks": [r.as_dict() for r in ctx.results],
+    }
 
 
 def audit(root: Path) -> dict[str, Any]:

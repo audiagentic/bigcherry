@@ -135,7 +135,7 @@ class _Harness:
             ),
         )
 
-    def worker(self, local_provenance_class: ProvenanceClass = "development"):
+    def worker(self, local_provenance_class: ProvenanceClass = "development", backend: str = "hip"):
         return campaign_workers.make_build_worker(
             context=self.context,
             source_root=self.directory / "source",
@@ -152,6 +152,7 @@ class _Harness:
             # production) provenance docs; development class keeps the
             # production-only publish-time kind contract out of scope.
             local_provenance_class=local_provenance_class,
+            backend=backend,
         )
 
     def fake_compiler(
@@ -209,6 +210,35 @@ class FreshBuildTests(unittest.TestCase):
                 metadata["build_plan_id"], harness.build_plan.build_plan_id
             )
             self.assertIn("CMAKE_C_COMPILER", metadata["effective_configure"])
+
+
+class BackendThreadingTests(unittest.TestCase):
+    """RE30 phase 3: make_build_worker's backend= parameter must actually
+    reach the real configure argv, not just default silently to HIP."""
+
+    def test_default_backend_configures_hip_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            inputs = harness.generate_inputs()
+            with patch(
+                "bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()
+            ):
+                harness.worker()(inputs)  # backend defaults to "hip"
+            configure_call = harness.calls[0]
+            self.assertIn("-DAMDGPU_TARGETS=gfx1100", configure_call)
+            self.assertFalse(any("GGML_VULKAN" in arg for arg in configure_call))
+
+    def test_vulkan_backend_reaches_the_real_configure_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            inputs = harness.generate_inputs()
+            with patch(
+                "bigcherry.campaign_workers.subprocess.run", harness.fake_compiler()
+            ):
+                harness.worker(backend="vulkan")(inputs)
+            configure_call = harness.calls[0]
+            self.assertIn("-DGGML_VULKAN=ON", configure_call)
+            self.assertFalse(any("AMDGPU_TARGETS" in arg for arg in configure_call))
 
 
 class Re25ParentLineageTests(unittest.TestCase):

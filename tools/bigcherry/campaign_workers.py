@@ -193,6 +193,7 @@ def make_build_worker(
     source_provenance: provenance.SourceProvenance | None = None,
     project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
+    backend: str = "hip",
 ):
     """Returns the callable ``_run_build_scoped`` expects for the build
     stage: takes generate's output ArtifactRef tuple (or none at all, for
@@ -400,6 +401,7 @@ def make_build_worker(
                 inventory=inventory_ref.path if inventory_ref is not None else None,
                 c_compiler=platform.c_compiler,
                 cxx_compiler=platform.cxx_compiler,
+                backend=backend,
             )
             subprocess.run(configure_args, cwd=source_root, check=True)
             subprocess.run(

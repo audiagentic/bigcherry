@@ -1,0 +1,12 @@
+{
+  "families": {
+    "mmvq": {"executed": 6958, "dispatched": 6958},
+    "mmq": {"executed": 24192, "dispatched": 24192},
+    "mmvf": {"executed": 80, "dispatched": 80},
+    "mmf": {"executed": 0, "dispatched": 0},
+    "blas": {"executed": 3696, "dispatched": 3696}
+  },
+  "total_executed": 34926,
+  "total_dispatched": 34926,
+  "replay": {"schema_version": 2, "entries": 59, "miss_log_calls": 39, "exact": 58, "candidate_unavailable": 0, "rerun_required": 0, "incompatible": 0, "misses": 39, "stale": false}
+}
