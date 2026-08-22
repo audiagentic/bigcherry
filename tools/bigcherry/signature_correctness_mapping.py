@@ -98,6 +98,16 @@ def load_ggml_op_names(vendor_root: Path) -> dict[int, str]:
     op_order = re.findall(r"GGML_OP_(\w+)", enum_match.group(1))
     if not op_order:
         raise SignatureMappingError("enum ggml_op parsed but yielded no entries")
+    # GGML_OP_COUNT is a sentinel terminator, not a real op -- it has no
+    # slot in GGML_OP_NAME, so it must be excluded here rather than
+    # counted as a positional entry the name table is missing.
+    if op_order[-1] != "COUNT":
+        raise SignatureMappingError(
+            f"expected enum ggml_op's last entry to be the GGML_OP_COUNT "
+            f"sentinel, found GGML_OP_{op_order[-1]} instead -- the enum "
+            "layout has changed in a way this parser does not recognize"
+        )
+    op_order = op_order[:-1]
 
     names_match = re.search(
         r"static const char \* GGML_OP_NAME\[GGML_OP_COUNT\] = \{(.*?)\n\};",
@@ -111,7 +121,22 @@ def load_ggml_op_names(vendor_root: Path) -> dict[int, str]:
     if not name_strings:
         raise SignatureMappingError("GGML_OP_NAME table parsed but yielded no strings")
 
-    return {index: name for index, name in enumerate(name_strings) if index < len(op_order)}
+    # Fail closed on a length mismatch rather than silently zipping the
+    # shorter of the two together: this table is an evidence-authority
+    # mapping (a wrong id->name association here would misattribute
+    # correctness evidence to the wrong op), so a vendor-source format
+    # drift that desyncs the enum from the name array must be a loud
+    # error here, not a quietly-truncated result.
+    if len(name_strings) != len(op_order):
+        raise SignatureMappingError(
+            f"enum ggml_op has {len(op_order)} entries but GGML_OP_NAME has "
+            f"{len(name_strings)} -- these must be positionally aligned 1:1; "
+            "a mismatch means the vendor source format has drifted from what "
+            "this parser expects, and any id->name mapping derived from it "
+            "would be unverified rather than fail closed"
+        )
+
+    return dict(enumerate(name_strings))
 
 
 def _read(path: Path) -> str:
@@ -216,6 +241,30 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
         raise SignatureMappingError(
             f"signature's src0/src1 shared inner dimension disagrees: "
             f"ne0[0]={k_from_a}, ne1[0]={k_from_b} -- not a valid MUL_MAT signature"
+        )
+
+    # The returned op_filter unconditionally PINS bs=[1,1], nr=[1,1] --
+    # that is only a valid test-case identity for a signature whose own
+    # outer dimensions (ne0[2:4], ne1[2:4]) are actually (1,1). Prove that
+    # from the signature itself rather than merely asserting it in prose:
+    # a signature with real batch/repeat dimensions would otherwise get
+    # correctness evidence for an unrelated, un-batched test case, exactly
+    # the "authorized the wrong thing" failure mode HI80 exists to prevent.
+    ne0_outer = (int(ne0[2]), int(ne0[3]))
+    ne1_outer = (int(ne1[2]), int(ne1[3]))
+    if ne0_outer != (1, 1):
+        raise SignatureMappingError(
+            f"signature's src0 outer dimensions are {ne0_outer}, not (1, 1) -- "
+            "this function only maps the non-batched default case (bs=[1,1], "
+            "nr=[1,1]); a signature with real outer/batch dimensions needs "
+            "its own op_filter derivation, not this one's pinned assumption"
+        )
+    if ne1_outer != (1, 1):
+        raise SignatureMappingError(
+            f"signature's src1 outer dimensions are {ne1_outer}, not (1, 1) -- "
+            "this function only maps the non-batched default case (bs=[1,1], "
+            "nr=[1,1]); a signature with real outer/batch dimensions needs "
+            "its own op_filter derivation, not this one's pinned assumption"
         )
 
     type_a = _type_name(signature["src0_type"])
