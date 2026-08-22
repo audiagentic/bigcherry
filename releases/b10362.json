@@ -11,7 +11,7 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "042548891d9f81eab4524c7d71e440110d937516",
+  "bigcherry_revision": "202a0c131c0d7c65bebc6f33c83b3a5ad1f223ce",
   "first_seen": "2026-08-11T23:22:00.783822+00:00",
   "manifest_hash": "",
   "notes": "",
@@ -141,5 +141,5 @@
   "revision": "4801e3c567d5131dd41b387df5f2d4b1370d92be",
   "stage": "patched",
   "tree_state": "0aaaad14a73b6364",
-  "updated_at": "2026-08-19T04:14:15.849443+00:00"
+  "updated_at": "2026-08-21T06:04:11.527590+00:00"
 }

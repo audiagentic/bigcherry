@@ -2109,6 +2109,15 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     Result result;
     result.winner = native.candidate;
     result.native_name = native.candidate ? native.candidate->stable_name : "";
+    // Default provisional_winner to native up front, once, rather than at
+    // each of the (many, growing) early-return sites below: every exit that
+    // returns before the ranking-stage pick (further down) inherits the
+    // correct value for free instead of needing its own assignment. Exits
+    // AFTER a real ranking pick has been made (confirmation/retime failures)
+    // must NOT let this default stand uncorrected -- see the comments at
+    // those sites for why overwriting a nominated challenger's identity back
+    // to native is itself a bug, not a fix.
+    result.provisional_winner = result.native_name;
     // Recomputed rather than threaded down from the resolver: the two are the
     // same values, and recomputing here keeps this function's signature stable
     // for a field the caller has no other use for. Cold path, once per
@@ -2345,6 +2354,9 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
         // reference and no baseline, so this signature is rejected rather than
         // producing a winner chosen against nothing.
         result.reason = "native not eligible; run rejected";
+        // provisional_winner already defaults to native (set once at
+        // Result construction, above) -- this exit is before any ranking
+        // pick exists, so the default is already correct.
         record_result(dispatch_digest, result);
         return native.candidate;
     }
@@ -3092,6 +3104,13 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
             result.winner = native.candidate;
             result.improvement_pct = 0.0;
             result.promotion_status = "native";
+            // GPT review (2026-08-21): this exit lands after the ranking
+            // policy has already produced ranking_decisions but before
+            // provisional_winner is ever assigned below -- native is
+            // operationally safe here (matches the inherited default) even
+            // though it doesn't capture which candidate determinism was
+            // being checked when it failed. A dedicated evaluation-audit
+            // field would be needed to record that; out of scope for now.
             result.reason = "determinism measurement failed; tuning experiment poisoned";
             capture_device_state_post();
             record_result(dispatch_digest, result);
@@ -3144,9 +3163,22 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
                 result.launches_per_sample, config.pre_sample_mode, "confirmation");
             record_retime_observation(result, measured);
             if (!measured.complete) {
+                // GPT review (2026-08-21): the dispatch winner falls back to
+                // native (never ship an unconfirmed candidate), but
+                // provisional_winner is deliberately LEFT ALONE -- it was set
+                // to the challenger's name by the "HI50 ranking-stage pick"
+                // above, and that is a true, useful fact: ranking nominated
+                // this candidate; the attempt to confirm it produced invalid
+                // evidence. Overwriting it to native would both discard that
+                // fact and desync it from ranking_decisions.predicted_winner
+                // (which still names the challenger), tripping a DIFFERENT
+                // invariant in tune_promotion.py's _validate_policy_identity.
+                // promotion_status uses a distinct non-"native" terminal
+                // state so the challenger-provisional/native-status pairing
+                // reads as "evaluation aborted", not "ranking chose native".
                 result.winner = native.candidate;
                 result.improvement_pct = 0.0;
-                result.promotion_status = "native";
+                result.promotion_status = "evaluation_failed";
                 result.reason = "confirmation measurement failed; tuning experiment poisoned";
                 capture_device_state_post();
                 record_result(dispatch_digest, result);
@@ -3195,7 +3227,19 @@ const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
     if (result.retime_status == "unresolved") {
         result.winner = native.candidate;
         result.improvement_pct = 0.0;
-        result.promotion_status = "native";
+        // GPT review (2026-08-21): provisional_winner is deliberately left
+        // untouched here (see the confirmation-failure branch above for the
+        // full rationale) -- but unlike that branch, this one can also fire
+        // when winner_m == native_m, i.e. no real challenger was ever
+        // nominated (provisional_winner already reads native, promotion_status
+        // is already "native" from the branch above). Only relabel as an
+        // aborted evaluation when a challenger's identity is actually at
+        // stake; otherwise "native" already correctly describes this exit.
+        if (result.provisional_winner != result.native_name) {
+            result.promotion_status = "evaluation_failed";
+        } else {
+            result.promotion_status = "native";
+        }
         result.reason = "clock drift retime unresolved; run rejected";
     }
 

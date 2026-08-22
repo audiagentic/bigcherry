@@ -78,7 +78,28 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
     except ranking_policy.RankingPolicyError as exc:
         raise PromotionError(str(exc)) from exc
     if not decisions:
-        raise PromotionError("ranking decision coverage is empty")
+        # The C++ emitter always writes this field, defaulting to "[]" for
+        # runs with nothing to rank (e.g. "native not eligible; run
+        # rejected") -- that default carries no ranking claim to validate,
+        # unlike a genuinely present-but-malformed decision list. But
+        # unconditional acceptance is too permissive (GPT review,
+        # 2026-08-21): a producer regression that reaches the ranking stage,
+        # picks a challenger, and accidentally serializes "[]" would then
+        # bypass every ranking-policy identity/coverage/verdict check below.
+        # Every status the tuner emits AFTER ranking runs (evaluation_failed,
+        # confirmation_rejected, pending_bh, promoted, rejected_*) requires
+        # real ranking_decisions; only "native" legitimately has none, since
+        # every pre-ranking early-return keeps status=="native" by
+        # construction. (This is still a proxy, not a first-class contract --
+        # the real fix is an explicit ranking_state field the tuner emits
+        # directly, so absence-of-evidence is stated rather than inferred.)
+        status = row.get("promotion_status")
+        if status is not None and status != "native":
+            raise PromotionError(
+                "ranking decision coverage is empty but promotion_status "
+                f"{status!r} requires a completed ranking pick"
+            )
+        return
     production = [decision for decision in decisions if decision.is_production]
     if len(production) != 1:
         raise PromotionError("ranking decision production policy coverage is invalid")
@@ -154,6 +175,7 @@ def _validate_provisional_status(row: dict[str, Any]) -> None:
         "native",
         "pending_bh",
         "confirmation_rejected",
+        "evaluation_failed",
         "promoted",
         "rejected_effect",
         "rejected_ci",
@@ -631,6 +653,15 @@ def promote(
         if not isinstance(provisional, str) or provisional == row.get("native"):
             continue
         original_status = row.get("promotion_status")
+        # A real challenger was nominated (provisional != native) but the
+        # measurement transaction that would have produced confirmation
+        # evidence for it never completed (HIP timing failure, unresolved
+        # clock drift). There is no p-value to test -- this is not a
+        # rejected hypothesis, it is evidence that was never obtained.
+        # Skip it the same way a native-retained row is skipped, rather than
+        # treating "no evidence" as if it were "evidence against".
+        if original_status == "evaluation_failed":
+            continue
         if original_status not in {"pending_bh", "confirmation_rejected"}:
             raise PromotionError(
                 "non-native result lacks current pending_bh/confirmation evidence"

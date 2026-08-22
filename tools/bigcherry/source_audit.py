@@ -492,6 +492,57 @@ def check_identity_namespace_separation(ctx: AuditContext) -> None:
 
 # ----------------------------------------------------------------- build files
 
+def check_overlay_sync(ctx: AuditContext) -> None:
+    """Detect drift between the tracked overlay (src/) and the compiled tree.
+
+    ``src/`` is this repo's tracked canonical source for files ``apply``
+    mirrors onto the checkout (see ``_copy_overlay`` in __main__.py);
+    ``vendor/llama.cpp`` (gitignored) is what cmake actually compiles. Nothing
+    previously verified the two stayed in sync, so an overlay file could be
+    edited, committed, and pass every test while the compiled tree kept
+    running the old content -- a fix that looks done but was never built.
+
+    A file present only in the overlay (not yet mirrored to the checkout) is
+    NOT drift: that is the normal pre-``apply`` state for a new or
+    just-edited overlay file. Only a same-relative-path file that exists on
+    BOTH sides with DIFFERENT content is drift -- that means ``apply`` ran at
+    some point but the overlay has since moved on without a re-run.
+    """
+    overlay_root = paths.SRC_OVERLAY
+    if not overlay_root.is_dir():
+        ctx.fail("overlay.root_present", f"missing overlay root {overlay_root}")
+        return
+
+    drifted: list[str] = []
+    compared = 0
+    for source in sorted(overlay_root.rglob("*")):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(overlay_root)
+        target = ctx.root / relative
+        if not target.is_file():
+            continue  # not yet applied -- normal in-progress state, not drift
+        compared += 1
+        if source.read_bytes() != target.read_bytes():
+            drifted.append(str(relative).replace("\\", "/"))
+
+    if drifted:
+        ctx.fail(
+            "overlay.vendor_sync",
+            f"{len(drifted)} overlay file(s) differ from the compiled tree "
+            "-- run `python -m bigcherry apply` to sync, or the checkout "
+            "will silently build stale code: " + ", ".join(drifted),
+            expected="src/ and vendor/llama.cpp copies identical",
+            actual=drifted,
+        )
+    else:
+        ctx.ok(
+            "overlay.vendor_sync",
+            f"{compared} overlay file(s) mirrored onto the checkout match "
+            "byte-for-byte",
+        )
+
+
 def check_build(ctx: AuditContext) -> None:
     cmake_path = ctx.root / "ggml" / "src" / "ggml-hip" / "CMakeLists.txt"
     if not cmake_path.is_file():
@@ -604,6 +655,7 @@ ALL_CHECKS: tuple[Callable[[AuditContext], None], ...] = (
     check_mmf,
     check_mmvq,
     check_identity_namespace_separation,
+    check_overlay_sync,
     check_build,
     check_entry_points,
 )

@@ -1,25 +1,112 @@
 {
   "artifact_version": 1,
   "audit": {
-    "failed_checks": [],
-    "passed": true,
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
     "strict": true,
     "summary": {
-      "errors": 0,
+      "errors": 1,
       "passed": 33,
-      "total": 33,
+      "total": 34,
       "warnings": 0
     }
   },
-  "bigcherry_revision": "e76c58af43d96af5f6d6e9ac19c7f27762632718",
+  "bigcherry_revision": "c4c7d794fe6376ee2837ee9ec946c7e44878b6ba",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
-  "manifest_hash": "",
-  "notes": "",
-  "patches": {},
+  "manifest_hash": "817a920fde9284bfc8cb721057f63dd1",
+  "notes": "source audit failed: overlay.vendor_sync",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "replay-diagnostics-option": "applied"
+      },
+      "ggml/src/ggml-backend-meta.cpp": {
+        "meta-reduce-telemetry-fallback": "applied",
+        "meta-reduce-telemetry-hook-field": "applied",
+        "meta-reduce-telemetry-hook-resolve": "applied",
+        "meta-reduce-telemetry-hook-type": "applied",
+        "meta-reduce-telemetry-include": "applied",
+        "meta-reduce-telemetry-node-declaration": "applied",
+        "meta-reduce-telemetry-node-scope": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "pool-alloc-requested-size-member": "applied",
+        "pool-workspace-members": "applied",
+        "pool-workspace-note-alloc": "applied",
+        "pool-workspace-note-free": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "pool-leg-clear-cache": "applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-tuner.cu": {
+        "emit-result-canonical-json": "already-applied",
+        "format-result-canonical-json": "already-applied",
+        "result-canonical-json": "already-applied",
+        "set-result-canonical-json": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "q2k-mma-unroll-guard": "applied",
+        "q6k-mma-float-promotion": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-case-forward": "applied",
+        "mmq-case-signature": "applied",
+        "mmq-helpers-and-switch": "applied",
+        "mmq-instantiation-macro": "applied",
+        "mmq-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "replay-diagnostics-definition": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "hi70-direct-op-corpus": "applied"
+      },
+      "tools/server/server.cpp": {
+        "server-shutdown-cstdlib": "applied",
+        "server-shutdown-response": "applied",
+        "server-shutdown-route": "applied"
+      }
+    }
+  },
   "promotion": null,
   "release_tag": "b10502",
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
-  "stage": "audited",
-  "tree_state": "",
-  "updated_at": "2026-08-20T03:16:47.879287+00:00"
+  "stage": "generated",
+  "tree_state": "c383ff6fd7c91d8c",
+  "updated_at": "2026-08-21T23:42:03.465898+00:00"
 }

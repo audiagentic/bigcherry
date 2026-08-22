@@ -189,6 +189,16 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
         fusion_data.x_bias = bias_tensor;
 
         if (ggml_cuda_should_fuse_mul_mat_vec_f(mm_node)) {
+            // bigcherry: HI82 activation-evidence instrumentation, not part
+            // of the ported fork change. See 1205_rd12's identical marker
+            // for the rationale (silent host-side fusion selection needs an
+            // explicit hit signal for unattended validation to trust).
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                static std::atomic_flag bigcherry_rd13_logged = ATOMIC_FLAG_INIT;
+                if (!bigcherry_rd13_logged.test_and_set(std::memory_order_relaxed)) {
+                    GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_f\\n");
+                }
+            }
             ggml_cuda_mul_mat_vec_f(*cuda_ctx, src0, src1, ids, bias_node, &fusion_data);
             fused_mul_mat_vec = true;
             fused_node_count  = has_view ? 3 : 2;
@@ -196,6 +206,12 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
         }
 
         if (ggml_cuda_should_fuse_mul_mat_vec_q(mm_node)) {
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                static std::atomic_flag bigcherry_rd13_logged_q = ATOMIC_FLAG_INIT;
+                if (!bigcherry_rd13_logged_q.test_and_set(std::memory_order_relaxed)) {
+                    GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q\\n");
+                }
+            }
             ggml_cuda_mul_mat_vec_q(*cuda_ctx, src0, src1, ids, bias_node, &fusion_data);
             fused_mul_mat_vec = true;
             fused_node_count  = has_view ? 3 : 2;"""

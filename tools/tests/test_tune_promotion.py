@@ -672,6 +672,151 @@ class PromotionTests(unittest.TestCase):
         tune_promotion._validate_policy_identity(row, header)
 
 
+def native_retained_row(dispatch: str, *, reason: str) -> dict:
+    """A row shaped like the tuner's early-reject paths (HI30 provisional_winner
+    fix, 2026-08-21): promotion_status "native", provisional_winner == native,
+    no schedule/confirmation/ranking evidence -- exactly what
+    "native not eligible; run rejected", "tuning experiment poisoned; later
+    measurements suppressed", "clock drift retime unresolved; run rejected",
+    "determinism measurement failed; tuning experiment poisoned", and
+    "confirmation measurement failed; tuning experiment poisoned" all emit."""
+    return {
+        "kind": "result",
+        "dispatch": dispatch,
+        "native": "native",
+        "signature": dispatch,
+        "hardware": HARDWARE_HEX,
+        "winner": "native",
+        "promotion_status": "native",
+        "provisional_winner": "native",
+        "reason": reason,
+    }
+
+
+class NativeRetainedContractTests(unittest.TestCase):
+    """HI79: promotion-contract coverage for the tuner's early-reject paths
+    (mixed-outcome rows), the class of case that only surfaced from real
+    hardware output in the 2026-08-21 qwen2b E2E campaign session. Two real
+    bugs lived here: (1) tune_promotion.py rejected the C++ emitter's
+    legitimate default-empty ranking_decisions:[] as a malformed claim, and
+    (2) 7 places in hip-autotune-tuner.cu left provisional_winner empty on
+    these exact paths, which _validate_provisional_status correctly rejects
+    -- that fix belongs in the emitter, not by loosening this check (see
+    test_missing_provisional_winner_is_still_rejected below)."""
+
+    HEADER = PromotionTests.HEADER
+
+    EARLY_REJECT_REASONS = [
+        "native not eligible; run rejected",
+        "tuning disabled after fatal measurement failure",
+        "tuning experiment poisoned; later measurements suppressed",
+        "clock drift retime unresolved; run rejected",
+        "determinism measurement failed; tuning experiment poisoned",
+        "confirmation measurement failed; tuning experiment poisoned",
+    ]
+
+    def test_every_early_reject_reason_promotes_cleanly_as_native(self):
+        for reason in self.EARLY_REJECT_REASONS:
+            with self.subTest(reason=reason):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    source, output = root / "source.jsonl", root / "promoted.jsonl"
+                    row = native_retained_row("a" * 32, reason=reason)
+                    source.write_text(
+                        "".join(
+                            json.dumps(row_) + "\n" for row_ in [self.HEADER, row]
+                        ),
+                        encoding="utf-8",
+                    )
+                    report = tune_promotion.promote(
+                        source, output, dispatch_db=empty_dispatch_db(root),
+                        resamples=1000,
+                    )
+                    self.assertEqual(report["promoted"], 0)
+                    self.assertEqual(report["hypotheses"], 0)
+                    promoted = [
+                        json.loads(line) for line in output.read_text().splitlines()
+                    ]
+                    self.assertEqual(promoted[1]["promotion_status"], "native")
+
+    def test_empty_ranking_decisions_on_a_native_row_does_not_raise(self):
+        # The actual bug: the C++ emitter always writes this field, defaulting
+        # to "[]" for early-reject rows -- an empty array carries no ranking
+        # claim to validate, unlike a genuinely malformed one.
+        row = native_retained_row("a" * 32, reason="native not eligible; run rejected")
+        row["ranking_decisions"] = []
+        tune_promotion._validate_policy_identity(row, self.HEADER)
+
+    def test_missing_provisional_winner_is_still_rejected(self):
+        # Guards the validator itself: an empty provisional_winner alongside a
+        # present promotion_status is genuinely malformed (this was the
+        # pre-fix shape hip-autotune-tuner.cu emitted on 7 early-reject
+        # paths) -- the fix belongs in the C++ emitter, not by loosening this
+        # check, so it must keep failing closed.
+        row = native_retained_row("a" * 32, reason="native not eligible; run rejected")
+        row["provisional_winner"] = ""
+        with self.assertRaisesRegex(
+            tune_promotion.PromotionError, "provisional winner identity is missing"
+        ):
+            tune_promotion._validate_provisional_status(row)
+
+    def test_rejected_bh_is_reachable_when_statistics_pass_but_bh_rejects(self):
+        # Both rows individually pass effect/CI; only the second's BH-adjusted
+        # q-value (p=0.5 against q=0.05, count=2) exceeds the threshold, so
+        # promote() must classify it as rejected_bh specifically -- not
+        # rejected_effect or rejected_ci, which would misreport why it lost.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.5, 95.0),
+            ]
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[2]["promotion_status"], "rejected_bh")
+            self.assertEqual(promoted[2]["winner"], "native")
+
+    def test_rejected_ci_is_reachable_when_effect_passes_but_ci_crosses_zero(self):
+        # Median effect is comfortably above threshold_pct, but half the
+        # paired rounds favor native and half favor the challenger by a wide
+        # margin -- high enough bootstrap variance that the 95% CI's lower
+        # bound crosses zero even though the point estimate does not.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 90.0)
+            native_us = [100.0] * 12
+            winner_us = [60.0] * 7 + [220.0] * 5
+            row["confirmation"]["native_us"] = native_us
+            row["confirmation"]["winner_us"] = winner_us
+            row["confirmation"]["wins"] = 7
+            row["confirmation"]["rounds"] = 12
+            row["confirmation"]["effect_pct"] = 100.0 * (
+                tune_promotion._median(native_us) - tune_promotion._median(winner_us)
+            ) / tune_promotion._median(native_us)
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                threshold_pct=1.0, resamples=2000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_ci")
+            self.assertEqual(promoted[1]["winner"], "native")
+
+
 class CorrectnessGateIntegrationTests(unittest.TestCase):
     """HI67 slice 3: the correctness gate is a HARD AND with the existing
     BH/bootstrap statistical criteria, exercised through the real promote()
