@@ -5,6 +5,7 @@ between point releases (bare number vs 'Agent N'). A silently mis-parsed
 trace produces a plausible percentage, so the parser must be pinned by
 tests over both formats.
 """
+
 from __future__ import annotations
 
 import sys
@@ -70,10 +71,8 @@ class AgentFormatTests(unittest.TestCase):
             a = kernel_fraction.parse_kernel_trace([bare])
             b = kernel_fraction.parse_kernel_trace([named])
         self.assertEqual(
-            [(r["kernel"], r["family"], r["dur_ns"], r["agent"])
-             for r in a["rows"]],
-            [(r["kernel"], r["family"], r["dur_ns"], r["agent"])
-             for r in b["rows"]],
+            [(r["kernel"], r["family"], r["dur_ns"], r["agent"]) for r in a["rows"]],
+            [(r["kernel"], r["family"], r["dur_ns"], r["agent"]) for r in b["rows"]],
         )
 
     def test_no_agent_column(self):

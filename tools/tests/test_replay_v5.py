@@ -23,31 +23,58 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bigcherry import replay_cache  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CAMPAIGN_V4 = REPO_ROOT / "docs" / "reference" / "h36-campaign-27b-r9700" / \
-    "dispatch-27b.cache"
+CAMPAIGN_V4 = (
+    REPO_ROOT / "docs" / "reference" / "h36-campaign-27b-r9700" / "dispatch-27b.cache"
+)
 
 
 def _fixture(dispatch: str, root: Path, manifest_hash: str = "a" * 32):
     manifest = root / f"manifest-{dispatch[0]}.json"
-    manifest.write_text(json.dumps({
-        "source_revision": "b" * 40,
-        "manifest_hash": manifest_hash,
-        "candidates": [{
-            "stable_name": "mmvq:native:v1", "family": "mmvq",
-            "source_class": "native_wrapper", "implementation_version": 1,
-            "config": {},
-        }],
-    }), encoding="utf-8")
+    manifest.write_text(
+        json.dumps(
+            {
+                "source_revision": "b" * 40,
+                "manifest_hash": manifest_hash,
+                "candidates": [
+                    {
+                        "stable_name": "mmvq:native:v1",
+                        "family": "mmvq",
+                        "source_class": "native_wrapper",
+                        "implementation_version": 1,
+                        "config": {},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     ggml_h = root / "ggml.h"
     ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
     measurements = root / f"measurements-{dispatch[0]}.jsonl"
-    measurements.write_text("\n".join([
-        json.dumps({"kind": "header", "source_revision": "b" * 40,
-                    "manifest_hash": manifest_hash}),
-        json.dumps({"kind": "result", "dispatch": dispatch,
-                    "signature": "C" * 32, "winner": "mmvq:native:v1",
-                    "native": "mmvq:native:v1"}),
-    ]) + "\n", encoding="utf-8")
+    measurements.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "kind": "header",
+                        "source_revision": "b" * 40,
+                        "manifest_hash": manifest_hash,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "kind": "result",
+                        "dispatch": dispatch,
+                        "signature": "C" * 32,
+                        "winner": "mmvq:native:v1",
+                        "native": "mmvq:native:v1",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return manifest, ggml_h, measurements
 
 
@@ -62,21 +89,23 @@ def _v5_to_v4(v5_blob: bytes) -> bytes:
     version4 = bytearray(v5_blob)
     struct.pack_into("<I", version4, 4, replay_cache.REPLAY_VERSION_V4)
     entry_count, string_bytes = struct.unpack_from("<II", version4, 16)
-    strings_at = replay_cache.REPLAY_HEADER_SIZE + \
-        entry_count * replay_cache.ENT_SIZE
-    header = bytes(version4[:replay_cache.REPLAY_HEADER_SIZE])
+    strings_at = replay_cache.REPLAY_HEADER_SIZE + entry_count * replay_cache.ENT_SIZE
+    header = bytes(version4[: replay_cache.REPLAY_HEADER_SIZE])
     entries = bytearray()
     for i in range(entry_count):
         offset = replay_cache.REPLAY_HEADER_SIZE + i * replay_cache.ENT_SIZE
-        entries += version4[offset:offset + replay_cache.ENT_SIZE_V4]
-    strings = bytes(version4[strings_at:strings_at + string_bytes])
+        entries += version4[offset : offset + replay_cache.ENT_SIZE_V4]
+    strings = bytes(version4[strings_at : strings_at + string_bytes])
     payload = bytes(entries) + strings
     out = bytearray(header)
-    struct.pack_into("<16s", out, 40,
-                     replay_cache.blake2b_digest(payload))
+    struct.pack_into("<16s", out, 40, replay_cache.blake2b_digest(payload))
     out += payload
-    assert len(out) == replay_cache.REPLAY_HEADER_SIZE + \
-        entry_count * replay_cache.ENT_SIZE_V4 + string_bytes
+    assert (
+        len(out)
+        == replay_cache.REPLAY_HEADER_SIZE
+        + entry_count * replay_cache.ENT_SIZE_V4
+        + string_bytes
+    )
     return bytes(out)
 
 
@@ -110,8 +139,10 @@ class V4LegacyReaderTests(unittest.TestCase):
         self.assertIsNone(entries[0]["match_kind"])
         # Every non-trailing v4 field is byte-identical to the v5 original.
         v5_header, v5_entries = replay_cache.read_cache(v5)
-        self.assertEqual(entries[0]["wire_entry"],
-                         v5_entries[0]["wire_entry"][:replay_cache.ENT_SIZE_V4])
+        self.assertEqual(
+            entries[0]["wire_entry"],
+            v5_entries[0]["wire_entry"][: replay_cache.ENT_SIZE_V4],
+        )
 
     def test_production_reader_rejects_v4_as_rerun_input(self):
         manifest, ggml_h, measurements = _fixture("A" * 32, self.root)
@@ -130,8 +161,7 @@ class V4LegacyReaderTests(unittest.TestCase):
     def test_truncated_v4_is_rejected(self):
         manifest, ggml_h, measurements = _fixture("A" * 32, self.root)
         v4 = _v5_to_v4(replay_cache.build(measurements, manifest, ggml_h))
-        for bad in (v4[:replay_cache.REPLAY_HEADER_SIZE - 4],
-                    v4[:-7]):
+        for bad in (v4[: replay_cache.REPLAY_HEADER_SIZE - 4], v4[:-7]):
             with self.assertRaises(SystemExit):
                 replay_cache.read_cache_legacy_v4(bad)
 
@@ -144,20 +174,21 @@ class V4ToV5MergeTests(unittest.TestCase):
         # First "historical" export: dispatch B, converted to v4.
         manifest_b, ggml_h, measurements_b = _fixture("B" * 32, self.root)
         v4_path = self.root / "legacy.cache"
-        v4_path.write_bytes(_v5_to_v4(
-            replay_cache.build(measurements_b, manifest_b, ggml_h)))
+        v4_path.write_bytes(
+            _v5_to_v4(replay_cache.build(measurements_b, manifest_b, ggml_h))
+        )
         # Current export: dispatch A, merged into the v4 cache.
         manifest_a, _, measurements_a = _fixture("A" * 32, self.root)
-        merged = replay_cache.build(measurements_a, manifest_a, ggml_h,
-                                    merge_into=v4_path, generation=2)
+        merged = replay_cache.build(
+            measurements_a, manifest_a, ggml_h, merge_into=v4_path, generation=2
+        )
         header, entries = replay_cache.read_cache(merged)
         self.assertEqual(header["version"], replay_cache.REPLAY_VERSION)
         self.assertEqual(len(entries), 2)
         # The v4-derived entry was repacked as a genuine 93-byte v5 entry.
         for entry in entries:
             self.assertEqual(len(entry["wire_entry"]), replay_cache.ENT_SIZE)
-            self.assertEqual(entry["match_kind"],
-                             replay_cache.MATCH_KIND_EXACT)
+            self.assertEqual(entry["match_kind"], replay_cache.MATCH_KIND_EXACT)
             self.assertEqual(entry["transform_id"], 0)
         generations = sorted(entry["generation"] for entry in entries)
         self.assertEqual(generations, [0, 2])
@@ -174,8 +205,9 @@ class UnrecognisedMatchKindTests(unittest.TestCase):
         blob[offset] = kind
         # A future producer would emit a valid checksum; recompute it so the
         # match_kind check -- not the checksum -- is what rejects the file.
-        struct.pack_into("<16s", blob, 40,
-                         replay_cache.blake2b_digest(bytes(blob[56:])))
+        struct.pack_into(
+            "<16s", blob, 40, replay_cache.blake2b_digest(bytes(blob[56:]))
+        )
         return bytes(blob)
 
     def test_future_match_kind_is_rejected_not_reinterpreted(self):
@@ -188,8 +220,7 @@ class UnrecognisedMatchKindTests(unittest.TestCase):
     def test_exact_match_kind_still_round_trips(self):
         blob = self._v5_with_match_kind(replay_cache.MATCH_KIND_EXACT)
         _, entries = replay_cache.read_cache(blob)
-        self.assertEqual(entries[0]["match_kind"],
-                         replay_cache.MATCH_KIND_EXACT)
+        self.assertEqual(entries[0]["match_kind"], replay_cache.MATCH_KIND_EXACT)
 
 
 class V5CorruptionParityTests(unittest.TestCase):
@@ -204,9 +235,14 @@ class V5CorruptionParityTests(unittest.TestCase):
         replay_cache.read_cache(self.blob)  # sanity: clean blob passes
 
     def test_truncation_matrix_is_rejected(self):
-        for length in (0, 8, replay_cache.REPLAY_HEADER_SIZE - 1,
-                       replay_cache.REPLAY_HEADER_SIZE + 30,
-                       len(self.blob) - 1, len(self.blob) - 5):
+        for length in (
+            0,
+            8,
+            replay_cache.REPLAY_HEADER_SIZE - 1,
+            replay_cache.REPLAY_HEADER_SIZE + 30,
+            len(self.blob) - 1,
+            len(self.blob) - 5,
+        ):
             with self.subTest(length=length), self.assertRaises(SystemExit):
                 replay_cache.read_cache(self.blob[:length])
 
@@ -215,14 +251,14 @@ class V5CorruptionParityTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 with self.assertRaises(SystemExit) as ctx:
                     replay_cache.read_cache(self.blob + b"\x00" * extra)
-                self.assertIn("truncated or has trailing bytes",
-                              str(ctx.exception))
+                self.assertIn("truncated or has trailing bytes", str(ctx.exception))
 
     def test_single_byte_flip_is_caught_by_checksum(self):
-        for position in (57,  # first entry byte
-                         replay_cache.REPLAY_HEADER_SIZE +
-                         replay_cache.ENT_MANIFEST,  # mid-entry
-                         len(self.blob) - 1):  # string table
+        for position in (
+            57,  # first entry byte
+            replay_cache.REPLAY_HEADER_SIZE + replay_cache.ENT_MANIFEST,  # mid-entry
+            len(self.blob) - 1,
+        ):  # string table
             with self.subTest(position=position):
                 flipped = bytearray(self.blob)
                 flipped[position] ^= 0x01
@@ -243,21 +279,26 @@ class CppContractTests(unittest.TestCase):
     behaviour the Python side mirrors."""
 
     def test_cpp_loader_contract_strings(self):
-        cpp = (REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" /
-               "hip-autotune-replay.cpp").read_text(encoding="utf-8")
-        header = (REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" /
-                  "hip-autotune-replay.h").read_text(encoding="utf-8")
+        cpp = (
+            REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.cpp"
+        ).read_text(encoding="utf-8")
+        header = (
+            REPO_ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-replay.h"
+        ).read_text(encoding="utf-8")
         for fragment in (
-                "container format version mismatch",  # v4 -> rerun_required
-                "match_kind this build does not recognise",
-                "implementation_version that no longer matches",
-                "artifact version mismatch",
-                "signature schema version mismatch",
-                "hardware key schema version mismatch"):
+            "container format version mismatch",  # v4 -> rerun_required
+            "match_kind this build does not recognise",
+            "implementation_version that no longer matches",
+            "artifact version mismatch",
+            "signature schema version mismatch",
+            "hardware key schema version mismatch",
+        ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, cpp)
-        for fragment in ("#define GGML_HIP_REPLAY_VERSION 5",
-                         "GGML_HIP_REPLAY_MATCH_EXACT = 0"):
+        for fragment in (
+            "#define GGML_HIP_REPLAY_VERSION 5",
+            "GGML_HIP_REPLAY_MATCH_EXACT = 0",
+        ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, header)
 

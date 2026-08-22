@@ -328,6 +328,14 @@ state = "untested"
 plan-item = "HI67"
 
 [[patch]]
+id = "1224_hi18_reduce_correctness_probe"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI18"
+
+[[patch]]
 id = "1230_hip_autotune_inspect"
 kind = "framework"
 origin = "local"
