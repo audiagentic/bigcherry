@@ -334,3 +334,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI15/HI16"
+
+[[patch]]
+id = "1231_hi14_graph_capture_lifecycle_evidence"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI14"
