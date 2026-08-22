@@ -40,6 +40,7 @@ def _write_fixture_vendor(tmp_path: Path) -> Path:
         "    GGML_OP_NONE,\n"
         "    GGML_OP_ADD,\n"
         "    GGML_OP_MUL_MAT,\n"
+        "    GGML_OP_COUNT,\n"
         "};\n",
         encoding="utf-8",
     )
@@ -170,6 +171,26 @@ def test_mismatched_inner_dimension_is_rejected(tmp_path):
         assert False, "expected SignatureMappingError for mismatched k"
     except scm.SignatureMappingError as exc:
         assert "disagrees" in str(exc)
+
+
+def test_batched_src0_outer_dims_are_rejected(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path)
+    signature["ne0"] = [256, 16, 3, 1]  # ne0[2]=3, not the assumed 1
+    try:
+        scm.signature_to_op_filter(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for batched src0 outer dims"
+    except scm.SignatureMappingError as exc:
+        assert "src0 outer dimensions" in str(exc)
+
+
+def test_batched_src1_outer_dims_are_rejected(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path)
+    signature["ne1"] = [256, 1, 1, 2]  # ne1[3]=2, not the assumed 1
+    try:
+        scm.signature_to_op_filter(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for batched src1 outer dims"
+    except scm.SignatureMappingError as exc:
+        assert "src1 outer dimensions" in str(exc)
 
 
 def test_unknown_type_id_is_rejected(tmp_path):
