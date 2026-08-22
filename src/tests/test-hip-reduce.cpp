@@ -129,6 +129,21 @@ probe_options parse_args(int argc, char ** argv) {
     return opts;
 }
 
+// Exact canonical key format tools/bigcherry/telemetry.py derives from real
+// production reduction telemetry (mirrored by reduce_correctness.py's
+// make_reduction_signature_key) -- verified before use here, so the
+// probe's observed runtime signature and a case's declared identity are
+// provably comparable, not merely similarly-shaped strings.
+std::string make_reduction_signature_key(
+        const std::string & element_type, int64_t element_count,
+        const int64_t shape[4], const std::string & topology_key) {
+    std::ostringstream ss;
+    ss << "split_reduce:v1:" << element_type << ":" << element_count << ":"
+       << shape[0] << "," << shape[1] << "," << shape[2] << "," << shape[3]
+       << ":" << topology_key;
+    return ss.str();
+}
+
 std::string sha256_hex_of(const std::vector<uint8_t> & data) {
     return hash_sha256_hex(data.data(), data.size());
 }
@@ -279,6 +294,20 @@ int main(int argc, char ** argv) {
     const probe_options opts = parse_args(argc, argv);
     const size_t D = opts.devices.size();
 
+    // Two logical participants backed by the same physical device must
+    // never count as two-GPU correctness evidence.
+    for (size_t i = 0; i < opts.devices.size(); ++i) {
+        if (opts.devices[i] < 0) {
+            fail("device ordinals must be non-negative, got " + std::to_string(opts.devices[i]));
+        }
+        for (size_t j = 0; j < i; ++j) {
+            if (opts.devices[i] == opts.devices[j]) {
+                fail("duplicate device ordinal " + std::to_string(opts.devices[i]) +
+                     " -- HI18 requires distinct participating devices");
+            }
+        }
+    }
+
     // HI18 D=2 slice: mechanics above are device-count-generic (see HI84
     // for the planned D=3/D=4 extension), but this build only claims D=2
     // hardware evidence. Relax this guard, not the mechanics, when HI84
@@ -387,11 +416,26 @@ int main(int argc, char ** argv) {
     // ggml_vbuffer_alloc), so tensor init sees the correct usage the first
     // time, and META derives partial/out's state from the real
     // handle_mul_mat()/DUP rules instead.
+    // ggml_backend_sched_new() hard-requires its LAST backend to be
+    // CPU-typed (ggml-backend.cpp's own GGML_ASSERT) -- discovered against
+    // the real toolchain on Brutus, not documented in the header comment.
+    // No graph node targets it; it exists only to satisfy the scheduler's
+    // own precondition.
+    ggml_backend_dev_t cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    if (cpu_dev == nullptr) {
+        fail("no CPU backend device registered (required by ggml_backend_sched_new)");
+    }
+    ggml_backend_t cpu_backend = ggml_backend_dev_init(cpu_dev, nullptr);
+    if (cpu_backend == nullptr) {
+        fail("ggml_backend_dev_init(cpu_dev) returned null");
+    }
+
     ggml_backend_buffer_type_t meta_buft = ggml_backend_get_default_buffer_type(meta_backend);
-    ggml_backend_t sched_backends[] = { meta_backend };
-    ggml_backend_buffer_type_t sched_bufts[] = { meta_buft };
+    ggml_backend_buffer_type_t cpu_buft = ggml_backend_get_default_buffer_type(cpu_backend);
+    ggml_backend_t sched_backends[] = { meta_backend, cpu_backend };
+    ggml_backend_buffer_type_t sched_bufts[] = { meta_buft, cpu_buft };
     ggml_backend_sched_t sched = ggml_backend_sched_new(
-        sched_backends, sched_bufts, 1, GGML_DEFAULT_GRAPH_SIZE, false, false);
+        sched_backends, sched_bufts, 2, GGML_DEFAULT_GRAPH_SIZE, false, false);
     if (sched == nullptr) {
         fail("failed to create the meta backend scheduler");
     }
@@ -480,9 +524,27 @@ int main(int argc, char ** argv) {
         signature["peer_access"] = std::string(snap.peer_access);
         result["reduction_signature"] = signature;
 
+        const std::string expected_key =
+            c.manifest.at("reduction_signature_key").get<std::string>();
+        const std::string expected_topology = c.manifest.at("topology_key").get<std::string>();
+        const std::string expected_peer_access = c.manifest.at("peer_access").get<std::string>();
+        const std::string observed_key = make_reduction_signature_key(
+            std::string(snap.element_type), snap.element_count, snap.slice_shape,
+            std::string(snap.topology_key));
+        result["reduction_signature_key"] = observed_key;
+        result["expected_reduction_signature_key"] = expected_key;
+
+        // Full identity, not merely shape: the real production key is also
+        // keyed on topology (verified against tools/bigcherry/telemetry.py)
+        // -- the same tensor shape on a DIFFERENT topology is a different
+        // signature and must not silently pass as evidence for this case.
         signature_matches = snap.element_count == c.element_count &&
+            std::string(snap.element_type) == "f32" &&
             snap.slice_shape[0] == s0 && snap.slice_shape[1] == s1 &&
-            snap.slice_shape[2] == s2 && snap.slice_shape[3] == s3;
+            snap.slice_shape[2] == s2 && snap.slice_shape[3] == s3 &&
+            std::string(snap.topology_key) == expected_topology &&
+            std::string(snap.peer_access) == expected_peer_access &&
+            observed_key == expected_key;
         result["reduction_signature_matches_case"] = signature_matches;
 
         json outputs = json::array();

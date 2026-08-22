@@ -106,7 +106,11 @@ class CaseRoundTripTests(unittest.TestCase):
             case_dir = Path(tmp) / "case-0001"
             manifest = rc.write_case(
                 case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
-                reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                reduction_signature_key=rc.make_reduction_signature_key(
+                    element_type="f32", element_count=32, slice_shape=(32, 1, 1, 1),
+                    topology_key="n2:peer1001",
+                ),
+                topology_key="n2:peer1001",
                 peer_access="partial", devices=devices, slice_shape=(32, 1, 1, 1),
             )
             loaded_manifest, ranks = rc.load_case(case_dir)
@@ -121,7 +125,11 @@ class CaseRoundTripTests(unittest.TestCase):
             case_dir = Path(tmp) / "case-0001"
             rc.write_case(
                 case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
-                reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                reduction_signature_key=rc.make_reduction_signature_key(
+                    element_type="f32", element_count=8, slice_shape=(8, 1, 1, 1),
+                    topology_key="n2:peer1001",
+                ),
+                topology_key="n2:peer1001",
                 peer_access="partial", devices=devices, slice_shape=(8, 1, 1, 1),
             )
             (case_dir / "rank-0.f32").write_bytes(b"\x00" * 32)
@@ -147,6 +155,39 @@ class CaseRoundTripTests(unittest.TestCase):
                     reduction_signature_key="sig-a", topology_key="n2:peer1001",
                     peer_access="partial", devices=devices, slice_shape=(4, 1, 1, 1),
                 )
+
+
+class SignatureKeyTests(unittest.TestCase):
+    def test_matches_real_telemetry_key_format(self):
+        key = rc.make_reduction_signature_key(
+            element_type="f32", element_count=8192, slice_shape=(4096, 2, 1, 1),
+            topology_key="n2:peer1001",
+        )
+        self.assertEqual(key, "split_reduce:v1:f32:8192:4096,2,1,1:n2:peer1001")
+
+    def test_write_case_rejects_inconsistent_declared_key(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="not-the-real-canonical-key",
+                    topology_key="n2:peer1001", peer_access="partial",
+                    devices=devices, slice_shape=(8, 1, 1, 1),
+                )
+
+    def test_write_case_accepts_the_canonical_key(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            rc.write_case(
+                Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                reduction_signature_key=rc.make_reduction_signature_key(
+                    element_type="f32", element_count=8, slice_shape=(8, 1, 1, 1),
+                    topology_key="n2:peer1001",
+                ),
+                topology_key="n2:peer1001", peer_access="partial",
+                devices=devices, slice_shape=(8, 1, 1, 1),
+            )
 
 
 class AnalyticalBoundTests(unittest.TestCase):

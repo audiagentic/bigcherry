@@ -58,7 +58,7 @@ CMAKE = FilePatch(
                 "# bigcherry: HI18 SPLIT_REDUCE correctness probe (patches/1224). Drives\n"
                 "# the real production META backend through GGML_HIP_REDUCE_PLAN; see\n"
                 "# src/tests/test-hip-reduce.cpp for the full design rationale.\n"
-                "if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)\n"
+                "if (NOT GGML_BACKEND_DL AND (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY))\n"
                 "    llama_build(test-hip-reduce.cpp)\n"
                 "    target_link_libraries(test-hip-reduce PRIVATE vendor::hash)\n"
                 "    target_include_directories(test-hip-reduce PRIVATE\n"
