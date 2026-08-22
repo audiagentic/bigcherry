@@ -43,10 +43,16 @@ class CampaignIdentityTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _context(self, *, patch_digest: str = "patch-a") -> CampaignIdentityContext:
+        # Full builds.CompletedBuildEvidence.campaign_identity() shape --
+        # the campaign now validates this structurally (HI82, GPT review
+        # req_6b1466ee8369406c), so a minimal fixture would fail closed.
         build = {
             "effective_build_id": "effective",
             "compile_verification_id": "compile",
+            "compile_commands_digest": "compile-commands",
+            "hip_compile_commands_digest": "hip-compile-commands",
             "runtime_bundle_hash": "bundle",
+            "runtime_artifacts": {"llama-server": "aaa"},
         }
         return CampaignIdentityContext(
             patch_name="example", patch_digest=patch_digest, patched_source_tree="tree-a",
@@ -106,6 +112,21 @@ class CampaignIdentityTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CampaignError, "does not recompute"):
             self._campaign().ensure_campaign_identity()
+
+    def test_weak_build_identity_is_rejected(self):
+        # HI82 (GPT review, req_6b1466ee8369406c): {"tune": {}} would
+        # structurally satisfy the old (role-presence-only) check while
+        # carrying none of the real compile/runtime proof. Must fail closed.
+        weak_build = {"effective_build_id": "effective"}
+        context = CampaignIdentityContext(
+            patch_name="example", patch_digest="patch-a", patched_source_tree="tree-a",
+            gpu_architecture="gfx1100",
+            build_identities={
+                "tune": dict(weak_build), "replay": dict(weak_build), "stock": dict(weak_build),
+            },
+        )
+        with self.assertRaisesRegex(CampaignError, "missing required field"):
+            self._campaign(context=context).ensure_campaign_identity()
 
     def test_manifest_generated_at_change_does_not_refuse_resume(self):
         # HI82 (req_f2b3c8914ec0498d): the canonical manifest legitimately

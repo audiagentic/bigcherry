@@ -100,6 +100,45 @@ class CampaignIdentityContext:
     build_identities: dict[str, dict[str, object]]
 
 
+# The exact keys builds.CompletedBuildEvidence.campaign_identity() returns.
+# HI82 (GPT review, req_6b1466ee8369406c): the campaign only validated ROLE
+# presence in build_identities, not the CONTENT of each role's identity --
+# {"tune": {}, "replay": {}, "stock": {}} would structurally satisfy the
+# type while carrying none of the real compile/runtime proof. Fail closed
+# on the boundary instead, so a future caller can't silently regress to
+# weaker evidence.
+_COMPLETED_BUILD_IDENTITY_REQUIRED_KEYS = (
+    "effective_build_id",
+    "compile_verification_id",
+    "compile_commands_digest",
+    "hip_compile_commands_digest",
+    "runtime_bundle_hash",
+    "runtime_artifacts",
+)
+
+
+def _require_completed_build_identity_shape(role: str, identity: object) -> None:
+    if not isinstance(identity, dict):
+        raise CampaignError(f"build identity for role {role!r} is not an object")
+    missing = [key for key in _COMPLETED_BUILD_IDENTITY_REQUIRED_KEYS if key not in identity]
+    if missing:
+        raise CampaignError(
+            f"build identity for role {role!r} is missing required field(s) {missing!r} -- "
+            "expected the shape of builds.CompletedBuildEvidence.campaign_identity()"
+        )
+    for key in _COMPLETED_BUILD_IDENTITY_REQUIRED_KEYS:
+        if key == "runtime_artifacts":
+            if not isinstance(identity[key], dict) or not identity[key]:
+                raise CampaignError(
+                    f"build identity for role {role!r}: runtime_artifacts must be a "
+                    "non-empty object"
+                )
+        elif not isinstance(identity[key], str) or not identity[key]:
+            raise CampaignError(
+                f"build identity for role {role!r}: {key!r} must be a non-empty string"
+            )
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -312,6 +351,8 @@ class Campaign:
                 raise CampaignError(
                     f"campaign identity context is missing build identities: {sorted(missing)}"
                 )
+            for role in required_builds:
+                _require_completed_build_identity_shape(role, build_identities[role])
 
         return {
             "schema_version": CAMPAIGN_IDENTITY_SCHEMA_VERSION,
