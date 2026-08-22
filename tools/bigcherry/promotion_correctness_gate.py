@@ -120,6 +120,60 @@ def resolve_promotion_identity(
     )
 
 
+@dataclass(frozen=True)
+class CorrectnessBinding:
+    """The exact production unit RV49 evidence is keyed at: one dispatch key
+    resolving to one candidate, on one piece of hardware, against one native
+    baseline. Deliberately the SAME granularity resolve_promotion_identity()
+    already takes as keyword arguments -- a named wrapper, not a new identity
+    model, so a future caller (the replay-cache exporter) has one canonical
+    binding type to import rather than five loose positional hex strings."""
+    dispatch_hex: str
+    signature_hex: str
+    hardware_hex: str
+    native_name: str
+    candidate_name: str
+
+
+def resolve_correctness_binding(
+    conn: sqlite3.Connection, binding: CorrectnessBinding,
+) -> PromotionIdentity:
+    """CorrectnessBinding-typed entry point for resolve_promotion_identity().
+    Identical resolution, same fail-closed behavior -- see that function's
+    own docstring for the identity rules (never a legacy source_revision/
+    manifest_hash key, never an inferred signature_id, ambiguous or absent
+    rows always raise)."""
+    return resolve_promotion_identity(
+        conn, dispatch_hex=binding.dispatch_hex, signature_hex=binding.signature_hex,
+        hardware_hex=binding.hardware_hex, native_name=binding.native_name,
+        candidate_name=binding.candidate_name,
+    )
+
+
+def require_correctness_binding(
+    conn: sqlite3.Connection, binding: CorrectnessBinding, *,
+    required_contract_version: str = ce.CONTRACT_VERSION,
+    required_headroom_fraction: float = ce.DEFAULT_HEADROOM_FRACTION,
+) -> PromotionIdentity:
+    """Resolve identity for one binding and require it to pass the RV49
+    correctness gate, or raise. Intended for a caller (e.g. the replay-cache
+    exporter) that needs "prove this exact binding is production-safe or
+    stop" as a single call, rather than tune_promotion.py's own two-step
+    resolve-then-evaluate flow, which needs the intermediate identity for
+    other purposes too."""
+    identity = resolve_correctness_binding(conn, binding)
+    passed, status = evaluate_correctness_gate(
+        conn, identity, required_contract_version=required_contract_version,
+        required_headroom_fraction=required_headroom_fraction,
+    )
+    if not passed:
+        raise CorrectnessGateError(
+            f"{binding.dispatch_hex}: candidate {binding.candidate_name!r} failed the "
+            f"RV49 correctness gate ({status})"
+        )
+    return identity
+
+
 def evaluate_correctness_gate(
     conn: sqlite3.Connection, identity: PromotionIdentity, *,
     required_contract_version: str = ce.CONTRACT_VERSION,

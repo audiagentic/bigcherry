@@ -251,5 +251,48 @@ class EvaluateGateTests(_Base):
         self.assertEqual(status, "rejected_correctness_contract")
 
 
+class CorrectnessBindingTests(_Base):
+    """HI67 follow-on: CorrectnessBinding/resolve_correctness_binding/
+    require_correctness_binding are a purely additive, named-wrapper layer
+    around resolve_promotion_identity()/evaluate_correctness_gate() --
+    intended for a future caller (the replay-cache exporter) that needs
+    "prove this exact binding is production-safe or stop" as one call.
+    Not yet wired into any production path in this commit."""
+
+    def _binding(self, *, candidate_name="mmq:fb1"):
+        return gate.CorrectnessBinding(
+            dispatch_hex=DISPATCH_HEX, signature_hex=SIGNATURE_HEX,
+            hardware_hex=HARDWARE_HEX, native_name="native", candidate_name=candidate_name,
+        )
+
+    def test_resolve_correctness_binding_matches_resolve_promotion_identity(self):
+        via_binding = gate.resolve_correctness_binding(self.conn, self._binding())
+        via_kwargs = gate.resolve_promotion_identity(
+            self.conn, dispatch_hex=DISPATCH_HEX, signature_hex=SIGNATURE_HEX,
+            hardware_hex=HARDWARE_HEX, native_name="native", candidate_name="mmq:fb1",
+        )
+        self.assertEqual(via_binding, via_kwargs)
+
+    def test_resolve_correctness_binding_fails_closed_on_unknown_candidate(self):
+        with self.assertRaises(gate.CorrectnessGateError):
+            gate.resolve_correctness_binding(self.conn, self._binding(candidate_name="nope"))
+
+    def test_require_correctness_binding_passes_with_valid_evidence(self):
+        self._write_evidence()
+        identity = gate.require_correctness_binding(self.conn, self._binding())
+        self.assertEqual(identity.candidate_id, self.candidate_id)
+
+    def test_require_correctness_binding_raises_with_no_evidence(self):
+        with self.assertRaises(gate.CorrectnessGateError) as ctx:
+            gate.require_correctness_binding(self.conn, self._binding())
+        self.assertIn("rejected_no_correctness_evidence", str(ctx.exception))
+
+    def test_require_correctness_binding_raises_when_gate_fails(self):
+        self._write_evidence(e_c_nmse=4.9e-04)  # blows past the headroom rule
+        with self.assertRaises(gate.CorrectnessGateError) as ctx:
+            gate.require_correctness_binding(self.conn, self._binding())
+        self.assertIn("rejected_correctness", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
