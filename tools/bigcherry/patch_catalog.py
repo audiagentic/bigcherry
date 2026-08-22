@@ -21,6 +21,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import config as campaign_config
+from . import patch_validation_evidence
 from . import paths, patchset
 
 KINDS = ("framework", "upstream-backport", "enhancement")
@@ -63,6 +65,13 @@ class CatalogEntry:
     backends: tuple[str, ...] = ()
     subsystems: tuple[str, ...] = ()
     hardware: tuple[str, ...] = ()
+    # HI83: which GPU architecture(s) must have a current, qualifying
+    # patch_validation_evidence record before this patch may claim global
+    # STATE="validated" -- a distinct policy field from `hardware` (free-form
+    # descriptive metadata, not validated against a closed vocabulary,
+    # explicitly not a correctness obligation per that field's own docstring
+    # above). Empty means no architecture-coverage requirement is enforced.
+    validation_architectures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -168,6 +177,16 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
                         f"{path}: {patch_id}: {field} entries must be one of "
                         f"{valid}, got {value!r}"
                     )
+        validation_architectures_raw = record.get("validation-architectures") or []
+        if not isinstance(validation_architectures_raw, list) or not all(
+            isinstance(value, str) and value for value in validation_architectures_raw
+        ):
+            raise ValueError(
+                f"{path}: {patch_id}: validation-architectures must be a list of non-empty strings"
+            )
+        if len(set(validation_architectures_raw)) != len(validation_architectures_raw):
+            raise ValueError(f"{path}: {patch_id}: validation-architectures contains duplicates")
+
         entries[patch_id] = CatalogEntry(
             patch_id=patch_id,
             kind=kind,
@@ -184,17 +203,109 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
             backends=tuple(record.get("backends") or ()),
             subsystems=tuple(record.get("subsystems") or ()),
             hardware=tuple(record.get("hardware") or ()),
+            validation_architectures=tuple(validation_architectures_raw),
         )
     return entries
+
+
+# ------------------------------------------------------------ HI83 evidence
+#
+# Purely observational functions -- NOT wired into any selection/build/apply
+# path. patch_catalog.py's own module docstring above states it is
+# "read-only, additive metadata... does not change what bigcherry apply/
+# bigcherry build actually select"; hard enforcement (refusing to apply/
+# build a STATE="validated" patch with stale evidence) is a deliberate,
+# separate, deferred decision -- see plan item HI83's notes for why. These
+# functions exist so `patch-verify-evidence` and cross_check() (also only
+# a diagnostic, not called from any production path today) can report the
+# same thing a future enforcement point would check.
+
+
+def validation_evidence_statuses(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    catalog_path: Path | None = None,
+    patches_dir: Path | None = None,
+    pinned_ref: str | None = None,
+    evidence_root: Path | None = None,
+    allow_legacy_grandfather: bool = True,
+) -> dict[str, patch_validation_evidence.EvidenceCheck]:
+    entries = load_catalog(catalog_path)
+    modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
+
+    if pinned_ref is None:
+        pinned_ref = campaign_config.load(paths.RECIPES).pinned
+
+    result: dict[str, patch_validation_evidence.EvidenceCheck] = {}
+    for patch_id in patch_ids:
+        entry = entries.get(patch_id)
+        if entry is None:
+            result[patch_id] = patch_validation_evidence.EvidenceCheck(
+                status="missing-or-stale", problems=("no patches/catalog.toml entry",),
+            )
+            continue
+
+        module = modules.get(patch_id)
+        if module is None:
+            result[patch_id] = patch_validation_evidence.EvidenceCheck(
+                status="missing-or-stale", problems=("no matching patch module",),
+            )
+            continue
+
+        result[patch_id] = patch_validation_evidence.verify_validated_patch(
+            module, pinned_ref=pinned_ref,
+            required_architectures=entry.validation_architectures,
+            root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
+        )
+    return result
+
+
+def require_validation_evidence(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    catalog_path: Path | None = None,
+    patches_dir: Path | None = None,
+    pinned_ref: str | None = None,
+    evidence_root: Path | None = None,
+    allow_legacy_grandfather: bool = True,
+) -> None:
+    """Raise ValueError describing every STATE='validated' patch (among
+    patch_ids) whose evidence is missing or stale. Callers decide whether
+    and where to treat that as fatal -- this function itself does not gate
+    anything on its own."""
+    statuses = validation_evidence_statuses(
+        patch_ids, catalog_path=catalog_path, patches_dir=patches_dir, pinned_ref=pinned_ref,
+        evidence_root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
+    )
+    failures = [(patch_id, status) for patch_id, status in statuses.items() if not status.ok]
+    if not failures:
+        return
+    detail = "; ".join(
+        f"{patch_id}: " + ("; ".join(status.problems) or status.status)
+        for patch_id, status in failures
+    )
+    raise ValueError(f"validated patch evidence check failed: {detail}")
 
 
 def cross_check(
     catalog_path: Path | None = None,
     patches_dir: Path | None = None,
+    *,
+    verify_validation_evidence: bool | None = None,
+    pinned_ref: str | None = None,
+    evidence_root: Path | None = None,
+    allow_legacy_grandfather: bool = True,
 ) -> list[str]:
     """Verify one-to-one coverage between the catalog and discovered patch
     modules, and that each entry's ``state`` matches its module's real STATE
-    constant. Returns a list of problem descriptions (empty = clean)."""
+    constant. Returns a list of problem descriptions (empty = clean).
+
+    HI83: when verify_validation_evidence is left at its default (None), it
+    auto-enables only for the real repository catalog (catalog_path and
+    patches_dir both omitted) -- synthetic temp-catalog unit tests keep
+    their pre-HI83 narrow semantics unless they explicitly opt in. This
+    function is still only a diagnostic (see the module note above it) --
+    nothing currently calls it from a production apply/build path."""
     entries = load_catalog(catalog_path)
     modules = {module.patch_id for module in patchset.catalog(patches_dir)}
     problems: list[str] = []
@@ -215,6 +326,24 @@ def cross_check(
                 f"{patch_id}: catalog state {entries[patch_id].state!r} does not match "
                 f"module STATE {module_state!r}"
             )
+
+    if verify_validation_evidence is None:
+        verify_validation_evidence = catalog_path is None and patches_dir is None
+
+    if verify_validation_evidence:
+        statuses = validation_evidence_statuses(
+            sorted(set(entries) & modules), catalog_path=catalog_path, patches_dir=patches_dir,
+            pinned_ref=pinned_ref, evidence_root=evidence_root,
+            allow_legacy_grandfather=allow_legacy_grandfather,
+        )
+        for patch_id, status in statuses.items():
+            if status.ok:
+                continue
+            problems.append(
+                f"{patch_id}: STATE='validated' has no current matching validation evidence: "
+                + ("; ".join(status.problems) or status.status)
+            )
+
     return problems
 
 
