@@ -32,10 +32,16 @@ per-stage resume-check).
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import re
 import sys
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from bigcherry.builds import capture_completed_build_evidence
+from bigcherry.patch_activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LLAMA_CPP_SRC = REPO_ROOT / "vendor" / "llama.cpp"
@@ -44,6 +50,34 @@ CMAKE_GENERATOR = "Ninja"
 
 class PatchCampaignError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class TraceProbeSpec:
+    marker_regex: str
+    description: str
+
+
+# HI82 item 4 (design: GPT, req_cc5af49494fe457a): patches that fuse graph
+# nodes silently at the host level need explicit two-probe activation
+# evidence -- a green build+bench alone never proves the fusion fired (the
+# HI82 design's original motivating example: 1221_rd50 is arch-gated and
+# would produce a normal-looking bench "pass" on hardware where its new
+# kernel never runs). BIGCHERRY_PATCH_HIT markers already exist in the
+# patches themselves (env-gated GGML_LOG_INFO calls at the real fusion
+# commit point); this wires the two-probe check (positive: marker must
+# fire; negative control with GGML_CUDA_DISABLE_FUSION=1: marker must NOT
+# fire) into the campaign so activation.json is produced automatically.
+_TRACE_PROBE_SPECS: dict[str, TraceProbeSpec] = {
+    "1205_rd12_paired_mmvq_dual_output": TraceProbeSpec(
+        marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
+        description="RD12 paired-MMVQ dual-output fusion",
+    ),
+    "1206_rd13_mul_mat_add_view_fusion": TraceProbeSpec(
+        marker_regex=r"BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)",
+        description="RD13 MUL_MAT -> RESHAPE -> ADD fusion",
+    ),
+}
 
 
 def _print(msg: str) -> None:
@@ -78,6 +112,88 @@ def _requested_cmake_args(amdgpu_targets: str, extra_cmake_args: list[str]) -> l
         "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
         f"-DAMDGPU_TARGETS={amdgpu_targets}", *extra_cmake_args,
     ]
+
+
+def _full_requested_cmake_args(
+    *, hip_path: Path, amdgpu_targets: str, extra_cmake_args: list[str],
+) -> list[str]:
+    """Every -D value actually supplied to `cmake` configure, AND what
+    capture_completed_build_evidence() is told was requested -- the two
+    must describe the same build intent, or the verifier's "requested vs
+    resolved cache" check is comparing against an incomplete picture."""
+    is_windows = sys.platform == "win32"
+    clang = hip_path / "bin" / ("clang.exe" if is_windows else "clang")
+    clangxx = hip_path / "bin" / ("clang++.exe" if is_windows else "clang++")
+
+    args = [
+        *_requested_cmake_args(amdgpu_targets, extra_cmake_args),
+        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
+        f"-DCMAKE_PREFIX_PATH={hip_path}", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
+
+    if is_windows:
+        # ROCm's clang driver invokes lld-link, which (like MSVC link.exe)
+        # embeds a wall-clock PE timestamp by default -- every relink
+        # produces different binary bytes even with byte-identical inputs.
+        # /Brepro makes lld-link derive that field from content instead,
+        # so a genuine no-op relink is byte-reproducible. Found for real
+        # via HI82 item 9: two back-to-back identical campaign runs
+        # produced different runtime_bundle_hash values purely from this
+        # (diagnosed with GPT, req_cc5af49494fe457a).
+        args += [
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,/Brepro",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,/Brepro",
+            "-DCMAKE_MODULE_LINKER_FLAGS=-Wl,/Brepro",
+        ]
+
+    return args
+
+
+_CONFIGURE_REQUEST_SCHEMA_VERSION = 1
+
+
+def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
+def _configure_request_document(*, source: Path, cmake_args: list[str]) -> dict[str, object]:
+    return {
+        "schema_version": _CONFIGURE_REQUEST_SCHEMA_VERSION,
+        "source": str(source.resolve()), "generator": CMAKE_GENERATOR,
+        "cmake_args": list(cmake_args),
+    }
+
+
+def _configure_request_matches(*, build_dir: Path, expected: dict[str, object]) -> bool:
+    """Whether build_dir's existing CMake cache was configured by the exact
+    same request as `expected` -- the real fix for the old, too-broad "skip
+    configure whenever CMakeCache.txt exists" check (which could silently
+    reuse a stale configuration across differently-parameterized
+    invocations) without paying for a full reconfigure on every single run
+    (which itself can dirty Ninja's dependency graph unnecessarily)."""
+    cache = build_dir / "CMakeCache.txt"
+    request_path = build_dir / "bigcherry-configure-request.json"
+    if not cache.is_file() or not request_path.is_file():
+        return False
+    try:
+        recorded = json.loads(request_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return recorded == expected
 
 
 def generate_registry(*, source: Path, amdgpu_targets: str, generated_dir: Path) -> None:
@@ -133,36 +249,32 @@ def build_tree(
     build_dir = workdir / name
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    is_windows = sys.platform == "win32"
-    clang = hip_path / "bin" / ("clang.exe" if is_windows else "clang")
-    clangxx = hip_path / "bin" / ("clang++.exe" if is_windows else "clang++")
 
     env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=extra_cmake_args,
+    )
+    configure_request = _configure_request_document(source=source, cmake_args=cmake_args)
+    configure_request_path = build_dir / "bigcherry-configure-request.json"
 
-    # Always (re)configure: build directories are keyed by SOURCE identity
-    # (patched_src.name), not by cmake configuration -- skipping configure
-    # merely because CMakeCache.txt already exists would silently reuse a
-    # stale configuration if this tool is ever invoked twice against the
-    # same patch with different extra_cmake_args. CMake configure is
-    # incremental, so this is cheap; a full rebuild only happens if the
-    # resolved configuration actually changed.
-    _print(f"configuring {name} ...")
-    args = [
-        "cmake", "-S", str(source), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
-        *_requested_cmake_args(amdgpu_targets, extra_cmake_args),
-        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
-        f"-DCMAKE_PREFIX_PATH={hip_path}",
-        # HI82 item 7: builds.post_build_verify() needs real compiled
-        # command lines, not just CMakeCache.txt's configured intent --
-        # CMAKE_HIP_FLAGS is proven this session (HI81) to silently not
-        # reach the compiler on Windows/Ninja+Clang.
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-    ]
-    log_path = log_dir / f"{name}-configure.log"
-    with log_path.open("w", encoding="utf-8") as log_file:
-        result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
-    if result.returncode != 0:
-        raise PatchCampaignError(f"{name} configure failed (see {log_path})")
+    # Reconfigure only when the REQUEST actually changed -- the old "skip
+    # whenever CMakeCache.txt exists" check could silently reuse a stale
+    # configuration across differently-parameterized invocations; the
+    # opposite extreme, always reconfiguring, was tried this session and
+    # found to needlessly perturb Ninja's dependency graph on every run
+    # (compounding with autotune_catalog's now-fixed unconditional compile-
+    # input rewrites to make byte-stable resume unreachable in practice).
+    if _configure_request_matches(build_dir=build_dir, expected=configure_request):
+        _print(f"{name}: configure request unchanged; reusing CMake cache")
+    else:
+        _print(f"configuring {name} ...")
+        args = ["cmake", "-S", str(source), "-B", str(build_dir), "-G", CMAKE_GENERATOR, *cmake_args]
+        log_path = log_dir / f"{name}-configure.log"
+        with log_path.open("w", encoding="utf-8") as log_file:
+            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+        if result.returncode != 0:
+            raise PatchCampaignError(f"{name} configure failed (see {log_path})")
+        _atomic_write_json(configure_request_path, configure_request)
 
     for target in targets:
         _print(f"building {name} ({target}) ...")
@@ -190,26 +302,30 @@ def ensure_stock_baseline(
     comparison arm. A patch under test never touches this tree."""
     import subprocess
 
-    is_windows = sys.platform == "win32"
-    clang = hip_path / "bin" / ("clang.exe" if is_windows else "clang")
-    clangxx = hip_path / "bin" / ("clang++.exe" if is_windows else "clang++")
     build_dir = workdir / "stock"
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = _hip_env(hip_path)
-    _print("configuring stock baseline ...")
-    args = [
-        "cmake", "-S", str(stock_src), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
-        *_requested_cmake_args(amdgpu_targets, []),
-        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
-        f"-DCMAKE_PREFIX_PATH={hip_path}",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-    ]
-    log_path = log_dir / "stock-configure.log"
-    with log_path.open("w", encoding="utf-8") as log_file:
-        result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
-    if result.returncode != 0:
-        raise PatchCampaignError(f"stock configure failed (see {log_path})")
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    configure_request = _configure_request_document(source=stock_src, cmake_args=cmake_args)
+    configure_request_path = build_dir / "bigcherry-configure-request.json"
+
+    if _configure_request_matches(build_dir=build_dir, expected=configure_request):
+        _print("stock: configure request unchanged; reusing CMake cache")
+    else:
+        _print("configuring stock baseline ...")
+        args = [
+            "cmake", "-S", str(stock_src), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
+            *cmake_args,
+        ]
+        log_path = log_dir / "stock-configure.log"
+        with log_path.open("w", encoding="utf-8") as log_file:
+            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+        if result.returncode != 0:
+            raise PatchCampaignError(f"stock configure failed (see {log_path})")
+        _atomic_write_json(configure_request_path, configure_request)
     for target in ("llama-bench",):
         log_path = log_dir / f"stock-build-{target}.log"
         with log_path.open("w", encoding="utf-8") as log_file:
@@ -221,6 +337,144 @@ def ensure_stock_baseline(
             raise PatchCampaignError(f"stock build ({target}) failed (see {log_path})")
     _print("stock: OK")
     return build_dir / "bin"
+
+
+def _trace_probe_env(*, hip_path: Path, disable_fusion: bool) -> dict[str, str]:
+    env = _hip_env(hip_path)
+    # A parent campaign/shell must not accidentally carry a dispatch mode
+    # or an earlier trace/fusion setting into this isolated probe.
+    for key in list(env):
+        if key.startswith("GGML_HIP_DISPATCH_") or key.startswith("BIGCHERRY_"):
+            env.pop(key, None)
+    env["BIGCHERRY_PATCH_TRACE"] = "1"
+    env["GGML_HIP_DISPATCH_MODE"] = "native"
+    if disable_fusion:
+        env["GGML_CUDA_DISABLE_FUSION"] = "1"
+    else:
+        env.pop("GGML_CUDA_DISABLE_FUSION", None)
+    return env
+
+
+def _run_one_trace_probe(
+    *, name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
+    bench_prompt: int, bench_gen: int, disable_fusion: bool,
+) -> str:
+    import subprocess
+
+    binary = Path(binary)
+    model = Path(model)
+    if not binary.is_file():
+        raise PatchCampaignError(f"activation probe binary does not exist: {binary}")
+    if not model.is_file():
+        raise PatchCampaignError(f"activation probe model does not exist: {model}")
+
+    command = [
+        str(binary.resolve()), "-m", str(model.resolve()),
+        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1",
+    ]
+    env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
+
+    log_dir = workdir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"activation-{name}.log"
+
+    completed = subprocess.run(
+        command, cwd=workdir, env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        encoding="utf-8", errors="replace",
+    )
+    combined = completed.stdout + "\n" + completed.stderr
+    log_path.write_text(
+        f"command: {command!r}\n"
+        f"GGML_CUDA_DISABLE_FUSION={env.get('GGML_CUDA_DISABLE_FUSION')!r}\n\n"
+        f"stdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise PatchCampaignError(
+            f"activation probe {name!r} failed with exit code {completed.returncode}; "
+            f"see {log_path}"
+        )
+    return combined
+
+
+def run_trace_activation_probes(
+    *, patch_name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
+    bench_prompt: int, bench_gen: int,
+) -> tuple[ActivationEvidence, dict[str, object]] | None:
+    """Run positive + fusion-disabled negative-control activation probes.
+
+    Returns None for patches which do not use the shared trace-marker
+    mechanism.
+
+    Positive: BIGCHERRY_PATCH_TRACE=1 -- expected marker MUST occur to
+    prove the patch's path executed.
+
+    Negative control: BIGCHERRY_PATCH_TRACE=1 + GGML_CUDA_DISABLE_FUSION=1
+    -- marker MUST NOT occur. A marker that survives the negative control
+    is not trustworthy activation evidence (it would fire regardless of
+    whether the specific fusion this patch adds actually ran) and is
+    classified unobservable rather than executed.
+    """
+    spec = _TRACE_PROBE_SPECS.get(patch_name)
+    if spec is None:
+        return None
+
+    pattern = re.compile(spec.marker_regex)
+
+    _print(f"activation probe: {spec.description} (positive)")
+    positive_output = _run_one_trace_probe(
+        name="positive", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
+        bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+    )
+    positive_hit = pattern.search(positive_output) is not None
+
+    _print(f"activation probe: {spec.description} (fusion-disabled control)")
+    negative_output = _run_one_trace_probe(
+        name="fusion-disabled", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
+        bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=True,
+    )
+    negative_hit = pattern.search(negative_output) is not None
+
+    if negative_hit:
+        evidence = ActivationEvidence(
+            status="unobservable", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            detail=(
+                f"{spec.description}: marker was present even with GGML_CUDA_DISABLE_FUSION=1. "
+                "The marker therefore does not uniquely prove execution of the intended "
+                "fusion path."
+            ),
+        )
+    elif positive_hit:
+        evidence = ActivationEvidence(
+            status="executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            detail=(
+                f"{spec.description}: expected marker was observed with fusion enabled and "
+                "was absent with GGML_CUDA_DISABLE_FUSION=1."
+            ),
+        )
+    else:
+        evidence = ActivationEvidence(
+            status="not_executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            detail=(
+                f"{spec.description}: expected marker was absent from the positive probe and "
+                "remained absent in the fusion-disabled control. This model/workload did not "
+                "prove execution of the patch path."
+            ),
+        )
+
+    detail: dict[str, object] = {
+        "patch": patch_name, "description": spec.description, "marker_regex": spec.marker_regex,
+        "positive": {
+            "BIGCHERRY_PATCH_TRACE": "1", "GGML_CUDA_DISABLE_FUSION": None,
+            "marker_observed": positive_hit, "log": "logs/activation-positive.log",
+        },
+        "negative_control": {
+            "BIGCHERRY_PATCH_TRACE": "1", "GGML_CUDA_DISABLE_FUSION": "1",
+            "marker_observed": negative_hit, "log": "logs/activation-fusion-disabled.log",
+        },
+    }
+    return evidence, detail
 
 
 def run(args: argparse.Namespace) -> int:
@@ -285,7 +539,10 @@ def run(args: argparse.Namespace) -> int:
         "-DGGML_HIP_ROUTING_TRANSFORM=ON",
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
-    tune_cmake_args = _requested_cmake_args(args.amdgpu_targets, tune_extra_cmake_args)
+    tune_cmake_args = _full_requested_cmake_args(
+        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+        extra_cmake_args=tune_extra_cmake_args,
+    )
     tune_bin = build_tree(
         name="tune", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
@@ -314,7 +571,10 @@ def run(args: argparse.Namespace) -> int:
         "-DGGML_HIP_DISPATCH_REPLAY=ON",
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
-    replay_cmake_args = _requested_cmake_args(args.amdgpu_targets, replay_extra_cmake_args)
+    replay_cmake_args = _full_requested_cmake_args(
+        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+        extra_cmake_args=replay_extra_cmake_args,
+    )
     replay_bin = build_tree(
         name="replay", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
@@ -337,7 +597,9 @@ def run(args: argparse.Namespace) -> int:
         hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
         workdir=stock_build_root, stock_src=stock_src,
     )
-    stock_cmake_args = _requested_cmake_args(args.amdgpu_targets, [])
+    stock_cmake_args = _full_requested_cmake_args(
+        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=[],
+    )
     stock_build_evidence = capture_completed_build_evidence(
         stock_build_root / "stock", source_root=stock_src, architecture=args.amdgpu_targets,
         binary=stock_bin / f"llama-bench{exe}", requested_cmake_args=stock_cmake_args,
@@ -378,6 +640,34 @@ def run(args: argparse.Namespace) -> int:
         bench_repetitions=args.bench_repetitions,
         identity_context=identity_context,
     )
+
+    # Bind the workdir before writing any patch-specific activation
+    # evidence. campaign.run() will check it again; this earlier call
+    # prevents a trace probe from writing evidence into a stale/mismatched
+    # campaign directory.
+    campaign.ensure_campaign_identity()
+
+    trace_result = run_trace_activation_probes(
+        patch_name=args.patch, binary=tune_bin / f"llama-bench{exe}", model=args.model,
+        hip_path=args.hip_path, workdir=workdir / "campaign",
+        bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
+    )
+    if trace_result is not None:
+        activation_evidence, trace_detail = trace_result
+        # This stage establishes activation evidence only -- the existing
+        # patch_activation verdict contract accepts correctness_passed=None;
+        # a later patch-class-specific correctness check can strengthen
+        # this without changing the trace-probe mechanism.
+        activation_verdict = verdict(activation_evidence, correctness_passed=None)
+        write_activation_json(
+            workdir / "campaign" / "activation.json", activation_evidence, activation_verdict,
+            extra={
+                "campaign_identity_digest": campaign.campaign_identity_digest,
+                "trace_probe": trace_detail,
+            },
+        )
+        _print(f"activation: {activation_evidence.status} ({activation_evidence.mechanism})")
+
     try:
         campaign.run()
     except CampaignError as exc:

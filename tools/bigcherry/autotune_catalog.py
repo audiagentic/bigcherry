@@ -1494,6 +1494,33 @@ def render_mmvq_instance(candidate: dict[str, Any]) -> str:
     ])
 
 
+def _write_compile_input_if_changed(path: Path, text: str) -> None:
+    """Preserve mtime when a generated compiler input is byte-identical.
+
+    Ninja tracks these files by timestamp. Rewriting identical generated
+    headers/includes on every `bigcherry generate` invocation makes
+    dependent translation units spuriously dirty, cascading into
+    unnecessary recompiles/relinks and defeating byte-stable build reuse
+    (found via HI82 item 9's campaign-identity resume gate: two back-to-
+    back, otherwise-identical patch_validation_campaign.py runs produced
+    different effective_build_id/runtime_bundle_hash values purely because
+    this function rewrote unchanged compile inputs each time -- diagnosed
+    with GPT, req_cc5af49494fe457a).
+
+    Evidence JSON (the manifest/descriptor writes elsewhere in emit()) is
+    intentionally NOT routed through this helper -- those carry real-time
+    generated_at and are per-generation evidence artifacts, not compile
+    inputs whose byte-identity is supposed to be stable.
+    """
+    payload = text.encode("utf-8")
+    try:
+        if path.read_bytes() == payload:
+            return
+    except FileNotFoundError:
+        pass
+    path.write_bytes(payload)
+
+
 @dataclass
 class EmitResult:
     manifest_path: Path
@@ -1548,16 +1575,13 @@ def emit(
         encoding="utf-8", newline="")
 
     registry_path = generated / "hip-autotune-registry.inc"
-    registry_path.write_text(render_registry(manifest), encoding="utf-8",
-                             newline="")
+    _write_compile_input_if_changed(registry_path, render_registry(manifest))
 
     build_hash_path = generated / "hip-autotune-build-hash.h"
-    build_hash_path.write_text(render_build_hash(manifest), encoding="utf-8",
-                               newline="")
+    _write_compile_input_if_changed(build_hash_path, render_build_hash(manifest))
 
     arch_header_path = generated / "hip-autotune-arch.h"
-    arch_header_path.write_text(render_arch_header(), encoding="utf-8",
-                                newline="")
+    _write_compile_input_if_changed(arch_header_path, render_arch_header())
 
     # The generated manifest belongs beside the generated headers.  In legacy
     # mode that is still the source tree; campaign callers pass a build-local
@@ -1579,8 +1603,7 @@ def emit(
     # All MMVQ geometry instances go into one include, compiled inside
     # mmvq.cu's translation unit -- see render_mmvq_instances for why.
     instances_path = generated / "hip-autotune-mmvq-instances.inc"
-    instances_path.write_text(render_mmvq_instances(manifest), encoding="utf-8",
-                              newline="")
+    _write_compile_input_if_changed(instances_path, render_mmvq_instances(manifest))
 
     # Earlier revisions emitted one .cu per instance. Remove any left behind, or
     # they would still compile, still register, and still be launchable --
