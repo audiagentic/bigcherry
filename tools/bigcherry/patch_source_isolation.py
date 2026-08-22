@@ -38,7 +38,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCHES_ROOT = REPO_ROOT / "patches"
@@ -297,6 +297,54 @@ def _add_worktree(base_repo: Path, worktree_dir: Path, base_revision: str) -> No
     )
 
 
+def _apply_baseline_and_stack(source_dir: Path, patch_modules: Sequence[str]) -> None:
+    """Overlay bigcherry's own source additions, apply the validated
+    framework baseline, then apply patch_modules IN ORDER.
+
+    A patch under test is validated as it will actually SHIP: on top of the
+    real framework-validated baseline, not bare upstream. Confirmed
+    necessary by a real failure: RD08's own test-backend-ops.cpp anchor only
+    exists after other validated patches (the HI70 direct-op corpus) have
+    already added it -- applying RD08 alone against raw upstream in an
+    isolated worktree failed with a real "anchor matched 0 times" error
+    until this baseline step was added.
+
+    Shared by materialize_source() (single patch) and
+    materialize_source_variant() (an ordered stack) so the overlay/baseline/
+    apply sequence has exactly one implementation.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from bigcherry import patcher, patchset, paths  # noqa: E402  (path inserted above)
+
+    for source in sorted(paths.SRC_OVERLAY.rglob("*")):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(paths.SRC_OVERLAY)
+        target = source_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="")
+
+    baseline_patches = patchset.load_patches(groups=None, states=frozenset({"validated"}))
+    baseline_results = patcher.apply_all(baseline_patches, source_dir, dry_run=False)
+    for result in baseline_results:
+        if result.failed:
+            raise PatchSourceIsolationError(
+                f"framework baseline patch failed to apply to {result.path} in "
+                f"isolated worktree {source_dir} (before the patch stack was "
+                f"even applied): {[r.detail for r in result.failed]}"
+            )
+
+    for patch_module in patch_modules:
+        mod = importlib.import_module(f"patches.{patch_module}")
+        results = patcher.apply_all(mod.PATCHES, source_dir, dry_run=False)
+        for result in results:
+            if result.failed:
+                raise PatchSourceIsolationError(
+                    f"patch {patch_module} failed to apply to {result.path} in "
+                    f"isolated worktree {source_dir}: {[r.detail for r in result.failed]}"
+                )
+
+
 def materialize_source(
     *, base_repo: Path, worktree_root: Path, patch_module: str, base_revision: str,
 ) -> Path:
@@ -321,45 +369,85 @@ def materialize_source(
         return source_dir
 
     _add_worktree(base_repo, source_dir, base_revision)
+    _apply_baseline_and_stack(source_dir, (patch_module,))
 
-    sys.path.insert(0, str(REPO_ROOT))
-    from bigcherry import patcher, patchset, paths  # noqa: E402  (path inserted above)
+    manifest = {
+        **identity,
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+        "head": git_head(source_dir),
+        "patched_tree": git_worktree_tree(source_dir),
+    }
+    _write_manifest(source_dir, manifest)
+    return source_dir
 
-    # A patch under test is validated as it will actually SHIP: on top of
-    # the real framework-validated baseline, not bare upstream. Confirmed
-    # necessary by a real failure: RD08's own test-backend-ops.cpp anchor
-    # only exists after other validated patches (the HI70 direct-op
-    # corpus) have already added it -- applying RD08 alone against raw
-    # upstream in an isolated worktree failed with a real "anchor matched
-    # 0 times" error until this baseline step was added.
-    written = []
-    for source in sorted(paths.SRC_OVERLAY.rglob("*")):
-        if not source.is_file():
-            continue
-        relative = source.relative_to(paths.SRC_OVERLAY)
-        target = source_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="")
-        written.append(str(relative))
 
-    baseline_patches = patchset.load_patches(groups=None, states=frozenset({"validated"}))
-    baseline_results = patcher.apply_all(baseline_patches, source_dir, dry_run=False)
-    for result in baseline_results:
-        if result.failed:
-            raise PatchSourceIsolationError(
-                f"framework baseline patch failed to apply to {result.path} in "
-                f"isolated worktree {source_dir} (before the patch under test "
-                f"was even applied): {[r.detail for r in result.failed]}"
-            )
+def _make_variant_identity(
+    base_revision: str, patch_modules: Sequence[str], variant_name: str, variant_digest: str,
+) -> dict[str, Any]:
+    payload = {
+        "schema": "bigcherry-patch-source-variant-v1",
+        "base_revision": base_revision,
+        "framework_baseline_digest": framework_baseline_digest(),
+        "patch_stack": [
+            {"patch": module, "implementation_digest": patch_implementation_digest(module)}
+            for module in patch_modules
+        ],
+        "variant_name": variant_name,
+        "variant_digest": variant_digest,
+    }
+    return {**payload, "source_key": _stable_digest(payload)}
 
-    mod = importlib.import_module(f"patches.{patch_module}")
-    results = patcher.apply_all(mod.PATCHES, source_dir, dry_run=False)
-    for result in results:
-        if result.failed:
-            raise PatchSourceIsolationError(
-                f"patch {patch_module} failed to apply to {result.path} in "
-                f"isolated worktree {source_dir}: {[r.detail for r in result.failed]}"
-            )
+
+def materialize_source_variant(
+    *,
+    base_repo: Path,
+    worktree_root: Path,
+    base_revision: str,
+    patch_modules: tuple[str, ...],
+    variant_name: str,
+    variant_digest: str,
+    apply_variant: Callable[[Path], None] | None = None,
+) -> Path:
+    """Materialize an isolated worktree for an ORDERED patch stack, plus an
+    optional post-stack variant transform.
+
+    Generalizes materialize_source() for "subject vs control" evidence,
+    where two worktrees need the SAME patch stack but differ by an
+    explicitly identified, content-addressed transform applied on top of it
+    (e.g. rd08_correctness_evidence.py's VDR1-control / VDR2-subject pair,
+    which differ only by two checked source-line reversions applied after
+    the identical 1204+1222+1223 stack). `variant_digest` MUST be a stable
+    digest over the actual transform content (e.g. sha256 of the ordered
+    (path, old, new) triples an `apply_variant` callback performs) -- never
+    a bare name -- so two different transforms can never collide on the
+    same source_key, and the same transform's own identity is independently
+    checkable outside this module.
+
+    Deliberately separate from materialize_source()'s own identity/manifest
+    shape (schema "bigcherry-patch-source-v1"): changing that shape to fold
+    in a patch_stack list would silently invalidate every already-cached
+    single-patch worktree's manifest. Both functions share the actual
+    worktree-construction sequence via _apply_baseline_and_stack().
+    """
+    if not patch_modules:
+        raise PatchSourceIsolationError(
+            "materialize_source_variant requires at least one patch module"
+        )
+
+    identity = _make_variant_identity(
+        base_revision=base_revision, patch_modules=patch_modules,
+        variant_name=variant_name, variant_digest=variant_digest,
+    )
+    source_dir = worktree_root / identity["source_key"]
+
+    if source_dir.exists() and _verify_reuse(source_dir, identity):
+        return source_dir
+
+    _add_worktree(base_repo, source_dir, base_revision)
+    _apply_baseline_and_stack(source_dir, patch_modules)
+
+    if apply_variant is not None:
+        apply_variant(source_dir)
 
     manifest = {
         **identity,
