@@ -7,10 +7,33 @@ own instrumentation, a backport of specific upstream work, or a port from an
 external fork; which backend (hip/vulkan/agnostic) it targets; and, for
 backports, where the fix came from and when it should be retired.
 
-GROUP/STATE remain authoritative for patch *selection* (``patchset.py``'s
-resolver, recipes.toml patch-set membership, every existing identity hash).
-This module is read-only, additive metadata -- it does not change what
-``bigcherry apply``/``bigcherry build`` actually select.
+GROUP/STATE, recipes.toml membership, and patchset.py remain authoritative
+for patch COMPOSITION: this module never adds, removes, substitutes, or
+silently skips patches in an already-resolved patch set.
+
+Catalog metadata may, however, be consumed by explicit ADMISSION policy
+after composition has been resolved (``resolve_for_context``/
+``applicable`` already do this for backend/option applicability). An
+admission check may reject a resolved patch set because its backend,
+options, or (HI83) validation-evidence obligations are not satisfied.
+Rejection is not selection: the resolved composition remains unchanged and
+the operation fails closed rather than silently substituting or dropping
+a patch.
+
+This module remains read-only with respect to patch lifecycle state and
+catalog contents. The HI83 evidence functions below
+(``validation_evidence_statuses``/``require_validation_evidence``) are
+verifiers, not the production admission boundary -- as of this writing
+nothing calls them from a live ``bigcherry apply``/``bigcherry build``
+path; wiring a hard gate is a deliberate, separately-adjudicated decision
+(see plan item HI83's notes for the current status and why).
+
+Revised 2026-08-22 per GPT review (req_b87ea92609fa45fe): the previous
+wording ("read-only, additive metadata -- it does not change what apply/
+build actually select") overstated the invariant relative to
+resolve_for_context()'s pre-existing hard admission behavior, and did not
+leave room for HI83 evidence to ever become a real (but still
+post-selection, fail-closed) admission check.
 """
 
 from __future__ import annotations

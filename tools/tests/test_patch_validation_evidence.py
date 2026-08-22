@@ -241,6 +241,29 @@ class VerifyValidatedPatchTests(unittest.TestCase):
         )
         self.assertFalse(result.ok)
 
+    def test_resolved_base_revision_mismatch_fails_closed(self):
+        # GPT review, req_b87ea92609fa45fe: base_ref string equality alone
+        # doesn't catch a moving ref that has since resolved to a different
+        # commit -- only checked when a caller supplies the real resolved
+        # commit (opt-in, backward compatible).
+        pve.write_record(self._qualifying_record(), root=self.root)
+        module = self._module()
+        result = pve.verify_validated_patch(
+            module, pinned_ref="b10502", root=self.root, allow_legacy_grandfather=False,
+            resolved_base_revision="f" * 40,
+        )
+        self.assertFalse(result.ok)
+
+    def test_resolved_base_revision_match_still_passes(self):
+        record = self._qualifying_record()
+        pve.write_record(record, root=self.root)
+        module = self._module()
+        result = pve.verify_validated_patch(
+            module, pinned_ref="b10502", root=self.root,
+            resolved_base_revision=record["base_revision"],
+        )
+        self.assertTrue(result.ok)
+
     def test_missing_required_architecture_fails(self):
         pve.write_record(self._qualifying_record(), root=self.root)
         module = self._module()
