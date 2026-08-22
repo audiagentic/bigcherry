@@ -33,9 +33,21 @@ thread_local bool g_reduce_timer_active = false;
 // HI18 test-capture state. thread_local because the standalone probe is
 // single-threaded and this must never become a second, accidental
 // cross-thread state channel alongside g_last_comm_ctx above.
+//
+// g_reduce_test_capture_armed gates capture_reduce_test_snapshot() below:
+// GPT review (2026-08-22) caught that without it, EVERY successful
+// SPLIT_REDUCE in a normal production process -- not just the probe --
+// paid for snapshot mutation, signature reconstruction, and a fresh
+// D x D hipDeviceCanAccessPeer() topology query on every call, unconditionally.
+// ggml_hip_reduce_test_capture_reset() is the only place that arms it (a
+// probe calls it immediately before the one graph_compute it wants
+// observed); capture consumes the arm on the first call after that and
+// stays disabled otherwise, so a normal inference process -- which never
+// calls reset() -- never pays this cost at all.
 thread_local ggml_hip_reduce_test_snapshot_v1 g_reduce_test_snapshot;
 thread_local uint64_t g_reduce_test_sequence = 0;
 thread_local bool g_reduce_test_captured = false;
+thread_local bool g_reduce_test_capture_armed = false;
 
 void copy_label(char * dst, size_t dst_size, const char * src) {
     if (src == nullptr) {
@@ -57,6 +69,9 @@ void capture_reduce_test_snapshot(
         const int * devices, size_t device_count, ggml_tensor ** tensors,
         const char * requested_provider, const char * effective_provider,
         const char * handoff, size_t fallback_depth, bool provider_succeeded) {
+    if (!g_reduce_test_capture_armed || g_reduce_test_captured) {
+        return;
+    }
     ggml_hip_reduce_test_snapshot_v1 & snap = g_reduce_test_snapshot;
     snap.version = 1;
     snap.sequence = ++g_reduce_test_sequence;
@@ -84,6 +99,7 @@ void capture_reduce_test_snapshot(
         copy_label(snap.peer_access, sizeof(snap.peer_access), sig.peer_access);
     }
     g_reduce_test_captured = true;
+    g_reduce_test_capture_armed = false;
 }
 
 const char * telemetry_path() {
@@ -375,6 +391,7 @@ void ggml_hip_reduce_telemetry_fallback_context(
 void ggml_hip_reduce_test_capture_reset() {
     g_reduce_test_snapshot = ggml_hip_reduce_test_snapshot_v1{};
     g_reduce_test_captured = false;
+    g_reduce_test_capture_armed = true;
 }
 
 bool ggml_hip_reduce_test_capture_snapshot(ggml_hip_reduce_test_snapshot_v1 * out) {

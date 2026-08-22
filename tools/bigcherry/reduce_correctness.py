@@ -162,6 +162,21 @@ def generate_case(seed: int, pattern: str, element_count: int, device_count: int
     return devices
 
 
+def make_reduction_signature_key(
+    *, element_type: str, element_count: int,
+    slice_shape: tuple[int, int, int, int], topology_key: str,
+) -> str:
+    """The exact canonical key format tools/bigcherry/telemetry.py derives
+    from real production reduction telemetry -- verified against its
+    signature_key construction before use here, so a case's declared
+    reduction_signature_key and a probe's observed runtime signature are
+    provably comparable, not merely similarly-shaped strings."""
+    return (
+        f"split_reduce:v1:{element_type}:{element_count}:"
+        f"{','.join(str(v) for v in slice_shape)}:{topology_key}"
+    )
+
+
 @dataclass(frozen=True)
 class CaseManifest:
     case_id: str
@@ -202,6 +217,17 @@ def write_case(
         raise CorrectnessError(
             f"case {case_id}: slice_shape {slice_shape} has product {shape_product}, "
             f"expected element_count {element_count}"
+        )
+    expected_key = make_reduction_signature_key(
+        element_type="f32", element_count=element_count,
+        slice_shape=slice_shape, topology_key=topology_key,
+    )
+    if reduction_signature_key != expected_key:
+        raise CorrectnessError(
+            f"case {case_id}: reduction_signature_key {reduction_signature_key!r} does not "
+            f"match the canonical key derived from this case's own element_count/slice_shape/"
+            f"topology_key: {expected_key!r} -- a caller could otherwise write a case whose "
+            "declared identity disagrees with what it actually reproduces"
         )
 
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +430,13 @@ def evaluate_provider_run(
             case_id, run,
             f"missing participant output (expected {device_count} devices, "
             f"got {len(run.outputs)} outputs for {len(run.devices)} devices)"
+        )
+    if len(set(run.devices)) != device_count:
+        return _reject(
+            case_id, run,
+            f"duplicate participating devices: {run.devices} -- two logical "
+            "participants backed by the same physical device is not evidence "
+            "about a real multi-device reduction"
         )
 
     gate = PROVENANCE_GATES.get(run.provider)
