@@ -33,10 +33,12 @@ that guard rather than rewriting the probe).
 """
 
 GROUP = "core"
-# Not yet compiled -- no HIP/ROCm toolchain is available in this
-# environment (same constraint noted in patches/1222/1223/1230). Promote to
-# "validated" once a real build on Brutus links cleanly and the probe
-# produces a clean forced-RCCL/forced-META/AUTO result for one smoke case.
+# Mechanism compiled and hardware-validated on Brutus (63/63 synthetic
+# RCCL/META/AUTO executions across 6 numerical patterns, 3 seeds, and
+# swapped device order -- see docs/planning/active/hip-autotune/HI18.md).
+# STATE remains "untested" under the HI83 patch-validation contract until
+# the required tracked validation record exists AND the real recorded
+# production signatures (not this synthetic stand-in shape) have been run.
 STATE = "untested"
 
 from bigcherry.patcher import Edit, FilePatch
