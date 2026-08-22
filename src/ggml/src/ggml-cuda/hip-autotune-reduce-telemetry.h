@@ -88,6 +88,16 @@ struct ggml_hip_reduce_test_snapshot_v1 {
     char handoff[64] = {};
     size_t fallback_depth = 0;
     bool provider_succeeded = false;
+
+    // The actual runtime reduction identity this call observed -- same
+    // fields make_signature() derives for the ordinary telemetry JSONL, so
+    // a probe can verify it drove the exact signature its case claims
+    // rather than trusting shape/topology by construction alone.
+    int64_t element_count = 0;
+    int64_t slice_shape[4] = {};
+    char element_type[16] = {};
+    char topology_key[128] = {};
+    char peer_access[16] = {};
 };
 
 void ggml_hip_reduce_test_capture_reset();

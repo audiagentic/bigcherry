@@ -168,6 +168,7 @@ struct loaded_case {
     json manifest;
     size_t device_count = 0;
     int64_t element_count = 0;
+    int64_t slice_shape[4] = {1, 1, 1, 1};
     std::vector<std::vector<uint8_t>> rank_bytes;
     std::vector<std::string> input_digests;
 };
@@ -181,6 +182,21 @@ loaded_case load_case(const std::string & case_dir) {
     mf >> c.manifest;
     c.device_count = c.manifest.at("device_count").get<size_t>();
     c.element_count = c.manifest.at("element_count").get<int64_t>();
+
+    const auto & shape = c.manifest.at("slice_shape");
+    if (shape.size() != 4) {
+        fail("case.json slice_shape must have exactly 4 entries, got " + std::to_string(shape.size()));
+    }
+    int64_t shape_product = 1;
+    for (size_t i = 0; i < 4; ++i) {
+        c.slice_shape[i] = shape.at(i).get<int64_t>();
+        shape_product *= c.slice_shape[i];
+    }
+    if (shape_product != c.element_count) {
+        fail("case.json slice_shape product " + std::to_string(shape_product) +
+             " does not match element_count " + std::to_string(c.element_count));
+    }
+
     const auto & recorded_digests = c.manifest.at("input_digests");
 
     for (size_t d = 0; d < c.device_count; ++d) {
@@ -230,6 +246,9 @@ struct split_state_config {
     ggml_tensor * a = nullptr;
     ggml_tensor * b = nullptr;
     size_t device_count = 0;
+    // Elements of the split axis assigned to each rank (== the target
+    // shape's s1; 1 in the original flattened-shape special case).
+    int64_t rank_size = 1;
 };
 
 ggml_backend_meta_split_state probe_split_state(const ggml_tensor * tensor, void * userdata) {
@@ -246,7 +265,7 @@ ggml_backend_meta_split_state probe_split_state(const ggml_tensor * tensor, void
         // partitioning (verified against ggml-backend-meta.cpp).
         s.axis = GGML_BACKEND_SPLIT_AXIS_0;
         for (size_t rank = 0; rank < cfg->device_count; ++rank) {
-            s.ne[rank] = 1;
+            s.ne[rank] = cfg->rank_size;
         }
         return s;
     }
@@ -300,7 +319,24 @@ int main(int argc, char ** argv) {
         fail("ggml_backend_dev_init(meta_dev) returned null");
     }
 
-    // -- static leaf tensors: A[D,N], B[D,1] --
+    // -- shape-preserving K=1-generalized construction --
+    // Target output shape is the case's real slice_shape [s0,s1,s2,s3], not
+    // merely its total element_count -- HI18's reduction_signature_key is
+    // keyed on the full 4D shape (verified against tools/bigcherry/
+    // telemetry.py), so a flattened [N,1,1,1] collective would produce
+    // clean-looking evidence for the WRONG signature. Each rank's local
+    // matmul reduction dimension is s1 (not 1): A[D*s1,s0,s2,s3] holds the
+    // frozen per-rank data, B[D*s1,s1,s2,s3] is an s1xs1 identity block
+    // repeated per rank/batch element, so partial_rank = A_rank x I =
+    // A_rank exactly, landing the frozen bytes in the real output shape.
+    // The original K=1 case is this construction's s1==1 special case.
+    const int64_t s0 = c.slice_shape[0];
+    const int64_t s1 = c.slice_shape[1];
+    const int64_t s2 = c.slice_shape[2];
+    const int64_t s3 = c.slice_shape[3];
+    const int64_t K = static_cast<int64_t>(D) * s1;
+    (void) N;
+
     const ggml_init_params static_params = {
         /*.mem_size   =*/ ggml_tensor_overhead() * 4,
         /*.mem_buffer =*/ nullptr,
@@ -308,12 +344,13 @@ int main(int argc, char ** argv) {
     };
     ggml_context * ctx_static = ggml_init(static_params);
 
-    ggml_tensor * a = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, static_cast<int64_t>(D), N);
-    ggml_tensor * b = ggml_new_tensor_2d(ctx_static, GGML_TYPE_F32, static_cast<int64_t>(D), 1);
+    ggml_tensor * a = ggml_new_tensor_4d(ctx_static, GGML_TYPE_F32, K, s0, s2, s3);
+    ggml_tensor * b = ggml_new_tensor_4d(ctx_static, GGML_TYPE_F32, K, s1, s2, s3);
     ggml_set_name(a, "hi18.rank_values");
-    ggml_set_name(b, "hi18.ones");
+    ggml_set_name(b, "hi18.identity");
     split_cfg.a = a;
     split_cfg.b = b;
+    split_cfg.rank_size = s1;
 
     ggml_backend_buffer_t static_buf = ggml_backend_alloc_ctx_tensors(ctx_static, meta_backend);
     if (static_buf == nullptr) {
@@ -337,38 +374,67 @@ int main(int argc, char ** argv) {
     ggml_cgraph * graph = ggml_new_graph(ctx_compute);
     ggml_build_forward_expand(graph, out);
 
-    ggml_backend_buffer_t compute_buf = ggml_backend_alloc_ctx_tensors(ctx_compute, meta_backend);
-    if (compute_buf == nullptr) {
-        fail("failed to allocate compute tensors on the meta backend");
+    // Load-bearing (GPT review, 2026-08-22 -- verified against ggml-backend-
+    // meta.cpp before fixing): ggml_backend_alloc_ctx_tensors() on a META
+    // buffer type immediately resolves and CACHES each tensor's split state
+    // at allocation time (ggml_backend_meta_alloc_ctx_tensors_from_buft ->
+    // ggml_backend_meta_buffer_init_tensor_impl, before any later
+    // set_usage() call could run) -- so allocating `partial`/`out` that way
+    // and setting COMPUTE usage afterward is too late: META would already
+    // have asked probe_split_state() for them and cached MIRRORED. The
+    // scheduler's graph allocator creates its buffers WITH
+    // GGML_BACKEND_BUFFER_USAGE_COMPUTE from the start (ggml-alloc.c's
+    // ggml_vbuffer_alloc), so tensor init sees the correct usage the first
+    // time, and META derives partial/out's state from the real
+    // handle_mul_mat()/DUP rules instead.
+    ggml_backend_buffer_type_t meta_buft = ggml_backend_get_default_buffer_type(meta_backend);
+    ggml_backend_t sched_backends[] = { meta_backend };
+    ggml_backend_buffer_type_t sched_bufts[] = { meta_buft };
+    ggml_backend_sched_t sched = ggml_backend_sched_new(
+        sched_backends, sched_bufts, 1, GGML_DEFAULT_GRAPH_SIZE, false, false);
+    if (sched == nullptr) {
+        fail("failed to create the meta backend scheduler");
     }
-    // Load-bearing: META decides whether to invoke the split-state callback
-    // (static tensor) or derive state from sources (compute tensor) based
-    // on whether the tensor's buffer usage IS COMPUTE (verified against
-    // ggml-backend-meta.cpp's tensor-init check). Without this, META would
-    // wrongly ask probe_split_state() for `partial`/`out`, which it has no
-    // correct answer for.
-    ggml_backend_buffer_set_usage(compute_buf, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+    if (!ggml_backend_sched_alloc_graph(sched, graph)) {
+        fail("failed to allocate the compute graph via the scheduler");
+    }
 
-    // -- interleave frozen rank bytes into A (axis-0-contiguous per row); B is all-ones --
-    std::vector<float> a_host(D * static_cast<size_t>(N));
-    for (int64_t i = 0; i < N; ++i) {
-        for (size_t rank = 0; rank < D; ++rank) {
-            std::memcpy(&a_host[static_cast<size_t>(i) * D + rank],
-                        c.rank_bytes[rank].data() + i * 4, 4);
+    // -- populate A with frozen rank bytes at (i0,i1,i2,i3), B as a per-rank/per-batch s1xs1 identity --
+    std::vector<float> a_host(static_cast<size_t>(K * s0 * s2 * s3), 0.0f);
+    std::vector<float> b_host(static_cast<size_t>(K * s1 * s2 * s3), 0.0f);
+    for (size_t rank = 0; rank < D; ++rank) {
+        for (int64_t i3 = 0; i3 < s3; ++i3) {
+            for (int64_t i2 = 0; i2 < s2; ++i2) {
+                for (int64_t i1 = 0; i1 < s1; ++i1) {
+                    const int64_t global_k = static_cast<int64_t>(rank) * s1 + i1;
+                    for (int64_t i0 = 0; i0 < s0; ++i0) {
+                        const int64_t flat = i0 + s0 * (i1 + s1 * (i2 + s2 * i3));
+                        float value = 0.0f;
+                        std::memcpy(&value, c.rank_bytes[rank].data() + flat * 4, 4);
+                        const int64_t a_idx = global_k + K * (i0 + s0 * (i2 + s2 * i3));
+                        a_host[static_cast<size_t>(a_idx)] = value;
+                    }
+                    for (int64_t m = 0; m < s1; ++m) {
+                        const int64_t b_idx = global_k + K * (m + s1 * (i2 + s2 * i3));
+                        b_host[static_cast<size_t>(b_idx)] = (m == i1) ? 1.0f : 0.0f;
+                    }
+                }
+            }
         }
     }
-    const std::vector<float> b_host(D, 1.0f);
 
     ggml_backend_tensor_set(a, a_host.data(), 0, a_host.size() * sizeof(float));
     ggml_backend_tensor_set(b, b_host.data(), 0, b_host.size() * sizeof(float));
 
     ggml_hip_reduce_test_capture_reset();
-    const ggml_status status = ggml_backend_graph_compute(meta_backend, graph);
-    ggml_backend_synchronize(meta_backend);
+    const ggml_status status = ggml_backend_sched_graph_compute(sched, graph);
+    ggml_backend_sched_synchronize(sched);
     const bool completion_synchronized = status == GGML_STATUS_SUCCESS;
 
     ggml_hip_reduce_test_snapshot_v1 snap;
     const bool captured = ggml_hip_reduce_test_capture_snapshot(&snap);
+
+    const int64_t expected_nbytes = s0 * s1 * s2 * s3 * static_cast<int64_t>(sizeof(float));
 
     json result;
     result["schema_version"] = 1;
@@ -380,6 +446,15 @@ int main(int argc, char ** argv) {
     result["graph_compute_status"] = ggml_status_to_string(status);
     result["completion_synchronized"] = completion_synchronized;
     result["captured"] = captured;
+
+    // A successfully-computed graph with nothing captured (or captured for
+    // fewer devices than requested) means the intended PARTIAL/allreduce
+    // boundary was silently missed -- e.g. the exact COMPUTE-usage-timing
+    // bug this construction was rewritten to avoid. That must never look
+    // like a clean result: valid only if the graph computed successfully
+    // AND a full-device-count reduction was actually observed AND its
+    // runtime signature matches what this case claims.
+    bool signature_matches = false;
 
     if (!captured) {
         result["requested_provider"] = opts.plan;
@@ -394,6 +469,21 @@ int main(int argc, char ** argv) {
         result["provider_succeeded"] = snap.provider_succeeded;
         result["handoff"] = std::string(snap.handoff);
         result["fallback_depth"] = snap.fallback_depth;
+
+        json signature;
+        signature["version"] = 1;
+        signature["element_count"] = snap.element_count;
+        signature["element_type"] = std::string(snap.element_type);
+        signature["slice_shape"] = {snap.slice_shape[0], snap.slice_shape[1],
+                                     snap.slice_shape[2], snap.slice_shape[3]};
+        signature["topology_key"] = std::string(snap.topology_key);
+        signature["peer_access"] = std::string(snap.peer_access);
+        result["reduction_signature"] = signature;
+
+        signature_matches = snap.element_count == c.element_count &&
+            snap.slice_shape[0] == s0 && snap.slice_shape[1] == s1 &&
+            snap.slice_shape[2] == s2 && snap.slice_shape[3] == s3;
+        result["reduction_signature_matches_case"] = signature_matches;
 
         json outputs = json::array();
         const std::string out_dir = dirname_of(opts.out_path);
@@ -410,7 +500,18 @@ int main(int argc, char ** argv) {
             if (t == nullptr) {
                 fail("captured snapshot has a null tensor for rank " + std::to_string(rank));
             }
+            if (snap.devices[rank] != opts.devices[rank]) {
+                fail("captured snapshot rank " + std::to_string(rank) + " reports device " +
+                     std::to_string(snap.devices[rank]) + ", expected " +
+                     std::to_string(opts.devices[rank]));
+            }
             const size_t nbytes = ggml_nbytes(t);
+            if (static_cast<int64_t>(nbytes) != expected_nbytes) {
+                fail("rank " + std::to_string(rank) + " output is " + std::to_string(nbytes) +
+                     " bytes, expected " + std::to_string(expected_nbytes) +
+                     " for shape [" + std::to_string(s0) + "," + std::to_string(s1) + "," +
+                     std::to_string(s2) + "," + std::to_string(s3) + "]");
+            }
             std::vector<uint8_t> out_bytes(nbytes);
             ggml_backend_tensor_get(t, out_bytes.data(), 0, nbytes);
 
@@ -428,11 +529,18 @@ int main(int argc, char ** argv) {
         result["outputs"] = outputs;
     }
 
+    const bool probe_valid = completion_synchronized && captured &&
+        snap.device_count == D && signature_matches;
+    result["probe_valid"] = probe_valid;
+
     std::ofstream out_file(opts.out_path);
     if (!out_file) {
         fail("cannot write result file: " + opts.out_path);
     }
     out_file << result.dump(2);
 
-    return status == GGML_STATUS_SUCCESS ? 0 : 1;
+    // Distinct from "the graph computed" (status): a successful compute
+    // with no valid captured reduction (finding #1's exact failure mode)
+    // must exit nonzero, not look like a clean run to the caller.
+    return probe_valid ? 0 : 2;
 }
