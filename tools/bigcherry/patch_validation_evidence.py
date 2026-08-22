@@ -369,6 +369,7 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
 
 def _record_qualifies(
     record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
+    resolved_base_revision: str | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
     problems: list[str] = []
     expected = {
@@ -380,6 +381,19 @@ def _record_qualifies(
     for key, wanted in expected.items():
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
+
+    # GPT review (req_b87ea92609fa45fe): base_ref matching alone only proves
+    # the record was made against a ref with the same NAME -- if that ref is
+    # ever a moving target (unlike this project's current tag-pin practice),
+    # a record could still "match" a base_ref string that now resolves to a
+    # different commit. Only checked when a caller actually supplies the
+    # real resolved commit (patch_catalog.py does not yet do this -- see its
+    # module docstring); existing callers are unaffected.
+    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
+        problems.append(
+            f"base_revision={record.get('base_revision')!r} does not match the currently "
+            f"resolved pin {resolved_base_revision!r}"
+        )
 
     activation = record.get("activation")
     if (
@@ -434,7 +448,15 @@ def _legacy_hashes(root: Path | None) -> dict[str, str]:
 def verify_validated_patch(
     module: patchset.PatchModule, *, pinned_ref: str, required_architectures: Iterable[str] = (),
     root: Path | None = None, allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
 ) -> EvidenceCheck:
+    """resolved_base_revision (optional): the actual commit `pinned_ref`
+    currently resolves to. When supplied, a record's base_revision must
+    match it exactly, catching the case where pinned_ref names a moving
+    ref that has since advanced past what the record was validated
+    against. Omitted by default since no caller resolves this yet (see
+    patch_catalog.py's module docstring on why hard enforcement, which is
+    where this would matter, is still deferred)."""
     if module.state != "validated":
         return EvidenceCheck("not-required")
 
@@ -445,6 +467,7 @@ def verify_validated_patch(
     for record in load_records(module.patch_id, root=root):
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
+            resolved_base_revision=resolved_base_revision,
         )
         if ok:
             qualifying.append(record)
