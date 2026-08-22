@@ -996,6 +996,50 @@ def cmd_patch_graph(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_patch_verify_evidence(args: argparse.Namespace) -> int:
+    """HI83: report which STATE='validated' patches have a current,
+    qualifying patch_validation_evidence record -- purely observational,
+    not wired into apply/build (see patch_catalog.py's module docstring
+    and plan item HI83's notes for why hard enforcement is deliberately
+    deferred)."""
+    from . import config as campaign_config
+
+    cfg = campaign_config.load(paths.RECIPES)
+    modules = patchset.catalog()
+
+    if args.patch_id is not None:
+        modules = [module for module in modules if module.patch_id == args.patch_id]
+        if not modules:
+            print(f"unknown patch {args.patch_id!r}", file=sys.stderr)
+            return 1
+
+    patch_ids = [module.patch_id for module in modules]
+    statuses = patch_catalog.validation_evidence_statuses(
+        patch_ids, pinned_ref=cfg.pinned,
+        allow_legacy_grandfather=not args.no_legacy_grandfather,
+    )
+
+    if args.json:
+        print(json.dumps(
+            {
+                patch_id: {
+                    "status": status.status,
+                    "problems": list(status.problems),
+                    "campaign_digests": list(status.campaign_digests),
+                }
+                for patch_id, status in sorted(statuses.items())
+            },
+            indent=2, sort_keys=True,
+        ))
+    else:
+        for patch_id, status in sorted(statuses.items()):
+            print(f"{patch_id}: {status.status}")
+            for problem in status.problems:
+                print(f"  - {problem}")
+
+    return 0 if all(status.ok for status in statuses.values()) else 1
+
+
 # ----------------------------------------------------------------- generate
 
 
@@ -1225,6 +1269,23 @@ def build_parser() -> argparse.ArgumentParser:
         "omit to show every patch with any requires/conflicts edge",
     )
     patch_graph_cmd.set_defaults(func=cmd_patch_graph)
+
+    patch_verify_evidence_cmd = sub.add_parser(
+        "patch-verify-evidence",
+        help="HI83: verify that every STATE='validated' patch has current "
+        "matching validation evidence (observational only -- not wired "
+        "into apply/build)",
+    )
+    patch_verify_evidence_cmd.add_argument(
+        "patch_id", nargs="?", default=None,
+        help="check only this patch instead of every patch in the catalog",
+    )
+    patch_verify_evidence_cmd.add_argument("--json", action="store_true")
+    patch_verify_evidence_cmd.add_argument(
+        "--no-legacy-grandfather", action="store_true",
+        help="require real HI83 evidence; do not accept the one-time legacy baseline",
+    )
+    patch_verify_evidence_cmd.set_defaults(func=cmd_patch_verify_evidence)
 
     sources.register(sub)
 

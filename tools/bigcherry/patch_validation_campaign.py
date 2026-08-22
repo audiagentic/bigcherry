@@ -615,10 +615,14 @@ def run(args: argparse.Namespace) -> int:
         Campaign, CampaignError, CampaignIdentityContext,
     )
 
+    # Hoisted: HI83's evidence record (below) needs the same values.
+    patch_digest = psi.patch_implementation_digest(args.patch)
+    patched_source_tree = psi.git_worktree_tree(patched_src)
+
     identity_context = CampaignIdentityContext(
         patch_name=args.patch,
-        patch_digest=psi.patch_implementation_digest(args.patch),
-        patched_source_tree=psi.git_worktree_tree(patched_src),
+        patch_digest=patch_digest,
+        patched_source_tree=patched_source_tree,
         gpu_architecture=args.amdgpu_targets,
         build_identities={
             "tune": tune_build_evidence.campaign_identity(),
@@ -647,6 +651,8 @@ def run(args: argparse.Namespace) -> int:
     # campaign directory.
     campaign.ensure_campaign_identity()
 
+    activation_evidence = None
+    activation_verdict = None
     trace_result = run_trace_activation_probes(
         patch_name=args.patch, binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -677,6 +683,49 @@ def run(args: argparse.Namespace) -> int:
     report_path = workdir / "campaign" / "report.md"
     _print(f"done -- report: {report_path}")
     print(report_path.read_text(encoding="utf-8"))
+
+    # HI83: record what this campaign proved (or didn't), tracked so
+    # STATE="validated" can eventually be checked against it. This is
+    # purely additive evidence production -- it does not gate anything in
+    # this campaign, and nothing in bigcherry apply/build consumes it yet
+    # (see plan item HI83's notes for why hard enforcement is deliberately
+    # deferred). A campaign with no correctness evidence and/or no
+    # activation probe for this patch still writes a real record; it is
+    # simply not eligible_for_validated_state.
+    from bigcherry import config as campaign_config  # noqa: E402
+    from bigcherry import patch_validation_evidence  # noqa: E402
+    from bigcherry import paths as bc_paths  # noqa: E402
+
+    cfg = campaign_config.load(bc_paths.RECIPES)
+    correctness_summary = None
+    if args.correctness_evidence is not None:
+        correctness_summary = patch_validation_evidence.load_correctness_summary(
+            args.correctness_evidence, patch_id=args.patch,
+            subject_digest=patch_validation_evidence.patch_validation_subject_digest(
+                REPO_ROOT / "patches" / f"{args.patch}.py"
+            ),
+            base_revision=base_revision, patched_source_tree=patched_source_tree,
+            campaign_identity_digest=campaign.campaign_identity_digest,
+            gpu_architectures=(args.amdgpu_targets,),
+        )
+        _atomic_write_json(workdir / "campaign" / "correctness.json", correctness_summary)
+
+    validation_record = patch_validation_evidence.make_record(
+        patch_id=args.patch, patch_path=REPO_ROOT / "patches" / f"{args.patch}.py",
+        patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
+        base_revision=base_revision, framework_baseline_digest=psi.framework_baseline_digest(),
+        patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
+        activation_evidence=activation_evidence, activation_disposition=activation_verdict,
+        correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,
+        build_identities=identity_context.build_identities, campaign_workdir=workdir / "campaign",
+    )
+    validation_record_path = patch_validation_evidence.write_record(validation_record)
+    _print(f"validation evidence: {validation_record_path}")
+    _print(
+        "STATE='validated' eligible: "
+        + ("yes" if validation_record["eligible_for_validated_state"] else "no")
+    )
+
     return 0
 
 
@@ -702,6 +751,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bench-prompt", type=int, default=512)
     parser.add_argument("--bench-gen", type=int, default=128)
     parser.add_argument("--bench-repetitions", type=int, default=5)
+    parser.add_argument(
+        "--correctness-evidence", type=Path, default=None,
+        help="HI83: machine-readable patch-level correctness evidence bound to "
+             "this patch/source/campaign identity; without it the campaign still "
+             "runs and records evidence, but the record is not eligible for "
+             "STATE='validated'",
+    )
     args = parser.parse_args(argv)
     return run(args)
 
