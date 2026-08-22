@@ -308,6 +308,11 @@ class Campaign:
             self.workdir / "coverage.json",
             self.workdir / "bench.json",
             self.workdir / "report.md",
+            # HI82 item 4: patch_validation_campaign.py writes this before
+            # campaign.run() -- an orphaned activation.json without an
+            # identity-bound status.json must refuse resume exactly like
+            # every other stage artifact.
+            self.workdir / "activation.json",
         )
         return tuple(path for path in candidates if path.exists())
 

@@ -206,6 +206,15 @@ _EFFECTIVE_CONFIGURE_PREFIXES = (
     # effective_build_id, breaking the same reuse-safety guarantee the
     # HIP prefixes above exist for.
     "GGML_VULKAN",
+    # HI82 (gpt-auto-agent, req_cc5af49494fe457a): once a caller opts into
+    # reproducible-linking flags (e.g. Windows /Brepro to make lld-link
+    # stop embedding a wall-clock PE timestamp), those flags must be part
+    # of effective build identity -- otherwise a build with and without
+    # them would silently collapse to the same effective_build_id despite
+    # producing non-comparable (non-reproducible vs reproducible) binaries.
+    "CMAKE_EXE_LINKER_FLAGS",
+    "CMAKE_SHARED_LINKER_FLAGS",
+    "CMAKE_MODULE_LINKER_FLAGS",
 )
 
 
@@ -512,6 +521,8 @@ def _architecture_tokens(architecture: str | Sequence[str]) -> tuple[str, ...]:
 _REQUESTED_CACHE_KEYS = frozenset({
     "CMAKE_BUILD_TYPE", "CMAKE_HIP_FLAGS", "CMAKE_HIP_ARCHITECTURES",
     "CMAKE_EXPORT_COMPILE_COMMANDS", "AMDGPU_TARGETS",
+    "CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_PREFIX_PATH",
+    "CMAKE_EXE_LINKER_FLAGS", "CMAKE_SHARED_LINKER_FLAGS", "CMAKE_MODULE_LINKER_FLAGS",
 })
 
 
