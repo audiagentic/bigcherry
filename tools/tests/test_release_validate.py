@@ -235,10 +235,11 @@ class _ProbeHarness:
         self.origin, self.origin_revision = _init_bare_origin(root)
         self.project = root / "project"
         _init_project(self.project)
-        (self.project / "recipes.toml").write_text(_RECIPES_TOML, encoding="utf-8")
+        (self.project / "config").mkdir()
+        (self.project / "config" / "recipes.toml").write_text(_RECIPES_TOML, encoding="utf-8")
         (self.project / "patches").mkdir()
         (self.project / "patches" / ".gitkeep").write_text("", encoding="utf-8")
-        _git(self.project, "add", "recipes.toml", "patches/.gitkeep")
+        _git(self.project, "add", "config/recipes.toml", "patches/.gitkeep")
         _git(self.project, "commit", "-m", "recipes")
         self.mirror = root / "mirror"
         _git(root, "clone", str(self.origin), str(self.mirror))

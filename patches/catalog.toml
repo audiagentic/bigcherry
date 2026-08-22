@@ -1,0 +1,352 @@
+# BigCherry patch catalog (RE30 phase 1: declarative patch-stream metadata).
+#
+# This is orthogonal metadata layered ON TOP of each patch module's existing
+# GROUP/STATE Python constants -- it does not replace them yet (GROUP/STATE
+# remain authoritative for tools/bigcherry/patchset.py's resolver, recipes.toml
+# patch-set membership, and every existing identity hash). `kind`/`origin`/
+# `backend` answer questions GROUP/STATE cannot: GROUP="core" conflates
+# BigCherry's own dispatch-engine instrumentation with nothing external,
+# while GROUP="upstream-fixes" conflates an OPEN unmerged PR (1002) with
+# already-merged upstream commits (1003/1004/1005) -- none of that is
+# recoverable from GROUP/STATE alone. `state` here mirrors each module's
+# real STATE constant (validated/rejected/untested) so the two can be
+# cross-checked one-to-one; see tools/tests/test_patch_catalog.py.
+#
+# Known mismatch this catalog documents (RE30's own investigation finding):
+# 1000_rdna4_mmq_q2k_q6k_fix declares GROUP="upstream-fixes" in its Python
+# module -- a real backport of an unmerged upstream PR (#25940) -- yet is
+# also compiled into the standard `framework` patch-set in recipes.toml
+# (group="core" territory). kind=upstream-backport here records what it
+# actually IS regardless of which recipe currently pulls it in; the
+# recipe-membership question is a separate, not-yet-resolved cleanup.
+#
+# backend: hip | vulkan | agnostic -- every module today is hip or agnostic;
+# no vulkan patches exist yet (RE30 phases 2+ need real Vulkan hardware
+# evidence before any vulkan-backend patch is written).
+# kind: framework | upstream-backport | enhancement
+# origin: local | upstream-commit | upstream-pr | external-fork
+
+version = 1
+
+# --- framework (BigCherry's own dispatch-engine instrumentation) ---------
+
+[[patch]]
+id = "0100_cmake_options"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0200_dispatch_hook"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0300_mmq_forced_j"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0400_mmvf_forced_block"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0500_mmf_forced_nwarps"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0600_mmvq_geometry"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0650_mmvq_native_variant"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0700_coverage_counters"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0800_server_shutdown_endpoint"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0810_replay_hit_diagnostics"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0820_measurement_signature_shapes"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0830_split_reduce_telemetry"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "0900_pool_workspace_metrics"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+[[patch]]
+id = "1100_hi70_direct_op_evidence"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+
+# --- upstream-backport (corrections/fixes taken from ggml-org/llama.cpp) --
+
+[[patch]]
+id = "1000_rdna4_mmq_q2k_q6k_fix"
+kind = "upstream-backport"
+origin = "upstream-pr"
+backend = "hip"
+state = "validated"
+upstream-ref = "https://github.com/ggml-org/llama.cpp/pull/25940"
+retirement = "remove when PR #25940 (or an equivalent fix) lands in the pinned base"
+
+[[patch]]
+id = "1002_hip_unsafe_math_opt_in"
+kind = "upstream-backport"
+origin = "upstream-pr"
+backend = "hip"
+state = "untested"
+upstream-ref = "https://github.com/ggml-org/llama.cpp/pull/26696"
+retirement = "remove when PR #26696 lands in the pinned base"
+
+[[patch]]
+id = "1003_quantized_cpy_thread_block_fix"
+kind = "upstream-backport"
+origin = "upstream-commit"
+backend = "hip"
+state = "rejected"
+upstream-ref = "https://github.com/ggml-org/llama.cpp/commit/69bf6437914596fbbc4caf09a7ac16f2acdd1a94"
+retirement = "already superseded/rejected -- kept for provenance, see module docstring"
+
+[[patch]]
+id = "1004_rms_norm_mul_rope_fusion"
+kind = "upstream-backport"
+origin = "upstream-commit"
+backend = "hip"
+state = "rejected"
+upstream-ref = "https://github.com/ggml-org/llama.cpp/commit/687e7789271ec1276e3470f158428e11a4f80b6f"
+retirement = "already superseded/rejected -- kept for provenance, see module docstring"
+
+[[patch]]
+id = "1005_prompt_cache_checkpoint_selection"
+kind = "upstream-backport"
+origin = "upstream-commit"
+backend = "hip"
+state = "untested"
+retirement = "remove when the squashed 4-commit checkpoint-selection stack lands in the pinned base"
+
+# --- enhancement (external-fork ports, RD plan items, all rdna-boosts) ---
+
+[[patch]]
+id = "1200_rd19_single_gpu_meta_bypass"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD19"
+
+[[patch]]
+id = "1201_rd20_attn_gate_tp_split"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD20"
+
+[[patch]]
+id = "1202_rd04_bf16_flash_attn_tile"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD04"
+
+[[patch]]
+id = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD05/RD06/RD07"
+
+[[patch]]
+id = "1204_rd08_q6k_mmvq_vdr2"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD08"
+
+[[patch]]
+id = "1205_rd12_paired_mmvq_dual_output"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD12"
+
+[[patch]]
+id = "1206_rd13_mul_mat_add_view_fusion"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD13"
+
+[[patch]]
+id = "1207_rd17_moe_topk_down_fold"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD17"
+
+[[patch]]
+id = "1208_rd21_gfx1151_mmvq_nwarps_table"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD21"
+
+[[patch]]
+id = "1209_rd22_integrated_gpu_host_buffer_backout"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD22"
+
+[[patch]]
+id = "1210_rd26_bitidentical_decode_verify_standalone"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "stew675-rdna-boosts"
+plan-item = "RD26"
+
+[[patch]]
+id = "1215_rd394041_amd_stream_moe_overlap"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "amd-ecosystem-llama-cpp"
+plan-item = "RD39/RD40/RD41/RD42"
+
+[[patch]]
+id = "1216_rd43_concurrent_join_fusion_guard"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "amd-ecosystem-llama-cpp"
+plan-item = "RD43"
+
+[[patch]]
+id = "1217_rd44_graph_opt_default_rdna35"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "amd-ecosystem-llama-cpp"
+plan-item = "RD44"
+
+[[patch]]
+id = "1221_rd50_gdn_chunked_recurrence"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "amd-ecosystem-llama-cpp"
+plan-item = "RD50/RD51/RD52/RD53"
+
+[[patch]]
+id = "1222_hi67_deterministic_test_backend_ops_seed"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI67"
+
+[[patch]]
+id = "1223_hi67_machine_readable_correctness_metrics"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI67"
+
+[[patch]]
+id = "1224_hi18_reduce_correctness_probe"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI18"
+
+[[patch]]
+id = "1230_hip_autotune_inspect"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI15/HI16"
+
+[[patch]]
+id = "1231_hi14_graph_capture_lifecycle_evidence"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI14"

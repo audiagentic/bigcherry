@@ -31,7 +31,7 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from . import paths
+from . import paths, recipes
 
 REGISTRY_NAME = "external-sources.toml"
 
@@ -54,7 +54,7 @@ _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def registry_path(override: str | Path | None = None) -> Path:
-    return Path(override) if override is not None else paths.REPO_ROOT / REGISTRY_NAME
+    return Path(override) if override is not None else paths.EXTERNAL_SOURCES
 
 
 def load_registry(path: str | Path | None = None) -> dict:
@@ -239,6 +239,87 @@ def _git(cwd: str, *argv: str, timeout: int) -> subprocess.CompletedProcess:
         ["git", "-C", cwd, *argv],
         capture_output=True, text=True, timeout=timeout, check=False,
     )
+
+
+# RD95 (external patch-management review, 2026-08-20): "merged-upstream"
+# below only proves a tracked commit has a patch-id equivalent SOMEWHERE in
+# mainline/master's current, moving tip -- it does NOT prove that commit is
+# ancestral to THIS project's own pinned vendor revision. Those are
+# different questions: mainline/master moves continuously, our pin only
+# moves at an explicit repin. This session found the gap the hard way,
+# twice, by hand: RD68a/RD68b's PRs were confirmed merged into
+# ggml-org/llama.cpp, but their merge commits landed HOURS AFTER the
+# b10502 pin was cut -- so "merged upstream" was true while "ancestral to
+# our pin, therefore redundant to keep porting right now" was false. A
+# tool that only checked the first question would have wrongly told
+# someone to drop RD68a/RD68b as already covered. ancestral_to_pin() is
+# the missing second question, real and independently callable (not yet
+# wired into _check()'s merged-upstream branch, which would need to
+# additionally resolve the exact mainline-equivalent SHA per tracked
+# commit -- a real but separate follow-up; see this function's own
+# docstring for why that's non-trivial with git-cherry's output shape).
+def ancestral_to_pin(
+    candidate_sha: str,
+    *,
+    vendor_root: Path | None = None,
+    pin_ref: str | None = None,
+    timeout: int = 30,
+) -> str:
+    """Is ``candidate_sha`` an ancestor of this project's pinned vendor
+    revision, checked entirely against the LOCAL vendor checkout (no
+    network) -- the real, reusable primitive this session's manual RD68a/
+    RD68b and RD85/RD86 ancestry investigations each re-derived by hand via
+    ad hoc SSH commands.
+
+    Returns one of three strings, never raises for an ordinary "don't
+    know" case (fail-closed callers should treat anything but "ancestral"
+    as "not proven redundant, keep tracking"):
+
+    - ``"ancestral"``       -- candidate_sha IS an ancestor of the pin;
+                               a tracked commit with this verdict is a real
+                               candidate to mark superseded/baseline.
+    - ``"not-ancestral"``   -- both SHAs resolved locally and git could
+                               positively determine candidate_sha is NOT an
+                               ancestor of the pin (the RD68a/RD68b case:
+                               really is still needed).
+    - ``"unknown"``         -- candidate_sha (or the pin itself) is not
+                               present in the local vendor checkout's
+                               history at all (a shallow clone, or a
+                               commit that lives only on a fork/mainline
+                               branch never fetched locally) -- git cannot
+                               answer the ancestry question from what is
+                               on disk; a real check needs that history
+                               fetched first. NEVER treated as "ancestral"
+                               by construction -- unresolvable is not
+                               evidence of redundancy.
+
+    ``vendor_root`` defaults to ``paths.llama_root()`` (the real, local
+    pinned checkout); ``pin_ref`` defaults to the currently configured pin
+    (``recipes.load_config().pinned``, e.g. ``"b10502"``) resolved within
+    that checkout.
+    """
+    root = vendor_root if vendor_root is not None else paths.llama_root()
+    if pin_ref is None:
+        pin_ref = recipes.load_config().pinned
+    if not root.is_dir():
+        return "unknown"
+
+    resolved_pin = _git(str(root), "rev-parse", "--verify", f"{pin_ref}^{{commit}}", timeout=timeout)
+    if resolved_pin.returncode != 0:
+        return "unknown"
+    pin_sha = resolved_pin.stdout.strip()
+
+    resolved_candidate = _git(
+        str(root), "rev-parse", "--verify", f"{candidate_sha}^{{commit}}", timeout=timeout)
+    if resolved_candidate.returncode != 0:
+        return "unknown"
+
+    result = _git(str(root), "merge-base", "--is-ancestor", candidate_sha, pin_sha, timeout=timeout)
+    if result.returncode == 0:
+        return "ancestral"
+    if result.returncode == 1:
+        return "not-ancestral"
+    return "unknown"
 
 
 def _check(args: argparse.Namespace) -> int:

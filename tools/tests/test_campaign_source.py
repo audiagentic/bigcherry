@@ -10,11 +10,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry import config as campaign_config  # noqa: E402
 from bigcherry import patchset  # noqa: E402
+from bigcherry import paths  # noqa: E402
 from bigcherry import workspace  # noqa: E402
 from bigcherry.campaign_source import (CampaignSourceError, source_plan_for,  # noqa: E402
                                        source_plan_id)
 
-_RECIPES_PATH = Path(__file__).resolve().parents[2] / "recipes.toml"
+_RECIPES_PATH = paths.RECIPES
 
 
 class CampaignSourceTests(unittest.TestCase):

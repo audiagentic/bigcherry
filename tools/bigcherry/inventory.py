@@ -33,7 +33,19 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "4"
+CURRENT_DB_SCHEMA_VERSION = "6"
+#: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
+#: hardware/signature/candidate/observation/measurement/winner), purely
+#: additive -- zero changes to any schema-4 table/column/index. Real
+#: existing schema-4 databases migrate to 5 in place via the unconditional
+#: UPDATE at the end of sql/dispatch-db.sql; no data is lost or reshaped.
+#: See that file's schema_meta comment for why this differs from the
+#: "guess at an unlisted intermediate shape" case readers must still reject.
+#: Schema 6 (HI67 slices 2/3, RV49/RV77, 2026-08-21): added correctness_
+#: evidence and correctness_evidence_seed, purely additive -- zero changes
+#: to any schema-5 table/column/index (HIP or vk_*). Real existing schema-5
+#: databases migrate to 6 in place via the unconditional UPDATE at the end
+#: of sql/dispatch-db.sql; no data is lost or reshaped.
 
 
 @dataclass(frozen=True)
@@ -360,6 +372,13 @@ def type_name(value: int) -> str | None:
     return _GGML_TYPE_NAMES.get(value)
 
 
+# HI73: types that are NOT quantised, per dispatch's ggml_is_quantized gate
+# (is_float is f32/f16/bf16; the dense-path ints are not quantised either).
+_NON_QUANTISED = {"f32", "f16", "bf16", "f64", "i8", "i16", "i32", "i64"}
+_FLOAT_TYPES = {"f32", "f16", "bf16"}
+_GGML_TYPE_F32 = 0
+
+
 def build_inventory(record: Record) -> dict[str, Any]:
     """Derive the observed type and width sets the catalog restricts to.
 
@@ -367,6 +386,23 @@ def build_inventory(record: Record) -> dict[str, Any]:
     name, which is the only place that information exists -- the signature
     describes the *operation*, deliberately not the implementation chosen for
     it (standards 5.1).
+
+    HI73: also derives per-type SHAPE reachability. Two facts in the
+    dispatch's eligibility check (hip-autotune-dispatch.cu) decide whether a
+    whole candidate row family is reachable at all, and neither is a property
+    of the type alone:
+
+    - MMQ fallback rows (``fallback=1``) execute only when ``ne0[1] % 128
+      != 0`` -- dispatch derives the fallback from shape, it is not a
+      candidate choice (ggml_hip_mmq_can_execute).
+    - MMF executes only for float src0 with F32 activations, even K
+      (``ne0[0] % 2 == 0``) and ``1 <= ncols_dst <= 16``
+      (ggml_hip_family_can_serve).
+
+    Each field is emitted only when EVERY relevant observation was evaluable;
+    a malformed observation makes the field absent, and absent means
+    "unknown -- skip nothing". An EMPTY set is positive grounds to skip: the
+    field was fully evaluated and the shape never occurred.
     """
     families: dict[str, set[str]] = {
         "mmq": set(),
@@ -378,14 +414,25 @@ def build_inventory(record: Record) -> dict[str, Any]:
     uses_blas = False
     unknown_types: Counter[int] = Counter()
 
+    # HI73: per-type shape reachability. ``*_evaluated`` tracks the types that
+    # had at least one evaluable observation; ``*_complete`` becomes False the
+    # moment any observation of a relevant type is missing the fields the
+    # eligibility rule needs.
+    mmq_fallback_types: set[str] = set()
+    mmq_fallback_evaluated: set[str] = set()
+    mmq_fallback_complete = True
+    mmf_eligible_types: set[str] = set()
+    mmf_eligible_evaluated: set[str] = set()
+    mmf_eligible_complete = True
+
     for observation in record.observations:
         native = observation.get("native", "")
         family = native.split(":", 1)[0] if ":" in native else ""
         canonical = observation.get("canonical", {})
 
         src0 = canonical.get("src0_type")
+        name = type_name(int(src0)) if src0 is not None else None
         if src0 is not None:
-            name = type_name(int(src0))
             if name is None:
                 unknown_types[int(src0)] += 1
             elif family in families:
@@ -404,6 +451,34 @@ def build_inventory(record: Record) -> dict[str, Any]:
         if family == "blas":
             uses_blas = True
 
+        # --- HI73: MMQ fallback reachability (any quantised op; dispatch
+        # eligibility is per-signature, independent of the native family).
+        ne0 = canonical.get("ne0")
+        if name is not None and name not in _NON_QUANTISED:
+            mmq_fallback_evaluated.add(name)
+            if isinstance(ne0, list) and len(ne0) > 1:
+                if int(ne0[1]) % 128 != 0:
+                    mmq_fallback_types.add(name)
+            else:
+                mmq_fallback_complete = False
+
+        # --- HI73: MMF eligibility (float src0 + f32 activation + even K
+        # + ncols_dst in [1, 16], mirroring ggml_hip_family_can_serve).
+        if name in _FLOAT_TYPES:
+            src1 = canonical.get("src1_type")
+            k = ne0[0] if isinstance(ne0, list) and len(ne0) > 0 else None
+            ncols = (int(ned[width_index])
+                     if isinstance(ned, list) and len(ned) > width_index
+                     else None)
+            if src1 is not None and k is not None and ncols is not None:
+                mmf_eligible_evaluated.add(name)
+                if (int(src1) == _GGML_TYPE_F32
+                        and int(k) % 2 == 0
+                        and 1 <= ncols <= 16):
+                    mmf_eligible_types.add(name)
+            else:
+                mmf_eligible_complete = False
+
     if unknown_types:
         print(
             f"warning: {sum(unknown_types.values())} observation(s) use "
@@ -412,6 +487,13 @@ def build_inventory(record: Record) -> dict[str, Any]:
             f"catalog will silently omit those types.",
             file=sys.stderr,
         )
+
+    # Only trust reachability when fully evaluated; a partially-evaluated set
+    # would let one malformed observation silently skip candidates.
+    mmq_fallback_out = (sorted(mmq_fallback_types)
+                        if mmq_fallback_complete else None)
+    mmf_eligible_out = (sorted(mmf_eligible_types)
+                        if mmf_eligible_complete else None)
 
     return {
         "source_revision": record.header.get("source_revision", ""),
@@ -423,6 +505,8 @@ def build_inventory(record: Record) -> dict[str, Any]:
         "mmf_types": sorted(families["mmf"]),
         "widths": sorted(widths),
         "uses_blas": uses_blas,
+        "mmq_fallback_types": mmq_fallback_out,
+        "mmf_eligible_types": mmf_eligible_out,
     }
 
 

@@ -11,15 +11,18 @@ actually emits today.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
 import random
+import sqlite3
 from pathlib import Path
 from typing import Any
 
 from .tune_journal import atomic_write, canonical
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
+from . import promotion_correctness_gate
 from . import ranking_policy
 
 SCHEMA_VERSION = 1
@@ -75,7 +78,28 @@ def _validate_policy_identity(row: dict[str, Any], header: dict[str, Any]) -> No
     except ranking_policy.RankingPolicyError as exc:
         raise PromotionError(str(exc)) from exc
     if not decisions:
-        raise PromotionError("ranking decision coverage is empty")
+        # The C++ emitter always writes this field, defaulting to "[]" for
+        # runs with nothing to rank (e.g. "native not eligible; run
+        # rejected") -- that default carries no ranking claim to validate,
+        # unlike a genuinely present-but-malformed decision list. But
+        # unconditional acceptance is too permissive (GPT review,
+        # 2026-08-21): a producer regression that reaches the ranking stage,
+        # picks a challenger, and accidentally serializes "[]" would then
+        # bypass every ranking-policy identity/coverage/verdict check below.
+        # Every status the tuner emits AFTER ranking runs (evaluation_failed,
+        # confirmation_rejected, pending_bh, promoted, rejected_*) requires
+        # real ranking_decisions; only "native" legitimately has none, since
+        # every pre-ranking early-return keeps status=="native" by
+        # construction. (This is still a proxy, not a first-class contract --
+        # the real fix is an explicit ranking_state field the tuner emits
+        # directly, so absence-of-evidence is stated rather than inferred.)
+        status = row.get("promotion_status")
+        if status is not None and status != "native":
+            raise PromotionError(
+                "ranking decision coverage is empty but promotion_status "
+                f"{status!r} requires a completed ranking pick"
+            )
+        return
     production = [decision for decision in decisions if decision.is_production]
     if len(production) != 1:
         raise PromotionError("ranking decision production policy coverage is invalid")
@@ -151,6 +175,7 @@ def _validate_provisional_status(row: dict[str, Any]) -> None:
         "native",
         "pending_bh",
         "confirmation_rejected",
+        "evaluation_failed",
         "promoted",
         "rejected_effect",
         "rejected_ci",
@@ -564,10 +589,41 @@ def simulate_null_fdr(
     }
 
 
+def _evaluate_row_correctness(
+    conn: sqlite3.Connection, row: dict[str, Any]
+) -> tuple[bool, str]:
+    """HI67 slice 3: resolve one row's real DB identity and evaluate the
+    RV49 correctness contract against it. Always returns a decision --
+    never raises -- so one row's unresolvable identity or missing evidence
+    fails closed as a rejection for THAT row, not a crash of the whole
+    promotion run."""
+    dispatch_hex = row.get("dispatch")
+    signature_hex = row.get("signature")
+    hardware_hex = row.get("hardware")
+    native_name = row.get("native")
+    candidate_name = row.get("provisional_winner")
+    if not all(isinstance(v, str) and v for v in
+               (dispatch_hex, signature_hex, hardware_hex, native_name, candidate_name)):
+        # Most commonly: this row's tuner run predates the row-level
+        # "hardware" field (HI37 territory) -- with no digest to resolve
+        # against, there is nothing to check evidence for.
+        return False, "rejected_no_correctness_evidence"
+    try:
+        identity = promotion_correctness_gate.resolve_promotion_identity(
+            conn, dispatch_hex=dispatch_hex, signature_hex=signature_hex,
+            hardware_hex=hardware_hex, native_name=native_name,
+            candidate_name=candidate_name,
+        )
+    except promotion_correctness_gate.CorrectnessGateError:
+        return False, "rejected_no_correctness_evidence"
+    return promotion_correctness_gate.evaluate_correctness_gate(conn, identity)
+
+
 def promote(
     measurements: Path,
     output: Path,
     *,
+    dispatch_db: Path,
     q: float = 0.05,
     threshold_pct: float = 1.0,
     resamples: int = 10_000,
@@ -597,6 +653,15 @@ def promote(
         if not isinstance(provisional, str) or provisional == row.get("native"):
             continue
         original_status = row.get("promotion_status")
+        # A real challenger was nominated (provisional != native) but the
+        # measurement transaction that would have produced confirmation
+        # evidence for it never completed (HIP timing failure, unresolved
+        # clock drift). There is no p-value to test -- this is not a
+        # rejected hypothesis, it is evidence that was never obtained.
+        # Skip it the same way a native-retained row is skipped, rather than
+        # treating "no evidence" as if it were "evidence against".
+        if original_status == "evaluation_failed":
+            continue
         if original_status not in {"pending_bh", "confirmation_rejected"}:
             raise PromotionError(
                 "non-native result lacks current pending_bh/confirmation evidence"
@@ -614,6 +679,27 @@ def promote(
         hypotheses.append((dispatch, float(p_value)))
     adjusted = benjamini_hochberg(hypotheses) if hypotheses else {}
     accepted = {digest for digest, value in adjusted.items() if value <= q}
+
+    # HI67 slice 3 (RV49/RV77): a real dispatch_db is a REQUIRED promotion
+    # input -- a non-native winner must clear CPU-reference correctness
+    # evidence (correctness_evidence/correctness_evidence_seed, schema 6)
+    # as a hard AND with the statistical BH/bootstrap criteria below.
+    # Resolved in one tightly-scoped read-only pass (this function only
+    # ever SELECTs identity a real inventory.load_measurements() ingestion
+    # already wrote; it never inserts/upserts) so the connection does not
+    # need to stay open across the rest of this function's several
+    # early-raise validation paths.
+    correctness_results: dict[str, tuple[bool, str]] = {}
+    with contextlib.closing(
+        sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+    ) as dispatch_conn:
+        for row in results:
+            provisional = row.get("provisional_winner")
+            if isinstance(provisional, str) and provisional != row.get("native"):
+                correctness_results[row["dispatch"]] = _evaluate_row_correctness(
+                    dispatch_conn, row
+                )
+
     promoted_count = 0
     for row in results:
         provisional = row.get("provisional_winner")
@@ -635,12 +721,21 @@ def promote(
             resamples=resamples,
         )
         original_status = row["promotion_status"]
-        passed = (
+        statistically_passed = (
             original_status == "pending_bh"
             and row["dispatch"] in accepted
             and observed_effect >= threshold_pct
             and low > 0.0
         )
+        # HI67 slice 3: correctness is a HARD AND, never a rescue. It is
+        # only even evaluated (and can only ever REJECT, never promote) once
+        # the statistical criteria already passed -- an already-BH-rejected
+        # row keeps its own statistical rejection reason, not a correctness
+        # one, so the audit trail says why it was ACTUALLY first rejected.
+        correctness_passed, correctness_status = (
+            correctness_results.get(row["dispatch"], (False, "rejected_no_correctness_evidence"))
+        )
+        passed = statistically_passed and correctness_passed
         row["promotion"] = {
             "schema_version": SCHEMA_VERSION,
             "q": q,
@@ -663,8 +758,15 @@ def promote(
                 rejection_status = "rejected_effect"
             elif low <= 0.0:
                 rejection_status = "rejected_ci"
-            else:
+            elif not statistically_passed:
                 rejection_status = "rejected_bh"
+            else:
+                # Statistical criteria passed -- rejected purely on the
+                # correctness gate (RV49). correctness_status is always one
+                # of rejected_no_correctness_evidence/rejected_correctness_
+                # contract/rejected_correctness here, never "" (empty only
+                # means correctness_passed was True).
+                rejection_status = correctness_status
             row["promotion_status"] = rejection_status
             row["winner"] = row["native"]
             row["improvement_pct"] = 0.0
@@ -673,6 +775,9 @@ def promote(
                 "rejected_effect": "native retained below the declared effect threshold",
                 "rejected_ci": "native retained because the confidence interval crosses zero",
                 "rejected_bh": "native retained by experiment-wide promotion policy",
+                "rejected_no_correctness_evidence": "native retained: no CPU-reference correctness evidence for this candidate",
+                "rejected_correctness_contract": "native retained: correctness evidence contract/identity mismatch",
+                "rejected_correctness": "native retained: candidate failed the CPU-reference correctness headroom rule",
             }[rejection_status]
     promoted_header = dict(header)
     promoted_header["promotion_policy"] = {
@@ -706,6 +811,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry tune-promote")
     parser.add_argument("measurements", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--dispatch-db", type=Path, required=True,
+        help="dispatch database (schema 6+) this measurements file was ingested "
+             "into -- required so a non-native winner's CPU-reference correctness "
+             "evidence (HI67) can be checked as a hard AND with the statistical "
+             "promotion criteria",
+    )
     parser.add_argument("--q", type=float, default=0.05)
     parser.add_argument("--threshold-pct", type=float, default=1.0)
     parser.add_argument("--resamples", type=int, default=10_000)
@@ -714,6 +826,7 @@ def main(argv: list[str] | None = None) -> int:
         result = promote(
             args.measurements,
             args.output,
+            dispatch_db=args.dispatch_db,
             q=args.q,
             threshold_pct=args.threshold_pct,
             resamples=args.resamples,

@@ -73,6 +73,16 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "untested"
 
+# RE40 (external patch-management review, 2026-08-20): 1205/1207 share a
+# struct anchor in ggml-cuda.cu's fusion-detection block and cannot compose
+# today (documented in both patches' own docstrings and
+# docs/reference/PIN_REBASE_REVIEW_B10502.md section 2.2). CONFLICTS makes
+# that real and enforced (patchset.resolve_exact() raises if both are
+# explicitly selected together) instead of relying solely on the anchor
+# collision to surface it at apply time. First-sweep policy: compatible
+# composition is a future decision, not implied by this declaration.
+CONFLICTS = ("1207_rd17_moe_topk_down_fold",)
+
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",
     "plan-item": "RD12",
@@ -135,6 +145,19 @@ _DETECT_BLOCK = """    // Dual-output mmvq fusion: two matmuls over the same act
                 ggml_cuda_mm_fusion_args_host fusion_data{};
                 fusion_data.gate     = mid->src[0];
                 fusion_data.dst_gate = mid;
+                // bigcherry: HI82 activation-evidence instrumentation, not
+                // part of the ported fork change. Emits once (not per-call)
+                // so an unattended validation campaign can prove this
+                // silent, host-side-selected fusion path was actually
+                // taken -- a green build + a plausible benchmark alone
+                // cannot distinguish "fused" from "fell through unfused"
+                // for a graph-selection optimization like this one.
+                if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                    static std::atomic_flag bigcherry_rd12_logged = ATOMIC_FLAG_INIT;
+                    if (!bigcherry_rd12_logged.test_and_set(std::memory_order_relaxed)) {
+                        GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion\\n");
+                    }
+                }
                 ggml_cuda_mul_mat_vec_q(*cuda_ctx, mm_a->src[0], mm_a->src[1], mm_a->src[2], mm_a, &fusion_data);
                 return j - i;
             }

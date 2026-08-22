@@ -324,6 +324,13 @@ struct ggml_hip_native_selection {
     bool                                  valid;
 };
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// Forward-declared: the full definition (further down this file) needs
+// GGML_HIP_ROUTING_TRANSFORM too, but a pointer member does not need the
+// complete type.
+struct ggml_hip_routing_transformation;
+#endif
+
 // The result of resolving a dispatch key: the candidate to launch, plus room
 // for per-signature state the resolver computed once and the launch can reuse.
 struct ggml_hip_resolved_dispatch {
@@ -331,6 +338,16 @@ struct ggml_hip_resolved_dispatch {
     ggml_hip_variant_params               variant;
     void *                                prepared_state; // owned by the resolver
     bool                                  from_cache;     // false = native fallback
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI31: nullptr (the default -- see every construction site) means
+    // `candidate` is reached directly; a real pointer means it was only
+    // reachable through this routing transformation (HI27/HI28), and the
+    // dispatch-time launch must route through ggml_hip_transform_launch()
+    // rather than calling candidate->launch() directly. See hip-autotune-
+    // dispatch.cu's ggml_hip_dispatch_launch() for the fast-path contract:
+    // a nullptr check here is the ONLY cost a non-transformed binding pays.
+    const ggml_hip_routing_transformation * transform = nullptr;
+#endif
 };
 
 // -------------------------------------------------------- routing transforms

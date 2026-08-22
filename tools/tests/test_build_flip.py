@@ -1,11 +1,14 @@
-"""RE21: `build` becomes the new multi-lane campaign engine, `legacy-build`
-keeps today's recipe/tree-state path -- fail-closed CLI boundary tests.
+"""RE21/RE23: `build` is the multi-lane campaign engine -- fail-closed CLI
+boundary tests.
 
 Only the parser/dispatch boundary is exercised here (argparse wiring,
 cmd_build_new's own validation, exit codes) -- run_campaign() and plan()'s
 own correctness are already covered by test_campaign_planner.py/
-test_campaign_lane.py; this file's job is that `build` never silently
-routes to legacy mechanics and that its own request-validation is sound.
+test_campaign_lane.py. RE23 deleted the `legacy-build` compatibility command
+and its recipe/tree-state mechanics entirely once the cutover's compatibility
+gates were satisfied; the tests that used to prove `build` never routed to
+it were retired along with it (see test_campaign_build_flip.py's
+NoLegacyTreeStateMechanicsTests for the remaining static-reference guard).
 """
 
 from __future__ import annotations
@@ -21,12 +24,12 @@ from bigcherry import __main__ as cli  # noqa: E402
 
 
 class BuildParserSplitTests(unittest.TestCase):
-    def test_build_and_legacy_build_are_both_registered_subcommands(self):
+    def test_build_is_registered_and_legacy_build_is_gone(self):
         parser = cli.build_parser()
         subparsers_action = next(
             a for a in parser._actions if a.dest == "command" or hasattr(a, "choices") and a.choices)
         self.assertIn("build", subparsers_action.choices)
-        self.assertIn("legacy-build", subparsers_action.choices)
+        self.assertNotIn("legacy-build", subparsers_action.choices)
 
     def test_new_build_rejects_recipe_flag_with_exit_2(self):
         parser = cli.build_parser()
@@ -69,13 +72,6 @@ class BuildParserSplitTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             parser.parse_args(["build", "--dry-run"])
         self.assertEqual(ctx.exception.code, 2)
-
-    def test_legacy_build_still_accepts_groups_and_states(self):
-        parser = cli.build_parser()
-        args = parser.parse_args(["legacy-build", "--groups", "core", "--states", "validated"])
-        self.assertEqual(args.groups, "core")
-        self.assertEqual(args.states, "validated")
-        self.assertIs(args.func, cli.cmd_build)
 
     def test_new_build_dispatches_to_cmd_build_new(self):
         parser = cli.build_parser()
@@ -134,7 +130,12 @@ class CmdBuildNewRequestValidationTests(unittest.TestCase):
 
     def test_rejects_unknown_profile_via_planner_error(self):
         args = self._args(profile="does-not-exist")
-        code = cli.cmd_build_new(args)
+        # The RE48 pin preflight resolves the REAL tree these wiring tests
+        # run against; stub it so the exit code under test comes from the
+        # planner, not from the pin gate (covered by test_pin_status.py).
+        with patch("bigcherry.pin_status.campaign_preflight",
+                   return_value=([], False)):
+            code = cli.cmd_build_new(args)
         self.assertEqual(code, 2)
 
 

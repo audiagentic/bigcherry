@@ -364,6 +364,126 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                     allow_dirty_bigcherry=True,
                 )
 
+    def test_source_backend_reaches_make_build_worker(self):
+        # RE30 phase 3: execute_campaign_lane must resolve
+        # cfg.sources[spec.source_name].backend and pass it to
+        # make_build_worker -- the seam that used to silently default
+        # every lane to "hip" regardless of the source's real backend.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            harness = _Harness(root, upstream, revision)
+            harness.cfg = replace(
+                harness.cfg,
+                sources={
+                    "test-source": replace(
+                        harness.cfg.sources["test-source"], backend="vulkan"
+                    )
+                },
+            )
+            _, fake_build, fake_smoke = harness.fake_workers()
+            captured: dict[str, object] = {}
+
+            def capturing_build_worker(**kwargs):
+                captured["backend"] = kwargs.get("backend")
+                return fake_build(**kwargs)
+
+            with (
+                patch(
+                    "bigcherry.campaign_lane.campaign_workers.make_generate_worker",
+                    side_effect=Re25ProvenanceLineageTests._fake_generate_worker(),
+                ),
+                patch(
+                    "bigcherry.campaign_lane.campaign_workers.make_build_worker",
+                    side_effect=capturing_build_worker,
+                ),
+                patch(
+                    "bigcherry.campaign_lane.campaign_workers.make_smoke_worker",
+                    side_effect=fake_smoke,
+                ),
+            ):
+                execute_campaign_lane(
+                    harness.spec(),
+                    cfg=harness.cfg,
+                    context=harness.context,
+                    store=harness.store,
+                    run_id="run1",
+                    allow_dirty_bigcherry=True,
+                )
+            self.assertEqual(captured["backend"], "vulkan")
+
+    def test_hip_and_vulkan_produce_different_build_plan_id(self):
+        # RE-backend-identity (external review, 2026-08-20) P0-1: backend
+        # must be intrinsic to requested BuildPlan identity. Before this
+        # fix, a HIP and a Vulkan lane sharing the same nominal source/
+        # build/platform names produced the SAME build_plan_id/build_dir
+        # (backend.py::build_directory keys purely off it), so a cached
+        # HIP build could be silently "reused" for a Vulkan request, or
+        # vice versa, with no error anywhere in the chain.
+        def run_with_backend(backend: str):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                upstream, revision = _init_upstream(root)
+                harness = _Harness(root, upstream, revision)
+                harness.cfg = replace(
+                    harness.cfg,
+                    sources={
+                        "test-source": replace(
+                            harness.cfg.sources["test-source"], backend=backend
+                        )
+                    },
+                )
+                _, fake_build, fake_smoke = harness.fake_workers()
+                with (
+                    patch(
+                        "bigcherry.campaign_lane.campaign_workers.make_generate_worker",
+                        side_effect=Re25ProvenanceLineageTests._fake_generate_worker(),
+                    ),
+                    patch(
+                        "bigcherry.campaign_lane.campaign_workers.make_build_worker",
+                        side_effect=fake_build,
+                    ),
+                    patch(
+                        "bigcherry.campaign_lane.campaign_workers.make_smoke_worker",
+                        side_effect=fake_smoke,
+                    ),
+                ):
+                    result = execute_campaign_lane(
+                        harness.spec(),
+                        cfg=harness.cfg,
+                        context=harness.context,
+                        store=harness.store,
+                        run_id="run1",
+                        allow_dirty_bigcherry=True,
+                    )
+                return result.build_plan
+
+        hip_plan = run_with_backend("hip")
+        vulkan_plan = run_with_backend("vulkan")
+
+        self.assertEqual(hip_plan.backend, "hip")
+        self.assertEqual(vulkan_plan.backend, "vulkan")
+        self.assertNotEqual(hip_plan.cmake_options, vulkan_plan.cmake_options)
+        self.assertNotEqual(hip_plan.build_plan_id, vulkan_plan.build_plan_id)
+        # ... and therefore not the same on-disk build_dir either -- a
+        # cached HIP build cannot be silently handed to a Vulkan request
+        # sharing the same nominal source/build/platform names.
+        from bigcherry.builds import build_directory
+
+        context = ProjectContext(
+            project_root=Path("/root"),
+            config_path=Path("/root/recipes.toml"),
+            artifacts_root=Path("/root/artifacts"),
+            work_root=Path("/root/work"),
+            upstream_repo=Path("/root/upstream"),
+            overlay_root=Path("/root/src"),
+            patches_root=Path("/root/patches"),
+        )
+        self.assertNotEqual(
+            build_directory(context, "slice", hip_plan),
+            build_directory(context, "slice", vulkan_plan),
+        )
+
 
 class Re25ProvenanceLineageTests(unittest.TestCase):
     """RE25.2: real call sites construct typed ProvenanceV2 with full lineage

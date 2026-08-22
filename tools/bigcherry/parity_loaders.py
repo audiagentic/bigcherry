@@ -1,12 +1,15 @@
-"""RE14: build a parity.CampaignArm from real legacy or new-path output.
+"""RE14: build a parity.CampaignArm from real campaign-published output.
 
-Two loaders, not one, because the two paths publish their artifacts
-differently: the legacy path writes plain files at conventional paths
-(``artifact_dir(revision)/hip-autotune-manifest.json``, a ``_build_dir``
-binary); the new path publishes everything through :class:`ArtifactStore`
-under content-addressed relative paths. Both loaders converge on the same
-:class:`~bigcherry.parity.CampaignArm` shape so :func:`~bigcherry.parity.check_parity`
-never needs to know which path produced its inputs.
+Reads through :class:`ArtifactStore`'s content-addressed relative paths and
+converges on :class:`~bigcherry.parity.CampaignArm`, so
+:func:`~bigcherry.parity.check_parity` never needs to know anything about
+how its inputs were produced.
+
+RE23 note: this module used to have a sibling ``load_legacy_arm`` reading
+plain files at conventional legacy-checkout paths, for the legacy-vs-new
+parity comparison that ran during the RE14 cutover (see git history for
+``re14_parity_run.py``, retired in RE23 once that comparison's job -- proving
+the two paths agreed -- was done and the legacy path itself was deleted).
 """
 
 from __future__ import annotations
@@ -17,20 +20,6 @@ from pathlib import Path
 from .artifacts import ArtifactError, ArtifactStore
 from .builds import binary_hash
 from .parity import CampaignArm
-
-
-def load_legacy_arm(
-    name: str, *, manifest_path: Path, descriptor_path: Path, binary_path: Path,
-    toolchain: dict[str, str] | None = None,
-) -> CampaignArm:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
-    candidate_names = frozenset(c["stable_name"] for c in manifest["candidates"])
-    return CampaignArm(
-        name=name, manifest=manifest, descriptor=descriptor,
-        candidate_names=candidate_names, binary_hash=binary_hash(binary_path),
-        toolchain=toolchain if toolchain is not None else {},
-    )
 
 
 def load_new_arm(

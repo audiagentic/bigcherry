@@ -226,6 +226,12 @@ class Inventory:
     mmf_types: set[str] = field(default_factory=set)
     widths: set[int] = field(default_factory=set)
     uses_blas: bool = True
+    # HI73: per-type shape reachability from the record inventory.
+    # None means "unknown" (a pre-HI73 inventory JSON without the field) --
+    # in that case no shape-based candidate is skipped. An empty set means
+    # "observed, and never reached", which IS positive grounds to skip.
+    mmq_fallback_types: set[str] | None = None
+    mmf_eligible_types: set[str] | None = None
 
     @property
     def quant_types(self) -> set[str]:
@@ -253,6 +259,8 @@ class Inventory:
     @classmethod
     def from_json(cls, path: Path) -> "Inventory":
         data = json.loads(path.read_text(encoding="utf-8"))
+        fallback = data.get("mmq_fallback_types")
+        mmf_eligible = data.get("mmf_eligible_types")
         return cls(
             mmq_types=set(data.get("mmq_types", [])),
             mmvq_types=set(data.get("mmvq_types", [])),
@@ -260,11 +268,24 @@ class Inventory:
             mmf_types=set(data.get("mmf_types", [])),
             widths=set(int(w) for w in data.get("widths", [])),
             uses_blas=bool(data.get("uses_blas", True)),
+            # Absent field => unknown (pre-HI73 inventory) => keep everything.
+            mmq_fallback_types=set(fallback) if fallback is not None else None,
+            mmf_eligible_types=(set(mmf_eligible)
+                                if mmf_eligible is not None else None),
         )
 
 
 def _keep(observed: set[str], name: str, *, restrict: bool) -> bool:
     return not restrict or name in observed
+
+
+def _mmq_stable_name(row: MMQConfigRow) -> str:
+    # Standards 2.2: the name carries the whole resolved config, not just J,
+    # because the config table can change independently of J.
+    return (f"mmq:{row.type}:j{row.j}:fb{int(row.fallback)}"
+            f":t{row.nthreads}:o{row.occupancy}:i{row.i}"
+            f":sram-{row.sram_layout}:k{row.k_vram}"
+            f":sk{int(row.stream_k)}:v{IMPLEMENTATION_VERSION}")
 
 
 def _keep_width(observed: set[int], width: int, *, restrict: bool) -> bool:
@@ -323,12 +344,18 @@ def enumerate_mmq(cuda_dir: Path, architectures: Iterable[str],
             if not _keep(inventory.quant_types, row.type, restrict=restrict):
                 continue
 
-            # Standards 2.2: the name carries the whole resolved config, not
-            # just J, because the config table can change independently of J.
-            name = (f"mmq:{row.type}:j{row.j}:fb{int(row.fallback)}"
-                    f":t{row.nthreads}:o{row.occupancy}:i{row.i}"
-                    f":sram-{row.sram_layout}:k{row.k_vram}"
-                    f":sk{int(row.stream_k)}:v{IMPLEMENTATION_VERSION}")
+            # HI73: a fallback=1 row is reachable only when the workload
+            # executed a non-128-aligned shape for this type -- dispatch
+            # derives `fallback` from ne0[1] % 128 (hip-autotune-dispatch.cu,
+            # ggml_hip_mmq_can_execute). A row no observed signature can
+            # reach must not be enumerated: the replay-full gate would demand
+            # correctness evidence that no workload run can ever produce.
+            if (restrict and row.fallback
+                    and inventory.mmq_fallback_types is not None
+                    and row.type not in inventory.mmq_fallback_types):
+                continue
+
+            name = _mmq_stable_name(row)
 
             existing = by_name.get(name)
             if existing is not None:
@@ -396,6 +423,14 @@ def enumerate_mmf(architectures: list[str], inventory: Inventory,
                   *, restrict: bool) -> list[Candidate]:
     candidates: list[Candidate] = []
     for source_type in FLOAT_TYPES:
+        # HI73: MMF is only eligible for float ops with k % 2 == 0 and
+        # 1 <= ncols_dst <= 16 (dispatch.cu ggml_hip_family_can_serve). Skip
+        # the whole type when no observed operation could ever reach it --
+        # an f16 width observed on a q8_0 op does not make an mmf:f16
+        # candidate reachable (the old cross-product overapproximation).
+        if (restrict and inventory.mmf_eligible_types is not None
+                and source_type not in inventory.mmf_eligible_types):
+            continue
         if not _keep(inventory.float_types, source_type, restrict=restrict):
             continue
         # MMF needs a matrix core for the source type, and which one depends on
@@ -539,6 +574,62 @@ def enumerate_natives(architectures: list[str],
     ]
 
 
+def unreachable_candidates(cuda_dir: Path, architectures: list[str],
+                           types: list[str],
+                           inventory: Inventory | None) -> list[dict[str, str]]:
+    """HI73: name the candidates the inventory proves unreachable.
+
+    The restricted enumeration omits them silently; this makes the omission
+    visible so a new model's evidence gaps self-diagnose at inventory time
+    instead of surfacing as a multi-hour "why is evidence missing" on real
+    hardware. Pre-HI73 inventories (fields None) report nothing: unknown
+    reachability is never claimed.
+    """
+    if inventory is None:
+        return []
+    out: list[dict[str, str]] = []
+    known = {t.removeprefix("GGML_TYPE_").lower() for t in types}
+    if inventory.mmq_fallback_types is not None:
+        seen: set[str] = set()
+        for arch in architectures:
+            header = ARCH_CONFIG_HEADERS.get(arch)
+            if header is None:
+                continue
+            for row in read_mmq_config_table(cuda_dir, header):
+                if not row.fallback or row.type not in known:
+                    continue
+                # Already omitted for the pre-existing reason (unobserved
+                # type) -- not a reachability skip.
+                if row.type not in inventory.quant_types:
+                    continue
+                if row.type in inventory.mmq_fallback_types:
+                    continue  # reachable
+                name = _mmq_stable_name(row)
+                if name in seen:
+                    continue
+                seen.add(name)
+                out.append({
+                    "stable_name": name,
+                    "family": "mmq",
+                    "reason": (f"no observed {row.type} operation with "
+                               f"ne0[1] % 128 != 0"),
+                })
+    if inventory.mmf_eligible_types is not None:
+        for source_type in FLOAT_TYPES:
+            if source_type not in inventory.float_types:
+                continue
+            if source_type in inventory.mmf_eligible_types:
+                continue
+            out.append({
+                "stable_name": f"mmf:{source_type}:*(all widths/nwarps)",
+                "family": "mmf",
+                "reason": ("no observed float operation with f32 activations, "
+                           f"even K and 1 <= ncols_dst <= 16 for "
+                           f"{source_type}"),
+            })
+    return out
+
+
 def enumerate_blas(architectures: list[str]) -> list[Candidate]:
     """Enumerate the first structured BLAS-1 plan.
 
@@ -615,12 +706,35 @@ def read_winners(measurements: Path) -> set[str]:
 
 
 def read_correctness_evidence(measurements: Path) -> dict[str, dict[str, Any]]:
-    """Reduce successful candidate checks into production manifest evidence.
+    """Reduce successful candidate checks into manifest evidence.
 
     Replay candidates must carry evidence from the exact tune artifact that
     selected them.  The tuner records per-signature error metrics; retain the
     worst observed finite metrics for each candidate and bind them to the
     producer's signature/build namespace.
+
+    HI67 (RV49/RV77): this reduces NATIVE-RELATIVE deltas (candidate GPU
+    output vs native GPU output on the SAME hardware) -- a cheap local
+    screening check, and NOT the CPU-reference production correctness proof
+    RV49's contract requires (native itself has its own floating-point error
+    relative to the true CPU-reference computation, so "close to native"
+    does not bound absolute correctness -- see tools/bigcherry/correctness_
+    evidence.py's module docstring for the full contract, and the real
+    q4_1 k=32 RDNA2 case, RV08, this gap already caused). The tolerances
+    below (nmse<=1e-6, max_abs<=1e-2) are this screening check's own
+    thresholds, called `delta_nmse_vs_native` conceptually, not an RV49
+    threshold_t/headroom_fraction pair.
+
+    tools/bigcherry/tune_promotion.py's promotion stage already requires the
+    REAL RV49 evidence (correctness_evidence/correctness_evidence_seed,
+    schema 6, via promotion_correctness_gate.py) as a hard AND with its
+    statistical criteria before a winner can be promoted. This function's
+    consumer (build_manifest()'s PRODUCTION_VARIANT_SETS gate, below) has
+    NOT yet been switched to require that same RV49 evidence -- doing so
+    needs build_manifest() to gain a dispatch_db input and resolve manifest
+    candidates' identity against it, a separate, larger integration than
+    promotion's (a different pipeline stage, a different identity-resolution
+    shape) and is tracked as follow-up scope, not implemented here.
     """
     evidence: dict[str, dict[str, Any]] = {}
     header: dict[str, Any] = {}
@@ -1380,6 +1494,33 @@ def render_mmvq_instance(candidate: dict[str, Any]) -> str:
     ])
 
 
+def _write_compile_input_if_changed(path: Path, text: str) -> None:
+    """Preserve mtime when a generated compiler input is byte-identical.
+
+    Ninja tracks these files by timestamp. Rewriting identical generated
+    headers/includes on every `bigcherry generate` invocation makes
+    dependent translation units spuriously dirty, cascading into
+    unnecessary recompiles/relinks and defeating byte-stable build reuse
+    (found via HI82 item 9's campaign-identity resume gate: two back-to-
+    back, otherwise-identical patch_validation_campaign.py runs produced
+    different effective_build_id/runtime_bundle_hash values purely because
+    this function rewrote unchanged compile inputs each time -- diagnosed
+    with GPT, req_cc5af49494fe457a).
+
+    Evidence JSON (the manifest/descriptor writes elsewhere in emit()) is
+    intentionally NOT routed through this helper -- those carry real-time
+    generated_at and are per-generation evidence artifacts, not compile
+    inputs whose byte-identity is supposed to be stable.
+    """
+    payload = text.encode("utf-8")
+    try:
+        if path.read_bytes() == payload:
+            return
+    except FileNotFoundError:
+        pass
+    path.write_bytes(payload)
+
+
 @dataclass
 class EmitResult:
     manifest_path: Path
@@ -1434,16 +1575,13 @@ def emit(
         encoding="utf-8", newline="")
 
     registry_path = generated / "hip-autotune-registry.inc"
-    registry_path.write_text(render_registry(manifest), encoding="utf-8",
-                             newline="")
+    _write_compile_input_if_changed(registry_path, render_registry(manifest))
 
     build_hash_path = generated / "hip-autotune-build-hash.h"
-    build_hash_path.write_text(render_build_hash(manifest), encoding="utf-8",
-                               newline="")
+    _write_compile_input_if_changed(build_hash_path, render_build_hash(manifest))
 
     arch_header_path = generated / "hip-autotune-arch.h"
-    arch_header_path.write_text(render_arch_header(), encoding="utf-8",
-                                newline="")
+    _write_compile_input_if_changed(arch_header_path, render_arch_header())
 
     # The generated manifest belongs beside the generated headers.  In legacy
     # mode that is still the source tree; campaign callers pass a build-local
@@ -1465,8 +1603,7 @@ def emit(
     # All MMVQ geometry instances go into one include, compiled inside
     # mmvq.cu's translation unit -- see render_mmvq_instances for why.
     instances_path = generated / "hip-autotune-mmvq-instances.inc"
-    instances_path.write_text(render_mmvq_instances(manifest), encoding="utf-8",
-                              newline="")
+    _write_compile_input_if_changed(instances_path, render_mmvq_instances(manifest))
 
     # Earlier revisions emitted one .cu per instance. Remove any left behind, or
     # they would still compile, still register, and still be launchable --
@@ -1570,6 +1707,19 @@ def main(argv: list[str] | None = None) -> int:
     for source, count in summary["by_source_class"].items():
         print(f"    {source:<24} {count}")
     print(f"  manifest hash: {manifest['manifest_hash']}")
+
+    # HI73: make the reachability skips visible. Only the workload-restricted
+    # profiles skip on shape grounds; full-max and inventory never restrict.
+    if inventory is not None and args.variant_set not in ("full-max",
+                                                          "inventory"):
+        unreachable = unreachable_candidates(
+            paths.cuda_dir(root), architectures,
+            read_types_mmq(paths.generate_cu_files_py(root)) or [], inventory)
+        if unreachable:
+            print(f"  unreachable (skipped, no evidence required): "
+                  f"{len(unreachable)}")
+            for item in unreachable:
+                print(f"    {item['stable_name']}: {item['reason']}")
 
     if args.dry_run:
         print("  (dry run -- nothing written)")

@@ -14,9 +14,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 SRC_OVERLAY = REPO_ROOT / "src"
 PATCHES = REPO_ROOT / "patches"
+PATCH_CATALOG = PATCHES / "catalog.toml"
 SQL = REPO_ROOT / "sql"
 DOCS = REPO_ROOT / "docs"
 ARTIFACTS = REPO_ROOT / "artifacts"
+CONFIG = REPO_ROOT / "config"
+RECIPES = CONFIG / "recipes.toml"
+EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
+EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 
 _ENV_LLAMA_ROOT = "BIGCHERRY_LLAMA_ROOT"
 
@@ -38,6 +43,14 @@ def llama_root(override: str | os.PathLike[str] | None = None) -> Path:
 
 def cuda_dir(root: Path) -> Path:
     return root / "ggml" / "src" / "ggml-cuda"
+
+
+def vulkan_dir(root: Path) -> Path:
+    return root / "ggml" / "src" / "ggml-vulkan"
+
+
+def vulkan_shaders_dir(root: Path) -> Path:
+    return vulkan_dir(root) / "vulkan-shaders"
 
 
 def template_instances_dir(root: Path) -> Path:

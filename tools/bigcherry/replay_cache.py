@@ -25,20 +25,31 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
 import struct
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import autotune_catalog
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
-REPLAY_VERSION = 4
+# HI31: v4 -> v5 adds a per-entry transform_id (uint16, 0 = no transform,
+# ENT_TRANSFORM below); HI74 adds the trailing match_kind byte (ENT_MATCH_KIND
+# below). Both mirror hip-autotune-replay.h/.cpp byte for byte. A v4 cache is
+# rejected outright by the C++ loader's exact format-version check (rerun
+# required) -- the production side has no dual-layout reader. The only v4
+# reader in this module is read_cache_legacy_v4(), an OFFLINE ANALYSIS-ONLY
+# reader for historical campaign artifacts and for merging v4 exports into a
+# fresh v5 cache.
+REPLAY_VERSION = 5
+REPLAY_VERSION_V4 = 4
 ARTIFACT_VERSION = 1
 SIGNATURE_SCHEMA_VERSION = 1
 HARDWARE_SCHEMA_VERSION = 1
@@ -47,7 +58,9 @@ PERSON_DISPATCH = b"llama-dispatch"
 _REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
 
 
-def validate_provenance_namespace(value: dict[str, Any], *, where: str = "provenance") -> dict[str, Any]:
+def validate_provenance_namespace(
+    value: dict[str, Any], *, where: str = "provenance"
+) -> dict[str, Any]:
     """Validate the identity namespace carried by a tuning result.
 
     Provenance is intentionally metadata, not part of the portable replay
@@ -59,7 +72,9 @@ def validate_provenance_namespace(value: dict[str, Any], *, where: str = "proven
         raise SystemExit(f"{where} must be an object")
     revision = value.get("source_revision")
     if not isinstance(revision, str) or not _REVISION_RE.fullmatch(revision):
-        raise SystemExit(f"{where}.source_revision must be a 20-byte hexadecimal revision")
+        raise SystemExit(
+            f"{where}.source_revision must be a 20-byte hexadecimal revision"
+        )
     manifest = _digest_hex(value.get("manifest_hash"), f"{where}.manifest_hash")
     normalized: dict[str, Any] = {
         "source_revision": revision.lower(),
@@ -68,7 +83,8 @@ def validate_provenance_namespace(value: dict[str, Any], *, where: str = "proven
     descriptor = value.get("build_descriptor_hash")
     if descriptor is not None:
         normalized["build_descriptor_hash"] = _digest_hex(
-            descriptor, f"{where}.build_descriptor_hash")
+            descriptor, f"{where}.build_descriptor_hash"
+        )
     variant_set = value.get("variant_set")
     if variant_set is not None:
         if not isinstance(variant_set, str) or not variant_set.strip():
@@ -77,7 +93,9 @@ def validate_provenance_namespace(value: dict[str, Any], *, where: str = "proven
     return normalized
 
 
-def portable_tuning_key(hardware: Any, signature: Any, objective: Any = "latency") -> str:
+def portable_tuning_key(
+    hardware: Any, signature: Any, objective: Any = "latency"
+) -> str:
     """Return the Python equivalent of the runtime portable dispatch digest.
 
     The canonical object and personalization match ``ggml_hip_dispatch_digest``
@@ -90,11 +108,15 @@ def portable_tuning_key(hardware: Any, signature: Any, objective: Any = "latency
         raise SystemExit("objective must be a non-empty string")
     payload = json.dumps(
         {"hardware": hardware, "objective": objective, "signature": signature},
-        sort_keys=True, separators=(",", ":"))
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return blake2b_digest(payload.encode("utf-8")).hex()
 
 
-def select_newest_winners(records: Iterable[dict[str, Any]], *, keep_generations: int = 1) -> list[dict[str, Any]]:
+def select_newest_winners(
+    records: Iterable[dict[str, Any]], *, keep_generations: int = 1
+) -> list[dict[str, Any]]:
     """Select deterministic newest winners without changing replay bytes.
 
     Records are grouped by their portable hardware/signature/objective key.
@@ -103,45 +125,72 @@ def select_newest_winners(records: Iterable[dict[str, Any]], *, keep_generations
     conflicting winner for the same key and generation is rejected rather than
     making selection depend on input order.
     """
-    if isinstance(keep_generations, bool) or not isinstance(keep_generations, int) or keep_generations < 1:
+    if (
+        isinstance(keep_generations, bool)
+        or not isinstance(keep_generations, int)
+        or keep_generations < 1
+    ):
         raise SystemExit("keep_generations must be a positive integer")
-    grouped: dict[str, dict[int, dict[tuple[str, str], dict[str, Any]]] ] = {}
+    grouped: dict[str, dict[int, dict[tuple[str, str], dict[str, Any]]]] = {}
     for index, original in enumerate(records):
         if not isinstance(original, dict):
             raise SystemExit(f"winner record {index} must be an object")
         record = dict(original)
         provenance = record.get("provenance")
         if provenance is None and record.get("source_revision_digest") is not None:
-            manifest = _digest_hex(record.get("manifest_hash"),
-                                   f"winner record {index}.manifest_hash")
+            manifest = _digest_hex(
+                record.get("manifest_hash"), f"winner record {index}.manifest_hash"
+            )
             revision_digest = _digest_hex(
                 record.get("source_revision_digest"),
-                f"winner record {index}.source_revision_digest")
-            provenance = {"manifest_hash": manifest,
-                          "source_revision_digest": revision_digest}
+                f"winner record {index}.source_revision_digest",
+            )
+            provenance = {
+                "manifest_hash": manifest,
+                "source_revision_digest": revision_digest,
+            }
         elif provenance is None:
-            provenance = {key: record.get(key) for key in
-                          ("source_revision", "manifest_hash", "build_descriptor_hash", "variant_set")
-                          if key in record}
+            provenance = {
+                key: record.get(key)
+                for key in (
+                    "source_revision",
+                    "manifest_hash",
+                    "build_descriptor_hash",
+                    "variant_set",
+                )
+                if key in record
+            }
         if "source_revision_digest" in provenance:
             provenance = {
                 "manifest_hash": _digest_hex(
                     provenance.get("manifest_hash"),
-                    f"winner record {index}.provenance.manifest_hash"),
+                    f"winner record {index}.provenance.manifest_hash",
+                ),
                 "source_revision_digest": _digest_hex(
                     provenance.get("source_revision_digest"),
-                    f"winner record {index}.provenance.source_revision_digest"),
+                    f"winner record {index}.provenance.source_revision_digest",
+                ),
             }
         else:
             provenance = validate_provenance_namespace(
-                provenance, where=f"winner record {index}.provenance")
+                provenance, where=f"winner record {index}.provenance"
+            )
         generation = record.get("generation", 0)
-        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
-            raise SystemExit(f"winner record {index}.generation must be a non-negative integer")
+        if (
+            isinstance(generation, bool)
+            or not isinstance(generation, int)
+            or generation < 0
+        ):
+            raise SystemExit(
+                f"winner record {index}.generation must be a non-negative integer"
+            )
         key = record.get("portable_key")
         if key is None:
-            key = portable_tuning_key(record.get("hardware"), record.get("signature"),
-                                      record.get("objective", "latency"))
+            key = portable_tuning_key(
+                record.get("hardware"),
+                record.get("signature"),
+                record.get("objective", "latency"),
+            )
         key = _digest_hex(key, f"winner record {index}.portable_key")
         winner = record.get("winner")
         if not isinstance(winner, str) or not winner:
@@ -151,14 +200,16 @@ def select_newest_winners(records: Iterable[dict[str, Any]], *, keep_generations
         record["generation"] = generation
         bucket = grouped.setdefault(key, {})
         identity = (
-            provenance.get("source_revision_digest") or
-            source_revision_digest(provenance["source_revision"]),
+            provenance.get("source_revision_digest")
+            or source_revision_digest(provenance["source_revision"]),
             provenance["manifest_hash"],
         )
         existing = bucket.setdefault(generation, {})
         prior = existing.get(identity)
         if prior is not None and prior.get("winner") != winner:
-            raise SystemExit(f"conflicting winners for portable key {key} generation {generation}")
+            raise SystemExit(
+                f"conflicting winners for portable key {key} generation {generation}"
+            )
         existing[identity] = record
 
     selected: list[dict[str, Any]] = []
@@ -167,9 +218,12 @@ def select_newest_winners(records: Iterable[dict[str, Any]], *, keep_generations
         for generation in generations:
             # A single generation may have multiple provenance identities;
             # retain all of them in stable order for a future exact match.
-            selected.extend(grouped[key][generation][identity]
-                            for identity in sorted(grouped[key][generation]))
+            selected.extend(
+                grouped[key][generation][identity]
+                for identity in sorted(grouped[key][generation])
+            )
     return selected
+
 
 # Wire-format boundary shared with hip-autotune-replay.cpp. Version 4 keeps the
 # v3 ABI fields and adds per-entry provenance/generation. Older containers are
@@ -180,13 +234,29 @@ REPLAY_HEADER_SIZE = 56
 ENT_MANIFEST = 54
 ENT_SOURCE_REVISION = ENT_MANIFEST + DIGEST_BYTES
 ENT_GENERATION = ENT_SOURCE_REVISION + DIGEST_BYTES
-ENT_SIZE = ENT_GENERATION + 4
-assert ENT_SIZE == 90
+ENT_TRANSFORM = ENT_GENERATION + 4
+# HI74: match_kind discriminator -- see ggml_hip_replay_match_kind in
+# hip-autotune-replay.h. Every producer here writes MATCH_KIND_EXACT; the
+# field exists so a future generalised-entry feature (HI36b) has an
+# extension point that does not force a v6 wire-format bump by itself.
+ENT_MATCH_KIND = ENT_TRANSFORM + 2
+ENT_SIZE = ENT_MATCH_KIND + 1
+assert ENT_SIZE == 93
+
+# v4 entry layout: the v5 fields minus the trailing transform_id +
+# match_kind. Verified against the historical dispatch-27b.cache artifact
+# (version=4, 59 entries, implied size 90).
+ENT_SIZE_V4 = 90
+assert ENT_SIZE_V4 + 3 == ENT_SIZE
+
+MATCH_KIND_EXACT = 0
 
 
 def source_revision_digest(source_revision: str) -> str:
     """Return the v4 fixed-width identity for a source revision string."""
-    if not isinstance(source_revision, str) or not _REVISION_RE.fullmatch(source_revision):
+    if not isinstance(source_revision, str) or not _REVISION_RE.fullmatch(
+        source_revision
+    ):
         raise SystemExit("source_revision must be a 20-byte hexadecimal revision")
     return blake2b_digest(source_revision.lower().encode("ascii")).hex()
 
@@ -210,13 +280,22 @@ def blake2b_digest(data: bytes) -> bytes:
 
 
 def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str, int]:
-    """Preflight a v4 cache using the same bounds as the production reader.
+    """Preflight a v5 cache using the same bounds as the production reader.
 
     This is deliberately a structural check only: candidate ABI validation
     remains the C++ registry's responsibility.  Running it before publishing
     an export catches accidental truncation, stale manifest binding, and
     duplicate/unterminated entries while the producer still has a useful
     error path.  It does not change or rewrite the wire bytes.
+
+    A v4 cache fails here at the format-version check: production replay
+    treats v4 as rerun-required, and a producer must never rewrite a v4
+    file as if it understood it.  A v5 entry carrying a match_kind this
+    tool does not recognise (anything but MATCH_KIND_EXACT) is rejected the
+    same way -- reinterpreting a future generalised-entry key form as a
+    plain exact match is exactly the misparse the discriminator exists to
+    prevent (HI74 fail-closed contract, mirroring the C++ loader's
+    per-entry skip).
     """
     if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
         raise SystemExit("replay cache is shorter than its header")
@@ -224,11 +303,16 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     if magic != MAGIC:
         raise SystemExit("replay cache has bad magic")
     if version != REPLAY_VERSION:
-        raise SystemExit("replay cache format version mismatch")
+        raise SystemExit(
+            "replay cache format version mismatch "
+            f"(found {version}, this tool produces and consumes "
+            f"{REPLAY_VERSION} only)"
+        )
     if artifact != ARTIFACT_VERSION:
         raise SystemExit("replay cache artifact version mismatch")
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
-        "<HHII", blob, 12)
+        "<HHII", blob, 12
+    )
     if sig_schema != SIGNATURE_SCHEMA_VERSION:
         raise SystemExit("replay cache signature schema version mismatch")
     if hw_schema != HARDWARE_SCHEMA_VERSION:
@@ -237,7 +321,9 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     if manifest_hash is not None:
         expected_manifest = bytes.fromhex(_digest_hex(manifest_hash, "manifest_hash"))
         if stored_manifest != expected_manifest:
-            raise SystemExit("replay cache manifest hash differs from supplied manifest")
+            raise SystemExit(
+                "replay cache manifest hash differs from supplied manifest"
+            )
     entries_bytes = entry_count * ENT_SIZE
     strings_at = REPLAY_HEADER_SIZE + entries_bytes
     expected = strings_at + string_bytes
@@ -252,8 +338,132 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     strings = blob[strings_at:expected]
     seen: set[tuple[bytes, bytes, bytes, int]] = set()
     for index in range(entry_count):
-        entry = blob[REPLAY_HEADER_SIZE + index * ENT_SIZE:
-                     REPLAY_HEADER_SIZE + (index + 1) * ENT_SIZE]
+        entry = blob[
+            REPLAY_HEADER_SIZE + index * ENT_SIZE : REPLAY_HEADER_SIZE
+            + (index + 1) * ENT_SIZE
+        ]
+        dispatch = entry[:DIGEST_BYTES]
+        manifest = entry[ENT_MANIFEST:ENT_SOURCE_REVISION]
+        revision = entry[ENT_SOURCE_REVISION:ENT_GENERATION]
+        generation = struct.unpack_from("<I", entry, ENT_GENERATION)[0]
+        identity = (dispatch, manifest, revision, generation)
+        if identity in seen:
+            raise SystemExit("replay cache contains duplicate generation identity")
+        seen.add(identity)
+        match_kind = entry[ENT_MATCH_KIND]
+        if match_kind != MATCH_KIND_EXACT:
+            raise SystemExit(
+                "replay cache entry "
+                f"{dispatch.hex()[:16]}... carries match_kind {match_kind}, "
+                "which this tool does not recognise; refusing to reinterpret "
+                "a future key form as an exact match"
+            )
+        name_offset = struct.unpack_from("<I", entry, 32)[0]
+        if name_offset >= string_bytes:
+            raise SystemExit("replay cache entry names a string outside the table")
+        if b"\0" not in strings[name_offset:]:
+            raise SystemExit("replay cache string table is not NUL-terminated")
+    return {"entry_count": entry_count, "string_bytes": string_bytes}
+
+
+def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Read v5 entries for a deterministic merge without trusting bad bytes."""
+    validate_blob(blob)
+    _, version, artifact = struct.unpack_from("<III", blob)
+    sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
+        "<HHII", blob, 12
+    )
+    entries_at = REPLAY_HEADER_SIZE
+    strings_at = entries_at + entry_count * ENT_SIZE
+    strings = blob[strings_at : strings_at + string_bytes]
+    header = {
+        "version": version,
+        "artifact_version": artifact,
+        "signature_schema": sig_schema,
+        "hardware_schema": hw_schema,
+        "manifest_hash": blob[24:40].hex(),
+    }
+    entries: list[dict[str, Any]] = []
+    for index in range(entry_count):
+        entry = blob[
+            entries_at + index * ENT_SIZE : entries_at + (index + 1) * ENT_SIZE
+        ]
+        name_offset = struct.unpack_from("<I", entry, 32)[0]
+        name_end = strings.index(b"\0", name_offset)
+        entries.append(
+            {
+                "portable_key": entry[:DIGEST_BYTES].hex(),
+                "dispatch": entry[:DIGEST_BYTES].hex(),
+                "signature": entry[DIGEST_BYTES : 2 * DIGEST_BYTES].hex(),
+                "winner": strings[name_offset:name_end].decode("utf-8"),
+                "manifest_hash": entry[ENT_MANIFEST:ENT_SOURCE_REVISION].hex(),
+                "source_revision_digest": entry[
+                    ENT_SOURCE_REVISION:ENT_GENERATION
+                ].hex(),
+                "generation": struct.unpack_from("<I", entry, ENT_GENERATION)[0],
+                "transform_id": struct.unpack_from("<H", entry, ENT_TRANSFORM)[0],
+                "match_kind": entry[ENT_MATCH_KIND],
+                "wire_entry": entry,
+            }
+        )
+    return header, entries
+
+
+def read_cache_legacy_v4(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Offline analysis-only reader for historical v4 caches.
+
+    NOT a production reader. The C++ loader rejects v4 outright as
+    rerun-required and never reads it; this exists so the Python tools can
+    still inspect historical campaign artifacts (e.g. dispatch-27b.cache) and
+    so a v4 export can be merged into a fresh v5 cache without the operator
+    having to hand-convert bytes. It shares every structural bound with
+    :func:`validate_blob` (same header fields, same checksum, same bounds and
+    duplicate/string checks) and only differs in the v4 entry size and the
+    absence of the trailing transform_id/match_kind fields.
+
+    Returned entries carry ``transform_id=0`` and ``match_kind=None`` because
+    the v4 wire format had no such fields -- a v4 entry was always an exact
+    match. ``wire_entry`` is the raw 90-byte v4 entry; it must not be
+    repacked into a v5 cache as-is (see the retained-entry guard in
+    :func:`build`), it is only exposed for inspection.
+    """
+    if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
+        raise SystemExit("replay cache is shorter than its header")
+    magic, version, artifact = struct.unpack_from("<III", blob)
+    if magic != MAGIC:
+        raise SystemExit("replay cache has bad magic")
+    if version != REPLAY_VERSION_V4:
+        raise SystemExit(
+            f"read_cache_legacy_v4 expects a v4 cache, found version {version}"
+        )
+    if artifact != ARTIFACT_VERSION:
+        raise SystemExit("replay cache artifact version mismatch")
+    sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
+        "<HHII", blob, 12
+    )
+    if sig_schema != SIGNATURE_SCHEMA_VERSION:
+        raise SystemExit("replay cache signature schema version mismatch")
+    if hw_schema != HARDWARE_SCHEMA_VERSION:
+        raise SystemExit("replay cache hardware schema version mismatch")
+    entries_bytes = entry_count * ENT_SIZE_V4
+    strings_at = REPLAY_HEADER_SIZE + entries_bytes
+    expected = strings_at + string_bytes
+    if strings_at < REPLAY_HEADER_SIZE or expected < strings_at:
+        raise SystemExit("replay cache table size overflows")
+    if len(blob) != expected:
+        raise SystemExit("replay cache file is truncated or has trailing bytes")
+    payload = blob[REPLAY_HEADER_SIZE:]
+    if blob[40:56] != blake2b_digest(payload):
+        raise SystemExit("replay cache content checksum mismatch")
+
+    strings = blob[strings_at:expected]
+    seen: set[tuple[bytes, bytes, bytes, int]] = set()
+    entries: list[dict[str, Any]] = []
+    for index in range(entry_count):
+        entry = blob[
+            REPLAY_HEADER_SIZE + index * ENT_SIZE_V4 : REPLAY_HEADER_SIZE
+            + (index + 1) * ENT_SIZE_V4
+        ]
         dispatch = entry[:DIGEST_BYTES]
         manifest = entry[ENT_MANIFEST:ENT_SOURCE_REVISION]
         revision = entry[ENT_SOURCE_REVISION:ENT_GENERATION]
@@ -265,20 +475,22 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
         name_offset = struct.unpack_from("<I", entry, 32)[0]
         if name_offset >= string_bytes:
             raise SystemExit("replay cache entry names a string outside the table")
-        if b"\0" not in strings[name_offset:]:
-            raise SystemExit("replay cache string table is not NUL-terminated")
-    return {"entry_count": entry_count, "string_bytes": string_bytes}
-
-
-def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Read v4 entries for a deterministic merge without trusting bad bytes."""
-    validate_blob(blob)
-    _, version, artifact = struct.unpack_from("<III", blob)
-    sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
-        "<HHII", blob, 12)
-    entries_at = REPLAY_HEADER_SIZE
-    strings_at = entries_at + entry_count * ENT_SIZE
-    strings = blob[strings_at:strings_at + string_bytes]
+        name_end = strings.index(b"\0", name_offset)
+        entries.append(
+            {
+                "portable_key": dispatch.hex(),
+                "dispatch": dispatch.hex(),
+                "signature": entry[DIGEST_BYTES : 2 * DIGEST_BYTES].hex(),
+                "winner": strings[name_offset:name_end].decode("utf-8"),
+                "manifest_hash": manifest.hex(),
+                "source_revision_digest": revision.hex(),
+                "generation": generation,
+                # v4 has no transform/match fields; an exact match by construction.
+                "transform_id": 0,
+                "match_kind": None,
+                "wire_entry": entry,
+            }
+        )
     header = {
         "version": version,
         "artifact_version": artifact,
@@ -286,22 +498,6 @@ def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         "hardware_schema": hw_schema,
         "manifest_hash": blob[24:40].hex(),
     }
-    entries: list[dict[str, Any]] = []
-    for index in range(entry_count):
-        entry = blob[entries_at + index * ENT_SIZE:
-                     entries_at + (index + 1) * ENT_SIZE]
-        name_offset = struct.unpack_from("<I", entry, 32)[0]
-        name_end = strings.index(b"\0", name_offset)
-        entries.append({
-            "portable_key": entry[:DIGEST_BYTES].hex(),
-            "dispatch": entry[:DIGEST_BYTES].hex(),
-            "signature": entry[DIGEST_BYTES:2 * DIGEST_BYTES].hex(),
-            "winner": strings[name_offset:name_end].decode("utf-8"),
-            "manifest_hash": entry[ENT_MANIFEST:ENT_SOURCE_REVISION].hex(),
-            "source_revision_digest": entry[ENT_SOURCE_REVISION:ENT_GENERATION].hex(),
-            "generation": struct.unpack_from("<I", entry, ENT_GENERATION)[0],
-            "wire_entry": entry,
-        })
     return header, entries
 
 
@@ -321,7 +517,9 @@ def ggml_type_values(ggml_h: Path) -> dict[str, int]:
     return values
 
 
-def read_results(path: Path, *, require_header: bool = True) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def read_results(
+    path: Path, *, require_header: bool = True
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Winning results from a measurements JSONL.
 
     Tolerates a truncated final line by construction -- a tuning run killed
@@ -338,15 +536,18 @@ def read_results(path: Path, *, require_header: bool = True) -> tuple[dict[str, 
             try:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise SystemExit(f"malformed measurements JSONL: {path}: {exc}") from exc
+                raise SystemExit(
+                    f"malformed measurements JSONL: {path}: {exc}"
+                ) from exc
             if record.get("kind") == "header":
                 if header is not None:
                     raise SystemExit("duplicate measurements header")
                 header = record
             elif record.get("kind") == "result" and record.get("winner"):
                 try:
-                    validate_measurement_identity(record, header=header,
-                                                  where=f"result {len(results)}")
+                    validate_measurement_identity(
+                        record, header=header, where=f"result {len(results)}"
+                    )
                 except IdentitySeparationError as exc:
                     raise SystemExit(str(exc)) from exc
                 dispatch = record.get("dispatch")
@@ -388,9 +589,10 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
     """
     violations = []
     for digest_hex, record in entries.items():
-        if record.get("measurement_failure") is True:
-            violations.append((digest_hex, record.get("winner"),
-                               "measurement_failure"))
+        # Fail closed: any truthy encoding of the failure marker counts,
+        # not only a strict boolean True.
+        if bool(record.get("measurement_failure")):
+            violations.append((digest_hex, record.get("winner"), "measurement_failure"))
             continue
         winner = record.get("winner")
         native = record.get("native")
@@ -403,7 +605,9 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
             f"  {digest[:16]}...: winner={winner!r} promotion_status={status!r}"
             for digest, winner, status in violations[:20]
         )
-        more = f"\n  ... and {len(violations) - 20} more" if len(violations) > 20 else ""
+        more = (
+            f"\n  ... and {len(violations) - 20} more" if len(violations) > 20 else ""
+        )
         raise SystemExit(
             f"refusing to export: {len(violations)} unsafe measurement result(s) "
             f"lack a valid replay promotion gate (failed measurements are never "
@@ -431,7 +635,9 @@ def build(
     # A fully explicit seed file is an operator-authored provenance source and
     # may replace the measurements artifact entirely. Normal exports always
     # require the producer header.
-    producer_header, results = read_results(measurements, require_header=seed_file is None)
+    producer_header, results = read_results(
+        measurements, require_header=seed_file is None
+    )
     if not results:
         raise SystemExit(f"no winning results in {measurements}")
     if seed_file is None:
@@ -443,7 +649,8 @@ def build(
             )
         manifest_provenance = validate_provenance_namespace(
             {"source_revision": expected_revision, "manifest_hash": manifest_hash},
-            where="manifest provenance")
+            where="manifest provenance",
+        )
         expected_revision = manifest_provenance["source_revision"]
         # manifest_hash is deliberately not compared here: it is scoped to
         # variant_set and candidate set (manifest_hash()), so a replay-slim
@@ -452,14 +659,20 @@ def build(
         # source_revision is the actual producer/consumer identity that
         # matters -- the candidate-set compatibility check happens separately
         # when winners are resolved against this manifest's catalog below.
-        if (producer_header is None or
-                producer_header.get("source_revision", "").lower() != expected_revision):
+        if (
+            producer_header is None
+            or producer_header.get("source_revision", "").lower() != expected_revision
+        ):
             raise SystemExit(
                 "refusing to export: measurements producer source_revision does "
                 "not match the supplied manifest's source_revision"
             )
 
-    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 0
+    ):
         raise SystemExit("generation must be a non-negative integer")
     if merge_into is not None and not merge_into.is_file():
         raise SystemExit(f"merge source does not exist: {merge_into}")
@@ -477,11 +690,18 @@ def build(
     seed_overrides: dict[str, dict[str, str]] = {}
     if seed_file and seed_file.is_file():
         seed_overrides = _load_seed_overrides(
-            seed_file, by_name=by_name, manifest=manifest, manifest_hash=manifest_hash)
+            seed_file, by_name=by_name, manifest=manifest, manifest_hash=manifest_hash
+        )
         for digest_hex, override in seed_overrides.items():
             existing = entries.get(digest_hex)
-            signature = existing.get("signature") if existing is not None else override.get("signature")
-            if not isinstance(signature, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", signature):
+            signature = (
+                existing.get("signature")
+                if existing is not None
+                else override.get("signature")
+            )
+            if not isinstance(signature, str) or not re.fullmatch(
+                r"[0-9a-fA-F]{32}", signature
+            ):
                 raise SystemExit(
                     f"seed override for unseen dispatch {digest_hex[:16]}... requires explicit signature"
                 )
@@ -495,17 +715,26 @@ def build(
     # (HI22), not the tuner's, and must not be blocked by (or need to pass)
     # the promotion state of whatever raw measurement happened to exist for
     # that same digest.
-    _validate_promotion_gate({
-        digest_hex: record for digest_hex, record in entries.items()
-        if digest_hex not in seed_overrides
-    })
+    _validate_promotion_gate(
+        {
+            digest_hex: record
+            for digest_hex, record in entries.items()
+            if digest_hex not in seed_overrides
+        }
+    )
 
     if seed_overrides:
         # Apply overrides: replace or insert entries
         for digest_hex, override in seed_overrides.items():
             entry = dict(entries.get(digest_hex, {}))
-            entry.update({"dispatch": digest_hex, "winner": override["winner"],
-                          "signature": override["signature"], "seeded": True})
+            entry.update(
+                {
+                    "dispatch": digest_hex,
+                    "winner": override["winner"],
+                    "signature": override["signature"],
+                    "seeded": True,
+                }
+            )
             entries[digest_hex] = entry
 
     current_entries: list[dict[str, Any]] = []
@@ -523,6 +752,15 @@ def build(
         record = dict(record)
         record["portable_key"] = digest_hex
         record["generation"] = generation
+        # HI31: the tuner's measurements.jsonl row (winner_transform_id) and
+        # read_cache()'s retained-entry dict (transform_id) name this fact
+        # differently -- normalize onto "transform_id" here so the packing
+        # loop below has one field to read regardless of which of
+        # current_entries/existing_entries a record came from. A seed
+        # override entry (built by hand above, no tuner row behind it) has
+        # neither key and defaults to 0 -- an operator-authored seed always
+        # names a plain candidate, never a transform.
+        record["transform_id"] = int(record.get("winner_transform_id", 0) or 0)
         record["provenance"] = {
             "source_revision": producer_revision,
             "manifest_hash": manifest_hash,
@@ -531,17 +769,33 @@ def build(
 
     existing_entries: list[dict[str, Any]] = []
     if merge_into is not None:
-        _, existing_entries = read_cache(merge_into.read_bytes())
+        merge_blob = merge_into.read_bytes()
+        merge_version = (
+            struct.unpack_from("<I", merge_blob, 4)[0] if len(merge_blob) >= 8 else None
+        )
+        if merge_version == REPLAY_VERSION_V4:
+            # A historical v4 export can be folded into a fresh v5 cache. v4
+            # entries have no transform/match fields and are exact by
+            # construction; the legacy reader maps them to transform_id=0.
+            # Their raw 90-byte wire entries are never repacked into v5 -- the
+            # retained-entry guard below rejects them fail-closed.
+            _, existing_entries = read_cache_legacy_v4(merge_blob)
+        else:
+            _, existing_entries = read_cache(merge_blob)
         # A re-tune of the same build/generation replaces that generation's
         # winners rather than creating an input-order-dependent conflict.
         existing_entries = [
-            old for old in existing_entries
-            if not (old.get("generation") == generation and
-                    old.get("manifest_hash") == manifest_hash and
-                    old.get("source_revision_digest") == producer_revision_digest)
+            old
+            for old in existing_entries
+            if not (
+                old.get("generation") == generation
+                and old.get("manifest_hash") == manifest_hash
+                and old.get("source_revision_digest") == producer_revision_digest
+            )
         ]
     selected_entries = select_newest_winners(
-        [*existing_entries, *current_entries], keep_generations=keep_generations)
+        [*existing_entries, *current_entries], keep_generations=keep_generations
+    )
 
     strings: dict[str, int] = {}
     string_blob = bytearray()
@@ -554,12 +808,16 @@ def build(
         return strings[name]
 
     packed = bytearray()
-    for record in sorted(selected_entries,
-                         key=lambda item: (
-                             item["portable_key"], -item["generation"],
-                             item["provenance"].get("source_revision_digest") or
-                             source_revision_digest(item["provenance"]["source_revision"]),
-                             item["provenance"]["manifest_hash"])):
+    for record in sorted(
+        selected_entries,
+        key=lambda item: (
+            item["portable_key"],
+            -item["generation"],
+            item["provenance"].get("source_revision_digest")
+            or source_revision_digest(item["provenance"]["source_revision"]),
+            item["provenance"]["manifest_hash"],
+        ),
+    ):
         digest_hex = record["portable_key"]
         name = record["winner"]
         candidate = by_name.get(name)
@@ -572,7 +830,8 @@ def build(
             if not isinstance(raw_entry, bytes) or len(raw_entry) != ENT_SIZE:
                 raise SystemExit(
                     f"winner '{name}' is not in {manifest_path.name} and has "
-                    "no self-describing wire entry to retain")
+                    "no self-describing wire entry to retain"
+                )
             retained = bytearray(raw_entry)
             struct.pack_into("<I", retained, 32, intern(name))
             packed += retained
@@ -591,9 +850,11 @@ def build(
         signature_value = record.get("signature")
         if signature_value is None:
             raise SystemExit(
-                f"winner {digest_hex} is missing an explicit signature digest")
-        signature_hex = _digest_hex(signature_value,
-                                   f"winner {digest_hex} signature digest")
+                f"winner {digest_hex} is missing an explicit signature digest"
+            )
+        signature_hex = _digest_hex(
+            signature_value, f"winner {digest_hex} signature digest"
+        )
 
         # Current measurements also carry the hardware half of the portable
         # dispatch identity.  If it is present, verify the composite rather
@@ -602,20 +863,24 @@ def build(
         # remain readable, but they still must carry an explicit signature.
         hardware_value = record.get("hardware")
         if hardware_value is not None:
-            hardware_hex = _digest_hex(hardware_value,
-                                       f"winner {digest_hex} hardware digest")
+            hardware_hex = _digest_hex(
+                hardware_value, f"winner {digest_hex} hardware digest"
+            )
             expected_dispatch = portable_tuning_key(
-                hardware_hex, signature_hex, record.get("objective", "latency"))
+                hardware_hex, signature_hex, record.get("objective", "latency")
+            )
             if expected_dispatch != digest_hex:
                 raise SystemExit(
                     f"winner {digest_hex} does not match its hardware/signature "
-                    "dispatch identity")
+                    "dispatch identity"
+                )
         signature = bytes.fromhex(signature_hex)
         provenance = record["provenance"]
         entry_manifest = bytes.fromhex(provenance["manifest_hash"])
         entry_revision = bytes.fromhex(
-            provenance.get("source_revision_digest") or
-            source_revision_digest(provenance["source_revision"]))
+            provenance.get("source_revision_digest")
+            or source_revision_digest(provenance["source_revision"])
+        )
 
         packed += digest  # ENT_DISPATCH
         packed += signature  # ENT_SIGNATURE
@@ -630,6 +895,18 @@ def build(
         packed += entry_manifest
         packed += entry_revision
         packed += struct.pack("<I", record["generation"])
+        transform_id = int(record.get("transform_id", 0) or 0)
+        if not 0 <= transform_id <= 0xFFFF:
+            raise SystemExit(
+                f"winner {digest_hex} transform_id out of range: {transform_id}"
+            )
+        packed += struct.pack("<H", transform_id)
+        match_kind = int(record.get("match_kind", MATCH_KIND_EXACT) or MATCH_KIND_EXACT)
+        if not 0 <= match_kind <= 0xFF:
+            raise SystemExit(
+                f"winner {digest_hex} match_kind out of range: {match_kind}"
+            )
+        packed += struct.pack("<B", match_kind)
 
     entry_count = len(packed) // ENT_SIZE
     payload = bytes(packed) + bytes(string_blob)
@@ -641,28 +918,37 @@ def build(
     header += bytes.fromhex(manifest_hash)
     header += blake2b_digest(payload)
     if len(header) != REPLAY_HEADER_SIZE:
-        raise AssertionError("replay header layout drifted from the v4 wire format")
+        raise AssertionError("replay header layout drifted from the v5 wire format")
 
     blob = bytes(header) + payload
     validate_blob(blob, manifest_hash=manifest_hash)
 
-    generations = sorted({record["generation"] for record in selected_entries}, reverse=True)
-    print(f"  {entry_count} winner(s) across generations {generations}, "
-          f"{len(strings)} distinct candidate(s), {len(string_blob)} string byte(s)")
+    generations = sorted(
+        {record["generation"] for record in selected_entries}, reverse=True
+    )
+    print(
+        f"  {entry_count} winner(s) across generations {generations}, "
+        f"{len(strings)} distinct candidate(s), {len(string_blob)} string byte(s)"
+    )
     print(f"  manifest {manifest['manifest_hash']}")
     return blob
 
 
 def _candidate_identity(candidate: dict[str, Any]) -> str:
     """Return the manifest-bound identity of a candidate descriptor."""
-    payload = json.dumps(candidate, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=True).encode("utf-8")
+    payload = json.dumps(
+        candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
     return blake2b_digest(payload).hex()
 
 
-def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
-                         manifest: dict[str, Any], manifest_hash: str
-                         ) -> dict[str, dict[str, str]]:
+def _load_seed_overrides(
+    seed_file: Path,
+    *,
+    by_name: dict[str, dict[str, Any]],
+    manifest: dict[str, Any],
+    manifest_hash: str,
+) -> dict[str, dict[str, str]]:
     """Load operator seeds with a manifest-bound, deterministic precedence.
 
     The original flat ``{dispatch: stable_name}`` format remains accepted for
@@ -681,15 +967,23 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
     if "overrides" in document:
         unknown = set(document) - {"version", "provenance", "overrides"}
         if unknown:
-            raise SystemExit(f"seed file has unknown top-level fields: {sorted(unknown)}")
+            raise SystemExit(
+                f"seed file has unknown top-level fields: {sorted(unknown)}"
+            )
         if document.get("version", 1) != 1:
             raise SystemExit("unsupported seed file version")
+        seed_provenance = document.get("provenance")
+        if not isinstance(seed_provenance, dict):
+            raise SystemExit("seed file is missing its provenance object")
         provenance = validate_provenance_namespace(
-            document.get("provenance"), where="seed provenance")
+            seed_provenance, where="seed provenance"
+        )
         expected_revision = manifest.get("source_revision")
-        if (not isinstance(expected_revision, str) or
-                provenance["source_revision"] != expected_revision.lower() or
-                provenance["manifest_hash"] != manifest_hash):
+        if (
+            not isinstance(expected_revision, str)
+            or provenance["source_revision"] != expected_revision.lower()
+            or provenance["manifest_hash"] != manifest_hash
+        ):
             raise SystemExit("seed provenance does not match supplied manifest")
         raw_overrides = document["overrides"]
     else:
@@ -700,13 +994,17 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
     if not isinstance(raw_overrides, dict):
         raise SystemExit("seed overrides must be an object")
     normalized: dict[str, dict[str, str]] = {}
-    for raw_digest, raw_value in sorted(raw_overrides.items(), key=lambda item: item[0].lower()):
+    for raw_digest, raw_value in sorted(
+        raw_overrides.items(), key=lambda item: item[0].lower()
+    ):
         digest_hex = _digest_hex(raw_digest, "seed override dispatch digest")
         if digest_hex in normalized:
             raise SystemExit(f"duplicate seed override dispatch digest: {digest_hex}")
         value = {"winner": raw_value} if isinstance(raw_value, str) else raw_value
         if not isinstance(value, dict) or not isinstance(value.get("winner"), str):
-            raise SystemExit("seed override must be a candidate name or object with winner")
+            raise SystemExit(
+                "seed override must be a candidate name or object with winner"
+            )
         allowed = {"winner", "signature", "candidate_digest", "provenance"}
         unknown = set(value) - allowed
         if unknown:
@@ -716,27 +1014,45 @@ def _load_seed_overrides(seed_file: Path, *, by_name: dict[str, dict[str, Any]],
         if candidate is None:
             raise SystemExit(
                 f"seed override '{stable_name}' for dispatch {digest_hex[:16]}... "
-                f"is not in the manifest")
+                f"is not in the manifest"
+            )
         candidate_digest = _candidate_identity(candidate)
         supplied_candidate_digest = value.get("candidate_digest", candidate_digest)
-        if _digest_hex(supplied_candidate_digest, "seed override candidate digest") != candidate_digest:
-            raise SystemExit(f"seed override candidate identity does not match manifest for '{stable_name}'")
+        if (
+            _digest_hex(supplied_candidate_digest, "seed override candidate digest")
+            != candidate_digest
+        ):
+            raise SystemExit(
+                f"seed override candidate identity does not match manifest for '{stable_name}'"
+            )
         if "provenance" in value:
+            override_provenance = value["provenance"]
+            if not isinstance(override_provenance, dict):
+                raise SystemExit(
+                    f"seed override '{stable_name}' has a non-object provenance"
+                )
             provenance = validate_provenance_namespace(
-                value["provenance"], where="seed override provenance")
-            if (provenance["manifest_hash"] != manifest_hash or
-                    (isinstance(manifest.get("source_revision"), str) and
-                     provenance["source_revision"] != manifest["source_revision"].lower())):
-                raise SystemExit("seed override provenance does not match supplied manifest")
+                override_provenance, where="seed override provenance"
+            )
+            if provenance["manifest_hash"] != manifest_hash or (
+                isinstance(manifest.get("source_revision"), str)
+                and provenance["source_revision"] != manifest["source_revision"].lower()
+            ):
+                raise SystemExit(
+                    "seed override provenance does not match supplied manifest"
+                )
         # The caller supplies measurements separately; signature is checked
         # against that row below.  Unseen dispatches must carry one explicitly.
         signature = value.get("signature")
         if signature is not None:
             signature = _digest_hex(signature, "seed override signature digest")
-        normalized[digest_hex] = {"winner": stable_name,
-                                  "candidate_digest": candidate_digest,
-                                  **({"signature": signature} if signature else {})}
+        normalized[digest_hex] = {
+            "winner": stable_name,
+            "candidate_digest": candidate_digest,
+            **({"signature": signature} if signature else {}),
+        }
     return normalized
+
 
 def main(argv: list[str] | None = None) -> None:
     root = Path(__file__).resolve().parent.parent.parent
@@ -772,15 +1088,21 @@ def main(argv: list[str] | None = None) -> None:
         "for manual seed overrides (HI22)",
     )
     parser.add_argument(
-        "--merge-into", type=Path, default=None,
+        "--merge-into",
+        type=Path,
+        default=None,
         help="existing v4 cache whose generations should be retained",
     )
     parser.add_argument(
-        "--keep-generations", type=int, default=3,
+        "--keep-generations",
+        type=int,
+        default=3,
         help="maximum generations retained per portable key (default: 3)",
     )
     parser.add_argument(
-        "--generation", type=int, default=0,
+        "--generation",
+        type=int,
+        default=0,
         help="monotonic generation number for this export (default: 0)",
     )
     args = parser.parse_args(argv)
@@ -795,8 +1117,9 @@ def main(argv: list[str] | None = None) -> None:
         generation=args.generation,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=args.output.name + ".tmp-",
-                                     dir=args.output.parent)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=args.output.name + ".tmp-", dir=args.output.parent
+    )
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(blob)
@@ -804,10 +1127,8 @@ def main(argv: list[str] | None = None) -> None:
             os.fsync(handle.fileno())
         os.replace(temp_name, args.output)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
         raise
     print(f"wrote {args.output} ({len(blob)} bytes)")
     print("Load it with GGML_HIP_DISPATCH_CACHE=<path> GGML_HIP_DISPATCH_MODE=replay")

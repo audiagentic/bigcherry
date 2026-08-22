@@ -42,6 +42,7 @@ from . import (
     campaign_source,
     campaign_workers,
     config as campaign_config,
+    patch_catalog,
     patchset,
 )
 from . import runtime_smoke as smoke_module
@@ -122,6 +123,33 @@ class CampaignLaneExecutionSpec:
     #: benching one experimental patch in isolation. None means "just the
     #: source's normal patch-set", identical to today's behavior.
     experiment: str | None = None
+    #: EC04: Experiment Contract lane metadata (tools/bigcherry/
+    #: experiment_contract.py). Deliberately provenance-only -- these five
+    #: fields must NEVER be read by anything that computes build_plan_id,
+    #: effective_build_id, source_slice_id, or a runtime signature/dispatch
+    #: digest (see the Experiment Contract guide's non-negotiable
+    #: architecture: "keep runtime candidate identity separate from source
+    #: provenance and from experiment identity"). _to_spec()/materialize/
+    #: generate/build/smoke never read them; they exist purely so EC05's
+    #: evidence binding and EC10's reporting know which part of a contract
+    #: a given lane's result is proving. contract_id/optimization_id name
+    #: the ExperimentContract.id and .source.atomic_part; role is one of
+    #: "positive"/"control"/"boundary"/"holdout"; workload_tag is one of
+    #: experiment_contract.WORKLOAD_TAGS; model_ref is a free-form
+    #: recipe/model reference string, not a runtime dispatch identity.
+    contract_id: str | None = None
+    optimization_id: str | None = None
+    role: str | None = None
+    workload_tag: str | None = None
+    model_ref: str | None = None
+    #: Set only when role == "boundary": which swept dimension (e.g.
+    #: "physical_m", from the contract's boundary.dimensions) and which
+    #: single value along it this lane probes. Stored as a string
+    #: regardless of the dimension's native type (int/float/str in the
+    #: contract) -- this is metadata for reporting, never parsed back into
+    #: a typed value anything dispatch-relevant reads.
+    boundary_dimension: str | None = None
+    boundary_value: str | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +207,13 @@ class _MaterializedLaneSource:
     #: materialize_source() returned, so every stage in this lane carries
     #: the full real source lineage downstream.
     source_provenance: SourceProvenance
+    #: RE30 P0-3 (external review, 2026-08-20): the exact composed patch
+    #: selection resolve_lane() already approved for this source -- carried
+    #: forward so the build phase can validate it against the REAL backend
+    #: and cmake options a lane is about to compile with, not just the
+    #: patch-set-name policy resolve_lane() already checked at materialize
+    #: time (before backend-injected options like GGML_VULKAN=ON exist).
+    patch_ids: tuple[str, ...] = ()
 
 
 def _require_one_artifact(
@@ -324,6 +359,7 @@ def _execute_materialize_phase(
         source_root=source_root,
         source_metadata_ref=source_metadata_ref,
         source_provenance=source_provenance,
+        patch_ids=source_plan.patch_ids,
     )
 
 
@@ -589,8 +625,52 @@ def _execute_build_phase(
             cxx_compiler=spec.cxx_compiler or platform_cfg.cxx_compiler,
         )
     build_cfg = cfg.builds[spec.build_name]
+    # RE-backend-identity (external review, 2026-08-20): backend must be
+    # part of the SAME options map that becomes both BuildPlan.cmake_options
+    # (requested identity) and the real cmake_configure_args() call below
+    # (what actually gets compiled) -- previously these were two
+    # independently-computed maps, so BuildPlan.cmake_options never saw the
+    # backend-injected options (GGML_VULKAN=ON / AMDGPU_TARGETS=...) unless
+    # a source's static recipes.toml options happened to already declare
+    # them. A HIP and a Vulkan request sharing the same nominal source/
+    # build/platform names but relying on backend injection (rather than
+    # static build.options) for GGML_VULKAN/AMDGPU_TARGETS could otherwise
+    # produce the SAME build_plan_id while compiling different commands.
+    backend = cfg.sources[spec.source_name].backend
     merged_options = dict(platform_cfg.options)
     merged_options.update(dict(build_cfg.options))
+    merged_options.update(campaign_build._backend_configure_options(backend, platform_cfg))
+
+    # RE30 P0-3 (external review, 2026-08-20): resolve_lane() already
+    # enforced patch-set-name/state policy at materialize time, but never
+    # checked an individual patch's declared backend/requires-options/
+    # forbids-options (patch_catalog.CatalogEntry) against what this build
+    # is ACTUALLY about to compile with -- the real backend and the real
+    # merged cmake options, only known here. A selected-but-inapplicable
+    # patch (e.g. a hip-only patch on a vulkan source, or one requiring an
+    # option this lane never sets) is a hard error, not a silent skip.
+    # Resolved against THIS context's own catalog.toml (matching the
+    # patches_root already used for resolve_lane() at materialize time,
+    # not paths.PATCH_CATALOG's real-project default) -- an isolated test
+    # context with its own synthetic patches directory and no descriptive
+    # catalog layer at all has nothing to check applicability against, and
+    # must not be validated against the unrelated real project's catalog.
+    lane_catalog_path = context.patches_root / "catalog.toml"
+    if materialized.patch_ids and lane_catalog_path.is_file():
+        try:
+            patch_catalog.resolve_for_context(
+                materialized.patch_ids,
+                patch_catalog.PatchContext(
+                    backend=backend,
+                    source=spec.source_name,
+                    build=spec.build_name,
+                    platform=platform_cfg.name,
+                    options=tuple(sorted(merged_options)),
+                ),
+                catalog_path=lane_catalog_path,
+            )
+        except ValueError as exc:
+            raise CampaignLaneError(f"patch applicability check failed: {exc}") from exc
 
     input_refs = _resolve_lane_inputs(spec, build=build_cfg, store=store, run_id=run_id)
     inventory_ref = input_refs.get("inventory")
@@ -615,6 +695,7 @@ def _execute_build_phase(
         platform=platform_cfg.name,
         targets=platform_cfg.targets,
         cmake_options=tuple(sorted(merged_options.items())),
+        backend=backend,
         variant_set=build_cfg.variant_set,
         # RE07/RV48: empty for a build with no generate stage -- there is
         # no catalog to disambiguate. Otherwise the exact architecture set
@@ -676,6 +757,7 @@ def _execute_build_phase(
         source_provenance=materialized.source_provenance,
         project_revision=project_revision,
         local_provenance_class=local_provenance_class,
+        backend=cfg.sources[spec.source_name].backend,
     )
     smoke_worker = None
     validation_spec = spec.validation

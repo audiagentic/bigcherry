@@ -1,25 +1,124 @@
 {
   "artifact_version": 1,
   "audit": {
-    "failed_checks": [],
-    "passed": true,
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
     "strict": true,
     "summary": {
-      "errors": 0,
+      "errors": 1,
       "passed": 33,
-      "total": 33,
+      "total": 34,
       "warnings": 0
     }
   },
-  "bigcherry_revision": "e76c58af43d96af5f6d6e9ac19c7f27762632718",
+  "bigcherry_revision": "5cacb0baf8dfc9f354b1152a776dfbf191438270",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
-  "manifest_hash": "",
-  "notes": "",
-  "patches": {},
+  "manifest_hash": "817a920fde9284bfc8cb721057f63dd1",
+  "notes": "source audit failed: overlay.vendor_sync",
+  "patches": {
+    "applied_cleanly": false,
+    "failed_edits": [
+      "ggml/src/ggml-cuda/common.cuh:rd17-struct-host",
+      "ggml/src/ggml-cuda/common.cuh:rd17-struct-device"
+    ],
+    "files": {
+      "ggml/src/ggml-cpu/llamafile/sgemm.cpp": {
+        "rd26a-sgemm-batch-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "rd3942-cublas-handle-array": "applied",
+        "rd3942-cublas-handle-method": "applied",
+        "rd3942-scratch-fields": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn-mma-f16.cuh": {
+        "rd05-k00-sync": "applied",
+        "rd05-kbc-sync": "applied",
+        "rd0506-config-table": "applied",
+        "rd06-dkq-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn-tile.cu": {
+        "rd04-cu-hunk00": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn-tile.cuh": {
+        "rd04-cuh-hunk00": "applied",
+        "rd04-cuh-hunk01": "applied",
+        "rd04-cuh-hunk02": "applied",
+        "rd04-cuh-hunk03": "applied",
+        "rd04-cuh-hunk04": "applied",
+        "rd04-cuh-hunk05": "applied",
+        "rd04-cuh-hunk06": "applied",
+        "rd04-cuh-hunk07": "applied",
+        "rd04-cuh-hunk08": "applied",
+        "rd04-cuh-hunk09": "applied",
+        "rd04-cuh-hunk10": "applied",
+        "rd04-cuh-hunk11": "applied",
+        "rd04-cuh-hunk12": "applied",
+        "rd04-cuh-hunk13": "applied",
+        "rd04-cuh-hunk14": "applied",
+        "rd04-cuh-hunk15": "applied",
+        "rd04-cuh-hunk16": "applied",
+        "rd04-cuh-hunk17": "applied",
+        "rd04-cuh-hunk18": "applied",
+        "rd04-cuh-hunk19": "applied",
+        "rd04-cuh-hunk20": "applied",
+        "rd04-cuh-hunk21": "applied",
+        "rd04-cuh-hunk22": "applied",
+        "rd04-cuh-hunk23": "applied",
+        "rd04-cuh-hunk24": "applied",
+        "rd04-cuh-hunk25": "applied",
+        "rd04-cuh-hunk26": "applied",
+        "rd04-cuh-hunk27": "applied",
+        "rd04-cuh-hunk28": "applied",
+        "rd04-cuh-hunk29": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn.cu": {
+        "rd0506-softcap-read": "applied",
+        "rd06-wmma-gating": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "rd50-chunked-kernel-unit": "applied",
+        "rd50-dispatch-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "rd44-graph-opt-default-rdna35": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "rd07-fold-subscale": "applied",
+        "rd07-hoist-base-scale": "applied",
+        "rd07-sum-line": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd07-jmax-env": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "rd21-device-table": "applied",
+        "rd21-enum-entry": "applied",
+        "rd21-host-table": "applied",
+        "rd21-nwarps-table": "applied"
+      },
+      "ggml/src/ggml-cuda/vecdotq.cuh": {
+        "rd08-vdr-define": "already-applied",
+        "rd08-vdr2-entry": "already-applied",
+        "rd08-vdr2-impl": "already-applied"
+      },
+      "src/llama-model.cpp": {
+        "rd20-attn-gate-granularity": "applied"
+      },
+      "src/llama.cpp": {
+        "rd19-single-device-default-selection": "applied",
+        "rd19-single-device-explicit-list": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "rd08-perf-cases": "already-applied"
+      }
+    }
+  },
   "promotion": null,
   "release_tag": "b10502",
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
-  "stage": "audited",
+  "stage": "broken",
   "tree_state": "",
-  "updated_at": "2026-08-20T03:16:47.879287+00:00"
+  "updated_at": "2026-08-22T05:31:02.379171+00:00"
 }

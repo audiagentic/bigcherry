@@ -1,0 +1,8 @@
+ok   fully_contained_ignores_checkpoints           = 100
+ok   no_checkpoints_full_lcp_reusable              = 200
+ok   checkpoint_exactly_at_lcp                     = 300
+ok   stale_checkpoint_past_lcp_yields_zero         = 0
+ok   largest_checkpoint_at_or_below_lcp            = 250
+ok   only_zero_checkpoint_below_lcp                = 0
+
+ALL PASSED

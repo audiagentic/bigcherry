@@ -38,6 +38,9 @@
 #ifdef GGML_HIP_DISPATCH_REPLAY
 #include "hip-autotune-replay.h"
 #endif
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+#include "hip-autotune-transform.cuh"
+#endif
 
 // The generated table. Included exactly once, here, after the family entry
 // points it references have been declared.
@@ -252,6 +255,13 @@ struct Binding {
     const ggml_hip_candidate_descriptor * candidate;
     ggml_hip_variant_params               variant;
     bool                                  from_cache;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI31: see ggml_hip_resolved_dispatch's own comment (hip-autotune-
+    // types.h) -- same nullptr-means-direct contract, carried through the
+    // process cache so a warm-path hit does not lose which transform (if
+    // any) a cold-path resolve installed.
+    const ggml_hip_routing_transformation * transform = nullptr;
+#endif
 };
 
 // The resolver is entered for every matmul. Keep a small per-thread binding
@@ -318,17 +328,36 @@ struct DispatchScope {
 
 // HI22: GGML_HIP_FORCE_CANDIDATE env var — force a specific candidate for every
 // dispatch. Used for manual testing of a single geometry without tuning.
+//
+// HI67 (2026-08-22): GGML_HIP_FORCE_CANDIDATE_STRICT=1 turns an ineligible or
+// unregistered forced candidate from a one-shot warning + silent fallback to
+// normal resolution into a hard, immediate abort. A CPU-reference correctness
+// producer (tools/bigcherry/correctness_evidence.py) that asks for a specific
+// candidate and silently gets ordinary resolution instead would record a
+// perfectly plausible-looking "candidate" result for a comparison that never
+// actually happened -- the process's own exit code and stderr give no signal
+// that anything went wrong. Strict mode is diagnostic/test-only (opt-in via
+// GGML_HIP_FORCE_CANDIDATE, itself never set in production) so failing hard
+// here costs nothing outside deliberate correctness-evidence collection.
 struct ForcedCandidate {
     const char * stable_name = nullptr;
     const ggml_hip_candidate_descriptor * candidate = nullptr;
+    bool strict = false;
 
     static const ForcedCandidate & instance() {
         static ForcedCandidate inst = [] {
             ForcedCandidate fc;
             if (const char * name = getenv("GGML_HIP_FORCE_CANDIDATE")) {
                 fc.stable_name = name;
+                fc.strict = getenv("GGML_HIP_FORCE_CANDIDATE_STRICT") != nullptr;
                 fc.candidate = ggml_hip_registry_find(name);
                 if (!fc.candidate) {
+                    if (fc.strict) {
+                        GGML_ABORT("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s not found in "
+                                   "registry (GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing "
+                                   "closed instead of silently falling back to normal "
+                                   "resolution)", name);
+                    }
                     GGML_LOG_WARN("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s not "
                                   "found in registry — force-candidate disabled\n",
                                   name);
@@ -407,6 +436,45 @@ void ggml_hip_log_tune_kept_native(const ggml_hip_digest & dispatch_digest,
 
 // ---------------------------------------------------------------- resolution
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI31: the second-layer validation ggml_hip_replay_lookup()'s own contract
+// (hip-autotune-replay.h) requires every caller to run before trusting a
+// transformed replay entry -- the loader only has the ORIGINAL signature
+// and cannot itself apply the transform. Also reused by the final
+// blacklist/arch safety net further down: a transformed binding needs
+// this SAME re-validation there, never the plain can_execute(original sig)
+// check that net runs for an untransformed one (checking a transformed
+// candidate against the untransformed signature is exactly the wrong
+// question -- see hip-autotune-replay.h's comment on the same point).
+static bool transformed_candidate_still_valid(
+        const ggml_hip_candidate_descriptor * candidate,
+        const ggml_hip_routing_transformation * transform,
+        const ggml_hip_dispatch_signature_v1 & sig,
+        const ggml_hip_launch_context & lc,
+        const ggml_hip_hardware_key_v1 & hw) {
+    if (candidate == nullptr || transform == nullptr) {
+        return false;
+    }
+    if (!transform->equivalence_verified) {
+        return false;
+    }
+    if (!ggml_hip_transform_signature_is_eligible(sig) || !transform->can_apply(sig)) {
+        return false;
+    }
+    ggml_hip_transform_ctx ctx = {};
+    ggml_hip_dispatch_signature_v1 transformed_sig = {};
+    ggml_hip_launch_context transformed_lc;
+    if (!transform->apply(lc, &ctx, &transformed_sig, &transformed_lc)) {
+        return false;
+    }
+    if (candidate->family != transform->target_family) {
+        return false;
+    }
+    return ggml_hip_candidate_supports_arch(*candidate, hw) &&
+           candidate->can_execute(candidate, transformed_sig, hw);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
@@ -429,6 +497,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         resolved.candidate  = thread_binding.candidate;
         resolved.variant    = thread_binding.variant;
         resolved.from_cache = thread_binding.from_cache;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        resolved.transform  = thread_binding.transform;
+#endif
         return resolved;
     }
 
@@ -447,9 +518,33 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // provenance and can make later callers treat it as persistent.
             resolved.from_cache = false;
             forced_selected = true;
+            if (forced.strict) {
+                // Machine-readable proof, for a correctness-evidence producer
+                // parsing stderr, that THIS exact requested candidate is the
+                // one that actually executed -- not merely that force-
+                // candidate was configured. Emitted once per process is not
+                // enough here (unlike the one-shot warnings elsewhere in this
+                // file): a strict-mode caller needs this on every dispatch it
+                // is trying to prove, since a single process may exercise
+                // several signatures against the same forced candidate.
+                GGML_LOG_INFO("BIGCHERRY_FORCE_CANDIDATE_EXECUTED stable_name=%s\n",
+                              forced.stable_name);
+            }
             if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
                 return resolved;
             }
+        } else if (forced.strict) {
+            GGML_ABORT("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s is not eligible for this "
+                       "signature (%s %s %s m=%lld n=%lld k=%lld) "
+                       "(GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing closed instead of "
+                       "silently falling back to normal resolution)",
+                       forced.stable_name,
+                       sig.src0_type ? "t" : "?",
+                       sig.src1_type ? "t" : "?",
+                       sig.dst_type ? "t" : "?",
+                       (long long)sig.ne1[1],
+                       (long long)sig.ned[1],
+                       (long long)sig.ne0[0]);
         } else {
             // Not eligible — fall through to normal resolution with a
             // one-shot warning.
@@ -540,6 +635,30 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
                                     workspace_bytes);
     }
 #endif
+    // HI64 (2026-08-22): whether the binding about to be installed below is
+    // safe to publish into the process-global, device-ordinal-free
+    // g_bindings cache that other devices (including an identical twin
+    // GPU sharing this exact hardware/dispatch key, standards 10.2) can
+    // hit. Defaults true -- every mode except TUNE keeps its existing
+    // behavior unchanged. TUNE mode clears it for the two cases where no
+    // real portable resolution happened: a fatal measurement failure
+    // (confirmed on real hardware to otherwise silently block a second,
+    // healthy device from ever getting its own attempt) and a capture-time
+    // skip (no measurement was even attempted, so nothing portable to
+    // publish either).
+    bool process_binding_cacheable = true;
+    // HI64 follow-up (2026-08-22, GPT review of the fix above): a SEPARATE
+    // flag for the per-device/thread g_thread_bindings cache. A fatal
+    // measurement failure correctly poisons the process for the rest of
+    // this device's lifetime, so caching native locally there is still
+    // useful -- but a capture-time skip is NOT permanent: capture ends,
+    // and the next ordinary call for this exact (device, signature) should
+    // be free to actually tune. Unconditionally caching native for it here
+    // would otherwise let one capture-time skip permanently starve that
+    // (thread, device, signature) triple of ever being measured, even
+    // after capture is long over. Defaults true; only capture-time skip
+    // clears it -- a measurement failure deliberately leaves it true.
+    bool thread_binding_cacheable = true;
 #ifdef GGML_HIP_AUTOTUNE
     if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {
         if (ggml_hip_stream_is_capturing(lc.stream)) {
@@ -547,6 +666,8 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // and a winner chosen from poisoned timings would be worse than no
             // winner at all.
             ggml_hip_warn_tuning_skipped_under_capture();
+            process_binding_cacheable = false;
+            thread_binding_cacheable  = false;
         } else {
             // HI67 (F1): measure/select/record only. The tuner launches its
             // own measurement rounds through lc, so keeping this binding on
@@ -556,12 +677,13 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // correctness proof (RV08); installing an unproven winner here
             // is exactly the intermittent 5e-4 cliff failure. The binding
             // below therefore always installs native in tune mode.
-            const ggml_hip_candidate_descriptor * winner =
+            const ggml_hip_tuner_resolution tuning =
                 ggml_hip_tuner_resolve(ctx, sig, hw, dispatch_digest, native, lc);
-            if (winner != nullptr && winner != native.candidate) {
+            process_binding_cacheable = !tuning.measurement_failure;
+            if (tuning.winner != nullptr && tuning.winner != native.candidate) {
                 ggml_hip_log_tune_kept_native(
                     dispatch_digest,
-                    winner->stable_name ? winner->stable_name : "?");
+                    tuning.winner->stable_name ? tuning.winner->stable_name : "?");
             }
         }
     }
@@ -571,11 +693,44 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
         const ggml_hip_candidate_descriptor * winner = nullptr;
         ggml_hip_variant_params variant = {};
-        if (ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
-                                   &winner, &variant) == GGML_HIP_RESOLVE_EXACT) {
+        uint16_t transform_id = 0;
+        const bool exact = ggml_hip_replay_lookup(dispatch_digest, signature_digest, sig, hw,
+                                                   &winner, &variant, &transform_id)
+                            == GGML_HIP_RESOLVE_EXACT;
+        // HI31: ggml_hip_replay_lookup()'s EXACT is NECESSARY but not
+        // SUFFICIENT for a transformed entry (transform_id != 0) -- see that
+        // function's declaration in hip-autotune-replay.h. The loader only
+        // has the ORIGINAL signature; the second-layer validation (resolve
+        // the transform, confirm equivalence_verified, apply() to get the
+        // real transformed signature, re-check can_execute against THAT)
+        // happens here, where the real ggml_hip_launch_context is available.
+        bool usable = exact;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+        // ggml_hip_routing_transformation is only declared (forward or in
+        // full) under this same macro in hip-autotune-types.h -- this
+        // pointer must stay inside the guard too, or a replay-only build
+        // (GGML_HIP_ROUTING_TRANSFORM off, e.g. production replay) fails to
+        // compile on the unknown type name.
+        const ggml_hip_routing_transformation * winner_transform = nullptr;
+        if (exact && transform_id != 0) {
+            winner_transform = ggml_hip_transform_find((ggml_hip_transform_id) transform_id);
+            usable = transformed_candidate_still_valid(winner, winner_transform, sig, lc, hw);
+        }
+#else
+        // No transform machinery compiled into this build at all: a
+        // transformed entry can never be validated, so it is unusable here
+        // regardless of what the loader returned.
+        if (exact && transform_id != 0) {
+            usable = false;
+        }
+#endif
+        if (usable) {
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+            binding.transform  = winner_transform;
+#endif
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
             ggml_hip_replay_record_hit(dispatch_digest, signature_digest, winner);
 #endif
@@ -590,6 +745,21 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
     // A stored winner that cannot run on this hardware, or that has since been
     // blacklisted, must not be launched merely because it was once the winner.
+    // HI31: a transformed binding needs the transform-aware re-validation
+    // (checking the candidate against the TRANSFORMED signature), never the
+    // plain can_execute(original sig) check below -- that check would
+    // reject a legitimately transformed candidate for the same reason the
+    // transform existed in the first place.
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    if (binding.transform != nullptr) {
+        if (!transformed_candidate_still_valid(binding.candidate, binding.transform, sig, lc, hw)) {
+            binding.candidate  = native.candidate;
+            binding.variant    = native.variant;
+            binding.from_cache = false;
+            binding.transform  = nullptr;
+        }
+    } else
+#endif
     if (binding.candidate != nullptr
             && (!ggml_hip_candidate_supports_arch(*binding.candidate, hw)
                 || !binding.candidate->can_execute(binding.candidate, sig, hw))) {
@@ -598,7 +768,10 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         binding.from_cache = false;
     }
 
-    {
+    // HI64: only a genuinely portable resolution may be published into the
+    // process-global, device-ordinal-free binding cache -- see
+    // process_binding_cacheable's declaration above for why.
+    if (process_binding_cacheable) {
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
         g_bindings.emplace(dispatch_digest, binding);
     }
@@ -606,16 +779,85 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.candidate  = binding.candidate;
     resolved.variant    = binding.variant;
     resolved.from_cache = binding.from_cache;
-    if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    resolved.transform   = binding.transform;
+#endif
+    // HI64: gated on thread_binding_cacheable (capture-time skip only) --
+    // NOT on process_binding_cacheable. A device-local measurement failure
+    // deliberately still reaches this insert: this device/thread is
+    // genuinely poisoned for the rest of the process, so caching native
+    // here avoids retrying a signature already known to be unmeasurable
+    // on it, while other devices remain free via the gated process-global
+    // cache above.
+    if (mode != GGML_HIP_DISPATCH_MODE_RECORD && thread_binding_cacheable) {
         g_thread_bindings.insert(ctx.device, sig, binding);
     }
     return resolved;
 }
 
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+// HI31: apply()'s only documented failure mode is "can_apply should already
+// have prevented this -- a bug, not a routine outcome" (hip-autotune-types.h).
+// GGML_ASSERT always aborts in this codebase (it is not compiled out under
+// NDEBUG, unlike C's assert()), so using it here would turn one bad
+// transform into a crashed inference process -- exactly the outcome a
+// "fail closed" policy exists to avoid. Instead: log once per signature
+// (so the supposedly-impossible case leaves real evidence, not silence)
+// and fail closed to a FRESH native selection recomputed from `lc` --
+// never `bound.candidate`, which names the transformed candidate and is
+// the wrong thing to launch untransformed.
+static void launch_native_fallback_after_transform_failure(
+        const ggml_hip_routing_transformation * transform,
+        const ggml_hip_launch_context & lc) {
+    static std::mutex once_mutex;
+    static std::set<std::string> logged;
+    {
+        std::lock_guard<std::mutex> lock(once_mutex);
+        if (logged.insert(transform->name).second) {
+            GGML_LOG_WARN(
+                "bigcherry: transform '%s' failed to apply at dispatch time "
+                "(can_apply() should have prevented this) -- falling back "
+                "to native selection for this signature\n", transform->name);
+        }
+    }
+    const ggml_hip_native_selection native =
+        ggml_hip_native_select(*lc.ctx, lc.src0, lc.src1, lc.ids, lc.dst);
+    if (!native.valid || native.candidate == nullptr) {
+        return; // Nothing safe to launch; upstream's own dispatch never ran.
+    }
+    ggml_hip_candidate_descriptor native_effective = *native.candidate;
+    native_effective.variant = native.variant;
+    native_effective.launch(&native_effective, lc);
+}
+#endif // GGML_HIP_ROUTING_TRANSFORM
+
 void ggml_hip_dispatch_launch(const ggml_hip_resolved_dispatch & bound,
                               const ggml_hip_launch_context & lc) {
     GGML_ASSERT(bound.candidate != nullptr);
     GGML_ASSERT(bound.candidate->launch != nullptr);
+
+#ifdef GGML_HIP_ROUTING_TRANSFORM
+    // HI31: nullptr is the fast path -- no allocation, no signature rebuild,
+    // no tensor-header rewrite, no registry lookup, no extra sync, one
+    // predictable branch. Feature-off builds (below) never see this check
+    // at all, so the ordinary path is compile-time unchanged there.
+    if (bound.transform != nullptr) {
+        ggml_hip_transform_ctx ctx = {};
+        ggml_hip_launch_context transformed_lc;
+        if (bound.transform->apply(lc, &ctx, /*out_sig=*/nullptr, &transformed_lc)) {
+            ggml_hip_transform_launch(bound.transform, bound.candidate,
+                                      bound.variant, &ctx, transformed_lc);
+        } else {
+            launch_native_fallback_after_transform_failure(bound.transform, lc);
+        }
+#ifdef GGML_HIP_AUTOTUNE_RECORD
+        if (ggml_hip_dispatch_mode() == GGML_HIP_DISPATCH_MODE_RECORD) {
+            ggml_hip_record_end_observation();
+        }
+#endif
+        return;
+    }
+#endif // GGML_HIP_ROUTING_TRANSFORM
 
     // The descriptor carries the variant for a fixed candidate, but a resolved
     // dispatch may override it (a tuner probe, a seeded winner). Launching
