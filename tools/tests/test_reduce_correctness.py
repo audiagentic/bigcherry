@@ -107,7 +107,7 @@ class CaseRoundTripTests(unittest.TestCase):
             manifest = rc.write_case(
                 case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
                 reduction_signature_key="sig-a", topology_key="n2:peer1001",
-                peer_access="partial", devices=devices,
+                peer_access="partial", devices=devices, slice_shape=(32, 1, 1, 1),
             )
             loaded_manifest, ranks = rc.load_case(case_dir)
             self.assertEqual(loaded_manifest["case_id"], "case-0001")
@@ -122,11 +122,31 @@ class CaseRoundTripTests(unittest.TestCase):
             rc.write_case(
                 case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
                 reduction_signature_key="sig-a", topology_key="n2:peer1001",
-                peer_access="partial", devices=devices,
+                peer_access="partial", devices=devices, slice_shape=(8, 1, 1, 1),
             )
             (case_dir / "rank-0.f32").write_bytes(b"\x00" * 32)
             with self.assertRaises(rc.CorrectnessError):
                 rc.load_case(case_dir)
+
+    def test_missing_slice_shape_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices,
+                )
+
+    def test_slice_shape_product_mismatch_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices, slice_shape=(4, 1, 1, 1),
+                )
 
 
 class AnalyticalBoundTests(unittest.TestCase):

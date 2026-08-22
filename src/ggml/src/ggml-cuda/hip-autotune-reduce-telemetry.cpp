@@ -45,6 +45,14 @@ void copy_label(char * dst, size_t dst_size, const char * src) {
     std::snprintf(dst, dst_size, "%s", src);
 }
 
+// Forward-declared: defined further below, alongside write_event()'s own
+// use of it. Recomputing it here (rather than threading a shared value
+// through both call sites) keeps this test-only seam decoupled from the
+// production telemetry hot path -- it only runs when a probe is actually
+// capturing, never in a normal inference process.
+ggml_hip_reduce_signature_v1 make_signature(
+        const int * devices, size_t device_count, ggml_tensor ** tensors);
+
 void capture_reduce_test_snapshot(
         const int * devices, size_t device_count, ggml_tensor ** tensors,
         const char * requested_provider, const char * effective_provider,
@@ -64,6 +72,17 @@ void capture_reduce_test_snapshot(
     copy_label(snap.handoff, sizeof(snap.handoff), handoff);
     snap.fallback_depth = fallback_depth;
     snap.provider_succeeded = provider_succeeded;
+
+    if (tensors != nullptr && tensors[0] != nullptr) {
+        const ggml_hip_reduce_signature_v1 sig = make_signature(devices, snap.device_count, tensors);
+        snap.element_count = sig.element_count;
+        for (size_t i = 0; i < 4; ++i) {
+            snap.slice_shape[i] = sig.slice_shape[i];
+        }
+        copy_label(snap.element_type, sizeof(snap.element_type), sig.element_type);
+        copy_label(snap.topology_key, sizeof(snap.topology_key), sig.topology_key);
+        copy_label(snap.peer_access, sizeof(snap.peer_access), sig.peer_access);
+    }
     g_reduce_test_captured = true;
 }
 

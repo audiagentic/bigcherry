@@ -63,6 +63,12 @@ CMAKE = FilePatch(
                 "    target_link_libraries(test-hip-reduce PRIVATE vendor::hash)\n"
                 "    target_include_directories(test-hip-reduce PRIVATE\n"
                 "        ${CMAKE_CURRENT_SOURCE_DIR}/../ggml/src)\n"
+                "    # GGML_HIP_DISPATCH is only added at ggml/src/ggml-hip's directory\n"
+                "    # scope (patches/0100_cmake_options.py), which does not propagate to\n"
+                "    # this sibling tests/ directory -- without this, the telemetry header's\n"
+                "    # #if defined(GGML_USE_HIP) && defined(GGML_HIP_DISPATCH) guard hides\n"
+                "    # the test-capture seam this probe depends on.\n"
+                "    target_compile_definitions(test-hip-reduce PRIVATE GGML_HIP_DISPATCH)\n"
                 "endif()\n"
             ),
             guard=r"add_executable\(test-hip-reduce|llama_build\(test-hip-reduce\.cpp\)",

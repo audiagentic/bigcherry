@@ -178,12 +178,31 @@ class CaseManifest:
 def write_case(
     case_dir: Path, *, case_id: str, seed: int, pattern: str,
     reduction_signature_key: str, topology_key: str, peer_access: str,
-    devices: list[list[float]],
+    devices: list[list[float]], slice_shape: tuple[int, int, int, int] | None = None,
 ) -> CaseManifest:
+    """slice_shape is the real production reduction signature's 4D tensor
+    shape (element_count, slice_shape[0..3] with slice_shape's product ==
+    element_count) -- required, not optional, because a case's evidence is
+    only comparable to a real recorded reduction_signature_key if it
+    reproduces that exact shape, not merely the same total element count
+    (schema v2 fix; verified against tools/bigcherry/telemetry.py's key
+    format, which joins slice_shape into the key, not just element_count)."""
     device_count = len(devices)
     element_count = len(devices[0])
     if any(len(v) != element_count for v in devices):
         raise CorrectnessError(f"case {case_id}: device value arrays have inconsistent length")
+    if slice_shape is None:
+        raise CorrectnessError(
+            f"case {case_id}: slice_shape is required -- a case's evidence is only "
+            "comparable to a real recorded reduction_signature_key if it reproduces "
+            "that signature's exact 4D shape, not merely its total element count"
+        )
+    shape_product = slice_shape[0] * slice_shape[1] * slice_shape[2] * slice_shape[3]
+    if shape_product != element_count:
+        raise CorrectnessError(
+            f"case {case_id}: slice_shape {slice_shape} has product {shape_product}, "
+            f"expected element_count {element_count}"
+        )
 
     case_dir.mkdir(parents=True, exist_ok=True)
     digests = []
@@ -193,12 +212,13 @@ def write_case(
         digests.append(sha256_hex(data))
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "case_id": case_id,
         "seed": seed,
         "pattern": pattern,
         "generator_version": GENERATOR_VERSION,
         "element_count": element_count,
+        "slice_shape": list(slice_shape),
         "device_count": device_count,
         "reduction_signature_key": reduction_signature_key,
         "topology_key": topology_key,
