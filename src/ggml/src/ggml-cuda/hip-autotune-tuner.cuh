@@ -173,15 +173,42 @@ struct ggml_hip_tuner_config {
 
 const ggml_hip_tuner_config & ggml_hip_tuner_get_config();
 
-// Resolve a signature by measuring it.
-//
-// Returns the winner, or `native.candidate` when nothing beat it -- which is
-// the common and correct outcome. Returns nullptr only when the run had to be
-// rejected, meaning native itself could not be measured.
-//
-// Measures once per dispatch key and caches; the resolver's process cache then
-// keeps later executions free.
-const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve(
+// HI64 (2026-08-22): the header comment above this struct used to claim
+// ggml_hip_tuner_resolve() "returns nullptr only when the run had to be
+// rejected" -- stale; the real implementation always returns
+// native.candidate on every rejection/failure path, never nullptr.
+// Corrected below, and this struct now makes the fatal-measurement-failure
+// case an explicit, checkable fact rather than something a caller could
+// only infer from an unusual reason string.
+struct ggml_hip_tuner_resolution {
+    // The tuner's selected candidate. Native is returned for an ordinary
+    // native-retained result and also as the safe workload choice after a
+    // fatal measurement failure -- `measurement_failure` is what tells the
+    // two apart, not this pointer's identity.
+    const ggml_hip_candidate_descriptor * winner = nullptr;
+
+    // True only when this invocation hit a fatal/mechanical measurement
+    // failure (Result::measurement_failure). Such an outcome is local to
+    // the current HIP device/context and MUST NOT be used to populate a
+    // process-global dispatch binding shared with other devices via the
+    // portable (device-ordinal-free) hardware/dispatch key -- confirmed on
+    // real dual-XTX hardware that doing so lets one device's transient
+    // fault silently block tuning on a second, healthy, identical GPU. It
+    // may still be retained as diagnostic/journal evidence.
+    //
+    // This flag says nothing about HI67 production correctness or
+    // promotion; tune-mode workload dispatch remains native regardless of
+    // the selected winner either way.
+    bool measurement_failure = false;
+};
+
+// Resolve a signature by measuring it. Measures once per portable dispatch
+// key and caches a NON-FAILED result there; the resolver's process cache
+// then keeps later executions (on this or another device sharing that
+// portable key) free. A fatal measurement failure is never cached as a
+// resolution -- see ggml_hip_tuner_resolution::measurement_failure and
+// record_result()'s failure->success replacement in the .cu file.
+ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
     ggml_backend_cuda_context & ctx,
     const ggml_hip_dispatch_signature_v1 & sig,
     const ggml_hip_hardware_key_v1 & hw,
