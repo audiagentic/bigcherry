@@ -6,13 +6,28 @@ See also: [TEST.md](TEST.md) — testing, tuning workflows, and coverage.
 
 ## Environment — brutus (`10.10.100.10`)
 
-**SMB share mapping:**
+**`~/bigcherry` is the live tree — a real local git clone.** Git operations
+(fetch/checkout/status) over the old SMB-mounted path (below) were too slow
+and unreliable over the network, so brutus builds from its own local
+checkout now, not from the share. Treat it as a normal git worktree, not a
+build cache: before building, `git status` must be clean and `git log -1`
+must match what you expect (fetch/pull first if not); after any hands-on
+edit there, commit and push before moving on.
+
+**SMB share — file transfer only, never git/build:**
 
 ```text
 J:\development\llmhosts\bigcherry  ==  /mnt/vault/development/llmhosts/bigcherry
 ```
 
-No copy or sync step needed — edit on either side, build on the server.
+Still useful for copying a build artifact or doc back and forth by hand.
+Do not `git` anything against this path, and do not point cmake at it for
+a brutus build — use `~/bigcherry` for that. (This section previously said
+the reverse — that `~/bigcherry` was the stale copy and `/mnt/vault` was
+live. That was wrong and out of date; see BUILD_AND_TEST.md, which already
+had the corrected version. If you're reading this after finding it
+contradicted `~/bigcherry`'s actual state again, trust the live checkout,
+not either doc, and fix whichever doc is behind.)
 
 **Device indices:** 0,1 = gfx1100 (RX 7900 XTX), 2 = gfx1201 (RDNA4), 3 = gfx1030 (RDNA2)
 
@@ -31,11 +46,9 @@ No copy or sync step needed — edit on either side, build on the server.
   scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
-- **`~/bigcherry` on brutus is a stale copy** — ignore or delete it. The live tree is under `/mnt/vault`.
-
 ## Recipes — the normal way to build
 
-`$BC` = `/mnt/vault/development/llmhosts/bigcherry` (or `J:\development\llmhosts\bigcherry`).
+`$BC` = `~/bigcherry` on brutus.
 
 A **recipe** names one complete build configuration: an upstream ref, a patch selection, and which variant(s) to compile. Recipes live in `recipes.toml`.
 
@@ -104,7 +117,7 @@ python3 -m bigcherry patches --recipe release
 
 ## Manual build cycle
 
-One-off builds outside a recipe. `$BC` = `/mnt/vault/development/llmhosts/bigcherry` (or `J:\development\llmhosts\bigcherry`).
+One-off builds outside a recipe. `$BC` = `~/bigcherry` on brutus.
 
 ### Linux — all three GPUs
 
