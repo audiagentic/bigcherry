@@ -527,8 +527,8 @@ def aggregate_case_results(
 
 def case_result_to_row(
     result: CaseResult, *, source_revision: str, manifest_hash: str,
-    topology_key: str, peer_access: str, element_count: int,
-    seed: int, contract_version: str = CONTRACT_VERSION,
+    reduction_signature_key: str, topology_key: str, peer_access: str,
+    element_count: int, seed: int, contract_version: str = CONTRACT_VERSION,
 ) -> dict:
     return {
         "schema_version": 1,
@@ -540,6 +540,7 @@ def case_result_to_row(
         "manifest_hash": manifest_hash,
         "element_type": "f32",
         "element_count": element_count,
+        "reduction_signature_key": reduction_signature_key,
         "topology_key": topology_key,
         "peer_access": peer_access,
         "requested_provider": result.requested_provider,
