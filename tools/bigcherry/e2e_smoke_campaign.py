@@ -35,6 +35,7 @@ bug can be validated by rerunning just the stages downstream of the fix
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -50,6 +51,16 @@ from pathlib import Path
 from typing import Any
 
 PROGRESS_INTERVAL_S = 15
+
+# HI82 item 9: campaign-identity-gated resume (design/implementation:
+# gpt-auto-agent, req_527bff46e32e481c).
+STATUS_SCHEMA_VERSION = 2
+CAMPAIGN_IDENTITY_SCHEMA_VERSION = 1
+
+# Manual semantic version for campaign execution logic. Bump this whenever a
+# code change can alter stage meaning/output without already changing one of
+# the explicit identity inputs below (model/build/patch/source identity).
+CAMPAIGN_SCRIPT_VERSION = "hi82-item9-v1"
 COMPLETIONS = (
     {
         "prompt": "Explain the difference between a mutex and a semaphore in "
@@ -70,6 +81,66 @@ class CampaignError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class CampaignIdentityContext:
+    """External provenance supplied by a build/source orchestrator.
+
+    patch_validation_campaign.py supplies this richer identity (patch
+    digest, patched source tree, per-build-mode compile-verified evidence
+    from builds.capture_completed_build_evidence()). Direct
+    e2e_smoke_campaign CLI use may omit it (identity_context=None on
+    Campaign) -- executable file identities still protect resume in that
+    case, there is just naturally no patch/source provenance to record.
+    """
+
+    patch_name: str
+    patch_digest: str
+    patched_source_tree: str
+    gpu_architecture: str
+    build_identities: dict[str, dict[str, object]]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _file_content_identity(path: Path) -> dict[str, object]:
+    path = Path(path)
+    if not path.is_file():
+        raise CampaignError(f"campaign identity input does not exist: {path}")
+    stat = path.stat()
+    return {"size": stat.st_size, "sha256": _sha256_file(path)}
+
+
+def _stable_json_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _identity_differences(old: object, new: object, prefix: str = "") -> list[str]:
+    if isinstance(old, dict) and isinstance(new, dict):
+        differences: list[str] = []
+        for key in sorted(set(old) | set(new)):
+            child = f"{prefix}.{key}" if prefix else str(key)
+            if key not in old:
+                differences.append(f"{child} added")
+            elif key not in new:
+                differences.append(f"{child} removed")
+            else:
+                differences.extend(_identity_differences(old[key], new[key], child))
+        return differences
+
+    if old != new:
+        return [prefix or "<root>"]
+    return []
+
+
 @dataclass
 class Campaign:
     model: Path
@@ -87,8 +158,15 @@ class Campaign:
     bench_prompt: int = 512
     bench_gen: int = 128
     bench_repetitions: int = 3
+    identity_context: CampaignIdentityContext | None = None
 
     def __post_init__(self) -> None:
+        self.model = Path(self.model)
+        self.tune_server = Path(self.tune_server)
+        self.replay_server = Path(self.replay_server)
+        self.manifest = Path(self.manifest)
+        self.workdir = Path(self.workdir)
+
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.logdir = self.workdir / "logs"
         self.logdir.mkdir(exist_ok=True)
@@ -103,6 +181,10 @@ class Campaign:
         self.bench_prompt = int(self.bench_prompt)
         self.bench_gen = int(self.bench_gen)
         self.bench_repetitions = int(self.bench_repetitions)
+        # Lazy: file hashing belongs in run()/ensure_campaign_identity(),
+        # where CampaignError is already part of the execution contract,
+        # not during bare dataclass construction.
+        self._campaign_identity_document: dict[str, object] | None = None
         if self.bench_prompt <= 0:
             raise ValueError("bench_prompt must be > 0")
         if self.bench_gen <= 0:
@@ -110,24 +192,231 @@ class Campaign:
         if self.bench_repetitions <= 0:
             raise ValueError("bench_repetitions must be > 0")
 
+    # -- campaign identity (HI82 item 9) --------------------------------
+
+    def _make_campaign_identity(self) -> dict[str, object]:
+        bench_enabled = bool(self.stock_bench and self.tune_bench and self.replay_bench)
+
+        executable_files: dict[str, object] = {
+            "tune_server": {
+                "path": str(self.tune_server.resolve()),
+                "file_identity": _file_content_identity(self.tune_server),
+            },
+            "replay_server": {
+                "path": str(self.replay_server.resolve()),
+                "file_identity": _file_content_identity(self.replay_server),
+            },
+        }
+        if self.stock_bench is not None:
+            executable_files["stock_bench"] = {
+                "path": str(self.stock_bench.resolve()),
+                "file_identity": _file_content_identity(self.stock_bench),
+            }
+        if self.tune_bench is not None:
+            executable_files["tune_bench"] = {
+                "path": str(self.tune_bench.resolve()),
+                "file_identity": _file_content_identity(self.tune_bench),
+            }
+        if self.replay_bench is not None:
+            executable_files["replay_bench"] = {
+                "path": str(self.replay_bench.resolve()),
+                "file_identity": _file_content_identity(self.replay_bench),
+            }
+
+        if self.identity_context is None:
+            patch_identity: dict[str, object] | None = None
+            patched_source_tree = None
+            gpu_architecture = None
+            # Standalone CLI fallback: still safe against binary
+            # replacement, but cannot invent build provenance that was not
+            # supplied by the build layer.
+            build_identities: dict[str, object] = {"standalone_executables": executable_files}
+        else:
+            patch_identity = {
+                "name": self.identity_context.patch_name,
+                "digest": self.identity_context.patch_digest,
+            }
+            patched_source_tree = self.identity_context.patched_source_tree
+            gpu_architecture = self.identity_context.gpu_architecture
+            build_identities = {
+                name: dict(value)
+                for name, value in sorted(self.identity_context.build_identities.items())
+            }
+
+            required_builds = {"tune", "replay"}
+            if bench_enabled:
+                required_builds.add("stock")
+            missing = required_builds - set(build_identities)
+            if missing:
+                raise CampaignError(
+                    f"campaign identity context is missing build identities: {sorted(missing)}"
+                )
+
+        return {
+            "schema_version": CAMPAIGN_IDENTITY_SCHEMA_VERSION,
+            "campaign_script_version": CAMPAIGN_SCRIPT_VERSION,
+            # The path tells the operator which model was intended; the
+            # independent file identity detects replacement in place.
+            "model_identity": {"path": str(self.model.resolve())},
+            "model_file_identity": _file_content_identity(self.model),
+            # The manifest affects dispatch-db/export semantics and must
+            # not be allowed to change underneath resumed measurements.
+            "manifest_identity": {
+                "path": str(self.manifest.resolve()),
+                "file_identity": _file_content_identity(self.manifest),
+            },
+            "patch_identity": patch_identity,
+            "patched_source_tree": patched_source_tree,
+            "gpu_architecture": gpu_architecture,
+            "build_identities": build_identities,
+            # Actual executable files are included even when richer build
+            # identities exist -- catches a binary replacement occurring
+            # after build evidence was captured but before Campaign starts.
+            "executables": executable_files,
+            "campaign_parameters": {
+                "n_gpu_layers": self.n_gpu_layers,
+                "ctx_size": self.ctx_size,
+                "completions": COMPLETIONS,
+                "bench_enabled": bench_enabled,
+                "bench_prompt": self.bench_prompt,
+                "bench_gen": self.bench_gen,
+                "bench_repetitions": self.bench_repetitions,
+            },
+        }
+
+    def _campaign_identity(self) -> dict[str, object]:
+        if self._campaign_identity_document is None:
+            self._campaign_identity_document = self._make_campaign_identity()
+        return self._campaign_identity_document
+
+    @property
+    def campaign_identity_digest(self) -> str:
+        return _stable_json_sha256(self._campaign_identity())
+
+    def _known_stage_artifacts(self) -> tuple[Path, ...]:
+        tune_db = self.workdir / "tune.jsonl"
+        candidates = (
+            self.workdir / "record.jsonl",
+            self.workdir / "inventory.json",
+            self.workdir / "inventory.sqlite",
+            tune_db,
+            Path(f"{tune_db}.measurements.jsonl"),
+            Path(f"{tune_db}.journal.jsonl"),
+            self.workdir / "dispatch.sqlite",
+            self.workdir / "promoted.jsonl",
+            self.workdir / "dispatch.cache",
+            self.workdir / "coverage.json",
+            self.workdir / "bench.json",
+            self.workdir / "report.md",
+        )
+        return tuple(path for path in candidates if path.exists())
+
+    def _read_status_document(self) -> dict[str, Any]:
+        try:
+            value = json.loads(self.status_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CampaignError(f"cannot trust existing status.json: {exc}") from exc
+        if not isinstance(value, dict):
+            raise CampaignError("cannot trust existing status.json: root is not an object")
+        return value
+
+    def ensure_campaign_identity(self) -> dict[str, Any]:
+        """Bind this workdir to exactly one campaign identity.
+
+        Called before any stage can resume. A mismatch never deletes or
+        overwrites prior evidence; it refuses the run -- reusing another
+        workdir explicitly, or deleting the old campaign directory, is a
+        human-visible operation, not something this does automatically.
+        """
+        expected = self._campaign_identity()
+        expected_digest = self.campaign_identity_digest
+
+        if not self.status_path.exists():
+            existing_artifacts = self._known_stage_artifacts()
+            if existing_artifacts:
+                names = ", ".join(path.name for path in existing_artifacts[:8])
+                more = (
+                    "" if len(existing_artifacts) <= 8
+                    else f" (+{len(existing_artifacts) - 8} more)"
+                )
+                raise CampaignError(
+                    "campaign workdir contains stage artifacts but has no identity-bound "
+                    f"status.json; refusing legacy/unattributed resume: {names}{more}"
+                )
+
+            data: dict[str, Any] = {
+                "schema_version": STATUS_SCHEMA_VERSION,
+                "campaign_identity": expected,
+                "campaign_identity_digest": expected_digest,
+                "history": [],
+            }
+            self._atomic_write_json(self.status_path, data)
+            return data
+
+        data = self._read_status_document()
+
+        if data.get("schema_version") != STATUS_SCHEMA_VERSION:
+            raise CampaignError(
+                "existing status.json uses an untrusted/legacy status schema; refusing resume"
+            )
+
+        recorded = data.get("campaign_identity")
+        recorded_digest = data.get("campaign_identity_digest")
+        if not isinstance(recorded, dict):
+            raise CampaignError("existing status.json has no campaign identity; refusing resume")
+        if not isinstance(recorded_digest, str):
+            raise CampaignError(
+                "existing status.json has no campaign identity digest; refusing resume"
+            )
+
+        if _stable_json_sha256(recorded) != recorded_digest:
+            raise CampaignError(
+                "existing status.json campaign identity does not recompute; refusing resume"
+            )
+
+        # `recorded` came back from json.loads() (tuples became lists);
+        # `expected` is still the freshly-built native dict (e.g.
+        # COMPLETIONS is a tuple there) -- round-trip `expected` through
+        # JSON too before any raw dict comparison, or a semantically
+        # identical value would spuriously "differ" by container type even
+        # though campaign_identity_digest (itself JSON-based) already
+        # proves equivalence.
+        expected_canonical = json.loads(json.dumps(expected, sort_keys=True, ensure_ascii=False))
+
+        if recorded_digest != expected_digest or recorded != expected_canonical:
+            differences = _identity_differences(recorded, expected_canonical)
+            summary = ", ".join(differences[:12])
+            if len(differences) > 12:
+                summary += f" (+{len(differences) - 12} more)"
+            raise CampaignError(
+                "campaign identity mismatch; refusing to resume stale stage artifacts"
+                + (f": {summary}" if summary else "")
+            )
+
+        return data
+
     # -- status/progress -----------------------------------------------
 
     def write_status(self, stage: str, state: str, detail: str = "") -> None:
+        # Every mutation re-validates the identity-bound document -- an
+        # individual stage invoked directly still cannot reuse an
+        # unbound/mismatched workdir, not just the top-level run() gate.
+        data = self.ensure_campaign_identity()
+
         record = {
             "stage": stage,
             "state": state,
             "detail": detail,
+            "campaign_identity_digest": self.campaign_identity_digest,
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        data: dict = {}
-        if self.status_path.exists():
-            try:
-                data = json.loads(self.status_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                data = {}
         data["current"] = record
-        data.setdefault("history", []).append(record)
-        self.status_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        history = data.setdefault("history", [])
+        if not isinstance(history, list):
+            raise CampaignError("existing status.json history is invalid")
+        history.append(record)
+
+        self._atomic_write_json(self.status_path, data)
         print(f"[{record['ts']}] {stage} {state} {detail}", flush=True)
 
     def sample_progress(self, stage: str, journal_path: Path, t0: float) -> None:
@@ -140,6 +429,7 @@ class Campaign:
             "stage": stage,
             "journal_lines": lines,
             "elapsed_s": round(time.time() - t0, 1),
+            "campaign_identity_digest": self.campaign_identity_digest,
         }
         with self.progress_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
@@ -283,7 +573,7 @@ class Campaign:
         stage = "S1b_inventory"
         inventory_json = self.workdir / "inventory.json"
         inventory_sqlite = self.workdir / "inventory.sqlite"
-        if inventory_json.exists():
+        if inventory_json.exists() and inventory_sqlite.exists():
             self.write_status(stage, "done", "resumed")
             return inventory_json, inventory_sqlite
         self.write_status(stage, "running")
@@ -645,6 +935,11 @@ class Campaign:
         return report_path
 
     def run(self) -> dict:
+        # HI82 item 9: nothing below this point may inspect an existing
+        # stage output for resume until the entire workdir has been proven
+        # to belong to this exact campaign identity.
+        self.ensure_campaign_identity()
+
         record_db = self.s1_record()
         _inventory_json, _inventory_sqlite = self.s1b_inventory(record_db)
         measurements = self.s2_tune()
@@ -721,7 +1016,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         coverage = campaign.run()
     except CampaignError as exc:
-        campaign.write_status("CAMPAIGN", "failed", str(exc))
+        try:
+            campaign.write_status("CAMPAIGN", "failed", str(exc))
+        except CampaignError:
+            # Most importantly: an identity mismatch must not mutate the
+            # existing status document merely to record that this new,
+            # mismatched invocation failed.
+            pass
         print(f"CAMPAIGN FAILED: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(coverage, indent=2))
