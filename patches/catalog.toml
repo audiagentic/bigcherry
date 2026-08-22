@@ -336,6 +336,14 @@ state = "untested"
 plan-item = "HI18"
 
 [[patch]]
+id = "1225_hi85_nccl_heterogeneous_arch_guard"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI85"
+
+[[patch]]
 id = "1230_hip_autotune_inspect"
 kind = "framework"
 origin = "local"
