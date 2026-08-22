@@ -870,5 +870,75 @@ class TestHi31DispatchTransformIntegration(unittest.TestCase):
         self.assertIn("ggml_hip_tuner_resolve(", tune_block)
 
 
+class TestHi67StrictForcedCandidate(unittest.TestCase):
+    """HI67: a CPU-reference correctness producer that asks for a specific
+    candidate via GGML_HIP_FORCE_CANDIDATE must be able to PROVE it actually
+    executed. Without GGML_HIP_FORCE_CANDIDATE_STRICT=1, an unregistered or
+    ineligible forced candidate silently falls back to normal resolution --
+    the process exit code and stderr give no signal, so a correctness
+    producer could record a valid-looking comparison for one that never
+    happened. Strict mode fails closed instead (GGML_ABORT) and, on success,
+    emits a per-dispatch machine-readable marker."""
+
+    def _forced_candidate_struct(self, dispatch: str) -> str:
+        start = dispatch.index("struct ForcedCandidate {")
+        end = dispatch.index("\n};\n", start)
+        return dispatch[start:end]
+
+    def _resolve_forced_block(self, dispatch: str) -> str:
+        resolve = dispatch[dispatch.index("ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(") :]
+        start = resolve.index("if (const auto & forced = ForcedCandidate::instance();")
+        end = resolve.index("\n    }\n", start) + len("\n    }\n")
+        return resolve[start:end]
+
+    def test_strict_flag_read_from_env_alongside_stable_name(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        struct = self._forced_candidate_struct(dispatch)
+        self.assertIn("bool strict = false;", struct)
+        self.assertIn('getenv("GGML_HIP_FORCE_CANDIDATE_STRICT") != nullptr', struct)
+
+    def test_unregistered_candidate_aborts_in_strict_mode(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        struct = self._forced_candidate_struct(dispatch)
+        not_found = struct[struct.index("if (!fc.candidate) {") :]
+        not_found = not_found[: not_found.index("} else {")]
+        self.assertIn("if (fc.strict) {", not_found)
+        self.assertIn("GGML_ABORT(", not_found)
+        # The non-strict warning-and-disable path must still exist, unchanged,
+        # for ordinary (non-correctness-evidence) manual force-candidate use.
+        self.assertIn("GGML_LOG_WARN(", not_found)
+
+    def test_ineligible_candidate_aborts_in_strict_mode_not_falls_through(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        block = self._resolve_forced_block(dispatch)
+        strict_abort = block.index("} else if (forced.strict) {")
+        fallback_warn = block.index("} else {\n            // Not eligible")
+        self.assertLess(strict_abort, fallback_warn)
+        strict_branch = block[strict_abort:fallback_warn]
+        self.assertIn("GGML_ABORT(", strict_branch)
+        # The strict-mode abort branch must be checked BEFORE the silent
+        # fallback branch, not after -- else the fallback would still run
+        # first for a strict-mode caller.
+        fallback_branch = block[fallback_warn:]
+        self.assertIn("using normal resolution instead", fallback_branch)
+
+    def test_successful_strict_selection_emits_per_dispatch_marker(self):
+        dispatch = DISPATCH.read_text(encoding="utf-8")
+        block = self._resolve_forced_block(dispatch)
+        can_execute = block.index("if (forced.candidate->can_execute(forced.candidate, sig, hw)) {")
+        strict_marker = block.index("if (forced.strict) {", can_execute)
+        marker_end = block.index("}", strict_marker)
+        marker_body = block[strict_marker:marker_end]
+        self.assertIn(
+            'GGML_LOG_INFO("BIGCHERRY_FORCE_CANDIDATE_EXECUTED stable_name=%s\\n",',
+            marker_body,
+        )
+        self.assertIn("forced.stable_name)", marker_body)
+        # Marker emission must happen before the mode-dependent early return,
+        # not be skippable by it.
+        early_return = block.index("if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {", can_execute)
+        self.assertLess(strict_marker, early_return)
+
+
 if __name__ == "__main__":
     unittest.main()

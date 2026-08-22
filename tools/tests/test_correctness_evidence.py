@@ -170,6 +170,29 @@ class CollectSeedEvidenceTests(unittest.TestCase):
             )
         self.assertIn("DIFFERENT CPU-reference", str(ctx.exception))
 
+    def test_threshold_mismatch_between_native_and_candidate_fails_closed(self):
+        native_stderr = _digest_line(digest="abc123") + _metric_line(err="1e-05", max_abs="0.001", threshold=5e-4)
+        candidate_stderr = _digest_line(digest="abc123") + _metric_line(err="2e-05", max_abs="0.0012", threshold=1e-3)
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr)
+
+        with self.assertRaises(ce.EvidenceError) as ctx:
+            ce.collect_seed_evidence(
+                Path("/bin/x"), op_filter="m=1,n=1,k=1", target_tensor="dst",
+                candidate_stable_name="mmq:fb1", seed=3, runner=runner,
+            )
+        self.assertIn("DIFFERENT upstream correctness thresholds", str(ctx.exception))
+
+    def test_seed_row_carries_threshold_from_the_metric_line(self):
+        native_stderr = _digest_line(digest="abc123") + _metric_line(err="1e-05", max_abs="0.001", threshold=1e-3)
+        candidate_stderr = _digest_line(digest="abc123") + _metric_line(err="2e-05", max_abs="0.0012", threshold=1e-3)
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr)
+
+        row = ce.collect_seed_evidence(
+            Path("/bin/x"), op_filter="m=1,n=1,k=1", target_tensor="dst",
+            candidate_stable_name="mmq:fb1", seed=3, runner=runner,
+        )
+        self.assertAlmostEqual(row.threshold_t, 1e-3)
+
     def test_missing_digest_fails_closed(self):
         native_stderr = _metric_line(err="1e-05", max_abs="0.001")  # no digest line
         candidate_stderr = _digest_line(digest="abc123") + _metric_line(err="2e-05", max_abs="0.0012")
@@ -198,11 +221,12 @@ class CollectSeedEvidenceTests(unittest.TestCase):
 
 
 class AggregateSeedEvidenceTests(unittest.TestCase):
-    def _row(self, seed, *, e_n=1e-05, e_c=2e-05, max_abs_n=0.001, max_abs_c=0.0012, native_status="ok", candidate_status="ok"):
+    def _row(self, seed, *, e_n=1e-05, e_c=2e-05, max_abs_n=0.001, max_abs_c=0.0012, native_status="ok", candidate_status="ok", threshold_t=5e-4):
         return ce.SeedEvidence(
             seed=seed, reference_digest=f"digest{seed}", e_n_nmse=e_n, e_c_nmse=e_c,
             max_abs_native=max_abs_n, max_abs_candidate=max_abs_c,
             native_execution_status=native_status, candidate_execution_status=candidate_status,
+            threshold_t=threshold_t,
         )
 
     def test_worst_of_seeds_not_average(self):
@@ -211,23 +235,41 @@ class AggregateSeedEvidenceTests(unittest.TestCase):
             self._row(2, e_n=9e-05, e_c=1e-04),  # the worst
             self._row(3, e_n=2e-05, e_c=3e-05),
         ]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         self.assertAlmostEqual(agg.e_n_nmse, 9e-05)
         self.assertAlmostEqual(agg.e_c_nmse, 1e-04)
+
+    def test_threshold_derived_from_seed_rows_not_a_parameter(self):
+        rows = [self._row(i, threshold_t=1e-3) for i in (1, 2, 3)]
+        agg = ce.aggregate_seed_evidence(rows)
+        self.assertAlmostEqual(agg.threshold_t, 1e-3)
+
+    def test_seeds_disagreeing_on_threshold_fails_closed(self):
+        # HI67 threshold-authority fix: T comes from test-backend-ops' own
+        # emitted value per seed, never a caller-supplied float -- seeds that
+        # disagree are not comparable evidence for the same operation.
+        rows = [
+            self._row(1, threshold_t=5e-4),
+            self._row(2, threshold_t=5e-4),
+            self._row(3, threshold_t=1e-3),
+        ]
+        with self.assertRaises(ce.EvidenceError) as ctx:
+            ce.aggregate_seed_evidence(rows)
+        self.assertIn("disagree", str(ctx.exception))
 
     def test_fewer_than_three_seeds_rejected(self):
         rows = [self._row(1), self._row(2)]
         with self.assertRaises(ce.EvidenceError):
-            ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+            ce.aggregate_seed_evidence(rows)
 
     def test_any_failed_seed_fails_closed(self):
         rows = [self._row(1), self._row(2, candidate_status="failed"), self._row(3)]
         with self.assertRaises(ce.EvidenceError):
-            ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+            ce.aggregate_seed_evidence(rows)
 
     def test_dispatchable_true_when_within_headroom(self):
         rows = [self._row(i, e_n=1e-05, e_c=1.2e-05, max_abs_n=0.001, max_abs_c=0.001) for i in (1, 2, 3)]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         self.assertTrue(agg.native_passes)
         self.assertTrue(agg.candidate_passes_headroom)
         self.assertTrue(agg.candidate_max_abs_ok)
@@ -237,20 +279,20 @@ class AggregateSeedEvidenceTests(unittest.TestCase):
         # native uses almost none of its budget; candidate blows way past
         # the 50%-remaining-headroom rule even though it's still < T.
         rows = [self._row(i, e_n=1e-06, e_c=4.9e-04) for i in (1, 2, 3)]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         self.assertTrue(agg.native_passes)
         self.assertFalse(agg.candidate_passes_headroom)
         self.assertFalse(agg.dispatchable)
 
     def test_dispatchable_false_when_native_itself_fails(self):
         rows = [self._row(i, e_n=9e-04, e_c=1e-06) for i in (1, 2, 3)]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         self.assertFalse(agg.native_passes)
         self.assertFalse(agg.dispatchable)
 
     def test_dispatchable_false_when_candidate_max_abs_worse_than_native(self):
         rows = [self._row(i, e_n=1e-05, e_c=1.1e-05, max_abs_n=0.001, max_abs_c=0.002) for i in (1, 2, 3)]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         self.assertFalse(agg.candidate_max_abs_ok)
         self.assertFalse(agg.dispatchable)
 
@@ -301,10 +343,10 @@ class WriteCorrectnessEvidenceTests(unittest.TestCase):
         rows = [
             ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
                              max_abs_native=0.001, max_abs_candidate=0.0012,
-                             native_execution_status="ok", candidate_execution_status="ok")
+                             native_execution_status="ok", candidate_execution_status="ok", threshold_t=5e-4)
             for i in (1, 2, 3)
         ]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         evidence_id = ce.write_correctness_evidence(
             self.conn, build_id=self.build_id, hardware_id=self.hardware_id,
             signature_id=self.signature_id, candidate_id=self.candidate_id,
@@ -325,10 +367,10 @@ class WriteCorrectnessEvidenceTests(unittest.TestCase):
         rows = [
             ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
                              max_abs_native=0.001, max_abs_candidate=0.0012,
-                             native_execution_status="ok", candidate_execution_status="ok")
+                             native_execution_status="ok", candidate_execution_status="ok", threshold_t=5e-4)
             for i in (1, 2, 3)
         ]
-        agg = ce.aggregate_seed_evidence(rows, threshold_t=5e-4)
+        agg = ce.aggregate_seed_evidence(rows)
         ce.write_correctness_evidence(
             self.conn, build_id=self.build_id, hardware_id=self.hardware_id,
             signature_id=self.signature_id, candidate_id=self.candidate_id,

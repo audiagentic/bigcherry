@@ -155,8 +155,8 @@ class CorrectnessEvidenceSchemaTests(unittest.TestCase):
             self.conn.execute(
                 "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
                 "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
-                "native_execution_status, candidate_execution_status) VALUES "
-                "(?, ?, ?, 1e-5, 2e-5, 0.01, 0.012, 'ok', 'ok')",
+                "native_execution_status, candidate_execution_status, threshold_t) VALUES "
+                "(?, ?, ?, 1e-5, 2e-5, 0.01, 0.012, 'ok', 'ok', 5e-4)",
                 (evidence_id, seed, f"digest{seed}"),
             )
         self.conn.commit()

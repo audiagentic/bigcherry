@@ -127,10 +127,13 @@ def evaluate_correctness_gate(
 ) -> tuple[bool, str]:
     """Returns (passed, rejection_status_if_not_passed).
 
-    T (threshold_t) is read from the evidence row itself -- it is a
-    per-OPERATION upstream correctness threshold (RV49), not a promotion
-    policy knob this module can independently derive without a full
-    op-to-threshold table that does not exist elsewhere in this codebase.
+    T (threshold_t) is RE-DERIVED from the child correctness_evidence_seed
+    rows' own threshold_t columns (HI67 threshold-authority fix -- each seed
+    row carries the upstream threshold as ACTUALLY EMITTED by test-backend-
+    ops for that run, not a caller-supplied Python float), the same way
+    e_n_nmse/e_c_nmse/max_abs_* are re-derived rather than trusted off the
+    parent. The parent row's own threshold_t is then cross-checked against
+    that re-derived value below, exactly like the other aggregates.
     contract_version and headroom_fraction ARE promotion-owned policy and
     are independently required to match, never trusted off the row."""
     parent = conn.execute(
@@ -159,7 +162,8 @@ def evaluate_correctness_gate(
 
     seed_rows = conn.execute(
         "SELECT seed, reference_digest, e_n_nmse, e_c_nmse, max_abs_native, "
-        "max_abs_candidate, native_execution_status, candidate_execution_status "
+        "max_abs_candidate, native_execution_status, candidate_execution_status, "
+        "threshold_t "
         "FROM correctness_evidence_seed WHERE correctness_evidence_id = ? ORDER BY seed",
         (evidence_id,),
     ).fetchall()
@@ -173,30 +177,33 @@ def evaluate_correctness_gate(
             seed=row[0], reference_digest=row[1], e_n_nmse=row[2], e_c_nmse=row[3],
             max_abs_native=row[4], max_abs_candidate=row[5],
             native_execution_status=row[6], candidate_execution_status=row[7],
+            threshold_t=row[8],
         )
         for row in seed_rows
     ]
     try:
         aggregate = ce.aggregate_seed_evidence(
-            seed_evidence, threshold_t=threshold_t,
-            headroom_fraction=headroom_fraction, contract_version=contract_version,
+            seed_evidence, headroom_fraction=headroom_fraction, contract_version=contract_version,
         )
     except ce.EvidenceError:
-        # Too few seeds, or a seed that did not execute cleanly -- the
-        # stored parent row claims evidence that does not actually hold up.
+        # Too few seeds, a seed that did not execute cleanly, or the seeds
+        # disagree on threshold_t -- the stored parent row claims evidence
+        # that does not actually hold up.
         return False, "rejected_correctness_contract"
 
-    # Cross-check: the parent row's own claimed aggregates must agree with
-    # what the child seed rows actually recompute to (RV77 Q2: "the DB is
-    # evidence, not authority" -- the parent is an index, the seeds are the
-    # real evidence). A mismatch means the parent row is not a faithful
-    # summary of its own children -- do not trust either number then.
+    # Cross-check: the parent row's own claimed aggregates -- INCLUDING
+    # threshold_t -- must agree with what the child seed rows actually
+    # recompute to (RV77 Q2: "the DB is evidence, not authority" -- the
+    # parent is an index, the seeds are the real evidence). A mismatch means
+    # the parent row is not a faithful summary of its own children -- do not
+    # trust either number then.
     _TOLERANCE = 1e-12
     if (
         abs(aggregate.e_n_nmse - parent_e_n) > _TOLERANCE
         or abs(aggregate.e_c_nmse - parent_e_c) > _TOLERANCE
         or abs(aggregate.max_abs_native - parent_max_abs_n) > _TOLERANCE
         or abs(aggregate.max_abs_candidate - parent_max_abs_c) > _TOLERANCE
+        or abs(aggregate.threshold_t - threshold_t) > _TOLERANCE
     ):
         return False, "rejected_correctness_contract"
 

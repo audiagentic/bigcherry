@@ -745,6 +745,15 @@ CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
     max_abs_candidate         REAL    NOT NULL,
     native_execution_status   TEXT    NOT NULL,   -- ok|failed|timeout
     candidate_execution_status TEXT   NOT NULL,   -- ok|failed|timeout
+    -- HI67 threshold-authority fix (2026-08-22): the upstream correctness
+    -- threshold T as ACTUALLY EMITTED by test-backend-ops for this seed
+    -- (BIGCHERRY_CORRECTNESS_METRIC's own threshold=... field), never a
+    -- caller-supplied Python float. The parent correctness_evidence row's
+    -- own threshold_t is derived FROM these (all seeds of one row must
+    -- agree), not the other way around -- this column is the actual source
+    -- of truth. Added before this feature ever ran against a real database
+    -- (offline-verified only as of this commit), so no migration is needed.
+    threshold_t                REAL   NOT NULL,
     UNIQUE (correctness_evidence_id, seed),
     CHECK (native_execution_status IN ('ok', 'failed', 'timeout')),
     CHECK (candidate_execution_status IN ('ok', 'failed', 'timeout'))

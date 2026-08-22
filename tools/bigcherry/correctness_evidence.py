@@ -159,6 +159,14 @@ class SeedEvidence:
     max_abs_candidate: float
     native_execution_status: str
     candidate_execution_status: str
+    # HI67 threshold-authority fix: the upstream correctness threshold T, as
+    # ACTUALLY EMITTED by test-backend-ops (BIGCHERRY_CORRECTNESS_METRIC's own
+    # threshold=... field) -- never a caller-supplied Python float. Before
+    # this field existed, threshold_t was an argument to
+    # generate_correctness_evidence(), an unreviewed policy-injection surface
+    # with no independent check that the value matched what the binary under
+    # test actually used.
+    threshold_t: float
 
 
 def collect_seed_evidence(
@@ -221,6 +229,15 @@ def collect_seed_evidence(
             f"seed {seed}: candidate run exited 0 but produced no "
             f"BIGCHERRY_CORRECTNESS_METRIC for tensor {target_tensor!r}"
         )
+    if native_metric is not None and candidate_metric is not None \
+            and native_metric.threshold != candidate_metric.threshold:
+        raise EvidenceError(
+            f"seed {seed}: native and candidate runs report DIFFERENT upstream "
+            f"correctness thresholds for tensor {target_tensor!r} (native="
+            f"{native_metric.threshold!r}, candidate={candidate_metric.threshold!r}) "
+            f"-- they must be comparing the same operation under the same "
+            f"upstream test-backend-ops tolerance table."
+        )
 
     return SeedEvidence(
         seed=seed,
@@ -231,6 +248,7 @@ def collect_seed_evidence(
         max_abs_candidate=candidate_metric.max_abs if candidate_metric else float("nan"),
         native_execution_status=native_status,
         candidate_execution_status=candidate_status,
+        threshold_t=native_metric.threshold if native_metric else float("nan"),
     )
 
 
@@ -269,14 +287,20 @@ class EvidenceAggregate:
 
 
 def aggregate_seed_evidence(
-    seed_rows: list[SeedEvidence], *, threshold_t: float,
+    seed_rows: list[SeedEvidence], *,
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
     contract_version: str = CONTRACT_VERSION,
 ) -> EvidenceAggregate:
     """Worst-of-seeds reduction (RV49: "use the WORST result across >=3
     deterministic seeds, not an average"). Fails closed on too few seeds or
     any seed that did not execute cleanly -- a failed seed is evidence of a
-    problem, not something to average away."""
+    problem, not something to average away.
+
+    threshold_t is NOT a parameter here (HI67 threshold-authority fix): it is
+    derived from the seed rows' own SeedEvidence.threshold_t, which in turn
+    comes only from test-backend-ops' own emitted BIGCHERRY_CORRECTNESS_METRIC
+    threshold=... field. Every seed row must agree on T -- disagreement means
+    the seeds are not actually comparable evidence for the same operation."""
     if len(seed_rows) < MIN_SEEDS:
         raise EvidenceError(
             f"need >={MIN_SEEDS} deterministic seeds (RV49 contract), got {len(seed_rows)}"
@@ -294,6 +318,15 @@ def aggregate_seed_evidence(
                 for row in failed
             )
         )
+    thresholds = {row.threshold_t for row in seed_rows}
+    if len(thresholds) != 1:
+        raise EvidenceError(
+            "seeds disagree on the upstream correctness threshold T -- RV49 "
+            "requires a single authoritative T derived from test-backend-ops' "
+            f"own emitted value for every seed of the same comparison, got: "
+            + ", ".join(f"seed={row.seed} threshold_t={row.threshold_t!r}" for row in seed_rows)
+        )
+    threshold_t = next(iter(thresholds))
     return EvidenceAggregate(
         seed_rows=tuple(seed_rows),
         e_n_nmse=max(row.e_n_nmse for row in seed_rows),
@@ -308,7 +341,7 @@ def aggregate_seed_evidence(
 
 def generate_correctness_evidence(
     binary: Path, *, op_filter: str, target_tensor: str, candidate_stable_name: str,
-    threshold_t: float, seeds: tuple[int, ...] = (1, 2, 3),
+    seeds: tuple[int, ...] = (1, 2, 3),
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
     contract_version: str = CONTRACT_VERSION,
     env: dict[str, str] | None = None, runner=subprocess.run,
@@ -319,7 +352,11 @@ def generate_correctness_evidence(
     invocation would make repeated generation runs for the same identity a
     cherry-picking vector, which the schema's UNIQUE constraint on
     (build_id, hardware_id, signature_id, candidate_id, contract_version)
-    additionally forecloses at the storage layer."""
+    additionally forecloses at the storage layer.
+
+    No threshold_t parameter (HI67 threshold-authority fix): T is derived
+    entirely from test-backend-ops' own emitted threshold, via
+    aggregate_seed_evidence()."""
     seed_rows = [
         collect_seed_evidence(
             binary, op_filter=op_filter, target_tensor=target_tensor,
@@ -328,8 +365,7 @@ def generate_correctness_evidence(
         for seed in seeds
     ]
     return aggregate_seed_evidence(
-        seed_rows, threshold_t=threshold_t, headroom_fraction=headroom_fraction,
-        contract_version=contract_version,
+        seed_rows, headroom_fraction=headroom_fraction, contract_version=contract_version,
     )
 
 
@@ -361,11 +397,11 @@ def write_correctness_evidence(
             "INSERT INTO correctness_evidence_seed "
             "(correctness_evidence_id, seed, reference_digest, e_n_nmse, e_c_nmse, "
             "max_abs_native, max_abs_candidate, native_execution_status, "
-            "candidate_execution_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "candidate_execution_status, threshold_t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
                 row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
-                row.candidate_execution_status,
+                row.candidate_execution_status, row.threshold_t,
             ),
         )
     connection.commit()

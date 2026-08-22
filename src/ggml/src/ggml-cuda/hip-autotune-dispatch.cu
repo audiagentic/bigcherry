@@ -328,17 +328,36 @@ struct DispatchScope {
 
 // HI22: GGML_HIP_FORCE_CANDIDATE env var — force a specific candidate for every
 // dispatch. Used for manual testing of a single geometry without tuning.
+//
+// HI67 (2026-08-22): GGML_HIP_FORCE_CANDIDATE_STRICT=1 turns an ineligible or
+// unregistered forced candidate from a one-shot warning + silent fallback to
+// normal resolution into a hard, immediate abort. A CPU-reference correctness
+// producer (tools/bigcherry/correctness_evidence.py) that asks for a specific
+// candidate and silently gets ordinary resolution instead would record a
+// perfectly plausible-looking "candidate" result for a comparison that never
+// actually happened -- the process's own exit code and stderr give no signal
+// that anything went wrong. Strict mode is diagnostic/test-only (opt-in via
+// GGML_HIP_FORCE_CANDIDATE, itself never set in production) so failing hard
+// here costs nothing outside deliberate correctness-evidence collection.
 struct ForcedCandidate {
     const char * stable_name = nullptr;
     const ggml_hip_candidate_descriptor * candidate = nullptr;
+    bool strict = false;
 
     static const ForcedCandidate & instance() {
         static ForcedCandidate inst = [] {
             ForcedCandidate fc;
             if (const char * name = getenv("GGML_HIP_FORCE_CANDIDATE")) {
                 fc.stable_name = name;
+                fc.strict = getenv("GGML_HIP_FORCE_CANDIDATE_STRICT") != nullptr;
                 fc.candidate = ggml_hip_registry_find(name);
                 if (!fc.candidate) {
+                    if (fc.strict) {
+                        GGML_ABORT("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s not found in "
+                                   "registry (GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing "
+                                   "closed instead of silently falling back to normal "
+                                   "resolution)", name);
+                    }
                     GGML_LOG_WARN("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s not "
                                   "found in registry — force-candidate disabled\n",
                                   name);
@@ -499,9 +518,33 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             // provenance and can make later callers treat it as persistent.
             resolved.from_cache = false;
             forced_selected = true;
+            if (forced.strict) {
+                // Machine-readable proof, for a correctness-evidence producer
+                // parsing stderr, that THIS exact requested candidate is the
+                // one that actually executed -- not merely that force-
+                // candidate was configured. Emitted once per process is not
+                // enough here (unlike the one-shot warnings elsewhere in this
+                // file): a strict-mode caller needs this on every dispatch it
+                // is trying to prove, since a single process may exercise
+                // several signatures against the same forced candidate.
+                GGML_LOG_INFO("BIGCHERRY_FORCE_CANDIDATE_EXECUTED stable_name=%s\n",
+                              forced.stable_name);
+            }
             if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
                 return resolved;
             }
+        } else if (forced.strict) {
+            GGML_ABORT("bigcherry: GGML_HIP_FORCE_CANDIDATE=%s is not eligible for this "
+                       "signature (%s %s %s m=%lld n=%lld k=%lld) "
+                       "(GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing closed instead of "
+                       "silently falling back to normal resolution)",
+                       forced.stable_name,
+                       sig.src0_type ? "t" : "?",
+                       sig.src1_type ? "t" : "?",
+                       sig.dst_type ? "t" : "?",
+                       (long long)sig.ne1[1],
+                       (long long)sig.ned[1],
+                       (long long)sig.ne0[0]);
         } else {
             // Not eligible — fall through to normal resolution with a
             // one-shot warning.

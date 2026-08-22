@@ -84,10 +84,11 @@ def correctness_gated_dispatch_db(root: Path, *, dispatch_hex: str) -> Path:
     seeds = [
         ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
                          max_abs_native=0.001, max_abs_candidate=0.0009,
-                         native_execution_status="ok", candidate_execution_status="ok")
+                         native_execution_status="ok", candidate_execution_status="ok",
+                         threshold_t=5e-4)
         for i in (1, 2, 3)
     ]
-    aggregate = ce.aggregate_seed_evidence(seeds, threshold_t=5e-4)
+    aggregate = ce.aggregate_seed_evidence(seeds)
     conn.execute(
         "INSERT INTO correctness_evidence (build_id, hardware_id, signature_id, "
         "candidate_id, native_candidate_id, contract_version, threshold_t, "
@@ -103,11 +104,11 @@ def correctness_gated_dispatch_db(root: Path, *, dispatch_hex: str) -> Path:
         conn.execute(
             "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
             "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
-            "native_execution_status, candidate_execution_status) VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "native_execution_status, candidate_execution_status, threshold_t) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
              row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
-             row.candidate_execution_status),
+             row.candidate_execution_status, row.threshold_t),
         )
     conn.commit()
     conn.close()
