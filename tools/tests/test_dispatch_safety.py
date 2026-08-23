@@ -1125,5 +1125,129 @@ class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
         self.assertNotIn("ggml_hip_dispatch_digest(hardware_digest, signature_digest, ctx.device", dispatch)
 
 
+class TestHi64ElapsedTimeRetry(unittest.TestCase):
+    """HI64 (2026-08-23, real Windows/WDDM hardware finding, RX 7900 GRE):
+    an unblocked tuning sweep reproduced deterministically across two
+    independent runs, poisoning the whole process on the FIRST signature
+    after 11/11 candidates measured cleanly. GGML_HIP_TUNE_TRACE_ATTEMPTS
+    tracing found zero hip_ok()-logged HIP API failures anywhere across all
+    runs -- every checked HIP call succeeded -- narrowing the cause to one
+    of the two silent numeric-sanity checks in time_candidate()'s timed-
+    sample loop (a non-finite/non-positive hipEventElapsedTime() reading for
+    a sub-millisecond kernel), not a driver crash/TDR event. Fix: a bounded
+    retry, WITHIN one timed sample, for that specific silent-branch class
+    only -- every hip_ok()-checked call keeps its original immediately-fatal
+    behavior on a genuine API failure."""
+
+    def test_config_field_declared_with_default(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        self.assertIn(
+            "int    elapsed_time_retry_max  = 2;       // GGML_HIP_TUNE_ELAPSED_RETRY",
+            header,
+        )
+
+    def test_env_var_parsed_and_bounded(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn(
+            'if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY")) {\n'
+            '            int_env("GGML_HIP_TUNE_ELAPSED_RETRY", 0, 10, c.elapsed_time_retry_max);\n'
+            "        }",
+            tuner,
+        )
+
+    def test_hip_ok_checked_calls_in_the_retry_loop_remain_immediately_fatal(self):
+        # A genuine HIP API failure (anything hip_ok() itself catches) must
+        # never be retried -- only the two silent numeric-sanity checks are.
+        tuner = TUNER.read_text(encoding="utf-8")
+        loop_start = tuner.index("const int max_elapsed_time_attempts =")
+        loop_end = tuner.index("if (!sample_ok) {", loop_start)
+        loop_body = tuner[loop_start:loop_end]
+        for hip_call in (
+            'hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")',
+            'hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")',
+            'hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")',
+            'hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")',
+        ):
+            call_at = loop_body.index(hip_call)
+            # Each of these sits inside its own `if (!hip_ok(...)) { ... return
+            # false; }` block, unlike the two numeric-sanity checks below.
+            following = loop_body[call_at : call_at + 400]
+            self.assertIn("return false;", following)
+
+    def test_numeric_sanity_checks_are_retryable_not_immediately_fatal(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        loop_start = tuner.index("const int max_elapsed_time_attempts =")
+        loop_end = tuner.index("if (!sample_ok) {", loop_start)
+        loop_body = tuner[loop_start:loop_end]
+        ms_check = loop_body.index("if (!std::isfinite(ms) || ms <= 0.0f) {")
+        self.assertIn(
+            "continue;", loop_body[ms_check : ms_check + 120]
+        )
+        us_check = loop_body.index(
+            "if (!std::isfinite(candidate_us) || candidate_us <= 0.0) {"
+        )
+        self.assertIn(
+            "continue;", loop_body[us_check : us_check + 120]
+        )
+        # Neither retryable branch may itself call
+        # disable_smi_after_measurement_failure() -- only exhausting every
+        # attempt (the `if (!sample_ok)` block, outside this slice) may.
+        self.assertNotIn(
+            "disable_smi_after_measurement_failure",
+            loop_body[ms_check : us_check + 200],
+        )
+
+    def test_retry_bound_derives_from_config_not_a_bare_constant(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "const int max_elapsed_time_attempts =\n"
+            "            1 + std::max(0, ggml_hip_tuner_get_config().elapsed_time_retry_max);",
+            tuner,
+        )
+
+    def test_warmup_sync_checks_route_through_hip_ok_not_silent_comparison(self):
+        # HI64 (2026-08-23, second real-hardware finding): the retry fix
+        # alone did not recover a second reproduction of the flake -- the
+        # trace showed zero elapsed_time_retry events, proving the failure
+        # never reached the branches the first fix covered. Root cause:
+        # these two warmup-phase checks compared a HIP status directly
+        # instead of going through hip_ok(), so a real failure here was
+        # invisible in the log too. Fixed the same way; NOT retried (a
+        # warmup-phase synchronization failure is not the same narrow class
+        # of "spurious sub-ms elapsedTime reading" the retry loop targets).
+        tuner = TUNER.read_text(encoding="utf-8")
+        warmup_region_start = tuner.index('"warmup_complete", candidate->stable_name);')
+        warmup_region_end = tuner.index('"synchronize", candidate->stable_name);')
+        warmup_region = tuner[warmup_region_start:warmup_region_end]
+        self.assertIn(
+            'hip_ok(hipStreamSynchronize(lc.stream), "hipStreamSynchronize(warmup)")',
+            warmup_region,
+        )
+        self.assertIn(
+            'hip_ok(hipGetLastError(), "hipGetLastError(post-warmup)")',
+            warmup_region,
+        )
+        self.assertNotIn("hipStreamSynchronize(lc.stream) != hipSuccess", warmup_region)
+        self.assertNotIn("hipGetLastError() != hipSuccess", warmup_region)
+
+    def test_post_measurement_check_routes_through_hip_ok_not_silent_comparison(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn(
+            'hip_ok(hipGetLastError(), "hipGetLastError(post-measurement)")',
+            tuner,
+        )
+        self.assertNotIn("last_status != hipSuccess", tuner)
+
+    def test_exhausting_retries_still_poisons_exactly_as_before(self):
+        # Zero regression to the permanent-failure path: exhausting every
+        # attempt still calls disable_smi_after_measurement_failure() and
+        # returns false, unchanged from the pre-HI64-retry behavior.
+        tuner = TUNER.read_text(encoding="utf-8")
+        exhausted = tuner.index("if (!sample_ok) {")
+        block = tuner[exhausted : tuner.index("}", tuner.index("return false;", exhausted)) + 1]
+        self.assertIn("disable_smi_after_measurement_failure();", block)
+        self.assertIn("return false;", block)
+
+
 if __name__ == "__main__":
     unittest.main()

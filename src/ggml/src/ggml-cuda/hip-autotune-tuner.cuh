@@ -86,6 +86,18 @@ struct ggml_hip_tuner_config {
     double min_sample_us           = 100.0;   // GGML_HIP_TUNE_MIN_SAMPLE_US
     int    max_launches_per_sample = 32;      // GGML_HIP_TUNE_MAX_LPS
 
+    // HI64: bounded retry, WITHIN one timed sample, for a spurious non-
+    // positive/non-finite hipEventElapsedTime() reading only -- real-hardware
+    // evidence (Windows/WDDM, RX 7900 GRE) found this specific silent branch
+    // firing on a sub-millisecond kernel with every checked HIP API call
+    // still reporting success, consistent with event-timestamp precision
+    // rather than a hard fault. A genuine HIP API failure (anything hip_ok()
+    // itself catches) is NEVER retried -- it stays immediately fatal, same as
+    // before this item: "a wrong measurement is worse than no measurement"
+    // only applies to trusting a bad number, not to masking a real error.
+    // 0 disables retry, restoring the original immediately-fatal behavior.
+    int    elapsed_time_retry_max  = 2;       // GGML_HIP_TUNE_ELAPSED_RETRY
+
     // HI34 step 3 (Slice B0): cache eviction between timed samples.
     // Diagnostic only, default OFF: the residency experiment needs a cold
     // extreme to compare against the hot back-to-back state. Sizing is
