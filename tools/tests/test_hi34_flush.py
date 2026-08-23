@@ -74,7 +74,11 @@ class FlushContractTests(unittest.TestCase):
         # final hipEventSynchronize(stop).
         loop = self.tuner.find("for (int s = 0; s < samples; ++s)")
         evict = self.tuner.find("&& !launch_cache_evict(lc))")
-        host_start = self.tuner.find("const int64_t host_start = ggml_time_us();")
+        # HI64 (2026-08-23): host_start's declaration moved outside the
+        # sample loop (it now needs to survive a bounded elapsed-time retry
+        # attempt), so the per-attempt assignment is no longer a `const`
+        # declaration -- same ordering invariant, updated literal text.
+        host_start = self.tuner.find("host_start = ggml_time_us();")
         record_start = self.tuner.find("hipEventRecord(start, lc.stream)")
         self.assertGreater(loop, 0)
         self.assertGreater(evict, loop)

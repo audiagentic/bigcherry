@@ -1287,12 +1287,16 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         }
     }
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
-    if (hipStreamSynchronize(lc.stream) != hipSuccess) {
+    // HI64: these two checks used to compare the raw status directly instead
+    // of going through hip_ok(), so a real failure here was invisible in the
+    // log -- exactly the class of gap that made this item's original
+    // real-hardware finding harder to pin down than it needed to be.
+    if (!hip_ok(hipStreamSynchronize(lc.stream), "hipStreamSynchronize(warmup)")) {
         destroy_events();
         disable_smi_after_measurement_failure();
         return false;
     }
-    if (hipGetLastError() != hipSuccess) {
+    if (!hip_ok(hipGetLastError(), "hipGetLastError(post-warmup)")) {
         destroy_events();
         disable_smi_after_measurement_failure();
         return false;
@@ -1342,42 +1346,68 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
             trace_workspace_event(stage, "rewarm_complete", candidate->stable_name);
         }
         trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
-        const int64_t host_start = ggml_time_us();
-        if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        // Several launches per sample when one kernel is below event
-        // resolution; the mean of the batch is the sample.
-        for (int i = 0; i < launches_per_sample; ++i) {
-            if (!do_launch()) {
+        // HI64: bounded retry for a spurious non-positive/non-finite
+        // hipEventElapsedTime() reading only (see the field comment on
+        // ggml_hip_tuner_config::elapsed_time_retry_max for the real-
+        // hardware finding this responds to). Every hip_ok()-checked call
+        // below keeps its original immediately-fatal behavior on a genuine
+        // API failure -- only the two silent numeric-sanity checks that used
+        // to fall straight through to disable_smi_after_measurement_failure()
+        // now get bounded extra attempts first.
+        const int max_elapsed_time_attempts =
+            1 + std::max(0, ggml_hip_tuner_get_config().elapsed_time_retry_max);
+        int64_t host_start = 0;
+        int64_t host_end = 0;
+        double us = 0.0;
+        bool sample_ok = false;
+        for (int attempt = 0; attempt < max_elapsed_time_attempts && !sample_ok; ++attempt) {
+            if (attempt > 0) {
+                trace_workspace_event(stage, "elapsed_time_retry", candidate->stable_name);
+            }
+            host_start = ggml_time_us();
+            if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
                 destroy_events();
                 disable_smi_after_measurement_failure();
                 return false;
             }
-        }
-        if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        const int64_t host_end = ggml_time_us();
+            // Several launches per sample when one kernel is below event
+            // resolution; the mean of the batch is the sample.
+            for (int i = 0; i < launches_per_sample; ++i) {
+                if (!do_launch()) {
+                    destroy_events();
+                    disable_smi_after_measurement_failure();
+                    return false;
+                }
+            }
+            if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            host_end = ggml_time_us();
 
-        float ms = 0.0f;
-        if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")
-                || !std::isfinite(ms) || ms <= 0.0f) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
+            float ms = 0.0f;
+            if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            if (!std::isfinite(ms) || ms <= 0.0f) {
+                continue;  // retryable: candidate for the bounded loop above
+            }
+            const double candidate_us = (double) ms * 1000.0 / (double) launches_per_sample;
+            if (!std::isfinite(candidate_us) || candidate_us <= 0.0) {
+                continue;  // retryable, same class as the ms check above
+            }
+            us = candidate_us;
+            sample_ok = true;
         }
-        const double us = (double) ms * 1000.0 / (double) launches_per_sample;
-        if (!std::isfinite(us) || us <= 0.0) {
+        if (!sample_ok) {
             destroy_events();
             disable_smi_after_measurement_failure();
             return false;
@@ -1402,8 +1432,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         *pool_peak_bytes = peak >= workspace_baseline ? peak - workspace_baseline : 0;
     }
 #endif
-    const hipError_t last_status = hipGetLastError();
-    if (!destroy_ok || last_status != hipSuccess) {
+    // HI64: same gap as the warmup checks above -- log the real status
+    // instead of comparing it silently, so a genuine post-measurement error
+    // is attributable rather than indistinguishable from the numeric-sanity
+    // failures the retry loop above already handles.
+    if (!hip_ok(hipGetLastError(), "hipGetLastError(post-measurement)") || !destroy_ok) {
         disable_smi_after_measurement_failure();
         return false;
     }
@@ -1920,6 +1953,9 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_MAX_LPS")) {
             int_env("GGML_HIP_TUNE_MAX_LPS", 1, 100000, c.max_launches_per_sample);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY")) {
+            int_env("GGML_HIP_TUNE_ELAPSED_RETRY", 0, 10, c.elapsed_time_retry_max);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
             int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
