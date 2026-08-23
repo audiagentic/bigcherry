@@ -17,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
+SIGNATURE_H = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.h"
 
 
 class Hi37WorkloadDigestContractTests(unittest.TestCase):
@@ -55,6 +56,20 @@ class Hi37WorkloadDigestContractTests(unittest.TestCase):
         # A missing GGML_HIP_TUNE_WORKLOAD must still produce valid JSON
         # (workload_label:"") rather than a null/garbage %s argument.
         self.assertIn('workload_label_env ? workload_label_env : "");', self.tuner)
+
+
+class Hi37DiagnosticsStructRemovedTests(unittest.TestCase):
+    """HI37 notes: ggml_hip_diagnostics was declared since HI05, never
+    instantiated anywhere in this tree, and could only be populated by
+    plumbing model metadata across the ggml/llama boundary this overlay
+    exists to avoid -- deleted rather than left as a struct that was either
+    a plan or a lie. Its intended purpose is now served by the workload
+    digest (this file) and dispatch_db's real, populated
+    observation.diagnostics_json column."""
+
+    def test_struct_is_gone(self):
+        text = SIGNATURE_H.read_text(encoding="utf-8")
+        self.assertNotIn("struct ggml_hip_diagnostics", text)
 
 
 if __name__ == "__main__":

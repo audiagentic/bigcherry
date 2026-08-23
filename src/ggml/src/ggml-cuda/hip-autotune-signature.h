@@ -34,15 +34,19 @@
 #define GGML_HIP_PERSON_HARDWARE  "llama-hardware"
 #define GGML_HIP_PERSON_DISPATCH  "llama-dispatch"
 
-// Observation metadata. Recorded alongside a signature, never hashed into it.
-// Keeping it in a separate struct is the mechanism that enforces standards
-// 5.1: there is no field here that *could* reach the digest.
-struct ggml_hip_diagnostics {
-    const char * model_name;  // may be nullptr
-    const char * node_name;
-    int          layer_index; // -1 when unknown
-    int          device_ordinal;
-};
+// HI37: ggml_hip_diagnostics (model_name/node_name/layer_index/
+// device_ordinal) was declared here since HI05 as the intended vehicle for
+// standards 5.1/15.1's "diagnostic identity travels beside the signature,
+// never into it" -- and never instantiated anywhere in this tree. It would
+// have needed model metadata plumbed across the ggml/llama boundary this
+// overlay deliberately avoids crossing, which is why it stayed empty rather
+// than because nobody got to it. Deleted rather than left as a struct that
+// was either a plan or a lie (HI37's own framing). The standard it was meant
+// to satisfy is implemented a different way: the workload digest (below)
+// derives identity from data a run already has -- the signatures it
+// observed -- with no model metadata required, and per-observation
+// diagnostic data has its own real, populated home in dispatch_db's
+// observation.diagnostics_json column (tools/bigcherry/inventory.py).
 
 // Build a signature from the device-local tensors of one operation.
 //
