@@ -2295,11 +2295,16 @@ static bool hi69_correctness_timing_enabled() {
 // poisoned/invalid-config checks (i.e. only around real cold-path work),
 // and it fires on every exit automatically.
 struct Hi69ColdTunerScope {
-    std::chrono::steady_clock::time_point t0;
+    // Declaration order matters: active must initialize (and be checked)
+    // before t0's initializer runs, or a disabled run still pays one
+    // steady_clock::now() per cold resolution (dev-gpt-agent review,
+    // req_e56f27a8fbda4219, P2 hardening -- harmless given how cheap the
+    // call is, but the opt-in diagnostic should cost nothing when off).
     bool active;
+    std::chrono::steady_clock::time_point t0;
     Hi69ColdTunerScope()
-        : t0(std::chrono::steady_clock::now())
-        , active(hi69_correctness_timing_enabled()) {}
+        : active(hi69_correctness_timing_enabled())
+        , t0(active ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}) {}
     ~Hi69ColdTunerScope() {
         if (!active) return;
         const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
