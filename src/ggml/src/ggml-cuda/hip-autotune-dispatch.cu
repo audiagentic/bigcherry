@@ -207,6 +207,44 @@ static bool dispatch_counters_enabled() {
     return enabled.load(std::memory_order_relaxed);
 }
 
+// ---------------------------------------------------- cached hardware identity
+
+// HI93 (RP4): a device's hardware key (architecture, wave size, compute
+// units, feature flags, shared memory per block) and its digest never
+// change for the life of the process, but the cold-path resolver used to
+// reconstruct both from scratch on every cold signature. Keyed directly by
+// ctx.device -- unlike HI64's PerDeviceState<T>, which queries
+// hipGetDevice() itself, every call site here already has the target
+// device index, so there is nothing to ask.
+//
+// unordered_map entries are never erased, so a reference returned into it
+// stays valid for the life of the process even across later insertions
+// (only iterators, not references, can be invalidated by a rehash) --
+// safe to return by reference after the lock guarding the lookup/insert
+// itself goes out of scope.
+struct HardwareIdentity {
+    ggml_hip_hardware_key_v1 key;
+    ggml_hip_digest digest;
+};
+
+std::mutex g_hardware_identity_mutex;
+std::unordered_map<int, HardwareIdentity> g_hardware_identity_by_device;
+
+static const HardwareIdentity & cached_hardware_identity(int device) {
+    std::lock_guard<std::mutex> lock(g_hardware_identity_mutex);
+    const auto found = g_hardware_identity_by_device.find(device);
+    if (found != g_hardware_identity_by_device.end()) {
+        return found->second;
+    }
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
+    }
+    HardwareIdentity identity;
+    identity.key    = ggml_hip_make_hardware_key(device);
+    identity.digest = ggml_hip_hardware_digest(identity.key);
+    return g_hardware_identity_by_device.emplace(device, identity).first->second;
+}
+
 // -------------------------------------------------------------- native select
 
 // Reproduces the branch order of upstream `ggml_cuda_mul_mat`. Any divergence
@@ -581,10 +619,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // modes retain the original fast bypass semantics.
     bool forced_selected = false;
     if (const auto & forced = ForcedCandidate::instance(); forced.candidate != nullptr) {
-        const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
-        if (dispatch_counters_enabled()) {
-            g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
-        }
+        const ggml_hip_hardware_key_v1 & hw = cached_hardware_identity(ctx.device).key;
         if (forced.candidate->can_execute(forced.candidate, sig, hw)) {
             resolved.candidate  = forced.candidate;
             resolved.variant    = forced.candidate->variant;
@@ -639,11 +674,11 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         }
     }
 
-    const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
-    const ggml_hip_digest hardware_digest  = ggml_hip_hardware_digest(hw);
+    const HardwareIdentity & hw_identity = cached_hardware_identity(ctx.device);
+    const ggml_hip_hardware_key_v1 & hw = hw_identity.key;
+    const ggml_hip_digest hardware_digest  = hw_identity.digest;
     const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
     if (dispatch_counters_enabled()) {
-        g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
         g_dispatch_counters.signature_digest_builds.fetch_add(1, std::memory_order_relaxed);
     }
     const ggml_hip_digest dispatch_digest =

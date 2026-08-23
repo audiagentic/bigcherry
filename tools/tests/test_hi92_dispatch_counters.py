@@ -104,12 +104,23 @@ class Hi92DispatchCountersContractTests(unittest.TestCase):
         window = self.src[max(0, idx - 120):idx]
         self.assertIn("if (usable) {", window)
 
-    def test_hardware_key_builds_counted_at_both_call_sites(self):
+    def test_hardware_key_builds_counted_only_on_a_real_cache_miss(self):
+        # HI93 (RP4): hardware key/digest construction is cached per device,
+        # so this counter's meaning is "how many times did we actually
+        # rebuild it", not "how many call sites touched it" -- one count
+        # site, inside the cache miss branch, not one per caller.
         self.assertEqual(
-            self.src.count("g_dispatch_counters.hardware_key_builds.fetch_add"), 2,
-            "expected one count site for the forced-candidate hardware key "
-            "build and one for the main resolution path",
+            self.src.count("g_dispatch_counters.hardware_key_builds.fetch_add"), 1,
         )
+        fn_idx = self.src.index("cached_hardware_identity(int device) {")
+        incr_idx = self.src.index(
+            "g_dispatch_counters.hardware_key_builds.fetch_add", fn_idx
+        )
+        window = self.src[fn_idx:incr_idx]
+        # The increment must be reached only after the "found in cache"
+        # early return, i.e. only on the miss path.
+        self.assertIn("found != g_hardware_identity_by_device.end()) {\n        return found->second;",
+                      window)
 
     def test_report_computes_hit_rate_percentages(self):
         self.assertIn("L1 hit=%llu miss=%llu (%.1f%%)", self.src)
