@@ -81,27 +81,36 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
             self.assertNotEqual(prov["fork-commit"], prov["original-commit"],
                                 f"{stem}: fork and original commit must differ (rebase)")
 
+    # Patches promoted out of the first-sweep isolation contract after
+    # passing their isolated bench + review (RD19: real-hardware evidence,
+    # gpt-dev-agent PROMOTE verdict, session ses_866bf44313864664, 2026-08-24).
+    PROMOTED_RDNA_PATCHES = frozenset({"1200_rd19_single_gpu_meta_bypass"})
+
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
         """The first-sweep isolation contract: rdna-boosts patches must NOT be
         pullable by the production groups, so a native build cannot pick them
-        up accidentally."""
+        up accidentally -- except for patches that have since been promoted."""
         from bigcherry import patchset
         for info in patchset.describe():
-            if info.group == "rdna-boosts":
+            if info.group == "rdna-boosts" and info.name not in self.PROMOTED_RDNA_PATCHES:
                 self.assertEqual(info.state, "untested", f"{info.name}: expected untested")
+            elif info.name in self.PROMOTED_RDNA_PATCHES:
+                self.assertEqual(info.state, "validated", f"{info.name}: expected validated")
 
     def test_rdna_patches_not_in_production_patch_sets(self):
         """recipes.toml's framework and validated-enhancements sets are exact
-        lists; the new patches must not appear in them until promoted."""
+        lists; unpromoted patches must not appear in them until promoted."""
         recipes = tomllib.loads((ROOT / "config" / "recipes.toml").read_text(encoding="utf-8"))
         production = set()
         for patch_set in recipes.get("patch-set", {}).values():
             production.update(patch_set.get("patches", []))
-        for patch_id in ("1200_rd19_single_gpu_meta_bypass",
-                         "1201_rd20_attn_gate_tp_split"):
+        for patch_id in ("1201_rd20_attn_gate_tp_split",):
             self.assertNotIn(patch_id, production,
                              f"{patch_id} must not be in a production patch-set "
                              f"before isolated validation")
+        for patch_id in self.PROMOTED_RDNA_PATCHES:
+            self.assertIn(patch_id, production,
+                          f"{patch_id} was promoted and must be in a production patch-set")
 
     def test_cross_check_detects_provenance_mismatch(self):
         """A corrupted PROVENANCE must be caught, not silently accepted."""

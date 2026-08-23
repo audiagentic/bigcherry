@@ -75,7 +75,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",

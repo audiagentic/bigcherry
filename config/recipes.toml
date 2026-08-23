@@ -25,7 +25,9 @@ patches = [
 required-state = "validated"
 
 [patch-set.validated-enhancements]
-patches = []
+patches = [
+  "1200_rd19_single_gpu_meta_bypass",
+]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
