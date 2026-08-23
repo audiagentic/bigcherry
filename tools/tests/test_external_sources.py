@@ -131,5 +131,83 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         self.assertIn("cross-check: OK", buf.getvalue())
 
 
+def _minimal_registry(tmp_path: Path, *, upstream_equivalent_line: str = "") -> Path:
+    sha = "a" * 40
+    registry_path = tmp_path / "external-sources.toml"
+    registry_path.write_text(
+        "\n".join([
+            "version = 1",
+            "",
+            "[[sources]]",
+            'id = "unit-source"',
+            'repo = "local"',
+            'locator = "test"',
+            "",
+            "[[sources.snapshots]]",
+            'label = "test"',
+            f'head = "{sha}"',
+            f'base = "{sha}"',
+            "active = true",
+            "",
+            "[[sources.tracked]]",
+            f'commit = "{sha}"',
+            'title = "minimal tracked entry"',
+            'plan-item = "RD999"',
+            'status = "planned"',
+            upstream_equivalent_line,
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    return registry_path
+
+
+class UpstreamEquivalentSchemaTests(unittest.TestCase):
+    """RD99 phase 1: load_registry() validates the optional
+    upstream-equivalent field exactly like the existing `original` field
+    (40-hex or absent)."""
+
+    def test_absent_field_loads_fine(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _minimal_registry(Path(tmp))
+            registry = src.load_registry(path)
+            entry = registry["sources"][0]["tracked"][0]
+            self.assertNotIn("upstream-equivalent", entry)
+
+    def test_valid_40hex_field_loads_fine(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _minimal_registry(
+                Path(tmp), upstream_equivalent_line=f'upstream-equivalent = "{"b" * 40}"',
+            )
+            registry = src.load_registry(path)
+            entry = registry["sources"][0]["tracked"][0]
+            self.assertEqual(entry["upstream-equivalent"], "b" * 40)
+
+    def test_malformed_field_is_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _minimal_registry(
+                Path(tmp), upstream_equivalent_line='upstream-equivalent = "not-a-sha"',
+            )
+            with self.assertRaisesRegex(ValueError, "upstream-equivalent is not a 40-hex SHA"):
+                src.load_registry(path)
+
+    def test_no_currently_tracked_entry_has_a_fabricated_equivalent(self):
+        """RD99's own scope note: populate upstream-equivalent only by
+        confirming a real landed change, never invent one to exercise the
+        feature. The committed registry must not carry a placeholder."""
+        registry = src.load_registry()
+        for source in registry["sources"]:
+            for entry in source.get("tracked", []):
+                equiv = entry.get("upstream-equivalent")
+                if equiv is not None:
+                    self.assertNotEqual(
+                        equiv, entry["commit"],
+                        f"{entry['commit'][:9]}: upstream-equivalent must not equal "
+                        "the tracked commit itself",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
