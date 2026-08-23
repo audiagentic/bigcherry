@@ -190,12 +190,25 @@ class SeedEvidence:
 
 def collect_seed_evidence(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
-    target_tensor: str, candidate_stable_name: str,
+    target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
     seed: int, env: dict[str, str] | None = None, runner=subprocess.run,
 ) -> SeedEvidence:
     """Run test-backend-ops twice for one seed (forced-native, forced-
-    candidate) and reduce both runs to one SeedEvidence row, matched by
-    tensor name.
+    candidate) and reduce both runs to one SeedEvidence row.
+
+    ``target_tensor`` is the tensor BIGCHERRY_CORRECTNESS_METRIC is read
+    from -- the actual output being compared. ``digest_tensor`` (defaults to
+    ``target_tensor`` if not given, matching the original -p/op_filter
+    behavior) is the tensor BIGCHERRY_REF_DIGEST is read from, to prove both
+    runs saw the SAME reference input -- these are the same tensor for a
+    registered test-backend-ops case (which happens to also pre-fill its
+    named destination tensor with random data, incidentally giving it a
+    digest too), but NOT for a --test-file/test_generic_op case (HI80,
+    2026-08-23 real-hardware finding): its destination tensor is never
+    pre-filled, so it never gets a BIGCHERRY_REF_DIGEST line at all, even
+    though its BIGCHERRY_CORRECTNESS_METRIC line fires correctly. Passing
+    a real leaf tensor name (e.g. "leaf_0") as digest_tensor there is the
+    fix -- it is a genuine random-input tensor and always gets digested.
 
     Fails closed: a missing digest/metric line, or a digest mismatch between
     the two runs, raises EvidenceError rather than silently producing a
@@ -205,6 +218,7 @@ def collect_seed_evidence(
     code alone does not raise -- it is recorded as execution_status='failed'
     so the caller (aggregate_seed_evidence) can fail closed on ANY failed
     seed rather than only ones that also happened to omit a digest line."""
+    digest_tensor = digest_tensor if digest_tensor is not None else target_tensor
     native_run = run_test_backend_ops(
         binary, op_filter=op_filter, test_file=test_file, seed=seed, dispatch_mode="native",
         forced_candidate=None, env=env, runner=runner,
@@ -217,11 +231,11 @@ def collect_seed_evidence(
     native_status = "ok" if native_run.returncode == 0 else "failed"
     candidate_status = "ok" if candidate_run.returncode == 0 else "failed"
 
-    native_digest = find_digest_for_tensor(native_run.stderr, target_tensor)
-    candidate_digest = find_digest_for_tensor(candidate_run.stderr, target_tensor)
+    native_digest = find_digest_for_tensor(native_run.stderr, digest_tensor)
+    candidate_digest = find_digest_for_tensor(candidate_run.stderr, digest_tensor)
     if native_digest is None or candidate_digest is None:
         raise EvidenceError(
-            f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {target_tensor!r} "
+            f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
             f"(native found={native_digest is not None}, "
             f"candidate found={candidate_digest is not None}) -- is the binary "
             f"built with patches/1222_hi67_deterministic_test_backend_ops_seed.py "
@@ -230,7 +244,7 @@ def collect_seed_evidence(
     if native_digest.digest != candidate_digest.digest:
         raise EvidenceError(
             f"seed {seed}: native and candidate runs saw DIFFERENT CPU-reference "
-            f"input for tensor {target_tensor!r} (native digest="
+            f"input for tensor {digest_tensor!r} (native digest="
             f"{native_digest.digest}, candidate digest={candidate_digest.digest}) "
             f"-- the comparison is invalid, not just imprecise. Check that both "
             f"runs exercise the identical op filter in the identical operand "
@@ -361,7 +375,7 @@ def aggregate_seed_evidence(
 
 def generate_correctness_evidence(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
-    target_tensor: str, candidate_stable_name: str,
+    target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
     seeds: tuple[int, ...] = (1, 2, 3),
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
     contract_version: str = CONTRACT_VERSION,
@@ -381,6 +395,7 @@ def generate_correctness_evidence(
     seed_rows = [
         collect_seed_evidence(
             binary, op_filter=op_filter, test_file=test_file, target_tensor=target_tensor,
+            digest_tensor=digest_tensor,
             candidate_stable_name=candidate_stable_name, seed=seed, env=env, runner=runner,
         )
         for seed in seeds

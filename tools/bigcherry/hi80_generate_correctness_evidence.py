@@ -131,7 +131,7 @@ def generate_for_row(
     # builds the exact requested shape directly via test_generic_op, so it
     # works for any signature within its (narrower) type scope regardless
     # of whether the fixed corpus happens to contain it.
-    test_file_line, target_tensor = scm.signature_to_test_file_line(
+    test_file_line, target_tensor, digest_tensor = scm.signature_to_test_file_line(
         signature_dict, vendor_root=vendor_root
     )
     with tempfile.NamedTemporaryFile(
@@ -142,6 +142,7 @@ def generate_for_row(
     try:
         aggregate = ce.generate_correctness_evidence(
             binary, test_file=test_file_path, target_tensor=target_tensor,
+            digest_tensor=digest_tensor,
             candidate_stable_name=candidate_name, seeds=seeds,
             headroom_fraction=headroom_fraction, contract_version=contract_version,
             runner=runner,

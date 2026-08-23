@@ -67,7 +67,11 @@ def _fake_runner_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs
         mode = env.get("GGML_HIP_DISPATCH_MODE")
         tensor = "out"
         stderr = (
-            f"BIGCHERRY_REF_DIGEST name={tensor} call_index=0 digest={digest} nels=16\n"
+            # HI80 (2026-08-23): the --test-file/test_generic_op path's
+            # destination tensor never gets pre-filled, so its digest comes
+            # from a real leaf tensor ("leaf_0") instead of "out" -- see
+            # correctness_evidence.collect_seed_evidence's digest_tensor.
+            f"BIGCHERRY_REF_DIGEST name=leaf_0 call_index=0 digest={digest} nels=16\n"
             f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor={tensor} "
             f"backend1=native backend2={'native' if mode == 'native' else 'candidate'} "
             f"err={e_c if mode != 'native' else 1e-6} max_abs={max_abs_c if mode != 'native' else 0.0005} "

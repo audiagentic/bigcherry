@@ -145,7 +145,7 @@ def test_test_file_line_matches_real_hardware_transcript(tmp_path):
     # hardware to fire BIGCHERRY_CORRECTNESS_METRIC for tensor "out" for
     # this exact line.
     vendor, signature = _mul_mat_signature(tmp_path, m=32, n=21, k=2880)
-    line, target_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
+    line, target_tensor, digest_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
     op_id = signature["op"]
     assert line == (
         f"{op_id} 0 32 21 1 1 0 2 "
@@ -153,6 +153,7 @@ def test_test_file_line_matches_real_hardware_transcript(tmp_path):
         "0 2880 21 1 1 4 11520 241920 241920 -"
     )
     assert target_tensor == "out"
+    assert digest_tensor == "leaf_0"
 
 
 def test_test_file_line_rejects_a_non_mul_mat_op(tmp_path):
