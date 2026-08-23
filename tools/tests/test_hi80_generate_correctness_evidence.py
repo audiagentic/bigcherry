@@ -33,8 +33,10 @@ CANONICAL_SIGNATURE = {
     "op": 2,  # MUL_MAT in the fixture vendor tree below
     "src0_type": 0,  # f32
     "src1_type": 0,  # f32
+    "dst_type": 0,  # f32
     "ne0": [256, 16, 1, 1],
     "ne1": [256, 1, 1, 1],
+    "ned": [16, 1, 1, 1],
 }
 
 
