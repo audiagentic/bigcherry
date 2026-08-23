@@ -137,11 +137,12 @@ def make_generate_worker(
             if inventory_ref is not None
             else None
         )
-        # winners feeds BOTH the winners= filtering param (replay-slim's
-        # variant reduction) AND correctness_source= (production variant
-        # sets consume the same evidence as correctness input) -- matching
-        # what the legacy CLI already does with the same file; do not
-        # assume winners only matters for replay-slim's own filtering.
+        # winners feeds the winners= filtering param (replay-slim's variant
+        # reduction). Production correctness proof is no longer sourced
+        # from this file at manifest-generation time (HI67) -- it is
+        # re-verified at replay-cache export time against a real dispatch_db,
+        # at the (dispatch, signature, hardware, candidate) binding
+        # granularity a replay decision actually needs.
         winners = (
             autotune_catalog.read_winners(winners_ref.path)
             if winners_ref is not None
@@ -155,7 +156,6 @@ def make_generate_worker(
             inventory=inventory,
             source_revision=upstream_revision,
             winners=winners,
-            correctness_source=winners_ref.path if winners_ref is not None else None,
         )
 
         stage_root = context.work_root / "runs" / run_id / "generate"

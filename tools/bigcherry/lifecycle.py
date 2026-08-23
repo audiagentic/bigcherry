@@ -692,6 +692,7 @@ def execute_replay_export_stage(
     run_id: str,
     promoted_winners: LaneInputValue,
     manifest: LaneInputValue,
+    dispatch_db: LaneInputValue,
     source_root: Path,
     generation: int = 0,
     keep_generations: int = 3,
@@ -701,11 +702,21 @@ def execute_replay_export_stage(
     """Delegates to replay_cache.build() -- keeps the portable replay
     dispatch identity independent of campaign DB identity (RE09 4.6):
     this stage's own provenance envelope carries campaign identity, but
-    the exported bytes themselves never do."""
+    the exported bytes themselves never do.
+
+    HI67: dispatch_db is a REQUIRED descriptor-verified input, mirroring
+    execute_promotion_stage's own -- replay_cache.build() uses it to
+    independently re-verify RV49 correctness evidence for every non-native
+    winner (including a manual --seed override) at the exact binding about
+    to ship, rather than only trusting an earlier stage's promotion_status.
+    Pass the same FINAL tune-stage database this run's promotion stage used.
+    """
     winners_ref = _rehydrate(store, promoted_winners, expected_kind="promoted-winners")
     manifest_ref = _rehydrate(store, manifest, expected_kind="manifest")
+    db_ref = _rehydrate(store, dispatch_db, expected_kind="dispatch-db")
     winners_doc = _parent_doc(winners_ref)
     manifest_doc = _parent_doc(manifest_ref)
+    db_doc = _parent_doc(db_ref)
 
     ggml_h = source_root / "ggml" / "include" / "ggml.h"
     if not ggml_h.is_file():
@@ -718,6 +729,7 @@ def execute_replay_export_stage(
             winners_ref.path,
             manifest_ref.path,
             ggml_h,
+            dispatch_db=db_ref.path,
             keep_generations=keep_generations,
             generation=generation,
         )
@@ -725,10 +737,10 @@ def execute_replay_export_stage(
         raise LifecycleError(f"replay export refused: {exc}") from exc
 
     entries, parent_ids = provenance.lane_input_provenance(
-        {"promoted-winners": winners_ref, "manifest": manifest_ref}
+        {"promoted-winners": winners_ref, "manifest": manifest_ref, "dispatch-db": db_ref}
     )
     doc = provenance.derive(
-        parents=(winners_doc, manifest_doc),
+        parents=(winners_doc, manifest_doc, db_doc),
         parent_artifact_ids=parent_ids,
         project_revision=project_revision,
         source=winners_doc.source,

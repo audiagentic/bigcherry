@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import struct
 import tempfile
 from collections.abc import Iterable
@@ -37,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from . import autotune_catalog
+from . import promotion_correctness_gate as correctness_gate
 from .identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
@@ -616,11 +618,94 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
         )
 
 
+def _validate_correctness_gate(
+    entries: dict[str, dict[str, Any]], dispatch_db: Path | None,
+) -> None:
+    """Fail closed (HI67/RV49): every non-native winner ships only after it
+    independently passes the real CPU-reference correctness gate for its
+    EXACT (dispatch, signature, hardware, candidate) binding -- re-verified
+    here against a real dispatch_db, not merely trusted from an earlier
+    pipeline stage.
+
+    This is deliberately separate from, and stricter than,
+    _validate_promotion_gate above: that function proves a row went through
+    tune_promotion.py's statistical BH correction; this proves it separately
+    satisfied the RV49 correctness contract (promotion_correctness_gate.py),
+    at export time, for the precise binding about to ship. A manual --seed
+    override is explicitly NOT exempt -- an operator-authored override for a
+    non-native candidate is exactly the kind of unverified escape hatch this
+    check exists to close (see HI67's replay-cache export gate redesign).
+
+    Only a candidate's own claim of correctness is ever accepted here: the
+    dispatch_db itself supplies threshold_t/headroom_fraction from evidence
+    that promotion_correctness_gate.py already re-derives from raw seed rows,
+    never from a caller-supplied value.
+    """
+    violations: list[tuple[str, str | None, str]] = []
+    conn: sqlite3.Connection | None = None
+    try:
+        for digest_hex, record in sorted(entries.items()):
+            if bool(record.get("measurement_failure")):
+                continue  # already rejected by _validate_promotion_gate
+            winner = record.get("winner")
+            native = record.get("native")
+            if winner == native:
+                continue  # native state; no correctness evidence required
+            signature_hex = record.get("signature")
+            hardware_hex = record.get("hardware")
+            if not isinstance(signature_hex, str) or not isinstance(hardware_hex, str):
+                violations.append((
+                    digest_hex, winner,
+                    "missing explicit signature/hardware identity needed to "
+                    "resolve real correctness evidence",
+                ))
+                continue
+            if not isinstance(native, str) or not native:
+                violations.append((
+                    digest_hex, winner, "missing native baseline identity",
+                ))
+                continue
+            if dispatch_db is None:
+                violations.append((
+                    digest_hex, winner,
+                    "no --dispatch-db supplied to verify RV49 correctness evidence",
+                ))
+                continue
+            if conn is None:
+                conn = sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+            binding = correctness_gate.CorrectnessBinding(
+                dispatch_hex=digest_hex, signature_hex=signature_hex,
+                hardware_hex=hardware_hex, native_name=native,
+                candidate_name=winner,
+            )
+            try:
+                correctness_gate.require_correctness_binding(conn, binding)
+            except correctness_gate.CorrectnessGateError as exc:
+                violations.append((digest_hex, winner, str(exc)))
+    finally:
+        if conn is not None:
+            conn.close()
+    if violations:
+        shown = "\n".join(
+            f"  {digest[:16]}...: winner={winner!r}: {reason}"
+            for digest, winner, reason in violations[:20]
+        )
+        more = (
+            f"\n  ... and {len(violations) - 20} more" if len(violations) > 20 else ""
+        )
+        raise SystemExit(
+            f"refusing to export: {len(violations)} non-native winner(s) lack "
+            f"real RV49 correctness-gate evidence for their exact dispatch/"
+            f"hardware binding:\n{shown}{more}"
+        )
+
+
 def build(
     measurements: Path,
     manifest_path: Path,
     ggml_h: Path,
     *,
+    dispatch_db: Path | None = None,
     seed_file: Path | None = None,
     merge_into: Path | None = None,
     keep_generations: int = 3,
@@ -735,7 +820,20 @@ def build(
                     "seeded": True,
                 }
             )
+            # An explicit override may also name the hardware/native identity
+            # a genuinely unseen dispatch has no measured row to inherit them
+            # from; when present it takes precedence over any measured value,
+            # matching signature's own override-wins precedence above.
+            if "hardware" in override:
+                entry["hardware"] = override["hardware"]
+            if "native" in override:
+                entry["native"] = override["native"]
             entries[digest_hex] = entry
+
+    # Runs on every entry, including seed overrides applied just above --
+    # unlike _validate_promotion_gate, which a seed override is explicitly
+    # allowed to bypass (HI22), this gate is never bypassable (HI67).
+    _validate_correctness_gate(entries, dispatch_db)
 
     current_entries: list[dict[str, Any]] = []
     producer_revision = manifest.get("source_revision")
@@ -1005,7 +1103,10 @@ def _load_seed_overrides(
             raise SystemExit(
                 "seed override must be a candidate name or object with winner"
             )
-        allowed = {"winner", "signature", "candidate_digest", "provenance"}
+        allowed = {
+            "winner", "signature", "candidate_digest", "provenance",
+            "hardware", "native",
+        }
         unknown = set(value) - allowed
         if unknown:
             raise SystemExit(f"seed override has unknown fields: {sorted(unknown)}")
@@ -1046,10 +1147,20 @@ def _load_seed_overrides(
         signature = value.get("signature")
         if signature is not None:
             signature = _digest_hex(signature, "seed override signature digest")
+        hardware = value.get("hardware")
+        if hardware is not None:
+            hardware = _digest_hex(hardware, "seed override hardware digest")
+        native = value.get("native")
+        if native is not None and not isinstance(native, str):
+            raise SystemExit(
+                f"seed override native for dispatch {digest_hex[:16]}... must be a string"
+            )
         normalized[digest_hex] = {
             "winner": stable_name,
             "candidate_digest": candidate_digest,
             **({"signature": signature} if signature else {}),
+            **({"hardware": hardware} if hardware else {}),
+            **({"native": native} if native else {}),
         }
     return normalized
 
@@ -1079,6 +1190,15 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         default=root / "vendor/llama.cpp/ggml/include/ggml.h",
         help="upstream ggml.h, for the ggml_type enum",
+    )
+    parser.add_argument(
+        "--dispatch-db",
+        type=Path,
+        default=None,
+        help="sqlite dispatch DB (schema 6) used to re-verify RV49 CPU-"
+        "reference correctness evidence for every non-native winner "
+        "(HI67); required whenever the export contains any non-native "
+        "winner, including manual --seed overrides",
     )
     parser.add_argument(
         "--seed",
@@ -1111,6 +1231,7 @@ def main(argv: list[str] | None = None) -> None:
         args.measurements,
         args.manifest,
         args.ggml_header,
+        dispatch_db=args.dispatch_db,
         seed_file=args.seed,
         merge_into=args.merge_into,
         keep_generations=args.keep_generations,

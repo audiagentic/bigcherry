@@ -242,6 +242,13 @@ plus `ROCBLAS_USE_HIPBLASLT`, since internal selection changes between releases
 
 ## Enumerated but unreachable candidates must not rank
 
+> **Not yet shipped ABI.** This section describes a proposed status model
+> (HI19). `ggml_hip_candidate_descriptor` today carries no `enumeration_status`
+> or `dispatch_status` field — do not read this as current wire format. The
+> motivating defect (MMVQ enumerated but gated `return false`) was fixed by
+> HI09 wiring its entry point; the split below remains backlog hygiene, not a
+> live gap.
+
 Two independent statuses, not one:
 
 ```text
