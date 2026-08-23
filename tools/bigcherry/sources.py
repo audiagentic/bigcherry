@@ -322,6 +322,119 @@ def ancestral_to_pin(
     return "unknown"
 
 
+def baseline_candidates_at_pin(
+    candidate_pin: str,
+    *,
+    vendor_root: str | Path | None = None,
+    registry: dict | str | Path | None = None,
+    timeout: int = 30,
+) -> dict:
+    """Return tracked external-source commits proven ancestral to candidate_pin.
+
+    Entirely local and fail-closed: only an "ancestral" verdict is included.
+    Missing candidate history, missing tracked commits, git failures, and
+    ancestry timeouts never assert redundancy. The candidate ref is resolved
+    once to a SHA and that exact SHA is passed to every ancestry test, so the
+    report cannot span two meanings of a moving ref. Deliberately checks
+    ``tracked.commit`` only -- not ``original`` (upstream-equivalence
+    resolution is a separate, unsolved problem, see sources._check).
+    """
+    root = Path(vendor_root) if vendor_root is not None else paths.llama_root()
+    reg = registry if isinstance(registry, dict) else load_registry(registry)
+
+    report: dict = {
+        "candidate_pin": candidate_pin,
+        "pin_resolvable": False,
+        "candidates": [],
+    }
+
+    if not root.is_dir():
+        return report
+
+    try:
+        resolved = _git(
+            str(root),
+            "rev-parse",
+            "--verify",
+            f"{candidate_pin}^{{commit}}",
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return report
+
+    if resolved.returncode != 0:
+        return report
+
+    pin_sha = resolved.stdout.strip()
+    report["pin_resolvable"] = True
+
+    for source in reg.get("sources", []):
+        for entry in source.get("tracked", []):
+            try:
+                verdict = ancestral_to_pin(
+                    entry["commit"],
+                    vendor_root=root,
+                    pin_ref=pin_sha,
+                    timeout=timeout,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                verdict = "unknown"
+
+            if verdict != "ancestral":
+                continue
+
+            report["candidates"].append(
+                {
+                    "source_id": source["id"],
+                    "commit": entry["commit"],
+                    "title": entry["title"],
+                    "plan_item": entry.get("plan-item", "-"),
+                    "status": entry["status"],
+                }
+            )
+
+    return report
+
+
+def print_baseline_candidates(report: dict) -> None:
+    """Print an advisory RD95 redundancy report; never mutates planning state."""
+    pin = report["candidate_pin"]
+
+    if not report["pin_resolvable"]:
+        print(
+            f"ancestry gate: pin {pin} not resolvable locally -- "
+            "pull it first before this gate can answer; "
+            "no commits asserted redundant"
+        )
+        return
+
+    candidates = report["candidates"]
+    if not candidates:
+        print(
+            "ancestry gate: no tracked external-source commits proven "
+            f"ancestral to pin {pin}"
+        )
+        return
+
+    print(
+        f"ancestry gate: {len(candidates)} tracked external-source "
+        f"commit(s) now baseline at pin {pin}:"
+    )
+    for item in candidates:
+        suffix = (
+            " [no plan item to transition]"
+            if item["plan_item"] == "-"
+            else ""
+        )
+        print(
+            f"  source={item['source_id']} "
+            f"commit={item['commit'][:9]} "
+            f"status={item['status']} "
+            f"plan-item={item['plan_item']} "
+            f"title={item['title']}{suffix}"
+        )
+
+
 def _check(args: argparse.Namespace) -> int:
     try:
         registry = load_registry()

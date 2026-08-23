@@ -414,6 +414,52 @@ class RepinAndPullGuardTests(unittest.TestCase):
         self.assertEqual(_status(self.root).verdict,
                          "uncommitted-transition")
 
+    def test_repin_emits_advisory_ancestry_report_for_target(self):
+        """RD95 wiring: a successful repin invokes the advisory ancestry
+        report for the target pin."""
+        from argparse import Namespace
+        from unittest import mock
+
+        import bigcherry.sources as bigcherry_sources
+        from bigcherry import __main__ as bigcherry_main
+
+        with mock.patch.object(
+            bigcherry_sources, "baseline_candidates_at_pin",
+            return_value={"candidate_pin": "b2", "pin_resolvable": False,
+                          "candidates": []},
+        ) as spy_report, mock.patch.object(
+            bigcherry_sources, "print_baseline_candidates",
+        ) as spy_print:
+            rc = bigcherry_main.cmd_repin(Namespace(ref="b2"))
+        self.assertEqual(rc, 0)
+        spy_report.assert_called_once_with("b2")
+        spy_print.assert_called_once()
+
+    def test_repin_succeeds_even_if_ancestry_report_raises(self):
+        """RD95 wiring: a report failure is advisory-only -- it must not fail
+        the repin or lose the RE48 transition marker."""
+        from argparse import Namespace
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from unittest import mock
+
+        import bigcherry.sources as bigcherry_sources
+        from bigcherry import __main__ as bigcherry_main
+
+        with mock.patch.object(
+            bigcherry_sources, "baseline_candidates_at_pin",
+            side_effect=RuntimeError("boom"),
+        ):
+            buf = StringIO()
+            with redirect_stderr(buf):
+                rc = bigcherry_main.cmd_repin(Namespace(ref="b2"))
+        self.assertEqual(rc, 0, "a report failure must not fail the repin")
+        self.assertTrue(
+            (self.root / "releases" / "pin-transition.json").is_file(),
+            "the transition marker must still be written",
+        )
+        self.assertIn("report unavailable", buf.getvalue())
+
     def test_pull_refused_while_marker_uncommitted(self):
         from argparse import Namespace
         from contextlib import redirect_stderr

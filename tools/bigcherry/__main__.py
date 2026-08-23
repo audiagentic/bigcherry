@@ -417,6 +417,21 @@ def cmd_repin(args: argparse.Namespace) -> int:
         "own ref are unchanged."
     )
     print(f"transition marker: {pin_transition.MARKER_PATH} ({old} -> {target})")
+
+    # RD95: advisory ancestry/redundancy report. Planning cards stay in the
+    # MCP single-writer domain; this reports now-baseline tracked commits but
+    # changes no state. A report failure must never invalidate an
+    # otherwise-successful RE48 transition, so it is wrapped broadly.
+    try:
+        report = sources.baseline_candidates_at_pin(target)
+        sources.print_baseline_candidates(report)
+    except Exception as exc:  # noqa: BLE001 -- report is advisory only
+        print(
+            f"ancestry gate: report unavailable: {exc}; "
+            "pin move remains valid and no commits are asserted redundant",
+            file=sys.stderr,
+        )
+
     print(
         "next: COMMIT recipes.toml + the marker together, then "
         "python -m bigcherry pull --recipe <name>"

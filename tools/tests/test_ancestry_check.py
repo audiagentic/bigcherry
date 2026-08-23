@@ -8,10 +8,12 @@ merged hours after the pin was cut)."""
 
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,6 +32,38 @@ def _commit(cwd: Path, filename: str, content: str) -> str:
     _run(cwd, "add", filename)
     _run(cwd, "commit", "-m", f"add {filename}", "--no-gpg-sign")
     return _run(cwd, "rev-parse", "HEAD")
+
+
+def _write_registry(
+    path: Path,
+    *,
+    snapshot: str,
+    tracked: list[tuple[str, str, str, str]],
+) -> None:
+    lines = [
+        "version = 1",
+        "",
+        "[[sources]]",
+        'id = "unit-source"',
+        'repo = "local"',
+        'locator = "test"',
+        "",
+        "[[sources.snapshots]]",
+        'label = "test"',
+        f'head = "{snapshot}"',
+        f'base = "{snapshot}"',
+        "active = true",
+    ]
+    for commit, title, plan_item, status in tracked:
+        lines += [
+            "",
+            "[[sources.tracked]]",
+            f'commit = "{commit}"',
+            f'title = "{title}"',
+            f'plan-item = "{plan_item}"',
+            f'status = "{status}"',
+        ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 class _ThrowawayRepo:
@@ -117,6 +151,93 @@ class AncestralToPinTests(unittest.TestCase):
             commit = _commit(root, "a.txt", "1")
             verdict = src.ancestral_to_pin(commit, vendor_root=root, pin_ref=None)
             self.assertEqual(verdict, "unknown")
+
+
+class BaselineCandidatesAtPinTests(unittest.TestCase):
+    def test_reports_only_commits_proven_ancestral(self):
+        with _ThrowawayRepo() as root, tempfile.TemporaryDirectory(
+            prefix="bc-rd95-registry-"
+        ) as tmp:
+            base = _commit(root, "base.txt", "base")
+            ancestral = _commit(root, "ancestral.txt", "ancestral")
+            candidate = _commit(root, "candidate.txt", "candidate")
+            _run(root, "tag", "candidate-pin", candidate)
+
+            # A real locally-present commit that is not in candidate history.
+            _run(root, "checkout", "-q", "-b", "side", base)
+            not_ancestral = _commit(root, "side.txt", "side")
+
+            registry_path = Path(tmp) / "external-sources.toml"
+            _write_registry(
+                registry_path,
+                snapshot=candidate,
+                tracked=[
+                    (ancestral, "already in candidate history", "RD123", "planned"),
+                    (not_ancestral, "side-branch change", "RD124", "ported-untested"),
+                    (base, "record-only baseline change", "-", "excluded"),
+                ],
+            )
+
+            report = src.baseline_candidates_at_pin(
+                "candidate-pin", vendor_root=root, registry=registry_path,
+            )
+
+            self.assertTrue(report["pin_resolvable"])
+            commits = {item["commit"] for item in report["candidates"]}
+
+            # Proven ancestor: report it.
+            self.assertIn(ancestral, commits)
+            # Positive non-ancestor: never claim redundancy.
+            self.assertNotIn(not_ancestral, commits)
+            # No planning item does not suppress the source-level finding.
+            self.assertIn(base, commits)
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                src.print_baseline_candidates(report)
+            text = output.getvalue()
+
+            self.assertIn(f"commit={ancestral[:9]}", text)
+            self.assertNotIn(f"commit={not_ancestral[:9]}", text)
+            self.assertIn("source=unit-source", text)
+            self.assertIn("status=planned", text)
+            self.assertIn("plan-item=RD123", text)
+            self.assertIn("title=already in candidate history", text)
+            self.assertIn(f"commit={base[:9]}", text)
+            self.assertIn("status=excluded", text)
+            self.assertIn("plan-item=-", text)
+            self.assertIn("title=record-only baseline change", text)
+            self.assertIn("[no plan item to transition]", text)
+
+    def test_unresolvable_candidate_asserts_nothing_and_says_pull_first(self):
+        with _ThrowawayRepo() as root, tempfile.TemporaryDirectory(
+            prefix="bc-rd95-registry-"
+        ) as tmp:
+            tracked = _commit(root, "tracked.txt", "tracked")
+
+            registry_path = Path(tmp) / "external-sources.toml"
+            _write_registry(
+                registry_path,
+                snapshot=tracked,
+                tracked=[(tracked, "otherwise real tracked change", "RD123", "planned")],
+            )
+
+            report = src.baseline_candidates_at_pin(
+                "unfetched-candidate-pin", vendor_root=root, registry=registry_path,
+            )
+
+            self.assertFalse(report["pin_resolvable"])
+            self.assertEqual(report["candidates"], [])
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                src.print_baseline_candidates(report)
+            text = output.getvalue()
+
+            self.assertIn("pin unfetched-candidate-pin not resolvable locally", text)
+            self.assertIn("pull it first before this gate can answer", text)
+            self.assertIn("no commits asserted redundant", text)
+            self.assertNotIn(f"commit={tracked[:9]}", text)
 
 
 if __name__ == "__main__":
