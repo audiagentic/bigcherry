@@ -358,3 +358,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI14"
+
+[[patch]]
+id = "1232_hi81_windows_cxx_hipcc_flags_reach_compile"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI81"
