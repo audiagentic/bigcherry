@@ -317,15 +317,31 @@ _TEST_FILE_TYPE_SIZES = {
 
 def signature_to_test_file_line(
     signature: dict[str, object], *, vendor_root: Path,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """Map a real MUL_MAT dispatch signature into one test-backend-ops
-    ``--test-file`` line (see module docstring above) plus its target
-    tensor name ("out", same as signature_to_op_filter -- test_generic_op
-    hardcodes this name too). Same scope restriction as
+    ``--test-file`` line (see module docstring above), its target tensor
+    name ("out", same as signature_to_op_filter -- test_generic_op
+    hardcodes this name too), and its digest tensor name ("leaf_0" -- the
+    first, unnamed source tensor test_generic_op creates; ggml auto-names
+    unnamed leaf tensors "leaf_0", "leaf_1", ... in creation order, and
+    this module always emits src0 first). Same scope restriction as
     signature_to_op_filter: non-batched, non-permuted, contiguous case only
     (ne0/ne1 outer dims == (1, 1)) -- this is the real shape of an actual
     BigCherry dispatch signature (standards 5.2), not an arbitrary
     restriction.
+
+    Why a separate digest tensor (2026-08-23 real-hardware finding):
+    test_generic_op's destination tensor is never pre-filled with random
+    data the way a registered test case's is (a side effect of that other
+    class's own build_graph(), not something test_case::eval() does
+    universally), so it never gets a BIGCHERRY_REF_DIGEST line at all --
+    confirmed on Brutus for this exact function's output line, even though
+    its BIGCHERRY_CORRECTNESS_METRIC line fires correctly. "leaf_0" (a
+    genuine random-input leaf) always gets digested, and proves the same
+    thing the digest check exists for -- that both runs saw identical
+    reference input -- just via a different, always-present tensor.
+    correctness_evidence.py's collect_seed_evidence() takes this as its
+    separate ``digest_tensor`` parameter.
 
     Unlike signature_to_op_filter, this always produces a matchable case
     for any signature within its supported type/shape scope -- there is no
@@ -413,4 +429,4 @@ def signature_to_test_file_line(
         src0_type_id, *ne0_i, *nb0,
         src1_type_id, *ne1_i, *nb1,
     )) + " -"
-    return line, "out"
+    return line, "out", "leaf_0"

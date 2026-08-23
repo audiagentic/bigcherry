@@ -205,6 +205,43 @@ class CollectSeedEvidenceTests(unittest.TestCase):
             )
         self.assertIn("missing BIGCHERRY_REF_DIGEST", str(ctx.exception))
 
+    def test_digest_tensor_can_differ_from_target_tensor(self):
+        # HI80 (2026-08-23 real-hardware finding): a --test-file/
+        # test_generic_op run's destination tensor is never pre-filled, so
+        # it never gets a BIGCHERRY_REF_DIGEST line, even though its
+        # BIGCHERRY_CORRECTNESS_METRIC fires correctly -- digest_tensor
+        # lets the caller point the reproducibility check at a real leaf
+        # tensor ("leaf_0") instead, independent of which tensor the
+        # correctness metric is read from ("out").
+        native_stderr = _digest_line(name="leaf_0", digest="abc123") + _metric_line(
+            tensor="out", err="1e-05", max_abs="0.001"
+        )
+        candidate_stderr = _digest_line(name="leaf_0", digest="abc123") + _metric_line(
+            tensor="out", err="2e-05", max_abs="0.0012"
+        )
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr)
+
+        row = ce.collect_seed_evidence(
+            Path("/bin/x"), test_file=Path("/tmp/x.txt"), target_tensor="out",
+            digest_tensor="leaf_0", candidate_stable_name="mmvf:native:v1", seed=3,
+            runner=runner,
+        )
+        self.assertEqual(row.reference_digest, "abc123")
+        self.assertAlmostEqual(row.e_c_nmse, 2e-05)
+
+    def test_digest_tensor_defaults_to_target_tensor(self):
+        # Preserves the original op_filter-path behavior exactly when
+        # digest_tensor is not given.
+        native_stderr = _digest_line(digest="abc123") + _metric_line(err="1e-05", max_abs="0.001")
+        candidate_stderr = _digest_line(digest="abc123") + _metric_line(err="2e-05", max_abs="0.0012")
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr)
+
+        row = ce.collect_seed_evidence(
+            Path("/bin/x"), op_filter="m=1,n=1,k=1", target_tensor="dst",
+            candidate_stable_name="mmq:fb1", seed=3, runner=runner,
+        )
+        self.assertEqual(row.reference_digest, "abc123")
+
     def test_nonzero_exit_is_recorded_not_raised(self):
         # A crash is real evidence (a failed seed), not a hard error at this
         # layer -- aggregate_seed_evidence is where "any failed seed" fails
