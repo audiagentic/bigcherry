@@ -95,7 +95,7 @@ note = "REAL, exact match for RD76's 'restore/benchmark rocWMMA FlashAttention o
 [[sources]]
 id = "amd-ecosystem-llama-cpp"
 repo = "https://github.com/AMD-Ecosystem/llama.cpp"
-locator = "master (multiple open PRs, tracked individually -- not a single branch snapshot)"
+locator = "master + gfx11 integration branch; individual optimization PRs tracked by exact commit"
 upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """AMD's own optimization fork, referenced across ggml-org/llama.cpp
 GitHub discussions #26349 (Set2), #26378 (Set4), #26379 (Set5), #26380 (Set6).
@@ -107,7 +107,19 @@ ggml-org/llama.cpp mainline as of that review (git cherry / PR search), so
 none are ancestral to the b10502 pin. Merge SHAs recorded per tracked entry
 below are the AMD-Ecosystem fork's OWN merge commits, not upstream identity --
 re-check before every pin bump per the sources id="amd-ecosystem-llama-cpp"
-`python -m bigcherry sources check` convention."""
+`python -m bigcherry sources check` convention.
+
+2026-08-23 refresh (AMD follow-up handoff): work is NOT represented by a
+single branch. master (58ab0a5f2ce3f426d657d55647846b03fbc1a20b at observation,
+unmoved since the master-2026-08-20 snapshot) is the fork's upstream-synced
+baseline; gfx11 is the AMD integrated RDNA optimization line, observed at
+0de19af1bee8ed86978a5395b2cdbe32d59f5dbd (PR #90 merge,
+'Sync gfx11 with fork master (2026-08-16)', AMD 51/51 gfx1151 regression
+validation, no MTP greedy divergence reported). Do not treat a moving branch
+name as identity: every port/exclusion below stays keyed by exact source
+commit/PR head and is rechecked for upstream ancestry before pin transitions.
+PRs #39/#52/#61/#63/#75/#76/#83/#84/#88/#89 carry the post-backlog evidence;
+only bounded items explicitly linked to a plan item should be ported."""
 
 [[sources.snapshots]]
 label = "master-2026-08-20"
@@ -458,3 +470,77 @@ title = "spec : rework adaptive MTP draft depth"
 plan-item = "-"
 status = "excluded"
 note = "new in snapshot v2; same exclusion as 4c548dbe8"
+
+# ---------------------------------------------------------------- 2026-08-23
+# AMD follow-up handoff: exact-commit provenance for the PRs the handoff
+# scoped. Merged PRs are keyed by the fork's own merge commit (same
+# convention as the existing rows); open PRs by their exact head SHA.
+# Do not replace these with moving branch refs.
+
+[[sources.tracked]]
+commit = "fee8f9925caf391094af6e0d5d0c68e44eca9542"
+original = "db0af64dd1732c5b1fb1a1c00585b4d908ae51ae"
+title = "ggml-cuda: size MMQ tile to MoE tokens-per-expert"
+plan-item = "RD30"
+status = "planned"
+note = "RD30's ORIGINAL source (PR #39). Re-design of 2026-08-23 keeps it as the CONTROL candidate, not the default: the mechanical port is stale on the current table-driven MMQ implementation and PR #63 (f8864197a4e) is the preferred structural candidate for the same empty-work problem."
+
+[[sources.tracked]]
+commit = "f8864197a4e2d07321bfb85466e3ba071e020aa9"
+original = "88ea358c039130ca1a811dfd0362cea9916b802f"
+title = "mmq: compacted MoE tiling for RDNA3.5 (default on)"
+plan-item = "RD30"
+status = "planned"
+note = "PR #63 (2026-08-23 handoff P1): compacts the MoE MMQ launch grid from expert_bounds (block_start prefix sum + block_expert map) instead of a rectangular worst-case grid. AMD reports +1.9..5.4% prefill across Qwen3/Qwen3.5/Qwen3.6/Gemma-4 MoE; decode unchanged. Preferred structural candidate for the RD30 re-design; qualify via EC13/RD94 hostile routing, do not port the RDNA3.5 default policy wholesale."
+
+[[sources.tracked]]
+commit = "812a47a89991897d7cd474625d1ceadefef1b8bb"
+original = "4ea5f294f8215218d4d102fc44d04863a589ad46"
+title = "HIP: fix MMQ tile-barrier race and tune tile width for RDNA3.5"
+plan-item = "RD97"
+status = "evidence-only"
+note = "PR #75 (P0 correctness audit, RD97). AUDIT RESULT at pin b10502 (d76bdc2): hazard NOT present in BigCherry's materialized source -- the fork's elidable mmq_hip_tile_barrier does not exist (no mmq_hip* symbols in vendor or patches) and upstream mul_mat_q_process_tile (mmq.cuh, single K loop) ends EVERY iteration with a full __syncthreads() after the last vec_dot and before the next load_tiles, so the shared-tile lifetime is already block-synchronized; no BigCherry patch edits that loop. AMD's in-fork evidence (115/1568 MMQ configs wrong pre-fix, nondeterministic) stands as evidence-only. The PR's RDNA3.5 tile-width tuning is PERFORMANCE evidence for the RD30/RD97 experiment path and must not be ported into any correctness change."
+
+[[sources.tracked]]
+commit = "d59eb5a1c5c38e6f8a0b04d75979c0318fe6aa2b"
+original = "5f1585f3374091ed48edc1c933c0906d0a4ff9cf"
+title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K decode"
+plan-item = "-"
+status = "excluded"
+note = "PR #61 (record-only, 2026-08-23 handoff): AMD reports ~+3.09% mean / +2.78% median decode uplift. NEW kernel family with a large code surface -- future candidate, not a near-term production patch; do not make it the first follow-up slice."
+
+[[sources.tracked]]
+commit = "b8fed9fae4b1af1479646f6af183628442441d2b"
+title = "tools: add mmq-tune, an MMQ tile-width autotuning harness"
+plan-item = "-"
+status = "evidence-only"
+note = "PR #76 (methodology, 2026-08-23 handoff): do NOT port the standalone tuner. Concepts to mine into BigCherry's existing qualification infrastructure: 99 real mul_mat_q shape corpus from 20 models, invocation-count weighting, token-count sweep dimension, distinct expert weights, Zipf routing skew, interleaved one-iteration-per-candidate timing, position-weighted output checksum, majority-vote candidate diagnostics. Import only; a second autotuner requires a proven feature gap first."
+
+[[sources.tracked]]
+commit = "42aff9e1f6e06238e0779a9a73e36a13d414b6ab"
+original = "0fe9a246c0816fc27dd379f71f0aaa7ecbe5a1d3"
+title = "[AIESW-40114] ggml-hip: drop unconditional -ffast-math"
+plan-item = "-"
+status = "excluded"
+note = "PR #83 (2026-08-23 handoff): confirms the SAME MTP determinism failure class BigCherry already handled in patches/1002_hip_unsafe_math_opt_in.py (unsafe math OFF by default, explicit GGML_HIP_UNSAFE_MATH opt-in, re-anchored after upstream removed the unconditional flag). Evidence/invariant verification only -- do NOT create a second unsafe-math patch."
+
+[[sources.tracked]]
+commit = "1b600a34d0f625ea69c971ad95f68524f6dc97d3"
+title = "q4_K mat-vec tuning for gfx1151"
+plan-item = "RD98"
+status = "planned"
+note = "PR #84 (2026-08-23 handoff, open PR tracked by head SHA): RADV-inspired Q4_K vec_dot, block_q8_1_x4 activation layout, 128-bit weight/activation loads, 4x K-loop unroll, sched_group_barrier, Q4_K-specific lower nwarps; AMD reports ~4.4% kernel-time reduction on a major Gemma-4 FFN decode shape. LOAD-BEARING correctness lesson: the x4 layout's second scale/sum field must match the Q4_K minimum-term semantic -- a wrong interpretation failed intermittently/data-dependently. One candidate family with PR #88 (0c92c50b57d), not two items."
+
+[[sources.tracked]]
+commit = "0c92c50b57dccbb09b34e7e3c53348effa993e08"
+title = "ggml-cuda: widen Q4_K MMVQ weight loads to global_load_b128"
+plan-item = "RD98"
+status = "planned"
+note = "PR #88 (2026-08-23 handoff, open PR tracked by head SHA): widen Q4_K MMVQ weight ownership so one thread owns a 32-byte Q4_K group via two global_load_b128-friendly loads; VDR=8 on the tested RDNA3.5 path; AMD reports typical ~1-2% decode gain with several models/shapes higher. Same RD98 candidate family as PR #84 (1b600a34d0f): interacting parameters, one experiment."
+
+[[sources.tracked]]
+commit = "88ef64264c243d06fadcaf8338f0e3a318854698"
+title = "cuda/hip: optional wave64 for the quantized mat-vec kernels"
+plan-item = "-"
+status = "excluded"
+note = "PR #89 (record-only, 2026-08-23 handoff): AMD observed some shapes improving but several regressing badly (double-digit), and the compile flag is per translation unit -- it affects the whole mmvq.cu TU, not one specialization. Do not port globally; revisit only if targeted instantiations are isolated into separate TUs or safe per-kernel wave-size control exists."
