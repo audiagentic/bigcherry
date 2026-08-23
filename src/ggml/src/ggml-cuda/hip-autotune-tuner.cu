@@ -3551,6 +3551,47 @@ void ggml_hip_tuner_flush() {
     GGML_LOG_INFO("bigcherry: wrote %zu tuning result(s) to '%s'\n",
                   g_results.size(), measurements_path.c_str());
 
+    // HI24 step 8: canary_pct is recorded per signature and nothing
+    // aggregated it, so nobody read it. This is the line that says whether
+    // this run's numbers can be believed at all. canary_pct == -1.0 means no
+    // same-kernel pair was available for that signature (e.g. a non-MMQ
+    // native with double_native disabled) and is excluded from these counts,
+    // not treated as zero divergence.
+    {
+        size_t checked = 0, flagged = 0, retried = 0;
+        double worst = 0.0;
+        std::string worst_dispatch;
+        for (const auto & entry : g_results) {
+            const Result & r = entry.second;
+            if (r.canary_pct < 0.0) {
+                continue;
+            }
+            ++checked;
+            if (r.canary_pct > config.noise_canary_pct) {
+                ++flagged;
+            }
+            if (r.canary_retries > 0) {
+                ++retried;
+            }
+            if (r.canary_pct > worst) {
+                worst = r.canary_pct;
+                worst_dispatch = ggml_hip_digest_hex(entry.first);
+            }
+        }
+        if (checked > 0) {
+            GGML_LOG_INFO(
+                "bigcherry: canary -- %zu/%zu signature(s) checked, %zu flagged "
+                "above %.2f%%, worst %.2f%% (%s), %zu re-measured\n",
+                checked, g_results.size(), flagged, config.noise_canary_pct,
+                worst, worst_dispatch.c_str(), retried);
+        } else {
+            GGML_LOG_INFO(
+                "bigcherry: canary -- 0/%zu signature(s) had a same-kernel pair "
+                "to check\n",
+                g_results.size());
+        }
+    }
+
 #ifdef GGML_HIP_ROUTING_TRANSFORM
     // bigcherry (HI29): a separate file, separate schema, separate consumer
     // (offline agent-driven pattern analysis across many gaps, not a human
