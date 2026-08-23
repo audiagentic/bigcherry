@@ -136,6 +136,14 @@ struct ggml_hip_tuner_config {
     // and is emitted as "<stable_name>#twin".
     int    double_native         = 1;   // GGML_HIP_TUNE_DOUBLE_NATIVE
 
+    // HI24 steps 5-6: cumulative call-weighted impact share (from
+    // `python -m bigcherry.inventory hot-list`, GGML_HIP_TUNE_HOT_SIGNATURES)
+    // at or below which a signature is "hot" and skips screening's
+    // noise-driven elimination. Only takes effect when a hot list is
+    // actually loaded; with no list, every signature behaves exactly as it
+    // did before this item.
+    double hot_share_pct         = 80.0;   // GGML_HIP_TUNE_HOT_SHARE
+
     // Winner selection (standards 7.3).
     double replacement_threshold_pct = 1.0;
     double tie_pct                   = 0.5;

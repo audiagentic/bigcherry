@@ -1997,6 +1997,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
 
+    # Hot list: rank observed signatures by estimated time contribution
+    # (HI24 steps 5-6), consumed by GGML_HIP_TUNE_HOT_SIGNATURES.
+    inv_hot = inv_sub.add_parser(
+        "hot-list", help="Rank observed signatures by estimated time contribution"
+    )
+    inv_hot.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
+    inv_hot.add_argument(
+        "--measurements",
+        default=None,
+        help="a previous tune's .measurements.jsonl; upgrades the ranking "
+        "from calls x est_bytes to calls x native_median_us",
+    )
+    inv_hot.add_argument(
+        "--output", default=None, help="hot list to write (default: alongside)"
+    )
+    inv_hot.set_defaults(func=lambda args: cmd_inventory(args, subcmd="hot-list"))
+
     return parser
 
 
@@ -2070,6 +2087,33 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
             f"{counts['measurements']} measurement(s) and "
             f"{counts['candidates']} candidate(s) into {db_path}"
         )
+        return 0
+
+    elif subcmd == "hot-list":
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        output = (
+            Path(args.output) if args.output else record_path.with_suffix(".hot")
+        )
+        measurements = Path(args.measurements) if args.measurements else None
+        summary = inv_mod.write_hot_list(record, output, measurements=measurements)
+
+        print(f"wrote {output}")
+        print(f"  {summary['signatures']} signature(s), basis {summary['basis']}")
+        for row in summary["rows"][:5]:
+            print(
+                f"  {row['rank']:>3}  {row['signature'][:16]}  "
+                f"{row['calls']:>8} calls  {row['share_pct']:6.2f}%  "
+                f"cum {row['cum_share_pct']:6.2f}%"
+            )
         return 0
 
     else:

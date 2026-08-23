@@ -249,6 +249,15 @@ struct Result {
     ggml_hip_digest hardware_digest  = {};
     std::string canonical_json;
 
+    // HI24 steps 5-6: true when this signature's cumulative call-weighted
+    // impact share (from an operator-supplied hot list, GGML_HIP_TUNE_HOT_
+    // SIGNATURES) falls at or below config.hot_share_pct. A hot signature
+    // skips screening's noise-driven elimination -- every measured, correct
+    // candidate reaches the final stage instead of only the top few by a
+    // screening median RV21 showed carries ~14% error. Always false with the
+    // env var unset, which is this item's explicit opt-in requirement.
+    bool hot_signature = false;
+
     // HI24 noise canary. `canary_pct` is the divergence between two
     // measurements of the *same kernel*; anything above zero is pure
     // measurement error. -1 means the check could not be run for this
@@ -320,6 +329,92 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+// HI24 steps 5-6: hot-list-based screening policy. A signature whose
+// cumulative call-weighted impact share falls at or below hot_share_pct is
+// "hot": screening's noise-driven elimination (top-N / within-band) is
+// skipped for it, and every measured, correct candidate reaches the final
+// stage instead. `python -m bigcherry.inventory hot-list` emits the file;
+// this is a plain text format, not JSON -- there is no JSON parser anywhere
+// in this overlay (every other file here writes JSON by hand and reads
+// none), and adding one solely to read four fixed fields would be a new
+// class of parsing bug in code that decides how much measurement each
+// signature gets.
+struct HotList {
+    std::unordered_map<ggml_hip_digest, double, DigestHash, DigestEqual> cum_share_pct;
+};
+
+const HotList & hot_list() {
+    static const HotList list = [] {
+        HotList l;
+        const char * path = getenv("GGML_HIP_TUNE_HOT_SIGNATURES");
+        if (path == nullptr || path[0] == '\0') {
+            return l;   // no list: every signature behaves exactly as before this item
+        }
+        FILE * file = fopen(path, "r");
+        if (file == nullptr) {
+            GGML_LOG_WARN("bigcherry: cannot read hot list '%s'; no signature "
+                          "will be treated as hot\n", path);
+            return l;
+        }
+        char line[256];
+        size_t parsed_rows = 0;
+        while (fgets(line, sizeof(line), file) != nullptr) {
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\0') {
+                continue;
+            }
+            char hex[80] = {0};
+            double share_pct = 0.0;
+            double row_cum_share_pct = 0.0;
+            int rank = 0;
+            if (sscanf(line, "%63s %lf %lf %d", hex, &share_pct,
+                       &row_cum_share_pct, &rank) != 4) {
+                continue;
+            }
+            if (strlen(hex) != 2 * GGML_HIP_DIGEST_BYTES) {
+                continue;
+            }
+            ggml_hip_digest digest = {};
+            bool ok = true;
+            for (size_t i = 0; i < GGML_HIP_DIGEST_BYTES; ++i) {
+                unsigned int byte = 0;
+                if (sscanf(hex + 2 * i, "%2x", &byte) != 1) {
+                    ok = false;
+                    break;
+                }
+                digest.bytes[i] = (uint8_t) byte;
+            }
+            if (!ok) {
+                continue;
+            }
+            l.cum_share_pct[digest] = row_cum_share_pct;
+            ++parsed_rows;
+        }
+        fclose(file);
+        GGML_LOG_INFO("bigcherry: hot list '%s' -- %zu signature(s) loaded\n",
+                      path, parsed_rows);
+        return l;
+    }();
+    return list;
+}
+
+// Absent from a *loaded* list means NOT hot: test-backend-ops sweeps produce
+// far more signatures than any real-workload hot list, and an unlisted
+// signature must not be silently promoted to hot treatment. Absent *list*
+// (env var unset) means every signature is exactly as it was before this
+// item -- the two absences are deliberately different outcomes.
+bool is_hot_signature(const ggml_hip_digest & signature_digest,
+                      const ggml_hip_tuner_config & config) {
+    const HotList & list = hot_list();
+    if (list.cum_share_pct.empty()) {
+        return false;
+    }
+    const auto found = list.cum_share_pct.find(signature_digest);
+    if (found == list.cum_share_pct.end()) {
+        return false;
+    }
+    return found->second <= config.hot_share_pct;
+}
 
 #ifdef GGML_HIP_ROUTING_TRANSFORM
 // bigcherry (HI29): transform-attempt / transform-gap recording, written
@@ -1768,6 +1863,9 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         if (const char * v = getenv("GGML_HIP_TUNE_DOUBLE_NATIVE")) {
             int_env("GGML_HIP_TUNE_DOUBLE_NATIVE", 0, 1, c.double_native);
         }
+        if (const char * v = getenv("GGML_HIP_TUNE_HOT_SHARE")) {
+            double_env("GGML_HIP_TUNE_HOT_SHARE", 0.0, 100.0, c.hot_share_pct);
+        }
         if (const char * v = getenv("GGML_HIP_TUNE_ALPHA")) {
             double_env("GGML_HIP_TUNE_ALPHA", 0.0, 1.0, c.confidence_alpha);
         }
@@ -2182,6 +2280,7 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
     result.signature_digest = ggml_hip_signature_digest(sig);
     result.hardware_digest  = ggml_hip_hardware_digest(hw);
     result.canonical_json   = ggml_hip_signature_json(sig, true);
+    result.hot_signature    = is_hot_signature(result.signature_digest, config);
     g_trace_signature_digest = result.signature_digest;
     g_trace_signature = sig;
     open_tuning_journal_once(result.hardware_digest);
@@ -2640,7 +2739,15 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         // The twin is retained unconditionally (once it has survived
         // screening and correctness): it is the calibration instrument, and
         // letting screening noise drop it would defeat its purpose.
-        if (is_native || is_twin || in_top || near_best) {
+        //
+        // HI24 steps 5-6: a hot signature (top hot_share_pct of the
+        // workload's call-weighted impact, per an operator-supplied hot
+        // list) retains every measured, correct survivor -- RV21 showed a
+        // three-sample screening median carries ~14% error, and the
+        // signatures that matter most to the aggregate result should not
+        // have a candidate eliminated on that noise before the final,
+        // full-sample stage gets to measure it properly.
+        if (is_native || is_twin || in_top || near_best || result.hot_signature) {
             finalists.push_back(m);
         }
     }
@@ -3446,6 +3553,7 @@ void ggml_hip_tuner_flush() {
                 "\"canary_pct\":%.3f,\"canary_retries\":%d,"
                 "\"canary_fresh_block\":%s,"
                 "\"canary_pair\":\"%s\","
+                "\"hot_signature\":%s,"
                 "\"promotion_status\":\"%s\","
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
                 "\"device_state_pre\":%s,\"device_state_post\":%s,"
@@ -3481,6 +3589,7 @@ void ggml_hip_tuner_flush() {
                 counts[GGML_HIP_REJECT_UNSTABLE],
                 r.canary_pct, r.canary_retries,
                 r.canary_fresh_block ? "true" : "false", r.canary_pair.c_str(),
+                r.hot_signature ? "true" : "false",
                 r.promotion_status.c_str(),
                 r.launches_per_sample, r.schedule_seed,
                 r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
