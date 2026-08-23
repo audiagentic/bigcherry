@@ -147,6 +147,66 @@ int ggml_hip_dispatch_mode() {
     return mode;
 }
 
+// ------------------------------------------------------------ hot-path counters
+
+// HI92: opt-in hot-path instrumentation -- dispatch calls, L1 (thread-local)/
+// L2 (process-global)/L3 (replay-DB) cache hit rates, native-selector and
+// hardware-key/signature-digest construction counts. Zero cost when disabled:
+// every increment site below is guarded by dispatch_counters_enabled(), never
+// unconditional, matching the check-once/atomic-bool pattern
+// GGML_HIP_TUNE_TRACE_ATTEMPTS already established (hip-autotune-tuner.cu).
+// Pure diagnostic -- no behavior this file's callers observe changes whether
+// this is on or off.
+struct DispatchCounters {
+    std::atomic<uint64_t> dispatch_entries{0};
+    std::atomic<uint64_t> native_select_calls{0};
+    std::atomic<uint64_t> hardware_key_builds{0};
+    std::atomic<uint64_t> signature_digest_builds{0};
+    std::atomic<uint64_t> l1_hits{0};
+    std::atomic<uint64_t> l1_misses{0};
+    std::atomic<uint64_t> l2_hits{0};
+    std::atomic<uint64_t> l2_misses{0};
+    std::atomic<uint64_t> l3_lookups{0};
+    std::atomic<uint64_t> l3_hits{0};
+};
+
+static DispatchCounters g_dispatch_counters;
+
+static void report_dispatch_counters() {
+    const uint64_t entries = g_dispatch_counters.dispatch_entries.load(std::memory_order_relaxed);
+    const uint64_t l1h = g_dispatch_counters.l1_hits.load(std::memory_order_relaxed);
+    const uint64_t l1m = g_dispatch_counters.l1_misses.load(std::memory_order_relaxed);
+    const uint64_t l2h = g_dispatch_counters.l2_hits.load(std::memory_order_relaxed);
+    const uint64_t l2m = g_dispatch_counters.l2_misses.load(std::memory_order_relaxed);
+    const uint64_t l3l = g_dispatch_counters.l3_lookups.load(std::memory_order_relaxed);
+    const uint64_t l3h = g_dispatch_counters.l3_hits.load(std::memory_order_relaxed);
+    GGML_LOG_INFO(
+        "bigcherry: dispatch counters -- entries=%llu native_select=%llu "
+        "hw_key_builds=%llu sig_digest_builds=%llu "
+        "L1 hit=%llu miss=%llu (%.1f%%) L2 hit=%llu miss=%llu (%.1f%%) "
+        "L3 lookups=%llu hits=%llu (%.1f%%)\n",
+        (unsigned long long) entries,
+        (unsigned long long) g_dispatch_counters.native_select_calls.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.hardware_key_builds.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.signature_digest_builds.load(std::memory_order_relaxed),
+        (unsigned long long) l1h, (unsigned long long) l1m,
+        (l1h + l1m) ? 100.0 * (double) l1h / (double) (l1h + l1m) : 0.0,
+        (unsigned long long) l2h, (unsigned long long) l2m,
+        (l2h + l2m) ? 100.0 * (double) l2h / (double) (l2h + l2m) : 0.0,
+        (unsigned long long) l3l, (unsigned long long) l3h,
+        l3l ? 100.0 * (double) l3h / (double) l3l : 0.0);
+}
+
+static bool dispatch_counters_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_DISPATCH_COUNTERS");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
 // -------------------------------------------------------------- native select
 
 // Reproduces the branch order of upstream `ggml_cuda_mul_mat`. Any divergence
@@ -156,6 +216,9 @@ ggml_hip_native_selection ggml_hip_native_select(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
         const ggml_tensor * src1, const ggml_tensor * ids,
         const ggml_tensor * dst) {
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.native_select_calls.fetch_add(1, std::memory_order_relaxed);
+    }
     ggml_hip_native_selection selection = {};
     selection.valid = false;
 
@@ -480,6 +543,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         const ggml_hip_dispatch_signature_v1 & sig,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc) {
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.dispatch_entries.fetch_add(1, std::memory_order_relaxed);
+    }
     ggml_hip_resolved_dispatch resolved = {};
     resolved.candidate      = native.candidate;
     resolved.variant        = native.variant;
@@ -492,8 +558,11 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     }
 
     Binding thread_binding = {};
-    if (mode != GGML_HIP_DISPATCH_MODE_RECORD &&
-            g_thread_bindings.find(ctx.device, sig, &thread_binding)) {
+    const bool l1_attempted = mode != GGML_HIP_DISPATCH_MODE_RECORD;
+    if (l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding)) {
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l1_hits.fetch_add(1, std::memory_order_relaxed);
+        }
         resolved.candidate  = thread_binding.candidate;
         resolved.variant    = thread_binding.variant;
         resolved.from_cache = thread_binding.from_cache;
@@ -501,6 +570,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         resolved.transform  = thread_binding.transform;
 #endif
         return resolved;
+    }
+    if (l1_attempted && dispatch_counters_enabled()) {
+        g_dispatch_counters.l1_misses.fetch_add(1, std::memory_order_relaxed);
     }
 
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
@@ -510,6 +582,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     bool forced_selected = false;
     if (const auto & forced = ForcedCandidate::instance(); forced.candidate != nullptr) {
         const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
+        }
         if (forced.candidate->can_execute(forced.candidate, sig, hw)) {
             resolved.candidate  = forced.candidate;
             resolved.variant    = forced.candidate->variant;
@@ -567,6 +642,10 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
     const ggml_hip_digest hardware_digest  = ggml_hip_hardware_digest(hw);
     const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
+        g_dispatch_counters.signature_digest_builds.fetch_add(1, std::memory_order_relaxed);
+    }
     const ggml_hip_digest dispatch_digest =
         ggml_hip_dispatch_digest(hardware_digest, signature_digest, "latency");
 
@@ -591,6 +670,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
         const auto found = g_bindings.find(dispatch_digest);
         if (found != g_bindings.end()) {
+            if (dispatch_counters_enabled()) {
+                g_dispatch_counters.l2_hits.fetch_add(1, std::memory_order_relaxed);
+            }
             resolved.candidate  = found->second.candidate;
             resolved.variant    = found->second.variant;
             resolved.from_cache = found->second.from_cache;
@@ -609,6 +691,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
                 g_thread_bindings.insert(ctx.device, sig, found->second);
             }
             return resolved;
+        }
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l2_misses.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
@@ -691,6 +776,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
 #ifdef GGML_HIP_DISPATCH_REPLAY
     if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l3_lookups.fetch_add(1, std::memory_order_relaxed);
+        }
         const ggml_hip_candidate_descriptor * winner = nullptr;
         ggml_hip_variant_params variant = {};
         uint16_t transform_id = 0;
@@ -725,6 +813,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         }
 #endif
         if (usable) {
+            if (dispatch_counters_enabled()) {
+                g_dispatch_counters.l3_hits.fetch_add(1, std::memory_order_relaxed);
+            }
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;
@@ -1932,6 +2023,15 @@ void ggml_hip_autotune_flush(void) {
 #endif
 #endif
     ggml_hip_coverage_report();
+    // HI92: same explicit end-of-run hook the coverage report above already
+    // uses -- NOT std::atexit, which does not reliably fire in this
+    // codebase's real shutdown path (confirmed on real hardware: a run with
+    // GGML_HIP_DISPATCH_COUNTERS=1 registered via atexit produced no report
+    // at all, while this explicit call site, mirroring coverage_report()'s
+    // own working pattern, does).
+    if (dispatch_counters_enabled()) {
+        report_dispatch_counters();
+    }
 }
 
 void ggml_hip_autotune_write_report(const char * path) {
