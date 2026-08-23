@@ -159,6 +159,40 @@ class RuntimeFlatLoaderTests(unittest.TestCase):
         with self.assertRaisesRegex(TransformRecordError, "rejection_reason"):
             load_runtime_transform_records(path)
 
+    def test_future_artifact_version_fails_closed(self):
+        # A bumped runtime schema with a changed layout must not be silently
+        # parsed as v1 (the loader hard-codes the v1 field shapes).
+        path = self.write(
+            "v2.jsonl",
+            {"kind": "header", "artifact_version": 2, "source_revision": REVISION,
+             "manifest_hash": MANIFEST},
+            flat_gap(),
+        )
+        with self.assertRaisesRegex(TransformRecordError, "artifact_version must be exactly 1"):
+            load_runtime_transform_records(path)
+
+    def test_malformed_optional_fields_rejected_not_coerced(self):
+        # Present-but-wrong-type optionals fail loudly: no str() coercion and
+        # no truth-test drop of malformed values.
+        cases = [
+            (flat_attempt(rejection_reason=5), "rejection_reason"),
+            (flat_attempt(rejection_reason=False), "rejection_reason"),
+            (flat_attempt(rejection_reason=None), "rejection_reason"),
+            (flat_attempt(transformed_winner=3), "transformed_winner"),
+            (flat_attempt(original_native_family=0), "original_native_family"),
+            (flat_gap(native_family=7), "native_family"),
+            (flat_gap(transformations_tried=[{"id": 1, "reason": False}]), "reason"),
+            (flat_gap(transformations_tried=[{"id": 1, "name": None}]), "name"),
+            (flat_gap(est_bytes=None), "est_bytes"),
+        ]
+        for index, (record, field) in enumerate(cases):
+            path = self.write(f"bad{index}.jsonl", flat_header(), record)
+            with self.assertRaisesRegex(
+                TransformRecordError, field + (" must be a (non-negative integer|string when present)")
+            ) as ctx:
+                load_runtime_transform_records(path)
+            self.assertIn(field, str(ctx.exception))
+
     def test_nested_rejected_attempt_still_requires_reason(self):
         # The strict validator is untouched: a nested rejected attempt with an
         # empty reason still fails exactly as before this change.

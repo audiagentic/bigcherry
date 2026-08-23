@@ -237,13 +237,33 @@ def _validate_runtime_header(record: Any, where: str) -> dict[str, Any]:
     header = _object(record, "record", where)
     if header.get("kind") != "header":
         raise TransformRecordError(f"{where}.kind must be header")
+    # This loader parses the v1 layout specifically; a future artifact
+    # version with a changed shape must fail closed, not be mis-read as v1.
     version = header.get("artifact_version")
-    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-        raise TransformRecordError(f"{where}.artifact_version must be a positive integer")
+    if isinstance(version, bool) or not isinstance(version, int) or version != 1:
+        raise TransformRecordError(
+            f"{where}.artifact_version must be exactly 1 (the runtime-flat v1 "
+            "layout this loader parses); other versions fail closed")
     return {
         "source_revision": _digest(header.get("source_revision"), "source_revision", where, _HEX40),
         "manifest_hash": _digest(header.get("manifest_hash"), "manifest_hash", where, _HEX64),
     }
+
+
+def _optional_text(rec: dict[str, Any], key: str, where: str) -> str | None:
+    """Flat-optional text field. Absent is legal; present must be a string.
+
+    Malformed present values (null, numbers, booleans) are rejected rather
+    than coerced via str() or dropped by truth-testing; the runtime writer's
+    empty-string sentinel (\u0022\u0022 means "none") normalizes to None.
+    """
+    if key not in rec:
+        return None
+    value = rec[key]
+    if not isinstance(value, str):
+        raise TransformRecordError(f"{where}.{key} must be a string when present")
+    text = value.strip()
+    return text or None
 
 
 def _runtime_provenance(
@@ -285,17 +305,17 @@ def _validate_runtime_attempt(record: Any, header: dict[str, Any], where: str) -
     outcome = normalized["outcome"]
     if outcome not in ("success", "rejected"):
         raise TransformRecordError(f"{where}.result must be success or rejected")
-    if "rejection_reason" in rec and rec.get("rejection_reason") is not None:
-        normalized["reason"] = str(rec["rejection_reason"]).strip()
+    normalized["reason"] = _optional_text(rec, "rejection_reason", where) or ""
     # Reason is optional/empty on success, required on rejected (HI33's
     # original design: a rejection with no reason is an incomplete record).
     if outcome == "rejected" and not normalized["reason"]:
         raise TransformRecordError(f"{where}: rejected transform attempt requires a rejection_reason")
-    if rec.get("transformed_winner"):
-        normalized["transformed_winner"] = _text(rec.get("transformed_winner"), "transformed_winner", where)
-    if rec.get("original_native_family"):
-        normalized["original_native_family"] = _text(
-            rec.get("original_native_family"), "original_native_family", where).casefold()
+    winner = _optional_text(rec, "transformed_winner", where)
+    if winner:
+        normalized["transformed_winner"] = winner
+    family = _optional_text(rec, "original_native_family", where)
+    if family:
+        normalized["original_native_family"] = family.casefold()
     hardware, build = _runtime_provenance(header["source_revision"], header["manifest_hash"], hardware_hex)
     normalized["hardware_provenance"] = hardware
     normalized["build_provenance"] = build
@@ -317,16 +337,18 @@ def _validate_runtime_gap(record: Any, header: dict[str, Any], where: str) -> di
         if ident in seen:
             raise TransformRecordError(f"{item_where}.id duplicates another transformation")
         seen.add(ident)
-        reason = ""
-        if "reason" in entry and entry.get("reason") is not None:
-            reason = str(entry["reason"]).strip()
-        tried_entry: dict[str, Any] = {"id": ident, "name": None, "reason": reason}
-        if entry.get("name"):
-            tried_entry["name"] = _text(entry.get("name"), "name", item_where)
+        tried_entry: dict[str, Any] = {
+            "id": ident, "name": None, "reason": _optional_text(entry, "reason", item_where) or "",
+        }
+        name = _optional_text(entry, "name", item_where)
+        if name:
+            tried_entry["name"] = name
         tried.append(tried_entry)
-    native_family = "unknown"
-    if rec.get("native_family"):
-        native_family = _text(rec.get("native_family"), "native_family", where).casefold()
+    native_family = _optional_text(rec, "native_family", where)
+    if native_family is None:
+        native_family = "unknown"
+    else:
+        native_family = native_family.casefold()
     normalized: dict[str, Any] = {
         "kind": "transform-gap",
         "source_signature": _digest(rec.get("sig"), "sig", where, _HEX32),
@@ -341,8 +363,10 @@ def _validate_runtime_gap(record: Any, header: dict[str, Any], where: str) -> di
         "native_family": native_family,
         "evidence_references": [],
     }
-    if "est_bytes" in rec and rec.get("est_bytes") is not None:
-        normalized["est_bytes"] = _positive_int(rec.get("est_bytes"), "est_bytes", where, zero=True)
+    # est_bytes is always present in the runtime writer; when present it must
+    # be a real integer -- null is malformed, not absent.
+    if "est_bytes" in rec:
+        normalized["est_bytes"] = _positive_int(rec["est_bytes"], "est_bytes", where, zero=True)
     hardware, build = _runtime_provenance(header["source_revision"], header["manifest_hash"], hardware_hex)
     normalized["hardware_provenance"] = hardware
     normalized["build_provenance"] = build
