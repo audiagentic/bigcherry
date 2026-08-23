@@ -366,3 +366,12 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI81"
+
+[[patch]]
+id = "1233_rd73_stable_graph_cache_key"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "mrlordcat-rdna-lab"
+plan-item = "RD73"
