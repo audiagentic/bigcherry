@@ -375,3 +375,12 @@ backend = "hip"
 state = "untested"
 external-source = "mrlordcat-rdna-lab"
 plan-item = "RD73"
+
+[[patch]]
+id = "1234_rd58_pin_state_buffer_multigpu_restore"
+kind = "upstream-backport"
+origin = "upstream-pr"
+backend = "hip"
+state = "untested"
+external-source = "davetha-llama-cpp"
+plan-item = "RD58"

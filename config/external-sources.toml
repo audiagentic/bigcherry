@@ -545,3 +545,35 @@ title = "cuda/hip: optional wave64 for the quantized mat-vec kernels"
 plan-item = "-"
 status = "excluded"
 note = "PR #89 (record-only, 2026-08-23 handoff): AMD observed some shapes improving but several regressing badly (double-digit), and the compile flag is per translation unit -- it affects the whole mmvq.cu TU, not one specialization. Do not port globally; revisit only if targeted instantiations are isolated into separate TUs or safe per-kernel wave-size control exists."
+
+[[sources]]
+id = "davetha-llama-cpp"
+repo = "https://github.com/davetha/llama.cpp"
+locator = "branch rocm/pin-state-restore-multigpu; one-off PR contribution, not a curated tuning fork"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """Personal fork carrying a single upstream PR contribution
+(ggml-org/llama.cpp#27405), not an ongoing tuning branch like
+stew675-rdna-boosts/amd-ecosystem-llama-cpp/mrlordcat-rdna-lab. The PR
+was closed by an upstream maintainer 2026-08-20 without merging
+("Fix it in ROCm. cc @ggml-org/amd"), redirecting discussion to
+rocm/rocm-systems#4817 (the real, still-open ROCm runtime defect the PR
+works around) -- not because the diagnosis or fix itself was disputed.
+Verified real 2026-08-24 via `gh pr view 27405 --repo ggml-org/llama.cpp`
+(state=CLOSED, mergedAt=null, body/comments confirm the above) and
+`gh api repos/ROCm/rocm-systems/issues/4817` (state=open, updated
+2026-08-22, reported by a ggml HIP-backend maintainer, explicitly names
+RX 7900 XTX among affected hardware -- BigCherry's own production GPU)."""
+
+[[sources.snapshots]]
+label = "pr-27405-head"
+head = "58025e01afd44ee06ea6fb23c7ccbdf38e0c34d5"
+base = "58025e01afd44ee06ea6fb23c7ccbdf38e0c34d5"
+active = true
+
+[[sources.tracked]]
+commit = "58025e01afd44ee06ea6fb23c7ccbdf38e0c34d5"
+title = "cuda : pin the host state buffer during multi-GPU state restore"
+plan-item = "RD58"
+status = "ported-untested"
+patch = "1234_rd58_pin_state_buffer_multigpu_restore"
+note = "REAL match for RD58's 'pinned host buffer for multi-GPU prompt-cache/state restore' hypothesis. Root cause: ROCm/rocm-systems#4817 (still open) -- with 2+ devices in one process, ROCm's on-the-fly pageable-memory mapping for an async H2D copy can be torn down mid-transfer, faulting the SDMA engine inside the copy's source range. Registers the state-restore buffer as portable pinned host memory for the duration of the restore. Fork's own measured data (2x MI210): unpinned faults after 2 restores; pinned survives 140 restores/12 rounds/0 faults, temp-0 output unchanged. Ported 2026-08-24 with one deliberate deviation from the source PR: removed the unconditional failure-path LLAMA_LOG_WARN (fires on every ordinary restore where GGML_CUDA_REGISTER_HOST is simply unset -- not an error), kept the success diagnostic as the real-hardware activation proof this item's validation relies on. See patches/1234_rd58_pin_state_buffer_multigpu_restore.py's own docstring for the full adaptation rationale. Real-hardware validation on Brutus (2+ HIP devices) pending -- see RD58's plan-item notes."
