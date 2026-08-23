@@ -98,6 +98,21 @@ struct ggml_hip_tuner_config {
     // 0 disables retry, restoring the original immediately-fatal behavior.
     int    elapsed_time_retry_max  = 2;       // GGML_HIP_TUNE_ELAPSED_RETRY
 
+    // HI64 (2026-08-23, second real-hardware finding): the retry above was
+    // originally back-to-back with no delay, and one run in six still
+    // exhausted all 3 attempts and poisoned. If the underlying WDDM
+    // event-timestamp anomaly is tied to the driver's own submission/
+    // scheduling batching rather than a single independent per-launch coin
+    // flip, hammering the identical measurement again in the same
+    // scheduling window would not be expected to help -- a real wait gives
+    // the driver a chance to leave that window before the next attempt.
+    // Linear backoff (attempt number * this value), not exponential: the
+    // retry budget is small (2 by default) and unbounded exponential growth
+    // has no evidence behind it here, only a bare hypothesis that SOME delay
+    // beats none. 0 disables the wait, matching the original immediate-
+    // retry behavior.
+    double elapsed_time_retry_backoff_us = 2000.0;  // GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US
+
     // HI34 step 3 (Slice B0): cache eviction between timed samples.
     // Diagnostic only, default OFF: the residency experiment needs a cold
     // extreme to compare against the hot back-to-back state. Sizing is
