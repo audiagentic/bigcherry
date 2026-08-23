@@ -193,6 +193,20 @@ class UpstreamEquivalentSchemaTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "upstream-equivalent is not a 40-hex SHA"):
                 src.load_registry(path)
 
+    def test_present_but_empty_field_is_rejected(self):
+        # RD99 review finding (dev-gpt-agent, 2026-08-24): `entry.get(...) and
+        # not _SHA_RE.match(...)` made a present-but-empty string falsy,
+        # silently bypassing validation -- fixed to `"upstream-equivalent"
+        # in entry`. Present-but-malformed metadata must fail closed, not
+        # be treated the same as absent.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _minimal_registry(
+                Path(tmp), upstream_equivalent_line='upstream-equivalent = ""',
+            )
+            with self.assertRaisesRegex(ValueError, "upstream-equivalent is not a 40-hex SHA"):
+                src.load_registry(path)
+
     def test_no_currently_tracked_entry_has_a_fabricated_equivalent(self):
         """RD99's own scope note: populate upstream-equivalent only by
         confirming a real landed change, never invent one to exercise the

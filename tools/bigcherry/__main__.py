@@ -421,7 +421,7 @@ def cmd_repin(args: argparse.Namespace) -> int:
     # RD95 (exact tracked-commit ancestry) + RD99 (manually-annotated
     # upstream-equivalent ancestry): advisory ancestry/redundancy report.
     # Planning cards stay in the MCP single-writer domain; this reports
-    # now-baseline tracked commits but changes no state. A report failure
+    # now-baseline tracked changes but changes no state. A report failure
     # must never invalidate an otherwise-successful RE48 transition, so it
     # is wrapped broadly.
     try:

@@ -294,6 +294,11 @@ class UpstreamEquivalentAncestryTests(unittest.TestCase):
             text = output.getvalue()
             self.assertIn(f"tracked-commit={fork_commit[:9]}", text)
             self.assertIn(f"baseline-via=upstream-equivalent:{equivalent_commit[:9]}", text)
+            # RD99 review finding: the heading must not say "commit(s)" --
+            # for an equivalent-only match the tracked fork commit itself
+            # is specifically NOT proven ancestral, only its noted change.
+            self.assertIn("change(s) now baseline", text)
+            self.assertNotIn("commit(s) now baseline", text)
 
     def test_equivalent_present_but_not_ancestral_is_not_reported(self):
         with _ThrowawayRepo() as root, tempfile.TemporaryDirectory(
@@ -351,23 +356,26 @@ class UpstreamEquivalentAncestryTests(unittest.TestCase):
 
     def test_exact_commit_ancestral_preferred_over_equivalent(self):
         # When the tracked commit itself is ALREADY proven ancestral, that
-        # is the match reason even if an upstream-equivalent field is also
-        # present -- never prefer the weaker/secondary evidence path.
+        # is the match reason even if an upstream-equivalent field is ALSO
+        # genuinely ancestral -- never prefer the weaker/secondary evidence
+        # path just because it exists. Both SHAs here are real ancestors of
+        # the pin, so this pins the precise "both would match -> exact
+        # wins" contract, not merely "an equivalent field is present".
         with _ThrowawayRepo() as root, tempfile.TemporaryDirectory(
             prefix="bc-rd99-registry-"
         ) as tmp:
             older = _commit(root, "a.txt", "1")
-            newer = _commit(root, "b.txt", "2")
+            also_ancestral_equivalent = _commit(root, "equiv.txt", "2")
+            newer = _commit(root, "b.txt", "3")
             _run(root, "tag", "candidate-pin", newer)
 
-            unrelated_equivalent = "cafebabe" * 5
             registry_path = Path(tmp) / "external-sources.toml"
             _write_registry(
                 registry_path,
                 snapshot=newer,
                 tracked=[
                     (older, "already ancestral on its own", "RD203", "planned",
-                     unrelated_equivalent),
+                     also_ancestral_equivalent),
                 ],
             )
 
