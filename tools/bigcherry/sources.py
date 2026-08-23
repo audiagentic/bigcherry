@@ -98,7 +98,9 @@ def load_registry(path: str | Path | None = None) -> dict:
                 raise ValueError(f"source {source['id']}: {sha[:9]} has invalid status {status!r}")
             if entry.get("original") and not _SHA_RE.match(str(entry["original"])):
                 raise ValueError(f"source {source['id']}: {sha[:9]} original is not a 40-hex SHA")
-            if entry.get("upstream-equivalent") and not _SHA_RE.match(str(entry["upstream-equivalent"])):
+            if "upstream-equivalent" in entry and not _SHA_RE.match(
+                str(entry["upstream-equivalent"])
+            ):
                 raise ValueError(
                     f"source {source['id']}: {sha[:9]} upstream-equivalent is not a 40-hex SHA"
                 )
@@ -333,7 +335,7 @@ def baseline_candidates_at_pin(
     registry: dict | str | Path | None = None,
     timeout: int = 30,
 ) -> dict:
-    """Return tracked external-source commits proven ancestral to candidate_pin.
+    """Return tracked external-source changes proven baseline at candidate_pin.
 
     Entirely local and fail-closed: only an "ancestral" verdict is included.
     Missing candidate history, missing tracked commits, git failures, and
@@ -447,14 +449,14 @@ def print_baseline_candidates(report: dict) -> None:
     candidates = report["candidates"]
     if not candidates:
         print(
-            "ancestry gate: no tracked external-source commits proven "
-            f"ancestral to pin {pin}"
+            "ancestry gate: no tracked external-source changes proven "
+            f"baseline at pin {pin}"
         )
         return
 
     print(
         f"ancestry gate: {len(candidates)} tracked external-source "
-        f"commit(s) now baseline at pin {pin}:"
+        f"change(s) now baseline at pin {pin}:"
     )
     for item in candidates:
         suffix = (
