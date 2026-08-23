@@ -1050,6 +1050,15 @@ class PromotionAndReplayExportTests(unittest.TestCase):
             (source_root / "ggml" / "include" / "ggml.h").write_text(
                 "GGML_TYPE_F32 = 0,\n", encoding="utf-8"
             )
+            # HI67: dispatch_db is required, though this fixture's winner is
+            # native (no correctness evidence needed) -- an empty schema-6
+            # DB is enough to satisfy rehydration.
+            dispatch_db_ref = fx.store.publish_bytes_ref(
+                "runs/run1/tune/dispatch.sqlite",
+                _correctness_gated_dispatch_db_bytes(Path(directory), dispatch_hex="a" * 32),
+                kind="dispatch-db",
+                provenance=fx.seed_doc,
+            )
 
             result = lifecycle.execute_replay_export_stage(
                 context=fx.context,
@@ -1057,6 +1066,7 @@ class PromotionAndReplayExportTests(unittest.TestCase):
                 run_id=fx.run_id,
                 promoted_winners=ArtifactLocator(winners_ref.artifact_id),
                 manifest=ArtifactLocator(manifest_ref.artifact_id),
+                dispatch_db=ArtifactLocator(dispatch_db_ref.artifact_id),
                 source_root=source_root,
                 local_provenance_class="development",
             )
