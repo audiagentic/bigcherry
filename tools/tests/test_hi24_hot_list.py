@@ -31,10 +31,15 @@ class Hi24HotListContractTests(unittest.TestCase):
         self.assertIn("double hot_share_pct         = 80.0;", self.cuh)
 
     def test_hot_share_env_override_is_bounded(self):
-        self.assertIn(
-            'double_env("GGML_HIP_TUNE_HOT_SHARE", 0.0, 100.0, c.hot_share_pct);',
-            self.tuner,
-        )
+        # HI99: generated from GGML_HIP_TUNER_CONFIG_FIELDS, not a standalone
+        # hand-written double_env() call.
+        header = (ROOT / "src" / "ggml" / "src" / "ggml-cuda"
+                  / "hip-autotune-tuner.cuh").read_text(encoding="utf-8")
+        row_idx = header.index("F(DOUBLE, hot_share_pct,")
+        row_end = header.index(") \\", row_idx)
+        row = header[row_idx:row_end]
+        self.assertIn('"GGML_HIP_TUNE_HOT_SHARE"', row)
+        self.assertIn("0.0,  100.0", row)
 
     def test_no_env_var_means_no_signature_is_hot(self):
         # hot_list() returns early (empty map) when the env var is unset;

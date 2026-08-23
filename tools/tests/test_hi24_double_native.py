@@ -28,9 +28,13 @@ class DoubleNativeContractTests(unittest.TestCase):
 
     def test_double_native_defaults_on_and_has_boolean_env_override(self):
         self.assertIn("int    double_native         = 1;", self.tuner_h)
-        self.assertIn(
-            'int_env("GGML_HIP_TUNE_DOUBLE_NATIVE", 0, 1, c.double_native);', self.tuner
-        )
+        # HI99: env-override parsing is generated from
+        # GGML_HIP_TUNER_CONFIG_FIELDS, not a standalone hand-written call.
+        row_idx = self.tuner_h.index("F(INT,    double_native,")
+        row_end = self.tuner_h.index(") \\", row_idx)
+        row = self.tuner_h[row_idx:row_end]
+        self.assertIn('"GGML_HIP_TUNE_DOUBLE_NATIVE"', row)
+        self.assertIn("0,    1", row)
 
     def test_twin_is_created_before_screening_pointer_vector(self):
         # The twin copies a Measurement and push_backs it into
@@ -152,7 +156,11 @@ class DoubleNativeContractTests(unittest.TestCase):
         self.assertIn("measurement_name(m).c_str()", self.tuner)
         # The header also records the Slice B0 flush configuration: a
         # flush=0 artifact is not measurement-equivalent to a flush=1 one.
-        self.assertIn('"\\\"alpha\\\":%.4f,\\\"double_native\\\":%d,', self.tuner)
+        # HI99: alpha/double_native are now macro-driven (%.17g/%d generated
+        # from GGML_HIP_TUNER_CONFIG_FIELDS), not a standalone literal
+        # fprintf fragment -- confirm both wire keys are still declared.
+        self.assertIn('"alpha"', self.tuner_h)
+        self.assertIn('"double_native"', self.tuner_h)
 
     def test_measurement_name_is_the_single_naming_authority(self):
         # One definition of measurement-instance identity: the "#twin"
