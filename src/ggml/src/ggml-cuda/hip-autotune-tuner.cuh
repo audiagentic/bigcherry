@@ -32,6 +32,7 @@
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE)
 
 #include <stddef.h>
+#include <limits>
 #include <string>
 
 // Why a candidate was not measured, or was measured and rejected. Recorded per
@@ -86,6 +87,33 @@ struct ggml_hip_tuner_config {
     double min_sample_us           = 100.0;   // GGML_HIP_TUNE_MIN_SAMPLE_US
     int    max_launches_per_sample = 32;      // GGML_HIP_TUNE_MAX_LPS
 
+    // HI64: bounded retry, WITHIN one timed sample, for a spurious non-
+    // positive/non-finite hipEventElapsedTime() reading only -- real-hardware
+    // evidence (Windows/WDDM, RX 7900 GRE) found this specific silent branch
+    // firing on a sub-millisecond kernel with every checked HIP API call
+    // still reporting success, consistent with event-timestamp precision
+    // rather than a hard fault. A genuine HIP API failure (anything hip_ok()
+    // itself catches) is NEVER retried -- it stays immediately fatal, same as
+    // before this item: "a wrong measurement is worse than no measurement"
+    // only applies to trusting a bad number, not to masking a real error.
+    // 0 disables retry, restoring the original immediately-fatal behavior.
+    int    elapsed_time_retry_max  = 2;       // GGML_HIP_TUNE_ELAPSED_RETRY
+
+    // HI64 (2026-08-23, second real-hardware finding): the retry above was
+    // originally back-to-back with no delay, and one run in six still
+    // exhausted all 3 attempts and poisoned. If the underlying WDDM
+    // event-timestamp anomaly is tied to the driver's own submission/
+    // scheduling batching rather than a single independent per-launch coin
+    // flip, hammering the identical measurement again in the same
+    // scheduling window would not be expected to help -- a real wait gives
+    // the driver a chance to leave that window before the next attempt.
+    // Linear backoff (attempt number * this value), not exponential: the
+    // retry budget is small (2 by default) and unbounded exponential growth
+    // has no evidence behind it here, only a bare hypothesis that SOME delay
+    // beats none. 0 disables the wait, matching the original immediate-
+    // retry behavior.
+    double elapsed_time_retry_backoff_us = 2000.0;  // GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US
+
     // HI34 step 3 (Slice B0): cache eviction between timed samples.
     // Diagnostic only, default OFF: the residency experiment needs a cold
     // extreme to compare against the hot back-to-back state. Sizing is
@@ -136,6 +164,14 @@ struct ggml_hip_tuner_config {
     // and is emitted as "<stable_name>#twin".
     int    double_native         = 1;   // GGML_HIP_TUNE_DOUBLE_NATIVE
 
+    // HI24 steps 5-6: cumulative call-weighted impact share (from
+    // `python -m bigcherry.inventory hot-list`, GGML_HIP_TUNE_HOT_SIGNATURES)
+    // at or below which a signature is "hot" and skips screening's
+    // noise-driven elimination. Only takes effect when a hot list is
+    // actually loaded; with no list, every signature behaves exactly as it
+    // did before this item.
+    double hot_share_pct         = 80.0;   // GGML_HIP_TUNE_HOT_SHARE
+
     // Winner selection (standards 7.3).
     double replacement_threshold_pct = 1.0;
     double tie_pct                   = 0.5;
@@ -170,6 +206,55 @@ struct ggml_hip_tuner_config {
     // HI12 E2: emit raw finalist samples so a winner is recomputable offline.
     int    emit_samples        = 1;
 };
+
+// HI99: single source of truth for every direct scalar env-backed
+// ggml_hip_tuner_config override. Before this macro, the env-override
+// parsing block and the measurements.jsonl header-emission fprintf were two
+// independently hand-maintained lists that were free to drift -- confirmed
+// they already had (11 of the fields below were env-overridable but never
+// appeared in the header, so a real tuning run's own provenance did not
+// record that they had been set). This is the same failure-mode class as
+// the historical incident where the `compiler` header field silently went
+// missing for weeks and nobody caught it.
+//
+// F(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) -- TYPE in
+// {INT, SIZE, DOUBLE} selects which env-parsing helper
+// (int_env/size_env/double_env, hip-autotune-tuner.cu) and which fprintf
+// specifier apply. wire_key is spelled out explicitly rather than derived
+// from cpp_field because the two already disagree for at least one field
+// (confidence_alpha is emitted as "alpha") -- inferring one from the other
+// would either silently rename the wire format or require yet another
+// hidden mapping this macro exists to eliminate.
+//
+// Deliberately NOT covered here: GGML_HIP_TUNE_FLUSH_L2 and
+// GGML_HIP_TUNE_FLUSH_REWARM resolve into ONE enum (pre_sample_mode) plus a
+// derived 0/1 wire mirror (flush_l2) -- not a 1:1 scalar override, so that
+// resolution logic (and its emission) stays hand-written in
+// ggml_hip_tuner_get_config()/ggml_hip_tuner_flush() rather than being
+// forced into this table. flush_evict_mb is an ordinary scalar and IS
+// covered below. Also deliberately NOT covered: screen_keep_top,
+// screen_keep_within_pct, noise_canary_retries, tie_pct, max_nmse,
+// max_abs_error, min_paired_rounds -- these are not env-overridable today,
+// and promoting them to be so is a separate tuning-policy decision, not
+// this anti-drift refactor's scope.
+#define GGML_HIP_TUNER_CONFIG_FIELDS(F) \
+    F(INT,    final_samples,                 "final_samples",                 "GGML_HIP_TUNE_FINAL_SAMPLES",             2,    100000) \
+    F(INT,    screen_samples,                "screen_samples",                "GGML_HIP_TUNE_SCREEN_SAMPLES",            1,    100000) \
+    F(SIZE,   max_workspace_bytes,           "max_workspace_bytes",           "GGML_HIP_TUNE_MAX_WORKSPACE",             (size_t) 0, std::numeric_limits<size_t>::max()) \
+    F(DOUBLE, noise_canary_pct,              "noise_canary_pct",              "GGML_HIP_TUNE_NOISE_PCT",                 0.0,  std::numeric_limits<double>::max()) \
+    F(INT,    double_native,                 "double_native",                 "GGML_HIP_TUNE_DOUBLE_NATIVE",             0,    1) \
+    F(DOUBLE, hot_share_pct,                 "hot_share_pct",                 "GGML_HIP_TUNE_HOT_SHARE",                 0.0,  100.0) \
+    F(DOUBLE, confidence_alpha,              "alpha",                         "GGML_HIP_TUNE_ALPHA",                     0.0,  1.0) \
+    F(DOUBLE, noisy_mad_ratio,               "noisy_mad_ratio",               "GGML_HIP_TUNE_NOISY_MAD",                 0.0,  std::numeric_limits<double>::max()) \
+    F(INT,    verify_determinism,            "verify_determinism",            "GGML_HIP_TUNE_VERIFY_DETERMINISM",        0,    1) \
+    F(INT,    emit_samples,                  "emit_samples",                  "GGML_HIP_TUNE_EMIT_SAMPLES",              0,    1) \
+    F(INT,    pilot_samples,                 "pilot_samples",                 "GGML_HIP_TUNE_PILOT_SAMPLES",             1,    100000) \
+    F(DOUBLE, min_sample_us,                 "min_sample_us",                 "GGML_HIP_TUNE_MIN_SAMPLE_US",             0.0,  std::numeric_limits<double>::max()) \
+    F(INT,    max_launches_per_sample,       "max_launches_per_sample",       "GGML_HIP_TUNE_MAX_LPS",                   1,    100000) \
+    F(INT,    elapsed_time_retry_max,        "elapsed_time_retry_max",        "GGML_HIP_TUNE_ELAPSED_RETRY",             0,    10) \
+    F(DOUBLE, elapsed_time_retry_backoff_us, "elapsed_time_retry_backoff_us", "GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US", -1.0,  std::numeric_limits<double>::max()) \
+    F(INT,    confirmation_samples,          "confirmation_samples",          "GGML_HIP_TUNE_CONFIRM_SAMPLES",           2,    100000) \
+    F(INT,    flush_evict_mb,                "flush_evict_mb",                "GGML_HIP_TUNE_FLUSH_MB",                  1,    65536)
 
 const ggml_hip_tuner_config & ggml_hip_tuner_get_config();
 

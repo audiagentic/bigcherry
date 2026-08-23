@@ -1,6 +1,8 @@
 """HI78: fast single-model end-to-end smoke campaign.
 
-record -> inventory -> tune -> dispatch-db -> promote -> export -> replay.
+record -> inventory -> tune -> dispatch-db -> promote -> [correctness-evidence
+-> re-promote] -> export -> replay. The bracketed stage (S3b) only runs when
+--correctness-binary is given; see HI80.
 
 Exercises the whole HI29/HI30/HI31/HI67/HI74 chain against one small local
 GGUF model in minutes, not the hours a full HI35/HI36-style production
@@ -255,6 +257,12 @@ class Campaign:
     stock_bench: Path | None = None
     tune_bench: Path | None = None
     replay_bench: Path | None = None
+    # HI80: optional, patched test-backend-ops (patches 1222+1223 applied).
+    # When given, S3b generates RV49 correctness evidence for rows that
+    # cleared every statistical promotion criterion but were rejected purely
+    # for missing evidence, then re-runs promotion. When omitted, S3b is a
+    # no-op and those rows stay rejected -- exactly today's behavior.
+    correctness_binary: Path | None = None
     bench_prompt: int = 512
     bench_gen: int = 128
     bench_repetitions: int = 3
@@ -278,6 +286,8 @@ class Campaign:
             self.tune_bench = Path(self.tune_bench)
         if self.replay_bench is not None:
             self.replay_bench = Path(self.replay_bench)
+        if self.correctness_binary is not None:
+            self.correctness_binary = Path(self.correctness_binary)
         self.bench_prompt = int(self.bench_prompt)
         self.bench_gen = int(self.bench_gen)
         self.bench_repetitions = int(self.bench_repetitions)
@@ -321,6 +331,11 @@ class Campaign:
             executable_files["replay_bench"] = {
                 "path": str(self.replay_bench.resolve()),
                 "file_identity": _file_content_identity(self.replay_bench),
+            }
+        if self.correctness_binary is not None:
+            executable_files["correctness_binary"] = {
+                "path": str(self.correctness_binary.resolve()),
+                "file_identity": _file_content_identity(self.correctness_binary),
             }
 
         if self.identity_context is None:
@@ -409,6 +424,7 @@ class Campaign:
             Path(f"{tune_db}.journal.jsonl"),
             self.workdir / "dispatch.sqlite",
             self.workdir / "promoted.jsonl",
+            self.workdir / "correctness_evidence_input.jsonl",
             self.workdir / "dispatch.cache",
             self.workdir / "coverage.json",
             self.workdir / "bench.json",
@@ -750,6 +766,82 @@ class Campaign:
         self.write_status(stage, "done", out.strip().splitlines()[-1] if out.strip() else "")
         return promoted
 
+    def s3b_correctness_evidence(
+        self, measurements: Path, dispatch_db: Path, promoted: Path,
+    ) -> Path:
+        """HI80: optional (no-op unless --correctness-binary was given).
+
+        s3_promote() already ran once above and rejected some rows with
+        promotion_status == "rejected_no_correctness_evidence" -- a status
+        promote() only ever assigns AFTER every statistical criterion (BH,
+        bootstrap CI, effect threshold) already passed, since the
+        correctness gate is evaluated last as a hard AND, never a rescue
+        (see tune_promotion.promote()'s own comments). Generating evidence
+        for exactly those rows and re-running promotion is therefore never
+        spent on a candidate that would have failed statistically anyway.
+
+        promote() is not safely rerunnable on its own OUTPUT -- a rejected
+        row's promotion_status is not one of the pending_bh/
+        confirmation_rejected values promote() requires to reconsider a row,
+        so feeding promoted.jsonl back in would raise "unknown promotion
+        status". Instead this selects the blocked rows' ORIGINAL (untouched,
+        still pending_bh) entries out of `measurements`, generates evidence
+        for just those against `dispatch_db`, then re-runs s3_promote against
+        the original measurements file -- unchanged except that dispatch_db
+        now carries evidence for the previously-blocked dispatches.
+        """
+        stage = "S3b_correctness_evidence"
+        if self.correctness_binary is None:
+            self.write_status(stage, "done", "skipped (no --correctness-binary given)")
+            return promoted
+        self.write_status(stage, "running")
+
+        blocked_dispatches: set[str] = set()
+        for line in promoted.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("promotion_status") == "rejected_no_correctness_evidence":
+                blocked_dispatches.add(row.get("dispatch"))
+        if not blocked_dispatches:
+            self.write_status(stage, "done", "no rows blocked purely on missing correctness evidence")
+            return promoted
+
+        header_line: str | None = None
+        selected_lines: list[str] = []
+        for line in measurements.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            row = json.loads(stripped)
+            if row.get("kind") == "header":
+                header_line = stripped
+            elif row.get("dispatch") in blocked_dispatches:
+                selected_lines.append(stripped)
+        if header_line is None or not selected_lines:
+            raise CampaignError(
+                f"{stage}: could not locate the blocked dispatch rows in the "
+                "original measurements file"
+            )
+
+        evidence_input = self.workdir / "correctness_evidence_input.jsonl"
+        evidence_input.write_text(
+            header_line + "\n" + "\n".join(selected_lines) + "\n", encoding="utf-8"
+        )
+
+        _run_module(
+            "bigcherry.hi80_generate_correctness_evidence", str(evidence_input),
+            "--dispatch-db", str(dispatch_db), "--binary", str(self.correctness_binary),
+        )
+
+        repromoted = self.s3_promote(measurements, dispatch_db)
+        self.write_status(
+            stage, "done",
+            f"{len(blocked_dispatches)} row(s) evidenced, re-ran S3_promote",
+        )
+        return repromoted
+
     def s4_export(self, promoted: Path) -> Path:
         stage = "S4_export"
         cache = self.workdir / "dispatch.cache"
@@ -1088,6 +1180,7 @@ class Campaign:
         measurements = self.s2_tune()
         dispatch_db = self.s2c_dispatch_db(measurements)
         promoted = self.s3_promote(measurements, dispatch_db)
+        promoted = self.s3b_correctness_evidence(measurements, dispatch_db, promoted)
         cache = self.s4_export(promoted)
         coverage = self.s5_replay(cache)
         if self.stock_bench and self.tune_bench and self.replay_bench:
@@ -1143,6 +1236,12 @@ def main(argv: list[str] | None = None) -> int:
                          help="bigcherry llama-bench binary for the native-dispatch bench arm")
     parser.add_argument("--replay-bench", type=Path, default=None,
                          help="bigcherry llama-bench binary for the replay-dispatch bench arm")
+    parser.add_argument(
+        "--correctness-binary", type=Path, default=None,
+        help="patched test-backend-ops (patches 1222+1223 applied); enables "
+             "HI80's S3b stage, generating RV49 correctness evidence for "
+             "statistically-ready-but-unevidenced rows and re-promoting",
+    )
     parser.add_argument("--bench-prompt", type=int, default=512)
     parser.add_argument("--bench-gen", type=int, default=128)
     parser.add_argument("--bench-repetitions", type=int, default=3)
@@ -1153,7 +1252,8 @@ def main(argv: list[str] | None = None) -> int:
         replay_server=args.replay_server, manifest=args.manifest,
         workdir=args.workdir, port=args.port,
         stock_bench=args.stock_bench, tune_bench=args.tune_bench,
-        replay_bench=args.replay_bench, bench_prompt=args.bench_prompt,
+        replay_bench=args.replay_bench, correctness_binary=args.correctness_binary,
+        bench_prompt=args.bench_prompt,
         bench_gen=args.bench_gen, bench_repetitions=args.bench_repetitions,
     )
     try:

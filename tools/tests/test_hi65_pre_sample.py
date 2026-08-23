@@ -101,7 +101,11 @@ class PreSampleModeContractTests(unittest.TestCase):
         loop = self.tuner.find("for (int s = 0; s < samples; ++s)")
         evict = self.tuner.find("&& !launch_cache_evict(lc))")
         rewarm = self.tuner.find("if (pre_sample == GGML_HIP_PRE_SAMPLE_EVICT_REWARM)")
-        host_start = self.tuner.find("const int64_t host_start = ggml_time_us();")
+        # HI64 (2026-08-23): host_start's declaration moved outside the
+        # sample loop (it now needs to survive a bounded elapsed-time retry
+        # attempt), so the per-attempt assignment is no longer a `const`
+        # declaration -- same ordering invariant, updated literal text.
+        host_start = self.tuner.find("host_start = ggml_time_us();")
         record_start = self.tuner.find("hipEventRecord(start, lc.stream)")
         for pos in (loop, evict, rewarm, host_start, record_start):
             self.assertGreater(pos, 0)
@@ -127,7 +131,10 @@ class PreSampleModeContractTests(unittest.TestCase):
     # --- provenance -----------------------------------------------------------
 
     def test_resolved_mode_string_is_in_the_artifact_header(self):
-        header = self.tuner.find('\\"pre_sample_mode\\":\\"%s\\"}')
+        # HI37 Part 2 added workload/workload_label fields after this one, so
+        # it is no longer immediately followed by the closing brace -- just
+        # confirm the field itself and its value source are present.
+        header = self.tuner.find('\\"pre_sample_mode\\":\\"%s\\"')
         self.assertGreater(header, 0)
         self.assertIn("pre_sample_mode_name(config.pre_sample_mode)", self.tuner)
 

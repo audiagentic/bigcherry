@@ -47,10 +47,15 @@ class FlushContractTests(unittest.TestCase):
         self.assertIn(
             'int_env("GGML_HIP_TUNE_FLUSH_L2", 0, 1, flush_l2_req);', self.tuner
         )
-        self.assertIn(
-            'int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);',
-            self.tuner,
-        )
+        # HI99: flush_evict_mb is an ordinary scalar override, generated from
+        # GGML_HIP_TUNER_CONFIG_FIELDS rather than a standalone hand-written
+        # call (unlike flush_l2/flush_rewarm, which resolve into one enum and
+        # stay hand-written -- see that macro's own comment for why).
+        row_idx = self.tuner_h.index("F(INT,    flush_evict_mb,")
+        row_end = self.tuner_h.index(")", row_idx)
+        row = self.tuner_h[row_idx:row_end]
+        self.assertIn('"GGML_HIP_TUNE_FLUSH_MB"', row)
+        self.assertIn("1,    65536", row)
 
     def test_sizing_never_derived_from_the_l2_attribute(self):
         # The eviction buffer must come from the explicit megabyte count. A
@@ -74,7 +79,11 @@ class FlushContractTests(unittest.TestCase):
         # final hipEventSynchronize(stop).
         loop = self.tuner.find("for (int s = 0; s < samples; ++s)")
         evict = self.tuner.find("&& !launch_cache_evict(lc))")
-        host_start = self.tuner.find("const int64_t host_start = ggml_time_us();")
+        # HI64 (2026-08-23): host_start's declaration moved outside the
+        # sample loop (it now needs to survive a bounded elapsed-time retry
+        # attempt), so the per-attempt assignment is no longer a `const`
+        # declaration -- same ordering invariant, updated literal text.
+        host_start = self.tuner.find("host_start = ggml_time_us();")
         record_start = self.tuner.find("hipEventRecord(start, lc.stream)")
         self.assertGreater(loop, 0)
         self.assertGreater(evict, loop)
@@ -179,13 +188,16 @@ class FlushContractTests(unittest.TestCase):
     # --- provenance ----------------------------------------------------------
 
     def test_flush_configuration_is_recorded_in_the_artifact_header(self):
-        # The C string literal carries escaped quotes; match them literally.
-        header = self.tuner.find('\\"flush_l2\\":%d,\\"flush_evict_mb\\":%d,')
-
+        # HI99: flush_l2 (hand-resolved, stays hand-written) and
+        # flush_evict_mb (an ordinary scalar, now macro-driven) are no
+        # longer one contiguous literal fprintf fragment -- check each
+        # separately.
+        header = self.tuner.find('\\"flush_l2\\":%d,')
         self.assertGreater(header, 0)
-        self.assertIn("config.flush_l2, config.flush_evict_mb", self.tuner)
-        # The rationale must stay next to the emission: flush=0 and flush=1
-        # artifacts are not measurement-equivalent.
+        self.assertIn("config.flush_l2,", self.tuner)
+        self.assertIn('"flush_evict_mb"', self.tuner_h)
+        # The rationale must stay next to the flush_l2 emission: flush=0 and
+        # flush=1 artifacts are not measurement-equivalent.
         block = self.tuner[header : header + 1600]
         self.assertIn("not measurement-equivalent", block)
 

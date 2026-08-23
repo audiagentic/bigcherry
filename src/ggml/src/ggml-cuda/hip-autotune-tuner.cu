@@ -4,6 +4,7 @@
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE)
 
+#include "hip-autotune-blake2b.h"
 #include "hip-autotune-build-hash.h"
 #include "hip-autotune-canary.h"
 #include "hip-autotune-dispatch.cuh"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -249,6 +252,15 @@ struct Result {
     ggml_hip_digest hardware_digest  = {};
     std::string canonical_json;
 
+    // HI24 steps 5-6: true when this signature's cumulative call-weighted
+    // impact share (from an operator-supplied hot list, GGML_HIP_TUNE_HOT_
+    // SIGNATURES) falls at or below config.hot_share_pct. A hot signature
+    // skips screening's noise-driven elimination -- every measured, correct
+    // candidate reaches the final stage instead of only the top few by a
+    // screening median RV21 showed carries ~14% error. Always false with the
+    // env var unset, which is this item's explicit opt-in requirement.
+    bool hot_signature = false;
+
     // HI24 noise canary. `canary_pct` is the divergence between two
     // measurements of the *same kernel*; anything above zero is pure
     // measurement error. -1 means the check could not be run for this
@@ -320,6 +332,125 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+// HI37 Part 2: identity for the WORKLOAD this run tuned, derived from the set
+// of shapes it actually observed rather than any model metadata -- no model
+// identity crosses the ggml/llama boundary this overlay exists to avoid, and
+// the set of shapes a model produces (layer widths, head dimensions, context,
+// draft widths) is its fingerprint for free, from data this run already has.
+//
+// Presence, not frequency: call counts vary with run length, so hashing them
+// would give two runs of the *same* model two different identities, which is
+// the opposite of what this field is for.
+ggml_hip_digest compute_workload_digest(
+        const std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> & results) {
+    std::vector<ggml_hip_digest> sorted;
+    sorted.reserve(results.size());
+    for (const auto & entry : results) {
+        sorted.push_back(entry.second.signature_digest);
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](const ggml_hip_digest & a, const ggml_hip_digest & b) {
+                  return memcmp(a.bytes, b.bytes, GGML_HIP_DIGEST_BYTES) < 0;
+              });
+    std::string blob;
+    blob.reserve(sorted.size() * GGML_HIP_DIGEST_BYTES);
+    for (const ggml_hip_digest & d : sorted) {
+        blob.append((const char *) d.bytes, GGML_HIP_DIGEST_BYTES);
+    }
+    ggml_hip_digest out = {};
+    // Mirrors tools/bigcherry's Python workload_digest() byte for byte --
+    // both must agree, the same reason every other digest in this file does.
+    ggml_hip_blake2b(out.bytes, GGML_HIP_DIGEST_BYTES,
+                     blob.data(), blob.size(), "llama-workload");
+    return out;
+}
+
+// HI24 steps 5-6: hot-list-based screening policy. A signature whose
+// cumulative call-weighted impact share falls at or below hot_share_pct is
+// "hot": screening's noise-driven elimination (top-N / within-band) is
+// skipped for it, and every measured, correct candidate reaches the final
+// stage instead. `python -m bigcherry.inventory hot-list` emits the file;
+// this is a plain text format, not JSON -- there is no JSON parser anywhere
+// in this overlay (every other file here writes JSON by hand and reads
+// none), and adding one solely to read four fixed fields would be a new
+// class of parsing bug in code that decides how much measurement each
+// signature gets.
+struct HotList {
+    std::unordered_map<ggml_hip_digest, double, DigestHash, DigestEqual> cum_share_pct;
+};
+
+const HotList & hot_list() {
+    static const HotList list = [] {
+        HotList l;
+        const char * path = getenv("GGML_HIP_TUNE_HOT_SIGNATURES");
+        if (path == nullptr || path[0] == '\0') {
+            return l;   // no list: every signature behaves exactly as before this item
+        }
+        FILE * file = fopen(path, "r");
+        if (file == nullptr) {
+            GGML_LOG_WARN("bigcherry: cannot read hot list '%s'; no signature "
+                          "will be treated as hot\n", path);
+            return l;
+        }
+        char line[256];
+        size_t parsed_rows = 0;
+        while (fgets(line, sizeof(line), file) != nullptr) {
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\0') {
+                continue;
+            }
+            char hex[80] = {0};
+            double share_pct = 0.0;
+            double row_cum_share_pct = 0.0;
+            int rank = 0;
+            if (sscanf(line, "%63s %lf %lf %d", hex, &share_pct,
+                       &row_cum_share_pct, &rank) != 4) {
+                continue;
+            }
+            if (strlen(hex) != 2 * GGML_HIP_DIGEST_BYTES) {
+                continue;
+            }
+            ggml_hip_digest digest = {};
+            bool ok = true;
+            for (size_t i = 0; i < GGML_HIP_DIGEST_BYTES; ++i) {
+                unsigned int byte = 0;
+                if (sscanf(hex + 2 * i, "%2x", &byte) != 1) {
+                    ok = false;
+                    break;
+                }
+                digest.bytes[i] = (uint8_t) byte;
+            }
+            if (!ok) {
+                continue;
+            }
+            l.cum_share_pct[digest] = row_cum_share_pct;
+            ++parsed_rows;
+        }
+        fclose(file);
+        GGML_LOG_INFO("bigcherry: hot list '%s' -- %zu signature(s) loaded\n",
+                      path, parsed_rows);
+        return l;
+    }();
+    return list;
+}
+
+// Absent from a *loaded* list means NOT hot: test-backend-ops sweeps produce
+// far more signatures than any real-workload hot list, and an unlisted
+// signature must not be silently promoted to hot treatment. Absent *list*
+// (env var unset) means every signature is exactly as it was before this
+// item -- the two absences are deliberately different outcomes.
+bool is_hot_signature(const ggml_hip_digest & signature_digest,
+                      const ggml_hip_tuner_config & config) {
+    const HotList & list = hot_list();
+    if (list.cum_share_pct.empty()) {
+        return false;
+    }
+    const auto found = list.cum_share_pct.find(signature_digest);
+    if (found == list.cum_share_pct.end()) {
+        return false;
+    }
+    return found->second <= config.hot_share_pct;
+}
 
 #ifdef GGML_HIP_ROUTING_TRANSFORM
 // bigcherry (HI29): transform-attempt / transform-gap recording, written
@@ -1158,12 +1289,16 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         }
     }
     trace_workspace_event(stage, "warmup_complete", candidate->stable_name);
-    if (hipStreamSynchronize(lc.stream) != hipSuccess) {
+    // HI64: these two checks used to compare the raw status directly instead
+    // of going through hip_ok(), so a real failure here was invisible in the
+    // log -- exactly the class of gap that made this item's original
+    // real-hardware finding harder to pin down than it needed to be.
+    if (!hip_ok(hipStreamSynchronize(lc.stream), "hipStreamSynchronize(warmup)")) {
         destroy_events();
         disable_smi_after_measurement_failure();
         return false;
     }
-    if (hipGetLastError() != hipSuccess) {
+    if (!hip_ok(hipGetLastError(), "hipGetLastError(post-warmup)")) {
         destroy_events();
         disable_smi_after_measurement_failure();
         return false;
@@ -1213,42 +1348,79 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
             trace_workspace_event(stage, "rewarm_complete", candidate->stable_name);
         }
         trace_workspace_event(stage, "timed_sample_begin", candidate->stable_name);
-        const int64_t host_start = ggml_time_us();
-        if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        // Several launches per sample when one kernel is below event
-        // resolution; the mean of the batch is the sample.
-        for (int i = 0; i < launches_per_sample; ++i) {
-            if (!do_launch()) {
+        // HI64: bounded retry for a spurious non-positive/non-finite
+        // hipEventElapsedTime() reading only (see the field comment on
+        // ggml_hip_tuner_config::elapsed_time_retry_max for the real-
+        // hardware finding this responds to). Every hip_ok()-checked call
+        // below keeps its original immediately-fatal behavior on a genuine
+        // API failure -- only the two silent numeric-sanity checks that used
+        // to fall straight through to disable_smi_after_measurement_failure()
+        // now get bounded extra attempts first.
+        const ggml_hip_tuner_config & retry_config = ggml_hip_tuner_get_config();
+        const int max_elapsed_time_attempts =
+            1 + std::max(0, retry_config.elapsed_time_retry_max);
+        int64_t host_start = 0;
+        int64_t host_end = 0;
+        double us = 0.0;
+        bool sample_ok = false;
+        for (int attempt = 0; attempt < max_elapsed_time_attempts && !sample_ok; ++attempt) {
+            if (attempt > 0) {
+                // Linear backoff (see the config field comment for why): the
+                // stream is already fully drained by the hipEventSynchronize
+                // below that led to this retry, so there is nothing to flush
+                // here -- only a real wall-clock wait, on the chance the
+                // driver's own submission/scheduling window is what needs
+                // to pass, not just another attempt.
+                if (retry_config.elapsed_time_retry_backoff_us > 0.0) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(
+                        (int64_t) (attempt * retry_config.elapsed_time_retry_backoff_us)));
+                }
+                trace_workspace_event(stage, "elapsed_time_retry", candidate->stable_name);
+            }
+            host_start = ggml_time_us();
+            if (!hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")) {
                 destroy_events();
                 disable_smi_after_measurement_failure();
                 return false;
             }
-        }
-        if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
-        }
-        const int64_t host_end = ggml_time_us();
+            // Several launches per sample when one kernel is below event
+            // resolution; the mean of the batch is the sample.
+            for (int i = 0; i < launches_per_sample; ++i) {
+                if (!do_launch()) {
+                    destroy_events();
+                    disable_smi_after_measurement_failure();
+                    return false;
+                }
+            }
+            if (!hip_ok(hipEventRecord(stop, lc.stream), "hipEventRecord(stop)")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            if (!hip_ok(hipEventSynchronize(stop), "hipEventSynchronize(stop)")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            host_end = ggml_time_us();
 
-        float ms = 0.0f;
-        if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")
-                || !std::isfinite(ms) || ms <= 0.0f) {
-            destroy_events();
-            disable_smi_after_measurement_failure();
-            return false;
+            float ms = 0.0f;
+            if (!hip_ok(hipEventElapsedTime(&ms, start, stop), "hipEventElapsedTime")) {
+                destroy_events();
+                disable_smi_after_measurement_failure();
+                return false;
+            }
+            if (!std::isfinite(ms) || ms <= 0.0f) {
+                continue;  // retryable: candidate for the bounded loop above
+            }
+            const double candidate_us = (double) ms * 1000.0 / (double) launches_per_sample;
+            if (!std::isfinite(candidate_us) || candidate_us <= 0.0) {
+                continue;  // retryable, same class as the ms check above
+            }
+            us = candidate_us;
+            sample_ok = true;
         }
-        const double us = (double) ms * 1000.0 / (double) launches_per_sample;
-        if (!std::isfinite(us) || us <= 0.0) {
+        if (!sample_ok) {
             destroy_events();
             disable_smi_after_measurement_failure();
             return false;
@@ -1273,8 +1445,11 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         *pool_peak_bytes = peak >= workspace_baseline ? peak - workspace_baseline : 0;
     }
 #endif
-    const hipError_t last_status = hipGetLastError();
-    if (!destroy_ok || last_status != hipSuccess) {
+    // HI64: same gap as the warmup checks above -- log the real status
+    // instead of comparing it silently, so a genuine post-measurement error
+    // is attributable rather than indistinguishable from the numeric-sanity
+    // failures the retry loop above already handles.
+    if (!hip_ok(hipGetLastError(), "hipGetLastError(post-measurement)") || !destroy_ok) {
         disable_smi_after_measurement_failure();
         return false;
     }
@@ -1725,7 +1900,7 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
             }
             out = (int) parsed;
         };
-        auto size_env = [&](const char * name, size_t & out) {
+        auto size_env = [&](const char * name, size_t min_v, size_t max_v, size_t & out) {
             const char * v = getenv(name); if (!v) return;
             if (*v == '\0' || std::isspace((unsigned char) *v)) {
                 GGML_LOG_WARN("bigcherry: invalid %s=%s (whitespace/empty value)\n", name, v);
@@ -1733,7 +1908,8 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
             }
             errno = 0; char * end = nullptr; const unsigned long long parsed = strtoull(v, &end, 10);
             if (errno || end == v || *end != '\0' || v[0] == '-'
-                    || parsed > (unsigned long long) std::numeric_limits<size_t>::max()) {
+                    || parsed > (unsigned long long) std::numeric_limits<size_t>::max()
+                    || (size_t) parsed < min_v || (size_t) parsed > max_v) {
                 GGML_LOG_WARN("bigcherry: invalid %s=%s\n", name, v); c.valid = false; return;
             }
             out = (size_t) parsed;
@@ -1753,45 +1929,28 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         };
         // Environment overrides exist so a long production tune can be traded
         // against precision without a rebuild.
-        if (const char * v = getenv("GGML_HIP_TUNE_FINAL_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_FINAL_SAMPLES", 2, 100000, c.final_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_SCREEN_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_SCREEN_SAMPLES", 1, 100000, c.screen_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MAX_WORKSPACE")) {
-            size_env("GGML_HIP_TUNE_MAX_WORKSPACE", c.max_workspace_bytes);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_NOISE_PCT")) {
-            double_env("GGML_HIP_TUNE_NOISE_PCT", 0.0, std::numeric_limits<double>::max(), c.noise_canary_pct);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_DOUBLE_NATIVE")) {
-            int_env("GGML_HIP_TUNE_DOUBLE_NATIVE", 0, 1, c.double_native);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_ALPHA")) {
-            double_env("GGML_HIP_TUNE_ALPHA", 0.0, 1.0, c.confidence_alpha);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_NOISY_MAD")) {
-            double_env("GGML_HIP_TUNE_NOISY_MAD", 0.0, std::numeric_limits<double>::max(), c.noisy_mad_ratio);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_VERIFY_DETERMINISM")) {
-            int_env("GGML_HIP_TUNE_VERIFY_DETERMINISM", 0, 1, c.verify_determinism);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_EMIT_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_EMIT_SAMPLES", 0, 1, c.emit_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_PILOT_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_PILOT_SAMPLES", 1, 100000, c.pilot_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MIN_SAMPLE_US")) {
-            double_env("GGML_HIP_TUNE_MIN_SAMPLE_US", 0.0, std::numeric_limits<double>::max(), c.min_sample_us);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MAX_LPS")) {
-            int_env("GGML_HIP_TUNE_MAX_LPS", 1, 100000, c.max_launches_per_sample);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
-        }
+        //
+        // HI99: every direct scalar override (including flush_evict_mb) is
+        // generated from GGML_HIP_TUNER_CONFIG_FIELDS (hip-autotune-tuner.cuh)
+        // -- adding a knob there is now the only edit needed for it to gain
+        // both env-override parsing here and header-emission provenance in
+        // ggml_hip_tuner_flush() below. No outer `if (getenv(...))` guard is
+        // needed: each *_env() lambda already returns immediately when the
+        // variable is unset, so the guard was redundant, not protective.
+#define GGML_HIP_TUNER_APPLY_ENV_INT(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        int_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_SIZE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        size_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_DOUBLE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        double_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+        GGML_HIP_TUNER_APPLY_ENV_##TYPE(cpp_field, wire_key, env_name, min_expr, max_expr)
+        GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_APPLY_ENV_ONE)
+#undef GGML_HIP_TUNER_APPLY_ENV_ONE
+#undef GGML_HIP_TUNER_APPLY_ENV_DOUBLE
+#undef GGML_HIP_TUNER_APPLY_ENV_SIZE
+#undef GGML_HIP_TUNER_APPLY_ENV_INT
+
         int flush_l2_req = 0;
         int flush_rewarm_req = 0;
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_L2")) {
@@ -1799,9 +1958,6 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_REWARM")) {
             int_env("GGML_HIP_TUNE_FLUSH_REWARM", 0, 1, flush_rewarm_req);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_MB")) {
-            int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);
         }
         // HI65: resolve the two request flags into the single mode. Both set
         // is a contradictory configuration (two different post-eviction
@@ -2079,6 +2235,146 @@ static std::string ranking_decision_json(const PolicyTableEntry & entry,
     return out;
 }
 
+// --------------------------------------------- HI69 correctness-cost timing
+//
+// HI69: opt-in (GGML_HIP_TUNE_CORRECTNESS_TIMING=1) diagnostic answering
+// whether the screening loop's per-candidate D2H copy + host
+// compare_outputs() is a material fraction of total cold tuner-resolution
+// wall time. Real gfx1100 measurement (1088 cold-path resolutions, 11,570
+// screening candidates, non-blocking): F_tune (aggregate avoidable
+// correctness wall / aggregate cold-tuner wall) = 0.54%, well below the
+// <2% "not worth it" gate agreed with dev-gpt-agent -- HI69 was closed
+// without implementing the proposed on-device reduction. Kept as a
+// permanent diagnostic (matching HI87's GGML_HIP_NATIVE_SELECT_TIMING
+// precedent) rather than deleted, since D2H cost can shift materially with
+// output shapes, GPU generation, PCIe topology, or ROCm/WDDM behavior:
+// F_tune >= 2% is the documented reopen condition, F_tune >= 5% is the
+// threshold at which an on-device reduction prototype becomes justified.
+// See HI69.md for the full investigation.
+//
+// Every correctness operation is timed (not sampled like HI87's dispatch-
+// hot-path diagnostic) -- each one contains a real device-to-host
+// transfer, a blocking stream sync, and an O(N) CPU traversal, so
+// steady_clock's own overhead is negligible by comparison, not a risk of
+// dominating what it measures.
+struct Hi69CorrectnessTiming {
+    std::mutex mutex;
+    std::atomic<uint64_t> cold_tuner_ns_sum{0};
+    std::atomic<uint64_t> cold_tuner_calls{0};
+    std::atomic<uint64_t> native_ref_copy_ns_sum{0};
+    std::atomic<uint64_t> native_ref_copy_count{0};
+    // Total bytes actually moved D2H -- distinguishes "the workload now has
+    // much larger outputs" from "this driver/platform made equivalent
+    // copies more expensive" if a future sweep reports a higher F_tune than
+    // this item's closing measurement (dev-gpt-agent review,
+    // req_c4fd3a694f66470e).
+    std::atomic<uint64_t> candidate_copy_bytes_sum{0};
+    std::atomic<uint64_t> native_ref_copy_bytes_sum{0};
+    // Per-candidate samples for percentile reporting -- cold-path resolution
+    // is already single-flight (HI64's g_single_flight_mutex covers the
+    // caller's entire call into this function), so contention here is
+    // negligible.
+    std::vector<double> measure_ns_samples;
+    std::vector<double> copy_sync_ns_samples;
+    std::vector<double> compare_ns_samples;
+};
+static Hi69CorrectnessTiming g_hi69_timing;
+
+static bool hi69_correctness_timing_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_TUNE_CORRECTNESS_TIMING");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
+// RAII rather than instrumenting each of ggml_hip_tuner_resolve_impl's ~25
+// exit sites individually: construct once, right after the early-return/
+// poisoned/invalid-config checks (i.e. only around real cold-path work),
+// and it fires on every exit automatically.
+struct Hi69ColdTunerScope {
+    // Declaration order matters: active must initialize (and be checked)
+    // before t0's initializer runs, or a disabled run still pays one
+    // steady_clock::now() per cold resolution (dev-gpt-agent review,
+    // req_e56f27a8fbda4219, P2 hardening -- harmless given how cheap the
+    // call is, but the opt-in diagnostic should cost nothing when off).
+    bool active;
+    std::chrono::steady_clock::time_point t0;
+    Hi69ColdTunerScope()
+        : active(hi69_correctness_timing_enabled())
+        , t0(active ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}) {}
+    ~Hi69ColdTunerScope() {
+        if (!active) return;
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        g_hi69_timing.cold_tuner_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_hi69_timing.cold_tuner_calls.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+static void hi69_record_sample(std::vector<double> & samples, double ns) {
+    std::lock_guard<std::mutex> lock(g_hi69_timing.mutex);
+    samples.push_back(ns);
+}
+
+static double hi69_percentile(std::vector<double> values, double pct) {
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const size_t idx = (size_t) (pct * (double) (values.size() - 1));
+    return values[idx];
+}
+
+static void hi69_report_correctness_timing() {
+    if (!hi69_correctness_timing_enabled()) return;
+    std::vector<double> measure_copy, copy_sync_copy, compare_copy;
+    {
+        std::lock_guard<std::mutex> lock(g_hi69_timing.mutex);
+        measure_copy   = g_hi69_timing.measure_ns_samples;
+        copy_sync_copy = g_hi69_timing.copy_sync_ns_samples;
+        compare_copy   = g_hi69_timing.compare_ns_samples;
+    }
+    double sum_copy = 0.0, sum_compare = 0.0;
+    for (double v : copy_sync_copy) sum_copy    += v;
+    for (double v : compare_copy)   sum_compare += v;
+    const uint64_t native_ref_ns = g_hi69_timing.native_ref_copy_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t cold_ns       = g_hi69_timing.cold_tuner_ns_sum.load(std::memory_order_relaxed);
+    // Primary go/no-go metric per HI69's agreed design (dev-gpt-agent,
+    // req_5c8c2a476c2c4143): aggregate avoidable correctness wall time over
+    // aggregate cold tuner-resolution wall time, NOT a mean of per-candidate
+    // ratios -- this answers "what upper bound on the tuning run could
+    // disappear if HI69's on-device reduction made correctness free".
+    const double correctness_sum = sum_copy + sum_compare + (double) native_ref_ns;
+    const double f_tune = cold_ns > 0 ? correctness_sum / (double) cold_ns : 0.0;
+
+    // Secondary/diagnostic: per-candidate C_i / (M_i + C_i), median and p95.
+    std::vector<double> ratios;
+    const size_t n = std::min({measure_copy.size(), copy_sync_copy.size(), compare_copy.size()});
+    ratios.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        const double c = copy_sync_copy[i] + compare_copy[i];
+        const double m = measure_copy[i];
+        ratios.push_back((m + c) > 0.0 ? c / (m + c) : 0.0);
+    }
+
+    const uint64_t candidate_bytes = g_hi69_timing.candidate_copy_bytes_sum.load(std::memory_order_relaxed);
+    const uint64_t native_ref_bytes = g_hi69_timing.native_ref_copy_bytes_sum.load(std::memory_order_relaxed);
+
+    GGML_LOG_INFO(
+        "bigcherry: HI69 correctness timing -- cold_tuner_wall=%.3fms (n=%llu) "
+        "correctness_total=%.3fms (copy_sync=%.3fms compare=%.3fms native_ref=%.3fms) "
+        "F_tune=%.4f%% candidates=%zu ratio_p50=%.4f%% ratio_p95=%.4f%% "
+        "d2h_bytes=%llu (candidate=%llu native_ref=%llu)\n",
+        (double) cold_ns / 1e6,
+        (unsigned long long) g_hi69_timing.cold_tuner_calls.load(std::memory_order_relaxed),
+        correctness_sum / 1e6, sum_copy / 1e6, sum_compare / 1e6, (double) native_ref_ns / 1e6,
+        f_tune * 100.0, n,
+        hi69_percentile(ratios, 0.50) * 100.0, hi69_percentile(ratios, 0.95) * 100.0,
+        (unsigned long long) (candidate_bytes + native_ref_bytes),
+        (unsigned long long) candidate_bytes, (unsigned long long) native_ref_bytes);
+}
+
 // HI64 (2026-08-22): renamed from the old public ggml_hip_tuner_resolve --
 // this is now a file-local implementation detail. The public entry point
 // below wraps this to additionally report whether the resolution ended in
@@ -2163,6 +2459,11 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         record_result(dispatch_digest, invalid);
         return native.candidate;
     }
+    // HI69: only real cold-path work (native measurement, screening,
+    // finalist selection, confirmation) from here on -- the cache-hit,
+    // poisoned-stub, and invalid-config early returns above are deliberately
+    // excluded from "cold tuner-resolution wall time".
+    const Hi69ColdTunerScope hi69_cold_tuner_scope;
     Result result;
     result.winner = native.candidate;
     result.native_name = native.candidate ? native.candidate->stable_name : "";
@@ -2182,6 +2483,7 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
     result.signature_digest = ggml_hip_signature_digest(sig);
     result.hardware_digest  = ggml_hip_hardware_digest(hw);
     result.canonical_json   = ggml_hip_signature_json(sig, true);
+    result.hot_signature    = is_hot_signature(result.signature_digest, config);
     g_trace_signature_digest = result.signature_digest;
     g_trace_signature = sig;
     open_tuning_journal_once(result.hardware_digest);
@@ -2514,6 +2816,9 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         native_m->measured       = true;
         ++result.measured;
 
+        const bool hi69_profile = hi69_correctness_timing_enabled();
+        const auto hi69_native_ref_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                       : std::chrono::steady_clock::time_point{};
         if (!hip_ok(hipMemcpyAsync(reference_host.data(), reference_buf.get(),
                                    dst_bytes, hipMemcpyDeviceToHost, lc.stream),
                     "hipMemcpyAsync(reference)")
@@ -2523,6 +2828,13 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
             record_measurement_failure(native_m,
                 "native correctness copy failed; tuning experiment poisoned");
             return native.candidate;
+        }
+        if (hi69_profile) {
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_native_ref_t0).count();
+            g_hi69_timing.native_ref_copy_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+            g_hi69_timing.native_ref_copy_count.fetch_add(1, std::memory_order_relaxed);
+            g_hi69_timing.native_ref_copy_bytes_sum.fetch_add((uint64_t) dst_bytes, std::memory_order_relaxed);
         }
     }
 
@@ -2534,6 +2846,9 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         if (m == native_m) {
             continue;
         }
+        const bool hi69_profile = hi69_correctness_timing_enabled();
+        const auto hi69_measure_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                    : std::chrono::steady_clock::time_point{};
         std::vector<double> gpu;
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
@@ -2550,7 +2865,14 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
             record_result(dispatch_digest, result);
             return native.candidate;
         }
+        double hi69_measure_ns = 0.0;
+        if (hi69_profile) {
+            hi69_measure_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_measure_t0).count();
+        }
 
+        const auto hi69_copy_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                 : std::chrono::steady_clock::time_point{};
         if (!hip_ok(hipMemcpyAsync(candidate_host.data(), candidate_buf.get(),
                                    dst_bytes, hipMemcpyDeviceToHost, lc.stream),
                     "hipMemcpyAsync(candidate)")
@@ -2561,10 +2883,26 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
                 "candidate correctness copy failed; tuning experiment poisoned");
             return native.candidate;
         }
+        double hi69_copy_ns = 0.0;
+        if (hi69_profile) {
+            hi69_copy_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_copy_t0).count();
+        }
 
+        const auto hi69_compare_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                    : std::chrono::steady_clock::time_point{};
         double nmse = 0.0;
         double max_abs = 0.0;
-        if (!compare_outputs(reference_host, candidate_host, nmse, max_abs)) {
+        const bool hi69_compare_ok = compare_outputs(reference_host, candidate_host, nmse, max_abs);
+        if (hi69_profile) {
+            const double compare_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_compare_t0).count();
+            hi69_record_sample(g_hi69_timing.measure_ns_samples, hi69_measure_ns);
+            hi69_record_sample(g_hi69_timing.copy_sync_ns_samples, hi69_copy_ns);
+            hi69_record_sample(g_hi69_timing.compare_ns_samples, compare_ns);
+            g_hi69_timing.candidate_copy_bytes_sum.fetch_add((uint64_t) dst_bytes, std::memory_order_relaxed);
+        }
+        if (!hi69_compare_ok) {
             // For an ordinary challenger this is a normal rejection. For the
             // double-native twin it is stronger evidence: the same descriptor,
             // same signature, same inputs produced a compatible output as
@@ -2640,7 +2978,15 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         // The twin is retained unconditionally (once it has survived
         // screening and correctness): it is the calibration instrument, and
         // letting screening noise drop it would defeat its purpose.
-        if (is_native || is_twin || in_top || near_best) {
+        //
+        // HI24 steps 5-6: a hot signature (top hot_share_pct of the
+        // workload's call-weighted impact, per an operator-supplied hot
+        // list) retains every measured, correct survivor -- RV21 showed a
+        // three-sample screening median carries ~14% error, and the
+        // signatures that matter most to the aggregate result should not
+        // have a candidate eliminated on that noise before the final,
+        // full-sample stage gets to measure it properly.
+        if (is_native || is_twin || in_top || near_best || result.hot_signature) {
             finalists.push_back(m);
         }
     }
@@ -3364,6 +3710,10 @@ ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
 }
 
 void ggml_hip_tuner_flush() {
+    // HI69: independent of whether any dispatch DB is configured -- this is
+    // a profiling summary, not tuning evidence, and should report even on a
+    // run that never writes measurements.jsonl.
+    hi69_report_correctness_timing();
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_results.empty()) {
         return;
@@ -3392,35 +3742,70 @@ void ggml_hip_tuner_flush() {
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
     const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();
 
+    // HI37 Part 2: a digest says "different"; an operator label says
+    // "different from what". Neither is worth much alone, and the label
+    // costs one getenv. Both are advisory -- recorded and reported, never
+    // gating a cache load (same precedent as HI23's manifest-hash flag).
+    const ggml_hip_digest workload = compute_workload_digest(g_results);
+    const char * workload_label_env = getenv("GGML_HIP_TUNE_WORKLOAD");
+
+    // HI99: every field GGML_HIP_TUNER_CONFIG_FIELDS declares is emitted here
+    // from the SAME table that drives env-override parsing above -- adding a
+    // knob to that one table is now the only edit needed for it to appear in
+    // both places. %.17g (not a display-precision specifier like %.4f) so a
+    // configured double is recorded precisely enough to identify the exact
+    // effective value, not rounded to a value distinguishable in the log but
+    // not in the artifact. Fields NOT in the macro (build/workload identity,
+    // measured host-sync overhead, warmup_launches, replacement_threshold_pct,
+    // production/active policy names, and the hand-resolved flush_l2/
+    // pre_sample_mode pair -- see GGML_HIP_TUNER_CONFIG_FIELDS's own comment
+    // for why those two stay hand-written) remain hand-written below.
+#define GGML_HIP_TUNER_HEADER_FMT_INT(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%d,"
+#define GGML_HIP_TUNER_HEADER_FMT_SIZE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%zu,"
+#define GGML_HIP_TUNER_HEADER_FMT_DOUBLE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%.17g,"
+#define GGML_HIP_TUNER_HEADER_FMT_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+    GGML_HIP_TUNER_HEADER_FMT_##TYPE(cpp_field, wire_key, env_name, min_expr, max_expr)
+#define GGML_HIP_TUNER_HEADER_ARG_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+    , config.cpp_field
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"compiler\":\"%s\",\"hip_version\":\"%s\","
             "\"variant_set\":\"%s\",\"build_descriptor_hash\":\"%s\","
-            "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,\"final_samples\":%d,"
-            "\"warmup_launches\":%d,\"screen_samples\":%d,"
-            "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
+            "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,"
+            GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_FMT_ONE)
+            "\"warmup_launches\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
-                "\"alpha\":%.4f,\"double_native\":%d,"
-                "\"flush_l2\":%d,\"flush_evict_mb\":%d,"
-                "\"pre_sample_mode\":\"%s\"}\n",
+                "\"flush_l2\":%d,"
+                "\"pre_sample_mode\":\"%s\","
+                "\"workload\":\"%s\",\"workload_label\":\"%s\"}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
-            sync_overhead.us, sync_overhead.valid ? "true" : "false", config.final_samples,
-            config.warmup_launches, config.screen_samples,
-            config.confirmation_samples, config.replacement_threshold_pct,
+            sync_overhead.us, sync_overhead.valid ? "true" : "false"
+            GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_ARG_ONE)
+            , config.warmup_launches, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
-            config.confidence_alpha, config.double_native,
             // Measurement-affecting knobs belong in the evidence: a flush=0
             // artifact and a flush=1 artifact are not measurement-equivalent
             // even with identical build/input digests (HI34 step 3). The
             // resolved pre_sample_mode string is the provenance of record;
-            // flush_l2 is its 0/1 wire mirror (HI65).
-            config.flush_l2, config.flush_evict_mb,
-            pre_sample_mode_name(config.pre_sample_mode));
+            // flush_l2 is its 0/1 wire mirror (HI65). flush_evict_mb itself
+            // is an ordinary scalar and comes from the macro block above.
+            config.flush_l2,
+            pre_sample_mode_name(config.pre_sample_mode),
+            ggml_hip_digest_hex(workload).c_str(),
+            workload_label_env ? workload_label_env : "");
+#undef GGML_HIP_TUNER_HEADER_ARG_ONE
+#undef GGML_HIP_TUNER_HEADER_FMT_ONE
+#undef GGML_HIP_TUNER_HEADER_FMT_DOUBLE
+#undef GGML_HIP_TUNER_HEADER_FMT_SIZE
+#undef GGML_HIP_TUNER_HEADER_FMT_INT
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;
@@ -3446,6 +3831,7 @@ void ggml_hip_tuner_flush() {
                 "\"canary_pct\":%.3f,\"canary_retries\":%d,"
                 "\"canary_fresh_block\":%s,"
                 "\"canary_pair\":\"%s\","
+                "\"hot_signature\":%s,"
                 "\"promotion_status\":\"%s\","
                 "\"launches_per_sample\":%d,\"schedule_seed\":%u,"
                 "\"device_state_pre\":%s,\"device_state_post\":%s,"
@@ -3481,6 +3867,7 @@ void ggml_hip_tuner_flush() {
                 counts[GGML_HIP_REJECT_UNSTABLE],
                 r.canary_pct, r.canary_retries,
                 r.canary_fresh_block ? "true" : "false", r.canary_pair.c_str(),
+                r.hot_signature ? "true" : "false",
                 r.promotion_status.c_str(),
                 r.launches_per_sample, r.schedule_seed,
                 r.device_state_pre_json.c_str(), r.device_state_post_json.c_str(),
@@ -3550,6 +3937,47 @@ void ggml_hip_tuner_flush() {
 
     GGML_LOG_INFO("bigcherry: wrote %zu tuning result(s) to '%s'\n",
                   g_results.size(), measurements_path.c_str());
+
+    // HI24 step 8: canary_pct is recorded per signature and nothing
+    // aggregated it, so nobody read it. This is the line that says whether
+    // this run's numbers can be believed at all. canary_pct == -1.0 means no
+    // same-kernel pair was available for that signature (e.g. a non-MMQ
+    // native with double_native disabled) and is excluded from these counts,
+    // not treated as zero divergence.
+    {
+        size_t checked = 0, flagged = 0, retried = 0;
+        double worst = 0.0;
+        std::string worst_dispatch;
+        for (const auto & entry : g_results) {
+            const Result & r = entry.second;
+            if (r.canary_pct < 0.0) {
+                continue;
+            }
+            ++checked;
+            if (r.canary_pct > config.noise_canary_pct) {
+                ++flagged;
+            }
+            if (r.canary_retries > 0) {
+                ++retried;
+            }
+            if (r.canary_pct > worst) {
+                worst = r.canary_pct;
+                worst_dispatch = ggml_hip_digest_hex(entry.first);
+            }
+        }
+        if (checked > 0) {
+            GGML_LOG_INFO(
+                "bigcherry: canary -- %zu/%zu signature(s) checked, %zu flagged "
+                "above %.2f%%, worst %.2f%% (%s), %zu re-measured\n",
+                checked, g_results.size(), flagged, config.noise_canary_pct,
+                worst, worst_dispatch.c_str(), retried);
+        } else {
+            GGML_LOG_INFO(
+                "bigcherry: canary -- 0/%zu signature(s) had a same-kernel pair "
+                "to check\n",
+                g_results.size());
+        }
+    }
 
 #ifdef GGML_HIP_ROUTING_TRANSFORM
     // bigcherry (HI29): a separate file, separate schema, separate consumer

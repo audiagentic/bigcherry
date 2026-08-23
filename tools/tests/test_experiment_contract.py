@@ -825,6 +825,83 @@ class GeneralisationHandoffTests(unittest.TestCase):
             self.assertEqual(result[name], value)
 
 
+class TriggerEvidenceTests(unittest.TestCase):
+    def test_requires_at_least_one_count_field(self):
+        with self.assertRaisesRegex(ec.ExperimentContractError, "candidate_launches.*expected_route_selected"):
+            ec.TriggerEvidence(role="positive", lane_id="lane-a")
+
+    def test_accepts_launches_only(self):
+        evidence = ec.TriggerEvidence(role="positive", lane_id="lane-a", candidate_launches=5)
+        self.assertEqual(evidence.candidate_launches, 5)
+        self.assertIsNone(evidence.expected_route_selected)
+
+    def test_accepts_route_selected_only(self):
+        evidence = ec.TriggerEvidence(role="positive", lane_id="lane-a", expected_route_selected=3)
+        self.assertEqual(evidence.expected_route_selected, 3)
+
+    def test_rejects_negative_launches(self):
+        with self.assertRaisesRegex(ec.ExperimentContractError, "non-negative"):
+            ec.TriggerEvidence(role="positive", lane_id="lane-a", candidate_launches=-1)
+
+    def test_rejects_bool_as_launches(self):
+        with self.assertRaisesRegex(ec.ExperimentContractError, "non-negative"):
+            ec.TriggerEvidence(role="positive", lane_id="lane-a", candidate_launches=True)
+
+
+class TriggerProofTests(unittest.TestCase):
+    def test_passes_when_every_positive_lane_has_launches(self):
+        evidence = [
+            ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10),
+            ec.TriggerEvidence(role="positive", lane_id="b", candidate_launches=1),
+        ]
+        result = ec.evaluate_trigger_proof(evidence)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["reasons"], [])
+        self.assertEqual(result["checked_lanes"], 2)
+        self.assertEqual(result["untriggered_lanes"], [])
+
+    def test_passes_via_route_selected_alone(self):
+        evidence = [ec.TriggerEvidence(role="positive", lane_id="a", expected_route_selected=2)]
+        result = ec.evaluate_trigger_proof(evidence)
+        self.assertTrue(result["passed"])
+
+    def test_fails_when_a_positive_lane_has_zero_launches_and_zero_routes(self):
+        evidence = [
+            ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10),
+            ec.TriggerEvidence(role="positive", lane_id="b", candidate_launches=0,
+                                expected_route_selected=0),
+        ]
+        result = ec.evaluate_trigger_proof(evidence)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["untriggered_lanes"], ["b"])
+        self.assertTrue(any("b" in r for r in result["reasons"]))
+
+    def test_fails_closed_on_empty_evidence(self):
+        result = ec.evaluate_trigger_proof([])
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["checked_lanes"], 0)
+
+    def test_control_role_lanes_are_not_checked(self):
+        # A control lane deliberately should not trigger the candidate in
+        # most contracts -- only positive-role lanes are checked.
+        evidence = [
+            ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=5),
+            ec.TriggerEvidence(role="control", lane_id="c", candidate_launches=0),
+        ]
+        result = ec.evaluate_trigger_proof(evidence)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["checked_lanes"], 1)
+
+    def test_boundary_role_lanes_are_not_checked(self):
+        evidence = [
+            ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=5),
+            ec.TriggerEvidence(role="boundary", lane_id="bd", candidate_launches=0),
+        ]
+        result = ec.evaluate_trigger_proof(evidence)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["checked_lanes"], 1)
+
+
 class PromotionGateTests(unittest.TestCase):
     PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
     FAILING_CORRECTNESS = {"passed": False, "missing_checks": ["greedy_parity"], "failed_checks": []}
@@ -889,6 +966,56 @@ class PromotionGateTests(unittest.TestCase):
             generalisation_result=None)
         self.assertTrue(gate["passed"])
 
+    def test_passing_gate_reports_status_pass(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertEqual(gate["status"], "pass")
+
+    def test_failing_gate_reports_status_fail(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 5.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertEqual(gate["status"], "fail")
+
+    def test_missing_trigger_proof_short_circuits_to_invalid_even_with_perfect_effects(self):
+        # EC18: a benchmark whose target code path never ran cannot be
+        # evidence of pass OR fail, regardless of how good the numbers
+        # otherwise look -- trigger proof is checked before anything else.
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 5, "max_control_regression_pct": 1,
+        })
+        effects = {"target_kernel_gain_pct": 50.0, "max_control_regression_pct": 0.0}
+        trigger_proof = ec.evaluate_trigger_proof(
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)])
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            trigger_proof=trigger_proof)
+        self.assertEqual(gate["status"], "invalid")
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("never exercised" in r or "positive-role" in r for r in gate["reasons"]))
+
+    def test_passing_trigger_proof_does_not_block_a_real_pass(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        trigger_proof = ec.evaluate_trigger_proof(
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10)])
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            trigger_proof=trigger_proof)
+        self.assertEqual(gate["status"], "pass")
+        self.assertTrue(gate["passed"])
+
+    def test_trigger_proof_absent_does_not_block_backward_compatibility(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            trigger_proof=None)
+        self.assertEqual(gate["status"], "pass")
+
 
 class RenderReportTests(unittest.TestCase):
     PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
@@ -927,6 +1054,20 @@ class RenderReportTests(unittest.TestCase):
             self.assertIn(heading, report)
         self.assertIn("blocked by:", report)
         self.assertIn(contract.id, report)
+
+    def test_report_flags_invalid_status_distinctly_from_pass_or_fail(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": 0.0}
+        trigger_proof = ec.evaluate_trigger_proof(
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)])
+        promotion = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            trigger_proof=trigger_proof)
+        report = ec.render_report(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
+            promotion_gate=promotion)
+        self.assertIn("status: invalid", report)
+        self.assertIn("INVALID", report)
 
     def test_report_shows_boundary_dimensions_when_declared(self):
         contract = _minimal_contract(

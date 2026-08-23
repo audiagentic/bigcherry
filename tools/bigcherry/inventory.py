@@ -21,6 +21,7 @@ import sqlite3
 import sys
 import math
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1403,6 +1404,169 @@ def load_measurements(
         }
     finally:
         connection.close()
+
+
+# ------------------------------------------------------------------ hot list
+
+
+def _native_medians(measurements: Path, record: Record) -> dict[str, float]:
+    """Native's median (us) per *signature* digest, from a measurements JSONL.
+
+    Native is identified in preference order: the result line's own
+    ``native`` field; failing that, the record's ``observation.native`` for
+    the same signature. Never by scanning for a ``*:native:v1`` candidate
+    name -- a cross-family result carries one per family, and picking the
+    wrong one would silently re-base every impact figure derived from it
+    (HI24).
+    """
+    from . import report
+
+    by_signature = {
+        o["signature"]: o.get("native", "")
+        for o in record.observations
+        if "signature" in o
+    }
+    medians: dict[str, float] = {}
+    for result in report.read_measurements_jsonl(measurements):
+        signature = result.get("signature")
+        if not signature:
+            continue  # pre-HI23 file: no signature digest
+        native_name = result.get("native") or by_signature.get(signature)
+        if not native_name:
+            continue
+        for candidate in result.get("candidates", []):
+            if candidate.get("name") != native_name:
+                continue
+            median = candidate.get("median_us")
+            if median:
+                medians[signature] = float(median)
+            break
+    return medians
+
+
+def write_hot_list(
+    record: Record,
+    output: Path,
+    *,
+    measurements: Path | None = None,
+) -> dict[str, Any]:
+    """Rank observed signatures by estimated time contribution (HI24 steps 5-6).
+
+    Two bases, because the first tuning run has no timings to weight with:
+
+      pass 1  calls x est_bytes         -- est_bytes is a bandwidth proxy,
+                                           recorded per observation since
+                                           HI10.
+      pass 2  calls x native_median_us  -- available from the second tune on,
+                                           strictly better than pass 1.
+
+    Ranking by call count alone is misleading: two signatures with similar
+    call counts can differ by an order of magnitude in per-call cost, and a
+    call-count ranking would spend the tuning budget on the wrong one --
+    which is the whole reason this function ranks by impact instead.
+
+    Output is consumed by ``GGML_HIP_TUNE_HOT_SIGNATURES``: a flat text
+    format (schema documented in the header comment lines), not JSON --
+    there is no JSON parser anywhere in the C++ overlay, and this is the
+    only artifact the tuner itself reads.
+    """
+    native_median = (
+        _native_medians(measurements, record)
+        if measurements is not None and measurements.is_file()
+        else {}
+    )
+    basis = "calls_x_native_median" if native_median else "calls_x_est_bytes"
+
+    rows: list[dict[str, Any]] = []
+    for observation in record.observations:
+        signature = observation.get("signature")
+        if not signature:
+            continue
+        calls = float(observation.get("calls", 0))
+        weight = native_median.get(signature)
+        if weight is None:
+            weight = float(observation.get("est_bytes", 0))
+        rows.append(
+            {
+                "signature": signature,
+                "calls": int(calls),
+                "native_median_us": native_median.get(signature),
+                "impact": calls * weight,
+            }
+        )
+
+    # Tie-break on digest, not insertion order: two runs over the same
+    # observations must produce byte-identical output, and this file is an
+    # input to tuning decisions.
+    rows.sort(key=lambda r: (-r["impact"], r["signature"]))
+    total = sum(r["impact"] for r in rows) or 1.0
+    cumulative = 0.0
+    for rank, row in enumerate(rows, start=1):
+        row["share_pct"] = 100.0 * row["impact"] / total
+        cumulative += row["share_pct"]
+        row["cum_share_pct"] = cumulative
+        row["rank"] = rank
+
+    lines = [
+        "# bigcherry hot list, schema 1",
+        f"# basis {basis}",
+        f"# source_measurements {measurements if measurements else '-'}",
+        f"# signatures {len(rows)}",
+        "# columns signature share_pct cum_share_pct rank",
+    ]
+    lines += [
+        f"{r['signature']} {r['share_pct']:.4f} {r['cum_share_pct']:.4f} {r['rank']}"
+        for r in rows
+    ]
+    output.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return {"basis": basis, "signatures": len(rows), "rows": rows}
+
+
+# --------------------------------------------------------------- workload id
+
+
+def workload_digest(signatures: Iterable[str]) -> str:
+    """Mirror of the C++ ``compute_workload_digest()``: blake2b over the
+    sorted SET of signature digests -- presence, not frequency, so this is
+    stable across two runs of the same model at different token counts.
+    Must agree byte-for-byte with the C++ implementation (HI37 Part 2)."""
+    blob = b"".join(bytes.fromhex(s) for s in sorted(set(signatures)))
+    return hashlib.blake2b(blob, digest_size=16, person=b"llama-workload").hexdigest()
+
+
+def workload_overlap(record: Record, tuned_signatures: set[str]) -> dict[str, Any]:
+    """How much of this workload has a tuned winner, weighted by calls.
+
+    Digest equality is too strict to be a useful comparison: one extra
+    context length or draft width changes the digest completely, so a
+    95%-overlapping workload would report as "different". Overlap is the
+    number that actually matters; the digest is only cheap identity.
+
+    Weighted by calls, not signature count -- an unweighted count cannot
+    distinguish a cache covering the hottest signatures from one covering
+    the coldest, which are opposite conclusions about whether a run was
+    usefully tuned. Advisory only: this never gates a cache load.
+    """
+    total = covered = 0
+    covered_signatures = 0
+    observed_signatures = 0
+    for observation in record.observations:
+        signature = observation.get("signature")
+        if not signature:
+            continue
+        observed_signatures += 1
+        calls = int(observation.get("calls", 0))
+        total += calls
+        if signature in tuned_signatures:
+            covered += calls
+            covered_signatures += 1
+    return {
+        "signatures_observed": observed_signatures,
+        "signatures_covered": covered_signatures,
+        "calls_observed": total,
+        "calls_covered": covered,
+        "covered_share_pct": 100.0 * covered / total if total else 0.0,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

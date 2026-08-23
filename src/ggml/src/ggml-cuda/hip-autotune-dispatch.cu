@@ -19,6 +19,7 @@
 #include "mmf.cuh"
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <cctype>
 #include <stdlib.h>
@@ -147,6 +148,174 @@ int ggml_hip_dispatch_mode() {
     return mode;
 }
 
+// ------------------------------------------------------------ hot-path counters
+
+// HI92: opt-in hot-path instrumentation -- dispatch calls, L1 (thread-local)/
+// L2 (process-global)/L3 (replay-DB) cache hit rates, native-selector and
+// hardware-key/signature-digest construction counts. Zero cost when disabled:
+// every increment site below is guarded by dispatch_counters_enabled(), never
+// unconditional, matching the check-once/atomic-bool pattern
+// GGML_HIP_TUNE_TRACE_ATTEMPTS already established (hip-autotune-tuner.cu).
+// Pure diagnostic -- no behavior this file's callers observe changes whether
+// this is on or off.
+struct DispatchCounters {
+    std::atomic<uint64_t> dispatch_entries{0};
+    std::atomic<uint64_t> native_select_calls{0};
+    std::atomic<uint64_t> hardware_key_builds{0};
+    std::atomic<uint64_t> signature_digest_builds{0};
+    std::atomic<uint64_t> l1_hits{0};
+    std::atomic<uint64_t> l1_misses{0};
+    std::atomic<uint64_t> l2_hits{0};
+    std::atomic<uint64_t> l2_misses{0};
+    std::atomic<uint64_t> l3_lookups{0};
+    std::atomic<uint64_t> l3_hits{0};
+};
+
+static DispatchCounters g_dispatch_counters;
+
+static void report_dispatch_counters() {
+    const uint64_t entries = g_dispatch_counters.dispatch_entries.load(std::memory_order_relaxed);
+    const uint64_t l1h = g_dispatch_counters.l1_hits.load(std::memory_order_relaxed);
+    const uint64_t l1m = g_dispatch_counters.l1_misses.load(std::memory_order_relaxed);
+    const uint64_t l2h = g_dispatch_counters.l2_hits.load(std::memory_order_relaxed);
+    const uint64_t l2m = g_dispatch_counters.l2_misses.load(std::memory_order_relaxed);
+    const uint64_t l3l = g_dispatch_counters.l3_lookups.load(std::memory_order_relaxed);
+    const uint64_t l3h = g_dispatch_counters.l3_hits.load(std::memory_order_relaxed);
+    GGML_LOG_INFO(
+        "bigcherry: dispatch counters -- entries=%llu native_select=%llu "
+        "hw_key_builds=%llu sig_digest_builds=%llu "
+        "L1 hit=%llu miss=%llu (%.1f%%) L2 hit=%llu miss=%llu (%.1f%%) "
+        "L3 lookups=%llu hits=%llu (%.1f%%)\n",
+        (unsigned long long) entries,
+        (unsigned long long) g_dispatch_counters.native_select_calls.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.hardware_key_builds.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.signature_digest_builds.load(std::memory_order_relaxed),
+        (unsigned long long) l1h, (unsigned long long) l1m,
+        (l1h + l1m) ? 100.0 * (double) l1h / (double) (l1h + l1m) : 0.0,
+        (unsigned long long) l2h, (unsigned long long) l2m,
+        (l2h + l2m) ? 100.0 * (double) l2h / (double) (l2h + l2m) : 0.0,
+        (unsigned long long) l3l, (unsigned long long) l3h,
+        l3l ? 100.0 * (double) l3h / (double) l3l : 0.0);
+}
+
+static bool dispatch_counters_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_DISPATCH_COUNTERS");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
+// ------------------------------------------- native-select sampled-cost timing
+//
+// HI87: opt-in, zero-cost-when-disabled sampled timing comparing
+// native_select()'s cost against the L1 warm-cache lookup it runs ahead of --
+// the real measurement that answered whether a warm-cache-first reorder
+// (skip native_select() before a guaranteed L1/L2 hit) is worth its
+// complexity. Real gfx1100 measurement (110,020-dispatch repeated-shape
+// sweep, 99.8% L1 hit rate): native_select() mean=193.6ns (n=860) vs
+// L1-hit-lookup mean=52.6ns (n=860) -- real, but below this project's
+// intervention threshold once scaled to a per-token estimate (~0.1-0.3% of
+// measured production decode latency), so HI87 was closed without a reorder.
+// Kept as a permanent diagnostic (matching GGML_HIP_DISPATCH_COUNTERS'
+// pattern, HI92) rather than deleted, so the one reopen condition HI87's
+// closure names -- a future workload where this path measurably exceeds
+// ~1% of real end-to-end decode wall time -- can be re-checked without
+// rebuilding the instrumentation from scratch. See HI87.md for the full
+// investigation, including the gpt-dev-agent design conversation that
+// shaped the measurement methodology and the closure decision.
+//
+// Sampled every 128th call (not every call) so the timer itself --
+// std::chrono::steady_clock, tens of ns of overhead per call on this
+// platform -- does not dominate what it is measuring.
+struct NativeSelectTiming {
+    // Two INDEPENDENT tick counters, not one shared between call sites: the
+    // two sites are always visited in the same relative order within a
+    // single dispatch (native_select's check, then the L1 lookup's), so one
+    // shared counter alternates parity between them -- native_select would
+    // only ever land on even ticks, L1 only on odd, and an even modulus
+    // check (`% 128 == 0`) can then NEVER fire for the odd-parity site.
+    // Caught on the first real run: native_select sampled n=1720, L1
+    // sampled n=0, exactly and suspiciously -- not "rare", literally never.
+    std::atomic<uint64_t> native_select_tick{0};
+    std::atomic<uint64_t> l1_hit_tick{0};
+    std::atomic<uint64_t> native_select_ns_sum{0};
+    std::atomic<uint64_t> native_select_samples{0};
+    std::atomic<uint64_t> l1_hit_ns_sum{0};
+    std::atomic<uint64_t> l1_hit_samples{0};
+};
+static NativeSelectTiming g_native_select_timing;
+
+static bool native_select_timing_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_NATIVE_SELECT_TIMING");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
+static bool native_select_timing_should_sample_native_select() {
+    return (g_native_select_timing.native_select_tick.fetch_add(1, std::memory_order_relaxed) % 128) == 0;
+}
+
+static bool native_select_timing_should_sample_l1() {
+    return (g_native_select_timing.l1_hit_tick.fetch_add(1, std::memory_order_relaxed) % 128) == 0;
+}
+
+static void report_native_select_timing() {
+    const uint64_t ns_sum = g_native_select_timing.native_select_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t n      = g_native_select_timing.native_select_samples.load(std::memory_order_relaxed);
+    const uint64_t l1_sum = g_native_select_timing.l1_hit_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t l1_n   = g_native_select_timing.l1_hit_samples.load(std::memory_order_relaxed);
+    GGML_LOG_INFO(
+        "bigcherry: native-select timing -- native_select() mean=%.1fns (n=%llu) "
+        "L1-hit-lookup mean=%.1fns (n=%llu)\n",
+        n ? (double) ns_sum / (double) n : 0.0, (unsigned long long) n,
+        l1_n ? (double) l1_sum / (double) l1_n : 0.0, (unsigned long long) l1_n);
+}
+
+// ---------------------------------------------------- cached hardware identity
+
+// HI93 (RP4): a device's hardware key (architecture, wave size, compute
+// units, feature flags, shared memory per block) and its digest never
+// change for the life of the process, but the cold-path resolver used to
+// reconstruct both from scratch on every cold signature. Keyed directly by
+// ctx.device -- unlike HI64's PerDeviceState<T>, which queries
+// hipGetDevice() itself, every call site here already has the target
+// device index, so there is nothing to ask.
+//
+// unordered_map entries are never erased, so a reference returned into it
+// stays valid for the life of the process even across later insertions
+// (only iterators, not references, can be invalidated by a rehash) --
+// safe to return by reference after the lock guarding the lookup/insert
+// itself goes out of scope.
+struct HardwareIdentity {
+    ggml_hip_hardware_key_v1 key;
+    ggml_hip_digest digest;
+};
+
+std::mutex g_hardware_identity_mutex;
+std::unordered_map<int, HardwareIdentity> g_hardware_identity_by_device;
+
+static const HardwareIdentity & cached_hardware_identity(int device) {
+    std::lock_guard<std::mutex> lock(g_hardware_identity_mutex);
+    const auto found = g_hardware_identity_by_device.find(device);
+    if (found != g_hardware_identity_by_device.end()) {
+        return found->second;
+    }
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
+    }
+    HardwareIdentity identity;
+    identity.key    = ggml_hip_make_hardware_key(device);
+    identity.digest = ggml_hip_hardware_digest(identity.key);
+    return g_hardware_identity_by_device.emplace(device, identity).first->second;
+}
+
 // -------------------------------------------------------------- native select
 
 // Reproduces the branch order of upstream `ggml_cuda_mul_mat`. Any divergence
@@ -156,6 +325,9 @@ ggml_hip_native_selection ggml_hip_native_select(
         ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
         const ggml_tensor * src1, const ggml_tensor * ids,
         const ggml_tensor * dst) {
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.native_select_calls.fetch_add(1, std::memory_order_relaxed);
+    }
     ggml_hip_native_selection selection = {};
     selection.valid = false;
 
@@ -480,6 +652,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         const ggml_hip_dispatch_signature_v1 & sig,
         const ggml_hip_native_selection & native,
         const ggml_hip_launch_context & lc) {
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.dispatch_entries.fetch_add(1, std::memory_order_relaxed);
+    }
     ggml_hip_resolved_dispatch resolved = {};
     resolved.candidate      = native.candidate;
     resolved.variant        = native.variant;
@@ -492,8 +667,22 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     }
 
     Binding thread_binding = {};
-    if (mode != GGML_HIP_DISPATCH_MODE_RECORD &&
-            g_thread_bindings.find(ctx.device, sig, &thread_binding)) {
+    const bool l1_attempted = mode != GGML_HIP_DISPATCH_MODE_RECORD;
+    const bool sample_l1 = l1_attempted && native_select_timing_enabled()
+                            && native_select_timing_should_sample_l1();
+    const auto l1_sample_t0 = sample_l1 ? std::chrono::steady_clock::now()
+                                         : std::chrono::steady_clock::time_point{};
+    const bool l1_found = l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding);
+    if (sample_l1) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - l1_sample_t0).count();
+        g_native_select_timing.l1_hit_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_native_select_timing.l1_hit_samples.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (l1_found) {
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l1_hits.fetch_add(1, std::memory_order_relaxed);
+        }
         resolved.candidate  = thread_binding.candidate;
         resolved.variant    = thread_binding.variant;
         resolved.from_cache = thread_binding.from_cache;
@@ -502,6 +691,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 #endif
         return resolved;
     }
+    if (l1_attempted && dispatch_counters_enabled()) {
+        g_dispatch_counters.l1_misses.fetch_add(1, std::memory_order_relaxed);
+    }
 
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
     // Record mode deliberately continues through the recorder below so the
@@ -509,7 +701,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // modes retain the original fast bypass semantics.
     bool forced_selected = false;
     if (const auto & forced = ForcedCandidate::instance(); forced.candidate != nullptr) {
-        const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
+        const ggml_hip_hardware_key_v1 & hw = cached_hardware_identity(ctx.device).key;
         if (forced.candidate->can_execute(forced.candidate, sig, hw)) {
             resolved.candidate  = forced.candidate;
             resolved.variant    = forced.candidate->variant;
@@ -564,9 +756,13 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         }
     }
 
-    const ggml_hip_hardware_key_v1 hw = ggml_hip_make_hardware_key(ctx.device);
-    const ggml_hip_digest hardware_digest  = ggml_hip_hardware_digest(hw);
+    const HardwareIdentity & hw_identity = cached_hardware_identity(ctx.device);
+    const ggml_hip_hardware_key_v1 & hw = hw_identity.key;
+    const ggml_hip_digest hardware_digest  = hw_identity.digest;
     const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.signature_digest_builds.fetch_add(1, std::memory_order_relaxed);
+    }
     const ggml_hip_digest dispatch_digest =
         ggml_hip_dispatch_digest(hardware_digest, signature_digest, "latency");
 
@@ -591,6 +787,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
         const auto found = g_bindings.find(dispatch_digest);
         if (found != g_bindings.end()) {
+            if (dispatch_counters_enabled()) {
+                g_dispatch_counters.l2_hits.fetch_add(1, std::memory_order_relaxed);
+            }
             resolved.candidate  = found->second.candidate;
             resolved.variant    = found->second.variant;
             resolved.from_cache = found->second.from_cache;
@@ -609,6 +808,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
                 g_thread_bindings.insert(ctx.device, sig, found->second);
             }
             return resolved;
+        }
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l2_misses.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
@@ -691,6 +893,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
 #ifdef GGML_HIP_DISPATCH_REPLAY
     if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.l3_lookups.fetch_add(1, std::memory_order_relaxed);
+        }
         const ggml_hip_candidate_descriptor * winner = nullptr;
         ggml_hip_variant_params variant = {};
         uint16_t transform_id = 0;
@@ -725,6 +930,9 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         }
 #endif
         if (usable) {
+            if (dispatch_counters_enabled()) {
+                g_dispatch_counters.l3_hits.fetch_add(1, std::memory_order_relaxed);
+            }
             binding.candidate  = winner;
             binding.variant    = variant;
             binding.from_cache = true;
@@ -897,8 +1105,18 @@ bool ggml_hip_dispatch_mul_mat(
         return false;
     }
 
+    const bool sample_native_select = native_select_timing_enabled()
+                                       && native_select_timing_should_sample_native_select();
+    const auto native_select_sample_t0 = sample_native_select ? std::chrono::steady_clock::now()
+                                                                : std::chrono::steady_clock::time_point{};
     const ggml_hip_native_selection native =
         ggml_hip_native_select(ctx, src0, src1, ids, dst);
+    if (sample_native_select) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - native_select_sample_t0).count();
+        g_native_select_timing.native_select_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_native_select_timing.native_select_samples.fetch_add(1, std::memory_order_relaxed);
+    }
     if (!native.valid) {
         return false;
     }
@@ -1932,6 +2150,18 @@ void ggml_hip_autotune_flush(void) {
 #endif
 #endif
     ggml_hip_coverage_report();
+    // HI92: same explicit end-of-run hook the coverage report above already
+    // uses -- NOT std::atexit, which does not reliably fire in this
+    // codebase's real shutdown path (confirmed on real hardware: a run with
+    // GGML_HIP_DISPATCH_COUNTERS=1 registered via atexit produced no report
+    // at all, while this explicit call site, mirroring coverage_report()'s
+    // own working pattern, does).
+    if (dispatch_counters_enabled()) {
+        report_dispatch_counters();
+    }
+    if (native_select_timing_enabled()) {
+        report_native_select_timing();
+    }
 }
 
 void ggml_hip_autotune_write_report(const char * path) {
