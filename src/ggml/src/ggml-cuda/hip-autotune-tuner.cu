@@ -2235,6 +2235,141 @@ static std::string ranking_decision_json(const PolicyTableEntry & entry,
     return out;
 }
 
+// --------------------------------------------- HI69 correctness-cost timing
+//
+// HI69: opt-in (GGML_HIP_TUNE_CORRECTNESS_TIMING=1) diagnostic answering
+// whether the screening loop's per-candidate D2H copy + host
+// compare_outputs() is a material fraction of total cold tuner-resolution
+// wall time. Real gfx1100 measurement (1088 cold-path resolutions, 11,570
+// screening candidates, non-blocking): F_tune (aggregate avoidable
+// correctness wall / aggregate cold-tuner wall) = 0.54%, well below the
+// <2% "not worth it" gate agreed with dev-gpt-agent -- HI69 was closed
+// without implementing the proposed on-device reduction. Kept as a
+// permanent diagnostic (matching HI87's GGML_HIP_NATIVE_SELECT_TIMING
+// precedent) rather than deleted, since D2H cost can shift materially with
+// output shapes, GPU generation, PCIe topology, or ROCm/WDDM behavior:
+// F_tune >= 2% is the documented reopen condition, F_tune >= 5% is the
+// threshold at which an on-device reduction prototype becomes justified.
+// See HI69.md for the full investigation.
+//
+// Every correctness operation is timed (not sampled like HI87's dispatch-
+// hot-path diagnostic) -- each one contains a real device-to-host
+// transfer, a blocking stream sync, and an O(N) CPU traversal, so
+// steady_clock's own overhead is negligible by comparison, not a risk of
+// dominating what it measures.
+struct Hi69CorrectnessTiming {
+    std::mutex mutex;
+    std::atomic<uint64_t> cold_tuner_ns_sum{0};
+    std::atomic<uint64_t> cold_tuner_calls{0};
+    std::atomic<uint64_t> native_ref_copy_ns_sum{0};
+    std::atomic<uint64_t> native_ref_copy_count{0};
+    // Total bytes actually moved D2H -- distinguishes "the workload now has
+    // much larger outputs" from "this driver/platform made equivalent
+    // copies more expensive" if a future sweep reports a higher F_tune than
+    // this item's closing measurement (dev-gpt-agent review,
+    // req_c4fd3a694f66470e).
+    std::atomic<uint64_t> candidate_copy_bytes_sum{0};
+    std::atomic<uint64_t> native_ref_copy_bytes_sum{0};
+    // Per-candidate samples for percentile reporting -- cold-path resolution
+    // is already single-flight (HI64's g_single_flight_mutex covers the
+    // caller's entire call into this function), so contention here is
+    // negligible.
+    std::vector<double> measure_ns_samples;
+    std::vector<double> copy_sync_ns_samples;
+    std::vector<double> compare_ns_samples;
+};
+static Hi69CorrectnessTiming g_hi69_timing;
+
+static bool hi69_correctness_timing_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_TUNE_CORRECTNESS_TIMING");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
+// RAII rather than instrumenting each of ggml_hip_tuner_resolve_impl's ~25
+// exit sites individually: construct once, right after the early-return/
+// poisoned/invalid-config checks (i.e. only around real cold-path work),
+// and it fires on every exit automatically.
+struct Hi69ColdTunerScope {
+    std::chrono::steady_clock::time_point t0;
+    bool active;
+    Hi69ColdTunerScope()
+        : t0(std::chrono::steady_clock::now())
+        , active(hi69_correctness_timing_enabled()) {}
+    ~Hi69ColdTunerScope() {
+        if (!active) return;
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        g_hi69_timing.cold_tuner_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_hi69_timing.cold_tuner_calls.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+static void hi69_record_sample(std::vector<double> & samples, double ns) {
+    std::lock_guard<std::mutex> lock(g_hi69_timing.mutex);
+    samples.push_back(ns);
+}
+
+static double hi69_percentile(std::vector<double> values, double pct) {
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const size_t idx = (size_t) (pct * (double) (values.size() - 1));
+    return values[idx];
+}
+
+static void hi69_report_correctness_timing() {
+    if (!hi69_correctness_timing_enabled()) return;
+    std::vector<double> measure_copy, copy_sync_copy, compare_copy;
+    {
+        std::lock_guard<std::mutex> lock(g_hi69_timing.mutex);
+        measure_copy   = g_hi69_timing.measure_ns_samples;
+        copy_sync_copy = g_hi69_timing.copy_sync_ns_samples;
+        compare_copy   = g_hi69_timing.compare_ns_samples;
+    }
+    double sum_copy = 0.0, sum_compare = 0.0;
+    for (double v : copy_sync_copy) sum_copy    += v;
+    for (double v : compare_copy)   sum_compare += v;
+    const uint64_t native_ref_ns = g_hi69_timing.native_ref_copy_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t cold_ns       = g_hi69_timing.cold_tuner_ns_sum.load(std::memory_order_relaxed);
+    // Primary go/no-go metric per HI69's agreed design (dev-gpt-agent,
+    // req_5c8c2a476c2c4143): aggregate avoidable correctness wall time over
+    // aggregate cold tuner-resolution wall time, NOT a mean of per-candidate
+    // ratios -- this answers "what upper bound on the tuning run could
+    // disappear if HI69's on-device reduction made correctness free".
+    const double correctness_sum = sum_copy + sum_compare + (double) native_ref_ns;
+    const double f_tune = cold_ns > 0 ? correctness_sum / (double) cold_ns : 0.0;
+
+    // Secondary/diagnostic: per-candidate C_i / (M_i + C_i), median and p95.
+    std::vector<double> ratios;
+    const size_t n = std::min({measure_copy.size(), copy_sync_copy.size(), compare_copy.size()});
+    ratios.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        const double c = copy_sync_copy[i] + compare_copy[i];
+        const double m = measure_copy[i];
+        ratios.push_back((m + c) > 0.0 ? c / (m + c) : 0.0);
+    }
+
+    const uint64_t candidate_bytes = g_hi69_timing.candidate_copy_bytes_sum.load(std::memory_order_relaxed);
+    const uint64_t native_ref_bytes = g_hi69_timing.native_ref_copy_bytes_sum.load(std::memory_order_relaxed);
+
+    GGML_LOG_INFO(
+        "bigcherry: HI69 correctness timing -- cold_tuner_wall=%.3fms (n=%llu) "
+        "correctness_total=%.3fms (copy_sync=%.3fms compare=%.3fms native_ref=%.3fms) "
+        "F_tune=%.4f%% candidates=%zu ratio_p50=%.4f%% ratio_p95=%.4f%% "
+        "d2h_bytes=%llu (candidate=%llu native_ref=%llu)\n",
+        (double) cold_ns / 1e6,
+        (unsigned long long) g_hi69_timing.cold_tuner_calls.load(std::memory_order_relaxed),
+        correctness_sum / 1e6, sum_copy / 1e6, sum_compare / 1e6, (double) native_ref_ns / 1e6,
+        f_tune * 100.0, n,
+        hi69_percentile(ratios, 0.50) * 100.0, hi69_percentile(ratios, 0.95) * 100.0,
+        (unsigned long long) (candidate_bytes + native_ref_bytes),
+        (unsigned long long) candidate_bytes, (unsigned long long) native_ref_bytes);
+}
+
 // HI64 (2026-08-22): renamed from the old public ggml_hip_tuner_resolve --
 // this is now a file-local implementation detail. The public entry point
 // below wraps this to additionally report whether the resolution ended in
@@ -2319,6 +2454,11 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         record_result(dispatch_digest, invalid);
         return native.candidate;
     }
+    // HI69: only real cold-path work (native measurement, screening,
+    // finalist selection, confirmation) from here on -- the cache-hit,
+    // poisoned-stub, and invalid-config early returns above are deliberately
+    // excluded from "cold tuner-resolution wall time".
+    const Hi69ColdTunerScope hi69_cold_tuner_scope;
     Result result;
     result.winner = native.candidate;
     result.native_name = native.candidate ? native.candidate->stable_name : "";
@@ -2671,6 +2811,9 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         native_m->measured       = true;
         ++result.measured;
 
+        const bool hi69_profile = hi69_correctness_timing_enabled();
+        const auto hi69_native_ref_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                       : std::chrono::steady_clock::time_point{};
         if (!hip_ok(hipMemcpyAsync(reference_host.data(), reference_buf.get(),
                                    dst_bytes, hipMemcpyDeviceToHost, lc.stream),
                     "hipMemcpyAsync(reference)")
@@ -2680,6 +2823,13 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
             record_measurement_failure(native_m,
                 "native correctness copy failed; tuning experiment poisoned");
             return native.candidate;
+        }
+        if (hi69_profile) {
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_native_ref_t0).count();
+            g_hi69_timing.native_ref_copy_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+            g_hi69_timing.native_ref_copy_count.fetch_add(1, std::memory_order_relaxed);
+            g_hi69_timing.native_ref_copy_bytes_sum.fetch_add((uint64_t) dst_bytes, std::memory_order_relaxed);
         }
     }
 
@@ -2691,6 +2841,9 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
         if (m == native_m) {
             continue;
         }
+        const bool hi69_profile = hi69_correctness_timing_enabled();
+        const auto hi69_measure_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                    : std::chrono::steady_clock::time_point{};
         std::vector<double> gpu;
         std::vector<double> host;
         if (!time_candidate(m->candidate, lc, config.warmup_launches,
@@ -2707,7 +2860,14 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
             record_result(dispatch_digest, result);
             return native.candidate;
         }
+        double hi69_measure_ns = 0.0;
+        if (hi69_profile) {
+            hi69_measure_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_measure_t0).count();
+        }
 
+        const auto hi69_copy_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                 : std::chrono::steady_clock::time_point{};
         if (!hip_ok(hipMemcpyAsync(candidate_host.data(), candidate_buf.get(),
                                    dst_bytes, hipMemcpyDeviceToHost, lc.stream),
                     "hipMemcpyAsync(candidate)")
@@ -2718,10 +2878,26 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
                 "candidate correctness copy failed; tuning experiment poisoned");
             return native.candidate;
         }
+        double hi69_copy_ns = 0.0;
+        if (hi69_profile) {
+            hi69_copy_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_copy_t0).count();
+        }
 
+        const auto hi69_compare_t0 = hi69_profile ? std::chrono::steady_clock::now()
+                                                    : std::chrono::steady_clock::time_point{};
         double nmse = 0.0;
         double max_abs = 0.0;
-        if (!compare_outputs(reference_host, candidate_host, nmse, max_abs)) {
+        const bool hi69_compare_ok = compare_outputs(reference_host, candidate_host, nmse, max_abs);
+        if (hi69_profile) {
+            const double compare_ns = (double) std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - hi69_compare_t0).count();
+            hi69_record_sample(g_hi69_timing.measure_ns_samples, hi69_measure_ns);
+            hi69_record_sample(g_hi69_timing.copy_sync_ns_samples, hi69_copy_ns);
+            hi69_record_sample(g_hi69_timing.compare_ns_samples, compare_ns);
+            g_hi69_timing.candidate_copy_bytes_sum.fetch_add((uint64_t) dst_bytes, std::memory_order_relaxed);
+        }
+        if (!hi69_compare_ok) {
             // For an ordinary challenger this is a normal rejection. For the
             // double-native twin it is stronger evidence: the same descriptor,
             // same signature, same inputs produced a compatible output as
@@ -3529,6 +3705,10 @@ ggml_hip_tuner_resolution ggml_hip_tuner_resolve(
 }
 
 void ggml_hip_tuner_flush() {
+    // HI69: independent of whether any dispatch DB is configured -- this is
+    // a profiling summary, not tuning evidence, and should report even on a
+    // run that never writes measurements.jsonl.
+    hi69_report_correctness_timing();
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_results.empty()) {
         return;
