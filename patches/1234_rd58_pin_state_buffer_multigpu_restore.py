@@ -80,6 +80,34 @@ Hardware status: real-hardware validation pass in progress on Brutus
 (2+ HIP devices) -- see this item's plan-item notes for reproduction/
 validation results. STATE stays "untested" pending that evidence.
 
+KNOWN ACTIVATION GAP (found 2026-08-24, real-hardware, confirmed with
+direct debug instrumentation -- this is stock upstream llama.cpp
+behavior, NOT something BigCherry introduced; no BigCherry patch
+touches ggml-backend-meta.cpp or this backend-enumeration path):
+the registration loop above iterates `backends`, exactly as the source
+PR does. Under `-sm layer` (row/layer split), `backends` contains the
+real per-device HIP backend directly (e.g. "ROCm0"), its registry
+resolves ggml_backend_register_host_buffer/unregister_host_buffer, and
+registration succeeds (confirmed: reg_fn() returns true, the "pinned
+state buffer" log fires). Under `-sm tensor` (tensor split -- the mode
+Brutus's actual production dual-XTX deployment uses), `backends`
+instead contains a single "Meta(ROCm0,ROCm1)" scheduling wrapper
+(ggml/src/ggml-backend-meta.cpp, upstream ggml, not BigCherry code)
+whose ggml_backend_dev_backend_reg() returns NULL, plus CPU (whose
+registry exists but never implements these proc addresses, as
+expected) -- so the loop NEVER finds a real per-device HIP registry
+and pinning silently never activates. Not a crash, not incorrect
+behavior, just structurally inert for this topology. Ported faithfully
+from the identical loop in the source PR, so this gap most likely
+exists in the upstream PR's own mechanism too on any tensor-split
+deployment -- not verified against the PR author's own test topology.
+Practical consequence: as currently ported, this patch does NOT
+protect BigCherry's actual `-sm tensor` production deployment, only
+`-sm layer` topologies. See this item's plan-item notes for the
+decision on whether to extend the loop to unwrap the Meta backend and
+reach real per-device registries, or ship as a documented
+layer-split-only mitigation.
+
 Isolation and promotion (first-sweep policy, matching existing RD
 items): GROUP 'rdna-boosts' + STATE 'untested' keeps this OUT of the
 production 'framework' and 'validated-enhancements' patch-sets until
