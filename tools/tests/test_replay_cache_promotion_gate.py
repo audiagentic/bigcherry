@@ -204,6 +204,52 @@ class SeedOverrideBypassesGateTests(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         return manifest, ggml_h, measurements
 
+    def test_seed_override_native_not_in_manifest_is_refused_fast(self):
+        # HI89: an operator typo in `native` used to only surface later as
+        # an opaque CorrectnessGateError from the binding-resolution DB
+        # lookup. Now it fails at seed-load time, matching `winner`'s own
+        # existing manifest-bound validation, with a clear reason.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, ggml_h, measurements = self._fixture(root)
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps({"b" * 32: {
+                "winner": "mmvq:seeded:v1", "signature": "c" * 32,
+                "hardware": "d" * 32, "native": "mmvq:typo:v1",
+            }}), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "native 'mmvq:typo:v1'.*not in the manifest"):
+                replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+
+    def test_seed_override_native_not_a_native_wrapper_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "manifest_hash": "a" * 32,
+                "candidates": [
+                    {"stable_name": "mmvq:native:v1", "family": "mmvq",
+                     "source_class": "native_wrapper", "config": {}},
+                    {"stable_name": "mmvq:seeded:v1", "family": "mmvq",
+                     "source_class": "native_wrapper", "config": {}},
+                    {"stable_name": "mmvq:candidate:v1", "family": "mmvq",
+                     "source_class": "existing_alternative", "config": {}},
+                ],
+            }), encoding="utf-8")
+            ggml_h = root / "ggml.h"
+            ggml_h.write_text("GGML_TYPE_F32 = 0,\n", encoding="utf-8")
+            measurements = root / "tune.measurements.jsonl"
+            measurements.write_text(json.dumps({
+                "kind": "result", "dispatch": "b" * 32,
+                "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+            }) + "\n", encoding="utf-8")
+            seed_file = root / "seed.json"
+            seed_file.write_text(json.dumps({"b" * 32: {
+                "winner": "mmvq:seeded:v1", "signature": "c" * 32,
+                "hardware": "d" * 32, "native": "mmvq:candidate:v1",
+            }}), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "not a native_wrapper candidate"):
+                replay_cache.build(measurements, manifest, ggml_h, seed_file=seed_file)
+
     def test_unseeded_unpromoted_entry_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

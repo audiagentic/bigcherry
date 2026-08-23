@@ -1151,10 +1151,26 @@ def _load_seed_overrides(
         if hardware is not None:
             hardware = _digest_hex(hardware, "seed override hardware digest")
         native = value.get("native")
-        if native is not None and not isinstance(native, str):
-            raise SystemExit(
-                f"seed override native for dispatch {digest_hex[:16]}... must be a string"
-            )
+        if native is not None:
+            if not isinstance(native, str):
+                raise SystemExit(
+                    f"seed override native for dispatch {digest_hex[:16]}... must be a string"
+                )
+            # HI89: validate against the manifest up front, the same way
+            # `winner` already is -- an operator typo here previously only
+            # surfaced later as an opaque CorrectnessGateError from the
+            # binding-resolution DB lookup, fail-closed but not fail-fast.
+            native_candidate = by_name.get(native)
+            if native_candidate is None:
+                raise SystemExit(
+                    f"seed override native '{native}' for dispatch "
+                    f"{digest_hex[:16]}... is not in the manifest"
+                )
+            if native_candidate.get("source_class") != "native_wrapper":
+                raise SystemExit(
+                    f"seed override native '{native}' for dispatch "
+                    f"{digest_hex[:16]}... is not a native_wrapper candidate"
+                )
         normalized[digest_hex] = {
             "winner": stable_name,
             "candidate_digest": candidate_digest,
