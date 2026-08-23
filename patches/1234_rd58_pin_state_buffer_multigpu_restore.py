@@ -80,33 +80,40 @@ Hardware status: real-hardware validation pass in progress on Brutus
 (2+ HIP devices) -- see this item's plan-item notes for reproduction/
 validation results. STATE stays "untested" pending that evidence.
 
-KNOWN ACTIVATION GAP (found 2026-08-24, real-hardware, confirmed with
-direct debug instrumentation -- this is stock upstream llama.cpp
-behavior, NOT something BigCherry introduced; no BigCherry patch
-touches ggml-backend-meta.cpp or this backend-enumeration path):
-the registration loop above iterates `backends`, exactly as the source
-PR does. Under `-sm layer` (row/layer split), `backends` contains the
-real per-device HIP backend directly (e.g. "ROCm0"), its registry
-resolves ggml_backend_register_host_buffer/unregister_host_buffer, and
-registration succeeds (confirmed: reg_fn() returns true, the "pinned
-state buffer" log fires). Under `-sm tensor` (tensor split -- the mode
-Brutus's actual production dual-XTX deployment uses), `backends`
-instead contains a single "Meta(ROCm0,ROCm1)" scheduling wrapper
+FIXED ACTIVATION GAP (found AND fixed 2026-08-24, real-hardware,
+confirmed with direct debug instrumentation -- the gap itself is stock
+upstream llama.cpp behavior, NOT something BigCherry introduced; the
+fix below is new BigCherry logic, not upstream): the registration loop
+originally iterated `backends` directly, exactly as the source PR
+does. Under `-sm layer` (row/layer split), `backends` contains the
+real per-device HIP backend directly (e.g. "ROCm0"), and registration
+succeeded (confirmed: reg_fn() returns true, the "pinned state buffer"
+log fires). Under `-sm tensor` (tensor split -- the mode Brutus's
+actual production dual-XTX deployment uses), `backends` instead
+contains a single "Meta(ROCm0,ROCm1)" scheduling wrapper
 (ggml/src/ggml-backend-meta.cpp, upstream ggml, not BigCherry code)
-whose ggml_backend_dev_backend_reg() returns NULL, plus CPU (whose
-registry exists but never implements these proc addresses, as
-expected) -- so the loop NEVER finds a real per-device HIP registry
-and pinning silently never activates. Not a crash, not incorrect
-behavior, just structurally inert for this topology. Ported faithfully
-from the identical loop in the source PR, so this gap most likely
-exists in the upstream PR's own mechanism too on any tensor-split
-deployment -- not verified against the PR author's own test topology.
-Practical consequence: as currently ported, this patch does NOT
-protect BigCherry's actual `-sm tensor` production deployment, only
-`-sm layer` topologies. See this item's plan-item notes for the
-decision on whether to extend the loop to unwrap the Meta backend and
-reach real per-device registries, or ship as a documented
-layer-split-only mitigation.
+whose ggml_backend_dev_backend_reg() returns NULL -- so the original
+loop never found a real per-device HIP registry and pinning silently
+never activated under the exact topology this item was filed for.
+This gap most likely exists in the upstream PR's own mechanism too on
+any tensor-split deployment (not verified against the PR author's own
+test topology, but their published repro command does not specify
+--split-mode, so it defaults to layer split -- consistent with their
+loop having found real HIP backends).
+
+Fix (dev-gpt-agent design, 2026-08-24): before iterating `backends`,
+flatten any Meta-typed device into its real underlying "simple"
+per-device backends via ggml_backend_meta_dev_n_devs()/
+ggml_backend_meta_dev_simple_dev() -- two functions that already
+existed in upstream ggml-backend-meta.cpp but were file-local `static`
+(see the HEADER_PATCH/META_SRC_PATCH sibling edits below, which only
+change their linkage, not their logic). The registration/pin logic
+itself is byte-identical to before; only the device list it iterates
+changed, from `backends` directly to a flattened list that unwraps any
+Meta wrapper first. Verified real-hardware: this fix must be
+independently confirmed on Brutus's actual -sm tensor topology before
+STATE can move past "untested" -- see this item's plan-item notes for
+the specific evidence.
 
 Isolation and promotion (first-sweep policy, matching existing RD
 items): GROUP 'rdna-boosts' + STATE 'untested' keeps this OUT of the
@@ -157,8 +164,31 @@ _ANCHOR_NEW = """size_t llama_context::state_seq_set_data(llama_seq_id seq_id, c
         ~rd58_pin_guard_t() { if (ptr && unreg) { unreg(ptr); } }
     } rd58_pin_guard;
     if (!(flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) && size >= 1u << 20) {
+        // bigcherry (RD58): flatten Meta-wrapped devices (used by -sm
+        // tensor, BigCherry's actual production dual-GPU topology) into
+        // their real underlying per-device backends first. A Meta device
+        // has no registry of its own -- ggml_backend_dev_backend_reg()
+        // returns null for it -- so the plain loop below would otherwise
+        // never find a real HIP backend under tensor-split (confirmed via
+        // real-hardware debug instrumentation on Brutus, 2026-08-24: the
+        // registration path activated correctly under -sm layer but was
+        // structurally unreachable under -sm tensor before this fix).
+        // ggml_backend_meta_dev_n_devs()/simple_dev() are upstream ggml
+        // functions in ggml-backend-meta.cpp, exposed by a small sibling
+        // edit in this same patch module (previously file-local `static`).
+        std::vector<ggml_backend_dev_t> rd58_devs;
         for (auto & backend : backends) {
             ggml_backend_dev_t dev = ggml_backend_get_device(backend.get());
+            if (dev && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_META) {
+                const size_t rd58_n = ggml_backend_meta_dev_n_devs(dev);
+                for (size_t rd58_j = 0; rd58_j < rd58_n; ++rd58_j) {
+                    rd58_devs.push_back(ggml_backend_meta_dev_simple_dev(dev, rd58_j));
+                }
+            } else {
+                rd58_devs.push_back(dev);
+            }
+        }
+        for (ggml_backend_dev_t dev : rd58_devs) {
             ggml_backend_reg_t reg = dev ? ggml_backend_dev_backend_reg(dev) : nullptr;
             if (!reg) {
                 continue;
@@ -203,4 +233,95 @@ PATCH = FilePatch(
     ),
 )
 
-PATCHES = [PATCH]
+# --- Meta-backend unwrap support (2026-08-24 real-hardware finding) -------
+#
+# ggml_backend_meta_dev_n_devs()/ggml_backend_meta_dev_simple_dev() already
+# exist in upstream ggml-backend-meta.cpp but are file-local `static`. RD58
+# needs them from llama-context.cpp to unwrap a Meta device (the -sm tensor
+# case) back to its real per-device HIP backends. This exposes exactly
+# those two existing functions -- no new logic added to the Meta backend
+# itself, purely a visibility change (static -> GGML_API + header decl),
+# matching the same pattern ggml_backend_meta_device() already uses.
+
+_HEADER_OLD = """    GGML_API ggml_backend_dev_t ggml_backend_meta_device(
+        ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);"""
+
+_HEADER_NEW = """    GGML_API ggml_backend_dev_t ggml_backend_meta_device(
+        ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
+
+    // bigcherry (RD58): expose the Meta device's underlying "simple"
+    // per-device backends. Needed to unwrap a Meta device (created under
+    // -sm tensor) back to its real HIP backends for host-buffer
+    // registration -- Meta itself has no backend registry of its own.
+    GGML_API size_t          ggml_backend_meta_dev_n_devs(ggml_backend_dev_t meta_dev);
+    GGML_API ggml_backend_dev_t ggml_backend_meta_dev_simple_dev(ggml_backend_dev_t meta_dev, size_t index);"""
+
+HEADER_PATCH = FilePatch(
+    path="ggml/include/ggml-backend.h",
+    description="Expose ggml_backend_meta_dev_n_devs()/simple_dev() as "
+                "public API (RD58 -- needed to unwrap a Meta device back "
+                "to its real per-device HIP backends)",
+    edits=(
+        Edit(
+            id="rd58-expose-meta-dev-accessors-header",
+            anchor=re.escape(_HEADER_OLD),
+            rationale="add public declarations for the two existing Meta "
+                      "device accessor functions RD58 needs from "
+                      "llama-context.cpp",
+            mode="replace",
+            text=_HEADER_NEW,
+            guard=r"ggml_backend_meta_dev_n_devs",
+        ),
+    ),
+)
+
+_META_SRC_OLD = """static size_t ggml_backend_meta_dev_n_devs(ggml_backend_dev_t meta_dev) {
+    GGML_ASSERT(ggml_backend_dev_is_meta(meta_dev));
+    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) meta_dev->context;
+    return meta_dev_ctx->simple_devs.size();
+}
+
+static ggml_backend_dev_t ggml_backend_meta_dev_simple_dev(ggml_backend_dev_t meta_dev, size_t index) {
+    GGML_ASSERT(ggml_backend_dev_is_meta(meta_dev));
+    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) meta_dev->context;
+    GGML_ASSERT(index < meta_dev_ctx->simple_devs.size());
+    return meta_dev_ctx->simple_devs[index];
+}"""
+
+_META_SRC_NEW = """// bigcherry (RD58): no longer file-local -- exposed via ggml-backend.h so
+// llama-context.cpp can unwrap a Meta device (created under -sm tensor)
+// back to its real per-device HIP backends for host-buffer registration.
+// Logic unchanged from upstream, only the linkage/visibility changed.
+size_t ggml_backend_meta_dev_n_devs(ggml_backend_dev_t meta_dev) {
+    GGML_ASSERT(ggml_backend_dev_is_meta(meta_dev));
+    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) meta_dev->context;
+    return meta_dev_ctx->simple_devs.size();
+}
+
+ggml_backend_dev_t ggml_backend_meta_dev_simple_dev(ggml_backend_dev_t meta_dev, size_t index) {
+    GGML_ASSERT(ggml_backend_dev_is_meta(meta_dev));
+    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) meta_dev->context;
+    GGML_ASSERT(index < meta_dev_ctx->simple_devs.size());
+    return meta_dev_ctx->simple_devs[index];
+}"""
+
+META_SRC_PATCH = FilePatch(
+    path="ggml/src/ggml-backend-meta.cpp",
+    description="Remove `static` from ggml_backend_meta_dev_n_devs()/"
+                "simple_dev() so RD58 can call them from "
+                "llama-context.cpp (no logic change)",
+    edits=(
+        Edit(
+            id="rd58-expose-meta-dev-accessors-impl",
+            anchor=re.escape(_META_SRC_OLD),
+            rationale="drop `static` from the two existing Meta device "
+                      "accessor functions, matching the new public "
+                      "declarations in ggml-backend.h",
+            mode="replace",
+            text=_META_SRC_NEW,
+            guard=r"no longer file-local",
+        ),
+    ),
+)
+
+PATCHES = [PATCH, HEADER_PATCH, META_SRC_PATCH]
