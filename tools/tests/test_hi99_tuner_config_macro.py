@@ -163,7 +163,17 @@ class Hi99TunerConfigMacroTests(unittest.TestCase):
         # the agreed design (a literal whole-header equality would be wrong;
         # a bare subset check would miss a hand-added config field that
         # bypasses the registry in the opposite direction).
-        macro_keys = {wire for _, _, wire in EXPECTED_FIELDS}
+        # Derived from the actual macro rows, not the EXPECTED_FIELDS
+        # constant: test_macro_declares_every_expected_field_in_order proves
+        # the two are equal today, but deriving independently here means a
+        # future one-row addition to the macro table only needs that one
+        # edit -- not also a matching edit to this test's own field list
+        # (per dev-gpt-agent post-implementation review, req_c40a1876389a469b,
+        # verdict CLOSE with this as a non-blocking hardening suggestion).
+        macro_rows = re.findall(r"F\(\w+,\s*\w+,\s*\"([^\"]+)\"", self.macro_text)
+        self.assertEqual(len(macro_rows), len(set(macro_rows)),
+                          "duplicate wire_key in GGML_HIP_TUNER_CONFIG_FIELDS")
+        macro_keys = set(macro_rows)
         governed = macro_keys | NON_MACRO_CONFIG_KEYS
 
         fn_idx = self.cu.index("void ggml_hip_tuner_flush(void)") \
@@ -178,7 +188,10 @@ class Hi99TunerConfigMacroTests(unittest.TestCase):
         # wire keys live in the .cuh table (already captured in macro_keys).
         # What's literally spelled out in the fprintf block is everything
         # ELSE: the non-macro config exceptions plus true provenance fields.
-        literal_keys = set(re.findall(r'\\"(\w+)\\":', block))
+        literal_key_list = re.findall(r'\\"(\w+)\\":', block)
+        self.assertEqual(len(literal_key_list), len(set(literal_key_list)),
+                          "duplicate literal header key in the hand-written fprintf block")
+        literal_keys = set(literal_key_list)
         self.assertTrue(
             macro_keys.isdisjoint(literal_keys),
             f"macro-driven keys duplicated as hand-written literals: "
