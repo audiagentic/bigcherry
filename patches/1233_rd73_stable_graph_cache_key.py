@@ -62,6 +62,22 @@ Porting notes:
     fingerprint rather than hashing every node (which would make the
     key computation itself a per-dispatch cost comparable to the
     per-node comparison it is meant to short-circuit).
+  - Ported byte-for-byte from the real fork diff (fetched via `gh api`
+    to verify, not just the review's paraphrase), after an external
+    review (dev-gpt-agent, 2026-08-23) caught a real bug in an earlier
+    draft of this port: that draft hashed `sizeof(node->name)` (the
+    whole fixed 64-byte name[] buffer) instead of
+    `strnlen(node->name, GGML_MAX_NAME)`. ggml_set_name()/
+    ggml_format_name() (ggml.c) write the visible name and its
+    terminating NUL but never clear the rest of the buffer, so two
+    tensors with the same logical name can carry different stale tail
+    bytes there -- hashing the whole buffer would have reintroduced
+    exactly the key instability this patch exists to remove. Also
+    fixed to match the fork: n_nodes/op normalized through int32_t
+    before hashing, and the fork's own (non-standard) FNV-1a offset
+    basis literal kept as-is rather than swapped for the canonical
+    constant, to avoid an unnecessary causal variable versus the
+    fork's own measured result.
 
 Hardware status: UNVALIDATED on BigCherry hardware as of porting --
 STATE stays "untested" pending a real-HIP causal comparison (control
@@ -90,11 +106,19 @@ PROVENANCE = {
     "snapshot-head": "7f2e7e4a3ebf8e3b5aade75743c267f5ad7df199",
     "snapshot-base": "7f2e7e4a3ebf8e3b5aade75743c267f5ad7df199",
     "adaptations": [
-        "Mechanism ported as-is (fingerprint fields, FNV-1a constants); "
-        "comments rewritten to explain BigCherry's own collision-safety "
-        "argument against ggml_cuda_graph_update_required()'s existing "
-        "per-node memcmp, and to record which graph-cache subsystem "
-        "(ggml-cuda, not Vulkan) this targets and why.",
+        "Mechanism ported byte-for-byte (fingerprint fields, int32_t "
+        "normalization, strnlen-bounded name hashing, both FNV-1a "
+        "constants including the fork's non-standard offset basis "
+        "literal) after an external review (dev-gpt-agent, 2026-08-23) "
+        "caught an earlier draft of this port hashing the full "
+        "fixed-size name[] buffer instead of strnlen(name, "
+        "GGML_MAX_NAME) -- verified against the fork's real commit diff "
+        "via `gh api`, not just the review's paraphrase. Comments "
+        "rewritten to explain BigCherry's own collision-safety argument "
+        "against ggml_cuda_graph_update_required()'s existing per-node "
+        "memcmp, why the full-buffer hash was wrong (ggml_set_name/"
+        "ggml_format_name never clear name[]'s tail bytes), and which "
+        "graph-cache subsystem (ggml-cuda, not Vulkan) this targets.",
     ],
 }
 
@@ -107,31 +131,47 @@ _KEY_NEW = """static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) 
     // first-node pointer. An allocator can hand a fresh address to an
     // otherwise-identical recurring shape (e.g. repeated speculative-verify
     // batches), so the old pointer key almost never hit a warm cache slot.
-    // Ported from MrLordCat/llama.cpp-rdna-lab commit 7f2e7e4a (see
-    // config/external-sources.toml). A fingerprint collision is safe:
-    // ggml_cuda_graph_update_required() below still compares graph size and
-    // memcmp()s every node's op/src pointers/ne/nb before reusing a cached
-    // instance, so a false-positive key match only costs an extra
-    // recapture, never stale reuse.
-    uint64_t hash = 0xcbf29ce484222325ULL; // FNV-1a 64-bit offset basis
-    auto fnv1a = [&hash](const void * data, size_t len) {
-        const unsigned char * bytes = (const unsigned char *) data;
-        for (size_t i = 0; i < len; ++i) {
-            hash ^= bytes[i];
-            hash *= 0x100000001b3ULL; // FNV-1a 64-bit prime
+    // Ported byte-for-byte from MrLordCat/llama.cpp-rdna-lab commit
+    // 7f2e7e4a (see config/external-sources.toml) -- including its
+    // non-standard FNV-1a offset basis literal below, kept as-is rather
+    // than swapped for the canonical 0xcbf29ce484222325 to avoid an
+    // unnecessary causal variable versus the fork's own measured result.
+    // A fingerprint collision is safe: ggml_cuda_graph_update_required()
+    // below still compares graph size and memcmp()s every node's op/src
+    // pointers/ne/nb before reusing a cached instance, so a false-positive
+    // key match only costs an extra recapture, never stale reuse. Hashing
+    // only strnlen(name, GGML_MAX_NAME) bytes (not the full fixed buffer)
+    // matters: ggml_set_name()/ggml_format_name() (ggml.c) write the name
+    // and its NUL but never clear the rest of the fixed-size name[]
+    // buffer, so two tensors with the same logical name can carry
+    // different stale tail bytes there -- hashing the whole buffer would
+    // reintroduce the exact key instability this patch exists to remove.
+    uint64_t h = 1469598103934665603ULL; // FNV-1a offset basis (fork's literal)
+    auto mix = [&h](const void * data, size_t n) {
+        const unsigned char * p = (const unsigned char *) data;
+        for (size_t i = 0; i < n; ++i) {
+            h ^= p[i];
+            h *= 1099511628211ULL; // FNV-1a 64-bit prime
         }
     };
-    auto hash_node = [&fnv1a](const ggml_tensor * node) {
-        fnv1a(&node->op, sizeof(node->op));
-        fnv1a(node->name, sizeof(node->name));
-        fnv1a(node->ne, sizeof(node->ne));
-    };
-    fnv1a(&cgraph->n_nodes, sizeof(cgraph->n_nodes));
-    if (cgraph->n_nodes > 0) {
-        hash_node(cgraph->nodes[0]);
-        hash_node(cgraph->nodes[cgraph->n_nodes - 1]);
+
+    const int32_t n_nodes = cgraph->n_nodes;
+    mix(&n_nodes, sizeof(n_nodes));
+    if (n_nodes > 0) {
+        const ggml_tensor * first = cgraph->nodes[0];
+        const int32_t op_f = (int32_t) first->op;
+        mix(&op_f, sizeof(op_f));
+        mix(first->name, strnlen(first->name, GGML_MAX_NAME));
+        mix(first->ne, sizeof(first->ne));
+
+        const ggml_tensor * last = cgraph->nodes[n_nodes - 1];
+        const int32_t op_l = (int32_t) last->op;
+        mix(&op_l, sizeof(op_l));
+        mix(last->name, strnlen(last->name, GGML_MAX_NAME));
+        mix(last->ne, sizeof(last->ne));
     }
-    return (const void *) (uintptr_t) hash;
+
+    return (const void *) (uintptr_t) h;
 }"""
 
 
@@ -150,7 +190,7 @@ PATCH = FilePatch(
                       "speculative-verify batches) hit a warm cached graph",
             mode="replace",
             text=_KEY_NEW,
-            guard=r"FNV-1a 64-bit offset basis",
+            guard=r"FNV-1a offset basis \(fork's literal\)",
         ),
     ),
 )

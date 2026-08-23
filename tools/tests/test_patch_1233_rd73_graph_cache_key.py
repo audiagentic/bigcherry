@@ -51,14 +51,20 @@ def test_patch_applies_cleanly_to_the_real_pinned_source(tmp_path):
     patched = target.read_text(encoding="utf-8")
     assert "return cgraph->nodes[0];" not in patched
     assert "static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) {" in patched
-    assert "0xcbf29ce484222325ULL" in patched  # FNV-1a 64-bit offset basis
-    assert "0x100000001b3ULL" in patched       # FNV-1a 64-bit prime
-    assert "fnv1a(&node->op, sizeof(node->op));" in patched
-    assert "fnv1a(node->name, sizeof(node->name));" in patched
-    assert "fnv1a(node->ne, sizeof(node->ne));" in patched
-    assert "hash_node(cgraph->nodes[0]);" in patched
-    assert "hash_node(cgraph->nodes[cgraph->n_nodes - 1]);" in patched
-    assert "return (const void *) (uintptr_t) hash;" in patched
+    assert "1469598103934665603ULL" in patched  # FNV-1a offset basis (fork's literal)
+    assert "1099511628211ULL" in patched        # FNV-1a 64-bit prime
+    # RD73 review finding (dev-gpt-agent, 2026-08-23): must hash only the
+    # visible C-string, not the whole fixed name[] buffer -- ggml_set_name()/
+    # ggml_format_name() never clear the tail bytes, so hashing sizeof(name)
+    # would reintroduce the exact key instability this patch removes.
+    assert "sizeof(node->name)" not in patched
+    assert "mix(first->name, strnlen(first->name, GGML_MAX_NAME));" in patched
+    assert "mix(last->name, strnlen(last->name, GGML_MAX_NAME));" in patched
+    assert "const int32_t op_f = (int32_t) first->op;" in patched
+    assert "const int32_t op_l = (int32_t) last->op;" in patched
+    assert "mix(first->ne, sizeof(first->ne));" in patched
+    assert "mix(last->ne, sizeof(last->ne));" in patched
+    assert "return (const void *) (uintptr_t) h;" in patched
 
 
 def test_patch_is_idempotent(tmp_path):
@@ -100,5 +106,5 @@ def test_composes_with_hi14_graph_lifecycle_evidence_both_orders(tmp_path):
         encoding="utf-8"
     )
     composed = target_forward.read_text(encoding="utf-8")
-    assert "return (const void *) (uintptr_t) hash;" in composed
+    assert "return (const void *) (uintptr_t) h;" in composed
     assert "BIGCHERRY_GRAPH_LIFECYCLE" in composed
