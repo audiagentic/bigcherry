@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -27,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1354,14 +1356,25 @@ bool time_candidate(const ggml_hip_candidate_descriptor * candidate,
         // API failure -- only the two silent numeric-sanity checks that used
         // to fall straight through to disable_smi_after_measurement_failure()
         // now get bounded extra attempts first.
+        const ggml_hip_tuner_config & retry_config = ggml_hip_tuner_get_config();
         const int max_elapsed_time_attempts =
-            1 + std::max(0, ggml_hip_tuner_get_config().elapsed_time_retry_max);
+            1 + std::max(0, retry_config.elapsed_time_retry_max);
         int64_t host_start = 0;
         int64_t host_end = 0;
         double us = 0.0;
         bool sample_ok = false;
         for (int attempt = 0; attempt < max_elapsed_time_attempts && !sample_ok; ++attempt) {
             if (attempt > 0) {
+                // Linear backoff (see the config field comment for why): the
+                // stream is already fully drained by the hipEventSynchronize
+                // below that led to this retry, so there is nothing to flush
+                // here -- only a real wall-clock wait, on the chance the
+                // driver's own submission/scheduling window is what needs
+                // to pass, not just another attempt.
+                if (retry_config.elapsed_time_retry_backoff_us > 0.0) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(
+                        (int64_t) (attempt * retry_config.elapsed_time_retry_backoff_us)));
+                }
                 trace_workspace_event(stage, "elapsed_time_retry", candidate->stable_name);
             }
             host_start = ggml_time_us();
@@ -1956,6 +1969,10 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY")) {
             int_env("GGML_HIP_TUNE_ELAPSED_RETRY", 0, 10, c.elapsed_time_retry_max);
+        }
+        if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US")) {
+            double_env("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US", -1.0,
+                       std::numeric_limits<double>::max(), c.elapsed_time_retry_backoff_us);
         }
         if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
             int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);

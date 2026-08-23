@@ -1200,9 +1200,58 @@ class TestHi64ElapsedTimeRetry(unittest.TestCase):
     def test_retry_bound_derives_from_config_not_a_bare_constant(self):
         tuner = TUNER.read_text(encoding="utf-8")
         self.assertIn(
-            "const int max_elapsed_time_attempts =\n"
-            "            1 + std::max(0, ggml_hip_tuner_get_config().elapsed_time_retry_max);",
+            "const ggml_hip_tuner_config & retry_config = ggml_hip_tuner_get_config();\n"
+            "        const int max_elapsed_time_attempts =\n"
+            "            1 + std::max(0, retry_config.elapsed_time_retry_max);",
             tuner,
+        )
+
+    def test_backoff_field_declared_with_default(self):
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        self.assertIn(
+            "double elapsed_time_retry_backoff_us = 2000.0;  "
+            "// GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US",
+            header,
+        )
+
+    def test_backoff_env_var_parsed(self):
+        tuner = TUNER.read_text(encoding="utf-8")
+        self.assertIn(
+            'if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US")) {',
+            tuner,
+        )
+        self.assertIn("c.elapsed_time_retry_backoff_us", tuner)
+
+    def test_retry_sleeps_before_reattempting_not_immediately(self):
+        # HI64 (2026-08-23, third real-hardware round): the retry was
+        # originally back-to-back with zero delay. A real wall-clock sleep
+        # must happen for attempt > 0, scaled by attempt number (linear
+        # backoff), before the next hipEventRecord(start) -- not before the
+        # first attempt, and not unconditionally regardless of config.
+        tuner = TUNER.read_text(encoding="utf-8")
+        loop_start = tuner.index("const int max_elapsed_time_attempts =")
+        loop_end = tuner.index("if (!sample_ok) {", loop_start)
+        loop_body = tuner[loop_start:loop_end]
+        attempt_gt_zero = loop_body.index("if (attempt > 0) {")
+        sleep_call = loop_body.index(
+            "std::this_thread::sleep_for(std::chrono::microseconds(", attempt_gt_zero
+        )
+        record_start = loop_body.index(
+            'hip_ok(hipEventRecord(start, lc.stream), "hipEventRecord(start)")',
+            attempt_gt_zero,
+        )
+        self.assertLess(attempt_gt_zero, sleep_call)
+        self.assertLess(sleep_call, record_start)
+        self.assertIn(
+            "(int64_t) (attempt * retry_config.elapsed_time_retry_backoff_us)",
+            loop_body[sleep_call : sleep_call + 200],
+        )
+        # Gated: 0 (or negative, though the config parser already rejects
+        # that) must skip the sleep entirely rather than sleep_for(0), which
+        # is a real (if tiny) syscall on every retry.
+        self.assertIn(
+            "retry_config.elapsed_time_retry_backoff_us > 0.0",
+            loop_body[attempt_gt_zero:sleep_call],
         )
 
     def test_warmup_sync_checks_route_through_hip_ok_not_silent_comparison(self):
