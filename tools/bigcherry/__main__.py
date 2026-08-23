@@ -2014,6 +2014,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inv_hot.set_defaults(func=lambda args: cmd_inventory(args, subcmd="hot-list"))
 
+    # Workload overlap: how much of a record's workload has a tuned winner,
+    # call-weighted (HI37 Part 2). Compares against a measurements JSONL's
+    # own tuned signature set (not a binary replay cache -- that reader
+    # belongs to replay_cache.py, a separate module this command does not
+    # need to import).
+    inv_workload = inv_sub.add_parser(
+        "workload-check",
+        help="Report call-weighted signature coverage of a measurements file "
+        "against a record",
+    )
+    inv_workload.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
+    inv_workload.add_argument(
+        "--measurements",
+        required=True,
+        help="a .measurements.jsonl file whose winners define the tuned set",
+    )
+    inv_workload.set_defaults(func=lambda args: cmd_inventory(args, subcmd="workload-check"))
+
     return parser
 
 
@@ -2114,6 +2132,55 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
                 f"{row['calls']:>8} calls  {row['share_pct']:6.2f}%  "
                 f"cum {row['cum_share_pct']:6.2f}%"
             )
+        return 0
+
+    elif subcmd == "workload-check":
+        from . import report as report_mod
+
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        measurements_path = Path(args.measurements)
+        if not measurements_path.is_file():
+            print(f"no such measurements file: {measurements_path}", file=sys.stderr)
+            return 2
+        tuned_signatures = {
+            row["signature"]
+            for row in report_mod.read_measurements_jsonl(measurements_path)
+            if row.get("signature")
+        }
+
+        record_digest = inv_mod.workload_digest(
+            o["signature"] for o in record.observations if o.get("signature")
+        )
+        tuned_digest = inv_mod.workload_digest(tuned_signatures)
+        overlap = inv_mod.workload_overlap(record, tuned_signatures)
+
+        print(f"workload  {record_digest}  ({record_path})")
+        print(f"tuned     {tuned_digest}  ({measurements_path})", end="")
+        print("  DIFFERENT" if record_digest != tuned_digest else "  SAME")
+        print()
+        print(
+            f"coverage  {overlap['signatures_covered']} of "
+            f"{overlap['signatures_observed']} observed signatures have a tuned winner"
+        )
+        print(
+            f"          {overlap['calls_covered']} of {overlap['calls_observed']} "
+            f"calls covered ({overlap['covered_share_pct']:.1f}%)"
+        )
+        print()
+        print(
+            "Advisory only: this does not gate any cache load or promotion "
+            "decision -- it says the tune was measured for a different "
+            "workload, not that it is unsafe."
+        )
         return 0
 
     else:

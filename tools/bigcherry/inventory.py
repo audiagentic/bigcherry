@@ -21,6 +21,7 @@ import sqlite3
 import sys
 import math
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1519,6 +1520,53 @@ def write_hot_list(
     ]
     output.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     return {"basis": basis, "signatures": len(rows), "rows": rows}
+
+
+# --------------------------------------------------------------- workload id
+
+
+def workload_digest(signatures: Iterable[str]) -> str:
+    """Mirror of the C++ ``compute_workload_digest()``: blake2b over the
+    sorted SET of signature digests -- presence, not frequency, so this is
+    stable across two runs of the same model at different token counts.
+    Must agree byte-for-byte with the C++ implementation (HI37 Part 2)."""
+    blob = b"".join(bytes.fromhex(s) for s in sorted(set(signatures)))
+    return hashlib.blake2b(blob, digest_size=16, person=b"llama-workload").hexdigest()
+
+
+def workload_overlap(record: Record, tuned_signatures: set[str]) -> dict[str, Any]:
+    """How much of this workload has a tuned winner, weighted by calls.
+
+    Digest equality is too strict to be a useful comparison: one extra
+    context length or draft width changes the digest completely, so a
+    95%-overlapping workload would report as "different". Overlap is the
+    number that actually matters; the digest is only cheap identity.
+
+    Weighted by calls, not signature count -- an unweighted count cannot
+    distinguish a cache covering the hottest signatures from one covering
+    the coldest, which are opposite conclusions about whether a run was
+    usefully tuned. Advisory only: this never gates a cache load.
+    """
+    total = covered = 0
+    covered_signatures = 0
+    observed_signatures = 0
+    for observation in record.observations:
+        signature = observation.get("signature")
+        if not signature:
+            continue
+        observed_signatures += 1
+        calls = int(observation.get("calls", 0))
+        total += calls
+        if signature in tuned_signatures:
+            covered += calls
+            covered_signatures += 1
+    return {
+        "signatures_observed": observed_signatures,
+        "signatures_covered": covered_signatures,
+        "calls_observed": total,
+        "calls_covered": covered,
+        "covered_share_pct": 100.0 * covered / total if total else 0.0,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -127,7 +127,10 @@ class PreSampleModeContractTests(unittest.TestCase):
     # --- provenance -----------------------------------------------------------
 
     def test_resolved_mode_string_is_in_the_artifact_header(self):
-        header = self.tuner.find('\\"pre_sample_mode\\":\\"%s\\"}')
+        # HI37 Part 2 added workload/workload_label fields after this one, so
+        # it is no longer immediately followed by the closing brace -- just
+        # confirm the field itself and its value source are present.
+        header = self.tuner.find('\\"pre_sample_mode\\":\\"%s\\"')
         self.assertGreater(header, 0)
         self.assertIn("pre_sample_mode_name(config.pre_sample_mode)", self.tuner)
 
