@@ -207,10 +207,14 @@ class UpstreamEquivalentSchemaTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "upstream-equivalent is not a 40-hex SHA"):
                 src.load_registry(path)
 
-    def test_no_currently_tracked_entry_has_a_fabricated_equivalent(self):
-        """RD99's own scope note: populate upstream-equivalent only by
-        confirming a real landed change, never invent one to exercise the
-        feature. The committed registry must not carry a placeholder."""
+    def test_upstream_equivalent_does_not_repeat_tracked_commit(self):
+        """Sanity check on the schema, not proof of provenance: an
+        upstream-equivalent SHA identical to the tracked commit itself
+        would be a nonsensical annotation. With zero entries currently
+        annotated this is vacuously true -- it cannot and does not prove
+        any future annotation is genuine; that verification happens by
+        hand when the field is populated (RD99's own scope note: populate
+        only by confirming a real landed change, never invent one)."""
         registry = src.load_registry()
         for source in registry["sources"]:
             for entry in source.get("tracked", []):

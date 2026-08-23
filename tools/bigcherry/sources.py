@@ -435,7 +435,7 @@ def baseline_candidates_at_pin(
 
 
 def print_baseline_candidates(report: dict) -> None:
-    """Print an advisory RD95 redundancy report; never mutates planning state."""
+    """Print an advisory RD95/RD99 baseline report; never mutates planning state."""
     pin = report["candidate_pin"]
 
     if not report["pin_resolvable"]:
