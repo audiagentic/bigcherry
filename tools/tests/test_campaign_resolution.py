@@ -45,9 +45,15 @@ class CampaignResolutionTests(unittest.TestCase):
 
     def test_base_is_exactly_the_fifteen_validated_core_modules(self):
         lane = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
+        # Scoped to the framework patch-set's own declared list, not "every
+        # validated module in the catalog" -- since RD19's promotion
+        # (2026-08-24), a validated module can also live in
+        # validated-enhancements, which bigcherry-native's "framework"
+        # patch-set must NOT pull in.
+        framework_patch_ids = frozenset(self.cfg.patch_sets["framework"].patches)
         expected = tuple(
             module.patch_id for module in self.catalog
-            if module.state == "validated"
+            if module.state == "validated" and module.patch_id in framework_patch_ids
         )
         # HI70: patches/1100_hi70_direct_op_evidence.py added a 15th
         # validated core module (deterministic direct-op correctness corpus
@@ -55,10 +61,15 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(len(expected), 15)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
-            sum(module.group == "core" for module in self.catalog if module.state == "validated"),
+            sum(module.group == "core" for module in self.catalog
+                if module.state == "validated" and module.patch_id in framework_patch_ids),
             14,
         )
-        self.assertEqual(lane.promoted_enhancements, ())
+        # RD19 (2026-08-24) is the first validated-enhancements member;
+        # bigcherry-native's own resolved patch set must still exclude it
+        # (that's what the assertion above already proves), but the lane's
+        # promoted_enhancements metadata now reports it as available.
+        self.assertEqual(lane.promoted_enhancements, ("1200_rd19_single_gpu_meta_bypass",))
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(

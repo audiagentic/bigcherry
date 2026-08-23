@@ -29,14 +29,16 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         self.assertTrue(s.contracted)
         self.assertIn("RD08-Q6K-MMVQ-VDR2", s.contract_ids)
 
-    def test_rd09_is_source_pinned_but_not_yet_materialized(self):
-        # RD09 is real, tracked, "planned" -- no patch or contract exists
-        # for it yet. compute_all must report that honestly, not guess.
+    def test_rd09_is_source_pinned_and_materialized_as_stage1_foundation(self):
+        # RD09's stage 1 (foundation-only cache, no MMVQ caller yet -- see
+        # patches/1235_rd09_q81_activation_cache_foundation.py) landed
+        # 2026-08-24. compute_all must report that honestly, not the old
+        # pre-implementation "planned, no patch" state.
         s = self.statuses["RD09"]
         self.assertTrue(s.source_pinned)
-        self.assertFalse(s.materialized)
-        self.assertEqual(s.patch_ids, ())
-        self.assertIsNone(s.build_state)
+        self.assertTrue(s.materialized)
+        self.assertEqual(s.patch_ids, ("1235_rd09_q81_activation_cache_foundation",))
+        self.assertEqual(s.build_state, "untested")
         self.assertFalse(s.contracted)
 
     def test_rd1003_rejected_upstream_fix_reports_rejected_build_state(self):

@@ -279,8 +279,9 @@ commit = "299f6eaf73b5eeb888bd94eaa66122d003136e6a"
 original = "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc"
 title = "CUDA: cache quantized Q8_1 matmul inputs per graph"
 plan-item = "RD09"
-status = "planned"
-note = "foundation for RD10/RD11/RD15 (and historically RD14); the hard prerequisite of the Q8_1 family"
+patch = "1235_rd09_q81_activation_cache_foundation"
+status = "ported-untested"
+note = "foundation for RD10/RD11/RD15 (and historically RD14, now superseded by RD24); the hard prerequisite of the Q8_1 family. Design converged 2026-08-24 (dev-gpt-agent, session ses_76b0fef0c94c434a, req_60a41664e0de43d6): NOT a verbatim port -- the fork's own key omits the exact view data offset (a real same-root/different-offset false-hit bug) and uses a relocatable arena (incompatible with HIP/CUDA graph-capture pointer stability). This patch (stage 1 of 7, foundation only, no caller yet) reimplements the mechanism with both weaknesses fixed: key includes the view data address; storage is bounded never-relocated stable slabs. See docs/planning/active/rdna-boost-experiments/RD09.md for the full staged plan."
 
 [[sources.tracked]]
 commit = "6be52a2416a63664abbf3d677abd62973c977f04"
