@@ -90,7 +90,7 @@ def test_missing_vendor_file_fails_closed(tmp_path):
         assert "not found" in str(exc)
 
 
-def _mul_mat_signature(tmp_path, *, m=16, n=1, k=256, src0_type=0, src1_type=0):
+def _mul_mat_signature(tmp_path, *, m=16, n=1, k=256, src0_type=0, src1_type=0, dst_type=0):
     vendor = _write_fixture_vendor(tmp_path)
     op_names = scm.load_ggml_op_names(vendor)
     op_id = next(i for i, name in op_names.items() if name == "MUL_MAT")
@@ -98,8 +98,10 @@ def _mul_mat_signature(tmp_path, *, m=16, n=1, k=256, src0_type=0, src1_type=0):
         "op": op_id,
         "src0_type": src0_type,
         "src1_type": src1_type,
+        "dst_type": dst_type,
         "ne0": [k, m, 1, 1],
         "ne1": [k, n, 1, 1],
+        "ned": [m, n, 1, 1],
     }
     return vendor, signature
 
@@ -131,6 +133,66 @@ def test_mul_mat_op_filter_does_not_match_a_batched_variant(tmp_path):
     op_filter, _ = scm.signature_to_op_filter(signature, vendor_root=vendor)
     batched_vars_line = "type_a=f32,type_b=f32,m=16,n=1,k=256,bs=[3,1],nr=[1,1],per=[0,1,2,3],k_v=0,o=1"
     assert re.search(op_filter, batched_vars_line) is None
+
+
+def test_test_file_line_matches_real_hardware_transcript(tmp_path):
+    # HI80 (2026-08-23 real-hardware finding): a real gpt-oss-20B MUL_MAT
+    # signature (m=32, n=21, k=2880, f32/f32) matches NONE of
+    # test-backend-ops' own fixed synthetic corpus shapes, so
+    # signature_to_op_filter() produces a filter that runs 0 tests.
+    # signature_to_test_file_line() instead drives test-backend-ops'
+    # --test-file escape hatch, verified end to end on real Brutus
+    # hardware to fire BIGCHERRY_CORRECTNESS_METRIC for tensor "out" for
+    # this exact line.
+    vendor, signature = _mul_mat_signature(tmp_path, m=32, n=21, k=2880)
+    line, target_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
+    op_id = signature["op"]
+    assert line == (
+        f"{op_id} 0 32 21 1 1 0 2 "
+        "0 2880 32 1 1 4 11520 368640 368640 "
+        "0 2880 21 1 1 4 11520 241920 241920 -"
+    )
+    assert target_tensor == "out"
+
+
+def test_test_file_line_rejects_a_non_mul_mat_op(tmp_path):
+    vendor = _write_fixture_vendor(tmp_path)
+    signature = {"op": 1, "src0_type": 0, "src1_type": 0, "dst_type": 0,
+                 "ne0": [1, 1, 1, 1], "ne1": [1, 1, 1, 1], "ned": [1, 1, 1, 1]}
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for a non-MUL_MAT op"
+    except scm.SignatureMappingError as exc:
+        assert "MUL_MAT" in str(exc)
+
+
+def test_test_file_line_rejects_batched_outer_dims(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path)
+    signature["ne0"] = [256, 16, 3, 1]
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for batched outer dims"
+    except scm.SignatureMappingError as exc:
+        assert "outer dimensions" in str(exc)
+
+
+def test_test_file_line_rejects_a_quantized_type(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path, src0_type=8, src1_type=8)
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for an unsupported (quantized) type"
+    except scm.SignatureMappingError as exc:
+        assert "q8_0" in str(exc).lower() or "F32" in str(exc)
+
+
+def test_test_file_line_rejects_missing_ned(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path)
+    del signature["ned"]
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for missing ned"
+    except scm.SignatureMappingError as exc:
+        assert "ned" in str(exc)
 
 
 def test_different_types_produce_different_filters(tmp_path):

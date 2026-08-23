@@ -279,3 +279,138 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
         rf"bs=\[1,1\],nr=\[1,1\],per=\[0,1,2,3\],k_v=0,o=1$"
     )
     return op_filter, "out"
+
+
+# HI80 (2026-08-23 real-hardware finding): signature_to_op_filter() only ever
+# produces evidence when a real dispatch signature happens to coincide with
+# one of test-backend-ops' own fixed synthetic corpus shapes -- verified on
+# Brutus that a real gpt-oss-20B MUL_MAT (m=32, n=21, k=2880) matches NONE of
+# them, so 0 tests run and no evidence is emitted, for a signature that is
+# otherwise perfectly valid. test-backend-ops already has an escape hatch
+# for exactly this: `--test-file <path>`, read by make_test_cases_from_file()
+# (vendor/llama.cpp/tests/test-backend-ops.cpp) into one test_generic_op per
+# line, which builds a graph directly from the given op/type/ne/sources
+# instead of going through the fixed generator -- so it works for ANY real
+# signature, not just ones lucky enough to already be registered. Verified
+# end to end on real Brutus hardware for the exact blocked m=32/n=21/k=2880
+# signature: BIGCHERRY_CORRECTNESS_METRIC fires for tensor "out" exactly as
+# it does for a registered-corpus case (test_generic_op inherits test_case's
+# shared eval() path, which is where patches 1222/1223 hook in -- nothing
+# op-specific about those patches, so no new patch to test-backend-ops
+# itself is needed).
+#
+# Byte type sizes below are the C sizeof() this project's own vendored
+# ggml.c type_traits table specifies for each entry (sizeof(float)=4,
+# sizeof(ggml_fp16_t)=2, sizeof(ggml_bf16_t)=2) -- literal C sizeof
+# expressions, not parseable generically the way the type_name string table
+# is, so this is a small explicit whitelist rather than parsed from source.
+# Deliberately narrow (float-family types only, matching the same
+# non-batched/contiguous pinned-case restriction _mul_mat_op_filter already
+# uses): quantized types need block-size-aware byte-stride math this
+# function does not attempt.
+_TEST_FILE_TYPE_SIZES = {
+    "F32": 4,
+    "F16": 2,
+    "BF16": 2,
+}
+
+
+def signature_to_test_file_line(
+    signature: dict[str, object], *, vendor_root: Path,
+) -> tuple[str, str]:
+    """Map a real MUL_MAT dispatch signature into one test-backend-ops
+    ``--test-file`` line (see module docstring above) plus its target
+    tensor name ("out", same as signature_to_op_filter -- test_generic_op
+    hardcodes this name too). Same scope restriction as
+    signature_to_op_filter: non-batched, non-permuted, contiguous case only
+    (ne0/ne1 outer dims == (1, 1)) -- this is the real shape of an actual
+    BigCherry dispatch signature (standards 5.2), not an arbitrary
+    restriction.
+
+    Unlike signature_to_op_filter, this always produces a matchable case
+    for any signature within its supported type/shape scope -- there is no
+    fixed corpus to coincide with, only test-backend-ops' own file-format
+    parser (a fixed, simple line grammar, verified against
+    make_test_cases_from_file() in tests/test-backend-ops.cpp)."""
+    op_names = load_ggml_op_names(vendor_root)
+    op_id = int(signature["op"])
+    op_name = op_names.get(op_id)
+    if op_name is None:
+        raise SignatureMappingError(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
+    if op_name != "MUL_MAT":
+        raise SignatureMappingError(
+            f"signature_to_test_file_line only supports MUL_MAT this slice, got op={op_name!r} "
+            f"(id={op_id})"
+        )
+
+    ne0 = signature.get("ne0")
+    ne1 = signature.get("ne1")
+    ned = signature.get("ned")
+    for field_name, value in (("ne0", ne0), ("ne1", ne1), ("ned", ned)):
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise SignatureMappingError(f"signature {field_name} must be a 4-element array, got {value!r}")
+
+    k_from_a = int(ne0[0])
+    k_from_b = int(ne1[0])
+    if k_from_a != k_from_b:
+        raise SignatureMappingError(
+            f"signature's src0/src1 shared inner dimension disagrees: "
+            f"ne0[0]={k_from_a}, ne1[0]={k_from_b} -- not a valid MUL_MAT signature"
+        )
+    ne0_outer = (int(ne0[2]), int(ne0[3]))
+    ne1_outer = (int(ne1[2]), int(ne1[3]))
+    if ne0_outer != (1, 1) or ne1_outer != (1, 1):
+        raise SignatureMappingError(
+            f"signature outer dimensions are src0={ne0_outer} src1={ne1_outer}, "
+            "not (1, 1) -- this function only maps the non-batched contiguous "
+            "default case, matching signature_to_op_filter's own restriction"
+        )
+
+    type_names = load_ggml_type_names(vendor_root)
+
+    def _type_name(type_id: object) -> str:
+        name = type_names.get(int(type_id))
+        if name is None:
+            raise SignatureMappingError(f"unknown ggml_type id {type_id!r}")
+        return name.upper()
+
+    def _type_size(type_name: str) -> int:
+        size = _TEST_FILE_TYPE_SIZES.get(type_name)
+        if size is None:
+            raise SignatureMappingError(
+                f"signature_to_test_file_line only supports "
+                f"{sorted(_TEST_FILE_TYPE_SIZES)} this slice, got type={type_name!r} "
+                "-- quantized types need block-size-aware byte-stride math "
+                "this function does not attempt"
+            )
+        return size
+
+    src0_type_id = int(signature["src0_type"])
+    src1_type_id = int(signature["src1_type"])
+    dst_type_id = int(signature["dst_type"])
+    src0_type_name = _type_name(src0_type_id)
+    src1_type_name = _type_name(src1_type_id)
+    dst_type_name = _type_name(dst_type_id)
+    _type_size(src0_type_name)
+    _type_size(src1_type_name)
+    _type_size(dst_type_name)
+
+    def _contiguous_byte_strides(ne: list[int], type_name: str) -> list[int]:
+        tsz = _type_size(type_name)
+        return [tsz, tsz * ne[0], tsz * ne[0] * ne[1], tsz * ne[0] * ne[1] * ne[2]]
+
+    ne0_i = [int(x) for x in ne0]
+    ne1_i = [int(x) for x in ne1]
+    ned_i = [int(x) for x in ned]
+    nb0 = _contiguous_byte_strides(ne0_i, src0_type_name)
+    nb1 = _contiguous_byte_strides(ne1_i, src1_type_name)
+
+    # GGML_OP_MUL_MAT's own id, op_params (unused by MUL_MAT -- 0 of them),
+    # num_sources=2 (src0, src1), name "-" (auto-generated, matches
+    # make_test_cases_from_file()'s own '-' -> empty-name convention).
+    line = " ".join(str(x) for x in (
+        op_id, dst_type_id, *ned_i, 0, 2,
+        src0_type_id, *ne0_i, *nb0,
+        src1_type_id, *ne1_i, *nb1,
+    )) + " -"
+    return line, "out"

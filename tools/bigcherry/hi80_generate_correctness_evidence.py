@@ -33,6 +33,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -121,14 +122,32 @@ def generate_for_row(
         return f"skip (already has evidence_id={existing})"
 
     signature_dict = _load_signature_dict(conn, identity.signature_id)
-    op_filter, target_tensor = scm.signature_to_op_filter(signature_dict, vendor_root=vendor_root)
-
-    aggregate = ce.generate_correctness_evidence(
-        binary, op_filter=op_filter, target_tensor=target_tensor,
-        candidate_stable_name=candidate_name, seeds=seeds,
-        headroom_fraction=headroom_fraction, contract_version=contract_version,
-        runner=runner,
+    # HI80 (2026-08-23 real-hardware finding): signature_to_op_filter()'s
+    # -p regex only matches a real signature by coincidence, when it
+    # happens to equal one of test-backend-ops' own fixed synthetic test
+    # shapes -- confirmed on Brutus that a real production MUL_MAT
+    # (m=32/n=21/k=2880) matches none of them. signature_to_test_file_line()
+    # drives test-backend-ops' --test-file escape hatch instead, which
+    # builds the exact requested shape directly via test_generic_op, so it
+    # works for any signature within its (narrower) type scope regardless
+    # of whether the fixed corpus happens to contain it.
+    test_file_line, target_tensor = scm.signature_to_test_file_line(
+        signature_dict, vendor_root=vendor_root
     )
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(test_file_line + "\n")
+        test_file_path = Path(handle.name)
+    try:
+        aggregate = ce.generate_correctness_evidence(
+            binary, test_file=test_file_path, target_tensor=target_tensor,
+            candidate_stable_name=candidate_name, seeds=seeds,
+            headroom_fraction=headroom_fraction, contract_version=contract_version,
+            runner=runner,
+        )
+    finally:
+        test_file_path.unlink(missing_ok=True)
     evidence_id = ce.write_correctness_evidence(
         conn, build_id=identity.build_id, hardware_id=identity.hardware_id,
         signature_id=identity.signature_id, candidate_id=identity.candidate_id,

@@ -118,10 +118,26 @@ def parse_correctness_metrics(stderr_text: str) -> list[CorrectnessMetric]:
 
 
 def run_test_backend_ops(
-    binary: Path, *, op_filter: str, seed: int, dispatch_mode: str,
+    binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    seed: int, dispatch_mode: str,
     forced_candidate: str | None, env: dict[str, str] | None = None,
     runner=subprocess.run,
 ) -> subprocess.CompletedProcess:
+    """``op_filter`` selects a case from test-backend-ops' own fixed synthetic
+    corpus via ``-p`` -- it only produces evidence when a real dispatch
+    signature happens to coincide with one of those hardcoded shapes, which
+    real production shapes generally do not (HI80, 2026-08-23 real-hardware
+    finding: gpt-oss-20B's real m=32/n=21/k=2880 MUL_MAT matches none of
+    them). ``test_file`` instead points at a test-backend-ops
+    ``--test-file`` line (see signature_correctness_mapping.
+    signature_to_test_file_line) describing the EXACT signature via
+    test_generic_op, bypassing the fixed corpus entirely -- this is the
+    real fix for that gap, not a new patch to test-backend-ops itself.
+    Exactly one of the two must be given."""
+    if (op_filter is None) == (test_file is None):
+        raise EvidenceError(
+            "run_test_backend_ops requires exactly one of op_filter or test_file"
+        )
     if seed == 0:
         raise EvidenceError(
             "seed must be nonzero -- 0 leaves BIGCHERRY_TEST_DETERMINISTIC_SEED "
@@ -135,7 +151,10 @@ def run_test_backend_ops(
         run_env["GGML_HIP_FORCE_CANDIDATE"] = forced_candidate
     else:
         run_env.pop("GGML_HIP_FORCE_CANDIDATE", None)
-    argv = [str(binary), "test", "-o", "MUL_MAT", "-p", op_filter]
+    if test_file is not None:
+        argv = [str(binary), "test", "--test-file", str(test_file)]
+    else:
+        argv = [str(binary), "test", "-o", "MUL_MAT", "-p", op_filter]
     return runner(argv, capture_output=True, text=True, env=run_env)
 
 
@@ -170,7 +189,8 @@ class SeedEvidence:
 
 
 def collect_seed_evidence(
-    binary: Path, *, op_filter: str, target_tensor: str, candidate_stable_name: str,
+    binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    target_tensor: str, candidate_stable_name: str,
     seed: int, env: dict[str, str] | None = None, runner=subprocess.run,
 ) -> SeedEvidence:
     """Run test-backend-ops twice for one seed (forced-native, forced-
@@ -186,11 +206,11 @@ def collect_seed_evidence(
     so the caller (aggregate_seed_evidence) can fail closed on ANY failed
     seed rather than only ones that also happened to omit a digest line."""
     native_run = run_test_backend_ops(
-        binary, op_filter=op_filter, seed=seed, dispatch_mode="native",
+        binary, op_filter=op_filter, test_file=test_file, seed=seed, dispatch_mode="native",
         forced_candidate=None, env=env, runner=runner,
     )
     candidate_run = run_test_backend_ops(
-        binary, op_filter=op_filter, seed=seed, dispatch_mode="replay",
+        binary, op_filter=op_filter, test_file=test_file, seed=seed, dispatch_mode="replay",
         forced_candidate=candidate_stable_name, env=env, runner=runner,
     )
 
@@ -340,7 +360,8 @@ def aggregate_seed_evidence(
 
 
 def generate_correctness_evidence(
-    binary: Path, *, op_filter: str, target_tensor: str, candidate_stable_name: str,
+    binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    target_tensor: str, candidate_stable_name: str,
     seeds: tuple[int, ...] = (1, 2, 3),
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
     contract_version: str = CONTRACT_VERSION,
@@ -359,7 +380,7 @@ def generate_correctness_evidence(
     aggregate_seed_evidence()."""
     seed_rows = [
         collect_seed_evidence(
-            binary, op_filter=op_filter, target_tensor=target_tensor,
+            binary, op_filter=op_filter, test_file=test_file, target_tensor=target_tensor,
             candidate_stable_name=candidate_stable_name, seed=seed, env=env, runner=runner,
         )
         for seed in seeds
