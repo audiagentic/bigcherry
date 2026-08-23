@@ -113,7 +113,10 @@ class DoubleNativeContractTests(unittest.TestCase):
 
     def test_native_and_twin_are_both_retained_as_finalists(self):
         self.assertIn("const bool is_twin        = m->is_native_twin;", self.tuner)
-        self.assertIn("if (is_native || is_twin || in_top || near_best)", self.tuner)
+        self.assertIn(
+            "if (is_native || is_twin || in_top || near_best || result.hot_signature)",
+            self.tuner,
+        )
         # Descriptor equality must no longer play the native role here.
         self.assertNotIn(
             "const bool is_native = m->candidate == native.candidate;", self.tuner
