@@ -19,6 +19,7 @@
 #include "mmf.cuh"
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <cctype>
 #include <stdlib.h>
@@ -205,6 +206,76 @@ static bool dispatch_counters_enabled() {
         enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
     }
     return enabled.load(std::memory_order_relaxed);
+}
+
+// ------------------------------------------- native-select sampled-cost timing
+//
+// HI87: opt-in, zero-cost-when-disabled sampled timing comparing
+// native_select()'s cost against the L1 warm-cache lookup it runs ahead of --
+// the real measurement that answered whether a warm-cache-first reorder
+// (skip native_select() before a guaranteed L1/L2 hit) is worth its
+// complexity. Real gfx1100 measurement (110,020-dispatch repeated-shape
+// sweep, 99.8% L1 hit rate): native_select() mean=193.6ns (n=860) vs
+// L1-hit-lookup mean=52.6ns (n=860) -- real, but below this project's
+// intervention threshold once scaled to a per-token estimate (~0.1-0.3% of
+// measured production decode latency), so HI87 was closed without a reorder.
+// Kept as a permanent diagnostic (matching GGML_HIP_DISPATCH_COUNTERS'
+// pattern, HI92) rather than deleted, so the one reopen condition HI87's
+// closure names -- a future workload where this path measurably exceeds
+// ~1% of real end-to-end decode wall time -- can be re-checked without
+// rebuilding the instrumentation from scratch. See HI87.md for the full
+// investigation, including the gpt-dev-agent design conversation that
+// shaped the measurement methodology and the closure decision.
+//
+// Sampled every 128th call (not every call) so the timer itself --
+// std::chrono::steady_clock, tens of ns of overhead per call on this
+// platform -- does not dominate what it is measuring.
+struct NativeSelectTiming {
+    // Two INDEPENDENT tick counters, not one shared between call sites: the
+    // two sites are always visited in the same relative order within a
+    // single dispatch (native_select's check, then the L1 lookup's), so one
+    // shared counter alternates parity between them -- native_select would
+    // only ever land on even ticks, L1 only on odd, and an even modulus
+    // check (`% 128 == 0`) can then NEVER fire for the odd-parity site.
+    // Caught on the first real run: native_select sampled n=1720, L1
+    // sampled n=0, exactly and suspiciously -- not "rare", literally never.
+    std::atomic<uint64_t> native_select_tick{0};
+    std::atomic<uint64_t> l1_hit_tick{0};
+    std::atomic<uint64_t> native_select_ns_sum{0};
+    std::atomic<uint64_t> native_select_samples{0};
+    std::atomic<uint64_t> l1_hit_ns_sum{0};
+    std::atomic<uint64_t> l1_hit_samples{0};
+};
+static NativeSelectTiming g_native_select_timing;
+
+static bool native_select_timing_enabled() {
+    static std::atomic<bool> enabled{false};
+    static std::atomic<bool> checked{false};
+    if (!checked.exchange(true)) {
+        const char * flag = getenv("GGML_HIP_NATIVE_SELECT_TIMING");
+        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
+    }
+    return enabled.load(std::memory_order_relaxed);
+}
+
+static bool native_select_timing_should_sample_native_select() {
+    return (g_native_select_timing.native_select_tick.fetch_add(1, std::memory_order_relaxed) % 128) == 0;
+}
+
+static bool native_select_timing_should_sample_l1() {
+    return (g_native_select_timing.l1_hit_tick.fetch_add(1, std::memory_order_relaxed) % 128) == 0;
+}
+
+static void report_native_select_timing() {
+    const uint64_t ns_sum = g_native_select_timing.native_select_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t n      = g_native_select_timing.native_select_samples.load(std::memory_order_relaxed);
+    const uint64_t l1_sum = g_native_select_timing.l1_hit_ns_sum.load(std::memory_order_relaxed);
+    const uint64_t l1_n   = g_native_select_timing.l1_hit_samples.load(std::memory_order_relaxed);
+    GGML_LOG_INFO(
+        "bigcherry: native-select timing -- native_select() mean=%.1fns (n=%llu) "
+        "L1-hit-lookup mean=%.1fns (n=%llu)\n",
+        n ? (double) ns_sum / (double) n : 0.0, (unsigned long long) n,
+        l1_n ? (double) l1_sum / (double) l1_n : 0.0, (unsigned long long) l1_n);
 }
 
 // ---------------------------------------------------- cached hardware identity
@@ -597,7 +668,18 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
     Binding thread_binding = {};
     const bool l1_attempted = mode != GGML_HIP_DISPATCH_MODE_RECORD;
-    if (l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding)) {
+    const bool sample_l1 = l1_attempted && native_select_timing_enabled()
+                            && native_select_timing_should_sample_l1();
+    const auto l1_sample_t0 = sample_l1 ? std::chrono::steady_clock::now()
+                                         : std::chrono::steady_clock::time_point{};
+    const bool l1_found = l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding);
+    if (sample_l1) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - l1_sample_t0).count();
+        g_native_select_timing.l1_hit_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_native_select_timing.l1_hit_samples.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (l1_found) {
         if (dispatch_counters_enabled()) {
             g_dispatch_counters.l1_hits.fetch_add(1, std::memory_order_relaxed);
         }
@@ -1023,8 +1105,18 @@ bool ggml_hip_dispatch_mul_mat(
         return false;
     }
 
+    const bool sample_native_select = native_select_timing_enabled()
+                                       && native_select_timing_should_sample_native_select();
+    const auto native_select_sample_t0 = sample_native_select ? std::chrono::steady_clock::now()
+                                                                : std::chrono::steady_clock::time_point{};
     const ggml_hip_native_selection native =
         ggml_hip_native_select(ctx, src0, src1, ids, dst);
+    if (sample_native_select) {
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - native_select_sample_t0).count();
+        g_native_select_timing.native_select_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+        g_native_select_timing.native_select_samples.fetch_add(1, std::memory_order_relaxed);
+    }
     if (!native.valid) {
         return false;
     }
@@ -2066,6 +2158,9 @@ void ggml_hip_autotune_flush(void) {
     // own working pattern, does).
     if (dispatch_counters_enabled()) {
         report_dispatch_counters();
+    }
+    if (native_select_timing_enabled()) {
+        report_native_select_timing();
     }
 }
 
