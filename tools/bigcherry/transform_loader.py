@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .inventory import RecordError, _require_current_schema
-from .transform_records import TransformRecordError, load_transform_records
+from .transform_records import TransformRecordError, load_artifact_records
 
 
 def _blob(value: str, field: str) -> bytes:
@@ -40,16 +40,41 @@ def _schema_supports_transforms(connection: sqlite3.Connection) -> None:
             raise RecordError(f"dispatch database is missing {table} table")
 
 
-def _identity_ids(connection: sqlite3.Connection, record: dict[str, Any]) -> tuple[int, int, bytes]:
-    build = record["build_provenance"]
-    hardware = record["hardware_provenance"]
+def _resolve_build_id(connection: sqlite3.Connection, build: dict[str, Any]) -> int:
+    descriptor = build.get("build_descriptor_hash")
+    if descriptor is None:
+        # Runtime-flat record (HI29): the artifact asserts only
+        # source_revision + manifest_hash as producer identity, so resolve the
+        # build row by exactly those.  hardware/signature digests are GLOBAL
+        # namespaces in the dispatch DB, not per-build evidence, so they must
+        # never be used to disambiguate a build (an observation row only says
+        # a build saw a pair, not that it produced this artifact).
+        rows = connection.execute(
+            "SELECT build_id FROM build WHERE source_revision=? AND manifest_hash=?",
+            (build["source_revision"], build["manifest_hash"]),
+        ).fetchall()
+        if len(rows) == 0:
+            raise RecordError("transform build provenance does not match an existing build")
+        if len(rows) > 1:
+            raise RecordError(
+                "ambiguous build identity for runtime-flat transform record: "
+                f"{len(rows)} builds share source_revision+manifest_hash; "
+                "refusing to bind one (fail closed)")
+        return rows[0][0]
     build_row = connection.execute(
         "SELECT build_id FROM build WHERE source_revision=? AND manifest_hash=? "
         "AND build_descriptor_hash=?",
-        (build["source_revision"], build["manifest_hash"], build["build_descriptor_hash"]),
+        (build["source_revision"], build["manifest_hash"], descriptor),
     ).fetchone()
     if build_row is None:
         raise RecordError("transform build provenance does not match an existing build")
+    return build_row[0]
+
+
+def _identity_ids(connection: sqlite3.Connection, record: dict[str, Any]) -> tuple[int, int, bytes]:
+    build = record["build_provenance"]
+    hardware = record["hardware_provenance"]
+    build_id = _resolve_build_id(connection, build)
     hardware_blob = _blob(hardware["digest"], "hardware_provenance.digest")
     hardware_row = connection.execute(
         "SELECT hardware_id FROM hardware WHERE hardware_digest=?", (hardware_blob,)
@@ -61,7 +86,7 @@ def _identity_ids(connection: sqlite3.Connection, record: dict[str, Any]) -> tup
         "SELECT 1 FROM signature WHERE signature_digest=?", (signature_blob,)
     ).fetchone() is None:
         raise RecordError("transform source_signature does not match an existing signature")
-    return build_row[0], hardware_row[0], signature_blob
+    return build_id, hardware_row[0], signature_blob
 
 
 def load_transforms(
@@ -74,8 +99,11 @@ def load_transforms(
     Loading is idempotent.  All records are validated before any transaction
     is committed, and provenance mismatches fail closed.
     """
+    # Header-dispatching boundary (HI97): a nested evidence artifact and a
+    # flat runtime (HI29) artifact both load here; each is validated by its
+    # own schema at the load boundary.
     try:
-        records = load_transform_records(transforms_path)
+        records = load_artifact_records(transforms_path)
     except TransformRecordError as exc:
         raise RecordError(str(exc)) from exc
     connection = sqlite3.connect(str(database_path))

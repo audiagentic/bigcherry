@@ -11,19 +11,34 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from .transform_records import TransformRecordError, load_transform_records, validate_transform_record
+from .transform_records import (
+    TransformRecordError,
+    load_artifact_records,
+    validate_transform_record,
+)
 
 
 class GapAnalysisError(ValueError):
     """The input set cannot produce a trustworthy gap report."""
 
 
-def _provenance_key(record: dict[str, Any]) -> tuple[str, ...]:
+def _provenance_key(record: dict[str, Any]) -> tuple[str | None, ...]:
+    # Runtime-flat records (HI29) carry None for the provenance dimensions the
+    # runtime does not emit (architecture, build_descriptor_hash).  Use actual
+    # None in the key -- no sentinel string, and no schema marker (the
+    # serialization format is not provenance); a flat record can never be
+    # mixed with a complete nested one because the None vs digest dimensions
+    # differ.
     hardware = record["hardware_provenance"]
     build = record["build_provenance"]
-    return (hardware["digest"].casefold(), hardware["architecture"].casefold(),
-            build["source_revision"].casefold(), build["manifest_hash"].casefold(),
-            build["build_descriptor_hash"].casefold())
+    return (
+        hardware["digest"].casefold(),
+        hardware["architecture"].casefold() if hardware["architecture"] is not None else None,
+        build["source_revision"].casefold(),
+        build["manifest_hash"].casefold(),
+        build["build_descriptor_hash"].casefold()
+        if build["build_descriptor_hash"] is not None else None,
+    )
 
 
 def _provenance_document(record: dict[str, Any]) -> dict[str, Any]:
@@ -34,19 +49,35 @@ def _provenance_document(record: dict[str, Any]) -> dict[str, Any]:
 def analyze_gaps(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate transform-gap records by pattern and native family.
 
-    Every record is normalized through ``validate_transform_record``. Attempts
-    are ignored, while gaps must share one provenance namespace and must not
-    reuse an evidence reference (case-insensitively). Output ordering is stable.
+    Every record is normalized through ``validate_transform_record`` (the
+    strict nested evidence contract).  Attempts are ignored, while gaps must
+    share one provenance namespace and must not reuse an evidence reference
+    (case-insensitively).  Output ordering is stable.  Artifact-level loading
+    of either schema goes through ``analyze_gap_file`` instead.
     """
-    gaps: list[dict[str, Any]] = []
-    provenance: tuple[str, ...] | None = None
-    provenance_record: dict[str, Any] | None = None
-    evidence_seen: set[str] = set()
+    normalized: list[dict[str, Any]] = []
     for index, raw in enumerate(records):
         try:
-            record = validate_transform_record(raw, where=f"records[{index}]")
+            normalized.append(validate_transform_record(raw, where=f"records[{index}]"))
         except TransformRecordError as exc:
             raise GapAnalysisError(str(exc)) from exc
+    return _analyze_normalized(normalized)
+
+
+def _analyze_normalized(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate already-normalized transform records.
+
+    This is the aggregation half of ``analyze_gaps`` for records that were
+    validated at the artifact boundary by ``load_artifact_records`` (which
+    may be either the nested schema or the runtime-flat HI29 schema).
+    Callers must not feed arbitrary dicts in here; the normalization boundary
+    is the only place where record shape is established.
+    """
+    gaps: list[dict[str, Any]] = []
+    provenance: tuple[str | None, ...] | None = None
+    provenance_record: dict[str, Any] | None = None
+    evidence_seen: set[str] = set()
+    for record in records:
         if record["kind"] != "transform-gap":
             continue
         current = _provenance_key(record)
@@ -88,12 +119,17 @@ def analyze_gaps(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
 
 
 def analyze_gap_file(path: str | Path) -> dict[str, Any]:
-    """Load a transform JSONL file and return its deterministic gap report."""
+    """Load a transform JSONL file and return its deterministic gap report.
+
+    The header dispatches the schema (nested evidence or runtime-flat HI29);
+    records are validated once at this boundary and the analyzer consumes the
+    normalized result.
+    """
     try:
-        records = load_transform_records(path)
+        records = load_artifact_records(path)
     except TransformRecordError as exc:
         raise GapAnalysisError(str(exc)) from exc
-    return analyze_gaps(records)
+    return _analyze_normalized(records)
 
 
 __all__ = ["GapAnalysisError", "analyze_gap_file", "analyze_gaps"]

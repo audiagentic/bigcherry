@@ -2015,20 +2015,28 @@ def build_parser() -> argparse.ArgumentParser:
     inv_hot.set_defaults(func=lambda args: cmd_inventory(args, subcmd="hot-list"))
 
     # Workload overlap: how much of a record's workload has a tuned winner,
-    # call-weighted (HI37 Part 2). Compares against a measurements JSONL's
-    # own tuned signature set (not a binary replay cache -- that reader
-    # belongs to replay_cache.py, a separate module this command does not
-    # need to import).
+    # call-weighted (HI37 Part 2). The tuned signature set comes either from
+    # a measurements JSONL's winners or (HI101) from a binary v5 replay cache
+    # via replay_cache.read_cache() -- the union of entry signatures, which
+    # is the same hardware-agnostic semantics as the measurements path
+    # (v5 entries carry no separate hardware field; it is folded into the
+    # portable dispatch digest).
     inv_workload = inv_sub.add_parser(
         "workload-check",
         help="Report call-weighted signature coverage of a measurements file "
-        "against a record",
+        "or a v5 replay cache against a record",
     )
     inv_workload.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
-    inv_workload.add_argument(
+    tuned_source = inv_workload.add_mutually_exclusive_group(required=True)
+    tuned_source.add_argument(
         "--measurements",
-        required=True,
+        default=None,
         help="a .measurements.jsonl file whose winners define the tuned set",
+    )
+    tuned_source.add_argument(
+        "--cache",
+        default=None,
+        help="a binary v5 replay cache whose entry signatures define the tuned set",
     )
     inv_workload.set_defaults(func=lambda args: cmd_inventory(args, subcmd="workload-check"))
 
@@ -2147,15 +2155,45 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
             print(str(exc), file=sys.stderr)
             return 1
 
-        measurements_path = Path(args.measurements)
-        if not measurements_path.is_file():
-            print(f"no such measurements file: {measurements_path}", file=sys.stderr)
-            return 2
-        tuned_signatures = {
-            row["signature"]
-            for row in report_mod.read_measurements_jsonl(measurements_path)
-            if row.get("signature")
-        }
+        if args.measurements:
+            measurements_path = Path(args.measurements)
+            if not measurements_path.is_file():
+                print(f"no such measurements file: {measurements_path}", file=sys.stderr)
+                return 2
+            tuned_signatures = {
+                row["signature"]
+                for row in report_mod.read_measurements_jsonl(measurements_path)
+                if row.get("signature")
+            }
+            tuned_source = str(measurements_path)
+        else:
+            from . import replay_cache
+
+            cache_path = Path(args.cache)
+            if not cache_path.is_file():
+                print(f"no such cache file: {cache_path}", file=sys.stderr)
+                return 2
+            # read_cache()/validate_blob() fail closed with SystemExit on
+            # truncation, bad magic/checksum, v4 input, or unrecognised
+            # match_kind; translate that into a normal CLI error here rather
+            # than letting a library exception escape.
+            try:
+                cache_header, cache_entries = replay_cache.read_cache(
+                    cache_path.read_bytes()
+                )
+            except SystemExit as exc:
+                print(
+                    f"cannot read replay cache {cache_path}: {exc}", file=sys.stderr
+                )
+                return 1
+            # A valid zero-entry cache is not an error: it reports zero
+            # coverage, which is the honest answer for a cache with no
+            # winners.
+            tuned_signatures = {entry["signature"] for entry in cache_entries}
+            tuned_source = (
+                f"{cache_path} (v{cache_header['version']} replay cache, "
+                f"{len(cache_entries)} entries)"
+            )
 
         record_digest = inv_mod.workload_digest(
             o["signature"] for o in record.observations if o.get("signature")
@@ -2164,7 +2202,7 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
         overlap = inv_mod.workload_overlap(record, tuned_signatures)
 
         print(f"workload  {record_digest}  ({record_path})")
-        print(f"tuned     {tuned_digest}  ({measurements_path})", end="")
+        print(f"tuned     {tuned_digest}  ({tuned_source})", end="")
         print("  DIFFERENT" if record_digest != tuned_digest else "  SAME")
         print()
         print(
