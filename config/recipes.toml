@@ -91,6 +91,9 @@ patches = ["1221_rd50_gdn_chunked_recurrence"]
 [experiment.rd73-only]
 patches = ["1233_rd73_stable_graph_cache_key"]
 
+[experiment.rd58-only]
+patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
+
 [source.llama-native]
 ref = "pinned"
 overlay = false
