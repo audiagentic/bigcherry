@@ -418,10 +418,12 @@ def cmd_repin(args: argparse.Namespace) -> int:
     )
     print(f"transition marker: {pin_transition.MARKER_PATH} ({old} -> {target})")
 
-    # RD95: advisory ancestry/redundancy report. Planning cards stay in the
-    # MCP single-writer domain; this reports now-baseline tracked commits but
-    # changes no state. A report failure must never invalidate an
-    # otherwise-successful RE48 transition, so it is wrapped broadly.
+    # RD95 (exact tracked-commit ancestry) + RD99 (manually-annotated
+    # upstream-equivalent ancestry): advisory ancestry/redundancy report.
+    # Planning cards stay in the MCP single-writer domain; this reports
+    # now-baseline tracked commits but changes no state. A report failure
+    # must never invalidate an otherwise-successful RE48 transition, so it
+    # is wrapped broadly.
     try:
         report = sources.baseline_candidates_at_pin(target)
         sources.print_baseline_candidates(report)

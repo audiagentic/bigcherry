@@ -98,6 +98,10 @@ def load_registry(path: str | Path | None = None) -> dict:
                 raise ValueError(f"source {source['id']}: {sha[:9]} has invalid status {status!r}")
             if entry.get("original") and not _SHA_RE.match(str(entry["original"])):
                 raise ValueError(f"source {source['id']}: {sha[:9]} original is not a 40-hex SHA")
+            if entry.get("upstream-equivalent") and not _SHA_RE.match(str(entry["upstream-equivalent"])):
+                raise ValueError(
+                    f"source {source['id']}: {sha[:9]} upstream-equivalent is not a 40-hex SHA"
+                )
     return raw
 
 
@@ -335,9 +339,19 @@ def baseline_candidates_at_pin(
     Missing candidate history, missing tracked commits, git failures, and
     ancestry timeouts never assert redundancy. The candidate ref is resolved
     once to a SHA and that exact SHA is passed to every ancestry test, so the
-    report cannot span two meanings of a moving ref. Deliberately checks
-    ``tracked.commit`` only -- not ``original`` (upstream-equivalence
-    resolution is a separate, unsolved problem, see sources._check).
+    report cannot span two meanings of a moving ref.
+
+    Checks ``tracked.commit`` first; if that is not proven ancestral and the
+    entry has a manually-annotated ``upstream-equivalent`` (RD99 phase 1 --
+    the case where a FORK commit's change later landed in mainline under a
+    different, rebased SHA), that SHA is checked too. Each candidate reports
+    ``baseline_commit`` (whichever SHA was actually proven ancestral) and
+    ``matched_via`` ("tracked-commit" or "upstream-equivalent") so a caller
+    never mistakes "the tracked fork SHA is baseline" for "its upstream
+    equivalent is baseline" -- the tracked SHA itself may still not be
+    ancestral even when its noted equivalent is. No automatic fork-commit ->
+    upstream-equivalent matching (patch-id/diff heuristic) is attempted here;
+    ``upstream-equivalent`` is populated by manual annotation only.
     """
     root = Path(vendor_root) if vendor_root is not None else paths.llama_root()
     reg = registry if isinstance(registry, dict) else load_registry(registry)
@@ -370,6 +384,9 @@ def baseline_candidates_at_pin(
 
     for source in reg.get("sources", []):
         for entry in source.get("tracked", []):
+            baseline_commit = None
+            matched_via = None
+
             try:
                 verdict = ancestral_to_pin(
                     entry["commit"],
@@ -380,13 +397,32 @@ def baseline_candidates_at_pin(
             except (OSError, subprocess.TimeoutExpired):
                 verdict = "unknown"
 
-            if verdict != "ancestral":
+            if verdict == "ancestral":
+                baseline_commit = entry["commit"]
+                matched_via = "tracked-commit"
+            elif entry.get("upstream-equivalent"):
+                try:
+                    equiv_verdict = ancestral_to_pin(
+                        entry["upstream-equivalent"],
+                        vendor_root=root,
+                        pin_ref=pin_sha,
+                        timeout=timeout,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    equiv_verdict = "unknown"
+                if equiv_verdict == "ancestral":
+                    baseline_commit = entry["upstream-equivalent"]
+                    matched_via = "upstream-equivalent"
+
+            if baseline_commit is None:
                 continue
 
             report["candidates"].append(
                 {
                     "source_id": source["id"],
                     "commit": entry["commit"],
+                    "baseline_commit": baseline_commit,
+                    "matched_via": matched_via,
                     "title": entry["title"],
                     "plan_item": entry.get("plan-item", "-"),
                     "status": entry["status"],
@@ -426,9 +462,15 @@ def print_baseline_candidates(report: dict) -> None:
             if item["plan_item"] == "-"
             else ""
         )
+        evidence = (
+            f"tracked-commit={item['commit'][:9]}"
+            if item["matched_via"] == "tracked-commit"
+            else f"tracked-commit={item['commit'][:9]} "
+                 f"baseline-via=upstream-equivalent:{item['baseline_commit'][:9]}"
+        )
         print(
             f"  source={item['source_id']} "
-            f"commit={item['commit'][:9]} "
+            f"{evidence} "
             f"status={item['status']} "
             f"plan-item={item['plan_item']} "
             f"title={item['title']}{suffix}"
