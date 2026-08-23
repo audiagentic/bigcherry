@@ -1147,13 +1147,19 @@ class TestHi64ElapsedTimeRetry(unittest.TestCase):
         )
 
     def test_env_var_parsed_and_bounded(self):
-        tuner = TUNER.read_text(encoding="utf-8")
-        self.assertIn(
-            'if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY")) {\n'
-            '            int_env("GGML_HIP_TUNE_ELAPSED_RETRY", 0, 10, c.elapsed_time_retry_max);\n'
-            "        }",
-            tuner,
-        )
+        # HI99: this knob's env-parsing is now generated from
+        # GGML_HIP_TUNER_CONFIG_FIELDS rather than a standalone hand-written
+        # getenv() block -- check its row in the macro table instead.
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        self.assertIn('elapsed_time_retry_max,', header)
+        self.assertIn('"GGML_HIP_TUNE_ELAPSED_RETRY"', header)
+        row_idx = header.index('F(INT,    elapsed_time_retry_max,')
+        row_end = header.index(") \\", row_idx)
+        row = header[row_idx:row_end]
+        self.assertIn('"elapsed_time_retry_max"', row)
+        self.assertIn('"GGML_HIP_TUNE_ELAPSED_RETRY"', row)
+        self.assertIn("0,", row)
+        self.assertIn("10", row)
 
     def test_hip_ok_checked_calls_in_the_retry_loop_remain_immediately_fatal(self):
         # A genuine HIP API failure (anything hip_ok() itself catches) must
@@ -1215,12 +1221,14 @@ class TestHi64ElapsedTimeRetry(unittest.TestCase):
         )
 
     def test_backoff_env_var_parsed(self):
-        tuner = TUNER.read_text(encoding="utf-8")
-        self.assertIn(
-            'if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US")) {',
-            tuner,
-        )
-        self.assertIn("c.elapsed_time_retry_backoff_us", tuner)
+        # HI99: generated from GGML_HIP_TUNER_CONFIG_FIELDS, not a standalone
+        # hand-written getenv() block.
+        header = TUNER_HEADER.read_text(encoding="utf-8")
+        row_idx = header.index("F(DOUBLE, elapsed_time_retry_backoff_us,")
+        row_end = header.index(") \\", row_idx)
+        row = header[row_idx:row_end]
+        self.assertIn('"GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US"', row)
+        self.assertIn("elapsed_time_retry_backoff_us", row)
 
     def test_retry_sleeps_before_reattempting_not_immediately(self):
         # HI64 (2026-08-23, third real-hardware round): the retry was

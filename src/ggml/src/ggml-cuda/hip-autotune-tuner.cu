@@ -1900,7 +1900,7 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
             }
             out = (int) parsed;
         };
-        auto size_env = [&](const char * name, size_t & out) {
+        auto size_env = [&](const char * name, size_t min_v, size_t max_v, size_t & out) {
             const char * v = getenv(name); if (!v) return;
             if (*v == '\0' || std::isspace((unsigned char) *v)) {
                 GGML_LOG_WARN("bigcherry: invalid %s=%s (whitespace/empty value)\n", name, v);
@@ -1908,7 +1908,8 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
             }
             errno = 0; char * end = nullptr; const unsigned long long parsed = strtoull(v, &end, 10);
             if (errno || end == v || *end != '\0' || v[0] == '-'
-                    || parsed > (unsigned long long) std::numeric_limits<size_t>::max()) {
+                    || parsed > (unsigned long long) std::numeric_limits<size_t>::max()
+                    || (size_t) parsed < min_v || (size_t) parsed > max_v) {
                 GGML_LOG_WARN("bigcherry: invalid %s=%s\n", name, v); c.valid = false; return;
             }
             out = (size_t) parsed;
@@ -1928,55 +1929,28 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         };
         // Environment overrides exist so a long production tune can be traded
         // against precision without a rebuild.
-        if (const char * v = getenv("GGML_HIP_TUNE_FINAL_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_FINAL_SAMPLES", 2, 100000, c.final_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_SCREEN_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_SCREEN_SAMPLES", 1, 100000, c.screen_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MAX_WORKSPACE")) {
-            size_env("GGML_HIP_TUNE_MAX_WORKSPACE", c.max_workspace_bytes);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_NOISE_PCT")) {
-            double_env("GGML_HIP_TUNE_NOISE_PCT", 0.0, std::numeric_limits<double>::max(), c.noise_canary_pct);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_DOUBLE_NATIVE")) {
-            int_env("GGML_HIP_TUNE_DOUBLE_NATIVE", 0, 1, c.double_native);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_HOT_SHARE")) {
-            double_env("GGML_HIP_TUNE_HOT_SHARE", 0.0, 100.0, c.hot_share_pct);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_ALPHA")) {
-            double_env("GGML_HIP_TUNE_ALPHA", 0.0, 1.0, c.confidence_alpha);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_NOISY_MAD")) {
-            double_env("GGML_HIP_TUNE_NOISY_MAD", 0.0, std::numeric_limits<double>::max(), c.noisy_mad_ratio);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_VERIFY_DETERMINISM")) {
-            int_env("GGML_HIP_TUNE_VERIFY_DETERMINISM", 0, 1, c.verify_determinism);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_EMIT_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_EMIT_SAMPLES", 0, 1, c.emit_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_PILOT_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_PILOT_SAMPLES", 1, 100000, c.pilot_samples);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MIN_SAMPLE_US")) {
-            double_env("GGML_HIP_TUNE_MIN_SAMPLE_US", 0.0, std::numeric_limits<double>::max(), c.min_sample_us);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_MAX_LPS")) {
-            int_env("GGML_HIP_TUNE_MAX_LPS", 1, 100000, c.max_launches_per_sample);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY")) {
-            int_env("GGML_HIP_TUNE_ELAPSED_RETRY", 0, 10, c.elapsed_time_retry_max);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US")) {
-            double_env("GGML_HIP_TUNE_ELAPSED_RETRY_BACKOFF_US", -1.0,
-                       std::numeric_limits<double>::max(), c.elapsed_time_retry_backoff_us);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_CONFIRM_SAMPLES")) {
-            int_env("GGML_HIP_TUNE_CONFIRM_SAMPLES", 2, 100000, c.confirmation_samples);
-        }
+        //
+        // HI99: every direct scalar override (including flush_evict_mb) is
+        // generated from GGML_HIP_TUNER_CONFIG_FIELDS (hip-autotune-tuner.cuh)
+        // -- adding a knob there is now the only edit needed for it to gain
+        // both env-override parsing here and header-emission provenance in
+        // ggml_hip_tuner_flush() below. No outer `if (getenv(...))` guard is
+        // needed: each *_env() lambda already returns immediately when the
+        // variable is unset, so the guard was redundant, not protective.
+#define GGML_HIP_TUNER_APPLY_ENV_INT(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        int_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_SIZE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        size_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_DOUBLE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+        double_env(env_name, min_expr, max_expr, c.cpp_field);
+#define GGML_HIP_TUNER_APPLY_ENV_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+        GGML_HIP_TUNER_APPLY_ENV_##TYPE(cpp_field, wire_key, env_name, min_expr, max_expr)
+        GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_APPLY_ENV_ONE)
+#undef GGML_HIP_TUNER_APPLY_ENV_ONE
+#undef GGML_HIP_TUNER_APPLY_ENV_DOUBLE
+#undef GGML_HIP_TUNER_APPLY_ENV_SIZE
+#undef GGML_HIP_TUNER_APPLY_ENV_INT
+
         int flush_l2_req = 0;
         int flush_rewarm_req = 0;
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_L2")) {
@@ -1984,9 +1958,6 @@ const ggml_hip_tuner_config & ggml_hip_tuner_get_config() {
         }
         if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_REWARM")) {
             int_env("GGML_HIP_TUNE_FLUSH_REWARM", 0, 1, flush_rewarm_req);
-        }
-        if (const char * v = getenv("GGML_HIP_TUNE_FLUSH_MB")) {
-            int_env("GGML_HIP_TUNE_FLUSH_MB", 1, 65536, c.flush_evict_mb);
         }
         // HI65: resolve the two request flags into the single mode. Both set
         // is a contradictory configuration (two different post-eviction
@@ -3593,17 +3564,37 @@ void ggml_hip_tuner_flush() {
     const ggml_hip_digest workload = compute_workload_digest(g_results);
     const char * workload_label_env = getenv("GGML_HIP_TUNE_WORKLOAD");
 
+    // HI99: every field GGML_HIP_TUNER_CONFIG_FIELDS declares is emitted here
+    // from the SAME table that drives env-override parsing above -- adding a
+    // knob to that one table is now the only edit needed for it to appear in
+    // both places. %.17g (not a display-precision specifier like %.4f) so a
+    // configured double is recorded precisely enough to identify the exact
+    // effective value, not rounded to a value distinguishable in the log but
+    // not in the artifact. Fields NOT in the macro (build/workload identity,
+    // measured host-sync overhead, warmup_launches, replacement_threshold_pct,
+    // production/active policy names, and the hand-resolved flush_l2/
+    // pre_sample_mode pair -- see GGML_HIP_TUNER_CONFIG_FIELDS's own comment
+    // for why those two stay hand-written) remain hand-written below.
+#define GGML_HIP_TUNER_HEADER_FMT_INT(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%d,"
+#define GGML_HIP_TUNER_HEADER_FMT_SIZE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%zu,"
+#define GGML_HIP_TUNER_HEADER_FMT_DOUBLE(cpp_field, wire_key, env_name, min_expr, max_expr) \
+    "\"" wire_key "\":%.17g,"
+#define GGML_HIP_TUNER_HEADER_FMT_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+    GGML_HIP_TUNER_HEADER_FMT_##TYPE(cpp_field, wire_key, env_name, min_expr, max_expr)
+#define GGML_HIP_TUNER_HEADER_ARG_ONE(TYPE, cpp_field, wire_key, env_name, min_expr, max_expr) \
+    , config.cpp_field
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"compiler\":\"%s\",\"hip_version\":\"%s\","
             "\"variant_set\":\"%s\",\"build_descriptor_hash\":\"%s\","
-            "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,\"final_samples\":%d,"
-            "\"warmup_launches\":%d,\"screen_samples\":%d,"
-            "\"confirmation_samples\":%d,\"replacement_threshold_pct\":%.4f,"
+            "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,"
+            GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_FMT_ONE)
+            "\"warmup_launches\":%d,\"replacement_threshold_pct\":%.4f,"
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
-                "\"alpha\":%.4f,\"double_native\":%d,"
-                "\"flush_l2\":%d,\"flush_evict_mb\":%d,"
+                "\"flush_l2\":%d,"
                 "\"pre_sample_mode\":\"%s\","
                 "\"workload\":\"%s\",\"workload_label\":\"%s\"}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
@@ -3611,20 +3602,25 @@ void ggml_hip_tuner_flush() {
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
-            sync_overhead.us, sync_overhead.valid ? "true" : "false", config.final_samples,
-            config.warmup_launches, config.screen_samples,
-            config.confirmation_samples, config.replacement_threshold_pct,
+            sync_overhead.us, sync_overhead.valid ? "true" : "false"
+            GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_ARG_ONE)
+            , config.warmup_launches, config.replacement_threshold_pct,
             config.production_policy.c_str(), config.active_policies.c_str(),
-            config.confidence_alpha, config.double_native,
             // Measurement-affecting knobs belong in the evidence: a flush=0
             // artifact and a flush=1 artifact are not measurement-equivalent
             // even with identical build/input digests (HI34 step 3). The
             // resolved pre_sample_mode string is the provenance of record;
-            // flush_l2 is its 0/1 wire mirror (HI65).
-            config.flush_l2, config.flush_evict_mb,
+            // flush_l2 is its 0/1 wire mirror (HI65). flush_evict_mb itself
+            // is an ordinary scalar and comes from the macro block above.
+            config.flush_l2,
             pre_sample_mode_name(config.pre_sample_mode),
             ggml_hip_digest_hex(workload).c_str(),
             workload_label_env ? workload_label_env : "");
+#undef GGML_HIP_TUNER_HEADER_ARG_ONE
+#undef GGML_HIP_TUNER_HEADER_FMT_ONE
+#undef GGML_HIP_TUNER_HEADER_FMT_DOUBLE
+#undef GGML_HIP_TUNER_HEADER_FMT_SIZE
+#undef GGML_HIP_TUNER_HEADER_FMT_INT
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;
