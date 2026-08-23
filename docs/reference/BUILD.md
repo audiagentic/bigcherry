@@ -218,3 +218,54 @@ cmake --build C:/bcw --target test-backend-ops -j
   exceeds the 250-character Windows object-path limit.
 - **Put ROCm's `bin` on `PATH` when *running*, not only when building.** Without
   it the exe dies with `0xC0000135` (DLL not found), which looks like a crash.
+
+### Building from git-bash on Windows
+
+`tools/rocm-env.sh` sourced from git-bash can resolve `HIP_PATH` to a
+backslash-containing Windows path (e.g. from a system-wide install ahead of
+the vendored one) rather than the vendored `vendor/rocm/<version>` tree.
+Passed straight into `cmake -D...`, a trailing-backslash-before-slash path
+like `C:\Program Files\AMD\ROCm\7.1\/bin/...` can produce a genuinely broken
+generated `CMakeRCCompiler.cmake` (`Invalid character escape '\P'`) rather
+than a normal "file not found". Two independent gotchas worth knowing before
+chasing a git-bash+cmake path error as something else:
+
+1. **No resource compiler by default.** `CMAKE_RC_COMPILER` is unset unless
+   you pass it; the vendored ROCm/LLVM toolchain bundles `llvm-rc.exe`, so
+   `-DCMAKE_RC_COMPILER="$ROCM/bin/llvm-rc.exe"` (forward slashes) is the fix.
+2. **Prefer forward-slash paths built from `pwd`** (e.g.
+   `ROCM=$(pwd)/vendor/rocm/7.1`) over whatever `tools/rocm-env.sh` resolves
+   `HIP_PATH` to, and set `HIP_PATH`/`ROCM_PATH`/`CMAKE_PREFIX_PATH` to that
+   same value explicitly rather than trusting the sourced script's export —
+   `find_package(hip)` needs `CMAKE_PREFIX_PATH` (or the `HIP_PATH`
+   environment variable, not just a `-D` cache var) to locate
+   `hip-config.cmake`.
+
+Confirmed working end to end (2026-08-23, this exact machine): configure and
+build `test-backend-ops`/`ggml-hip` against `vendor/rocm/7.1` and the local
+AMD Radeon RX 7900 GRE (gfx1100), then run a real tuning sweep
+(`GGML_HIP_DISPATCH_MODE=tune`) against it. Do not assume no compiler/GPU is
+available in this environment without checking this section and
+`vendor/rocm/` first.
+
+## Known dependency/toolchain gaps
+
+Anything vendored under `vendor/rocm/<version>/` is a straight copy of a
+ROCm install and covers the compiler, HIP/hipBLAS/hipBLASLt *runtime*
+libraries, and headers — everything a normal `GGML_HIP=ON` build needs. It
+does **not** cover every ROCm-adjacent tool some tuning/experiment work
+wants:
+
+- **hipBLASLt offline-tuning client (`hipblaslt-bench`)** — not present in
+  either the Windows HIP SDK vendored copy or Brutus's `hipblaslt`/
+  `hipblaslt-dev` apt packages (confirmed directly, 2026-08-23: the library
+  and headers are there, the client binary is not, and there is no separate
+  apt package for it). It has to be built from the `ROCm/hipBLASLt` GitHub
+  source with `-DBUILD_CLIENTS=ON`, which additionally pulls in Tensile — a
+  real, scoped, but substantially larger build than the library itself. See
+  RD87 for the concrete next step when someone picks that up.
+
+If you hit a similar "the runtime library is vendored but the CLI/dev tool
+isn't" gap for some other ROCm component, add it to this list rather than
+rediscovering it — the point of this section is to save the next person (or
+session) the investigation.
