@@ -4,6 +4,7 @@
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_AUTOTUNE)
 
+#include "hip-autotune-blake2b.h"
 #include "hip-autotune-build-hash.h"
 #include "hip-autotune-canary.h"
 #include "hip-autotune-dispatch.cuh"
@@ -329,6 +330,39 @@ struct DigestEqual {
 
 std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> g_results;
 std::mutex g_mutex;
+
+// HI37 Part 2: identity for the WORKLOAD this run tuned, derived from the set
+// of shapes it actually observed rather than any model metadata -- no model
+// identity crosses the ggml/llama boundary this overlay exists to avoid, and
+// the set of shapes a model produces (layer widths, head dimensions, context,
+// draft widths) is its fingerprint for free, from data this run already has.
+//
+// Presence, not frequency: call counts vary with run length, so hashing them
+// would give two runs of the *same* model two different identities, which is
+// the opposite of what this field is for.
+ggml_hip_digest compute_workload_digest(
+        const std::unordered_map<ggml_hip_digest, Result, DigestHash, DigestEqual> & results) {
+    std::vector<ggml_hip_digest> sorted;
+    sorted.reserve(results.size());
+    for (const auto & entry : results) {
+        sorted.push_back(entry.second.signature_digest);
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](const ggml_hip_digest & a, const ggml_hip_digest & b) {
+                  return memcmp(a.bytes, b.bytes, GGML_HIP_DIGEST_BYTES) < 0;
+              });
+    std::string blob;
+    blob.reserve(sorted.size() * GGML_HIP_DIGEST_BYTES);
+    for (const ggml_hip_digest & d : sorted) {
+        blob.append((const char *) d.bytes, GGML_HIP_DIGEST_BYTES);
+    }
+    ggml_hip_digest out = {};
+    // Mirrors tools/bigcherry's Python workload_digest() byte for byte --
+    // both must agree, the same reason every other digest in this file does.
+    ggml_hip_blake2b(out.bytes, GGML_HIP_DIGEST_BYTES,
+                     blob.data(), blob.size(), "llama-workload");
+    return out;
+}
 
 // HI24 steps 5-6: hot-list-based screening policy. A signature whose
 // cumulative call-weighted impact share falls at or below hot_share_pct is
@@ -3499,6 +3533,13 @@ void ggml_hip_tuner_flush() {
     const ggml_hip_tuner_config & config = ggml_hip_tuner_get_config();
     const HostSyncOverheadCache sync_overhead = g_host_sync_overhead.load();
 
+    // HI37 Part 2: a digest says "different"; an operator label says
+    // "different from what". Neither is worth much alone, and the label
+    // costs one getenv. Both are advisory -- recorded and reported, never
+    // gating a cache load (same precedent as HI23's manifest-hash flag).
+    const ggml_hip_digest workload = compute_workload_digest(g_results);
+    const char * workload_label_env = getenv("GGML_HIP_TUNE_WORKLOAD");
+
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
@@ -3510,7 +3551,8 @@ void ggml_hip_tuner_flush() {
             "\"production_policy\":\"%s\",\"active_policies\":\"%s\","
                 "\"alpha\":%.4f,\"double_native\":%d,"
                 "\"flush_l2\":%d,\"flush_evict_mb\":%d,"
-                "\"pre_sample_mode\":\"%s\"}\n",
+                "\"pre_sample_mode\":\"%s\","
+                "\"workload\":\"%s\",\"workload_label\":\"%s\"}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
@@ -3527,7 +3569,9 @@ void ggml_hip_tuner_flush() {
             // resolved pre_sample_mode string is the provenance of record;
             // flush_l2 is its 0/1 wire mirror (HI65).
             config.flush_l2, config.flush_evict_mb,
-            pre_sample_mode_name(config.pre_sample_mode));
+            pre_sample_mode_name(config.pre_sample_mode),
+            ggml_hip_digest_hex(workload).c_str(),
+            workload_label_env ? workload_label_env : "");
 
     for (const auto & entry : g_results) {
         const Result & r = entry.second;
