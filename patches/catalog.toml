@@ -336,6 +336,14 @@ state = "untested"
 plan-item = "HI18"
 
 [[patch]]
+id = "1225_hi85_nccl_heterogeneous_arch_guard"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI85"
+
+[[patch]]
 id = "1230_hip_autotune_inspect"
 kind = "framework"
 origin = "local"
@@ -350,3 +358,20 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI14"
+
+[[patch]]
+id = "1232_hi81_windows_cxx_hipcc_flags_reach_compile"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI81"
+
+[[patch]]
+id = "1233_rd73_stable_graph_cache_key"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "mrlordcat-rdna-lab"
+plan-item = "RD73"

@@ -725,16 +725,16 @@ def read_correctness_evidence(measurements: Path) -> dict[str, dict[str, Any]]:
     thresholds, called `delta_nmse_vs_native` conceptually, not an RV49
     threshold_t/headroom_fraction pair.
 
-    tools/bigcherry/tune_promotion.py's promotion stage already requires the
-    REAL RV49 evidence (correctness_evidence/correctness_evidence_seed,
-    schema 6, via promotion_correctness_gate.py) as a hard AND with its
-    statistical criteria before a winner can be promoted. This function's
-    consumer (build_manifest()'s PRODUCTION_VARIANT_SETS gate, below) has
-    NOT yet been switched to require that same RV49 evidence -- doing so
-    needs build_manifest() to gain a dispatch_db input and resolve manifest
-    candidates' identity against it, a separate, larger integration than
-    promotion's (a different pipeline stage, a different identity-resolution
-    shape) and is tracked as follow-up scope, not implemented here.
+    tools/bigcherry/tune_promotion.py's promotion stage requires the REAL
+    RV49 evidence (correctness_evidence/correctness_evidence_seed, schema 6,
+    via promotion_correctness_gate.py) as a hard AND with its statistical
+    criteria before a winner can be promoted, and replay_cache.build()'s
+    dispatch_db gate re-checks the same RV49 evidence at export time, at the
+    exact (dispatch, signature, hardware, candidate) binding granularity a
+    replay decision needs. build_manifest() no longer consumes this
+    function's native-relative screening metrics as production proof (HI67)
+    -- this function remains only as a cheap local screening reducer; no
+    current caller treats its output as a correctness gate.
     """
     evidence: dict[str, dict[str, Any]] = {}
     header: dict[str, Any] = {}
@@ -814,7 +814,6 @@ def build_manifest(root: Path, *, variant_set: str,
                    inventory: Inventory | None,
                    source_revision: str,
                    winners: set[str] | None = None,
-                   correctness_source: Path | None = None,
                    resource_blacklist: dict[tuple[str, str], tuple[str, ...]] | None = None) -> dict[str, Any]:
     if variant_set not in schema.VARIANT_SETS:
         raise CatalogError(
@@ -885,17 +884,16 @@ def build_manifest(root: Path, *, variant_set: str,
                 f"different inventory or architecture set than this build.")
         candidates = kept
 
-    if variant_set in schema.PRODUCTION_VARIANT_SETS and correctness_source is not None:
-        evidence = read_correctness_evidence(correctness_source)
-        for candidate in candidates:
-            if candidate.source_class == "native_wrapper":
-                continue
-            proof = evidence.get(candidate.stable_name)
-            if proof is None:
-                raise CatalogError(
-                    f"{variant_set} candidate {candidate.stable_name!r} has no "
-                    "successful correctness evidence in the supplied tune artifact")
-            candidate.config["correctness_reference"] = proof
+    # HI67 (RV49) note: production correctness proof is no longer gated here.
+    # A Candidate is reusable across many signatures/architectures, so
+    # "candidate C has evidence" was never a meaningful production statement
+    # -- the meaningful statement is "candidate C is safe for exactly this
+    # signature, on this hardware, against this native baseline", which is
+    # the granularity RV49 evidence (schema 6, correctness_evidence /
+    # correctness_evidence_seed) is keyed at. That check now lives at
+    # replay-cache export time (replay_cache.build()'s dispatch_db gate),
+    # the actual point where a binding becomes dispatchable in production --
+    # not here, where it would be checked at the wrong granularity.
 
     manifest = {
         "artifact_version": ARTIFACT_VERSION,
@@ -1690,7 +1688,6 @@ def main(argv: list[str] | None = None) -> int:
         manifest = build_manifest(
             root, variant_set=args.variant_set, architectures=architectures,
             inventory=inventory, source_revision=revision, winners=winners,
-            correctness_source=Path(args.winners) if args.winners else None,
             resource_blacklist=resource_blacklist)
     except (CatalogError, ResourceError, schema.SchemaError) as exc:
         print(f"catalog generation failed: {exc}", file=sys.stderr)

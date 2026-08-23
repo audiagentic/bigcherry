@@ -417,6 +417,23 @@ def cmd_repin(args: argparse.Namespace) -> int:
         "own ref are unchanged."
     )
     print(f"transition marker: {pin_transition.MARKER_PATH} ({old} -> {target})")
+
+    # RD95 (exact tracked-commit ancestry) + RD99 (manually-annotated
+    # upstream-equivalent ancestry): advisory ancestry/redundancy report.
+    # Planning cards stay in the MCP single-writer domain; this reports
+    # now-baseline tracked changes but changes no state. A report failure
+    # must never invalidate an otherwise-successful RE48 transition, so it
+    # is wrapped broadly.
+    try:
+        report = sources.baseline_candidates_at_pin(target)
+        sources.print_baseline_candidates(report)
+    except Exception as exc:  # noqa: BLE001 -- report is advisory only
+        print(
+            f"ancestry gate: report unavailable: {exc}; "
+            "pin move remains valid and no commits are asserted redundant",
+            file=sys.stderr,
+        )
+
     print(
         "next: COMMIT recipes.toml + the marker together, then "
         "python -m bigcherry pull --recipe <name>"
@@ -1997,6 +2014,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
 
+    # Hot list: rank observed signatures by estimated time contribution
+    # (HI24 steps 5-6), consumed by GGML_HIP_TUNE_HOT_SIGNATURES.
+    inv_hot = inv_sub.add_parser(
+        "hot-list", help="Rank observed signatures by estimated time contribution"
+    )
+    inv_hot.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
+    inv_hot.add_argument(
+        "--measurements",
+        default=None,
+        help="a previous tune's .measurements.jsonl; upgrades the ranking "
+        "from calls x est_bytes to calls x native_median_us",
+    )
+    inv_hot.add_argument(
+        "--output", default=None, help="hot list to write (default: alongside)"
+    )
+    inv_hot.set_defaults(func=lambda args: cmd_inventory(args, subcmd="hot-list"))
+
+    # Workload overlap: how much of a record's workload has a tuned winner,
+    # call-weighted (HI37 Part 2). The tuned signature set comes either from
+    # a measurements JSONL's winners or (HI101) from a binary v5 replay cache
+    # via replay_cache.read_cache() -- the union of entry signatures, which
+    # is the same hardware-agnostic semantics as the measurements path
+    # (v5 entries carry no separate hardware field; it is folded into the
+    # portable dispatch digest).
+    inv_workload = inv_sub.add_parser(
+        "workload-check",
+        help="Report call-weighted signature coverage of a measurements file "
+        "or a v5 replay cache against a record",
+    )
+    inv_workload.add_argument("record", help="JSONL written by GGML_HIP_DISPATCH_DB")
+    tuned_source = inv_workload.add_mutually_exclusive_group(required=True)
+    tuned_source.add_argument(
+        "--measurements",
+        default=None,
+        help="a .measurements.jsonl file whose winners define the tuned set",
+    )
+    tuned_source.add_argument(
+        "--cache",
+        default=None,
+        help="a binary v5 replay cache whose entry signatures define the tuned set",
+    )
+    inv_workload.set_defaults(func=lambda args: cmd_inventory(args, subcmd="workload-check"))
+
     return parser
 
 
@@ -2069,6 +2129,112 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
             f"loaded {counts['results']} result(s) with "
             f"{counts['measurements']} measurement(s) and "
             f"{counts['candidates']} candidate(s) into {db_path}"
+        )
+        return 0
+
+    elif subcmd == "hot-list":
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        output = (
+            Path(args.output) if args.output else record_path.with_suffix(".hot")
+        )
+        measurements = Path(args.measurements) if args.measurements else None
+        summary = inv_mod.write_hot_list(record, output, measurements=measurements)
+
+        print(f"wrote {output}")
+        print(f"  {summary['signatures']} signature(s), basis {summary['basis']}")
+        for row in summary["rows"][:5]:
+            print(
+                f"  {row['rank']:>3}  {row['signature'][:16]}  "
+                f"{row['calls']:>8} calls  {row['share_pct']:6.2f}%  "
+                f"cum {row['cum_share_pct']:6.2f}%"
+            )
+        return 0
+
+    elif subcmd == "workload-check":
+        from . import report as report_mod
+
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        if args.measurements:
+            measurements_path = Path(args.measurements)
+            if not measurements_path.is_file():
+                print(f"no such measurements file: {measurements_path}", file=sys.stderr)
+                return 2
+            tuned_signatures = {
+                row["signature"]
+                for row in report_mod.read_measurements_jsonl(measurements_path)
+                if row.get("signature")
+            }
+            tuned_source = str(measurements_path)
+        else:
+            from . import replay_cache
+
+            cache_path = Path(args.cache)
+            if not cache_path.is_file():
+                print(f"no such cache file: {cache_path}", file=sys.stderr)
+                return 2
+            # read_cache()/validate_blob() fail closed with SystemExit on
+            # truncation, bad magic/checksum, v4 input, or unrecognised
+            # match_kind; translate that into a normal CLI error here rather
+            # than letting a library exception escape.
+            try:
+                cache_header, cache_entries = replay_cache.read_cache(
+                    cache_path.read_bytes()
+                )
+            except SystemExit as exc:
+                print(
+                    f"cannot read replay cache {cache_path}: {exc}", file=sys.stderr
+                )
+                return 1
+            # A valid zero-entry cache is not an error: it reports zero
+            # coverage, which is the honest answer for a cache with no
+            # winners.
+            tuned_signatures = {entry["signature"] for entry in cache_entries}
+            tuned_source = (
+                f"{cache_path} (v{cache_header['version']} replay cache, "
+                f"{len(cache_entries)} entries)"
+            )
+
+        record_digest = inv_mod.workload_digest(
+            o["signature"] for o in record.observations if o.get("signature")
+        )
+        tuned_digest = inv_mod.workload_digest(tuned_signatures)
+        overlap = inv_mod.workload_overlap(record, tuned_signatures)
+
+        print(f"workload  {record_digest}  ({record_path})")
+        print(f"tuned     {tuned_digest}  ({tuned_source})", end="")
+        print("  DIFFERENT" if record_digest != tuned_digest else "  SAME")
+        print()
+        print(
+            f"coverage  {overlap['signatures_covered']} of "
+            f"{overlap['signatures_observed']} observed signatures have a tuned winner"
+        )
+        print(
+            f"          {overlap['calls_covered']} of {overlap['calls_observed']} "
+            f"calls covered ({overlap['covered_share_pct']:.1f}%)"
+        )
+        print()
+        print(
+            "Advisory only: this does not gate any cache load or promotion "
+            "decision -- it says the tune was measured for a different "
+            "workload, not that it is unsafe."
         )
         return 0
 

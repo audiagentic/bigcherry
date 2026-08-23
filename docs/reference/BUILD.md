@@ -6,13 +6,28 @@ See also: [TEST.md](TEST.md) — testing, tuning workflows, and coverage.
 
 ## Environment — brutus (`10.10.100.10`)
 
-**SMB share mapping:**
+**`~/bigcherry` is the live tree — a real local git clone.** Git operations
+(fetch/checkout/status) over the old SMB-mounted path (below) were too slow
+and unreliable over the network, so brutus builds from its own local
+checkout now, not from the share. Treat it as a normal git worktree, not a
+build cache: before building, `git status` must be clean and `git log -1`
+must match what you expect (fetch/pull first if not); after any hands-on
+edit there, commit and push before moving on.
+
+**SMB share — file transfer only, never git/build:**
 
 ```text
 J:\development\llmhosts\bigcherry  ==  /mnt/vault/development/llmhosts/bigcherry
 ```
 
-No copy or sync step needed — edit on either side, build on the server.
+Still useful for copying a build artifact or doc back and forth by hand.
+Do not `git` anything against this path, and do not point cmake at it for
+a brutus build — use `~/bigcherry` for that. (This section previously said
+the reverse — that `~/bigcherry` was the stale copy and `/mnt/vault` was
+live. That was wrong and out of date; see BUILD_AND_TEST.md, which already
+had the corrected version. If you're reading this after finding it
+contradicted `~/bigcherry`'s actual state again, trust the live checkout,
+not either doc, and fix whichever doc is behind.)
 
 **Device indices:** 0,1 = gfx1100 (RX 7900 XTX), 2 = gfx1201 (RDNA4), 3 = gfx1030 (RDNA2)
 
@@ -31,11 +46,9 @@ No copy or sync step needed — edit on either side, build on the server.
   scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
-- **`~/bigcherry` on brutus is a stale copy** — ignore or delete it. The live tree is under `/mnt/vault`.
-
 ## Recipes — the normal way to build
 
-`$BC` = `/mnt/vault/development/llmhosts/bigcherry` (or `J:\development\llmhosts\bigcherry`).
+`$BC` = `~/bigcherry` on brutus.
 
 A **recipe** names one complete build configuration: an upstream ref, a patch selection, and which variant(s) to compile. Recipes live in `recipes.toml`.
 
@@ -104,7 +117,7 @@ python3 -m bigcherry patches --recipe release
 
 ## Manual build cycle
 
-One-off builds outside a recipe. `$BC` = `/mnt/vault/development/llmhosts/bigcherry` (or `J:\development\llmhosts\bigcherry`).
+One-off builds outside a recipe. `$BC` = `~/bigcherry` on brutus.
 
 ### Linux — all three GPUs
 
@@ -205,3 +218,54 @@ cmake --build C:/bcw --target test-backend-ops -j
   exceeds the 250-character Windows object-path limit.
 - **Put ROCm's `bin` on `PATH` when *running*, not only when building.** Without
   it the exe dies with `0xC0000135` (DLL not found), which looks like a crash.
+
+### Building from git-bash on Windows
+
+`tools/rocm-env.sh` sourced from git-bash can resolve `HIP_PATH` to a
+backslash-containing Windows path (e.g. from a system-wide install ahead of
+the vendored one) rather than the vendored `vendor/rocm/<version>` tree.
+Passed straight into `cmake -D...`, a trailing-backslash-before-slash path
+like `C:\Program Files\AMD\ROCm\7.1\/bin/...` can produce a genuinely broken
+generated `CMakeRCCompiler.cmake` (`Invalid character escape '\P'`) rather
+than a normal "file not found". Two independent gotchas worth knowing before
+chasing a git-bash+cmake path error as something else:
+
+1. **No resource compiler by default.** `CMAKE_RC_COMPILER` is unset unless
+   you pass it; the vendored ROCm/LLVM toolchain bundles `llvm-rc.exe`, so
+   `-DCMAKE_RC_COMPILER="$ROCM/bin/llvm-rc.exe"` (forward slashes) is the fix.
+2. **Prefer forward-slash paths built from `pwd`** (e.g.
+   `ROCM=$(pwd)/vendor/rocm/7.1`) over whatever `tools/rocm-env.sh` resolves
+   `HIP_PATH` to, and set `HIP_PATH`/`ROCM_PATH`/`CMAKE_PREFIX_PATH` to that
+   same value explicitly rather than trusting the sourced script's export —
+   `find_package(hip)` needs `CMAKE_PREFIX_PATH` (or the `HIP_PATH`
+   environment variable, not just a `-D` cache var) to locate
+   `hip-config.cmake`.
+
+Confirmed working end to end (2026-08-23, this exact machine): configure and
+build `test-backend-ops`/`ggml-hip` against `vendor/rocm/7.1` and the local
+AMD Radeon RX 7900 GRE (gfx1100), then run a real tuning sweep
+(`GGML_HIP_DISPATCH_MODE=tune`) against it. Do not assume no compiler/GPU is
+available in this environment without checking this section and
+`vendor/rocm/` first.
+
+## Known dependency/toolchain gaps
+
+Anything vendored under `vendor/rocm/<version>/` is a straight copy of a
+ROCm install and covers the compiler, HIP/hipBLAS/hipBLASLt *runtime*
+libraries, and headers — everything a normal `GGML_HIP=ON` build needs. It
+does **not** cover every ROCm-adjacent tool some tuning/experiment work
+wants:
+
+- **hipBLASLt offline-tuning client (`hipblaslt-bench`)** — not present in
+  either the Windows HIP SDK vendored copy or Brutus's `hipblaslt`/
+  `hipblaslt-dev` apt packages (confirmed directly, 2026-08-23: the library
+  and headers are there, the client binary is not, and there is no separate
+  apt package for it). It has to be built from the `ROCm/hipBLASLt` GitHub
+  source with `-DBUILD_CLIENTS=ON`, which additionally pulls in Tensile — a
+  real, scoped, but substantially larger build than the library itself. See
+  RD87 for the concrete next step when someone picks that up.
+
+If you hit a similar "the runtime library is vendored but the CLI/dev tool
+isn't" gap for some other ROCm component, add it to this list rather than
+rediscovering it — the point of this section is to save the next person (or
+session) the investigation.

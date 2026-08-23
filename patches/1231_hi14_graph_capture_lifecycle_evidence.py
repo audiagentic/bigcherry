@@ -29,14 +29,30 @@ ggml_backend_cuda_graph_compute()/ggml_cuda_graph_evaluate_and_capture()
 Each site is instrumented immediately after its CUDA_CHECK(...) call
 succeeds (CUDA_CHECK aborts on failure, so reaching the marker means the
 call actually returned success) with a once-per-process, opt-in-only
-GGML_LOG_INFO marker: "BIGCHERRY_GRAPH_LIFECYCLE stage=<name>". Gated behind
+GGML_LOG_WARN marker: "BIGCHERRY_GRAPH_LIFECYCLE stage=<name>". Gated behind
 BIGCHERRY_GRAPH_LIFECYCLE_TRACE so ordinary graph-mode inference (including
 production replay) pays nothing beyond one getenv() per call site per
 process -- the same pattern as patches/1205_rd12_paired_mmvq_dual_output.py's
 and 1204_rd08_q6k_mmvq_vdr2.py's activation markers (once-per-process
-std::atomic_flag + GGML_LOG_INFO, same BIGCHERRY_PATCH_TRACE-style opt-in
+std::atomic_flag + a log call, same BIGCHERRY_PATCH_TRACE-style opt-in
 convention, here scoped to its own env var since this is a cross-cutting
 runtime lifecycle signal, not one patch's own activation evidence).
+
+HI90 (2026-08-23, real-hardware finding): a raw ggml GGML_LOG_INFO call is
+NOT visible in llama-server's default logs. vendor/llama.cpp/common/log.cpp's
+common_get_verbosity() maps GGML_LOG_LEVEL_INFO to LOG_LEVEL_TRACE (4), and
+common_log_default_callback() drops anything above the server's verbosity
+threshold (default 3) before it ever reaches a sink. Confirmed on real
+hardware: a genuine graph-capturing dual-XTX run produced zero
+BIGCHERRY_GRAPH_LIFECYCLE lines at default verbosity despite the server's
+own "graphs reused = N" counters proving graphs were captured and replayed;
+the identical run at `-lv 4` showed all four markers cleanly. GGML_LOG_WARN
+is NOT filtered by this verbosity mechanism (only GGML_LOG_LEVEL_DEBUG is
+gated in log.cpp's print()), so it is visible at any normal server
+verbosity -- these markers aren't warnings semantically, but the existing
+NCCL heterogeneous-arch guard (HI85, patches/1225) already established the
+same "use WARN for something an operator must be able to see without special
+flags" precedent for opt-in evidence markers in this codebase.
 
 tools/bigcherry/graph_lifecycle_evidence.py (new, this same change) parses
 these markers from a captured server log/stderr into the exact
@@ -60,7 +76,7 @@ _CAPTURE_BEGIN_NEW = """        CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stre
         if (getenv("BIGCHERRY_GRAPH_LIFECYCLE_TRACE") != nullptr) {
             static std::atomic_flag bigcherry_capture_begin_logged = ATOMIC_FLAG_INIT;
             if (!bigcherry_capture_begin_logged.test_and_set(std::memory_order_relaxed)) {
-                GGML_LOG_INFO("BIGCHERRY_GRAPH_LIFECYCLE stage=capture_begin\\n");
+                GGML_LOG_WARN("BIGCHERRY_GRAPH_LIFECYCLE stage=capture_begin\\n");
             }
         }"""
 
@@ -72,7 +88,7 @@ _CAPTURE_END_NEW = """            CUDA_CHECK(cudaStreamEndCapture(cuda_ctx->stre
             if (getenv("BIGCHERRY_GRAPH_LIFECYCLE_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_capture_end_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_capture_end_logged.test_and_set(std::memory_order_relaxed)) {
-                    GGML_LOG_INFO("BIGCHERRY_GRAPH_LIFECYCLE stage=capture_end\\n");
+                    GGML_LOG_WARN("BIGCHERRY_GRAPH_LIFECYCLE stage=capture_end\\n");
                 }
             }"""
 
@@ -84,7 +100,7 @@ _INSTANTIATE_NEW = """            CUDA_CHECK(cudaGraphInstantiate(&graph->instan
             if (getenv("BIGCHERRY_GRAPH_LIFECYCLE_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_instantiate_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_instantiate_logged.test_and_set(std::memory_order_relaxed)) {
-                    GGML_LOG_INFO("BIGCHERRY_GRAPH_LIFECYCLE stage=instantiate\\n");
+                    GGML_LOG_WARN("BIGCHERRY_GRAPH_LIFECYCLE stage=instantiate\\n");
                 }
             }"""
 
@@ -99,7 +115,7 @@ _LAUNCH_NEW = """        CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->s
         if (getenv("BIGCHERRY_GRAPH_LIFECYCLE_TRACE") != nullptr) {
             static std::atomic_flag bigcherry_replay_logged = ATOMIC_FLAG_INIT;
             if (!bigcherry_replay_logged.test_and_set(std::memory_order_relaxed)) {
-                GGML_LOG_INFO("BIGCHERRY_GRAPH_LIFECYCLE stage=replay\\n");
+                GGML_LOG_WARN("BIGCHERRY_GRAPH_LIFECYCLE stage=replay\\n");
             }
         }"""
 

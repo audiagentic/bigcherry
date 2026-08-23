@@ -751,8 +751,22 @@ CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
     -- caller-supplied Python float. The parent correctness_evidence row's
     -- own threshold_t is derived FROM these (all seeds of one row must
     -- agree), not the other way around -- this column is the actual source
-    -- of truth. Added before this feature ever ran against a real database
-    -- (offline-verified only as of this commit), so no migration is needed.
+    -- of truth.
+    --
+    -- CORRECTION (HI80, 2026-08-23): this comment originally claimed "added
+    -- before this feature ever ran against a real database... so no
+    -- migration is needed" -- that assumption was proven false by a real
+    -- Brutus campaign dispatch_db (built 2026-08-21/22, before this column
+    -- was added to this CREATE TABLE statement) that still lacked it.
+    -- CREATE TABLE IF NOT EXISTS leaves an existing table's shape
+    -- untouched regardless of schema_version, so that one pre-existing
+    -- database silently drifted from this definition. Migrated once, in
+    -- place, with `ALTER TABLE correctness_evidence_seed ADD COLUMN
+    -- threshold_t REAL NOT NULL DEFAULT 0` -- no runtime self-healing
+    -- shim was added to write_correctness_evidence(); this schema file
+    -- stays the single source of truth for CREATE TABLE IF NOT EXISTS,
+    -- and any future drift gets the same one-off ALTER, not a permanent
+    -- compatibility branch.
     threshold_t                REAL   NOT NULL,
     UNIQUE (correctness_evidence_id, seed),
     CHECK (native_execution_status IN ('ok', 'failed', 'timeout')),

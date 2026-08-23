@@ -253,6 +253,10 @@ def main(argv: list[str] | None = None) -> int:
         replay_export_result = lifecycle.execute_replay_export_stage(
             context=context, store=store, run_id=run_id,
             promoted_winners=promotion_result.promoted_winners_ref, manifest=replay_lane.manifest_ref,
+            # Same FINAL tune-stage database the promotion stage above used
+            # (see its own comment on tune_result.database_ref) -- the
+            # replay-export gate re-verifies RV49 evidence against it too.
+            dispatch_db=tune_result.database_ref,
             source_root=source_root, local_provenance_class="production",
         )
         manifest["replay_cache_artifact_id"] = replay_export_result.replay_cache_ref.artifact_id
