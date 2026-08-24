@@ -248,6 +248,18 @@ class ContractBindingTests(unittest.TestCase):
             self.assertIn(capability, plan.required_capabilities)
         self.assertEqual(plan.contract.contract_id, "ec-test")
 
+    def test_nested_contract_fields_not_allowed_in_adapter(self) -> None:
+        self.write_tree(
+            adapter=(
+                "schema = 1\n\n"
+                "[[check]]\n"
+                "id = \"applies\"\ncapability = \"apply\"\nvalidator = \"apply\"\n"
+                "config = { boundary = { source_id = \"smuggled\" } }\n"
+            ),
+        )
+        with self.assertRaisesRegex(pv.ConfigurationError, "Experiment Contract"):
+            self._plan()
+
     def test_contract_fields_not_allowed_in_adapter(self) -> None:
         self.write_tree(
             adapter="schema = 1\n\n"
