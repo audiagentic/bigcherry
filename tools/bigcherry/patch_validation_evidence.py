@@ -140,18 +140,30 @@ def patch_validation_subject_digest(path: Path) -> str:
     patch_implementation_digest(), which still records the exact bytes a
     given hardware campaign actually used.
     """
-    text = Path(path).read_text(encoding="utf-8")
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
     matches = list(_STATE_RE.finditer(text))
-    if len(matches) != 1:
-        raise ValidationEvidenceError(
-            f"{path}: expected exactly one literal STATE assignment, found {len(matches)}"
+    if len(matches) == 1:
+        match = matches[0]
+        normalized = (
+            text[:match.start()] + 'STATE = "<validation-state>"' + match.group("tail")
+            + text[match.end():]
         )
-    match = matches[0]
-    normalized = (
-        text[:match.start()] + 'STATE = "<validation-state>"' + match.group("tail")
-        + text[match.end():]
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    # Packaged patches keep lifecycle state in patch.toml, not patch.py.
+    manifest = path.parent / "patch.toml"
+    if len(matches) == 0 and manifest.is_file():
+        manifest_text = manifest.read_text(encoding="utf-8")
+        state = re.compile(r'(?m)^state\s*=\s*["\'][^"\']+["\']\s*$')
+        if len(state.findall(manifest_text)) != 1:
+            raise ValidationEvidenceError(f"{manifest}: expected exactly one state field")
+        normalized_manifest = state.sub('state = "<validation-state>"', manifest_text)
+        payload = {"implementation": text, "metadata": normalized_manifest}
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    raise ValidationEvidenceError(
+        f"{path}: expected exactly one literal STATE assignment or a packaged patch.toml state"
     )
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _validate_build_identity(role: str, value: object) -> dict[str, object]:
@@ -257,6 +269,7 @@ def make_record(
     contract_id: str | None = None, baseline_composition: Mapping[str, object] | None = None,
     control_composition: Mapping[str, object] | None = None,
     subject_composition: Mapping[str, object] | None = None,
+    control_tree: str | None = None, subject_tree: str | None = None,
     stock_tree: str | None = None, blockers: Iterable[str] = (),
 ) -> dict[str, object]:
     subject_digest = patch_validation_subject_digest(patch_path)
@@ -304,14 +317,16 @@ def make_record(
         "representation": representation,
         "validation_implementation_digest": validation_implementation_digest or _validation_digest(patch_path),
         "contract_id": contract_id or correctness_doc.get("contract_id"),
-        "contract_hash": str(correctness_doc.get("contract_hash", "")),
+        "contract_hash": correctness_doc.get("contract_hash"),
         "baseline_composition": dict(baseline_composition or {}),
         "control_composition": dict(control_composition or correctness_doc.get("control_composition", {})),
         "subject_composition": dict(subject_composition or correctness_doc.get("subject_composition", {})),
-        "control_tree": correctness_doc.get("control_tree"),
-        "subject_tree": correctness_doc.get("subject_tree", patched_source_tree),
+        "control_tree": control_tree or correctness_doc.get("control_tree"),
+        "subject_tree": subject_tree or correctness_doc.get("subject_tree", patched_source_tree),
         "stock_tree": stock_tree,
-        "check_results": correctness_doc.get("check_results", {}),
+        "check_results": correctness_doc.get("check_results") or {
+            "activation": dict(activation), "correctness": dict(correctness_doc),
+        },
         "hardware": {"architectures": list(archs)},
         "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir) if isinstance(item, Mapping)},
         "blockers": list(blockers),
@@ -419,8 +434,24 @@ def _record_qualifies(
     }
     if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
         problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
-    if record.get("record_schema_version") == 2 and record.get("record_digest") != _record_digest(record):
-        problems.append("record_digest does not match the v2 evidence payload")
+    if record.get("record_schema_version") == 2:
+        if record.get("record_digest") != _record_digest(record):
+            problems.append("record_digest does not match the v2 evidence payload")
+        required_v2 = ("representation", "validation_implementation_digest",
+                       "baseline_composition", "control_composition", "subject_composition",
+                       "control_tree", "subject_tree", "stock_tree", "check_results",
+                       "hardware", "artifact_hashes", "blockers", "final_eligibility")
+        for key in required_v2:
+            value = record.get(key)
+            if value is None or value == {}:
+                problems.append(f"v2 provenance field {key!r} is missing")
+        try:
+            _require_hex(record.get("validation_implementation_digest"),
+                         "validation_implementation_digest", (64,))
+        except ValidationEvidenceError as exc:
+            problems.append(str(exc))
+        if record.get("contract_id") is not None and not record.get("contract_hash"):
+            problems.append("contract_hash is required when contract_id is present")
     for key, wanted in expected.items():
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")

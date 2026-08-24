@@ -67,6 +67,22 @@ class SubjectDigestTests(unittest.TestCase):
         with self.assertRaises(pve.ValidationEvidenceError):
             pve.patch_validation_subject_digest(path)
 
+    def test_packaged_patch_state_lives_in_manifest(self):
+        package = self.root / "9999_packaged"
+        package.mkdir()
+        implementation = package / "patch.py"
+        implementation.write_text('"""implementation"""\n', encoding="utf-8")
+        (package / "patch.toml").write_text(
+            'schema = 1\nid = "9999_packaged"\norder = 9999\n'
+            'group = "g"\nstate = "untested"\n', encoding="utf-8",
+        )
+        first = pve.patch_validation_subject_digest(implementation)
+        (package / "patch.toml").write_text(
+            'schema = 1\nid = "9999_packaged"\norder = 9999\n'
+            'group = "g"\nstate = "validated"\n', encoding="utf-8",
+        )
+        self.assertEqual(first, pve.patch_validation_subject_digest(implementation))
+
 
 class MakeRecordTests(unittest.TestCase):
     def setUp(self):
