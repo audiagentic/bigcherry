@@ -4,6 +4,7 @@
 
 #include "hip-q81-cache.h"
 
+#include "common.cuh"
 #include "ggml.h"
 
 #include <hip/hip_runtime.h>
@@ -33,11 +34,18 @@ ggml_hip_q81_cache_mode parse_mode(const char * s) {
     return GGML_HIP_Q81_CACHE_OFF;
 }
 
-// Default cap: bounded, generous enough for real per-graph activation
+// Default byte cap: bounded, generous enough for real per-graph activation
 // traffic without letting a runaway workload grow this indefinitely.
 // Overridable for isolated-bench headroom testing, never for production
 // tuning -- there is deliberately no per-workload auto-sizing here.
-constexpr size_t k_default_max_bytes = 64ull << 20; // 64 MiB per device
+constexpr size_t k_default_max_bytes = 64ull << 20; // 64 MiB per context
+
+// Default entry cap: publish() enforces this so one pathological
+// generation issuing an unbounded number of distinct cache keys cannot
+// grow the entries map without limit even though total bytes are capped
+// (many small reservations could otherwise exhaust the entry map's own
+// memory well before the byte cap engages).
+constexpr size_t k_default_max_entries = 4096;
 
 size_t max_bytes_from_env() {
     const char * s = std::getenv("GGML_HIP_Q8_1_CACHE_MAX_MB");
@@ -105,15 +113,15 @@ struct slab {
 } // namespace
 
 struct ggml_hip_q81_cache {
-    int device = -1;
-
     std::mutex mutex;
 
     std::vector<slab> slabs;
     // Logical write cursor within the CURRENT generation, expressed as a
     // byte offset from the start of the concatenated slab sequence. Reset
     // to 0 by begin_generation(); never causes any slab to be freed or
-    // moved.
+    // moved. May point past the end of an existing slab mid-reservation
+    // walk (see reserve()); it always lands exactly on a slab boundary or
+    // inside a slab's own bytes, never inside a gap.
     size_t cursor = 0;
     size_t total_slab_bytes = 0;
 
@@ -135,16 +143,6 @@ struct ggml_hip_q81_cache {
 
 namespace {
 
-std::mutex & registry_mutex() {
-    static std::mutex m;
-    return m;
-}
-
-std::unordered_map<int, std::unique_ptr<ggml_hip_q81_cache>> & registry() {
-    static std::unordered_map<int, std::unique_ptr<ggml_hip_q81_cache>> reg;
-    return reg;
-}
-
 // Translates a logical cursor position into a physical (slab, offset)
 // pair, without allocating. Returns false if the position falls beyond
 // every existing slab.
@@ -161,26 +159,64 @@ bool locate(const std::vector<slab> & slabs, size_t pos, size_t & slab_index, si
     return false;
 }
 
-} // namespace
-
-ggml_hip_q81_cache & ggml_hip_q81_cache_for_device(int device) {
-    std::lock_guard<std::mutex> lock(registry_mutex());
-    auto & reg = registry();
-    auto it = reg.find(device);
-    if (it == reg.end()) {
-        auto cache = std::make_unique<ggml_hip_q81_cache>();
-        cache->device = device;
-        it = reg.emplace(device, std::move(cache)).first;
+// Byte offset of the start of slabs[index] within the concatenated slab
+// sequence.
+size_t slab_base(const std::vector<slab> & slabs, size_t index) {
+    size_t base = 0;
+    for (size_t i = 0; i < index; i++) {
+        base += slabs[i].bytes;
     }
-    return *it->second;
+    return base;
 }
 
-void ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache & cache) {
+} // namespace
+
+ggml_hip_q81_cache & ggml_hip_q81_cache_for_context(ggml_backend_cuda_context & ctx) {
+    if (ctx.q81_cache == nullptr) {
+        ctx.q81_cache = new ggml_hip_q81_cache();
+    }
+    return *static_cast<ggml_hip_q81_cache *>(ctx.q81_cache);
+}
+
+void ggml_hip_q81_cache_destroy_for_context(ggml_backend_cuda_context & ctx) {
+    if (ctx.q81_cache != nullptr) {
+        delete static_cast<ggml_hip_q81_cache *>(ctx.q81_cache);
+        ctx.q81_cache = nullptr;
+    }
+}
+
+uint64_t ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache & cache) {
     std::lock_guard<std::mutex> lock(cache.mutex);
     cache.generation++;
     cache.cursor = 0;
     cache.entries.clear();
     cache.stats.generations++;
+    cache.stats.current_bytes = 0;
+    return cache.generation;
+}
+
+uint64_t ggml_hip_q81_cache_current_generation(const ggml_hip_q81_cache & cache) {
+    return cache.generation;
+}
+
+ggml_hip_q81_cache_key ggml_hip_q81_cache_make_key(
+        const ggml_hip_q81_cache & cache, const ggml_tensor * view_root, const void * data,
+        int stream_no, int64_t ne0, int64_t ne0_padded, int64_t ne1, int64_t ne2, int64_t ne3,
+        int64_t s1, int64_t s2, int64_t s3) {
+    ggml_hip_q81_cache_key key;
+    key.generation  = cache.generation;
+    key.view_root   = view_root;
+    key.data        = data;
+    key.stream_no   = stream_no;
+    key.ne0         = ne0;
+    key.ne0_padded  = ne0_padded;
+    key.ne1         = ne1;
+    key.ne2         = ne2;
+    key.ne3         = ne3;
+    key.s1          = s1;
+    key.s2          = s2;
+    key.s3          = s3;
+    return key;
 }
 
 void * ggml_hip_q81_cache_find(ggml_hip_q81_cache & cache, const ggml_hip_q81_cache_key & key) {
@@ -205,26 +241,36 @@ ggml_hip_q81_cache_reservation ggml_hip_q81_cache_reserve(ggml_hip_q81_cache & c
     constexpr size_t k_align = 256;
     const size_t aligned_bytes = (bytes + k_align - 1) / k_align * k_align;
 
-    size_t slab_index = 0, offset = 0;
-    const size_t end = cache.cursor + aligned_bytes;
-    if (locate(cache.slabs, cache.cursor, slab_index, offset) &&
-            offset + aligned_bytes <= cache.slabs[slab_index].bytes) {
-        void * ptr = cache.slabs[slab_index].data + offset;
-        cache.cursor = end;
-        cache.stats.current_bytes = cache.cursor;
-        if (cache.cursor > cache.stats.high_water_bytes) {
-            cache.stats.high_water_bytes = cache.cursor;
+    // Walk forward through any already-existing slabs before ever
+    // growing. A request that doesn't fit the remainder of the current
+    // slab abandons that remainder and advances the cursor to the start
+    // of the next retained slab -- reused across generations exactly like
+    // the current slab is, so a warmed multi-slab cache stays fully
+    // reusable (including during graph capture, where growth is
+    // otherwise blocked but reuse of existing slabs is not).
+    for (;;) {
+        size_t slab_index = 0, offset = 0;
+        if (!locate(cache.slabs, cache.cursor, slab_index, offset)) {
+            break; // cursor is at/past every existing slab -- must grow
         }
-        return {ptr, true};
+        if (offset + aligned_bytes <= cache.slabs[slab_index].bytes) {
+            void * ptr = cache.slabs[slab_index].data + offset;
+            cache.cursor = slab_base(cache.slabs, slab_index) + offset + aligned_bytes;
+            cache.stats.current_bytes = cache.cursor;
+            if (cache.cursor > cache.stats.high_water_bytes) {
+                cache.stats.high_water_bytes = cache.cursor;
+            }
+            return {ptr, true};
+        }
+        // Doesn't fit the remainder of this slab: abandon that remainder
+        // (never split one reservation across two slabs) and try the
+        // next existing slab, without allocating anything yet.
+        cache.cursor = slab_base(cache.slabs, slab_index) + cache.slabs[slab_index].bytes;
     }
 
-    // Either the cursor is at/past the end of every existing slab, or the
-    // remaining space in the current slab is too small for this
-    // reservation (a partial-slab remainder we won't split across two
-    // slabs, to keep every reservation a single contiguous range). Either
-    // way, growth means appending a brand-new slab -- never touching an
-    // existing one -- so no previously-published pointer can be
-    // invalidated by this call.
+    // Every existing slab is exhausted: growth means appending a
+    // brand-new slab -- never touching an existing one -- so no
+    // previously-published pointer can be invalidated by this call.
     if (cache.capture_active) {
         cache.stats.capture_capacity_bypasses++;
         return {nullptr, false};
@@ -249,10 +295,10 @@ ggml_hip_q81_cache_reservation ggml_hip_q81_cache_reserve(ggml_hip_q81_cache & c
     }
 
     // The new slab starts exactly where the logical cursor already sits
-    // (the end of the previous slab, since a partial remainder is never
-    // split), so reservations from this point are contiguous from the
-    // caller's point of view even though they now live in a different
-    // physical allocation.
+    // (the end of every existing slab, since the walk above never leaves
+    // a gap), so this reservation is contiguous from the caller's point
+    // of view even though it now lives in a different physical
+    // allocation.
     cache.slabs.push_back({p, new_slab_bytes});
     cache.total_slab_bytes += new_slab_bytes;
 
@@ -271,6 +317,13 @@ void ggml_hip_q81_cache_publish(ggml_hip_q81_cache & cache, const ggml_hip_q81_c
         return;
     }
     std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.entries.find(key) == cache.entries.end() && cache.entries.size() >= k_default_max_entries) {
+        // The reservation's memory is still valid for the caller's own
+        // immediate use; it just will not be found again by a later
+        // lookup this generation.
+        cache.stats.entry_cap_bypasses++;
+        return;
+    }
     cache.entries[key] = reservation.ptr;
     cache.stats.quantize_launches++;
 }

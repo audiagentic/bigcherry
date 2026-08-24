@@ -23,6 +23,16 @@
 //      address that later moves would silently corrupt every subsequent
 //      replay. A stable slab set has no such failure mode.
 //
+// Ownership: one cache instance per ggml_backend_cuda_context, not per
+// physical device (dev-gpt-agent review, session ses_76b0fef0c94c434a,
+// req_9bd7db08f19d4e53, 2026-08-23: a device-global singleton is unsound
+// because upstream does not guarantee exactly one context per device --
+// two contexts sharing a device would otherwise race each other's
+// begin_generation() against live, still-in-flight reservations). The
+// context owns the cache's lifetime via
+// ggml_hip_q81_cache_destroy_for_context, called from
+// ggml_backend_cuda_context's own destructor.
+//
 // Stage 1 (this file + hip-q81-cache.cpp): cache foundation only. Nothing
 // in mmvq.cu references this yet -- that wiring is RD09 stage 2. Until a
 // caller exists, this code is entirely inert: its mere presence in the
@@ -36,6 +46,7 @@
 #include <cstdint>
 
 struct ggml_tensor;
+struct ggml_backend_cuda_context;
 
 enum ggml_hip_q81_cache_mode {
     GGML_HIP_Q81_CACHE_OFF    = 0,
@@ -57,10 +68,9 @@ ggml_hip_q81_cache_mode ggml_hip_q81_cache_mode_get();
 // env check is itself checked-once.
 bool ggml_hip_q81_cache_stats_enabled();
 
-// One cache instance per physical device. Device id is intentionally NOT
-// part of the key: the accessor below already routes to the right
-// instance, so the key never needs to disambiguate devices, and every
-// entry in a given instance is implicitly scoped to that device.
+// Cache identity is scoped to one ggml_backend_cuda_context, so the key
+// never needs a device field: every entry in a given instance is
+// implicitly scoped to that context's device.
 struct ggml_hip_q81_cache_key {
     uint64_t generation = 0;
     const ggml_tensor * view_root = nullptr; // tensor identity, not a view
@@ -103,6 +113,7 @@ struct ggml_hip_q81_cache_stats {
     uint64_t quantize_launches_saved    = 0;
     uint64_t capacity_bypasses          = 0;
     uint64_t capture_capacity_bypasses  = 0;
+    uint64_t entry_cap_bypasses         = 0;
     uint64_t verify_mismatches          = 0;
     size_t   current_bytes              = 0;
     size_t   high_water_bytes           = 0;
@@ -122,25 +133,52 @@ struct ggml_hip_q81_cache_reservation {
 
 struct ggml_hip_q81_cache;
 
-ggml_hip_q81_cache & ggml_hip_q81_cache_for_device(int device);
+// Lazily constructs the cache on first use for this context and returns
+// it. The context owns the returned reference's lifetime; callers must
+// not retain it past the context's own lifetime.
+ggml_hip_q81_cache & ggml_hip_q81_cache_for_context(ggml_backend_cuda_context & ctx);
 
-// Call once per graph evaluation, before any lookup against this device's
-// cache for that evaluation. Bumps the generation counter (so every key
-// from the previous evaluation misses) and resets the LOGICAL bump
-// position of the stable slabs back to their start. Backing memory is
-// never freed or moved here -- see the stable-slab rationale above. This
-// only produces stable per-generation addresses if the sequence of
-// reserve() calls within a generation is itself deterministic for a given
-// graph shape, which is already a precondition HIP/CUDA graph capture
-// imposes on the whole compute path.
-void ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache & cache);
+// Must be called exactly once, from ggml_backend_cuda_context's own
+// destructor, before the context itself finishes tearing down. A no-op if
+// no cache was ever constructed for this context (the common case for a
+// context that never ran an MMVQ op, or ran with the cache off).
+void ggml_hip_q81_cache_destroy_for_context(ggml_backend_cuda_context & ctx);
+
+// Call once per graph evaluation, before any lookup against this
+// context's cache for that evaluation. Bumps and returns the generation
+// counter (so every key from the previous evaluation misses) and resets
+// the LOGICAL bump position of the stable slabs back to their start.
+// Backing memory is never freed or moved here -- see the stable-slab
+// rationale above. This only produces stable per-generation addresses if
+// the sequence of reserve() calls within a generation is itself
+// deterministic for a given graph shape, which is already a precondition
+// HIP/CUDA graph capture imposes on the whole compute path.
+uint64_t ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache & cache);
+
+// The generation set by the most recent begin_generation() call (0 before
+// the first call). Exposed so callers build cache keys from a single
+// authoritative source rather than tracking a second counter of their
+// own -- see ggml_hip_q81_cache_make_key, which does this for them.
+uint64_t ggml_hip_q81_cache_current_generation(const ggml_hip_q81_cache & cache);
+
+// Builds a key against the cache's current generation, so a caller never
+// hand-assembles cache identity (and can never omit a field a future
+// reviewer would otherwise have to catch by hand -- see the fork's own
+// missing-offset bug this cache exists to not repeat).
+ggml_hip_q81_cache_key ggml_hip_q81_cache_make_key(
+    const ggml_hip_q81_cache & cache, const ggml_tensor * view_root, const void * data,
+    int stream_no, int64_t ne0, int64_t ne0_padded, int64_t ne1, int64_t ne2, int64_t ne3,
+    int64_t s1, int64_t s2, int64_t s3);
 
 // nullptr on miss.
 void * ggml_hip_q81_cache_find(ggml_hip_q81_cache & cache, const ggml_hip_q81_cache_key & key);
 
 // Bump-allocates `bytes` from the current generation's live region of the
-// stable slab set, appending a new slab if the existing ones are
-// exhausted and growth is currently allowed (see
+// stable slab set. Walks forward through any already-existing slabs
+// first (a request that doesn't fit the remainder of the current slab
+// advances to the next retained slab, never splitting one reservation
+// across two slabs); only once every existing slab is exhausted does this
+// append a brand-new slab, and only when growth is currently allowed (see
 // ggml_hip_q81_cache_set_capture_active). A new slab is an ADDITIONAL
 // allocation, never a reallocation of an existing one, so no
 // previously-returned pointer is ever invalidated.
@@ -154,18 +192,22 @@ ggml_hip_q81_cache_reservation ggml_hip_q81_cache_reserve(ggml_hip_q81_cache & c
 // Makes a successful reserve() visible to later find() calls with the same
 // key for the remainder of this generation. Must only be called after the
 // producer kernel writing `reservation.ptr` has been enqueued on the same
-// stream the key names.
+// stream the key names. A no-op past the per-generation entry cap (the
+// reservation's memory is still valid for the caller's own immediate use;
+// it simply will not be found again by a later lookup this generation).
 void ggml_hip_q81_cache_publish(ggml_hip_q81_cache & cache, const ggml_hip_q81_cache_key & key,
                                  const ggml_hip_q81_cache_reservation & reservation);
 
-// Graph capture is in flight on this device: reserve() must not grow the
+// Graph capture is in flight on this context: reserve() must not grow the
 // backing slab set (a growth would allocate a new address after a graph
 // may already have captured pointers computed from the current layout).
 // While active, a reserve() that would otherwise need to grow instead
 // fails closed -- counted as a capture_capacity_bypass, not a plain
 // capacity_bypass -- so the caller falls back to the native path for that
 // one call rather than risking a captured graph referencing memory that
-// was never actually grown into.
+// was never actually grown into. Reusing an already-existing later slab
+// is still permitted while capture is active; only growth (a brand-new
+// allocation) is blocked.
 void ggml_hip_q81_cache_set_capture_active(ggml_hip_q81_cache & cache, bool active);
 
 ggml_hip_q81_cache_stats ggml_hip_q81_cache_get_stats(const ggml_hip_q81_cache & cache);

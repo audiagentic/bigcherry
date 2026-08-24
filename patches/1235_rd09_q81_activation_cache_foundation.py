@@ -1,10 +1,30 @@
 """RD09 stage 1: per-graph Q8_1 activation-quantization cache -- foundation
 only. No caller in mmvq.cu references this cache yet (that wiring is RD09
 stage 2, a separate future patch); this patch only adds the cache's own
-implementation files to the HIP build. Until a caller exists, the added
-code is unreachable dead weight, so this patch cannot change any model
-output or timing by construction -- the isolated bench for THIS patch is
-therefore expected to show zero difference from bigcherry-native.
+implementation files to the HIP build and gives each ggml_backend_cuda_context
+a place to own one cache instance. Until a caller exists, the added code is
+unreachable dead weight, so this patch cannot change any model output or
+timing by construction -- the isolated bench for THIS patch is therefore
+expected to show zero difference from bigcherry-native.
+
+Revised 2026-08-24 after dev-gpt-agent code review (session
+ses_76b0fef0c94c434a, req_9bd7db08f19d4e53) of the first version of this
+patch (commit 4827a4fea70e2509a51c82326c037fbff84c4a58), which found two
+real P1 issues before stage 2 could safely build on this foundation:
+  1. reserve()'s slab-boundary handling could return overlapping pointers
+     when a request didn't fit the tail of the current slab -- fixed by
+     making reserve() walk forward through existing slabs before ever
+     growing, instead of growing immediately on the first slab-boundary
+     miss.
+  2. The cache was a device-global singleton, weaker than the
+     context-scoped lifetime the design called for (upstream does not
+     guarantee one ggml_backend_cuda_context per device, so two contexts
+     sharing a device could otherwise race each other's
+     begin_generation() against still-live reservations) -- fixed by
+     moving ownership onto ggml_backend_cuda_context itself (an opaque
+     `void * q81_cache` member, constructed lazily on first use, destroyed
+     from the context's own destructor), which is what the two additional
+     anchored edits below (common.cuh, ggml-cuda.cu) exist for.
 
 Provenance (group 'rdna-boosts' patches are external backports; the
 machine-readable PROVENANCE dict below is cross-checked against
@@ -84,11 +104,25 @@ for the full 7-stage plan and its exit gates):
     launch counts, TG/PP/memory.
 
 Porting notes:
-  - No textual anchor into any vendor llama.cpp SOURCE file. The only
-    vendor file touched is ggml/src/ggml-hip/CMakeLists.txt, to add the two
-    new source files to GGML_SOURCES_ROCM -- an addition, not a
-    modification of any existing line, so it cannot conflict with any
-    other patch's edits to that file.
+  - Three vendor files are touched, all as pure additions (no existing
+    line is modified), so none of these can conflict with another patch's
+    edits to the same file:
+      * ggml/src/ggml-hip/CMakeLists.txt: adds the two new source files to
+        GGML_SOURCES_ROCM.
+      * ggml/src/ggml-cuda/common.cuh: adds one `void * q81_cache =
+        nullptr;` member to ggml_backend_cuda_context, right after its
+        destructor declaration. Deliberately an opaque pointer, not the
+        concrete ggml_hip_q81_cache type, so common.cuh does not need to
+        know about this cache's internals -- only hip-q81-cache.cpp
+        (which already includes common.cuh for the full context type)
+        ever dereferences it.
+      * ggml/src/ggml-cuda/ggml-cuda.cu: adds one
+        `#include "ggml-cuda/hip-q81-cache.h"` next to the existing
+        BigCherry-header include, and one call to
+        ggml_hip_q81_cache_destroy_for_context(*this) at the start of
+        ggml_backend_cuda_context's destructor body, before any of its
+        other teardown -- the cache never needs anything from later in
+        that destructor, so tearing it down first is always safe.
   - The new files always compile in (no build-time flag): the
     GGML_HIP_Q8_1_CACHE_MODE env var is a pure runtime toggle, defaulting
     to off, and off must be byte-for-byte identical to the pre-cache
@@ -178,4 +212,75 @@ CMAKE_PATCH = FilePatch(
     ),
 )
 
-PATCHES = [CMAKE_PATCH]
+_CONTEXT_MEMBER_ANCHOR = r"~ggml_backend_cuda_context\(\);"
+
+_CONTEXT_MEMBER_NEW = """
+
+    // bigcherry (RD09): opaque owner of this context's Q8_1 activation
+    // cache, if one has been constructed (lazily, on first use). Opaque
+    // so common.cuh does not need the concrete ggml_hip_q81_cache type --
+    // only hip-q81-cache.cpp, which already includes this header for the
+    // full ggml_backend_cuda_context definition, ever casts it back.
+    // Destroyed from this context's own destructor
+    // (ggml_hip_q81_cache_destroy_for_context, called from
+    // ggml-cuda.cu's ~ggml_backend_cuda_context()) -- never left to leak,
+    // and never torn down while the context itself is still alive.
+    void * q81_cache = nullptr;"""
+
+COMMON_CUH_PATCH = FilePatch(
+    path="ggml/src/ggml-cuda/common.cuh",
+    description="RD09 stage 1: give ggml_backend_cuda_context a place to own one Q8_1 cache instance",
+    edits=(
+        Edit(
+            id="rd09-q81-cache-context-member",
+            anchor=_CONTEXT_MEMBER_ANCHOR,
+            rationale="right after ggml_backend_cuda_context's own destructor declaration -- "
+                      "a stable, unique anchor inside the struct body",
+            text=_CONTEXT_MEMBER_NEW,
+            guard=r"q81_cache = nullptr;",
+        ),
+    ),
+)
+
+_DESTRUCTOR_INCLUDE_ANCHOR = r'#include "ggml-cuda/hip-autotune-reduce-telemetry\.h"'
+
+_DESTRUCTOR_INCLUDE_NEW = '\n#include "ggml-cuda/hip-q81-cache.h"'
+
+_DESTRUCTOR_BODY_ANCHOR = (
+    r"ggml_backend_cuda_context::~ggml_backend_cuda_context\(\) \{\n"
+    r"    std::unique_lock<std::mutex> lock\(ggml_cuda_lock\);\n"
+    r"    ggml_cuda_lock_cv\.wait\(lock, \[\]\{ return ggml_cuda_lock_counter\.load\(std::memory_order_relaxed\) == 0; \}\);"
+)
+
+_DESTRUCTOR_BODY_NEW = """
+
+    // bigcherry (RD09): tear down this context's Q8_1 activation cache
+    // (if one was ever constructed) before any of the context's other
+    // teardown below -- the cache depends on nothing else this destructor
+    // frees, so destroying it first is always safe, and doing so early
+    // means an early-return teardown path can never accidentally skip it.
+    ggml_hip_q81_cache_destroy_for_context(*this);"""
+
+GGML_CUDA_CU_PATCH = FilePatch(
+    path="ggml/src/ggml-cuda/ggml-cuda.cu",
+    description="RD09 stage 1: tear down the per-context Q8_1 cache from the context's own destructor",
+    edits=(
+        Edit(
+            id="rd09-q81-cache-include",
+            anchor=_DESTRUCTOR_INCLUDE_ANCHOR,
+            rationale="next to the existing BigCherry-header include, at the top of the file's include block",
+            text=_DESTRUCTOR_INCLUDE_NEW,
+            guard=r'#include "ggml-cuda/hip-q81-cache\.h"',
+        ),
+        Edit(
+            id="rd09-q81-cache-destructor",
+            anchor=_DESTRUCTOR_BODY_ANCHOR,
+            rationale="the start of ggml_backend_cuda_context's destructor body, before its "
+                      "existing copy_event/streams/cublas_handles teardown",
+            text=_DESTRUCTOR_BODY_NEW,
+            guard=r"ggml_hip_q81_cache_destroy_for_context\(\*this\);",
+        ),
+    ),
+)
+
+PATCHES = [CMAKE_PATCH, COMMON_CUH_PATCH, GGML_CUDA_CU_PATCH]
