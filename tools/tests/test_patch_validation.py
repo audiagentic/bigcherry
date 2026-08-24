@@ -465,6 +465,17 @@ class RegistryAndVersionTests(unittest.TestCase):
         # and recomputed source tree; no fabricated PASS is allowed.
         self.assertEqual(passed.status, pv.BLOCKED)
 
+    def test_builtin_backend_ops_requires_bound_correctness_evidence(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="correct", capability="correctness", validator="backend-ops",
+            required=True, config={"ops": ["MUL_MAT"]},
+        )
+        ctx = pv.ValidationContext(
+            descriptor=_descriptor(), base_revision="r",
+            control_source=None, subject_source=None,
+        )
+        self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.BLOCKED)
+
     def test_builtin_trace_marker_requires_verified_positive_and_negative_logs(self) -> None:
         spec = pv.CheckSpec(
             check_id="trace", capability="activation", validator="trace-marker",

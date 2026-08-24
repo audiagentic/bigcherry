@@ -675,6 +675,7 @@ class ValidationContext:
     apply_evidence: dict[str, Any] = field(default_factory=dict)
     build_evidence: dict[str, Any] = field(default_factory=dict)
     trace_evidence: dict[str, Any] = field(default_factory=dict)
+    correctness_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 def _sha256_file(path: Path) -> str:
@@ -765,6 +766,33 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     )
 
 
+def _builtin_backend_ops(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Consume evidence-bound backend operation correctness results."""
+    configured = spec.config.get("ops")
+    if not isinstance(configured, (list, tuple)) or not configured or not all(
+        isinstance(item, str) and item for item in configured
+    ):
+        return _error_result(spec, "backend-ops requires non-empty string ops")
+    evidence = ctx.correctness_evidence
+    if not isinstance(evidence, dict) or not _artifact_is_bound(evidence.get("artifact"), ctx.run_dir):
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="verified backend-ops artifact is required",
+        )
+    observed = evidence.get("ops")
+    if tuple(observed or ()) != tuple(configured):
+        return _error_result(spec, "backend-ops evidence operation set does not match config")
+    if evidence.get("passed") is not True:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="backend operation correctness evidence failed",
+        )
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary="configured backend operations passed with bound evidence",
+    )
+
+
 def _builtin_trace_marker(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Consume generic positive/negative marker evidence.
 
@@ -839,6 +867,7 @@ def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
 register_builtin("apply", _builtin_apply)
 register_builtin("build", _builtin_build)
 register_builtin("trace-marker", _builtin_trace_marker)
+register_builtin("backend-ops", _builtin_backend_ops)
 
 
 # ------------------------------------------------------------------ verdict
