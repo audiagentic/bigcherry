@@ -144,13 +144,19 @@ def test_test_file_line_matches_real_hardware_transcript(tmp_path):
     # --test-file escape hatch, verified end to end on real Brutus
     # hardware to fire BIGCHERRY_CORRECTNESS_METRIC for tensor "out" for
     # this exact line.
+    #
+    # HI111 (2026-08-24): nb is the zero-strides "use default contiguous
+    # layout" sentinel (same as the MUL_MAT_ID path), not a hand-computed
+    # F32 byte stride -- this is what lets the line generalize to any type,
+    # quantized included, so the expected line below no longer encodes a
+    # type-specific byte size.
     vendor, signature = _mul_mat_signature(tmp_path, m=32, n=21, k=2880)
     line, target_tensor, digest_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
     op_id = signature["op"]
     assert line == (
         f"{op_id} 0 32 21 1 1 0 2 "
-        "0 2880 32 1 1 4 11520 368640 368640 "
-        "0 2880 21 1 1 4 11520 241920 241920 -"
+        "0 2880 32 1 1 0 0 0 0 "
+        "0 2880 21 1 1 0 0 0 0 -"
     )
     assert target_tensor == "out"
     assert digest_tensor == "leaf_0"
@@ -177,13 +183,19 @@ def test_test_file_line_rejects_batched_outer_dims(tmp_path):
         assert "outer dimensions" in str(exc)
 
 
-def test_test_file_line_rejects_a_quantized_type(tmp_path):
+def test_test_file_line_accepts_a_quantized_type(tmp_path):
+    # HI111 (2026-08-24, dense Qwen3.8-27B/Q8_0 production campaign): this
+    # used to raise SignatureMappingError for any type outside a hand-picked
+    # {F32, F16, BF16} whitelist, because nb was hand-computed from a
+    # per-type byte size that only made sense for non-block-quantized types.
+    # Q8_0 (id=8) now maps cleanly via the zero-strides sentinel, the same
+    # way signature_to_mul_mat_id_test_file_line() already handled it.
     vendor, signature = _mul_mat_signature(tmp_path, src0_type=8, src1_type=8)
-    try:
-        scm.signature_to_test_file_line(signature, vendor_root=vendor)
-        assert False, "expected SignatureMappingError for an unsupported (quantized) type"
-    except scm.SignatureMappingError as exc:
-        assert "q8_0" in str(exc).lower() or "F32" in str(exc)
+    line, target_tensor, digest_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
+    assert " 8 " in line
+    assert line.endswith("0 0 0 0 -")
+    assert target_tensor == "out"
+    assert digest_tensor == "leaf_0"
 
 
 def test_test_file_line_rejects_missing_ned(tmp_path):
