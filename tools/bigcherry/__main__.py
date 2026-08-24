@@ -834,12 +834,12 @@ def _resolve_selection(
 def cmd_patches(args: argparse.Namespace) -> int:
     """Show every patch, its metadata, and whether a selection takes it.
 
-    --kind/--backend/--origin filter against patches/catalog.toml (RE30
-    phase 1's declarative metadata) -- the metadata substitute for browsing
-    a physical folder split. RE41 decided patches/ stays flat indefinitely
-    because this filtering already answers the "which patches form the
-    framework / are HIP vs Vulkan / came from an external fork" questions a
-    directory move would otherwise exist to answer, with zero path churn.
+    --kind/--backend/--origin filter against patch metadata: catalog.toml
+    for legacy flat patches (RE30 phase 1's declarative metadata), and
+    patch.toml for packaged patches (patch-system PA02: patches/ may now
+    hold <id>/ package directories -- the metadata, not a directory move,
+    answers "which patches form the framework / are HIP vs Vulkan / came
+    from an external fork").
 
     RE39: reads patches/ and patches/catalog.toml exactly once via a single
     CatalogSnapshot, instead of the two independent scans (patchset.describe()
@@ -1232,7 +1232,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=patch_catalog.KINDS,
         help="filter to patches/catalog.toml's kind (framework|upstream-backport|"
         "enhancement) -- the metadata substitute for a physical folder split "
-        "(RE41: patches/ stays flat, this filter is the browsability answer)",
+        "(RE41: browsability metadata instead of a directory split; "
+        "patch-system PA02 keeps it metadata-first)",
     )
     patches_cmd.add_argument(
         "--backend",

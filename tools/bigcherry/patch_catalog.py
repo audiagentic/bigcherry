@@ -83,7 +83,9 @@ class CatalogEntry:
     # singular `backend` for the same reason (a future patch may span
     # hip+vulkan). `subsystems`/`hardware` are free-form descriptive tags,
     # not validated against a closed vocabulary -- explicitly NOT a folder
-    # axis (RE41: patches/ stays flat, this is browsability metadata only).
+    # axis (RE41's flat-layout decision is superseded by patch-system
+    # PA02: patches/ may now hold packaged directories, and this metadata
+    # stays browsability-only either way).
     plan_ids: tuple[str, ...] = ()
     backends: tuple[str, ...] = ()
     subsystems: tuple[str, ...] = ()
@@ -255,6 +257,13 @@ def validation_evidence_statuses(
 ) -> dict[str, patch_validation_evidence.EvidenceCheck]:
     entries = load_catalog(catalog_path)
     modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
+    # RS03: packaged patches carry their required architectures in
+    # patch.toml, not catalog.toml.
+    registry = patchset.patch_registry.load_registry(patches_dir or paths.PATCHES)
+    packaged = {
+        d.patch_id: d for d in registry.descriptors
+        if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
+    }
 
     if pinned_ref is None:
         pinned_ref = campaign_config.load(paths.RECIPES).pinned
@@ -262,7 +271,8 @@ def validation_evidence_statuses(
     result: dict[str, patch_validation_evidence.EvidenceCheck] = {}
     for patch_id in patch_ids:
         entry = entries.get(patch_id)
-        if entry is None:
+        packaged_descriptor = packaged.get(patch_id)
+        if entry is None and packaged_descriptor is None:
             result[patch_id] = patch_validation_evidence.EvidenceCheck(
                 status="missing-or-stale", problems=("no patches/catalog.toml entry",),
             )
@@ -275,9 +285,14 @@ def validation_evidence_statuses(
             )
             continue
 
+        required_archs = (
+            packaged_descriptor.validation_architectures
+            if packaged_descriptor is not None
+            else entry.validation_architectures
+        )
         result[patch_id] = patch_validation_evidence.verify_validated_patch(
             module, pinned_ref=pinned_ref,
-            required_architectures=entry.validation_architectures,
+            required_architectures=required_archs,
             root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
         )
     return result
@@ -330,19 +345,28 @@ def cross_check(
     function is still only a diagnostic (see the module note above it) --
     nothing currently calls it from a production apply/build path."""
     entries = load_catalog(catalog_path)
+    registry = patchset.patch_registry.load_registry(patches_dir or paths.PATCHES)
     modules = {module.patch_id for module in patchset.catalog(patches_dir)}
+    # RS03: packaged patches' metadata authority is their own patch.toml, so
+    # they are exempt from the catalog.toml one-to-one coverage and state
+    # cross-checks (and must NOT appear in catalog.toml -- build_snapshot()
+    # already rejects that overlap).
+    packaged_ids = {
+        d.patch_id for d in registry.descriptors
+        if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
+    }
     problems: list[str] = []
 
     orphan_records = sorted(set(entries) - modules)
     for patch_id in orphan_records:
         problems.append(f"catalog entry {patch_id!r} has no matching patch module")
 
-    dangling_modules = sorted(modules - set(entries))
+    dangling_modules = sorted((modules - set(entries)) - packaged_ids)
     for patch_id in dangling_modules:
         problems.append(f"patch module {patch_id!r} has no catalog entry")
 
     module_states = {module.patch_id: module.state for module in patchset.catalog(patches_dir)}
-    for patch_id in sorted(set(entries) & modules):
+    for patch_id in sorted((set(entries) & modules) - packaged_ids):
         module_state = module_states[patch_id]
         if entries[patch_id].state != module_state:
             problems.append(
@@ -406,6 +430,38 @@ class CatalogSnapshot:
         return self.metadata.get(patch_id)
 
 
+def catalog_entry_from_descriptor(descriptor) -> "CatalogEntry | None":
+    """RS03: the :class:`CatalogEntry` a PACKAGED patch carries, read from its
+    patch.toml (the packaged metadata authority, runbook section 8) -- a
+    packaged patch must not require duplicate catalog.toml metadata.
+
+    Returns ``None`` when the toml lacks the closed-vocabulary fields a
+    CatalogEntry needs (kind/origin/backend) -- the patch then behaves like
+    an uncataloged legacy patch for the ``--kind/--backend/--origin``
+    filters, while selection/identity are unaffected (those never read this).
+    """
+    if descriptor.kind is None or descriptor.origin is None or descriptor.backend is None:
+        return None
+    return CatalogEntry(
+        patch_id=descriptor.patch_id,
+        kind=descriptor.kind,
+        origin=descriptor.origin,
+        backend=descriptor.backend,
+        state=descriptor.state,
+        upstream_ref=descriptor.upstream,
+        retirement=None,
+        external_source=descriptor.external_source,
+        plan_item=None,
+        requires_options=descriptor.requires_options,
+        forbids_options=descriptor.forbids_options,
+        plan_ids=descriptor.plan_ids,
+        backends=(),
+        subsystems=descriptor.subsystems,
+        hardware=descriptor.hardware,
+        validation_architectures=descriptor.validation_architectures,
+    )
+
+
 def build_snapshot(
     *,
     patches_dir: Path | None = None,
@@ -413,10 +469,34 @@ def build_snapshot(
 ) -> CatalogSnapshot:
     """Build one ``CatalogSnapshot`` -- the single real filesystem read this
     phase covers. ``patches_dir``/``catalog_path`` default to the real
-    project locations (``paths.PATCHES``/``paths.PATCH_CATALOG``)."""
+    project locations (``paths.PATCHES``/``paths.PATCH_CATALOG``).
+
+    RS03: metadata = catalog.toml (legacy authority) merged with each
+    packaged patch's patch.toml (packaged authority). A packaged patch that
+    ALSO has a catalog.toml entry is an error -- two metadata authorities
+    for one patch is exactly what the packaged representation removes.
+    """
     root = patches_dir or paths.PATCHES
-    modules = tuple(patchset.catalog(root))
-    metadata = load_catalog(catalog_path)
+    registry = patchset.patch_registry.load_registry(root)
+    modules = tuple(
+        patchset._module_from_descriptor(descriptor, registry.root)
+        for descriptor in registry.descriptors
+    )
+    metadata = dict(load_catalog(catalog_path))
+    packaged = [
+        d for d in registry.descriptors
+        if d.representation == patchset.patch_registry.REPRESENTATION_PACKAGED
+    ]
+    overlaps = sorted(set(metadata) & {d.patch_id for d in packaged})
+    if overlaps:
+        raise ValueError(
+            "packaged patch(es) have both patch.toml and a catalog.toml entry "
+            "(duplicate metadata authority): " + ", ".join(overlaps)
+        )
+    for descriptor in packaged:
+        entry = catalog_entry_from_descriptor(descriptor)
+        if entry is not None:
+            metadata[descriptor.patch_id] = entry
     payload = {
         "modules": [(m.patch_id, m.content_hash) for m in modules],
         "metadata": sorted(metadata.keys()),
@@ -482,10 +562,14 @@ def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplan
 
     files_touched: tuple[str, ...] = ()
     try:
-        loaded = patchset._load_module(module.path)
-        files_touched = tuple(sorted({
-            patch.path for patch in getattr(loaded, "PATCHES", ())
-        }))
+        # RS04: implementation loading through the registry (descriptor-driven,
+        # byte-compile) instead of a direct module-path load.
+        registry = patchset.patch_registry.load_registry(snapshot.root)
+        descriptor = registry.get(module.patch_id)
+        implementation = patchset.patch_registry.load_implementation(
+            descriptor, root=registry.root
+        )
+        files_touched = tuple(sorted({patch.path for patch in implementation}))
     except Exception:
         # Explain is read-only reporting, not a patch-application path --
         # a module that fails to import (syntax error mid-edit, missing
