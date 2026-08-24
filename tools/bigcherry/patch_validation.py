@@ -177,9 +177,13 @@ _CONTRACT_AUTHORITY_KEYS: frozenset[str] = frozenset({
     "target-kernel-gain-pct", "end-to-end-gain-pct", "max-control-regression-pct",
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
     "controls", "boundaries", "positive", "workloads", "models",
-    "source", "scope", "backend", "architectures", "family", "contract",
-    "correctness", "performance", "activation", "bit-identical", "bit_identical",
-    "required-checks", "required_checks", "metrics", "target-metric", "target_metric",
+    "source", "source_id", "source-id", "source_evidence", "source-evidence",
+    "commits", "atomic_part", "atomic-part", "scope", "backend", "architectures",
+    "weight_types", "weight-types", "family", "kind", "target", "prerequisites",
+    "contract", "correctness", "performance", "activation", "bit-identical",
+    "bit_identical", "required-checks", "required_checks", "metrics",
+    "target-metric", "target_metric", "title", "rationale", "expected_effect",
+    "expected-effect", "acceptance", "hypothesis", "boundary", "source-evidence",
 })
 
 
@@ -576,7 +580,7 @@ def build_validation_plan(
 
     missing = [
         capability for capability in required
-        if not any(_produces(capability, spec) for spec in checks)
+        if not any(spec.required and _produces(capability, spec) for spec in checks)
     ]
     if missing:
         raise ConfigurationError(
@@ -680,12 +684,38 @@ def make_default_register_artifact(run_dir: Path) -> Callable[..., ArtifactRef]:
     return register
 
 
-def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
-    """Validate that both explicit control and subject sources are available.
+def _verified_source_tree(source: Path | None, declared: str | None) -> bool:
+    """Recompute a source worktree tree OID instead of trusting caller text."""
+    if source is None or not source.is_dir() or not declared:
+        return False
+    try:
+        from .patch_source_isolation import git_worktree_tree
+        return git_worktree_tree(source) == declared
+    except (OSError, RuntimeError, ValueError):
+        return False
 
-    Materialization itself belongs to the source-isolation/campaign layer; this
-    validator only consumes its evidence-bound outputs. Missing sources are
-    BLOCKED (unavailable prerequisite), never silently treated as pass.
+
+def _artifact_is_bound(artifact: object, run_dir: Path | None) -> bool:
+    if not isinstance(artifact, dict) or run_dir is None:
+        return False
+    path = artifact.get("path")
+    digest = artifact.get("sha256")
+    if not isinstance(path, str) or not isinstance(digest, str):
+        return False
+    target = (run_dir / path).resolve()
+    try:
+        target.relative_to(run_dir.resolve())
+    except ValueError:
+        return False
+    return target.is_file() and _sha256_file(target) == digest
+
+
+def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Validate evidence-bound apply/tree/idempotency artifacts.
+
+    Materialization itself belongs to the source-isolation/campaign layer;
+    this validator recomputes the source tree and binds the claimed evidence
+    artifact to the run directory before PASS is possible.
     """
     if ctx.control_source is None or ctx.subject_source is None:
         return ValidationResult(
@@ -698,9 +728,15 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
             summary="control or subject source directory does not exist",
         )
     missing = tuple(
-        role for role in ("control", "subject")
+        role for role, source, declared_tree in (
+            ("control", ctx.control_source, ctx.control_tree),
+            ("subject", ctx.subject_source, ctx.subject_tree),
+        )
         if not isinstance(ctx.apply_evidence.get(role), dict)
-        or not all(ctx.apply_evidence[role].get(key) for key in ("applied", "tree", "idempotent"))
+        or not ctx.apply_evidence[role].get("verified")
+        or not ctx.apply_evidence[role].get("idempotent")
+        or not _verified_source_tree(source, declared_tree)
+        or not _artifact_is_bound(ctx.apply_evidence[role].get("artifact"), ctx.run_dir)
     )
     if missing:
         return ValidationResult(
@@ -717,12 +753,18 @@ def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Validate that the campaign supplied build identities for both sides."""
     required = ("control", "subject")
     missing = tuple(
-        role for role in required
-        if not isinstance(ctx.build_evidence.get(role), dict)
-        or not all(
-            ctx.build_evidence[role].get(key)
-            for key in ("build_id", "source_tree", "architecture", "options", "compile_commands", "runtime_bundle")
+        role for role, source, declared_tree in (
+            ("control", ctx.control_source, ctx.control_tree),
+            ("subject", ctx.subject_source, ctx.subject_tree),
         )
+        if not isinstance(ctx.build_evidence.get(role), dict)
+        or ctx.build_evidence[role].get("build_id") != ctx.build_identities.get(role)
+        or not _verified_source_tree(source, declared_tree)
+        or ctx.build_evidence[role].get("source_tree") != declared_tree
+        or not ctx.build_evidence[role].get("architecture")
+        or not ctx.build_evidence[role].get("options")
+        or not _artifact_is_bound(ctx.build_evidence[role].get("compile_commands"), ctx.run_dir)
+        or not _artifact_is_bound(ctx.build_evidence[role].get("runtime_bundle"), ctx.run_dir)
     )
     if missing:
         return ValidationResult(
