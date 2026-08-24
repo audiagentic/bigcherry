@@ -98,7 +98,7 @@ class MakeRecordTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make(self, *, activation_status="executed", activation_disposition="activation-verified",
-               correctness_disposition="passed"):
+               correctness_disposition="passed", **record_kwargs):
         activation_evidence = ActivationEvidence(status=activation_status, mechanism="m", detail="d")
         correctness = {
             "schema_version": 1, "disposition": correctness_disposition, "mechanism": "m", "detail": "d",
@@ -112,7 +112,7 @@ class MakeRecordTests(unittest.TestCase):
             campaign_identity_digest=_HEX64,
             build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
                                "stock": _build_identity("3")},
-            campaign_workdir=self.workdir,
+            campaign_workdir=self.workdir, **record_kwargs,
         )
 
     def test_fully_eligible_record(self):
@@ -133,6 +133,11 @@ class MakeRecordTests(unittest.TestCase):
             changed = dict(record)
             changed[field] = "tampered"
             self.assertNotEqual(record["record_digest"], pve._record_digest(changed), field)
+
+    def test_contract_hash_is_written_from_authoritative_argument(self):
+        record = self._make(contract_id="RD08-Q6K-MMVQ-VDR2", contract_hash="c" * 32)
+        self.assertEqual(record["contract_id"], "RD08-Q6K-MMVQ-VDR2")
+        self.assertEqual(record["contract_hash"], "c" * 32)
 
     def test_missing_correctness_is_incomplete(self):
         record = self._make(correctness_disposition="unknown")

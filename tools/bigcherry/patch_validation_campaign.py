@@ -848,6 +848,7 @@ def run(args: argparse.Namespace) -> int:
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contract_id=_descriptor.experiment_contract,
+        contract_hash=(validation_plan.contract.contract_hash if validation_plan and validation_plan.contract else None),
         baseline_composition={"base_revision": base_revision},
         control_composition={"base_revision": base_revision, "patches": list(control_composition)},
         subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
