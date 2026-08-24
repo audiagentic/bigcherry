@@ -380,11 +380,23 @@ MMQ_CUH_PATCH = FilePatch(
     edits=(
         Edit(
             id="rd30-helpers",
-            anchor=r"^static void launch_mul_mat_q\(ggml_backend_cuda_context & ctx, "
+            # Anchored on the template line + signature together, not just
+            # the signature: launch_mul_mat_q's own
+            # `template <ggml_type type, int J, bool fallback>` line
+            # (identical text appears 7 other times in this file) must stay
+            # directly adjacent to the function it templates. insert_before
+            # on the signature alone would splice HELPERS between that
+            # template line and the function, orphaning it -- type/J/
+            # fallback would no longer be in scope inside the function body
+            # (caught by a real gfx1100 compile: "undeclared identifier
+            # 'type'/'J'/'fallback'" throughout launch_mul_mat_q).
+            anchor=r"^template <ggml_type type, int J, bool fallback>\n"
+                   r"static void launch_mul_mat_q\(ggml_backend_cuda_context & ctx, "
                    r"const mmq_args & args, cudaStream_t stream\) \{$",
             rationale="insert the compact-map helpers and prep kernel "
-                      "directly before launch_mul_mat_q, which is the only "
-                      "caller",
+                      "directly before launch_mul_mat_q (template line "
+                      "included so the template stays attached to the "
+                      "function), which is the only caller",
             mode="insert_before",
             text=_HELPERS,
             guard=r"mmq_build_moe_block_map",
