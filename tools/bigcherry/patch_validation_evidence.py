@@ -427,7 +427,8 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
 
 def _record_qualifies(
     record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
-    resolved_base_revision: str | None = None,
+    resolved_base_revision: str | None = None, validation_digest: str | None = None,
+    contract_id: str | None = None, contract_hash: str | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
     problems: list[str] = []
     expected = {
@@ -439,6 +440,12 @@ def _record_qualifies(
     if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
         problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
     if record.get("record_schema_version") == 2:
+        if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
+            problems.append("validation implementation digest is stale")
+        if record.get("contract_id") != contract_id:
+            problems.append("contract identity is stale")
+        if contract_hash is not None and record.get("contract_hash") != contract_hash:
+            problems.append("contract hash is stale")
         if record.get("record_digest") != _record_digest(record):
             problems.append("record_digest does not match the v2 evidence payload")
         required_v2 = ("representation", "validation_implementation_digest",
@@ -539,6 +546,24 @@ def verify_validated_patch(
         return EvidenceCheck("not-required")
 
     subject_digest = patch_validation_subject_digest(module.path)
+    validation_digest = None
+    contract_id = None
+    contract_hash = None
+    try:
+        from . import patch_registry
+        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
+        descriptor = registry.get(module.patch_id)
+        validation_digest = descriptor.validation_digest or _validation_digest(module.path)
+        contract_id = descriptor.experiment_contract
+        if descriptor.experiment_contract is not None:
+            from . import patch_validation
+            binding = patch_validation.load_contract_for_descriptor(descriptor)
+            if binding is not None:
+                contract_hash = binding.contract_hash
+    except (OSError, ValueError, KeyError):
+        # Legacy/synthetic callers may not have a registry; structural checks
+        # still apply, while production catalog verification remains strict.
+        pass
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
 
@@ -546,6 +571,8 @@ def verify_validated_patch(
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
+            validation_digest=validation_digest, contract_id=contract_id,
+            contract_hash=contract_hash,
         )
         if ok:
             qualifying.append(record)
