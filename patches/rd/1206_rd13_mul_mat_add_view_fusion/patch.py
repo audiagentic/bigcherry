@@ -226,8 +226,8 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
 PATCH = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     description="Accept one RESHAPE view between mul_mat and add in the "
-                "ggml_cuda_try_fuse matmul+bias fusion "
-                "(rdna-boosts 0153d580d / RD13)",
+    "ggml_cuda_try_fuse matmul+bias fusion "
+    "(rdna-boosts 0153d580d / RD13)",
     edits=(
         Edit(
             id="rd13-mul_mat_add_view",
@@ -239,8 +239,8 @@ PATCH = FilePatch(
             # a runaway-prevention, not a size limit -- raise it explicitly.
             max_span_lines=60,
             rationale="ggml_cuda_try_fuse: the mul_mat + add / "
-                      "mul_mat_id + add_id fusion branch, which today "
-                      "only matches the add directly after the matmul",
+            "mul_mat_id + add_id fusion branch, which today "
+            "only matches the add directly after the matmul",
             mode="replace",
             text=_NEW,
             # Guard on the fork's unique post-change comment line (the

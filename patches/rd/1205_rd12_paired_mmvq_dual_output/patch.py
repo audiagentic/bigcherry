@@ -258,13 +258,13 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/common.cuh",
         description="Add dst_gate to the mm fusion-args host/device structs "
-                    "(rdna-boosts 44b51c66a / RD12)",
+        "(rdna-boosts 44b51c66a / RD12)",
         edits=(
             Edit(
                 id="rd12-struct-host",
                 anchor=re.escape(_HOST_STRUCT_OLD),
                 rationale="ggml_cuda_mm_fusion_args_host: add dst_gate "
-                          "between gate_scale and glu_op (fork position)",
+                "between gate_scale and glu_op (fork position)",
                 mode="replace",
                 text=_HOST_STRUCT_NEW,
                 guard=r"const ggml_tensor \* dst_gate = nullptr;",
@@ -273,7 +273,7 @@ PATCHES = [
                 id="rd12-struct-device",
                 anchor=re.escape(_DEV_STRUCT_OLD),
                 rationale="ggml_cuda_mm_fusion_args_device: add dst_gate "
-                          "between gate_scale and glu_op (fork position)",
+                "between gate_scale and glu_op (fork position)",
                 mode="replace",
                 text=_DEV_STRUCT_NEW,
                 guard=r"const void \* dst_gate = nullptr;",
@@ -283,15 +283,15 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/ggml-cuda.cu",
         description="Detect paired mmvq matmuls over a shared activation and "
-                    "run them as one dual-output launch "
-                    "(rdna-boosts 44b51c66a / RD12)",
+        "run them as one dual-output launch "
+        "(rdna-boosts 44b51c66a / RD12)",
         edits=(
             Edit(
                 id="rd12-dual-output-detect",
                 anchor=re.escape(_DETECT_ANCHOR),
                 rationale="ggml_cuda_try_fuse: insertion point between the "
-                          "bias-add fusion and the GLU/mul_mat_vec section; "
-                          "the fork places the block at exactly this spot",
+                "bias-add fusion and the GLU/mul_mat_vec section; "
+                "the fork places the block at exactly this spot",
                 mode="replace",
                 text=_DETECT_NEW,
                 guard=r"// Dual-output mmvq fusion: two matmuls over the same activation with the",
@@ -301,13 +301,13 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/mmvq.cu",
         description="Kernel plumbing for the dual-output dst_gate write in "
-                    "mul_mat_vec_q (rdna-boosts 44b51c66a / RD12)",
+        "mul_mat_vec_q (rdna-boosts 44b51c66a / RD12)",
         edits=(
             Edit(
                 id="rd12-kernel-flags",
                 anchor=re.escape(_FLAGS_OLD),
                 rationale="mul_mat_vec_q: the fusion flag/pointer block; add "
-                          "use_dst_gate and the dst_gate pointer",
+                "use_dst_gate and the dst_gate pointer",
                 mode="replace",
                 text=_FLAGS_NEW,
                 guard=r"bool use_dst_gate = false;",
@@ -316,7 +316,7 @@ PATCHES = [
                 id="rd12-kernel-fusion-setup",
                 anchor=re.escape(_FUSION_SETUP_OLD),
                 rationale="mul_mat_vec_q: the has_fusion setup block; enable "
-                          "dst_gate when the host args carry one",
+                "dst_gate when the host args carry one",
                 mode="replace",
                 text=_FUSION_SETUP_NEW,
                 guard=r"use_dst_gate  = fusion\.dst_gate != nullptr && use_gate;",
@@ -325,8 +325,8 @@ PATCHES = [
                 id="rd12-kernel-dst-write",
                 anchor=re.escape(_SWITCH_OLD),
                 rationale="mul_mat_vec_q: the gate-combine switch; when "
-                          "dst_gate is set, write the raw gate value to its "
-                          "own destination instead of combining (fork logic)",
+                "dst_gate is set, write the raw gate value to its "
+                "own destination instead of combining (fork logic)",
                 mode="replace",
                 text=_SWITCH_NEW,
                 guard=r"separate output: write the gate result to its own destination",
@@ -335,7 +335,7 @@ PATCHES = [
                 id="rd12-kernel-unused-vars",
                 anchor=re.escape(_UNUSED_OLD),
                 rationale="mul_mat_vec_q: keep the non-fusion build compiling "
-                          "-- add the new variables to GGML_UNUSED_VARS",
+                "-- add the new variables to GGML_UNUSED_VARS",
                 mode="replace",
                 text=_UNUSED_NEW,
                 guard=r"use_dst_gate, active_glu",
@@ -344,8 +344,8 @@ PATCHES = [
                 id="rd12-kernel-host-side",
                 anchor=re.escape(_HOST_SIDE_OLD),
                 rationale="ggml_cuda_mul_mat_vec_q: copy the host dst_gate "
-                          "pointer into the device fusion args with the "
-                          "F32-type assertion (fork logic)",
+                "pointer into the device fusion args with the "
+                "F32-type assertion (fork logic)",
                 mode="replace",
                 text=_HOST_SIDE_NEW,
                 guard=r"fusion_local\.dst_gate = fusion->dst_gate->data;",

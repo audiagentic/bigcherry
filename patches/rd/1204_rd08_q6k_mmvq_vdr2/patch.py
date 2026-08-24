@@ -244,7 +244,8 @@ _CAPTURE_GATE_NEW = """    if (!op_timing && graph->is_enabled()) {"""
 # inserted after BigCherry's own HI70 direct-op corpus instead; same test
 # function, same cases, different position.
 _PERF_ANCHOR = re.escape(
-    "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));\n")
+    "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));\n"
+)
 
 _PERF_NEW = """    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));
 
@@ -267,13 +268,13 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/vecdotq.cuh",
         description="Q6_K VDR=2 mmvq vec_dot impl + entry point "
-                    "(rdna-boosts 4591cc980 / RD08)",
+        "(rdna-boosts 4591cc980 / RD08)",
         edits=(
             Edit(
                 id="rd08-vdr-define",
                 anchor=re.escape(_VDR_DEFINE_OLD),
                 rationale="VDR_Q6_K_Q8_1_MMVQ 1 -> 2: the mmvq kernel now "
-                          "strides kqs by 2",
+                "strides kqs by 2",
                 mode="replace",
                 text=_VDR_DEFINE_NEW,
                 guard=r"#define VDR_Q6_K_Q8_1_MMVQ 2",
@@ -282,7 +283,7 @@ PATCHES = [
                 id="rd08-vdr2-impl",
                 anchor=_IMPL_ANCHOR,
                 rationale="vecdotq.cuh: the vdr2 impl goes between the "
-                          "VDR=1 impl and the mmq impl (fork layout)",
+                "VDR=1 impl and the mmq impl (fork layout)",
                 # NOT mode="replace": _IMPL_ANCHOR is a REGEX (whitespace
                 # class + escaped paren), not literal source text -- the
                 # anchor matches real file content, but _IMPL_ANCHOR itself
@@ -303,8 +304,8 @@ PATCHES = [
                 id="rd08-vdr2-entry",
                 anchor=re.escape(_IQ2_ANCHOR),
                 rationale="vecdotq.cuh: the vdr2 entry point goes after "
-                          "vec_dot_q6_K_q8_1, before the IQ2 section "
-                          "(fork layout)",
+                "vec_dot_q6_K_q8_1, before the IQ2 section "
+                "(fork layout)",
                 mode="replace",
                 text=_IQ2_NEW,
                 guard=r"vec_dot_q6_K_q8_1_vdr2\(",
@@ -314,14 +315,14 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/mmvq.cu",
         description="Route Q6_K in get_vec_dot_q_cuda to the vdr2 entry "
-                    "(rdna-boosts 4591cc980 / RD08)",
+        "(rdna-boosts 4591cc980 / RD08)",
         edits=(
             Edit(
                 id="rd08-atomic-include",
                 anchor=re.escape(_INCLUDES_OLD),
                 rationale="mmvq.cu's activation marker below needs "
-                          "std::atomic_flag; <atomic> is not already "
-                          "included here or transitively via common.cuh",
+                "std::atomic_flag; <atomic> is not already "
+                "included here or transitively via common.cuh",
                 mode="replace",
                 text=_INCLUDES_NEW,
                 guard=r"#include <atomic>\n#include <cstdint>",
@@ -329,8 +330,7 @@ PATCHES = [
             Edit(
                 id="rd08-switch-q6k",
                 anchor=re.escape(_SWITCH_OLD),
-                rationale="get_vec_dot_q_cuda: Q6_K now resolves to the "
-                          "VDR=2 kernel",
+                rationale="get_vec_dot_q_cuda: Q6_K now resolves to the VDR=2 kernel",
                 mode="replace",
                 text=_SWITCH_NEW,
                 guard=r"case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1_vdr2;",
@@ -339,8 +339,8 @@ PATCHES = [
                 id="rd08-activation-marker",
                 anchor=_ACTIVATION_ANCHOR,
                 rationale="mul_mat_vec_q_switch_ncols_dst's case 1: block is "
-                          "the ncols_dst=1 host-side launch point the vdr2 "
-                          "kernel serves -- HI83 activation evidence",
+                "the ncols_dst=1 host-side launch point the vdr2 "
+                "kernel serves -- HI83 activation evidence",
                 mode="replace",
                 text=_ACTIVATION_MARKER,
                 guard=r"BIGCHERRY_PATCH_HIT patch=1204_rd08",
@@ -350,13 +350,13 @@ PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/ggml-cuda.cu",
         description="GGML_CUDA_OP_TIMING disables CUDA graph capture "
-                    "(rdna-boosts 4591cc980 / RD08)",
+        "(rdna-boosts 4591cc980 / RD08)",
         edits=(
             Edit(
                 id="rd08-op-timing-flag",
                 anchor=re.escape(_CAPTURE_HEAD_OLD),
                 rationale="ggml_backend_cuda_graph_compute: read the op "
-                          "timing env var up front",
+                "timing env var up front",
                 mode="replace",
                 text=_CAPTURE_HEAD_NEW,
                 guard=r"const bool op_timing = getenv\(\"GGML_CUDA_OP_TIMING\"\) != nullptr;",
@@ -365,8 +365,8 @@ PATCHES = [
                 id="rd08-op-timing-gate",
                 anchor=re.escape(_CAPTURE_GATE_OLD),
                 rationale="ggml_backend_cuda_graph_compute: skip graph "
-                          "capture while op timing is active (events are "
-                          "illegal during capture)",
+                "capture while op timing is active (events are "
+                "illegal during capture)",
                 mode="replace",
                 text=_CAPTURE_GATE_NEW,
                 guard=r"if \(!op_timing && graph->is_enabled\(\)\) \{",
@@ -376,15 +376,15 @@ PATCHES = [
     FilePatch(
         path="tests/test-backend-ops.cpp",
         description="Decode-shaped (n=1) Q6_K/Q8_0 MUL_MAT perf cases "
-                    "(rdna-boosts 4591cc980 / RD08)",
+        "(rdna-boosts 4591cc980 / RD08)",
         edits=(
             Edit(
                 id="rd08-perf-cases",
                 anchor=_PERF_ANCHOR,
                 rationale="make_test_cases_perf: qwen35-27B decode shapes "
-                          "after the HI70 direct-op corpus (position "
-                          "adaptation -- the fork's anchor context depends "
-                          "on RD05/06/07, which our base lacks)",
+                "after the HI70 direct-op corpus (position "
+                "adaptation -- the fork's anchor context depends "
+                "on RD05/06/07, which our base lacks)",
                 mode="replace",
                 text=_PERF_NEW,
                 guard=r"rdna-boosts \(RD08\): Qwen3\.6-27B decode shapes ",

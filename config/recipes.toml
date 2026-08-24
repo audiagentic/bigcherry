@@ -27,6 +27,7 @@ required-state = "validated"
 [patch-set.validated-enhancements]
 patches = [
   "1200_rd19_single_gpu_meta_bypass",
+  "1237_rd30_moe_mmq_compact_grid",
 ]
 required-state = "validated"
 
