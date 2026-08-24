@@ -186,3 +186,138 @@ class TestPatchContext(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------- RS03: packaged
+# patch-system PA03/RS03: packaged patches carry their metadata in
+# patch.toml (no duplicate catalog.toml entry); legacy patches keep
+# catalog.toml as their authority.
+
+
+PACKED_TOML = """\
+schema = 1
+id = "1204_focal"
+order = 1204
+group = "rdna-boosts"
+state = "untested"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+external-source = "stew675-rdna-boosts"
+plan-ids = ["RD12"]
+"""
+
+LEGACY_CATALOG_TOML = """\
+version = 1
+
+[[patch]]
+id = "0100_dep"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "validated"
+"""
+
+
+class TestPackagedCatalogIntegration(unittest.TestCase):
+    def _tree(self, tmp: str, *, with_catalog_entry: bool = False):
+        root = Path(tmp) / "patches"
+        (root / "rd/1204_focal").mkdir(parents=True)
+        (root / "0100_dep.py").write_text(
+            "GROUP = 'core'\nSTATE = 'validated'\nPATCHES = []\n", encoding="utf-8"
+        )
+        (root / "rd/1204_focal/patch.toml").write_text(PACKED_TOML, encoding="utf-8")
+        (root / "rd/1204_focal/patch.py").write_text(
+            "PATCHES = []\n", encoding="utf-8"
+        )
+        catalog_body = LEGACY_CATALOG_TOML
+        if with_catalog_entry:
+            catalog_body += (
+                "\n[[patch]]\n"
+                'id = "1204_focal"\n'
+                'kind = "enhancement"\n'
+                'origin = "external-fork"\n'
+                'backend = "hip"\n'
+                'state = "untested"\n'
+            )
+        (root / "catalog.toml").write_text(catalog_body, encoding="utf-8")
+        return root
+
+    def test_build_snapshot_merges_packaged_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            snapshot = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml"
+            )
+            self.assertEqual(
+                [m.patch_id for m in snapshot.modules], ["0100_dep", "1204_focal"]
+            )
+            legacy = snapshot.entry_for("0100_dep")
+            self.assertIsNotNone(legacy)
+            self.assertEqual(legacy.kind, "framework")
+            self.assertEqual(legacy.origin, "local")
+            packaged = snapshot.entry_for("1204_focal")
+            self.assertIsNotNone(packaged)
+            self.assertEqual(packaged.kind, "enhancement")
+            self.assertEqual(packaged.origin, "external-fork")
+            self.assertEqual(packaged.backend, "hip")
+            self.assertEqual(packaged.external_source, "stew675-rdna-boosts")
+            self.assertEqual(packaged.plan_ids, ("RD12",))
+            self.assertEqual(packaged.state, "untested")
+
+    def test_build_snapshot_deterministic_for_mixed_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            first = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml"
+            )
+            second = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml"
+            )
+            self.assertEqual(first.digest, second.digest)
+            self.assertEqual(first.modules, second.modules)
+            self.assertEqual(first.metadata, second.metadata)
+
+    def test_packaged_patch_with_catalog_entry_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp, with_catalog_entry=True)
+            with self.assertRaisesRegex(ValueError, "duplicate metadata authority"):
+                patch_catalog.build_snapshot(
+                    patches_dir=root, catalog_path=root / "catalog.toml"
+                )
+
+    def test_cross_check_exempts_packaged_patches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            problems = patch_catalog.cross_check(
+                catalog_path=root / "catalog.toml", patches_dir=root
+            )
+            self.assertEqual(problems, [])
+
+    def test_cross_check_still_flags_uncataloged_legacy_module(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            (root / "0200_rogue.py").write_text(
+                "GROUP = 'core'\nSTATE = 'untested'\nPATCHES = []\n", encoding="utf-8"
+            )
+            problems = patch_catalog.cross_check(
+                catalog_path=root / "catalog.toml", patches_dir=root
+            )
+            self.assertIn(
+                "patch module '0200_rogue' has no catalog entry", problems
+            )
+
+    def test_explain_renders_packaged_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            snapshot = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml"
+            )
+            info = patch_catalog.explain("1204_focal", snapshot, cfg=None)
+            self.assertEqual(info.kind, "enhancement")
+            self.assertEqual(info.origin, "external-fork")
+            self.assertEqual(info.backend, "hip")
+            self.assertEqual(info.plan_ids, ("RD12",))
+            rendered = patch_catalog.render_explanation(info)
+            self.assertIn("kind:           enhancement", rendered)
+            self.assertIn("origin:         external-fork", rendered)
