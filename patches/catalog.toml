@@ -213,33 +213,6 @@ external-source = "stew675-rdna-boosts"
 plan-item = "RD05/RD06/RD07"
 
 [[patch]]
-id = "1204_rd08_q6k_mmvq_vdr2"
-kind = "enhancement"
-origin = "external-fork"
-backend = "hip"
-state = "untested"
-external-source = "stew675-rdna-boosts"
-plan-item = "RD08"
-
-[[patch]]
-id = "1205_rd12_paired_mmvq_dual_output"
-kind = "enhancement"
-origin = "external-fork"
-backend = "hip"
-state = "untested"
-external-source = "stew675-rdna-boosts"
-plan-item = "RD12"
-
-[[patch]]
-id = "1206_rd13_mul_mat_add_view_fusion"
-kind = "enhancement"
-origin = "external-fork"
-backend = "hip"
-state = "untested"
-external-source = "stew675-rdna-boosts"
-plan-item = "RD13"
-
-[[patch]]
 id = "1207_rd17_moe_topk_down_fold"
 kind = "enhancement"
 origin = "external-fork"
