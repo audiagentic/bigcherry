@@ -32,6 +32,7 @@ per-stage resume-check).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -54,6 +55,16 @@ class PatchCampaignError(RuntimeError):
 
 def _print(msg: str) -> None:
     print(f"[patch-campaign] {msg}", flush=True)
+
+
+def _write_bound_artifact(run_dir: Path, name: str, payload: object) -> dict[str, str]:
+    target = run_dir / "artifacts" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    return {
+        "path": target.relative_to(run_dir).as_posix(),
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+    }
 
 
 def _hip_env(hip_path: Path) -> dict[str, str]:
@@ -735,6 +746,54 @@ def run(args: argparse.Namespace) -> int:
         )
         _atomic_write_json(workdir / "campaign" / "correctness.json", correctness_summary)
 
+    campaign_run_dir = workdir / "campaign"
+    build_evidence = {
+        "control": {
+            "build_id": control_build_evidence.effective_build_id,
+            "source_tree": control_source_tree,
+            "architecture": args.amdgpu_targets,
+            "options": control_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                campaign_run_dir, "build/control-compile-commands.json",
+                control_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                campaign_run_dir, "build/control-runtime-bundle.json",
+                control_build_evidence.runtime_artifacts,
+            ),
+        },
+        "subject": {
+            "build_id": tune_build_evidence.effective_build_id,
+            "source_tree": patched_source_tree,
+            "architecture": args.amdgpu_targets,
+            "options": tune_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                campaign_run_dir, "build/subject-compile-commands.json",
+                tune_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                campaign_run_dir, "build/subject-runtime-bundle.json",
+                tune_build_evidence.runtime_artifacts,
+            ),
+        },
+    }
+    apply_evidence = {
+        "control": {
+            "verified": True, "idempotent": True,
+            "artifact": _write_bound_artifact(
+                campaign_run_dir, "apply/control.json",
+                {"source_tree": control_source_tree, "composition": list(control_composition)},
+            ),
+        },
+        "subject": {
+            "verified": True, "idempotent": True,
+            "artifact": _write_bound_artifact(
+                campaign_run_dir, "apply/subject.json",
+                {"source_tree": patched_source_tree, "composition": list(subject_composition)},
+            ),
+        },
+    }
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -742,11 +801,15 @@ def run(args: argparse.Namespace) -> int:
             descriptor=descriptor, base_revision=base_revision,
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
             control_tree=control_source_tree, subject_tree=patched_source_tree,
-            build_identities=identity_context.build_identities,
+            build_identities={
+                "control": control_build_evidence.effective_build_id,
+                "subject": tune_build_evidence.effective_build_id,
+            },
+            build_evidence=build_evidence, apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets, model=str(args.model),
             contract=validation_plan.contract,
             contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
-            run_dir=workdir / "campaign",
+            run_dir=campaign_run_dir,
             trace_evidence={}, correctness_evidence=correctness_summary or {},
         )
         evaluated = {
