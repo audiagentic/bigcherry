@@ -173,14 +173,56 @@ def test_test_file_line_rejects_a_non_mul_mat_op(tmp_path):
         assert "MUL_MAT" in str(exc)
 
 
-def test_test_file_line_rejects_batched_outer_dims(tmp_path):
+def test_test_file_line_rejects_batched_src0(tmp_path):
     vendor, signature = _mul_mat_signature(tmp_path)
     signature["ne0"] = [256, 16, 3, 1]
     try:
         scm.signature_to_test_file_line(signature, vendor_root=vendor)
-        assert False, "expected SignatureMappingError for batched outer dims"
+        assert False, "expected SignatureMappingError for a batched src0"
     except scm.SignatureMappingError as exc:
         assert "outer dimensions" in str(exc)
+
+
+def test_test_file_line_accepts_a_batched_src1(tmp_path):
+    # HI112 (2026-08-24, dense Qwen3.8-27B/Q8_0 production campaign): real
+    # MTP multi-draft-token verification traffic batches src1 (activations)
+    # over ne[2] against a non-batched src0 (weights) -- ggml_mul_mat's own
+    # src1-broadcasts-over-src0 rule. test-backend-ops' build_graph() has no
+    # batching restriction once nb is the zero-strides sentinel, so this is
+    # a real, previously-unmapped signature shape, not a synthetic case.
+    vendor, signature = _mul_mat_signature(tmp_path, m=16, n=1, k=256)
+    signature["ne1"] = [256, 1, 2, 1]
+    signature["ned"] = [16, 1, 2, 1]
+    line, target_tensor, digest_tensor = scm.signature_to_test_file_line(signature, vendor_root=vendor)
+    op_id = signature["op"]
+    assert line == (
+        f"{op_id} 0 16 1 2 1 0 2 "
+        "0 256 16 1 1 0 0 0 0 "
+        "0 256 1 2 1 0 0 0 0 -"
+    )
+    assert target_tensor == "out"
+    assert digest_tensor == "leaf_0"
+
+
+def test_test_file_line_rejects_batched_src1_fourth_dim(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path)
+    signature["ne1"] = [256, 1, 1, 3]
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for a non-trivial 4th dimension"
+    except scm.SignatureMappingError as exc:
+        assert "outer dimensions" in str(exc)
+
+
+def test_test_file_line_rejects_src1_dst_batch_mismatch(tmp_path):
+    vendor, signature = _mul_mat_signature(tmp_path, m=16, n=1, k=256)
+    signature["ne1"] = [256, 1, 2, 1]
+    signature["ned"] = [16, 1, 3, 1]
+    try:
+        scm.signature_to_test_file_line(signature, vendor_root=vendor)
+        assert False, "expected SignatureMappingError for a src1/dst batch mismatch"
+    except scm.SignatureMappingError as exc:
+        assert "batch dimension" in str(exc)
 
 
 def test_test_file_line_accepts_a_quantized_type(tmp_path):

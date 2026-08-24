@@ -372,13 +372,37 @@ def signature_to_test_file_line(
             f"signature's src0/src1 shared inner dimension disagrees: "
             f"ne0[0]={k_from_a}, ne1[0]={k_from_b} -- not a valid MUL_MAT signature"
         )
+    # HI112 (2026-08-24, dense Qwen3.8-27B/Q8_0 production campaign): src0
+    # (the weights) must stay non-batched -- this mapper never sees a
+    # genuinely batched weight matrix on real hardware -- but src1 (the
+    # activations) batching over ne[2] is real, common production traffic:
+    # MTP's multi-draft-token verification batches multiple candidate
+    # continuations against the SAME weight matrix in one ggml_mul_mat call
+    # (ggml's own src1-broadcasts-over-src0 rule). test-backend-ops'
+    # build_graph() has no batching restriction at all once nb is the
+    # zero-strides sentinel (see is_non_contiguous()/build_graph() in
+    # tests/test-backend-ops.cpp -- ggml_new_tensor_4d takes ne[2]/ne[3]
+    # unconditionally), so this was an artificial restriction in this
+    # module, not something test-backend-ops itself requires. The 4th
+    # dimension stays pinned to 1 -- no real signature with ne[3] != 1 has
+    # been observed yet, so that case is left unverified rather than
+    # silently accepted.
     ne0_outer = (int(ne0[2]), int(ne0[3]))
     ne1_outer = (int(ne1[2]), int(ne1[3]))
-    if ne0_outer != (1, 1) or ne1_outer != (1, 1):
+    ned_outer = (int(ned[2]), int(ned[3]))
+    if ne0_outer != (1, 1) or ne1_outer[1] != 1 or ned_outer[1] != 1:
         raise SignatureMappingError(
-            f"signature outer dimensions are src0={ne0_outer} src1={ne1_outer}, "
-            "not (1, 1) -- this function only maps the non-batched contiguous "
-            "default case, matching signature_to_op_filter's own restriction"
+            f"signature outer dimensions are src0={ne0_outer} src1={ne1_outer} "
+            f"dst={ned_outer} -- this function only maps a non-batched src0 "
+            "against an (possibly ne[2]-batched) src1/dst, matching "
+            "ggml_mul_mat's own src1-broadcasts-over-src0 rule; a batched "
+            "src0 or a non-trivial 4th dimension is out of scope"
+        )
+    if ne1_outer[0] != ned_outer[0]:
+        raise SignatureMappingError(
+            f"signature src1 batch dimension ne1[2]={ne1_outer[0]} disagrees "
+            f"with dst batch dimension ned[2]={ned_outer[0]} -- not a valid "
+            "MUL_MAT signature"
         )
 
     type_names = load_ggml_type_names(vendor_root)
