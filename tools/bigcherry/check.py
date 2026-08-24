@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -50,7 +51,7 @@ def _catalog(root: Path) -> str | None:
 
 def _python_compile(root: Path) -> str | None:
     result = subprocess.run(
-        ["python", "-m", "compileall", "-q", str(root / "tools" / "bigcherry")],
+        [sys.executable, "-m", "compileall", "-q", str(root / "tools" / "bigcherry")],
         cwd=root, text=True, capture_output=True, timeout=120,
     )
     return None if result.returncode == 0 else (result.stdout + result.stderr).strip()
