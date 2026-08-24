@@ -101,6 +101,7 @@ class RunEnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(captured["env"]["GGML_HIP_DISPATCH_MODE"], "native")
         self.assertNotIn("GGML_HIP_FORCE_CANDIDATE", captured["env"])
+        self.assertNotIn("GGML_HIP_FORCE_CANDIDATE_STRICT", captured["env"])
         self.assertEqual(captured["env"]["BIGCHERRY_TEST_DETERMINISTIC_SEED"], "7")
         self.assertEqual(
             captured["argv"],
@@ -120,6 +121,12 @@ class RunEnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(captured["env"]["GGML_HIP_DISPATCH_MODE"], "replay")
         self.assertEqual(captured["env"]["GGML_HIP_FORCE_CANDIDATE"], "mmq:fb1")
+        self.assertEqual(
+            captured["env"]["GGML_HIP_FORCE_CANDIDATE_STRICT"], "1",
+            "HI105: a candidate run must fail closed (not silently fall back to "
+            "ordinary resolution) if the named candidate is unregistered/ineligible -- "
+            "dispatch.cu's own comment names this producer as the reason STRICT exists",
+        )
 
     def test_zero_seed_is_rejected(self):
         with self.assertRaises(ce.EvidenceError):
