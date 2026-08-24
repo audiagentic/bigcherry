@@ -676,6 +676,10 @@ class ValidationContext:
     build_evidence: dict[str, Any] = field(default_factory=dict)
     trace_evidence: dict[str, Any] = field(default_factory=dict)
     correctness_evidence: dict[str, Any] = field(default_factory=dict)
+    configuration_evidence: dict[str, Any] = field(default_factory=dict)
+    smoke_evidence: dict[str, Any] = field(default_factory=dict)
+    architecture_evidence: dict[str, Any] = field(default_factory=dict)
+    performance_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 def _sha256_file(path: Path) -> str:
@@ -764,6 +768,69 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
         check_id=spec.check_id, capability=spec.capability, status=PASS,
         summary="verified control/subject application, tree, and idempotency evidence is present",
     )
+
+
+def _evidence_pass(
+    spec: CheckSpec, evidence: dict[str, Any], ctx: ValidationContext, label: str,
+) -> ValidationResult:
+    if not isinstance(evidence, dict) or not _artifact_is_bound(evidence.get("artifact"), ctx.run_dir):
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary=f"verified {label} artifact is required",
+        )
+    if evidence.get("passed") is not True:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary=f"{label} evidence failed",
+        )
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary=f"{label} evidence is verified and bound",
+    )
+
+
+def _builtin_compile_option(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    expected = spec.config.get("options")
+    evidence = ctx.configuration_evidence
+    if expected is not None and evidence.get("options") != expected:
+        return _error_result(spec, "compile-option evidence does not match configured options")
+    return _evidence_pass(spec, evidence, ctx, "compile-option")
+
+
+def _builtin_runtime_smoke(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    evidence = ctx.smoke_evidence
+    if evidence.get("exit_code") != 0:
+        if evidence.get("exit_code") is None:
+            return ValidationResult(
+                check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+                summary="runtime-smoke exit evidence is missing",
+            )
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="runtime-smoke exited unsuccessfully",
+        )
+    return _evidence_pass(spec, evidence, ctx, "runtime-smoke")
+
+
+def _builtin_architecture(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    evidence = ctx.architecture_evidence
+    if ctx.architecture and evidence.get("architecture") != ctx.architecture:
+        return _error_result(spec, "architecture evidence does not match context")
+    return _evidence_pass(spec, evidence, ctx, "architecture")
+
+
+def _builtin_benchmark(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    evidence = ctx.performance_evidence
+    if not isinstance(evidence.get("metrics"), dict):
+        return _error_result(spec, "benchmark evidence requires metrics")
+    return _evidence_pass(spec, evidence, ctx, "benchmark")
+
+
+def _builtin_autotune_campaign(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    evidence = ctx.performance_evidence
+    if not evidence.get("campaign_id"):
+        return _error_result(spec, "autotune-campaign evidence requires campaign_id")
+    return _evidence_pass(spec, evidence, ctx, "autotune-campaign")
 
 
 def _builtin_backend_ops(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
@@ -868,6 +935,11 @@ register_builtin("apply", _builtin_apply)
 register_builtin("build", _builtin_build)
 register_builtin("trace-marker", _builtin_trace_marker)
 register_builtin("backend-ops", _builtin_backend_ops)
+register_builtin("compile-option", _builtin_compile_option)
+register_builtin("runtime-smoke", _builtin_runtime_smoke)
+register_builtin("architecture", _builtin_architecture)
+register_builtin("benchmark", _builtin_benchmark)
+register_builtin("autotune-campaign", _builtin_autotune_campaign)
 
 
 # ------------------------------------------------------------------ verdict
