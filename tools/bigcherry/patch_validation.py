@@ -31,6 +31,7 @@ import json
 import re
 import tomllib
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from pathlib import Path
 from typing import Any, Callable
 
@@ -184,6 +185,7 @@ _CONTRACT_AUTHORITY_KEYS: frozenset[str] = frozenset({
     "bit_identical", "required-checks", "required_checks", "metrics",
     "target-metric", "target_metric", "title", "rationale", "expected_effect",
     "expected-effect", "acceptance", "hypothesis", "boundary", "source-evidence",
+    "metric", "value_pct", "value-pct", "hardware", "workload", "weight-types",
 })
 
 
@@ -334,18 +336,12 @@ def resolve_custom_callable(spec: str, *, package_root: str | Path) -> Callable:
         raise ConfigurationError(
             f"custom callable {spec!r}: async callables are not supported in v1"
         )
-    params = [
-        p
-        for p in inspect.signature(func).parameters.values()
-        if p.kind
-        in (
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        )
-    ]
-    if len(params) != 1 or params[0].kind == inspect.Parameter.POSITIONAL_ONLY:
+    params = list(inspect.signature(func).parameters.values())
+    if (
+        len(params) != 1
+        or params[0].kind != inspect.Parameter.POSITIONAL_OR_KEYWORD
+        or params[0].name != "ctx"
+    ):
         raise ConfigurationError(
             f"custom callable {spec!r}: signature must be check(ctx) with exactly "
             "one positional argument, no *args/**kwargs/extra parameters"
@@ -404,6 +400,8 @@ def bind_contract(contract: experiment_contract.ExperimentContract) -> ContractB
         or contract.acceptance.end_to_end_gain_pct is not None
     ) and "performance" not in capabilities:
         capabilities.append("performance")
+        if "activation" not in capabilities:
+            capabilities.append("activation")
     return ContractBinding(
         contract_id=contract.id,
         contract_hash=contract.contract_hash,
@@ -624,7 +622,9 @@ Validator = Callable[
 # validator per step, each independently tested). Names listed in
 # BUILTIN_VALIDATORS but absent here are "not yet migrated" -- a check
 # referencing one produces a structured ERROR, never a silent skip.
-BUILTIN_REGISTRY: dict[str, Validator] = {}
+_BUILTIN_REGISTRY: dict[str, Validator] = {}
+# Public consumers may inspect the registry but cannot mutate dispatch.
+BUILTIN_REGISTRY = MappingProxyType(_BUILTIN_REGISTRY)
 
 
 def register_builtin(name: str, validator: Validator) -> None:
@@ -638,9 +638,9 @@ def register_builtin(name: str, validator: Validator) -> None:
             f"unknown built-in validator {name!r} (closed set: "
             f"{', '.join(BUILTIN_VALIDATORS)})"
         )
-    if name in BUILTIN_REGISTRY:
+    if name in _BUILTIN_REGISTRY:
         raise ConfigurationError(f"built-in validator {name!r} is already registered")
-    BUILTIN_REGISTRY[name] = validator
+    _BUILTIN_REGISTRY[name] = validator
 
 
 # ------------------------------------------------------------- ValidationContext
@@ -731,6 +731,31 @@ def _artifact_is_bound(artifact: object, run_dir: Path | None) -> bool:
     return target.is_file() and _sha256_file(target) == digest
 
 
+def _bound_artifact_path(artifact: object, run_dir: Path | None) -> Path | None:
+    if not isinstance(artifact, dict) or run_dir is None:
+        return None
+    path = artifact.get("path")
+    if not isinstance(path, str):
+        return None
+    target = (run_dir / path).resolve()
+    try:
+        target.relative_to(run_dir.resolve())
+    except ValueError:
+        return None
+    return target if target.is_file() else None
+
+
+def _read_bound_json(artifact: object, run_dir: Path | None) -> dict[str, Any] | None:
+    target = _bound_artifact_path(artifact, run_dir)
+    if target is None or not _artifact_is_bound(artifact, run_dir):
+        return None
+    try:
+        value = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Validate evidence-bound apply/tree/idempotency artifacts.
 
@@ -773,12 +798,13 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
 def _evidence_pass(
     spec: CheckSpec, evidence: dict[str, Any], ctx: ValidationContext, label: str,
 ) -> ValidationResult:
-    if not isinstance(evidence, dict) or not _artifact_is_bound(evidence.get("artifact"), ctx.run_dir):
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir)
+    if payload is None:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
             summary=f"verified {label} artifact is required",
         )
-    if evidence.get("passed") is not True:
+    if payload.get("passed") is not True:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary=f"{label} evidence failed",
@@ -792,15 +818,17 @@ def _evidence_pass(
 def _builtin_compile_option(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     expected = spec.config.get("options")
     evidence = ctx.configuration_evidence
-    if expected is not None and evidence.get("options") != expected:
-        return _error_result(spec, "compile-option evidence does not match configured options")
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if expected is not None and (payload is None or payload.get("options") != expected):
+        return _error_result(spec, "compile-option artifact does not match configured options")
     return _evidence_pass(spec, evidence, ctx, "compile-option")
 
 
 def _builtin_runtime_smoke(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     evidence = ctx.smoke_evidence
-    if evidence.get("exit_code") != 0:
-        if evidence.get("exit_code") is None:
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if payload is None or payload.get("exit_code") != 0:
+        if payload is None or payload.get("exit_code") is None:
             return ValidationResult(
                 check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
                 summary="runtime-smoke exit evidence is missing",
@@ -814,22 +842,25 @@ def _builtin_runtime_smoke(spec: CheckSpec, ctx: ValidationContext) -> Validatio
 
 def _builtin_architecture(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     evidence = ctx.architecture_evidence
-    if ctx.architecture and evidence.get("architecture") != ctx.architecture:
-        return _error_result(spec, "architecture evidence does not match context")
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if ctx.architecture and (payload is None or payload.get("architecture") != ctx.architecture):
+        return _error_result(spec, "architecture artifact does not match context")
     return _evidence_pass(spec, evidence, ctx, "architecture")
 
 
 def _builtin_benchmark(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     evidence = ctx.performance_evidence
-    if not isinstance(evidence.get("metrics"), dict):
-        return _error_result(spec, "benchmark evidence requires metrics")
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if payload is None or not isinstance(payload.get("metrics"), dict) or not payload["metrics"]:
+        return _error_result(spec, "benchmark artifact requires non-empty metrics")
     return _evidence_pass(spec, evidence, ctx, "benchmark")
 
 
 def _builtin_autotune_campaign(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     evidence = ctx.performance_evidence
-    if not evidence.get("campaign_id"):
-        return _error_result(spec, "autotune-campaign evidence requires campaign_id")
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if payload is None or not payload.get("campaign_id"):
+        return _error_result(spec, "autotune-campaign artifact requires campaign_id")
     return _evidence_pass(spec, evidence, ctx, "autotune-campaign")
 
 
@@ -841,15 +872,16 @@ def _builtin_backend_ops(spec: CheckSpec, ctx: ValidationContext) -> ValidationR
     ):
         return _error_result(spec, "backend-ops requires non-empty string ops")
     evidence = ctx.correctness_evidence
-    if not isinstance(evidence, dict) or not _artifact_is_bound(evidence.get("artifact"), ctx.run_dir):
+    payload = _read_bound_json(evidence.get("artifact"), ctx.run_dir) if isinstance(evidence, dict) else None
+    if payload is None:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
             summary="verified backend-ops artifact is required",
         )
-    observed = evidence.get("ops")
+    observed = payload.get("ops")
     if tuple(observed or ()) != tuple(configured):
-        return _error_result(spec, "backend-ops evidence operation set does not match config")
-    if evidence.get("passed") is not True:
+        return _error_result(spec, "backend-ops artifact operation set does not match config")
+    if payload.get("passed") is not True:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary="backend operation correctness evidence failed",
@@ -882,14 +914,26 @@ def _builtin_trace_marker(spec: CheckSpec, ctx: ValidationContext) -> Validation
             check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
             summary="trace logs are not bound to the validation run",
         )
+    positive_path = _bound_artifact_path(positive.get("artifact"), ctx.run_dir)
+    negative_path = _bound_artifact_path(negative.get("artifact"), ctx.run_dir)
+    if positive_path is None or negative_path is None:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="trace log paths are not available",
+        )
+    try:
+        positive_hit = re.search(marker, positive_path.read_text(encoding="utf-8")) is not None
+        negative_hit = re.search(marker, negative_path.read_text(encoding="utf-8")) is not None
+    except (OSError, UnicodeError, re.error) as exc:
+        return _error_result(spec, f"trace log verification failed: {exc}")
     if positive.get("marker_regex") != marker or negative.get("marker_regex") != marker:
         return _error_result(spec, "trace evidence marker-regex does not match check config")
-    if positive.get("marker_observed") is not True:
+    if positive_hit is not True:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary="positive trace probe did not observe the configured marker",
         )
-    if negative.get("marker_observed") is not False:
+    if negative_hit is not False:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary="negative-control trace probe observed the configured marker",
@@ -1001,7 +1045,7 @@ def evaluate_check(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
                 "does not trust the re-labelling",
             )
         return result
-    validator = BUILTIN_REGISTRY.get(spec.validator)
+    validator = _BUILTIN_REGISTRY.get(spec.validator)
     if validator is None:
         return _error_result(
             spec,
