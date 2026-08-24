@@ -525,8 +525,8 @@ class RegistryAndVersionTests(unittest.TestCase):
                 },
             )
             self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.PASS)
-            ctx.trace_evidence["negative"]["marker_observed"] = True
-            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.FAIL)
+            negative.write_text("MARKER\n", encoding="utf-8")
+            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.BLOCKED)
 
     def test_builtin_build_requires_control_and_subject_identities(self) -> None:
         spec = pv.CheckSpec(
@@ -593,7 +593,7 @@ class RegistryAndVersionTests(unittest.TestCase):
             pv.register_builtin("apply", lambda spec, ctx: None)
 
     def test_validator_exception_becomes_error(self) -> None:
-        original = pv.BUILTIN_REGISTRY.pop("apply")
+        original = pv._BUILTIN_REGISTRY.pop("apply")
         pv.register_builtin("apply", lambda spec, ctx: (_ for _ in ()).throw(RuntimeError("x")))
         try:
             spec = pv.CheckSpec(
@@ -606,8 +606,8 @@ class RegistryAndVersionTests(unittest.TestCase):
             result = pv.evaluate_check(spec, ctx)
             self.assertEqual(result.status, pv.ERROR)
         finally:
-            pv.BUILTIN_REGISTRY.pop("apply", None)
-            pv.BUILTIN_REGISTRY["apply"] = original
+            pv._BUILTIN_REGISTRY.pop("apply", None)
+            pv._BUILTIN_REGISTRY["apply"] = original
 
     def test_plan_digest_stable_and_sensitive(self) -> None:
         specs = (
