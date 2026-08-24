@@ -693,16 +693,27 @@ def run(args: argparse.Namespace) -> int:
     # activation probe for this patch still writes a real record; it is
     # simply not eligible_for_validated_state.
     from bigcherry import config as campaign_config  # noqa: E402
+    from bigcherry import patch_registry  # noqa: E402
     from bigcherry import patch_validation_evidence  # noqa: E402
     from bigcherry import paths as bc_paths  # noqa: E402
 
     cfg = campaign_config.load(bc_paths.RECIPES)
+    # RS04: the evidence record's patch file path resolves through the
+    # registry descriptor (flat or packaged) -- no f"{patch_id}.py" guessing
+    # in this caller.
+    _registry = patch_registry.load_registry(bc_paths.PATCHES)
+    try:
+        _descriptor = _registry.get(args.patch)
+    except patch_registry.PatchRegistryError:
+        _print(f"ERROR: unknown patch {args.patch!r} -- cannot record evidence")
+        return 1
+    _patch_file = _registry.root / _descriptor.implementation_path
     correctness_summary = None
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
             args.correctness_evidence, patch_id=args.patch,
             subject_digest=patch_validation_evidence.patch_validation_subject_digest(
-                REPO_ROOT / "patches" / f"{args.patch}.py"
+                _patch_file
             ),
             base_revision=base_revision, patched_source_tree=patched_source_tree,
             campaign_identity_digest=campaign.campaign_identity_digest,
@@ -711,7 +722,7 @@ def run(args: argparse.Namespace) -> int:
         _atomic_write_json(workdir / "campaign" / "correctness.json", correctness_summary)
 
     validation_record = patch_validation_evidence.make_record(
-        patch_id=args.patch, patch_path=REPO_ROOT / "patches" / f"{args.patch}.py",
+        patch_id=args.patch, patch_path=_patch_file,
         patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
         base_revision=base_revision, framework_baseline_digest=psi.framework_baseline_digest(),
         patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
