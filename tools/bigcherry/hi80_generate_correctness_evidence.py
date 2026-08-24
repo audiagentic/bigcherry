@@ -2,19 +2,24 @@
 
 Loops over a measurements JSONL's promotable-but-correctness-blocked rows
 (``provisional_winner`` set and not equal to ``native``), derives the
-op_filter/target_tensor for each row's real dispatch signature via
-signature_correctness_mapping.signature_to_op_filter(), runs
-correctness_evidence.generate_correctness_evidence() against a patched
+test-file line/target_tensor/digest_tensor for each row's real dispatch
+signature via signature_correctness_mapping.signature_to_any_test_file_line()
+(the one authoritative op dispatcher -- MUL_MAT and, as of HI105, MUL_MAT_ID),
+runs correctness_evidence.generate_correctness_evidence() against a patched
 test-backend-ops binary, and writes the result into dispatch_db via
 correctness_evidence.write_correctness_evidence() -- exactly the input
 tune_promotion.promote()'s RV49 gate (promotion_correctness_gate.py) checks
 for, closing the loop this item's own notes describe as "not done this
 session" at HI80's original filing.
 
-Deliberately MUL_MAT-only this slice, same as signature_correctness_mapping
-itself (see that module's own docstring on why this is not generic): any
-non-MUL_MAT row is reported and skipped, not treated as a hard CLI failure,
-since HI80 never claimed op coverage beyond MUL_MAT.
+MUL_MAT and MUL_MAT_ID only this slice (HI105 added the latter): any row
+whose op has no mapper in signature_to_any_test_file_line() is reported and
+skipped, not treated as a hard CLI failure, since HI80 never claimed op
+coverage beyond what it has actually verified against that op's own real
+test_case subclass (e.g. GLU is a real, different op with its own
+test-backend-ops class, and is NOT covered even though a fused MUL_MAT_ID+GLU
+signature carries the same has_ids/n_expert fields -- see
+signature_to_mul_mat_id_test_file_line's own docstring).
 
 Fails closed per row, not globally: a genuine evidence-generation failure
 (EvidenceError -- e.g. a digest mismatch, a nonzero exit) or an unsupported/
@@ -131,7 +136,15 @@ def generate_for_row(
     # builds the exact requested shape directly via test_generic_op, so it
     # works for any signature within its (narrower) type scope regardless
     # of whether the fixed corpus happens to contain it.
-    test_file_line, target_tensor, digest_tensor = scm.signature_to_test_file_line(
+    # HI105: route through the one authoritative dispatcher (MUL_MAT ->
+    # signature_to_test_file_line, MUL_MAT_ID -> the new sibling mapper,
+    # else fail closed) rather than calling signature_to_test_file_line
+    # directly -- calling it directly here silently mis-mapped every real
+    # MUL_MAT_ID row (dev-gpt-agent review, 2026-08-24): it would raise
+    # SignatureMappingError, which main()'s loop reports as SKIPPED without
+    # incrementing failed, so a run could exit 0 having generated evidence
+    # for nothing.
+    test_file_line, target_tensor, digest_tensor = scm.signature_to_any_test_file_line(
         signature_dict, vendor_root=vendor_root
     )
     with tempfile.NamedTemporaryFile(

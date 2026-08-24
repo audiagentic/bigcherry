@@ -346,7 +346,9 @@ def test_mul_mat_id_maps_rd54_k256_down_signature():
     fields = line.split()
     assert fields[-1] == "-"
     assert target_tensor == "out"
-    assert digest_tensor == "leaf_0"
+    # HI105: the ids (routing) tensor, not weights (leaf_0) -- see
+    # signature_to_mul_mat_id_test_file_line's own docstring on why.
+    assert digest_tensor == "leaf_2"
 
     op_id, dst_type_id = int(fields[0]), int(fields[1])
     ned = [int(x) for x in fields[2:6]]
@@ -427,3 +429,54 @@ def test_ggml_type_id_for_name_finds_i32():
     type_names = scm.load_ggml_type_names(REAL_VENDOR_ROOT)
     i32_id = scm._ggml_type_id_for_name(type_names, "I32")
     assert type_names[i32_id].upper() == "I32"
+
+
+def test_mul_mat_id_rejects_n_expert_used_exceeding_n_expert():
+    _require_real_vendor_root()
+    sig = dict(_RD54_K256_DOWN_SIGNATURE)
+    sig["n_expert_used"] = 300  # > n_expert=256
+    sig["ned"] = [2048, 300, 1, 1]  # keep ned[1]==n_expert_used consistent
+    try:
+        scm.signature_to_mul_mat_id_test_file_line(sig, vendor_root=REAL_VENDOR_ROOT)
+        assert False, "expected SignatureMappingError for n_expert_used > n_expert"
+    except scm.SignatureMappingError as exc:
+        assert "n_expert_used" in str(exc)
+
+
+# HI105 (dev-gpt-agent review, 2026-08-24): the CLI must route through one
+# authoritative dispatcher, not call signature_to_test_file_line directly --
+# a caller doing that would silently mis-map any non-MUL_MAT signature
+# (exactly the bug found in hi80_generate_correctness_evidence.py at
+# HEAD 7f2e04c, fixed alongside these tests).
+def test_dispatcher_routes_mul_mat_to_the_existing_mapper():
+    _require_real_vendor_root()
+    mul_mat_sig = {
+        "op": 29,  # MUL_MAT, confirmed via load_ggml_op_names
+        "src0_type": 0, "src1_type": 0, "dst_type": 0,
+        "ne0": [32, 32, 1, 1], "ne1": [32, 32, 1, 1], "ned": [32, 32, 1, 1],
+    }
+    direct = scm.signature_to_test_file_line(mul_mat_sig, vendor_root=REAL_VENDOR_ROOT)
+    via_dispatcher = scm.signature_to_any_test_file_line(mul_mat_sig, vendor_root=REAL_VENDOR_ROOT)
+    assert direct == via_dispatcher
+
+
+def test_dispatcher_routes_mul_mat_id_to_the_new_mapper():
+    _require_real_vendor_root()
+    direct = scm.signature_to_mul_mat_id_test_file_line(
+        _RD54_K256_DOWN_SIGNATURE, vendor_root=REAL_VENDOR_ROOT,
+    )
+    via_dispatcher = scm.signature_to_any_test_file_line(
+        _RD54_K256_DOWN_SIGNATURE, vendor_root=REAL_VENDOR_ROOT,
+    )
+    assert direct == via_dispatcher
+
+
+def test_dispatcher_rejects_the_real_glu_signature():
+    _require_real_vendor_root()
+    try:
+        scm.signature_to_any_test_file_line(
+            _RD54_K2048_GLU_SIGNATURE, vendor_root=REAL_VENDOR_ROOT,
+        )
+        assert False, "expected SignatureMappingError for a real GLU signature"
+    except scm.SignatureMappingError as exc:
+        assert "GLU" in str(exc)
