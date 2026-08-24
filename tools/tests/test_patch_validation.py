@@ -454,6 +454,10 @@ class RegistryAndVersionTests(unittest.TestCase):
                 pv.ValidationContext(
                     descriptor=_descriptor(), base_revision="r",
                     control_source=root / "control", subject_source=root / "subject",
+                    apply_evidence={
+                        "control": {"applied": True, "tree": "tc", "idempotent": True},
+                        "subject": {"applied": True, "tree": "ts", "idempotent": True},
+                    },
                 ),
             )
         self.assertEqual(passed.status, pv.PASS)
@@ -477,6 +481,13 @@ class RegistryAndVersionTests(unittest.TestCase):
                 descriptor=_descriptor(), base_revision="r",
                 control_source=None, subject_source=None,
                 build_identities={"control": "build-c", "subject": "build-s"},
+                build_evidence={
+                    role: {
+                        "build_id": role, "source_tree": "tree", "architecture": "gfx",
+                        "options": "opts", "compile_commands": "cc", "runtime_bundle": "rb",
+                    }
+                    for role in ("control", "subject")
+                },
             ),
         )
         self.assertEqual(passed.status, pv.PASS)
@@ -499,7 +510,12 @@ class RegistryAndVersionTests(unittest.TestCase):
         with self.assertRaises(pv.ConfigurationError):
             pv.register_builtin("totally-new", lambda spec, ctx: None)
 
+    def test_register_cannot_overwrite_builtin(self) -> None:
+        with self.assertRaisesRegex(pv.ConfigurationError, "already registered"):
+            pv.register_builtin("apply", lambda spec, ctx: None)
+
     def test_validator_exception_becomes_error(self) -> None:
+        original = pv.BUILTIN_REGISTRY.pop("apply")
         pv.register_builtin("apply", lambda spec, ctx: (_ for _ in ()).throw(RuntimeError("x")))
         try:
             spec = pv.CheckSpec(
@@ -513,6 +529,7 @@ class RegistryAndVersionTests(unittest.TestCase):
             self.assertEqual(result.status, pv.ERROR)
         finally:
             pv.BUILTIN_REGISTRY.pop("apply", None)
+            pv.BUILTIN_REGISTRY["apply"] = original
 
     def test_plan_digest_stable_and_sensitive(self) -> None:
         specs = (
