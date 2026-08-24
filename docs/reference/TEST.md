@@ -98,6 +98,33 @@ ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_ben
   must be idle, and a short single-repetition run is a liveness check, not a
   performance conclusion.
 
+## Real GPU profiling (rocprofv3)
+
+`tools/bigcherry/rocprof.py` wraps a real server/binary launch under
+`rocprofv3 --kernel-trace` and reduces the resulting trace into a
+per-kernel-family time breakdown plus real per-GPU busy time (interval
+union, not naive sum) — built for HI117's finding that isolated tune-time
+candidate measurements do not reliably predict real end-to-end effect;
+always verify a kernel-level win against a real profiled trace before
+trusting it, not just an isolated benchmark delta.
+
+```python
+from bigcherry import rocprof
+cmd = rocprof.wrap_command(["./llama-server", "-m", "model.gguf", ...],
+                            output_directory=Path("/tmp/profile-out"))
+# launch cmd, drive it with real back-to-back requests (no idle gaps —
+# the trace span is used as a serving-time proxy), shut it down cleanly
+# (rocprofv3 only flushes on normal process exit)
+trace = rocprof.find_kernel_trace(Path("/tmp/profile-out"))
+families, agents = rocprof.summarize(rocprof.load_kernel_trace(trace))
+print(rocprof.format_summary(families, agents))
+```
+
+Compare the SAME kernel family (e.g. `mmq`) across two legs built from
+identical real driving traffic — that is the only apples-to-apples
+comparison; absolute totals depend heavily on how much idle time is in
+the trace (utilization % is only meaningful when idle gaps are minimal).
+
 ## Coverage
 
 ```bash
