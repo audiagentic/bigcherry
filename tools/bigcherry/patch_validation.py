@@ -674,6 +674,7 @@ class ValidationContext:
     create_source_variant: Callable[..., Path] | None = None
     apply_evidence: dict[str, Any] = field(default_factory=dict)
     build_evidence: dict[str, Any] = field(default_factory=dict)
+    trace_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 def _sha256_file(path: Path) -> str:
@@ -764,6 +765,47 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     )
 
 
+def _builtin_trace_marker(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Consume generic positive/negative marker evidence.
+
+    Patch-specific probe commands stay in the campaign/orchestrator. The
+    framework receives only verified observations and bound log artifacts.
+    """
+    marker = spec.config.get("marker-regex")
+    if not isinstance(marker, str) or not marker:
+        return _error_result(spec, "trace-marker requires non-empty marker-regex")
+    positive = ctx.trace_evidence.get("positive")
+    negative = ctx.trace_evidence.get("negative")
+    if not isinstance(positive, dict) or not isinstance(negative, dict):
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="positive and negative trace observations are required",
+        )
+    artifacts = (positive.get("artifact"), negative.get("artifact"))
+    if not all(_artifact_is_bound(artifact, ctx.run_dir) for artifact in artifacts):
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="trace logs are not bound to the validation run",
+        )
+    if positive.get("marker_regex") != marker or negative.get("marker_regex") != marker:
+        return _error_result(spec, "trace evidence marker-regex does not match check config")
+    if positive.get("marker_observed") is not True:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="positive trace probe did not observe the configured marker",
+        )
+    if negative.get("marker_observed") is not False:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="negative-control trace probe observed the configured marker",
+        )
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary="positive marker hit and negative-control non-hit are verified",
+        artifacts=tuple(artifact for artifact in artifacts if isinstance(artifact, ArtifactRef)),
+    )
+
+
 def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Validate that the campaign supplied build identities for both sides."""
     required = ("control", "subject")
@@ -796,6 +838,7 @@ def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
 
 register_builtin("apply", _builtin_apply)
 register_builtin("build", _builtin_build)
+register_builtin("trace-marker", _builtin_trace_marker)
 
 
 # ------------------------------------------------------------------ verdict

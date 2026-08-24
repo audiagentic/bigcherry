@@ -13,6 +13,7 @@ check, and B4's framework-version re-export.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -463,6 +464,35 @@ class RegistryAndVersionTests(unittest.TestCase):
         # Truthy caller dictionaries are insufficient without a bound artifact
         # and recomputed source tree; no fabricated PASS is allowed.
         self.assertEqual(passed.status, pv.BLOCKED)
+
+    def test_builtin_trace_marker_requires_verified_positive_and_negative_logs(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="trace", capability="activation", validator="trace-marker",
+            required=True, config={"marker-regex": "MARKER"},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            positive = run_dir / "positive.log"
+            negative = run_dir / "negative.log"
+            positive.write_text("MARKER\n", encoding="utf-8")
+            negative.write_text("no marker\n", encoding="utf-8")
+            artifact = lambda path: {
+                "path": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            ctx = pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None, run_dir=run_dir,
+                trace_evidence={
+                    "positive": {"marker_regex": "MARKER", "marker_observed": True,
+                                  "artifact": artifact(positive)},
+                    "negative": {"marker_regex": "MARKER", "marker_observed": False,
+                                  "artifact": artifact(negative)},
+                },
+            )
+            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.PASS)
+            ctx.trace_evidence["negative"]["marker_observed"] = True
+            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.FAIL)
 
     def test_builtin_build_requires_control_and_subject_identities(self) -> None:
         spec = pv.CheckSpec(
