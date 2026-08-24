@@ -187,6 +187,21 @@ _CONTRACT_AUTHORITY_KEYS: frozenset[str] = frozenset({
 })
 
 
+def _contract_authority_keys_in(value: object, prefix: str = "") -> tuple[str, ...]:
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            name = str(key)
+            location = f"{prefix}.{name}" if prefix else name
+            if name in _CONTRACT_AUTHORITY_KEYS:
+                found.append(location)
+            found.extend(_contract_authority_keys_in(nested, location))
+    elif isinstance(value, (list, tuple)):
+        for index, nested in enumerate(value):
+            found.extend(_contract_authority_keys_in(nested, f"{prefix}[{index}]"))
+    return tuple(found)
+
+
 def parse_validation_toml(
     path: str | Path, *, patch_id: str = "?"
 ) -> tuple[CheckSpec, ...]:
@@ -245,10 +260,10 @@ def parse_validation_toml(
             for key, value in table.items()
             if key not in ("id", "capability", "validator", "required")
         }
-        shadowed = sorted(set(config) & _CONTRACT_AUTHORITY_KEYS)
+        shadowed = _contract_authority_keys_in(config)
         if shadowed:
             raise ConfigurationError(
-                f"{where}: key(s) {', '.join(shadowed)} belong to the Experiment "
+                f"{where}: key(s) {', '.join(sorted(shadowed))} belong to the Experiment "
                 "Contract, not the validation adapter (section 16 strict ownership)"
             )
         specs.append(
@@ -757,8 +772,10 @@ def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
             ("control", ctx.control_source, ctx.control_tree),
             ("subject", ctx.subject_source, ctx.subject_tree),
         )
-        if not isinstance(ctx.build_evidence.get(role), dict)
-        or ctx.build_evidence[role].get("build_id") != ctx.build_identities.get(role)
+        if not isinstance(ctx.build_identities.get(role), str)
+        or not ctx.build_identities[role]
+        or not isinstance(ctx.build_evidence.get(role), dict)
+        or ctx.build_evidence[role].get("build_id") != ctx.build_identities[role]
         or not _verified_source_tree(source, declared_tree)
         or ctx.build_evidence[role].get("source_tree") != declared_tree
         or not ctx.build_evidence[role].get("architecture")
