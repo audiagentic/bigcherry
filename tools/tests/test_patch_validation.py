@@ -460,7 +460,9 @@ class RegistryAndVersionTests(unittest.TestCase):
                     },
                 ),
             )
-        self.assertEqual(passed.status, pv.PASS)
+        # Truthy caller dictionaries are insufficient without a bound artifact
+        # and recomputed source tree; no fabricated PASS is allowed.
+        self.assertEqual(passed.status, pv.BLOCKED)
 
     def test_builtin_build_requires_control_and_subject_identities(self) -> None:
         spec = pv.CheckSpec(
@@ -490,7 +492,9 @@ class RegistryAndVersionTests(unittest.TestCase):
                 },
             ),
         )
-        self.assertEqual(passed.status, pv.PASS)
+        # Arbitrary identity strings are insufficient without bound build
+        # artifacts and a recomputed source tree.
+        self.assertEqual(passed.status, pv.BLOCKED)
 
     def test_unknown_validator_is_structured_error(self) -> None:
         spec = pv.CheckSpec(
@@ -505,6 +509,16 @@ class RegistryAndVersionTests(unittest.TestCase):
         self.assertIn("fallback", result.summary)
         # no catch-all 'fallback' in the v1 set
         self.assertNotIn("fallback", pv.BUILTIN_VALIDATORS)
+
+    def test_advisory_producer_cannot_satisfy_required_capability(self) -> None:
+        with self.assertRaisesRegex(pv.ConfigurationError, "no producer"):
+            pv.build_validation_plan(
+                "advisory",
+                [pv.CheckSpec(
+                    check_id="apply-advisory", capability="apply",
+                    validator="apply", required=False,
+                )],
+            )
 
     def test_register_rejects_unknown_name(self) -> None:
         with self.assertRaises(pv.ConfigurationError):
