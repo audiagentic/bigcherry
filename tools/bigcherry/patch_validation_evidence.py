@@ -39,7 +39,8 @@ from typing import Iterable, Mapping
 from . import paths, patchset
 from .patch_activation import ActivationEvidence
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+READABLE_SCHEMA_VERSIONS = (1, 2)
 CONTRACT_VERSION = "hi83-v1"
 CORRECTNESS_SCHEMA_VERSION = 1
 
@@ -282,6 +283,13 @@ def make_record(
     return {
         "record_schema_version": SCHEMA_VERSION,
         "validation_contract_version": CONTRACT_VERSION,
+        "validation_implementation_digest": subject_digest,
+        "contract_hash": str(correctness_doc.get("contract_hash", "")),
+        "control_composition": correctness_doc.get("control_composition", {}),
+        "subject_composition": correctness_doc.get("subject_composition", {}),
+        "check_results": correctness_doc.get("check_results", {}),
+        "hardware": {"architectures": list(archs)},
+        "final_eligibility": eligible,
         "patch_id": patch_id,
         # Exact bytes the hardware campaign used.
         "patch_implementation_digest": _require_hex(
@@ -322,7 +330,7 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
         except (OSError, json.JSONDecodeError) as exc:
             raise ValidationEvidenceError(f"cannot read {path}: {exc}") from exc
         if (
-            not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION
+            not isinstance(document, dict) or document.get("schema_version") not in READABLE_SCHEMA_VERSIONS
             or document.get("patch_id") != patch_id or not isinstance(document.get("records"), list)
         ):
             raise ValidationEvidenceError(f"{path}: invalid evidence file")
@@ -359,7 +367,7 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
     except (OSError, json.JSONDecodeError) as exc:
         raise ValidationEvidenceError(f"cannot read {path}: {exc}") from exc
     if (
-        not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION
+        not isinstance(document, dict) or document.get("schema_version") not in READABLE_SCHEMA_VERSIONS
         or document.get("patch_id") != patch_id or not isinstance(document.get("records"), list)
         or not all(isinstance(row, dict) for row in document["records"])
     ):
@@ -373,11 +381,13 @@ def _record_qualifies(
 ) -> tuple[bool, tuple[str, ...]]:
     problems: list[str] = []
     expected = {
-        "record_schema_version": SCHEMA_VERSION, "validation_contract_version": CONTRACT_VERSION,
+        "validation_contract_version": CONTRACT_VERSION,
         "patch_id": module.patch_id, "patch_validation_subject_digest": subject_digest,
         "base_ref": pinned_ref, "validation_disposition": "validated",
         "eligible_for_validated_state": True,
     }
+    if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
+        problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
     for key, wanted in expected.items():
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")

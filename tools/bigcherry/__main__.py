@@ -1013,6 +1013,22 @@ def cmd_patch_graph(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_patch_lint(args: argparse.Namespace) -> int:
+    """Run the non-mutating catalog/package lint gate."""
+    problems = patch_catalog.cross_check(allow_legacy_grandfather=True)
+    if args.json:
+        print(json.dumps({"passed": not problems, "problems": problems}, indent=2, sort_keys=True))
+    else:
+        for problem in problems:
+            print(problem, file=sys.stderr)
+    return 0 if not problems else 1
+
+
+def cmd_patch_validate(args: argparse.Namespace) -> int:
+    """Verify existing evidence; hardware campaigns remain explicit."""
+    return cmd_patch_verify_evidence(args)
+
+
 def cmd_patch_verify_evidence(args: argparse.Namespace) -> int:
     """HI83: report which STATE='validated' patches have a current,
     qualifying patch_validation_evidence record -- purely observational,
@@ -1141,6 +1157,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return doctor.main(as_json=args.json)
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    from . import check
+    tier = args.tier or "default"
+    report = check.run_checks(root=paths.REPO_ROOT, tier=tier, fail_fast=args.fail_fast)
+    encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if args.json:
+        Path(args.json).write_text(encoded, encoding="utf-8")
+    else:
+        for result in report["checks"]:
+            print(f"[{result['status'].upper():6}] {result['id']}: {result['detail']}")
+    return 0 if report["passed"] else 1
+
+
 # --------------------------------------------------------------------- main
 
 
@@ -1209,6 +1238,15 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--no-strict", dest="strict", action="store_false")
     audit.add_argument("-v", "--verbose", action="store_true")
     audit.set_defaults(func=cmd_audit)
+
+    check_cmd = sub.add_parser("check", help="run deterministic local CI gates")
+    check_tier = check_cmd.add_mutually_exclusive_group()
+    check_tier.add_argument("--quick", action="store_const", const="quick", dest="tier")
+    check_tier.add_argument("--default", action="store_const", const="default", dest="tier")
+    check_tier.add_argument("--full", action="store_const", const="full", dest="tier")
+    check_cmd.add_argument("--fail-fast", action="store_true")
+    check_cmd.add_argument("--json", metavar="PATH", default=None)
+    check_cmd.set_defaults(func=cmd_check, tier="default")
 
     apply_cmd = sub.add_parser("apply", help="apply the overlay and patches")
     apply_cmd.add_argument(
@@ -1304,6 +1342,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="require real HI83 evidence; do not accept the one-time legacy baseline",
     )
     patch_verify_evidence_cmd.set_defaults(func=cmd_patch_verify_evidence)
+
+    patch_lint_cmd = sub.add_parser("patch-lint", help="lint patch metadata without mutation")
+    patch_lint_cmd.add_argument("--json", action="store_true")
+    patch_lint_cmd.set_defaults(func=cmd_patch_lint)
+
+    patch_validate_cmd = sub.add_parser("patch-validate", help="verify existing patch evidence")
+    patch_validate_cmd.add_argument("patch_id", nargs="?", default=None)
+    patch_validate_cmd.add_argument("--json", action="store_true")
+    patch_validate_cmd.add_argument("--no-legacy-grandfather", action="store_true")
+    patch_validate_cmd.set_defaults(func=cmd_patch_validate)
 
     sources.register(sub)
 
