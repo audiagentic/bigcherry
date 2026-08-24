@@ -114,17 +114,28 @@ def materialize_rd08_variants(
     *, base_repo: Path, worktree_root: Path, base_revision: str,
 ) -> tuple[Path, Path]:
     """Return (subject_src, control_src): the VDR2-subject and VDR1-control
-    isolated worktrees, both carrying RD08_PATCH_STACK on top of the
-    validated framework baseline, differing only by apply_vdr1_control's two
-    reversions on the control."""
+    isolated worktrees, both carrying RD08_PATCH_STACK on top of the source's
+    explicit named composition (recipes [source.bigcherry] patch-sets),
+    differing only by apply_vdr1_control's two reversions on the control.
+
+    RV80/B6: the composition is resolved explicitly (exact-composition
+    validator, topological order) -- never a lifecycle-state scan -- and the
+    base ref resolves to the immutable SHA that enters the v2 identity."""
+    resolved_revision, composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=RD08_PATCH_STACK,
+        base_ref=base_revision, base_repo=base_repo,
+    )
     subject_src = psi.materialize_source_variant(
-        base_repo=base_repo, worktree_root=worktree_root, base_revision=base_revision,
-        patch_modules=RD08_PATCH_STACK, variant_name="rd08-vdr2-subject",
-        variant_digest="none",
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+        variant_name="rd08-vdr2-subject", variant_digest="none",
     )
     control_src = psi.materialize_source_variant(
-        base_repo=base_repo, worktree_root=worktree_root, base_revision=base_revision,
-        patch_modules=RD08_PATCH_STACK, variant_name="rd08-vdr1-control",
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+        variant_name="rd08-vdr1-control",
         variant_digest=_control_variant_digest(), apply_variant=apply_vdr1_control,
     )
     return subject_src, control_src

@@ -26,6 +26,7 @@ APIs: it never materializes anything.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import patch_registry, patchset
 
@@ -54,9 +55,24 @@ class FocalComparison:
         return self.blocked_reason is not None
 
 
+def _modules_by_id(registry: patch_registry.PatchRegistry) -> dict:
+    return {module.patch_id: module for module in patchset.catalog(registry.root)}
+
+
 def _ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> tuple[str, ...]:
-    known = registry.by_id
-    return tuple(sorted(ids, key=lambda patch_id: (known[patch_id].order, patch_id)))
+    """Topological order of a derived (possibly dependency-INCOMPLETE) set --
+    used for the focal's prerequisites. A global (order, patch_id) sort is the
+    RV80/B4 bug (numbering != REQUIRES), so use the true topological picker."""
+    return patchset.topological_order(sorted(ids), modules=_modules_by_id(registry))
+
+
+def _resolve_ordered(registry: patch_registry.PatchRegistry, ids: set[str]) -> tuple[str, ...]:
+    """The AUTHORITATIVE exact-composition validator (patchset.resolve_exact):
+    fail-closed on unknown IDs / rejected members / missing requires / internal
+    conflicts, returning a TRUE topological order. RV80 follow-up (GPT deep
+    review): focal CONTROL and SUBJECT must both pass through this."""
+    resolved = patchset.resolve_exact(sorted(ids), directory=registry.root)
+    return tuple(module.patch_id for module in resolved.modules)
 
 
 def build_focal_comparison(
@@ -64,7 +80,7 @@ def build_focal_comparison(
     baseline: tuple[str, ...] | list[str],
     *,
     registry: patch_registry.PatchRegistry | None = None,
-    root: "object" = None,
+    root: Path | None = None,
 ) -> FocalComparison:
     """Derive CONTROL/SUBJECT for focal patch ``focal`` over the explicit
     ``baseline`` composition.
@@ -149,8 +165,15 @@ def build_focal_comparison(
     subject_closed = patchset.expand_composition(
         tuple(base_set | {focal}), directory=registry.root
     ).expanded
-    control = _ordered(registry, set(control_closed))
-    subject = _ordered(registry, set(subject_closed))
+    # RV80 follow-up (GPT deep review): run CONTROL and SUBJECT through the
+    # authoritative exact-composition validator (resolve_exact) rather than a
+    # global (order, patch_id) sort. Focal-isolatability issues (rejected
+    # PREREQUISITES, focal conflicts, baseline-depends-on-focal) are BLOCKED
+    # above with a reason; a structurally-invalid caller-supplied baseline
+    # (rejected/conflicting BASELINE members) now surfaces as a resolve_exact
+    # failure, which is the correct fail-closed behaviour.
+    control = _resolve_ordered(registry, set(control_closed))
+    subject = _resolve_ordered(registry, set(subject_closed))
 
     if set(subject) - set(control) != {focal}:
         raise FocalComparisonError(

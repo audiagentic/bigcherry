@@ -500,11 +500,18 @@ def run(args: argparse.Namespace) -> int:
     from bigcherry import patch_source_isolation as psi  # noqa: E402
 
     worktree_root: Path = args.worktree_root
-    base_revision = psi.git_head(LLAMA_CPP_SRC)
+    # RV80/B6: the baseline is the source's EXPLICIT named composition from
+    # config/recipes.toml (never the retired implicit state=='validated'
+    # scan), resolved through the exact-composition validator; the base ref
+    # resolves to an immutable SHA that enters the v2 source identity.
+    base_revision, composition = psi.resolve_source_composition(
+        "bigcherry", focal=args.patch, base_ref="HEAD", base_repo=LLAMA_CPP_SRC,
+    )
     _print(f"materializing isolated source for {args.patch} @ {base_revision[:12]} ...")
-    patched_src = psi.materialize_source(
+    patched_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root,
-        patch_module=args.patch, base_revision=base_revision,
+        resolved_revision=base_revision, composition=composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
     )
     _print(f"patch source: {patched_src}")
     stock_src = psi.materialize_stock_source(
@@ -724,7 +731,7 @@ def run(args: argparse.Namespace) -> int:
     validation_record = patch_validation_evidence.make_record(
         patch_id=args.patch, patch_path=_patch_file,
         patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
-        base_revision=base_revision, framework_baseline_digest=psi.framework_baseline_digest(),
+        base_revision=base_revision, framework_baseline_digest=psi.composition_digest(composition),
         patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
         activation_evidence=activation_evidence, activation_disposition=activation_verdict,
         correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,

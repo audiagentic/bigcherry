@@ -468,6 +468,7 @@ def _validation_identity(
     separate concern, runbook 39).
     """
     manifest_toml = package_dir / "validation.toml"
+    _safe_resolve(package_dir, manifest_toml, what="validation manifest")
     if not manifest_toml.is_file():
         return None, None
 

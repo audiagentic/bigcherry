@@ -65,63 +65,81 @@ def _patch_registry():
     return patch_registry
 
 
-def framework_baseline_digest() -> str:
-    """sha256 over the sorted bytes of every currently-validated patch file.
+def resolve_base_revision(ref: str, *, repo: Path) -> str:
+    """Resolve a git ref (branch/tag/HEAD/full-SHA) to the IMMUTABLE commit SHA
+    it points at (peels annotated tags via ``^{commit}``). Fails closed on any
+    unresolvable ref. The RESOLVED SHA -- not the requested ref -- is what
+    enters the source identity and what ``git worktree add --detach`` receives,
+    so a moved ref yields a new identity, never a reused stale worktree.
+    (RV80/B2: replaces the implicit ``git_head`` + state-scan baseline.)"""
+    return _run(["git", "rev-parse", "--verify", f"{ref}^{{commit}}"], cwd=repo)
 
-    Folded into materialize_source()'s identity so a worktree materialized
-    against an OLDER framework-validated patchset is correctly treated as
-    stale (different source_key) once the baseline changes -- otherwise a
-    patch validated today could silently keep reusing an isolated worktree
-    that no longer reflects what `bigcherry apply` would actually produce.
 
-    RS05: the validated set is the registry's validated descriptors (root
-    relative implementation paths + bytes). For today's flat tree the
-    relative paths and bytes are exactly what the old discover_modules() +
-    module_state() walk produced, so existing source_key digests are stable.
-    """
-    registry = _patch_registry().load_registry(PATCHES_ROOT)
-    validated = sorted(
-        (d for d in registry.descriptors if d.state == "validated"),
-        key=lambda d: d.implementation_path.as_posix(),
+def _overlay_files(overlay_root: Path | None) -> list[tuple[str, str]]:
+    """Deterministic ``(relpath, sha256)`` enumeration of every file under the
+    source overlay. Shared by :func:`overlay_digest` and
+    :func:`_apply_composition` so the EXACT bytes that enter the identity are
+    the EXACT bytes applied. POSIX relative paths, sorted. A missing/absent
+    overlay (or ``None``) yields ``[]`` (the empty digest)."""
+    if overlay_root is None or not overlay_root.is_dir():
+        return []
+    entries = []
+    for source in sorted(overlay_root.rglob("*")):
+        if not source.is_file():
+            continue
+        relpath = source.relative_to(overlay_root).as_posix()
+        entries.append((relpath, hashlib.sha256(source.read_bytes()).hexdigest()))
+    return sorted(entries)
+
+
+def overlay_digest(overlay_root: Path | None) -> str:
+    """sha256 over the sorted ``(relpath, sha256)`` of every file under the
+    source overlay (bigcherry's ``src/`` additions). State-independent and
+    deterministic. ``overlay_root=None`` (stock) hashes the empty set."""
+    encoded = json.dumps(_overlay_files(overlay_root), separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def composition_digest(composition: Sequence[tuple[str, str]]) -> str:
+    """sha256 over the EXACT ORDERED ``[(patch_id, implementation_digest)]``
+    list as supplied (which must be the topologically-ordered output of
+    ``patchset.resolve_exact``). We do NOT re-sort: a lexicographic sort could
+    give two DIFFERENT application orders the same key when a packaged
+    ``patch.toml`` changes requires/order with unchanged ``patch.py`` digests.
+    The empty composition (stock) hashes the empty list."""
+    encoded = json.dumps(
+        [list(entry) for entry in composition], separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _make_source_identity_v2(
+    *,
+    resolved_revision: str,
+    composition: Sequence[tuple[str, str]],
+    overlay_root: Path | None,
+    variant_name: str | None = None,
+    variant_digest: str | None = None,
+) -> dict[str, Any]:
+    """``bigcherry-patch-source-v2`` (variants: ``-variant-v2``). The payload is
+    STATE-INDEPENDENT (RV80/B2): no lifecycle-state scan -- only (a) the
+    immutable resolved base SHA, (b) the overlay-bytes digest, (c) the EXPLICIT
+    ordered composition, and (d) for variants, the content-addressed transform.
+    The requested ref is recorded in the manifest separately and is NOT part of
+    the hashed payload."""
+    schema = (
+        "bigcherry-patch-source-variant-v2" if variant_name is not None
+        else "bigcherry-patch-source-v2"
     )
-    hasher = hashlib.sha256()
-    for descriptor in validated:
-        relative = descriptor.implementation_path.as_posix()
-        hasher.update(relative.encode("utf-8"))
-        hasher.update(b"\0")
-        hasher.update((registry.root / descriptor.implementation_path).read_bytes())
-        hasher.update(b"\0")
-    return hasher.hexdigest()
-
-
-def _make_source_identity(
-    base_revision: str, patch_name: str, implementation_digest: str,
-) -> dict[str, str]:
     payload = {
-        "schema": "bigcherry-patch-source-v1",
-        "base_revision": base_revision,
-        "framework_baseline_digest": framework_baseline_digest(),
-        "patch_name": patch_name,
-        "patch_implementation_digest": implementation_digest,
+        "schema": schema,
+        "resolved_revision": resolved_revision,
+        "overlay_digest": overlay_digest(overlay_root),
+        "composition": [list(entry) for entry in composition],
     }
-    return {**payload, "source_key": _stable_digest(payload)}
-
-
-def source_key(base_revision: str, patch_name: str, implementation_digest: str) -> str:
-    """Return the content-addressed key for one materialized source identity."""
-    return _make_source_identity(
-        base_revision=base_revision, patch_name=patch_name,
-        implementation_digest=implementation_digest,
-    )["source_key"]
-
-
-def _stock_source_identity(base_revision: str) -> dict[str, str]:
-    payload = {
-        "schema": "bigcherry-patch-source-v1",
-        "base_revision": base_revision,
-        "patch_name": None,
-        "patch_implementation_digest": None,
-    }
+    if variant_name is not None:
+        payload["variant_name"] = variant_name
+        payload["variant_digest"] = variant_digest
     return {**payload, "source_key": _stable_digest(payload)}
 
 
@@ -295,175 +313,107 @@ def _add_worktree(base_repo: Path, worktree_dir: Path, base_revision: str) -> No
     )
 
 
-def _apply_baseline_and_stack(
-    source_dir: Path, patch_modules: Sequence[str], *, root: Path | None = None
+def _apply_composition(
+    source_dir: Path,
+    composition: Sequence[tuple[str, str]],
+    *,
+    overlay_root: Path | None,
+    root: Path | None = None,
 ) -> None:
-    # Call-time resolution (not a def-time default) so tests can redirect
-    # the patches root by monkeypatching PATCHES_ROOT.
-    root = root or PATCHES_ROOT
-    """Overlay bigcherry's own source additions, apply the validated
-    framework baseline, then apply patch_modules IN ORDER.
+    """Overlay bigcherry's own source additions (EXACTLY the files whose bytes
+    are in the identity's overlay_digest), then apply the EXPLICIT composition
+    IN THE GIVEN ORDER via the registry loader (B3 digest re-check applies).
 
-    A patch under test is validated as it will actually SHIP: on top of the
-    real framework-validated baseline, not bare upstream. Confirmed
-    necessary by a real failure: RD08's own test-backend-ops.cpp anchor only
-    exists after other validated patches (the HI70 direct-op corpus) have
-    already added it -- applying RD08 alone against raw upstream in an
-    isolated worktree failed with a real "anchor matched 0 times" error
-    until this baseline step was added.
-
-    Shared by materialize_source() (single patch) and
-    materialize_source_variant() (an ordered stack) so the overlay/baseline/
-    apply sequence has exactly one implementation.
-
-    RS05: BOTH the baseline and the stack load through the registry
-    (descriptor + byte-compile load_implementation) -- the old
-    ``importlib.import_module(f"patches.{module}")`` line is gone, so
-    packaged patches materialize the same way flat ones do.
+    No lifecycle-state scan anywhere: the composition is exactly what the
+    caller resolved (RV80/B6). A patch under test is materialized as it will
+    actually SHIP: on top of the explicitly resolved named composition, not
+    bare upstream (RD08's anchor-dependency failure is why the composition
+    step exists at all).
     """
-    registry = _patch_registry().load_registry(root)
-    from bigcherry import patcher, paths  # noqa: E402
+    registry = _patch_registry().load_registry(root or PATCHES_ROOT)
+    from bigcherry import patcher  # noqa: E402
 
-    for source in sorted(paths.SRC_OVERLAY.rglob("*")):
-        if not source.is_file():
-            continue
-        relative = source.relative_to(paths.SRC_OVERLAY)
+    if overlay_root is not None:
+        overlay_entries = _overlay_files(overlay_root)
+    else:
+        overlay_entries = []
+    for relative, file_digest in overlay_entries:
+        # overlay_entries is non-empty only when overlay_root is present.
+        assert overlay_root is not None
+        source = overlay_root / relative
         target = source_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="")
-
-    baseline = [
-        d for d in registry.descriptors if d.state == "validated"
-    ]
-    baseline_patches = [
-        p for d in baseline for p in _patch_registry().load_implementation(d, root=root)
-    ]
-    baseline_results = patcher.apply_all(baseline_patches, source_dir, dry_run=False)
-    for result in baseline_results:
-        if result.failed:
+        data = source.read_bytes()
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != file_digest:
             raise PatchSourceIsolationError(
-                f"framework baseline patch failed to apply to {result.path} in "
-                f"isolated worktree {source_dir} (before the patch stack was "
-                f"even applied): {[r.detail for r in result.failed]}"
+                f"overlay file {relative} changed between identity computation "
+                f"and application: {actual} != {file_digest}"
             )
+        target.write_bytes(data)
 
-    for patch_module in patch_modules:
+    for patch_id, expected_digest in composition:
         try:
-            descriptor = registry.get(patch_module)
+            descriptor = registry.get(patch_id)
         except Exception as exc:
             raise PatchSourceIsolationError(
-                f"patch module does not exist: {patch_module!r}"
+                f"patch module does not exist: {patch_id!r}"
             ) from exc
-        implementation = _patch_registry().load_implementation(descriptor, root=root)
+        actual_digest = hashlib.sha256(
+            (registry.root / descriptor.implementation_path).read_bytes()
+        ).hexdigest()
+        if actual_digest != expected_digest:
+            raise PatchSourceIsolationError(
+                f"patch {patch_id} implementation changed between identity "
+                f"computation and application: {actual_digest} != {expected_digest}"
+            )
+        implementation = _patch_registry().load_implementation(
+            descriptor, root=registry.root
+        )
         results = patcher.apply_all(implementation, source_dir, dry_run=False)
         for result in results:
             if result.failed:
                 raise PatchSourceIsolationError(
-                    f"patch {patch_module} failed to apply to {result.path} in "
-                    f"isolated worktree {source_dir}: {[r.detail for r in result.failed]}"
+                    f"patch {patch_id} failed to apply to {result.path} in "
+                    f"isolated worktree {source_dir}: "
+                    f"{[r.detail for r in result.failed]}"
                 )
 
 
-def materialize_source(
-    *, base_repo: Path, worktree_root: Path, patch_module: str, base_revision: str,
-) -> Path:
-    """Return an isolated, patched worktree for exactly this one patch.
-
-    Reuses an existing worktree only when its manifest AND its actual
-    on-disk tree hash both match this exact (base_revision, patch_name,
-    patch_implementation_digest) identity. Otherwise materializes fresh:
-    `git worktree add --detach` at base_revision (never the shared vendor/
-    llama.cpp working tree, and never a branch ref that could move under
-    it -- --detach pins to the resolved commit), applies patch_module via
-    patcher.apply_all, records the resulting tree hash, and returns the
-    worktree path.
-    """
-    digest = patch_implementation_digest(patch_module)
-    identity = _make_source_identity(
-        base_revision=base_revision, patch_name=patch_module, implementation_digest=digest,
-    )
-    source_dir = worktree_root / identity["source_key"]
-
-    if source_dir.exists() and _verify_reuse(source_dir, identity):
-        return source_dir
-
-    _add_worktree(base_repo, source_dir, base_revision)
-    _apply_baseline_and_stack(source_dir, (patch_module,))
-
-    manifest = {
-        **identity,
-        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-        "head": git_head(source_dir),
-        "patched_tree": git_worktree_tree(source_dir),
-    }
-    _write_manifest(source_dir, manifest)
-    return source_dir
-
-
-def _make_variant_identity(
-    base_revision: str, patch_modules: Sequence[str], variant_name: str, variant_digest: str,
-) -> dict[str, Any]:
-    payload = {
-        "schema": "bigcherry-patch-source-variant-v1",
-        "base_revision": base_revision,
-        "framework_baseline_digest": framework_baseline_digest(),
-        "patch_stack": [
-            {"patch": module, "implementation_digest": patch_implementation_digest(module)}
-            for module in patch_modules
-        ],
-        "variant_name": variant_name,
-        "variant_digest": variant_digest,
-    }
-    return {**payload, "source_key": _stable_digest(payload)}
-
-
-def materialize_source_variant(
+def _materialize_v2(
     *,
     base_repo: Path,
     worktree_root: Path,
-    base_revision: str,
-    patch_modules: tuple[str, ...],
-    variant_name: str,
-    variant_digest: str,
+    resolved_revision: str,
+    composition: Sequence[tuple[str, str]],
+    overlay_root: Path | None,
+    requested_revision: str | None = None,
+    variant_name: str | None = None,
+    variant_digest: str | None = None,
     apply_variant: Callable[[Path], None] | None = None,
 ) -> Path:
-    """Materialize an isolated worktree for an ORDERED patch stack, plus an
-    optional post-stack variant transform.
+    """The single v2 worktree-construction path (RV80/B2).
 
-    Generalizes materialize_source() for "subject vs control" evidence,
-    where two worktrees need the SAME patch stack but differ by an
-    explicitly identified, content-addressed transform applied on top of it
-    (e.g. rd08_correctness_evidence.py's VDR1-control / VDR2-subject pair,
-    which differ only by two checked source-line reversions applied after
-    the identical 1204+1222+1223 stack). `variant_digest` MUST be a stable
-    digest over the actual transform content (e.g. sha256 of the ordered
-    (path, old, new) triples an `apply_variant` callback performs) -- never
-    a bare name -- so two different transforms can never collide on the
-    same source_key, and the same transform's own identity is independently
-    checkable outside this module.
-
-    Deliberately separate from materialize_source()'s own identity/manifest
-    shape (schema "bigcherry-patch-source-v1"): changing that shape to fold
-    in a patch_stack list would silently invalidate every already-cached
-    single-patch worktree's manifest. Both functions share the actual
-    worktree-construction sequence via _apply_baseline_and_stack().
+    `git worktree add --detach` at the RESOLVED SHA (a moved ref is a new
+    identity, never a reused stale worktree), overlay + explicit ordered
+    composition applied, optional content-addressed variant transform, then a
+    state-independent v2 manifest. Reuse is only permitted when manifest AND
+    actual on-disk tree hash both match this exact identity.
     """
-    if not patch_modules:
-        raise PatchSourceIsolationError(
-            "materialize_source_variant requires at least one patch module"
-        )
-
-    identity = _make_variant_identity(
-        base_revision=base_revision, patch_modules=patch_modules,
-        variant_name=variant_name, variant_digest=variant_digest,
+    identity = _make_source_identity_v2(
+        resolved_revision=resolved_revision, composition=composition,
+        overlay_root=overlay_root, variant_name=variant_name,
+        variant_digest=variant_digest,
     )
     source_dir = worktree_root / identity["source_key"]
 
     if source_dir.exists() and _verify_reuse(source_dir, identity):
         return source_dir
 
-    _add_worktree(base_repo, source_dir, base_revision)
-    _apply_baseline_and_stack(source_dir, patch_modules)
+    _add_worktree(base_repo, source_dir, resolved_revision)
+    _apply_composition(
+        source_dir, composition, overlay_root=overlay_root, root=PATCHES_ROOT,
+    )
 
     if apply_variant is not None:
         apply_variant(source_dir)
@@ -471,6 +421,7 @@ def materialize_source_variant(
     manifest = {
         **identity,
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+        "requested_revision": requested_revision,
         "head": git_head(source_dir),
         "patched_tree": git_worktree_tree(source_dir),
     }
@@ -478,25 +429,149 @@ def materialize_source_variant(
     return source_dir
 
 
-def materialize_stock_source(*, base_repo: Path, worktree_root: Path, base_revision: str) -> Path:
-    """Same worktree mechanism as materialize_source(), but no patch applied --
-    a genuinely pristine baseline at base_revision for stock bench comparison."""
-    identity = _stock_source_identity(base_revision)
-    source_dir = worktree_root / identity["source_key"]
+def materialize_composition(
+    *,
+    base_repo: Path,
+    worktree_root: Path,
+    resolved_revision: str,
+    composition: Sequence[tuple[str, str]],
+    overlay_root: Path | None = None,
+    requested_revision: str | None = None,
+) -> Path:
+    """Materialize an isolated worktree for an EXPLICIT composition.
 
-    if source_dir.exists() and _verify_reuse(source_dir, identity):
-        return source_dir
+    ``composition`` is the EXACT ORDERED ``[(patch_id, implementation_digest)]``
+    list (topologically ordered, e.g. from :func:`resolve_source_composition`)
+    -- its entries are re-verified against the live registry before
+    application and the whole list (in order) is what enters the v2 source
+    identity. An empty composition + ``overlay_root=None`` is the stock
+    (pristine upstream) case. ``materialize_source()`` (implicit state-scan
+    baseline) is RETIRED (runbook 12 / RV80-B6).
+    """
+    return _materialize_v2(
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=tuple(composition),
+        overlay_root=overlay_root, requested_revision=requested_revision,
+    )
 
-    _add_worktree(base_repo, source_dir, base_revision)
 
-    manifest = {
-        **identity,
-        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-        "head": git_head(source_dir),
-        "patched_tree": git_worktree_tree(source_dir),
-    }
-    _write_manifest(source_dir, manifest)
-    return source_dir
+def materialize_source_variant(
+    *,
+    base_repo: Path,
+    worktree_root: Path,
+    resolved_revision: str,
+    composition: Sequence[tuple[str, str]],
+    variant_name: str,
+    variant_digest: str,
+    overlay_root: Path | None = None,
+    requested_revision: str | None = None,
+    apply_variant: Callable[[Path], None] | None = None,
+) -> Path:
+    """Materialize an isolated worktree for an EXPLICIT composition plus a
+    post-composition variant transform ("subject vs control" evidence).
+
+    The two worktrees differ ONLY by the content-addressed transform applied
+    on top of the identical composition (e.g. rd08_correctness_evidence.py's
+    VDR1-control / VDR2-subject pair). ``variant_digest`` MUST be a stable
+    digest over the actual transform content (never a bare name) so two
+    different transforms can never collide on the same source_key.
+
+    RV80/B2: the identity is ``bigcherry-patch-source-variant-v2`` -- the
+    same state-independent payload as :func:`materialize_composition` plus
+    ``variant_name`` + ``variant_digest``. The v1 state-scan identity is
+    retired; the composition comes explicitly from the caller (e.g. via
+    :func:`resolve_source_composition`), never from a lifecycle-state scan.
+    """
+    return _materialize_v2(
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=tuple(composition),
+        overlay_root=overlay_root, requested_revision=requested_revision,
+        variant_name=variant_name, variant_digest=variant_digest,
+        apply_variant=apply_variant,
+    )
+
+
+def materialize_stock_source(
+    *, base_repo: Path, worktree_root: Path, base_revision: str,
+) -> Path:
+    """A genuinely pristine pinned-upstream worktree for stock bench
+    comparison: v2 identity with the EMPTY composition and no overlay. The
+    base ref is resolved to its immutable commit SHA first, so a moved ref
+    yields a new identity (and the requested ref is recorded in the manifest
+    informationally only)."""
+    resolved_revision = resolve_base_revision(base_revision, repo=base_repo)
+    return _materialize_v2(
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=(), overlay_root=None,
+        requested_revision=base_revision,
+    )
+
+
+def resolve_source_composition(
+    source_name: str,
+    *,
+    focal: str | None = None,
+    extra_patches: tuple[str, ...] = (),
+    base_ref: str = "HEAD",
+    base_repo: Path | None = None,
+    recipes: Path | None = None,
+    patches_root: Path | None = None,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Resolve a source's EXPLICIT named composition for identity purposes.
+
+    ``source_name``'s ``[patch-set.*]`` sets from config/recipes.toml (plus
+    an optional single ``focal`` patch and/or an explicit ``extra_patches``
+    stack, e.g. the RD08 evidence stack) are resolved through
+    ``campaign_resolution.resolve_lane`` + ``patchset.resolve_exact`` -- the
+    authoritative exact-composition validator (fail-closed on unknown IDs,
+    rejected members, missing requires, internal conflicts) in TRUE
+    topological order.
+
+    Returns ``(resolved_base_sha, ordered [(patch_id, impl_digest)])``. This
+    is the ONLY sanctioned way the identity/materialization path obtains a
+    composition -- RV80/B6 forbids lifecycle-state scans here.
+    """
+    if base_repo is None:
+        raise PatchSourceIsolationError(
+            "resolve_source_composition: base_repo is required"
+        )
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from bigcherry import config as campaign_config, campaign_resolution, patchset, paths  # noqa: E402
+
+    resolved_revision = resolve_base_revision(base_ref, repo=base_repo)
+    cfg = campaign_config.load(recipes or paths.RECIPES)
+    patches_root = patches_root or PATCHES_ROOT
+    catalog = patchset.catalog(directory=patches_root)
+    lane = campaign_resolution.resolve_lane(source_name, cfg, catalog)
+    # lane.patch_set.module_ids is the FULL named composition (the merged
+    # multi-set result already contains the validated-enhancements members;
+    # lane.promoted_enhancements is a declared-config view of them, not an
+    # extra). Extras/focal go on top and are deduplicated above.
+    ids = list(lane.patch_set.module_ids)
+    extras = list(extra_patches)
+    if focal is not None:
+        if focal in ids:
+            raise PatchSourceIsolationError(
+                f"focal patch {focal!r} is already in source {source_name!r}'s "
+                "named composition"
+            )
+        extras.append(focal)
+    if len(set(extras)) != len(extras):
+        raise PatchSourceIsolationError("explicit composition contains duplicates")
+    ids = [*ids, *extras]
+    resolved = patchset.resolve_exact(tuple(ids), directory=patches_root)
+    registry = _patch_registry().load_registry(patches_root)
+    composition = tuple(
+        (
+            module.patch_id,
+            hashlib.sha256(
+                (registry.root / registry.get(module.patch_id).implementation_path)
+                .read_bytes()
+            ).hexdigest(),
+        )
+        for module in resolved.modules
+    )
+    return resolved_revision, composition
 
 
 def remove_worktree(base_repo: Path, source_dir: Path) -> None:
