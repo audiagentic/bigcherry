@@ -37,6 +37,7 @@ import os
 import re
 import sys
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 from bigcherry.builds import capture_completed_build_evidence
@@ -469,6 +470,15 @@ def run(args: argparse.Namespace) -> int:
 
     sys.path.insert(0, str(REPO_ROOT / "tools"))
     from bigcherry import patch_source_isolation as psi  # noqa: E402
+    from bigcherry import patch_registry, patch_validation, paths as bc_paths  # noqa: E402
+
+    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    descriptor = registry.get(args.patch)
+    validation_plan = patch_validation.build_plan_for_patch(
+        descriptor, root=bc_paths.PATCHES,
+    )
+    if validation_plan is not None:
+        _print(f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}")
 
     worktree_root: Path = args.worktree_root
     # RV80/B6: the baseline is the source's EXPLICIT named composition from
@@ -601,6 +611,25 @@ def run(args: argparse.Namespace) -> int:
         f"{stock_build_evidence.compile_verification_id[:12]}"
     )
 
+    # RS10: the authoritative control source is independently built as well;
+    # it is not merely a recorded tree next to a subject-only campaign.
+    control_build_root = (args.build_root or workdir) / control_src.name
+    control_bin = build_tree(
+        name="control", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+        workdir=control_build_root, targets=["llama-server", "llama-bench"],
+        source=control_src, extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        control_build_root / "control", source_root=control_src,
+        architecture=args.amdgpu_targets, binary=control_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args, build_env=build_env,
+    )
+    _print(
+        f"control build: {control_build_evidence.effective_build_id[:12]} / "
+        f"{control_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{control_build_evidence.compile_verification_id[:12]}"
+    )
+
     from bigcherry.e2e_smoke_campaign import (  # noqa: E402
         Campaign, CampaignError, CampaignIdentityContext,
     )
@@ -685,21 +714,14 @@ def run(args: argparse.Namespace) -> int:
     # activation probe for this patch still writes a real record; it is
     # simply not eligible_for_validated_state.
     from bigcherry import config as campaign_config  # noqa: E402
-    from bigcherry import patch_registry  # noqa: E402
     from bigcherry import patch_validation_evidence  # noqa: E402
-    from bigcherry import paths as bc_paths  # noqa: E402
 
     cfg = campaign_config.load(bc_paths.RECIPES)
     # RS04: the evidence record's patch file path resolves through the
     # registry descriptor (flat or packaged) -- no f"{patch_id}.py" guessing
     # in this caller.
-    _registry = patch_registry.load_registry(bc_paths.PATCHES)
-    try:
-        _descriptor = _registry.get(args.patch)
-    except patch_registry.PatchRegistryError:
-        _print(f"ERROR: unknown patch {args.patch!r} -- cannot record evidence")
-        return 1
-    _patch_file = _registry.root / _descriptor.implementation_path
+    _descriptor = descriptor
+    _patch_file = registry.root / _descriptor.implementation_path
     correctness_summary = None
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
@@ -713,14 +735,43 @@ def run(args: argparse.Namespace) -> int:
         )
         _atomic_write_json(workdir / "campaign" / "correctness.json", correctness_summary)
 
+    validation_check_results: dict[str, object] = {}
+    validation_verdict = None
+    if validation_plan is not None:
+        validation_ctx = patch_validation.ValidationContext(
+            descriptor=descriptor, base_revision=base_revision,
+            control_source=control_src, subject_source=patched_src, stock_source=stock_src,
+            control_tree=control_source_tree, subject_tree=patched_source_tree,
+            build_identities=identity_context.build_identities,
+            architecture=args.amdgpu_targets, model=str(args.model),
+            contract=validation_plan.contract,
+            contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
+            run_dir=workdir / "campaign",
+            trace_evidence={}, correctness_evidence=correctness_summary or {},
+        )
+        evaluated = {
+            spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
+            for spec in validation_plan.checks
+        }
+        validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
+        validation_check_results = {
+            check_id: asdict(result) for check_id, result in evaluated.items()
+        }
+        _print(
+            f"validation verdict: {'eligible' if validation_verdict.eligible else 'ineligible'} "
+            f"({len(validation_verdict.reasons)} blocking reasons)"
+        )
+
     validation_record = patch_validation_evidence.make_record(
         patch_id=args.patch, patch_path=_patch_file,
         patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
-        base_revision=base_revision, framework_baseline_digest=psi.composition_digest(composition),
+        base_revision=base_revision, framework_baseline_digest=psi.composition_digest(subject_composition),
         patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
         activation_evidence=activation_evidence, activation_disposition=activation_verdict,
         correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,
         build_identities=identity_context.build_identities, campaign_workdir=workdir / "campaign",
+        check_results=validation_check_results,
+        validation_eligible=(validation_verdict.eligible if validation_verdict is not None else None),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contract_id=_descriptor.experiment_contract,
