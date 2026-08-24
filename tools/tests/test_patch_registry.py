@@ -18,12 +18,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bigcherry import patch_registry  # noqa: E402
 
+# RV80: the registry now resolves linked contracts through the canonical
+# ExperimentContract.contract_hash (experiment_contract.load_contracts), so
+# any fixture contract must be SCHEMA-VALID (strict parse), not a bare table.
 CONTRACTS_TOML = """\
 [contract.TEST-CONTRACT]
 title = "test contract"
 
+[contract.TEST-CONTRACT.source]
+source_id = "stew675-rdna-boosts"
+commits = ["abc123def456"]
+atomic_part = "test"
+
+[contract.TEST-CONTRACT.hypothesis]
+family = "mmvq"
+expected_effect = "performance"
+rationale = "test hypothesis"
+
 [contract.TEST-CONTRACT.scope]
 backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.TEST-CONTRACT.positive]
+models = ["m1"]
+workloads = ["decode"]
+
+[contract.TEST-CONTRACT.controls]
+models = ["m1"]
+workloads = ["prefill"]
+
+[contract.TEST-CONTRACT.acceptance]
+target_kernel_gain_pct = 1
+max_control_regression_pct = 1
 """
 
 SIMPLE_PY = '''\
