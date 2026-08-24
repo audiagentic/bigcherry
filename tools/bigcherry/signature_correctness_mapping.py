@@ -430,3 +430,172 @@ def signature_to_test_file_line(
         src1_type_id, *ne1_i, *nb1,
     )) + " -"
     return line, "out", "leaf_0"
+
+
+def _ggml_type_id_for_name(type_names: dict[int, str], name: str) -> int:
+    """Reverse load_ggml_type_names()'s {id: name} map to find a specific
+    type's numeric id -- used for GGML_TYPE_I32 (the ids tensor's real,
+    hardcoded type per mmvq.cu's own `GGML_ASSERT(!ids || ids->type ==
+    GGML_TYPE_I32)`) so its enum value is derived from the same
+    source-parsed table every other type id in this module comes from,
+    never a hand-transcribed numeric literal that could silently drift."""
+    for type_id, type_name in type_names.items():
+        if type_name.upper() == name:
+            return type_id
+    raise SignatureMappingError(
+        f"could not find ggml_type id for {name!r} in the parsed type_traits table"
+    )
+
+
+def signature_to_mul_mat_id_test_file_line(
+    signature: dict[str, object], *, vendor_root: Path,
+) -> tuple[str, str, str]:
+    """HI105: MUL_MAT_ID sibling of signature_to_test_file_line(), derived
+    from ggml_mul_mat_id's real shape identity (src/llama-graph.cpp's
+    build_moe_ffn, verified 2026-08-24 against RD54's own two real
+    signatures) rather than test-backend-ops' registered test_mul_mat_id
+    class, whose fixed synthetic corpus a real production signature
+    generally does not coincide with (the same real-hardware finding that
+    motivated the plain-MUL_MAT test-file path).
+
+    Real shape identity (ggml_mul_mat_id(as, b, ids)):
+        as  (src0, weights):     [k, m, n_expert]                (ne0)
+        b   (src1, activations): [k, ne1[1], n_tokens], ne1[1]
+                                  broadcastable up to n_expert_used
+                                  (ne1[1]==1: up/gate's real shape;
+                                  ne1[1]==n_expert_used: down's) -- taken
+                                  LITERALLY from the recorded signature, no
+                                  broadcast-flag branching needed the way
+                                  test_mul_mat_id's synthetic `b` bool
+                                  requires; the generic test-file path just
+                                  takes whatever explicit shape is given.
+        ids:                     [n_expert_used, n_tokens], GGML_TYPE_I32
+                                  -- not itself a recorded signature field;
+                                  derived from ned[1]/ned[2] (confirmed via
+                                  `selected_experts = ggml_argsort_top_k(...)
+                                  // [n_expert_used, n_tokens]`).
+        out (dst):                [m, n_expert_used, n_tokens]    (ned)
+
+    Every source is serialized with nb=[0,0,0,0] (test-backend-ops' own
+    input_tensor convention for "use default contiguous strides", per
+    is_non_contiguous()'s `if (src.nb[0] == 0) return false;`) rather than
+    this module hand-computing byte strides the way the plain-MUL_MAT path
+    does -- this sidesteps needing Q8_0's block-quantized layout math in
+    Python entirely; ggml itself derives the correct contiguous layout for
+    whatever type is given, quantized or not.
+
+    Requires patches/1236_hi105_deterministic_mul_mat_id_ids.py applied
+    (REQUIRES patches/1222) so two independent process invocations
+    (forced-native, forced-candidate) see identical, full-expert-range
+    routing for the same BIGCHERRY_TEST_DETERMINISTIC_SEED -- without it,
+    test_generic_op's own MUL_MAT_ID initializer is both non-deterministic
+    across processes and confined to a {0..n_expert_used-1} range rather
+    than the real full expert pool (see that patch's own docstring)."""
+    op_names = load_ggml_op_names(vendor_root)
+    op_id = int(signature["op"])
+    op_name = op_names.get(op_id)
+    if op_name is None:
+        raise SignatureMappingError(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
+    if op_name != "MUL_MAT_ID":
+        raise SignatureMappingError(
+            f"signature_to_mul_mat_id_test_file_line only supports MUL_MAT_ID, "
+            f"got op={op_name!r} (id={op_id})"
+        )
+
+    flags = int(signature.get("flags", 0))
+    _HAS_IDS = 1 << 3
+    if not (flags & _HAS_IDS):
+        raise SignatureMappingError(
+            f"signature op is MUL_MAT_ID but flags={flags!r} does not have "
+            "GGML_HIP_SIG_HAS_IDS (bit 3) set -- not a genuine MoE-routed signature"
+        )
+    _CONTIGUOUS = (1 << 0) | (1 << 1) | (1 << 2)
+    if flags & _CONTIGUOUS != _CONTIGUOUS:
+        raise SignatureMappingError(
+            f"signature flags={flags!r} indicate a non-contiguous src0/src1/dst -- "
+            "this function only maps the contiguous default case"
+        )
+
+    ne0 = signature.get("ne0")
+    ne1 = signature.get("ne1")
+    ned = signature.get("ned")
+    for field_name, value in (("ne0", ne0), ("ne1", ne1), ("ned", ned)):
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise SignatureMappingError(f"signature {field_name} must be a 4-element array, got {value!r}")
+    ne0_i = [int(x) for x in ne0]
+    ne1_i = [int(x) for x in ne1]
+    ned_i = [int(x) for x in ned]
+
+    n_expert = int(signature.get("n_expert", 0))
+    n_expert_used = int(signature.get("n_expert_used", 0))
+    if n_expert <= 0 or n_expert_used <= 0:
+        raise SignatureMappingError(
+            f"signature op is MUL_MAT_ID but n_expert={n_expert!r}/"
+            f"n_expert_used={n_expert_used!r} are not both positive"
+        )
+    if n_expert != ne0_i[2]:
+        raise SignatureMappingError(
+            f"signature n_expert={n_expert} disagrees with src0's own expert-count "
+            f"dimension ne0[2]={ne0_i[2]} -- not a valid MUL_MAT_ID signature"
+        )
+    if n_expert_used != ned_i[1]:
+        raise SignatureMappingError(
+            f"signature n_expert_used={n_expert_used} disagrees with dst's own "
+            f"n_expert_used dimension ned[1]={ned_i[1]} -- not a valid MUL_MAT_ID signature"
+        )
+    if ne0_i[0] != ne1_i[0]:
+        raise SignatureMappingError(
+            f"signature's src0/src1 shared inner (K) dimension disagrees: "
+            f"ne0[0]={ne0_i[0]}, ne1[0]={ne1_i[0]} -- not a valid MUL_MAT_ID signature"
+        )
+    if ned_i[0] != ne0_i[1]:
+        raise SignatureMappingError(
+            f"signature dst rows ned[0]={ned_i[0]} disagree with src0's own output-row "
+            f"dimension ne0[1]={ne0_i[1]} -- not a valid MUL_MAT_ID signature"
+        )
+    if ned_i[2] != ne1_i[2]:
+        raise SignatureMappingError(
+            f"signature dst token dimension ned[2]={ned_i[2]} disagrees with src1's "
+            f"own token dimension ne1[2]={ne1_i[2]} -- not a valid MUL_MAT_ID signature"
+        )
+    if ne0_i[3] != 1 or ne1_i[3] != 1 or ned_i[3] != 1:
+        raise SignatureMappingError(
+            "signature has a non-trivial 4th (batch) dimension -- this function "
+            "only maps the non-batched default case"
+        )
+    if ne1_i[1] <= 0 or n_expert_used % ne1_i[1] != 0:
+        raise SignatureMappingError(
+            f"signature's src1 middle dimension ne1[1]={ne1_i[1]} does not evenly "
+            f"divide n_expert_used={n_expert_used} -- not a valid ggml_mul_mat_id "
+            "broadcast shape"
+        )
+
+    type_names = load_ggml_type_names(vendor_root)
+
+    def _type_name(type_id: object) -> str:
+        name = type_names.get(int(type_id))
+        if name is None:
+            raise SignatureMappingError(f"unknown ggml_type id {type_id!r}")
+        return name.upper()
+
+    src0_type_id = int(signature["src0_type"])
+    src1_type_id = int(signature["src1_type"])
+    dst_type_id = int(signature["dst_type"])
+    _type_name(src0_type_id)
+    _type_name(src1_type_id)
+    _type_name(dst_type_id)
+
+    ids_type_id = _ggml_type_id_for_name(type_names, "I32")
+    ids_ne = [n_expert_used, ned_i[2], 1, 1]
+    zero_strides = [0, 0, 0, 0]
+
+    # GGML_OP_MUL_MAT_ID's own id, op_params (unused -- 0 of them),
+    # num_sources=3 (as, b, ids -- ggml_mul_mat_id's real source order,
+    # matching test_mul_mat_id::build_graph()), name "-" (auto-generated).
+    line = " ".join(str(x) for x in (
+        op_id, dst_type_id, *ned_i, 0, 3,
+        src0_type_id, *ne0_i, *zero_strides,
+        src1_type_id, *ne1_i, *zero_strides,
+        ids_type_id, *ids_ne, *zero_strides,
+    )) + " -"
+    return line, "out", "leaf_0"
