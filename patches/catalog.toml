@@ -374,3 +374,12 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI105"
+
+[[patch]]
+id = "1237_rd30_moe_mmq_compact_grid"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+state = "untested"
+external-source = "amd-ecosystem-llama-cpp"
+plan-item = "RD30"

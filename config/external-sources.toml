@@ -169,6 +169,14 @@ status = "ported-untested"
 patch = "1221_rd50_gdn_chunked_recurrence"
 note = "ported 2026-08-20 (2 edits, 1 file, new-file content folded into gated_delta_net.cu -- patcher has no new-file primitive). RD51 (DPP row-shift reduction), RD52 (native exp2 decay) and RD53 (launch-bounds/VGPR occupancy tuning) are all the SAME commit (2b9497ff) as this row -- inline, RDNA3.5-gated micro-decisions inside the single kernel body, not independently anchorable hunks. Subsumed into this one patch rather than filed as separate tracked rows (the registry's commit-uniqueness constraint forbids duplicating this SHA); see the patch module docstring for the bake-in rationale, same discipline as 1208's RD25 bake-in. Isolated bench pending; gfx1100/gfx1201 (Brutus) can only validate the fallback path is untouched, not the RDNA3.5 performance claim."
 
+[[sources.tracked]]
+commit = "f8864197a4e2d07321bfb85466e3ba071e020aa9"
+original = "88ea358c039130ca1a811dfd0362cea9916b802f"
+title = "mmq: compacted MoE tiling for RDNA3.5 (default on)"
+plan-item = "RD30"
+status = "ported-untested"
+patch = "1237_rd30_moe_mmq_compact_grid"
+note = "PR #63. Relocated here from a misplaced row under stew675-rdna-boosts's '2026-08-23 AMD follow-up handoff' block (this commit belongs to AMD-Ecosystem/llama.cpp, not stew675/llama.cpp; the enclosing [[sources]] id there did not match the commit's real repo -- fixed as part of RD30 landing since this patch is the first to actually cross-check against the row). Compacts the MoE MMQ launch grid from expert_bounds (block_start prefix sum + block_expert map) instead of a rectangular worst-case grid. AMD reports +1.9..5.4% prefill across Qwen3/Qwen3.5/Qwen3.6/Gemma-4 MoE; decode unchanged. Ported 2026-08-25 (6 edits, 2 files, dev-gpt-agent draft verified against real b10502 source before writing): concept-only, not a verbatim diff -- PR #63's own launch/mmq_args shapes differ from our b10502 pin, and its RDNA3.5-default-on gate is intentionally narrowed here to gfx1100 only (cc == GGML_CUDA_CC_RDNA3 exactly) pending our own gfx1100 hardware evidence (no RDNA3.5 hardware on Brutus). Qualify via EC13/RD94 hostile routing; do not port the RDNA3.5 default-on policy wholesale. Correctness + real-hardware timing evidence pending."
 
 [[sources]]
 id = "stew675-rdna-boosts"
@@ -486,14 +494,6 @@ title = "ggml-cuda: size MMQ tile to MoE tokens-per-expert"
 plan-item = "RD30"
 status = "planned"
 note = "RD30's ORIGINAL source (PR #39). Re-design of 2026-08-23 keeps it as the CONTROL candidate, not the default: the mechanical port is stale on the current table-driven MMQ implementation and PR #63 (f8864197a4e) is the preferred structural candidate for the same empty-work problem."
-
-[[sources.tracked]]
-commit = "f8864197a4e2d07321bfb85466e3ba071e020aa9"
-original = "88ea358c039130ca1a811dfd0362cea9916b802f"
-title = "mmq: compacted MoE tiling for RDNA3.5 (default on)"
-plan-item = "RD30"
-status = "planned"
-note = "PR #63 (2026-08-23 handoff P1): compacts the MoE MMQ launch grid from expert_bounds (block_start prefix sum + block_expert map) instead of a rectangular worst-case grid. AMD reports +1.9..5.4% prefill across Qwen3/Qwen3.5/Qwen3.6/Gemma-4 MoE; decode unchanged. Preferred structural candidate for the RD30 re-design; qualify via EC13/RD94 hostile routing, do not port the RDNA3.5 default policy wholesale."
 
 [[sources.tracked]]
 commit = "812a47a89991897d7cd474625d1ceadefef1b8bb"
