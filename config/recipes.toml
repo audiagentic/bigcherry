@@ -99,6 +99,18 @@ patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 [experiment.rd09-only]
 patches = ["1235_rd09_q81_activation_cache_foundation"]
 
+# HI105: the CPU-reference correctness-evidence patch chain (deterministic
+# test-backend-ops init + machine-readable metrics + MUL_MAT_ID's own
+# deterministic/full-range ids fix). Not itself a performance patch --
+# these only affect tests/test-backend-ops.cpp, gated behind
+# BIGCHERRY_TEST_DETERMINISTIC_SEED, so a normal (unset) run is unaffected.
+[experiment.hi105-correctness]
+patches = [
+  "1222_hi67_deterministic_test_backend_ops_seed",
+  "1223_hi67_machine_readable_correctness_metrics",
+  "1236_hi105_deterministic_mul_mat_id_ids",
+]
+
 [source.llama-native]
 ref = "pinned"
 overlay = false
