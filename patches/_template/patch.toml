@@ -1,3 +1,8 @@
-# Copy this directory to patches/<id>/ and replace every placeholder.
-patch_id = "<patch-id>"
-implementation = ["patch.py"]
+schema = 1
+id = "<numeric-order>_<patch-name>"
+order = 9999
+group = "<group>"
+state = "untested"
+plan-ids = []
+requires = []
+conflicts = []
