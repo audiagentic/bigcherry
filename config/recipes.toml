@@ -99,6 +99,9 @@ patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 [experiment.rd09-only]
 patches = ["1235_rd09_q81_activation_cache_foundation"]
 
+[experiment.rd30-only]
+patches = ["1237_rd30_moe_mmq_compact_grid"]
+
 # HI105: the CPU-reference correctness-evidence patch chain (deterministic
 # test-backend-ops init + machine-readable metrics + MUL_MAT_ID's own
 # deterministic/full-range ids fix). Not itself a performance patch --
