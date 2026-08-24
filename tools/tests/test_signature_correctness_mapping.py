@@ -295,3 +295,135 @@ class RealVendorSourceTests:
 
 def test_real_vendor_source_parses_cleanly_when_present():
     RealVendorSourceTests.run_if_available()
+
+
+# HI105: MUL_MAT_ID mapping tests, using RD54's own two real recorded
+# canonical signatures (Brutus, Qwen3.6-35B-A3B Q8_0, 2026-08-24) rather
+# than synthetic fixtures -- these are the exact real production shapes
+# HI105 exists to unblock correctness evidence for.
+
+# K=256 (down expert projection): op=30 (MUL_MAT_ID, confirmed via
+# load_ggml_op_names against the real vendored source), fusion=0/glu_op=0
+# (unfused), n_expert=256/n_expert_used=8, ne1[1]==8==n_expert_used (down's
+# real non-broadcast input shape, confirmed against build_moe_ffn).
+_RD54_K256_DOWN_SIGNATURE = {
+    "dst_type": 0, "flags": 31, "fusion": 0, "glu_op": 0,
+    "n_expert": 256, "n_expert_used": 8,
+    "ne0": [256, 2048, 256, 1], "ne1": [256, 8, 1, 1], "ned": [2048, 8, 1, 1],
+    "op": 30, "prec": 0, "schema_version": 1,
+    "src0_type": 8, "src1_type": 0,
+}
+
+# K=2048 (RD54's other real signature): op=100, which resolves to GLU, NOT
+# MUL_MAT_ID -- confirmed via load_ggml_op_names against the real vendored
+# source. fusion=2/glu_op=2 (a real fused GLU-activation node) is why:
+# GLU has its own real, distinct test-backend-ops class (test_glu,
+# tests/test-backend-ops.cpp) with different vars()/build_graph() than
+# MUL_MAT_ID's, so signature_to_mul_mat_id_test_file_line correctly
+# refuses it -- matching HI80's own doctrine that a new op needs its own
+# verified test_case-subclass derivation before this module maps it,
+# never a same-op assumption from a shared has_ids/n_expert flag.
+_RD54_K2048_GLU_SIGNATURE = {
+    "dst_type": 0, "flags": 31, "fusion": 2, "glu_op": 2,
+    "n_expert": 256, "n_expert_used": 8,
+    "ne0": [2048, 256, 256, 1], "ne1": [2048, 1, 1, 1], "ned": [256, 8, 1, 1],
+    "op": 100, "prec": 2, "schema_version": 1,
+    "src0_type": 8, "src1_type": 0,
+}
+
+
+def _require_real_vendor_root():
+    if not REAL_VENDOR_ROOT.is_dir():
+        import pytest
+        pytest.skip("real vendor/llama.cpp checkout not present")
+
+
+def test_mul_mat_id_maps_rd54_k256_down_signature():
+    _require_real_vendor_root()
+    line, target_tensor, digest_tensor = scm.signature_to_mul_mat_id_test_file_line(
+        _RD54_K256_DOWN_SIGNATURE, vendor_root=REAL_VENDOR_ROOT,
+    )
+    fields = line.split()
+    assert fields[-1] == "-"
+    assert target_tensor == "out"
+    assert digest_tensor == "leaf_0"
+
+    op_id, dst_type_id = int(fields[0]), int(fields[1])
+    ned = [int(x) for x in fields[2:6]]
+    op_params_count = int(fields[6])
+    num_src = int(fields[7])
+    assert op_id == 30
+    assert dst_type_id == 0
+    assert ned == [2048, 8, 1, 1]
+    assert op_params_count == 0
+    assert num_src == 3  # as, b, ids -- ggml_mul_mat_id's real source order
+
+    idx = 8
+    src0_type_id = int(fields[idx]); idx += 1
+    src0_ne = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    src0_nb = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    assert src0_type_id == 8  # Q8_0
+    assert src0_ne == [256, 2048, 256, 1]  # as: [k, m, n_expert]
+    assert src0_nb == [0, 0, 0, 0]  # default-contiguous, no Q8_0 layout math in Python
+
+    src1_type_id = int(fields[idx]); idx += 1
+    src1_ne = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    src1_nb = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    assert src1_type_id == 0  # F32
+    assert src1_ne == [256, 8, 1, 1]  # b, taken literally from the real signature
+    assert src1_nb == [0, 0, 0, 0]
+
+    ids_type_id = int(fields[idx]); idx += 1
+    ids_ne = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    ids_nb = [int(x) for x in fields[idx:idx + 4]]; idx += 4
+    type_names = scm.load_ggml_type_names(REAL_VENDOR_ROOT)
+    assert type_names[ids_type_id].upper() == "I32"
+    assert ids_ne == [8, 1, 1, 1]  # [n_expert_used, n_tokens]
+    assert ids_nb == [0, 0, 0, 0]
+
+    assert idx == len(fields) - 1  # nothing left but the trailing "-"
+
+
+def test_mul_mat_id_rejects_the_real_glu_signature():
+    _require_real_vendor_root()
+    # RD54's OTHER real signature is a real ggml GLU node, not MUL_MAT_ID
+    # (op=100 resolves to GLU) -- fail-closed rejection here is correct,
+    # not a bug: GLU needs its own test_glu-derived mapping, out of scope
+    # for this HI105 slice.
+    try:
+        scm.signature_to_mul_mat_id_test_file_line(
+            _RD54_K2048_GLU_SIGNATURE, vendor_root=REAL_VENDOR_ROOT,
+        )
+        assert False, "expected SignatureMappingError for a real GLU signature"
+    except scm.SignatureMappingError as exc:
+        assert "MUL_MAT_ID" in str(exc)
+        assert "GLU" in str(exc)
+
+
+def test_mul_mat_id_rejects_signature_without_has_ids_flag():
+    _require_real_vendor_root()
+    sig = dict(_RD54_K256_DOWN_SIGNATURE)
+    sig["flags"] = 7  # contiguity bits only, HAS_IDS (bit 3) cleared
+    try:
+        scm.signature_to_mul_mat_id_test_file_line(sig, vendor_root=REAL_VENDOR_ROOT)
+        assert False, "expected SignatureMappingError for a signature without HAS_IDS"
+    except scm.SignatureMappingError as exc:
+        assert "HAS_IDS" in str(exc)
+
+
+def test_mul_mat_id_rejects_inconsistent_n_expert():
+    _require_real_vendor_root()
+    sig = dict(_RD54_K256_DOWN_SIGNATURE)
+    sig["n_expert"] = 128  # disagrees with the real ne0[2]=256
+    try:
+        scm.signature_to_mul_mat_id_test_file_line(sig, vendor_root=REAL_VENDOR_ROOT)
+        assert False, "expected SignatureMappingError for inconsistent n_expert"
+    except scm.SignatureMappingError as exc:
+        assert "n_expert" in str(exc)
+
+
+def test_ggml_type_id_for_name_finds_i32():
+    _require_real_vendor_root()
+    type_names = scm.load_ggml_type_names(REAL_VENDOR_ROOT)
+    i32_id = scm._ggml_type_id_for_name(type_names, "I32")
+    assert type_names[i32_id].upper() == "I32"
