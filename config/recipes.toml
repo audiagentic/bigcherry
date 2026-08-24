@@ -96,6 +96,9 @@ patches = ["1233_rd73_stable_graph_cache_key"]
 [experiment.rd58-only]
 patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 
+[experiment.rd09-only]
+patches = ["1235_rd09_q81_activation_cache_foundation"]
+
 [source.llama-native]
 ref = "pinned"
 overlay = false
