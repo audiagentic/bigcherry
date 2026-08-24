@@ -30,7 +30,6 @@ detected and rejected rather than silently trusted.
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import os
 import shutil
@@ -57,6 +56,15 @@ def _stable_digest(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _patch_registry():
+    """The registry module, importable whether this file is loaded as a
+    package member or standalone (its existing pattern: REPO_ROOT-derived
+    paths + function-level import)."""
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from bigcherry import patch_registry  # noqa: E402
+    return patch_registry
+
+
 def framework_baseline_digest() -> str:
     """sha256 over the sorted bytes of every currently-validated patch file.
 
@@ -65,17 +73,23 @@ def framework_baseline_digest() -> str:
     stale (different source_key) once the baseline changes -- otherwise a
     patch validated today could silently keep reusing an isolated worktree
     that no longer reflects what `bigcherry apply` would actually produce.
-    """
-    sys.path.insert(0, str(REPO_ROOT))
-    from bigcherry import patchset  # noqa: E402  (path inserted above)
 
+    RS05: the validated set is the registry's validated descriptors (root
+    relative implementation paths + bytes). For today's flat tree the
+    relative paths and bytes are exactly what the old discover_modules() +
+    module_state() walk produced, so existing source_key digests are stable.
+    """
+    registry = _patch_registry().load_registry(PATCHES_ROOT)
+    validated = sorted(
+        (d for d in registry.descriptors if d.state == "validated"),
+        key=lambda d: d.implementation_path.as_posix(),
+    )
     hasher = hashlib.sha256()
-    for path in sorted(patchset.discover_modules(PATCHES_ROOT)):
-        if patchset.module_state(path) != "validated":
-            continue
-        hasher.update(str(path.relative_to(PATCHES_ROOT)).encode("utf-8"))
+    for descriptor in validated:
+        relative = descriptor.implementation_path.as_posix()
+        hasher.update(relative.encode("utf-8"))
         hasher.update(b"\0")
-        hasher.update(path.read_bytes())
+        hasher.update((registry.root / descriptor.implementation_path).read_bytes())
         hasher.update(b"\0")
     return hasher.hexdigest()
 
@@ -111,40 +125,13 @@ def _stock_source_identity(base_revision: str) -> dict[str, str]:
     return {**payload, "source_key": _stable_digest(payload)}
 
 
-def _patch_path(patch_name: str) -> Path:
-    """Resolve a flat patches/<name>.py module without permitting path escape."""
-    if not patch_name:
-        raise PatchSourceIsolationError("patch name must not be empty")
-
-    if patch_name.endswith(".py"):
-        patch_name = patch_name[:-3]
-
-    if (
-        "/" in patch_name or "\\" in patch_name
-        or patch_name in {".", ".."} or ".." in Path(patch_name).parts
-    ):
-        raise PatchSourceIsolationError(
-            f"patch name must be a flat module name under {PATCHES_ROOT}: {patch_name!r}"
-        )
-
-    root = PATCHES_ROOT.resolve()
-    candidate = (PATCHES_ROOT / f"{patch_name}.py").resolve()
-
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise PatchSourceIsolationError(
-            f"patch module escapes patches directory: {patch_name!r}"
-        ) from exc
-
-    if not candidate.is_file():
-        raise PatchSourceIsolationError(f"patch module does not exist: {candidate}")
-
-    return candidate
-
-
 def patch_implementation_digest(patch_name: str) -> str:
-    """sha256 of the patch module's own bytes.
+    """sha256 of the patch implementation's own bytes (flat OR packaged).
+
+    RS05: resolved through the registry descriptor -- no flat-only
+    f"{name}.py" construction left in this module (the old _patch_path() is
+    gone; the registry's own discovery is the path-resolution authority and
+    enforces the same escape rules).
 
     Deliberately does NOT also hash tools/bigcherry/patcher.py (the shared
     edit engine) -- that would force a rebuild on any unrelated patcher.py
@@ -152,7 +139,14 @@ def patch_implementation_digest(patch_name: str) -> str:
     edit semantics start changing in ways that matter; note the tradeoff
     rather than silently picking one side of it.
     """
-    return hashlib.sha256(_patch_path(patch_name).read_bytes()).hexdigest()
+    registry = _patch_registry().load_registry(PATCHES_ROOT)
+    try:
+        descriptor = registry.get(patch_name)
+    except Exception as exc:
+        raise PatchSourceIsolationError(f"patch module does not exist: {patch_name!r}") from exc
+    return hashlib.sha256(
+        (registry.root / descriptor.implementation_path).read_bytes()
+    ).hexdigest()
 
 
 def _run(argv: list[str], *, cwd: Path, check: bool = True) -> str:
@@ -286,18 +280,27 @@ def _add_worktree(base_repo: Path, worktree_dir: Path, base_revision: str) -> No
     worktree_dir.parent.mkdir(parents=True, exist_ok=True)
     if worktree_dir.exists():
         # A directory with no valid manifest (caught above) or a leftover
-        # partial worktree from a killed prior run -- prune registrations
-        # for missing worktrees, then remove the stale directory outright
-        # rather than trying to patch up unknown state.
-        _run(["git", "worktree", "prune"], cwd=base_repo, check=False)
+        # partial worktree from a killed prior run -- remove the stale
+        # directory outright rather than trying to patch up unknown state.
         shutil.rmtree(worktree_dir, ignore_errors=True)
+    # prune AFTER the rmtree (and even when the directory is already gone):
+    # a registration whose directory no longer exists is "missing but
+    # already registered" -- a prune that ran BEFORE the directory was
+    # removed leaves it in place, and the re-add below then fails with
+    # exit 128 (caught by a real RS05 rebuild test).
+    _run(["git", "worktree", "prune"], cwd=base_repo, check=False)
     _run(
         ["git", "worktree", "add", "--detach", str(worktree_dir), base_revision],
         cwd=base_repo,
     )
 
 
-def _apply_baseline_and_stack(source_dir: Path, patch_modules: Sequence[str]) -> None:
+def _apply_baseline_and_stack(
+    source_dir: Path, patch_modules: Sequence[str], *, root: Path | None = None
+) -> None:
+    # Call-time resolution (not a def-time default) so tests can redirect
+    # the patches root by monkeypatching PATCHES_ROOT.
+    root = root or PATCHES_ROOT
     """Overlay bigcherry's own source additions, apply the validated
     framework baseline, then apply patch_modules IN ORDER.
 
@@ -312,9 +315,14 @@ def _apply_baseline_and_stack(source_dir: Path, patch_modules: Sequence[str]) ->
     Shared by materialize_source() (single patch) and
     materialize_source_variant() (an ordered stack) so the overlay/baseline/
     apply sequence has exactly one implementation.
+
+    RS05: BOTH the baseline and the stack load through the registry
+    (descriptor + byte-compile load_implementation) -- the old
+    ``importlib.import_module(f"patches.{module}")`` line is gone, so
+    packaged patches materialize the same way flat ones do.
     """
-    sys.path.insert(0, str(REPO_ROOT))
-    from bigcherry import patcher, patchset, paths  # noqa: E402  (path inserted above)
+    registry = _patch_registry().load_registry(root)
+    from bigcherry import patcher, paths  # noqa: E402
 
     for source in sorted(paths.SRC_OVERLAY.rglob("*")):
         if not source.is_file():
@@ -324,7 +332,12 @@ def _apply_baseline_and_stack(source_dir: Path, patch_modules: Sequence[str]) ->
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="")
 
-    baseline_patches = patchset.load_patches(groups=None, states=frozenset({"validated"}))
+    baseline = [
+        d for d in registry.descriptors if d.state == "validated"
+    ]
+    baseline_patches = [
+        p for d in baseline for p in _patch_registry().load_implementation(d, root=root)
+    ]
     baseline_results = patcher.apply_all(baseline_patches, source_dir, dry_run=False)
     for result in baseline_results:
         if result.failed:
@@ -335,8 +348,14 @@ def _apply_baseline_and_stack(source_dir: Path, patch_modules: Sequence[str]) ->
             )
 
     for patch_module in patch_modules:
-        mod = importlib.import_module(f"patches.{patch_module}")
-        results = patcher.apply_all(mod.PATCHES, source_dir, dry_run=False)
+        try:
+            descriptor = registry.get(patch_module)
+        except Exception as exc:
+            raise PatchSourceIsolationError(
+                f"patch module does not exist: {patch_module!r}"
+            ) from exc
+        implementation = _patch_registry().load_implementation(descriptor, root=root)
+        results = patcher.apply_all(implementation, source_dir, dry_run=False)
         for result in results:
             if result.failed:
                 raise PatchSourceIsolationError(
