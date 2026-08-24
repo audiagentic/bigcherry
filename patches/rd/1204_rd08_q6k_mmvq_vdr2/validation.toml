@@ -1,0 +1,38 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "autotune-campaign"
+required = true
+
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2"
+
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "autotune-campaign"
+required = true
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "autotune-campaign"
+required = true

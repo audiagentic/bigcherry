@@ -22,6 +22,20 @@ class RD12PackageMigrationTests(unittest.TestCase):
         )
         self.assertNotIn("1205_rd12_paired_mmvq_dual_output.py", {p.name for p in root.glob("*.py")})
 
+    def test_rd08_is_packaged_with_contract_and_vdr_marker(self) -> None:
+        root = Path(__file__).resolve().parents[2] / "patches"
+        registry = patch_registry.load_registry(root)
+        descriptor = registry.get("1204_rd08_q6k_mmvq_vdr2")
+        self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)
+        self.assertEqual(descriptor.experiment_contract, "RD08-Q6K-MMVQ-VDR2")
+        self.assertEqual(len(patch_registry.load_implementation(descriptor, root=root)), 4)
+        plan = patch_validation.build_plan_for_patch(descriptor, root=root)
+        assert plan is not None
+        self.assertIn("controls", plan.required_capabilities)
+        trace = next(check for check in plan.checks if check.validator == "trace-marker")
+        self.assertIn("1204_rd08", trace.config["marker-regex"])
+        self.assertNotIn("1204_rd08_q6k_mmvq_vdr2.py", {p.name for p in root.glob("*.py")})
+
     def test_rd13_is_packaged_with_validation_owned_marker(self) -> None:
         root = Path(__file__).resolve().parents[2] / "patches"
         registry = patch_registry.load_registry(root)
