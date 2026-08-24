@@ -475,18 +475,30 @@ def run(args: argparse.Namespace) -> int:
     # config/recipes.toml (never the retired implicit state=='validated'
     # scan), resolved through the exact-composition validator; the base ref
     # resolves to an immutable SHA that enters the v2 source identity.
-    base_revision, composition = psi.resolve_source_composition(
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", focal=None, base_ref="HEAD", base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
         "bigcherry", focal=args.patch, base_ref="HEAD", base_repo=LLAMA_CPP_SRC,
     )
-    _print(f"materializing isolated source for {args.patch} @ {base_revision[:12]} ...")
-    patched_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root,
-        resolved_revision=base_revision, composition=composition,
+    if control_revision != subject_revision:
+        raise RuntimeError("control and subject source plans resolved different base revisions")
+    base_revision = subject_revision
+    _print(f"materializing control and subject source plans @ {base_revision[:12]} ...")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=base_revision, composition=control_composition,
         overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
     )
-    _print(f"patch source: {patched_src}")
+    patched_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+    )
+    _print(f"control source: {control_src}")
+    _print(f"subject source: {patched_src}")
     stock_src = psi.materialize_stock_source(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root, base_revision=base_revision,
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
     )
     _print(f"stock source: {stock_src}")
 
@@ -595,6 +607,7 @@ def run(args: argparse.Namespace) -> int:
 
     # Hoisted: HI83's evidence record (below) needs the same values.
     patch_digest = psi.patch_implementation_digest(args.patch)
+    control_source_tree = psi.git_worktree_tree(control_src)
     patched_source_tree = psi.git_worktree_tree(patched_src)
 
     identity_context = CampaignIdentityContext(
@@ -711,6 +724,12 @@ def run(args: argparse.Namespace) -> int:
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contract_id=_descriptor.experiment_contract,
+        baseline_composition={"base_revision": base_revision},
+        control_composition={"base_revision": base_revision, "patches": list(control_composition)},
+        subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
+        control_tree=control_source_tree,
+        subject_tree=patched_source_tree,
+        stock_tree=psi.git_worktree_tree(stock_src),
     )
     validation_record_path = patch_validation_evidence.write_record(validation_record)
     _print(f"validation evidence: {validation_record_path}")
