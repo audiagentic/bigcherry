@@ -135,7 +135,11 @@ struct ggml_hip_q81_cache {
     ~ggml_hip_q81_cache() {
         for (slab & s : slabs) {
             if (s.data != nullptr) {
-                hipFree(s.data);
+                // Deliberately ignoring the [[nodiscard]] result: this
+                // runs from a destructor / test-only reset, where there is
+                // no way to propagate a failure and no correctness action
+                // to take differently based on it.
+                (void) hipFree(s.data);
             }
         }
     }
