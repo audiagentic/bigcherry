@@ -465,6 +465,29 @@ class RegistryAndVersionTests(unittest.TestCase):
         # and recomputed source tree; no fabricated PASS is allowed.
         self.assertEqual(passed.status, pv.BLOCKED)
 
+    def test_remaining_builtin_validators_fail_closed_without_evidence(self) -> None:
+        ctx = pv.ValidationContext(
+            descriptor=_descriptor(), base_revision="r",
+            control_source=None, subject_source=None,
+        )
+        cases = (
+            ("compile-option", "configuration", {}),
+            ("runtime-smoke", "smoke", {}),
+            ("architecture", "architecture", {}),
+            ("benchmark", "performance", {}),
+            ("autotune-campaign", "performance", {}),
+        )
+        for validator, capability, config in cases:
+            with self.subTest(validator=validator):
+                result = pv.evaluate_check(
+                    pv.CheckSpec(
+                        check_id=validator, capability=capability,
+                        validator=validator, required=True, config=config,
+                    ),
+                    ctx,
+                )
+                self.assertIn(result.status, (pv.BLOCKED, pv.ERROR))
+
     def test_builtin_backend_ops_requires_bound_correctness_evidence(self) -> None:
         spec = pv.CheckSpec(
             check_id="correct", capability="correctness", validator="backend-ops",
