@@ -159,18 +159,24 @@ def describe(directory=None) -> list[PatchInfo]:
 
     RS02: backed by the registry, so packaged patches describe the same way
     flat ones do. For legacy modules this is exactly the old output.
+
+    RV80 follow-up (GPT ruling b): this is a REPORTING/observational facade,
+    so it uses the registry's report-only path (describe_all), which preserves
+    a raw malformed lifecycle state (state_valid=False) instead of raising.
+    Strict resolution/build paths still fail closed via load_registry.
     """
     directory = directory or paths.PATCHES
-    registry = patch_registry.load_registry(directory)
+    root = directory.resolve()
+    descriptors = patch_registry.describe_all(directory)
     return [
         PatchInfo(
             name=descriptor.patch_id,
-            path=registry.root / descriptor.implementation_path,
+            path=root / descriptor.implementation_path,
             group=descriptor.group,
             state=descriptor.state,
             upstream=descriptor.upstream,
         )
-        for descriptor in registry.descriptors
+        for descriptor in descriptors
     ]
 
 

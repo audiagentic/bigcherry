@@ -173,10 +173,19 @@ def resolve_lane(
                     )
                 claimed_by[patch_id] = resolved_set.name
         by_id = {module.patch_id: module for module in catalog}
-        merged_modules = tuple(sorted(
-            (by_id[patch_id] for resolved_set in per_set for patch_id in resolved_set.module_ids),
-            key=lambda module: (module.order, module.patch_id),
-        ))
+        # RV80 follow-up (GPT deep review, systemic): a GLOBAL (order, patch_id)
+        # re-sort here would destroy the dependency order that
+        # resolve_patch_set()/resolve_exact() already established whenever
+        # numbering and REQUIRES disagree -- reintroducing the B4 class of bug
+        # one layer above patchset. Use the true topological picker instead
+        # (identical output for every currently-configured source, whose
+        # numbering is consistent with REQUIRES).
+        merged_ids = [
+            patch_id for resolved_set in per_set for patch_id in resolved_set.module_ids
+        ]
+        merged_modules = tuple(
+            by_id[pid] for pid in patchset.topological_order(merged_ids, modules=by_id)
+        )
         module_ids = tuple(module.patch_id for module in merged_modules)
         module_hashes = tuple((module.patch_id, module.content_hash) for module in merged_modules)
         # When every constituent set was resolved under the SAME
@@ -214,13 +223,16 @@ def resolve_lane(
         )
         if set(resolved.module_ids) & {module.patch_id for module in extra_selection.modules}:
             raise ResolutionError("experiment repeats a base patch module")
-        modules = tuple(sorted(
-            [
-                *[next(module for module in catalog if module.patch_id == patch_id)
-                  for patch_id in resolved.module_ids],
-                *extra_selection.modules,
-            ], key=lambda module: (module.order, module.patch_id)
-        ))
+        # RV80 follow-up (GPT deep review, systemic): same topological-order
+        # requirement as the multi-set merge above -- never a global
+        # (order, patch_id) re-sort of the base + experiment union.
+        _exp_by_id = {module.patch_id: module for module in catalog}
+        _exp_ids = [
+            *resolved.module_ids, *(m.patch_id for m in extra_selection.modules)
+        ]
+        modules = tuple(
+            _exp_by_id[pid] for pid in patchset.topological_order(_exp_ids, modules=_exp_by_id)
+        )
         module_ids = tuple(module.patch_id for module in modules)
         module_hashes = tuple((module.patch_id, module.content_hash) for module in modules)
         identity = {
