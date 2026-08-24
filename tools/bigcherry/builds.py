@@ -70,6 +70,23 @@ class BuildPlan:
     computed their (possibly textually-similar) cmake_options could not be
     distinguished by inspection alone, even though build_plan_id already
     differs once cmake_options genuinely differs.
+
+    ``requested_targets`` (HI110, dev-gpt-agent design review 2026-08-24):
+    the sorted set of CMake target names (binary_relative_path's own name
+    plus every extra_binary_names entry) this build actually asked ninja to
+    produce. Two lanes sharing every other BuildPlan field but requesting
+    different target sets (e.g. bin/llama-bench vs bin/llama-server, same
+    source/config/toolchain) previously produced the SAME build_plan_id and
+    were pointed at the SAME build_dir -- campaign_workers.py's own comment
+    called this "a shared configure cache across targets," but in practice
+    a second target request mutates shared libraries already published
+    under the first target's build_plan_id (ninja relinks libggml-hip.so
+    when asked for a different top-level target), corrupting an artifact
+    the store treats as immutable and poisoning reuse-validation for BOTH
+    targets. Including the target set in identity gives each distinct
+    target set its own build_plan_id/build_dir, matching
+    ``catalog_architectures``'s precedent for closing this exact class of
+    identity gap.
     """
 
     source_slice_id: str
@@ -80,6 +97,7 @@ class BuildPlan:
     backend: str = "hip"
     variant_set: str | None = None
     catalog_architectures: tuple[str, ...] = ()
+    requested_targets: tuple[str, ...] = ()
     #: (need_name, content_hash) pairs, sorted by need_name -- one entry
     #: per key in config.Build.needs this lane actually resolved, generic
     #: over whatever kinds exist now or are added later.

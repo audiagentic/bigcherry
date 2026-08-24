@@ -704,6 +704,11 @@ def _execute_build_phase(
         catalog_architectures=tuple(sorted(spec.architectures))
         if variant_set is not None
         else (),
+        # HI110: the real requested output set -- see BuildPlan's own
+        # docstring for why this must participate in build_plan_id.
+        requested_targets=tuple(sorted(
+            {Path(spec.binary_relative_path).name, *spec.extra_cmake_targets}
+        )),
         # Generic over every declared need this lane resolved -- see
         # BuildPlan's own docstring for why this replaced the old
         # inventory_hash/winners_hash pair.
