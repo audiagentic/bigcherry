@@ -3,6 +3,9 @@
 Measured-dispatch autotuner for llama.cpp — packaged as a **release-tolerant
 overlay** rather than a fork.
 
+New to this repo? See `GETTING_STARTED.md` for build/test commands, how to
+run a patch, and operational gotchas.
+
 Upstream llama.cpp moves fast. Maintaining a long-lived fork means resolving
 merge conflicts on every release. bigcherry instead keeps its work in two
 buckets:
