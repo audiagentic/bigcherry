@@ -348,7 +348,7 @@ void ggml_hip_q81_cache_reset_for_test(ggml_hip_q81_cache & cache) {
     std::lock_guard<std::mutex> lock(cache.mutex);
     for (slab & s : cache.slabs) {
         if (s.data != nullptr) {
-            hipFree(s.data);
+            (void) hipFree(s.data);
         }
     }
     cache.slabs.clear();
