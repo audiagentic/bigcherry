@@ -299,20 +299,6 @@ def _mul_mat_op_filter(signature: dict[str, object], *, vendor_root: Path) -> tu
 # op-specific about those patches, so no new patch to test-backend-ops
 # itself is needed).
 #
-# Byte type sizes below are the C sizeof() this project's own vendored
-# ggml.c type_traits table specifies for each entry (sizeof(float)=4,
-# sizeof(ggml_fp16_t)=2, sizeof(ggml_bf16_t)=2) -- literal C sizeof
-# expressions, not parseable generically the way the type_name string table
-# is, so this is a small explicit whitelist rather than parsed from source.
-# Deliberately narrow (float-family types only, matching the same
-# non-batched/contiguous pinned-case restriction _mul_mat_op_filter already
-# uses): quantized types need block-size-aware byte-stride math this
-# function does not attempt.
-_TEST_FILE_TYPE_SIZES = {
-    "F32": 4,
-    "F16": 2,
-    "BF16": 2,
-}
 
 
 def signature_to_test_file_line(
@@ -347,7 +333,20 @@ def signature_to_test_file_line(
     for any signature within its supported type/shape scope -- there is no
     fixed corpus to coincide with, only test-backend-ops' own file-format
     parser (a fixed, simple line grammar, verified against
-    make_test_cases_from_file() in tests/test-backend-ops.cpp)."""
+    make_test_cases_from_file() in tests/test-backend-ops.cpp).
+
+    HI111 (2026-08-24 real-hardware finding, dense Qwen3.8-27B/Q8_0
+    production campaign): src0/src1 are always serialized with nb=[0,0,0,0]
+    (test-backend-ops' own "use default contiguous strides" sentinel --
+    is_non_contiguous()'s `if (src.nb[0] == 0) return false;`), the same
+    trick signature_to_mul_mat_id_test_file_line() already uses, rather than
+    this function hand-computing byte strides from a type-size whitelist.
+    ggml itself derives the correct block-aware contiguous layout for
+    whatever type is given, quantized or not -- an earlier version of this
+    function hand-computed nb from a `{F32, F16, BF16}`-only type-size table
+    and rejected every quantized signature (Q8_0, Q4_K, Q6_K, ...) outright,
+    which on a real Q8_0-quantized production model left almost the entire
+    signature set without correctness evidence."""
     op_names = load_ggml_op_names(vendor_root)
     op_id = int(signature["op"])
     op_name = op_names.get(op_id)
@@ -390,44 +389,29 @@ def signature_to_test_file_line(
             raise SignatureMappingError(f"unknown ggml_type id {type_id!r}")
         return name.upper()
 
-    def _type_size(type_name: str) -> int:
-        size = _TEST_FILE_TYPE_SIZES.get(type_name)
-        if size is None:
-            raise SignatureMappingError(
-                f"signature_to_test_file_line only supports "
-                f"{sorted(_TEST_FILE_TYPE_SIZES)} this slice, got type={type_name!r} "
-                "-- quantized types need block-size-aware byte-stride math "
-                "this function does not attempt"
-            )
-        return size
-
     src0_type_id = int(signature["src0_type"])
     src1_type_id = int(signature["src1_type"])
     dst_type_id = int(signature["dst_type"])
-    src0_type_name = _type_name(src0_type_id)
-    src1_type_name = _type_name(src1_type_id)
-    dst_type_name = _type_name(dst_type_id)
-    _type_size(src0_type_name)
-    _type_size(src1_type_name)
-    _type_size(dst_type_name)
-
-    def _contiguous_byte_strides(ne: list[int], type_name: str) -> list[int]:
-        tsz = _type_size(type_name)
-        return [tsz, tsz * ne[0], tsz * ne[0] * ne[1], tsz * ne[0] * ne[1] * ne[2]]
+    # Validated for the enum tables' own sake (raises on an unknown id) --
+    # the resolved names are otherwise unused: nb is always the zero-strides
+    # sentinel below, so no per-type byte size is needed for any of the
+    # three types, quantized or not.
+    _type_name(src0_type_id)
+    _type_name(src1_type_id)
+    _type_name(dst_type_id)
 
     ne0_i = [int(x) for x in ne0]
     ne1_i = [int(x) for x in ne1]
     ned_i = [int(x) for x in ned]
-    nb0 = _contiguous_byte_strides(ne0_i, src0_type_name)
-    nb1 = _contiguous_byte_strides(ne1_i, src1_type_name)
+    zero_strides = [0, 0, 0, 0]
 
     # GGML_OP_MUL_MAT's own id, op_params (unused by MUL_MAT -- 0 of them),
     # num_sources=2 (src0, src1), name "-" (auto-generated, matches
     # make_test_cases_from_file()'s own '-' -> empty-name convention).
     line = " ".join(str(x) for x in (
         op_id, dst_type_id, *ned_i, 0, 2,
-        src0_type_id, *ne0_i, *nb0,
-        src1_type_id, *ne1_i, *nb1,
+        src0_type_id, *ne0_i, *zero_strides,
+        src1_type_id, *ne1_i, *zero_strides,
     )) + " -"
     return line, "out", "leaf_0"
 
