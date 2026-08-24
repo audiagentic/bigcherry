@@ -60,6 +60,10 @@ _REF_DIGEST_RE = re.compile(
     r"digest=(?P<digest>[0-9a-fA-F]+) nels=(?P<nels>\d+)"
 )
 
+_REGISTRY_MISMATCH_RE = re.compile(
+    r"GGML_HIP_FORCE_CANDIDATE=(?P<candidate>\S+) not found in registry"
+)
+
 _METRIC_RE = re.compile(
     r"BIGCHERRY_CORRECTNESS_METRIC op=(?P<op>\S+) tensor=(?P<tensor>\S+) "
     r"backend1=(?P<backend1>\S+) backend2=(?P<backend2>\S+) "
@@ -239,6 +243,24 @@ def collect_seed_evidence(
 
     native_status = "ok" if native_run.returncode == 0 else "failed"
     candidate_status = "ok" if candidate_run.returncode == 0 else "failed"
+
+    # HI106: GGML_HIP_FORCE_CANDIDATE_STRICT aborts (SIGABRT) when the named
+    # candidate isn't in the binary's compiled registry -- e.g. the binary
+    # was built from a different --inventory than the tune run being
+    # evidenced. That failure looks identical to a real numerical
+    # correctness bug once folded into a generic "failed" execution_status,
+    # and was mistaken for one until traced back to this exact abort message.
+    # Fail closed here with an unambiguous diagnosis instead of letting it
+    # surface later as an opaque aggregate "did not execute cleanly" error.
+    registry_mismatch = _REGISTRY_MISMATCH_RE.search(candidate_run.stderr)
+    if registry_mismatch is not None:
+        raise EvidenceError(
+            f"seed {seed}: candidate {registry_mismatch['candidate']!r} is not in "
+            f"the binary's compiled candidate registry -- this binary was built "
+            f"from a different --inventory than the tune run being evidenced. "
+            f"Rebuild test-backend-ops scoped to the SAME inventory as the "
+            f"measurements being evidenced (this is not a correctness failure)."
+        )
 
     native_digest = find_digest_for_tensor(native_run.stderr, digest_tensor)
     candidate_digest = find_digest_for_tensor(candidate_run.stderr, digest_tensor)
