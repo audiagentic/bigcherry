@@ -263,6 +263,35 @@ class CollectSeedEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(row.candidate_execution_status, "failed")
 
+    def test_registry_mismatch_raises_a_distinct_diagnosis(self):
+        # HI106: GGML_HIP_FORCE_CANDIDATE_STRICT aborts (SIGABRT) when the
+        # binary under test was built from a different --inventory than the
+        # tune run being evidenced, so the named candidate was never
+        # compiled into its registry. This is a scope/build-matching bug in
+        # the caller, not a numerical correctness failure -- it must not be
+        # folded into the generic "failed" execution_status, which would
+        # make it indistinguishable from a real kernel bug (this exact
+        # confusion happened once before this test existed).
+        native_stderr = _digest_line(digest="abc123") + _metric_line(err="1e-05", max_abs="0.001")
+        candidate_stderr = (
+            _digest_line(digest="abc123")
+            + "hip-autotune-dispatch.cu:531: bigcherry: "
+            "GGML_HIP_FORCE_CANDIDATE=mmvf:f32:w8:bs32:accf32:v1 not found in "
+            "registry (GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing closed "
+            "instead of silently falling back to normal resolution)\n"
+        )
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr, candidate_rc=134)
+
+        with self.assertRaises(ce.EvidenceError) as ctx:
+            ce.collect_seed_evidence(
+                Path("/bin/x"), op_filter="m=1,n=1,k=1", target_tensor="dst",
+                candidate_stable_name="mmvf:f32:w8:bs32:accf32:v1", seed=3, runner=runner,
+            )
+        message = str(ctx.exception)
+        self.assertIn("mmvf:f32:w8:bs32:accf32:v1", message)
+        self.assertIn("not in the binary's compiled candidate registry", message)
+        self.assertIn("not a correctness failure", message)
+
 
 class AggregateSeedEvidenceTests(unittest.TestCase):
     def _row(self, seed, *, e_n=1e-05, e_c=2e-05, max_abs_n=0.001, max_abs_c=0.0012, native_status="ok", candidate_status="ok", threshold_t=5e-4):
