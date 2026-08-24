@@ -533,6 +533,13 @@ def signature_to_mul_mat_id_test_file_line(
             f"signature op is MUL_MAT_ID but n_expert={n_expert!r}/"
             f"n_expert_used={n_expert_used!r} are not both positive"
         )
+    if n_expert_used > n_expert:
+        raise SignatureMappingError(
+            f"signature n_expert_used={n_expert_used} exceeds n_expert={n_expert} -- "
+            "not a valid MUL_MAT_ID signature (patch 1236's C++ shuffle does "
+            "pool.begin() + t->ne[0], which would be invalid iterator arithmetic "
+            "for a pool smaller than the requested slice)"
+        )
     if n_expert != ne0_i[2]:
         raise SignatureMappingError(
             f"signature n_expert={n_expert} disagrees with src0's own expert-count "
@@ -598,4 +605,54 @@ def signature_to_mul_mat_id_test_file_line(
         src1_type_id, *ne1_i, *zero_strides,
         ids_type_id, *ids_ne, *zero_strides,
     )) + " -"
-    return line, "out", "leaf_0"
+    # HI105 (dev-gpt-agent review, 2026-08-24): the digest tensor for
+    # MUL_MAT_ID is the IDS tensor ("leaf_2", the 3rd of 3 sources in
+    # creation order -- ggml_format_name(node, "leaf_%d", cgraph->n_leafs)
+    # names unnamed leaves; confirmed empirically for source 0 of a
+    # 2-source MUL_MAT_ID case, but NOT yet independently confirmed for a
+    # 3-source case on real hardware -- verify the real BIGCHERRY_REF_DIGEST
+    # `name=` output on the first real run before trusting this), not
+    # "leaf_0" (the weights) the way the plain-MUL_MAT path uses. Patch
+    # 1222's deterministic init_tensor_uniform already gives leaf_0/leaf_1
+    # (weights/activations) a proven, verified determinism guarantee; the
+    # NEW risk MUL_MAT_ID introduces is expert routing (patch 1236's own
+    # subject), so checking the ids digest is what actually closes the gap
+    # patch 1236 exists to close -- native and candidate could otherwise
+    # each compare successfully against a different CPU reference with
+    # different routing, and nothing would catch it. Checking every
+    # digest tensor (weights AND routing) is the more complete fix and is
+    # a documented follow-up, not implemented in this slice.
+    return line, "out", "leaf_2"
+
+
+def signature_to_any_test_file_line(
+    signature: dict[str, object], *, vendor_root: Path,
+) -> tuple[str, str, str]:
+    """HI105: the one authoritative dispatcher hi80_generate_correctness_
+    evidence.py's CLI must call, so adding a new op's mapper here is the
+    only place that needs touching to make the CLI pick it up -- a caller
+    that hand-picks signature_to_test_file_line() (or the new MUL_MAT_ID
+    sibling) directly risks silently routing a real signature through the
+    wrong mapper, which for a shape that HAPPENS to satisfy both mappers'
+    structural checks (implausible today given the different num_src /
+    ne-derivation each expects, but not something to rely on) could
+    produce plausible-looking evidence for the wrong operation.
+
+    Routes purely on the signature's own real ggml_op id (never on
+    ancillary fields like n_expert/flags, which the wrong op could also
+    carry) so an unsupported op fails closed here with a clear message,
+    the same SignatureMappingError callers already handle for either
+    individual mapper."""
+    op_names = load_ggml_op_names(vendor_root)
+    op_id = int(signature["op"])
+    op_name = op_names.get(op_id)
+    if op_name is None:
+        raise SignatureMappingError(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
+    if op_name == "MUL_MAT":
+        return signature_to_test_file_line(signature, vendor_root=vendor_root)
+    if op_name == "MUL_MAT_ID":
+        return signature_to_mul_mat_id_test_file_line(signature, vendor_root=vendor_root)
+    raise SignatureMappingError(
+        f"signature_to_any_test_file_line has no mapper for op={op_name!r} (id={op_id}) -- "
+        "supported ops this slice: MUL_MAT, MUL_MAT_ID"
+    )

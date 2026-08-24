@@ -240,5 +240,159 @@ class GenerateForRowTests(_Base):
             )
 
 
+# HI105 (dev-gpt-agent review, 2026-08-24): proves the real bug found at
+# HEAD 7f2e04c is fixed -- generate_for_row() previously called
+# signature_to_test_file_line() (MUL_MAT-only) unconditionally, so a real
+# MUL_MAT_ID row always raised SignatureMappingError and was silently
+# SKIPPED by main()'s loop without incrementing `failed`, letting a run
+# exit 0 having generated no evidence at all. This test drives
+# generate_for_row() with a real MUL_MAT_ID signature (RD54 K=256's own
+# shape) through a fake runner and asserts it actually reaches
+# ce.generate_correctness_evidence() and writes real evidence -- not that
+# it merely fails to raise.
+
+MUL_MAT_ID_SIGNATURE_HEX = "44" * 16
+
+MUL_MAT_ID_CANONICAL_SIGNATURE = {
+    "op": 2,  # GGML_OP_MUL_MAT_ID in the extended fixture vendor tree below
+    "flags": 15,  # SRC0|SRC1|DST contiguous (1|2|4) | HAS_IDS (8)
+    "n_expert": 256, "n_expert_used": 8,
+    "src0_type": 0, "src1_type": 0, "dst_type": 0,  # f32 (fixture only defines f32)
+    "ne0": [256, 2048, 256, 1], "ne1": [256, 8, 1, 1], "ned": [2048, 8, 1, 1],
+}
+
+
+def _write_fixture_vendor_with_mul_mat_id(tmp_path: Path) -> Path:
+    vendor = tmp_path / "vendor" / "llama.cpp"
+    (vendor / "ggml" / "include").mkdir(parents=True, exist_ok=True)
+    (vendor / "ggml" / "src").mkdir(parents=True, exist_ok=True)
+    (vendor / "ggml" / "include" / "ggml.h").write_text(
+        "enum ggml_type {\n    GGML_TYPE_F32  = 0,\n    GGML_TYPE_I32  = 26,\n};\n"
+        "enum ggml_op {\n    GGML_OP_NONE,\n    GGML_OP_ADD,\n    GGML_OP_MUL_MAT_ID,\n"
+        "    GGML_OP_COUNT,\n};\n",
+        encoding="utf-8",
+    )
+    (vendor / "ggml" / "src" / "ggml.c").write_text(
+        "static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {\n"
+        '    [GGML_TYPE_F32] = {\n        .type_name = "f32",\n    },\n'
+        '    [GGML_TYPE_I32] = {\n        .type_name = "i32",\n    },\n'
+        "};\n"
+        'static const char * GGML_OP_NAME[GGML_OP_COUNT] = {\n'
+        '    "NONE",\n    "ADD",\n    "MUL_MAT_ID",\n'
+        "};\n",
+        encoding="utf-8",
+    )
+    return vendor
+
+
+def _fake_mul_mat_id_runner_factory(*, digest="deadc0de", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+    def runner(argv, capture_output, text, env):
+        mode = env.get("GGML_HIP_DISPATCH_MODE")
+        tensor = "out"
+        stderr = (
+            # HI105: digest_tensor is "leaf_2" (the ids/routing tensor) for
+            # MUL_MAT_ID, not "leaf_0" -- see signature_to_mul_mat_id_test_
+            # file_line's own docstring on why.
+            f"BIGCHERRY_REF_DIGEST name=leaf_2 call_index=0 digest={digest} nels=8\n"
+            f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT_ID tensor={tensor} "
+            f"backend1=native backend2={'native' if mode == 'native' else 'candidate'} "
+            f"err={e_c if mode != 'native' else 1e-6} max_abs={max_abs_c if mode != 'native' else 0.0005} "
+            f"threshold={threshold} n=8\n"
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr=stderr)
+
+    return runner
+
+
+class MulMatIdGenerateForRowTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+        self.conn.execute(
+            "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+            "hardware_schema, variant_set) VALUES ('deadbeefdeadbeefdead', 'aa', 1, 1, 'inventory')"
+        )
+        self.build_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO hardware (hardware_digest, architecture, architecture_code, "
+            "wave_size, compute_units, feature_flags, canonical_json) VALUES "
+            "(?, 'gfx1100', 1, 32, 96, 0, '{}')",
+            (bytes.fromhex(HARDWARE_HEX),),
+        )
+        self.hardware_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO signature (signature_digest, base_digest, schema_version, op, "
+            "src0_type, src1_type, dst_type, m, n, k, canonical_json) VALUES "
+            "(?, x'02', 1, 'MUL_MAT_ID', 'f32', 'f32', 'f32', 2048, 8, 256, ?)",
+            (bytes.fromhex(MUL_MAT_ID_SIGNATURE_HEX), json.dumps(MUL_MAT_ID_CANONICAL_SIGNATURE)),
+        )
+        self.signature_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+            "implementation_version, architectures, architecture_mask, graph_safe, "
+            "deterministic, config_json) VALUES (?, 'native', 'mmvq', 'native_wrapper', "
+            "1, '[]', 0, 1, 1, '{}')",
+            (self.build_id,),
+        )
+        self.native_candidate_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+            "implementation_version, architectures, architecture_mask, graph_safe, "
+            "deterministic, config_json) VALUES (?, 'mmvq:q8_0:w1:nw1:rpb2:sk0:v1', 'mmvq', "
+            "'new_generated_variant', 1, '[]', 0, 1, 1, '{}')",
+            (self.build_id,),
+        )
+        self.candidate_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+            "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', "
+            "'final', 1)",
+            (self.build_id, self.hardware_id, self.signature_id,
+             bytes.fromhex(DISPATCH_HEX), self.candidate_id),
+        )
+        self.conn.commit()
+
+        self._tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp_dir.cleanup)
+        self.vendor = _write_fixture_vendor_with_mul_mat_id(Path(self._tmp_dir.name))
+
+        self.row = {
+            "dispatch": DISPATCH_HEX,
+            "signature": MUL_MAT_ID_SIGNATURE_HEX,
+            "hardware": HARDWARE_HEX,
+            "native": "native",
+            "provisional_winner": "mmvq:q8_0:w1:nw1:rpb2:sk0:v1",
+        }
+
+    def test_mul_mat_id_row_reaches_real_evidence_generation(self):
+        outcome = cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=_fake_mul_mat_id_runner_factory(),
+        )
+        self.assertIn("wrote evidence_id=", outcome)
+        stored = self.conn.execute(
+            "SELECT candidate_id, native_candidate_id FROM correctness_evidence"
+        ).fetchone()
+        self.assertEqual(stored, (self.candidate_id, self.native_candidate_id))
+
+    def test_evidence_written_passes_the_real_promotion_gate(self):
+        cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=_fake_mul_mat_id_runner_factory(),
+        )
+        identity = gate.resolve_promotion_identity(
+            self.conn, dispatch_hex=DISPATCH_HEX, signature_hex=MUL_MAT_ID_SIGNATURE_HEX,
+            hardware_hex=HARDWARE_HEX, native_name="native",
+            candidate_name="mmvq:q8_0:w1:nw1:rpb2:sk0:v1",
+        )
+        passed, status = gate.evaluate_correctness_gate(self.conn, identity)
+        self.assertTrue(passed, status)
+
+
 if __name__ == "__main__":
     unittest.main()
