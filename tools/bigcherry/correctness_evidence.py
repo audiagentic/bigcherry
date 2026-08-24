@@ -148,9 +148,18 @@ def run_test_backend_ops(
     run_env["BIGCHERRY_TEST_DETERMINISTIC_SEED"] = str(seed)
     run_env["GGML_HIP_DISPATCH_MODE"] = dispatch_mode
     if forced_candidate is not None:
+        # HI105: GGML_HIP_FORCE_CANDIDATE_STRICT must accompany FORCE_CANDIDATE
+        # here -- dispatch.cu's own comment names this exact file as the
+        # reason STRICT exists: without it, an ineligible/unregistered
+        # requested candidate silently falls back to ordinary resolution
+        # instead of aborting, and this producer would then record a
+        # plausible-looking "candidate" correctness result for an operation
+        # that never actually ran under the named candidate at all.
         run_env["GGML_HIP_FORCE_CANDIDATE"] = forced_candidate
+        run_env["GGML_HIP_FORCE_CANDIDATE_STRICT"] = "1"
     else:
         run_env.pop("GGML_HIP_FORCE_CANDIDATE", None)
+        run_env.pop("GGML_HIP_FORCE_CANDIDATE_STRICT", None)
     if test_file is not None:
         argv = [str(binary), "test", "--test-file", str(test_file)]
     else:
