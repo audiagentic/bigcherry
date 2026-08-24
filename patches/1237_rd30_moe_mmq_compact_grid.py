@@ -65,15 +65,30 @@ candidate timing/promotions are stale under this patch even though
 candidate identity (J) is unchanged -- re-measurement is required before
 any promotion, not just a build-clean patch.
 
-Hardware status: UNVALIDATED as of authoring. Correctness (bitwise
-equality against the legacy rectangular-grid path under
-``moe_hostile_routing_sweep.py``'s hostile/skewed routing distributions)
-and real-hardware timing on gfx1100 are both required before promotion out
-of 'untested'.
+Hardware status (2026-08-25, real dual-gfx1100 Brutus rig, VALIDATED):
+  - Build: clean on both gfx1100-only and full gfx1100+gfx1201+gfx1030
+    multi-arch builds.
+  - Correctness: test-backend-ops MUL_MAT_ID passes under both native
+    (869/869) and tune (q4_K 73/73, q8_0 75/75, 100% MMQ dispatch
+    coverage) dispatch modes; a dedicated real-hardware test
+    (tools/tests/rd30_hostile_test.cu / test_rd30_hostile_routing.py)
+    checks mmq_build_moe_block_map directly against single-hot,
+    concentrated-8-of-256, Zipf-skew, uniform, and degenerate all-zero
+    routing distributions at real production scale (n_experts=256)
+    against a host-side reference implementation -- 0/5 failed.
+  - Timing: real production model (Qwen3.6-35B-A3B Q4_K_M, real
+    n_expert=256), three INTERLEAVED baseline/RD30 rounds (not a single
+    before/after) to rule out drift/noise as the explanation -- RD30 won
+    every round by +0.73%..+0.90% pp512, with the two clusters never
+    overlapping. See docs/planning/active/rdna-boost-experiments/RD30.md
+    for the full evidence trail.
+
+See docs/planning/active/rdna-boost-experiments/RD30.md for the complete
+validation record.
 """
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 import re
 

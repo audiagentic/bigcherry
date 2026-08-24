@@ -1,6 +1,6 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-08-24T22:34:14.419402+00:00",
+  "generated_at": "2026-08-24T23:54:56.082272+00:00",
   "releases": [
     {
       "audit_passed": true,
@@ -8,8 +8,8 @@
       "release_tag": "b10502",
       "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
       "slug": "b10502",
-      "stage": "broken",
-      "updated_at": "2026-08-24T22:34:14.383716+00:00"
+      "stage": "generated",
+      "updated_at": "2026-08-24T23:54:56.074537+00:00"
     },
     {
       "audit_passed": true,
