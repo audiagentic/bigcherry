@@ -405,28 +405,41 @@ def _parse_patch_toml(root: Path, toml_path: Path) -> dict:
 
 
 def _contract_hash(contract_id: str, *, contracts_path: Path | None = None) -> str:
-    """sha256 over the canonicalized ``[contract.<id>]`` table of the
-    experiment-contracts file (runbook 14.2: "linked Experiment Contract
-    hash" = semantic content, not file bytes — a reformat that leaves every
-    table's content unchanged does not change this).
+    """The canonical Experiment Contract hash (EC01) for ``contract_id`` —
+    ``ExperimentContract.contract_hash``: semantic content, schema-normalized
+    (key-order independent, defaults applied), computed by the contract
+    module that OWNS the schema (runbook 14.2: "linked Experiment Contract
+    hash" = semantic content, not file bytes).
 
-    Reads the file directly (tomllib) instead of importing
-    experiment_contract.py to keep the registry's dependency DAG at
-    {paths, patcher} (runbook 11).
+    RV80/A1: this used to be an ad-hoc sha256 over the RAW TOML table read
+    with tomllib — a second, divergent hashing authority for the same
+    contract (raw-table bytes vs the parsed+defaulted schema object), so a
+    schema-level normalization (e.g. defaults, tuple ordering) could change
+    ``contract_hash`` while the registry's hash stayed put, or vice versa.
+    The registry now defers to the canonical hash. A1 amends the §11 DAG pin:
+    the registry may import experiment_contract ONE-WAY (it is a leaf config
+    module — stdlib + autotune_schema only — and must never import the
+    registry).
     """
     file_path = contracts_path or paths.EXPERIMENT_CONTRACTS
     if not file_path.is_file():
         raise PatchRegistryError(
             f"experiment contract {contract_id!r} referenced but no contract file at {file_path}"
         )
-    raw = tomllib.loads(file_path.read_text(encoding="utf-8"))
-    table = (raw.get("contract") or {}).get(contract_id)
-    if table is None:
+    from bigcherry import experiment_contract  # noqa: PLC0415 (A1: one-way leaf import)
+
+    try:
+        contracts = experiment_contract.load_contracts(file_path)
+    except Exception as exc:  # noqa: BLE001 - schema errors become tree errors
+        raise PatchRegistryError(
+            f"experiment contracts file {file_path.name} failed to load: {exc}"
+        ) from exc
+    try:
+        return contracts[contract_id].contract_hash
+    except KeyError:
         raise PatchRegistryError(
             f"experiment contract {contract_id!r} not found in {file_path.name}"
-        )
-    canonical = json.dumps(table, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return _sha256_bytes(canonical.encode("utf-8"))
+        ) from None
 
 
 def _validation_identity(
@@ -602,6 +615,56 @@ def load_registry(
 # ------------------------------------------------------------------- loader
 
 
+# RV80/B5: frozen v1 rule — a packaged ``patch.py`` may import ONLY the
+# Python stdlib and the BigCherry public patch API (``bigcherry.patcher``).
+# Validated statically (AST walk) BEFORE execution: an out-of-scope import is
+# a load-time tree error with a structured message, not an ImportError (or
+# worse, an executed side effect) discovered mid-execution.
+_PACKAGED_ALLOWED_MODULE = "bigcherry.patcher"
+
+
+def _import_disallowed(module_name: str) -> bool:
+    """True when a packaged patch.py import of ``module_name`` is outside the
+    frozen v1 scope (stdlib + exactly ``bigcherry.patcher``). Deliberately
+    strict: ``import bigcherry`` / ``from bigcherry import patcher`` expose
+    the whole package surface and are NOT the public patch API — patches must
+    spell ``bigcherry.patcher`` explicitly (the form every flat patch uses).
+    """
+    if module_name == _PACKAGED_ALLOWED_MODULE:
+        return False
+    return module_name.split(".")[0] not in sys.stdlib_module_names
+
+
+def _validate_packaged_imports(source: str, descriptor: PatchDescriptor) -> None:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise PatchRegistryError(
+            f"{descriptor.patch_id}: patch.py failed to parse: {exc}"
+        ) from exc
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if _import_disallowed(alias.name):
+                    raise PatchRegistryError(
+                        f"{descriptor.patch_id}: packaged patch.py may import only "
+                        f"the Python stdlib and {_PACKAGED_ALLOWED_MODULE!r}; "
+                        f"found {alias.name!r} (line {node.lineno})"
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            if node.level != 0:
+                raise PatchRegistryError(
+                    f"{descriptor.patch_id}: relative imports are not allowed in "
+                    f"packaged patch.py (line {node.lineno})"
+                )
+            if node.module and _import_disallowed(node.module):
+                raise PatchRegistryError(
+                    f"{descriptor.patch_id}: packaged patch.py may import only "
+                    f"the Python stdlib and {_PACKAGED_ALLOWED_MODULE!r}; "
+                    f"found {node.module!r} (line {node.lineno})"
+                )
+
+
 def load_implementation(
     descriptor: PatchDescriptor,
     *,
@@ -615,6 +678,12 @@ def load_implementation(
     ``patchset._load_module``): the standard loader's mtime-keyed pycache can
     serve stale bytecode for a file whose on-disk bytes have changed, and a
     patch's applied effect must never diverge from its content hash.
+
+    RV80/B3: the bytes about to be executed are re-hashed against
+    ``descriptor.implementation_digest`` and the load FAILS CLOSED on
+    mismatch — a file edited between ``load_registry()`` and this call is a
+    tree error, never a silently re-hashed patch. RV80/B5: packaged
+    implementations additionally pass static import validation before exec.
     """
     resolved_root = (root or paths.PATCHES).resolve()
     path = resolved_root / descriptor.implementation_path
@@ -622,7 +691,20 @@ def load_implementation(
         raise PatchRegistryError(
             f"{descriptor.patch_id}: implementation path escapes registry root"
         )
-    source = path.read_text(encoding="utf-8")
+    raw = path.read_bytes()
+    actual_digest = _sha256_bytes(raw)
+    if actual_digest != descriptor.implementation_digest:
+        raise PatchRegistryError(
+            f"{descriptor.patch_id}: implementation bytes at "
+            f"{descriptor.implementation_path} no longer match the descriptor "
+            f"digest (descriptor {descriptor.implementation_digest[:16]}…, "
+            f"actual {actual_digest[:16]}…) — the file changed after the registry "
+            "was loaded; reload the registry from this tree rather than "
+            "executing a patch whose content identity moved"
+        )
+    source = raw.decode("utf-8")
+    if descriptor.representation == REPRESENTATION_PACKAGED:
+        _validate_packaged_imports(source, descriptor)
     code = compile(source, str(path), "exec")
     name = f"bigcherry._patches.{descriptor.patch_id}"
     module = ModuleType(name)

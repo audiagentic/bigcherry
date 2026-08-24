@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -213,6 +214,44 @@ def catalog(directory=None) -> list[PatchModule]:
     ]
 
 
+def topological_order(
+    patch_ids: Sequence[str],
+    *,
+    modules: Mapping[str, PatchModule],
+) -> tuple[str, ...]:
+    """Deterministic TRUE topological order of an EXACT, dependency-complete
+    patch id set: every REQUIRES dependency precedes its dependent, and the
+    canonical ``(order, patch_id)`` key is used ONLY to pick among the
+    currently READY nodes (minimum first) — never to re-sort the whole set.
+
+    RV80/B4: a global ``sorted(ids, key=(order, id))`` silently destroys the
+    dependency order whenever numbering and REQUIRES disagree (a ``0100``
+    child that REQUIRES a ``0200`` parent was emitted before its parent),
+    which changes the apply sequence and therefore which anchors exist when
+    a patch is applied. Callers must have already validated that the set is
+    dependency-complete (every ``requires`` target is in ``patch_ids``); an
+    unsatisfiable remainder is reported as a cycle.
+    """
+    remaining = set(patch_ids)
+    unmet = {
+        pid: {dep for dep in modules[pid].requires if dep in remaining}
+        for pid in remaining
+    }
+    ordered: list[str] = []
+    while remaining:
+        ready = [pid for pid in remaining if not unmet[pid]]
+        if not ready:
+            raise ValueError(
+                "REQUIRES cycle detected among: " + ", ".join(sorted(remaining))
+            )
+        pick = min(ready, key=lambda pid: (modules[pid].order, pid))
+        ordered.append(pick)
+        remaining.discard(pick)
+        for pid in remaining:
+            unmet[pid].discard(pick)
+    return tuple(ordered)
+
+
 def resolve_exact(
     patch_ids: tuple[str, ...] | list[str],
     *,
@@ -220,7 +259,13 @@ def resolve_exact(
     required_state: str | None = None,
     allow_rejected: bool = False,
 ) -> ResolvedPatchSet:
-    """Resolve a complete explicit module set without adding dependencies."""
+    """Resolve a complete explicit module set without adding dependencies.
+
+    The authoritative exact-composition validator (RV80): unknown IDs,
+    invalid/rejected states, duplicate IDs, missing explicit requires, and
+    internal conflicts ALL fail closed. The returned module order is a true
+    topological order (``topological_order``), not a numeric re-sort.
+    """
     modules = {module.patch_id: module for module in catalog(directory)}
     ids = tuple(patch_ids)
     if len(set(ids)) != len(ids):
@@ -228,7 +273,7 @@ def resolve_exact(
     unknown = sorted(set(ids) - set(modules))
     if unknown:
         raise ValueError(f"unknown patch module(s): {', '.join(unknown)}")
-    selected = tuple(sorted((modules[item] for item in ids), key=lambda m: (m.order, m.patch_id)))
+    selected = tuple(modules[item] for item in ids)
     for module in selected:
         if module.state not in STATES:
             raise ValueError(f"{module.patch_id}: invalid STATE={module.state!r}")
@@ -251,7 +296,10 @@ def resolve_exact(
             raise ValueError(
                 f"{module.patch_id} conflicts with selected module(s): {', '.join(conflicts)}"
             )
-    return ResolvedPatchSet(selected, required_state)
+    ordered_ids = topological_order(ids, modules=modules)
+    return ResolvedPatchSet(
+        tuple(modules[pid] for pid in ordered_ids), required_state
+    )
 
 
 @dataclass(frozen=True)
@@ -323,7 +371,11 @@ def expand_composition(
     for patch_id in requested:
         visit(patch_id)
 
-    expanded = tuple(sorted(order, key=lambda pid: (modules[pid].order, pid)))
+    # RV80/B4: the DFS order is already dependency-first; order it with the
+    # true topological picker (minimum ready (order, patch_id)) instead of a
+    # GLOBAL re-sort by (order, patch_id), which would put a numerically
+    # earlier dependent ahead of its numerically later dependency.
+    expanded = topological_order(order, modules=modules)
     return CompositionExpansion(requested=requested, expanded=expanded)
 
 

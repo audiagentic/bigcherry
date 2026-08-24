@@ -19,7 +19,6 @@ real-hardware-validate this diagnostic; see HI69.md's notes).
 
 from __future__ import annotations
 
-import re
 import unittest
 from pathlib import Path
 
