@@ -269,7 +269,9 @@ class PatchDescriptor:
 # ------------------------------------------------------------------ legacy
 
 
-def _legacy_descriptor(root: Path, path: Path) -> PatchDescriptor:
+def _legacy_descriptor(
+    root: Path, path: Path, *, validate_state: bool = True
+) -> PatchDescriptor:
     patch_id = path.stem
     if not _PATCH_ID_PATTERN.match(patch_id):
         raise PatchRegistryError(
@@ -277,7 +279,12 @@ def _legacy_descriptor(root: Path, path: Path) -> PatchDescriptor:
             f"ID pattern <numeric-order>_<name>"
         )
     state = module_state(path)
-    if state not in STATES:
+    # RV80 follow-up (GPT ruling b): the reporting facade (patchset.describe)
+    # must be able to SURFACE a malformed lifecycle state (state_valid=False)
+    # rather than crash. validate_state=False preserves the raw state; every
+    # strict path (load_registry/catalog/resolve/materialization) keeps the
+    # default True and stays fail-closed.
+    if state not in STATES and validate_state:
         raise PatchRegistryError(f"{patch_id}: invalid STATE={state!r}")
     return PatchDescriptor(
         patch_id=patch_id,
@@ -326,9 +333,14 @@ def _string_list(record: dict, key: str, *, patch_id: str, label: str) -> tuple[
     return tuple(value)
 
 
-def _parse_patch_toml(root: Path, toml_path: Path) -> dict:
+def _parse_patch_toml(
+    root: Path, toml_path: Path, *, validate_state: bool = True
+) -> dict:
     """Parse + schema-validate one ``patch.toml`` (runbook 6/7). Returns the
-    validated record. All errors name the file and fail closed."""
+    validated record. All errors name the file and fail closed. With
+    ``validate_state=False`` (reporting facade only) a malformed lifecycle
+    ``state`` is preserved rather than rejected; every other schema check is
+    unchanged."""
     where = toml_path
     try:
         raw = tomllib.loads(toml_path.read_text(encoding="utf-8"))
@@ -378,7 +390,7 @@ def _parse_patch_toml(root: Path, toml_path: Path) -> dict:
         raise PatchRegistryError(f"{where}: group must be a non-empty string")
 
     state = raw["state"]
-    if state not in STATES:
+    if state not in STATES and validate_state:
         raise PatchRegistryError(f"{where}: state must be one of {STATES}, got {state!r}")
 
     for key, vocabulary in (
@@ -496,8 +508,9 @@ def _packaged_descriptor(
     toml_path: Path,
     *,
     contracts_path: Path | None = None,
+    validate_state: bool = True,
 ) -> PatchDescriptor:
-    record = _parse_patch_toml(root, toml_path)
+    record = _parse_patch_toml(root, toml_path, validate_state=validate_state)
     package_dir = toml_path.parent
     patch_id = record["id"]
     implementation = package_dir / "patch.py"
@@ -610,6 +623,51 @@ def load_registry(
 
     ordered = tuple(sorted(descriptors, key=lambda d: (d.order, d.patch_id)))
     return PatchRegistry(root=resolved_root, descriptors=ordered)
+
+
+def describe_all(
+    root: Path | None = None, *, contracts_path: Path | None = None
+) -> tuple[PatchDescriptor, ...]:
+    """Report-only variant of :func:`load_registry` (runbook compatibility
+    facade; RV80 follow-up / GPT ruling b).
+
+    Identical discovery and structural validation (ID pattern, path/symlink
+    escape, duplicate IDs, TOML schema) EXCEPT it does not fail closed on an
+    invalid lifecycle ``state``: the raw state is preserved so the reporting
+    facade (:func:`bigcherry.patchset.describe`) can surface it
+    (``state_valid=False``) instead of crashing on a typo'd ``STATE``.
+
+    Every strict path -- ``load_registry``, ``catalog``, ``resolve_exact``,
+    source materialization -- keeps failing closed; this function is only for
+    observational/reporting use and must never feed a resolution or a build.
+    """
+    resolved_root = (root or paths.PATCHES).resolve()
+    if not resolved_root.is_dir():
+        return ()
+    descriptors: list[PatchDescriptor] = []
+    seen: dict[str, str] = {}
+
+    def _add(descriptor: PatchDescriptor) -> None:
+        if descriptor.patch_id in seen:
+            raise PatchRegistryError(
+                f"duplicate patch ID {descriptor.patch_id!r}: "
+                f"{seen[descriptor.patch_id]} and "
+                f"{descriptor.representation} at {descriptor.implementation_path}"
+            )
+        seen[descriptor.patch_id] = (
+            f"{descriptor.representation} at {descriptor.implementation_path}"
+        )
+        descriptors.append(descriptor)
+
+    for toml_path in discover_packaged_patches(resolved_root):
+        _add(_packaged_descriptor(
+            resolved_root, toml_path, contracts_path=contracts_path,
+            validate_state=False,
+        ))
+    for py_path in discover_simple_patches(resolved_root):
+        _add(_legacy_descriptor(resolved_root, py_path, validate_state=False))
+
+    return tuple(sorted(descriptors, key=lambda d: (d.order, d.patch_id)))
 
 
 # ------------------------------------------------------------------- loader

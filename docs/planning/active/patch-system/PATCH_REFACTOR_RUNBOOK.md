@@ -754,7 +754,9 @@ validation_digest =
 The hash must use sorted relative paths plus bytes, not filesystem traversal order.
 
 The "validation framework semantic version" is pinned as a constant in
-`patch_validation.py`:
+`patch_registry.py` (the lower identity layer) and RE-EXPORTED from
+`patch_validation.py` for validator/consumer convenience (A2 — the constant
+must live in the lower layer so both identity domains read the same value):
 
     VALIDATION_FRAMEWORK_VERSION = "1"
 
@@ -780,8 +782,13 @@ source_key = sha256({
                               # in the manifest informationally only)
   overlay_digest,             # sha256 over sorted (relpath, sha256) of every
                               # file under the source overlay (src/ additions)
-  composition,                # sorted [(patch_id, implementation_digest)] of
-                              # the EXPLICITLY resolved composition —
+  composition,                # ORDERED [(patch_id, implementation_digest)]
+                              # in the exact application order returned by
+                              # patchset.resolve_exact() — NEVER re-sorted:
+                              # a lexicographic sort could give two DIFFERENT
+                              # application orders the same key when a
+                              # packaged patch.toml changes requires/order
+                              # while patch.py digests stay fixed —
                               # stock = empty list
 })
 ```
