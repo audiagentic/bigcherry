@@ -37,7 +37,6 @@ import os
 import re
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from bigcherry.builds import capture_completed_build_evidence
@@ -50,34 +49,6 @@ CMAKE_GENERATOR = "Ninja"
 
 class PatchCampaignError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class TraceProbeSpec:
-    marker_regex: str
-    description: str
-
-
-# HI82 item 4 (design: GPT, req_cc5af49494fe457a): patches that fuse graph
-# nodes silently at the host level need explicit two-probe activation
-# evidence -- a green build+bench alone never proves the fusion fired (the
-# HI82 design's original motivating example: 1221_rd50 is arch-gated and
-# would produce a normal-looking bench "pass" on hardware where its new
-# kernel never runs). BIGCHERRY_PATCH_HIT markers already exist in the
-# patches themselves (env-gated GGML_LOG_INFO calls at the real fusion
-# commit point); this wires the two-probe check (positive: marker must
-# fire; negative control with GGML_CUDA_DISABLE_FUSION=1: marker must NOT
-# fire) into the campaign so activation.json is produced automatically.
-_TRACE_PROBE_SPECS: dict[str, TraceProbeSpec] = {
-    "1205_rd12_paired_mmvq_dual_output": TraceProbeSpec(
-        marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
-        description="RD12 paired-MMVQ dual-output fusion",
-    ),
-    "1206_rd13_mul_mat_add_view_fusion": TraceProbeSpec(
-        marker_regex=r"BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)",
-        description="RD13 MUL_MAT -> RESHAPE -> ADD fusion",
-    ),
-}
 
 
 def _print(msg: str) -> None:
@@ -399,7 +370,8 @@ def _run_one_trace_probe(
 
 
 def run_trace_activation_probes(
-    *, patch_name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
+    *, marker_regex: str | None, description: str | None,
+    binary: Path, model: Path, hip_path: Path, workdir: Path,
     bench_prompt: int, bench_gen: int,
 ) -> tuple[ActivationEvidence, dict[str, object]] | None:
     """Run positive + fusion-disabled negative-control activation probes.
@@ -416,20 +388,19 @@ def run_trace_activation_probes(
     whether the specific fusion this patch adds actually ran) and is
     classified unobservable rather than executed.
     """
-    spec = _TRACE_PROBE_SPECS.get(patch_name)
-    if spec is None:
+    if not marker_regex or not description:
         return None
 
-    pattern = re.compile(spec.marker_regex)
+    pattern = re.compile(marker_regex)
 
-    _print(f"activation probe: {spec.description} (positive)")
+    _print(f"activation probe: {description} (positive)")
     positive_output = _run_one_trace_probe(
         name="positive", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
         bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
     )
     positive_hit = pattern.search(positive_output) is not None
 
-    _print(f"activation probe: {spec.description} (fusion-disabled control)")
+    _print(f"activation probe: {description} (fusion-disabled control)")
     negative_output = _run_one_trace_probe(
         name="fusion-disabled", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
         bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=True,
@@ -440,7 +411,7 @@ def run_trace_activation_probes(
         evidence = ActivationEvidence(
             status="unobservable", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
-                f"{spec.description}: marker was present even with GGML_CUDA_DISABLE_FUSION=1. "
+                f"{description}: marker was present even with GGML_CUDA_DISABLE_FUSION=1. "
                 "The marker therefore does not uniquely prove execution of the intended "
                 "fusion path."
             ),
@@ -449,7 +420,7 @@ def run_trace_activation_probes(
         evidence = ActivationEvidence(
             status="executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
-                f"{spec.description}: expected marker was observed with fusion enabled and "
+                f"{description}: expected marker was observed with fusion enabled and "
                 "was absent with GGML_CUDA_DISABLE_FUSION=1."
             ),
         )
@@ -457,14 +428,14 @@ def run_trace_activation_probes(
         evidence = ActivationEvidence(
             status="not_executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
-                f"{spec.description}: expected marker was absent from the positive probe and "
+                f"{description}: expected marker was absent from the positive probe and "
                 "remained absent in the fusion-disabled control. This model/workload did not "
                 "prove execution of the patch path."
             ),
         )
 
     detail: dict[str, object] = {
-        "patch": patch_name, "description": spec.description, "marker_regex": spec.marker_regex,
+        "description": description, "marker_regex": marker_regex,
         "positive": {
             "BIGCHERRY_PATCH_TRACE": "1", "GGML_CUDA_DISABLE_FUSION": None,
             "marker_observed": positive_hit, "log": "logs/activation-positive.log",
@@ -661,7 +632,8 @@ def run(args: argparse.Namespace) -> int:
     activation_evidence = None
     activation_verdict = None
     trace_result = run_trace_activation_probes(
-        patch_name=args.patch, binary=tune_bin / f"llama-bench{exe}", model=args.model,
+        marker_regex=args.trace_marker_regex, description=args.trace_description,
+        binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
         bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
     )
@@ -769,6 +741,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bench-prompt", type=int, default=512)
     parser.add_argument("--bench-gen", type=int, default=128)
     parser.add_argument("--bench-repetitions", type=int, default=5)
+    parser.add_argument(
+        "--trace-marker-regex", default=None,
+        help="optional generic activation marker regex; patch-specific probe configuration "
+             "stays outside the campaign orchestrator",
+    )
+    parser.add_argument(
+        "--trace-description", default=None,
+        help="human-readable description paired with --trace-marker-regex",
+    )
     parser.add_argument(
         "--correctness-evidence", type=Path, default=None,
         help="HI83: machine-readable patch-level correctness evidence bound to "
