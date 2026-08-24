@@ -26,6 +26,8 @@ Fail closed.
 
 ## 0.1 Review record (2026-08-23)
 
+> See §0.2 for the 2026-08-25 identity amendments (RV80).
+
 Reviewed against the live `tuning-code-rebase` codebase: every factual premise
 verified (recursive `discover_modules` with `_`-filter, `_patch_path` /
 `patch_implementation_digest` / `importlib.import_module` in source isolation,
@@ -33,7 +35,59 @@ byte-compile `_load_module`, `_TRACE_PROBE_SPECS` holding exactly 1205_rd12 +
 1206_rd13, fully flat `patches/`, and `check`/`patch-lint`/`patch-validate` being
 genuinely new commands). External GPT clarification (gateway
 `req_cf1dc98ecf4b4ef0`) confirmed the architecture and mandated 8 must-fix
-corrections + 6 pins, all applied in this revision:
+corrections + 6 pins, all applied in this revision (list continued in §0.3):
+
+## 0.2 Amendment record (2026-08-25, RV80)
+
+GPT adversarial identity review of the implemented RS01–RS06 (plan review RV80)
+found six spec-compliance blockers in the PA02 code. This runbook was already
+normative on all six (§15 invalidation table: overlay → new source, state-only
+→ no new source, dependency composition → new source; §58: "Replace implicit
+state-scan baseline with explicitly resolved composition"); the implementation
+had drifted from the spec. Amendments:
+
+- A1 (amends §11 DAG pin): `patch_registry` MAY import `experiment_contract`
+  (one-way; `experiment_contract` must never import `patch_registry`) so the
+  linked Experiment Contract hash is the canonical `ExperimentContract.
+  contract_hash` (EC01), not an ad-hoc SHA-256 of a raw TOML table.
+- A2 (confirms §14.2): `VALIDATION_FRAMEWORK_VERSION` lives in `patch_registry`
+  (lower layer) and is re-exported from `patch_validation`.
+- A3 (confirms §9): descriptor paths (`implementation_path`, `validation_path`,
+  `metadata_path`) are REGISTRY-ROOT-relative.
+- §12 addition: the implementation loader MUST re-hash the bytes it is about
+  to execute against `descriptor.implementation_digest` and fail closed on
+  mismatch (descriptor and executed bytes must be the same content).
+- §12 addition: packaged `patch.py` imports are statically validated BEFORE
+  execution (AST walk): Python stdlib + `bigcherry.patcher` only; relative
+  imports rejected. (Flat-patch import scope is a v1 open question — the live
+  flat tree is 100% conformant; ruled separately.)
+- §14.3 addition: materialised source identity is normative payload
+  `bigcherry-patch-source-v2` (see §14.3). State scans are forbidden in the
+  identity path; the requested base ref is recorded informationally, the
+  RESOLVED commit SHA is the semantic one.
+- §11/§59 addition: composition ORDER is a true topological order —
+  `patchset.topological_order()`; the canonical `(order, patch_id)` key is a
+  tie-breaker among ready nodes ONLY, never a global re-sort (a global sort
+  destroys dependency order when numbering and REQUIRES disagree).
+- §59 (RS06) addition: both the control AND the subject composition must be
+  run through the authoritative exact-composition validator
+  (`patchset.resolve_exact`): unknown IDs, missing requires, forward AND
+  reverse conflicts, and rejected members all BLOCK the comparison.
+
+### Required PA02 acceptance tests (RV80; all landed with the fix commits)
+
+1. `0100_child` REQUIRES `0200_parent` → resolve/expand order is parent-first (temp registry).
+2. Overlay file change → different source key (temp overlay).
+3. Patch implementation change → different implementation digest → different key.
+4. Lifecycle state flips (packaged: `patch.toml` state; flat: unrelated patch promoted) → same key — no state in identity.
+5. Base ref name vs its SHA → same resolved identity; ref moves → new identity.
+6. `materialize_composition` applies EXACTLY the explicitly given composition (manifest composition list), even when other validated patches exist in the registry.
+7. Focal in baseline → BLOCKED; focal REQUIRES target rejected → BLOCKED; reverse conflict → BLOCKED.
+8. Patch bytes differ from descriptor digest → loader raises.
+9. Packaged `patch.py` imports a non-stdlib, non-`bigcherry.patcher` module → loader raises.
+10. `validation.toml` symlink escaping the package root → not accepted as that patch's manifest (raises at discovery).
+
+## 0.3 Original 8 must-fixes (applied in the 0.1 revision)
 - B1: removed the undefined `fallback` validator from the v1 built-in set (fail-closed).
 - B2: locked the custom-callable API (§31).
 - B3: `not_applicable` never satisfies a required check — v1 lock (§19).
@@ -581,11 +635,14 @@ Internally, migrate them toward the new registry.
 Preserve deterministic ordering, canonical content hashes, duplicate rejection and fail-closed state handling.
 
 Module dependency DAG (normative, no import cycles):
-    patch_registry -> {paths, patcher}
+    patch_registry -> {paths, patcher, experiment_contract}
     patchset       -> patch_registry
     patch_source_isolation / patch_validation -> registry APIs
     check          -> higher-level / public validation APIs
 `patch_registry` must never import `patchset`; no lower layer may import `check`.
+A1 (RV80): `experiment_contract` is a leaf config module (imports stdlib +
+`autotune_schema` only) and must never import `patch_registry`; the registry
+imports it ONE-WAY for the canonical linked-contract hash (EC01).
 Add an import-cycle / architecture test on this boundary.
 
 ---
@@ -604,6 +661,12 @@ extract PATCH / PATCHES
 ```
 
 No normal `importlib.import_module()` loading of patch implementation.
+
+RV80 addition: after reading the bytes, the loader MUST re-hash them and
+compare against `descriptor.implementation_digest`, failing closed on mismatch
+(the descriptor and the executed bytes must be the same content — a file
+edited between registry load and execution is a tree error, not a silent
+re-hash).
 
 ## v1 package restriction
 
@@ -705,6 +768,30 @@ reusable (per §15).
 Continue to use actual content-addressed source/tree identity.
 
 Do not derive source identity merely from patch ID.
+
+RV80 normative payload (`bigcherry-patch-source-v2`; variants use
+`bigcherry-patch-source-variant-v2` adding `variant_name` + `variant_digest`):
+
+```text
+source_key = sha256({
+  schema,
+  resolved_revision,          # base ref resolved to an IMMUTABLE commit SHA
+                              # (branch/tag/HEAD requested refs are recorded
+                              # in the manifest informationally only)
+  overlay_digest,             # sha256 over sorted (relpath, sha256) of every
+                              # file under the source overlay (src/ additions)
+  composition,                # sorted [(patch_id, implementation_digest)] of
+                              # the EXPLICITLY resolved composition —
+                              # stock = empty list
+})
+```
+
+State scans are FORBIDDEN in the identity path: the composition is supplied
+explicitly by the caller (campaign layer resolves the named
+`[patch-set.*]` sets for the source under test); promoting, rejecting, or
+adding ANY patch in the registry that is not in the composition does not
+change the key. `git worktree add --detach` receives the resolved SHA, so a
+moved ref yields a new identity, never a reused stale worktree.
 
 ---
 

@@ -393,3 +393,11 @@ backend = "hip"
 state = "untested"
 external-source = "stew675-rdna-boosts"
 plan-item = "RD09"
+
+[[patch]]
+id = "1236_hi105_deterministic_mul_mat_id_ids"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI105"
