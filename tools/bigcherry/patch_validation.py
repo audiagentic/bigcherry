@@ -533,8 +533,13 @@ class ValidationPlan:
 
 
 def _produces(capability: str, spec: CheckSpec) -> bool:
+    # A check is a producer only for the capability it declares. The validator
+    # vocabulary describes the evidence mechanic; it must not silently make a
+    # performance check satisfy a controls requirement (RS08).
+    if spec.capability != capability:
+        return False
     if _capability_is_custom(spec.validator):
-        # A custom check produces exactly the capability it declares; the
+        # A custom check produces exactly its declared capability; the
         # framework verifies the returned result matches (section 31).
         return True
     return spec.validator in _CAPABILITY_PRODUCERS.get(capability, frozenset())
@@ -559,12 +564,16 @@ def build_validation_plan(
             if capability not in required:
                 required = required + (capability,)
 
-    for capability in required:
-        if not any(_produces(capability, spec) for spec in checks):
-            raise ConfigurationError(
-                f"{patch_id}: required capability {capability!r} has no producer "
-                "among the adapter's checks (section 18: configuration error, not skip)"
-            )
+    missing = [
+        capability for capability in required
+        if not any(_produces(capability, spec) for spec in checks)
+    ]
+    if missing:
+        raise ConfigurationError(
+            f"{patch_id}: required capabilities with no producer: "
+            f"{', '.join(missing)} "
+            "(section 18: configuration error, not skip)"
+        )
 
     return ValidationPlan(
         patch_id=patch_id,

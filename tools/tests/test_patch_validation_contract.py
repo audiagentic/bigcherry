@@ -70,7 +70,7 @@ id = "1201_test"
 order = 1201
 group = "test"
 state = "untested"
-kind = "experiment"
+kind = "framework"
 origin = "local"
 backend = "hip"
 experiment-contract = "ec-test"
@@ -307,19 +307,35 @@ class ContractExitCriterionTests(unittest.TestCase):
                             "validation identity must change")
         self.assertEqual(first.implementation_digest, second.implementation_digest,
                          "implementation identity must NOT change")
-        # source identity (materialisation identity, RS05) is derived from
-        # base revision + baseline digest + implementation digest:
-        self.assertEqual(
-            psi.source_key("deadbeef", "1201_test", first.implementation_digest),
-            psi.source_key("deadbeef", "1201_test", second.implementation_digest),
-            "source identity must NOT change",
-        )
-        # plan identity: the contract hash is part of the plan payload
+        # Source identity (RS05/PA02 v2) is derived from the resolved base
+        # revision + overlay digest + ordered implementation composition; the
+        # contract-only change must not alter it.
+        first_source_key = psi._make_source_identity_v2(
+            resolved_revision="deadbeef",
+            composition=(("1201_test", first.implementation_digest),),
+            overlay_root=None,
+        )["source_key"]
+        second_source_key = psi._make_source_identity_v2(
+            resolved_revision="deadbeef",
+            composition=(("1201_test", second.implementation_digest),),
+            overlay_root=None,
+        )["source_key"]
+        self.assertEqual(first_source_key, second_source_key,
+                         "source identity must NOT change")
+        # Build the first plan while the first contract is still current, then
+        # change only the contract and build the second plan.
+        self.write(gain=0.3)
+        first_descriptor = patch_registry.load_registry(
+            self.patches_root, contracts_path=self.contracts
+        ).get("1201_test")
         plan_first = pv.build_plan_for_patch(
-            first, root=self.patches_root, contracts_path=self.contracts)
+            first_descriptor, root=self.patches_root, contracts_path=self.contracts)
         self.write(gain=7.5)
+        second_descriptor = patch_registry.load_registry(
+            self.patches_root, contracts_path=self.contracts
+        ).get("1201_test")
         plan_second = pv.build_plan_for_patch(
-            second, root=self.patches_root, contracts_path=self.contracts)
+            second_descriptor, root=self.patches_root, contracts_path=self.contracts)
         self.assertNotEqual(pv.plan_digest(plan_first), pv.plan_digest(plan_second))
 
 
