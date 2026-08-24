@@ -1,0 +1,12 @@
+schema = 1
+id = "1205_rd12_paired_mmvq_dual_output"
+order = 1205
+group = "rdna-boosts"
+state = "untested"
+kind = "enhancement"
+origin = "external-fork"
+backend = "hip"
+external-source = "stew675-rdna-boosts"
+plan-ids = ["RD12"]
+requires = []
+conflicts = ["1207_rd17_moe_topk_down_fold"]
