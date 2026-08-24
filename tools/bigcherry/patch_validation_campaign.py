@@ -17,7 +17,7 @@ out of "untested" is a separate, deliberate decision.
 
 Usage:
     python -m bigcherry.patch_validation_campaign \\
-        --patch 1204_rd08_q6k_mmvq_vdr2 \\
+        --patch <patch-id> \\
         --model G:/models/qwen3.5-2b/Qwen_Qwen3.5-2B-Q4_K_M.gguf \\
         --hip-path H:/.../vendor/rocm/7.1 --amdgpu-targets gfx1100 \\
         --manifest H:/.../artifacts/<rev>/hip-autotune-manifest.json \\
@@ -722,7 +722,7 @@ def run(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
     parser.add_argument("--patch", required=True,
-                         help="patch module name under patches/, e.g. 1204_rd08_q6k_mmvq_vdr2")
+                         help="patch module name under patches/")
     parser.add_argument("--model", required=True, type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
     parser.add_argument("--amdgpu-targets", required=True, help="e.g. gfx1100 or gfx1201")
