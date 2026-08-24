@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.h"
 IMPL = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-q81-cache.cpp"
 MMVQ = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "mmvq.cu"
+COMMON_CUH = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "common.cuh"
 PATCH_PATH = ROOT / "patches" / "1235_rd09_q81_activation_cache_foundation.py"
 CMAKE_0100 = ROOT / "patches" / "0100_cmake_options.py"
 
@@ -50,7 +51,13 @@ class Rd09CacheFoundationTests(unittest.TestCase):
         cls.header_src = HEADER.read_text(encoding="utf-8")
         cls.impl_src = IMPL.read_text(encoding="utf-8")
         cls.mmvq_src = MMVQ.read_text(encoding="utf-8")
+        cls.common_cuh_src = COMMON_CUH.read_text(encoding="utf-8")
         cls.patch_src = PATCH_PATH.read_text(encoding="utf-8")
+
+        sys.path.insert(0, str(ROOT / "tools"))
+        from bigcherry import patchset as _patchset
+
+        cls.patch_module = _patchset._load_module(PATCH_PATH)
 
     def test_files_exist(self):
         self.assertTrue(HEADER.is_file())
@@ -192,7 +199,7 @@ class Rd09CacheFoundationTests(unittest.TestCase):
 
     def test_begin_generation_clears_entries_but_keeps_slabs(self):
         fn = re.search(
-            r"void ggml_hip_q81_cache_begin_generation\(.*?\n\}", self.impl_src, re.DOTALL,
+            r"uint64_t ggml_hip_q81_cache_begin_generation\(.*?\n\}", self.impl_src, re.DOTALL,
         )
         self.assertIsNotNone(fn)
         body = fn.group(0)
@@ -225,22 +232,168 @@ class Rd09CacheFoundationTests(unittest.TestCase):
         self.assertNotIn("hip-q81-cache", CMAKE_0100.read_text(encoding="utf-8"))
         self.assertIn("hip-q81-cache.cpp", self.patch_src)
 
-    def test_patch_targets_only_the_hip_cmakelists(self):
-        from bigcherry import patchset as _patchset  # noqa: E402
+    def test_patch_touches_exactly_the_three_expected_vendor_files(self):
+        # CMakeLists.txt (source wiring), common.cuh (opaque context
+        # member), ggml-cuda.cu (include + destructor teardown call) --
+        # added after the 2026-08-24 review moved ownership from a
+        # device-global singleton onto ggml_backend_cuda_context.
+        paths = {p.path for p in self.patch_module.PATCHES}
+        self.assertEqual(paths, {
+            "ggml/src/ggml-hip/CMakeLists.txt",
+            "ggml/src/ggml-cuda/common.cuh",
+            "ggml/src/ggml-cuda/ggml-cuda.cu",
+        })
 
-        module = _patchset._load_module(PATCH_PATH)
-        patches = module.PATCHES
-        self.assertEqual(len(patches), 1)
-        self.assertEqual(patches[0].path, "ggml/src/ggml-hip/CMakeLists.txt")
+    def test_common_cuh_edit_adds_only_an_opaque_pointer_member(self):
+        common_cuh_patch = next(
+            p for p in self.patch_module.PATCHES if p.path == "ggml/src/ggml-cuda/common.cuh"
+        )
+        self.assertEqual(len(common_cuh_patch.edits), 1)
+        edit_text = common_cuh_patch.edits[0].text
+        self.assertIn("void * q81_cache = nullptr;", edit_text)
+        # Opaque: must not name the concrete cache type, so common.cuh
+        # never needs hip-q81-cache.h's full definition.
+        self.assertNotIn("ggml_hip_q81_cache *", edit_text)
+        self.assertNotIn("#include", edit_text)
+
+    def test_common_cuh_anchor_matches_the_real_unpatched_file_exactly_once(self):
+        common_cuh_patch = next(
+            p for p in self.patch_module.PATCHES if p.path == "ggml/src/ggml-cuda/common.cuh"
+        )
+        anchor = common_cuh_patch.edits[0].anchor
+        self.assertEqual(len(re.findall(anchor, self.common_cuh_src)), 1)
+
+    def test_ggml_cuda_cu_edit_adds_include_and_destructor_call(self):
+        cu_patch = next(
+            p for p in self.patch_module.PATCHES if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu"
+        )
+        self.assertEqual(len(cu_patch.edits), 2)
+        texts = [e.text for e in cu_patch.edits]
+        self.assertTrue(any('#include "ggml-cuda/hip-q81-cache.h"' in t for t in texts))
+        self.assertTrue(any("ggml_hip_q81_cache_destroy_for_context(*this);" in t for t in texts))
 
     def test_provenance_cites_the_rebased_commit_not_the_stale_short_hash(self):
-        from bigcherry import patchset as _patchset  # noqa: E402
-
-        module = _patchset._load_module(PATCH_PATH)
-        provenance = module.PROVENANCE
+        provenance = self.patch_module.PROVENANCE
         self.assertEqual(provenance["fork-commit"], "299f6eaf73b5eeb888bd94eaa66122d003136e6a")
         self.assertEqual(provenance["original-commit"], "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc")
         self.assertTrue(provenance["adaptations"], "must document the departures from the fork source")
+
+    # --- ownership: context-scoped, not device-global (P1 fix) -----------
+
+    def test_cache_ownership_is_context_scoped_not_device_global(self):
+        # 2026-08-24 review (req_9bd7db08f19d4e53) P1: a device-global
+        # singleton is unsound because upstream does not guarantee exactly
+        # one ggml_backend_cuda_context per device.
+        self.assertIn(
+            "ggml_hip_q81_cache & ggml_hip_q81_cache_for_context(ggml_backend_cuda_context & ctx)",
+            self.header_src,
+        )
+        self.assertNotIn("ggml_hip_q81_cache_for_device", self.header_src)
+        self.assertNotIn("ggml_hip_q81_cache_for_device", self.impl_src)
+        self.assertIn(
+            "void ggml_hip_q81_cache_destroy_for_context(ggml_backend_cuda_context & ctx)",
+            self.header_src,
+        )
+        # No device-keyed registry left over from the old singleton design.
+        self.assertNotIn("std::unordered_map<int, std::unique_ptr<ggml_hip_q81_cache>>", self.impl_src)
+
+    def test_for_context_lazily_constructs_on_the_opaque_pointer(self):
+        fn = re.search(
+            r"ggml_hip_q81_cache & ggml_hip_q81_cache_for_context\(.*?\n\}",
+            self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(fn)
+        body = fn.group(0)
+        self.assertIn("ctx.q81_cache == nullptr", body)
+        self.assertIn("new ggml_hip_q81_cache()", body)
+
+    def test_destroy_for_context_frees_and_nulls_the_opaque_pointer(self):
+        fn = re.search(
+            r"void ggml_hip_q81_cache_destroy_for_context\(.*?\n\}",
+            self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(fn)
+        body = fn.group(0)
+        self.assertIn("delete static_cast<ggml_hip_q81_cache *>(ctx.q81_cache)", body)
+        self.assertIn("ctx.q81_cache = nullptr", body)
+
+    # --- reserve() slab-walk correctness (P1 fix) -------------------------
+
+    def test_reserve_walks_existing_slabs_before_growing(self):
+        # 2026-08-24 review P1: the original version grew immediately on a
+        # slab-boundary miss, which could return a pointer that overlapped
+        # a reservation already handed out from the next slab. reserve()
+        # must now retry against each already-existing slab (advancing the
+        # cursor to that slab's own start) before ever calling hipMalloc.
+        reserve_fn = re.search(
+            r"ggml_hip_q81_cache_reservation ggml_hip_q81_cache_reserve\(.*?\n\}",
+            self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(reserve_fn)
+        body = reserve_fn.group(0)
+        # A loop that can retry against a later slab, not a single
+        # if/else that falls straight through to growth.
+        self.assertRegex(body, r"for\s*\(\s*;;\s*\)")
+        malloc_pos = body.index("hipMalloc")
+        loop_pos = re.search(r"for\s*\(\s*;;\s*\)", body).start()
+        self.assertLess(loop_pos, malloc_pos,
+                         "the slab-walk loop must run before any growth allocation")
+
+    def test_reserve_never_splits_one_reservation_across_two_slabs(self):
+        reserve_fn = re.search(
+            r"ggml_hip_q81_cache_reservation ggml_hip_q81_cache_reserve\(.*?\n\}",
+            self.impl_src, re.DOTALL,
+        ).group(0)
+        self.assertIn("offset + aligned_bytes <= cache.slabs[slab_index].bytes", reserve_fn)
+
+    def test_slab_base_helper_exists_for_correct_cursor_arithmetic(self):
+        # The overlap bug was specifically that the returned pointer used
+        # slab-relative offset 0 while the cursor advanced in the OLD
+        # (pre-growth) concatenated address space. A dedicated slab_base()
+        # helper, used consistently, is what the fix relies on.
+        self.assertIn("slab_base(cache.slabs,", self.impl_src)
+
+    # --- entry cap (P2 hardening) -----------------------------------------
+
+    def test_publish_enforces_an_entry_cap(self):
+        publish_fn = re.search(
+            r"void ggml_hip_q81_cache_publish\(.*?\n\}", self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(publish_fn)
+        body = publish_fn.group(0)
+        self.assertIn("entries.size()", body)
+        self.assertIn("entry_cap_bypasses", body)
+
+    def test_begin_generation_resets_current_bytes_stat(self):
+        # P2: the cursor resets to 0 but the reported current_bytes stat
+        # must reset with it, or stats can temporarily describe a
+        # generation that no longer exists.
+        fn = re.search(
+            r"uint64_t ggml_hip_q81_cache_begin_generation\(.*?\n\}", self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(fn)
+        self.assertIn("cache.stats.current_bytes = 0", fn.group(0))
+
+    def test_begin_generation_returns_the_new_generation(self):
+        self.assertIn(
+            "uint64_t ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache & cache)",
+            self.header_src,
+        )
+        fn = re.search(
+            r"uint64_t ggml_hip_q81_cache_begin_generation\(.*?\n\}", self.impl_src, re.DOTALL,
+        )
+        self.assertIn("return cache.generation;", fn.group(0))
+
+    def test_make_key_builder_exists_and_uses_current_generation(self):
+        # Reduces the chance a future caller (stage 2, or RD10/RD11/RD24)
+        # hand-assembles cache identity and omits a field.
+        self.assertIn("ggml_hip_q81_cache_key ggml_hip_q81_cache_make_key(", self.header_src)
+        fn = re.search(
+            r"ggml_hip_q81_cache_key ggml_hip_q81_cache_make_key\(.*?\n\}",
+            self.impl_src, re.DOTALL,
+        )
+        self.assertIsNotNone(fn)
+        self.assertIn("key.generation  = cache.generation;", fn.group(0))
 
 
 if __name__ == "__main__":
