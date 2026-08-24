@@ -663,6 +663,48 @@ def make_default_register_artifact(run_dir: Path) -> Callable[..., ArtifactRef]:
     return register
 
 
+def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Validate that both explicit control and subject sources are available.
+
+    Materialization itself belongs to the source-isolation/campaign layer; this
+    validator only consumes its evidence-bound outputs. Missing sources are
+    BLOCKED (unavailable prerequisite), never silently treated as pass.
+    """
+    if ctx.control_source is None or ctx.subject_source is None:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="control and subject sources are required for apply evidence",
+        )
+    if not ctx.control_source.is_dir() or not ctx.subject_source.is_dir():
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="control or subject source directory does not exist",
+        )
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary="explicit control and subject sources are available",
+    )
+
+
+def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Validate that the campaign supplied build identities for both sides."""
+    required = ("control", "subject")
+    missing = tuple(role for role in required if role not in ctx.build_identities)
+    if missing:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary=f"missing build identity for: {', '.join(missing)}",
+        )
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary="control and subject build identities are recorded",
+    )
+
+
+register_builtin("apply", _builtin_apply)
+register_builtin("build", _builtin_build)
+
+
 # ------------------------------------------------------------------ verdict
 
 

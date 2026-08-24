@@ -433,6 +433,54 @@ class RegistryAndVersionTests(unittest.TestCase):
         )
         self.assertEqual(pv.VALIDATION_FRAMEWORK_VERSION, "1")
 
+    def test_builtin_apply_requires_explicit_sources(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="apply", capability="apply", validator="apply", required=True,
+        )
+        blocked = pv.evaluate_check(
+            spec,
+            pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None,
+            ),
+        )
+        self.assertEqual(blocked.status, pv.BLOCKED)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "control").mkdir()
+            (root / "subject").mkdir()
+            passed = pv.evaluate_check(
+                spec,
+                pv.ValidationContext(
+                    descriptor=_descriptor(), base_revision="r",
+                    control_source=root / "control", subject_source=root / "subject",
+                ),
+            )
+        self.assertEqual(passed.status, pv.PASS)
+
+    def test_builtin_build_requires_control_and_subject_identities(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="build", capability="build", validator="build", required=True,
+        )
+        blocked = pv.evaluate_check(
+            spec,
+            pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None,
+                build_identities={"control": "build-c"},
+            ),
+        )
+        self.assertEqual(blocked.status, pv.BLOCKED)
+        passed = pv.evaluate_check(
+            spec,
+            pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None,
+                build_identities={"control": "build-c", "subject": "build-s"},
+            ),
+        )
+        self.assertEqual(passed.status, pv.PASS)
+
     def test_unknown_validator_is_structured_error(self) -> None:
         spec = pv.CheckSpec(
             check_id="x", capability="apply", validator="fallback", required=True,
