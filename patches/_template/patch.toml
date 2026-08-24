@@ -1,0 +1,3 @@
+# Copy this directory to patches/<id>/ and replace every placeholder.
+patch_id = "<patch-id>"
+implementation = ["patch.py"]

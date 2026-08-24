@@ -1,0 +1,3 @@
+# Validator configuration only. Experiment Contract fields do not belong here.
+# [checks]
+# activation = { validator = "trace-marker", marker-regex = "..." }
