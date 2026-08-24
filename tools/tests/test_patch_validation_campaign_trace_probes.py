@@ -22,14 +22,15 @@ class TraceProbeClassificationTests(unittest.TestCase):
             lambda **kwargs: next(iterator),
         )
         return patch_validation_campaign.run_trace_activation_probes(
-            patch_name=patch_name, binary=Path("unused"), model=Path("unused"),
+            marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
+            description="RD12 trace", binary=Path("unused"), model=Path("unused"),
             hip_path=Path("unused"), workdir=Path("unused"),
             bench_prompt=512, bench_gen=128,
         )
 
     def test_unknown_patch_returns_none(self):
         result = patch_validation_campaign.run_trace_activation_probes(
-            patch_name="9999_not_a_trace_patch", binary=Path("unused"), model=Path("unused"),
+            marker_regex=None, description=None, binary=Path("unused"), model=Path("unused"),
             hip_path=Path("unused"), workdir=Path("unused"),
             bench_prompt=512, bench_gen=128,
         )
@@ -45,8 +46,8 @@ class TraceProbeClassificationTests(unittest.TestCase):
             ],
         ):
             result = patch_validation_campaign.run_trace_activation_probes(
-                patch_name="1205_rd12_paired_mmvq_dual_output",
-                binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
+                marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
+                description="RD12 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,
             )
         self.assertIsNotNone(result)
@@ -61,8 +62,8 @@ class TraceProbeClassificationTests(unittest.TestCase):
             patch_validation_campaign, "_run_one_trace_probe", return_value="no marker",
         ):
             evidence, _ = patch_validation_campaign.run_trace_activation_probes(
-                patch_name="1205_rd12_paired_mmvq_dual_output",
-                binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
+                marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
+                description="RD12 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,
             )
         self.assertEqual(evidence.status, "not_executed")
@@ -74,8 +75,8 @@ class TraceProbeClassificationTests(unittest.TestCase):
             patch_validation_campaign, "_run_one_trace_probe", return_value=marker,
         ):
             evidence, _ = patch_validation_campaign.run_trace_activation_probes(
-                patch_name="1206_rd13_mul_mat_add_view_fusion",
-                binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
+                marker_regex=r"BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)",
+                description="RD13 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,
             )
         self.assertEqual(evidence.status, "unobservable")
