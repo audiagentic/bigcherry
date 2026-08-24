@@ -233,6 +233,19 @@ def load_correctness_summary(
     return doc
 
 
+def _record_digest(record: Mapping[str, object]) -> str:
+    payload = {key: value for key, value in record.items() if key != "record_digest"}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _validation_digest(patch_path: Path) -> str:
+    manifest = patch_path.parent / "validation.toml"
+    if manifest.is_file():
+        return _sha256_file(manifest)
+    return hashlib.sha256(b"no-validation-manifest").hexdigest()
+
+
 def make_record(
     *, patch_id: str, patch_path: Path, patch_implementation_digest: str, base_ref: str,
     base_revision: str, framework_baseline_digest: str, patched_source_tree: str,
@@ -240,6 +253,11 @@ def make_record(
     activation_disposition: str | None, correctness: Mapping[str, object] | None,
     campaign_identity_digest: str, build_identities: Mapping[str, Mapping[str, object]],
     campaign_workdir: Path,
+    representation: str = "simple", validation_implementation_digest: str | None = None,
+    contract_id: str | None = None, baseline_composition: Mapping[str, object] | None = None,
+    control_composition: Mapping[str, object] | None = None,
+    subject_composition: Mapping[str, object] | None = None,
+    stock_tree: str | None = None, blockers: Iterable[str] = (),
 ) -> dict[str, object]:
     subject_digest = patch_validation_subject_digest(patch_path)
     archs = _architectures(gpu_architectures)
@@ -280,15 +298,23 @@ def make_record(
         and correctness_doc.get("disposition") == "passed"
     )
 
-    return {
+    result = {
         "record_schema_version": SCHEMA_VERSION,
         "validation_contract_version": CONTRACT_VERSION,
-        "validation_implementation_digest": subject_digest,
+        "representation": representation,
+        "validation_implementation_digest": validation_implementation_digest or _validation_digest(patch_path),
+        "contract_id": contract_id or correctness_doc.get("contract_id"),
         "contract_hash": str(correctness_doc.get("contract_hash", "")),
-        "control_composition": correctness_doc.get("control_composition", {}),
-        "subject_composition": correctness_doc.get("subject_composition", {}),
+        "baseline_composition": dict(baseline_composition or {}),
+        "control_composition": dict(control_composition or correctness_doc.get("control_composition", {})),
+        "subject_composition": dict(subject_composition or correctness_doc.get("subject_composition", {})),
+        "control_tree": correctness_doc.get("control_tree"),
+        "subject_tree": correctness_doc.get("subject_tree", patched_source_tree),
+        "stock_tree": stock_tree,
         "check_results": correctness_doc.get("check_results", {}),
         "hardware": {"architectures": list(archs)},
+        "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir) if isinstance(item, Mapping)},
+        "blockers": list(blockers),
         "final_eligibility": eligible,
         "patch_id": patch_id,
         # Exact bytes the hardware campaign used.
@@ -317,6 +343,8 @@ def make_record(
         "validation_disposition": "validated" if eligible else "incomplete",
         "eligible_for_validated_state": eligible,
     }
+    result["record_digest"] = _record_digest(result)
+    return result
 
 
 def write_record(record: Mapping[str, object], *, root: Path | None = None) -> Path:
@@ -334,6 +362,9 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
             or document.get("patch_id") != patch_id or not isinstance(document.get("records"), list)
         ):
             raise ValidationEvidenceError(f"{path}: invalid evidence file")
+        # Reading a v1 container is supported; any successful write upgrades
+        # the container header to v2 without rewriting legacy records.
+        document["schema_version"] = SCHEMA_VERSION
     else:
         document = {"schema_version": SCHEMA_VERSION, "patch_id": patch_id, "records": []}
 
@@ -388,6 +419,8 @@ def _record_qualifies(
     }
     if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
         problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
+    if record.get("record_schema_version") == 2 and record.get("record_digest") != _record_digest(record):
+        problems.append("record_digest does not match the v2 evidence payload")
     for key, wanted in expected.items():
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")

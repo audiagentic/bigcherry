@@ -103,6 +103,20 @@ class MakeRecordTests(unittest.TestCase):
         record = self._make()
         self.assertTrue(record["eligible_for_validated_state"])
         self.assertEqual(record["validation_disposition"], "validated")
+        self.assertEqual(record["record_schema_version"], 2)
+        self.assertEqual(record["record_digest"], pve._record_digest(record))
+        self.assertIn("representation", record)
+        self.assertIn("hardware", record)
+
+    def test_v2_integrity_digest_changes_for_each_provenance_field(self):
+        record = self._make()
+        for field in ("representation", "validation_implementation_digest", "contract_hash",
+                      "baseline_composition", "control_composition", "subject_composition",
+                      "subject_tree", "stock_tree", "check_results", "hardware",
+                      "artifact_hashes", "final_eligibility"):
+            changed = dict(record)
+            changed[field] = "tampered"
+            self.assertNotEqual(record["record_digest"], pve._record_digest(changed), field)
 
     def test_missing_correctness_is_incomplete(self):
         record = self._make(correctness_disposition="unknown")

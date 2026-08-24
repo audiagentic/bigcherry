@@ -708,6 +708,9 @@ def run(args: argparse.Namespace) -> int:
         activation_evidence=activation_evidence, activation_disposition=activation_verdict,
         correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,
         build_identities=identity_context.build_identities, campaign_workdir=workdir / "campaign",
+        representation=_descriptor.representation,
+        validation_implementation_digest=_descriptor.validation_digest,
+        contract_id=_descriptor.experiment_contract,
     )
     validation_record_path = patch_validation_evidence.write_record(validation_record)
     _print(f"validation evidence: {validation_record_path}")
