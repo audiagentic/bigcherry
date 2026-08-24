@@ -271,6 +271,8 @@ def make_record(
     subject_composition: Mapping[str, object] | None = None,
     control_tree: str | None = None, subject_tree: str | None = None,
     stock_tree: str | None = None, blockers: Iterable[str] = (),
+    check_results: Mapping[str, object] | None = None,
+    validation_eligible: bool | None = None,
 ) -> dict[str, object]:
     subject_digest = patch_validation_subject_digest(patch_path)
     archs = _architectures(gpu_architectures)
@@ -310,6 +312,8 @@ def make_record(
         and activation.get("disposition") == "activation-verified"
         and correctness_doc.get("disposition") == "passed"
     )
+    if validation_eligible is not None:
+        eligible = validation_eligible
 
     result = {
         "record_schema_version": SCHEMA_VERSION,
@@ -324,9 +328,9 @@ def make_record(
         "control_tree": control_tree or correctness_doc.get("control_tree"),
         "subject_tree": subject_tree or correctness_doc.get("subject_tree", patched_source_tree),
         "stock_tree": stock_tree,
-        "check_results": correctness_doc.get("check_results") or {
+        "check_results": dict(check_results or correctness_doc.get("check_results") or {
             "activation": dict(activation), "correctness": dict(correctness_doc),
-        },
+        }),
         "hardware": {"architectures": list(archs)},
         "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir) if isinstance(item, Mapping)},
         "blockers": list(blockers),
