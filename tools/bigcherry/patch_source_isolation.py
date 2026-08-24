@@ -429,6 +429,30 @@ def _materialize_v2(
     return source_dir
 
 
+def verify_composition_idempotent(
+    *,
+    base_repo: Path,
+    source: Path,
+    worktree_root: Path,
+    resolved_revision: str,
+    composition: Sequence[tuple[str, str]],
+    overlay_root: Path | None = None,
+    requested_revision: str | None = None,
+) -> bool:
+    """Re-run exact materialization and prove it reused the same tree.
+
+    The second invocation must pass the v2 manifest/tree reuse check; equality
+    of the resulting path and git tree then proves a no-op reapplication.
+    """
+    before = git_worktree_tree(source)
+    again = materialize_composition(
+        base_repo=base_repo, worktree_root=worktree_root,
+        resolved_revision=resolved_revision, composition=composition,
+        overlay_root=overlay_root, requested_revision=requested_revision,
+    )
+    return again == source and git_worktree_tree(again) == before
+
+
 def materialize_composition(
     *,
     base_repo: Path,

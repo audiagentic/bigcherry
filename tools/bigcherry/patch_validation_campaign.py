@@ -518,6 +518,16 @@ def run(args: argparse.Namespace) -> int:
     )
     _print(f"control source: {control_src}")
     _print(f"subject source: {patched_src}")
+    control_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC, source=control_src, worktree_root=worktree_root / "control",
+        resolved_revision=base_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+    )
+    subject_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC, source=patched_src, worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+    )
     stock_src = psi.materialize_stock_source(
         base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
     )
@@ -779,14 +789,14 @@ def run(args: argparse.Namespace) -> int:
     }
     apply_evidence = {
         "control": {
-            "verified": True, "idempotent": True,
+            "verified": True, "idempotent": control_idempotent,
             "artifact": _write_bound_artifact(
                 campaign_run_dir, "apply/control.json",
                 {"source_tree": control_source_tree, "composition": list(control_composition)},
             ),
         },
         "subject": {
-            "verified": True, "idempotent": True,
+            "verified": True, "idempotent": subject_idempotent,
             "artifact": _write_bound_artifact(
                 campaign_run_dir, "apply/subject.json",
                 {"source_tree": patched_source_tree, "composition": list(subject_composition)},
