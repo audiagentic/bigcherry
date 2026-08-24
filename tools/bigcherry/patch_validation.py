@@ -177,6 +177,9 @@ _CONTRACT_AUTHORITY_KEYS: frozenset[str] = frozenset({
     "target-kernel-gain-pct", "end-to-end-gain-pct", "max-control-regression-pct",
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
     "controls", "boundaries", "positive", "workloads", "models",
+    "source", "scope", "backend", "architectures", "family", "contract",
+    "correctness", "performance", "activation", "bit-identical", "bit_identical",
+    "required-checks", "required_checks", "metrics", "target-metric", "target_metric",
 })
 
 
@@ -375,6 +378,13 @@ def bind_contract(contract: experiment_contract.ExperimentContract) -> ContractB
         capabilities.append("correctness")
     if contract.controls.models or contract.controls.workloads or contract.boundary.dimensions:
         capabilities.append("controls")
+    # Acceptance thresholds are performance claims even when the hypothesis'
+    # expected_effect is otherwise correctness-only (RS08).
+    if (
+        contract.acceptance.target_kernel_gain_pct is not None
+        or contract.acceptance.end_to_end_gain_pct is not None
+    ) and "performance" not in capabilities:
+        capabilities.append("performance")
     return ContractBinding(
         contract_id=contract.id,
         contract_hash=contract.contract_hash,
@@ -599,13 +609,18 @@ BUILTIN_REGISTRY: dict[str, Validator] = {}
 
 
 def register_builtin(name: str, validator: Validator) -> None:
-    """Register a built-in validator. The set is closed (section 21):
-    registering an unknown name is a ConfigurationError."""
+    """Register a built-in validator exactly once during framework setup.
+
+    The closed registry is not an extension hook: silently replacing an
+    existing validator would let package-local code hijack another capability.
+    """
     if name not in BUILTIN_VALIDATORS:
         raise ConfigurationError(
             f"unknown built-in validator {name!r} (closed set: "
             f"{', '.join(BUILTIN_VALIDATORS)})"
         )
+    if name in BUILTIN_REGISTRY:
+        raise ConfigurationError(f"built-in validator {name!r} is already registered")
     BUILTIN_REGISTRY[name] = validator
 
 
@@ -638,6 +653,8 @@ class ValidationContext:
     run_binary: Callable[..., Any] | None = None
     register_artifact: Callable[..., ArtifactRef] | None = None
     create_source_variant: Callable[..., Path] | None = None
+    apply_evidence: dict[str, Any] = field(default_factory=dict)
+    build_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 def _sha256_file(path: Path) -> str:
@@ -680,24 +697,41 @@ def _builtin_apply(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary="control or subject source directory does not exist",
         )
+    missing = tuple(
+        role for role in ("control", "subject")
+        if not isinstance(ctx.apply_evidence.get(role), dict)
+        or not all(ctx.apply_evidence[role].get(key) for key in ("applied", "tree", "idempotent"))
+    )
+    if missing:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary=f"verified apply evidence is missing for: {', '.join(missing)}",
+        )
     return ValidationResult(
         check_id=spec.check_id, capability=spec.capability, status=PASS,
-        summary="explicit control and subject sources are available",
+        summary="verified control/subject application, tree, and idempotency evidence is present",
     )
 
 
 def _builtin_build(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Validate that the campaign supplied build identities for both sides."""
     required = ("control", "subject")
-    missing = tuple(role for role in required if role not in ctx.build_identities)
+    missing = tuple(
+        role for role in required
+        if not isinstance(ctx.build_evidence.get(role), dict)
+        or not all(
+            ctx.build_evidence[role].get(key)
+            for key in ("build_id", "source_tree", "architecture", "options", "compile_commands", "runtime_bundle")
+        )
+    )
     if missing:
         return ValidationResult(
             check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
-            summary=f"missing build identity for: {', '.join(missing)}",
+            summary=f"verified build evidence is missing for: {', '.join(missing)}",
         )
     return ValidationResult(
         check_id=spec.check_id, capability=spec.capability, status=PASS,
-        summary="control and subject build identities are recorded",
+        summary="verified control and subject build/source/runtime evidence is present",
     )
 
 

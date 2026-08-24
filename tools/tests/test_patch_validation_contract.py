@@ -195,6 +195,19 @@ class ContractBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(pv.ConfigurationError, "correctness"):
             self._plan()
 
+    def test_correctness_only_contract_with_gain_requires_performance(self) -> None:
+        # A correctness hypothesis still needs a performance producer when its
+        # acceptance section declares a gain threshold.
+        self.write_tree(
+            effect="correctness",
+            adapter="schema = 1\n\n"
+            "[[check]]\nid = \"applies\"\ncapability = \"apply\"\nvalidator = \"apply\"\n"
+            "[[check]]\nid = \"builds\"\ncapability = \"build\"\nvalidator = \"build\"\n"
+            "[[check]]\nid = \"correct\"\ncapability = \"correctness\"\nvalidator = \"backend-ops\"\n",
+        )
+        with self.assertRaisesRegex(pv.ConfigurationError, "performance"):
+            self._plan()
+
     def test_performance_acceptance_requires_performance_evidence(self) -> None:
         # expected_effect = performance; adapter has no benchmark/autotune.
         self.write_tree(
