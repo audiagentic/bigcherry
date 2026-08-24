@@ -10,19 +10,26 @@ Modules are loaded by explicit path so ``patches/`` needs no ``__init__.py``
 and no ``sys.path`` manipulation, and so numeric ordering prefixes
 (``0100_``, ``0200_``) are free to name the file without constraining the
 Python identifier.
+
+patch-system PA02/RS02 (runbook section 11): this module is now a
+compatibility façade over ``patch_registry``. ``catalog()``/``describe()``
+consume normalized :class:`patch_registry.PatchDescriptor` records (which
+additionally accept packaged ``<id>/patch.toml`` patches); the legacy
+metadata readers, the constant-reading helpers, and the public types
+(``PatchModule``, ``PatchInfo``, ...) are unchanged in shape and behavior so
+every existing caller keeps working until the loader cutover (RS04) and the
+catalog integration (RS03) land.
 """
 
 from __future__ import annotations
 
-import ast
-import hashlib
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
+from . import patch_registry
 from . import paths
 from .patcher import FilePatch
 
@@ -32,16 +39,20 @@ DEFAULT_GROUP = "core"
 
 
 def _load_module(path: Path) -> ModuleType:
-    """Compile and exec the module's SOURCE directly -- deliberately not
-    ``importlib``'s standard loader machinery (RV48/RE04 audit fix).
-    ``SourceFileLoader.exec_module`` writes/reads a mtime-keyed
-    ``__pycache__/*.pyc`` bytecode cache; two writes to the same patch file
-    within one mtime-resolution tick (routine in tests, and not impossible
-    in fast development iteration) can serve STALE bytecode for a file
-    whose on-disk bytes -- and ``catalog()``'s own sha256 content_hash --
-    have already changed. A patch module's actual applied effect must never
-    diverge from what ``content_hash`` says it is; compiling straight from
-    freshly-read source bypasses that cache entirely, every call.
+    """COMPATIBILITY SHIM (RS04): explicit-path legacy module loader.
+
+    All production implementation loading now goes through
+    ``patch_registry.load_implementation`` (descriptor-driven, byte-compile,
+    no importlib). This helper remains only for direct explicit-path callers
+    that predate the registry (e.g. a test inspecting one specific module's
+    constants by file path); it performs no discovery and no path guessing.
+
+    The rationale for byte-compiling the SOURCE directly (deliberately not
+    ``importlib``'s standard loader machinery, RV48/RE04 audit fix) is the
+    registry's: a mtime-keyed ``__pycache__`` can serve STALE bytecode for a
+    file whose on-disk bytes have already changed, and a patch module's
+    actual applied effect must never diverge from what ``content_hash`` says
+    it is.
     """
     name = f"bigcherry._patches.{path.stem}"
     source = path.read_text(encoding="utf-8")
@@ -54,29 +65,19 @@ def _load_module(path: Path) -> ModuleType:
     return module
 
 
-def _constant(path: Path, name: str, pattern: str) -> str | None:
-    """Extract a module-level constant from a patch file without importing."""
-    try:
-        content = path.read_text(encoding='utf-8')
-        match = re.search(rf'^{name}\s*=\s*["\']({pattern})["\']', content, re.MULTILINE)
-        return match.group(1) if match else None
-    except Exception:
-        return None
-
-
 def module_group(path: Path) -> str:
     """The group a patch module belongs to, without fully loading it."""
-    return _constant(path, "GROUP", r"[\w-]+") or DEFAULT_GROUP
+    return patch_registry.module_group(path)
 
 
 def module_state(path: Path) -> str:
     """The state (validated/rejected/untested) of a patch module."""
-    return _constant(path, "STATE", r"[\w-]+") or DEFAULT_STATE
+    return patch_registry.module_state(path)
 
 
 def module_upstream(path: Path) -> str | None:
     """The upstream commit SHA this patch backports from, if any."""
-    return _constant(path, "UPSTREAM", r"[0-9a-fA-F]{7,40}")
+    return patch_registry.module_upstream(path)
 
 
 @dataclass(frozen=True)
@@ -124,42 +125,14 @@ class ResolvedPatchSet:
     required_state: str | None = None
 
 
-def _literal_constant(path: Path, name: str) -> object | None:
-    """Read a literal module constant without importing executable code."""
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError):
-        return None
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == name for target in node.targets
-        ):
-            try:
-                return ast.literal_eval(node.value)
-            except (ValueError, TypeError):
-                return None
-    return None
-
-
-def _constant_strings(path: Path, name: str) -> tuple[str, ...]:
-    value = _literal_constant(path, name)
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    if isinstance(value, (tuple, list)) and all(
-        isinstance(item, str) and item for item in value
-    ):
-        return tuple(value)
-    raise ValueError(f"{path.name}: {name} must be a string or list/tuple of strings")
-
-
-def _module_order(stem: str) -> int:
-    match = re.match(r"^(\d+)_", stem)
-    return int(match.group(1)) if match else 2**31
-
-
 def discover_modules(root: Path) -> list[Path]:
+    """Legacy recursive discovery, retained for RS02 compatibility.
+
+    RS04 retires the remaining non-registry consumer
+    (``patch_source_isolation.framework_baseline_digest``); the registry's own
+    discovery (root-level simple + ``patch.toml`` packaged) is the normative
+    one (runbook section 4).
+    """
     """Recursively discover patch module ``.py`` files under ``root``.
 
     Excludes any path whose relative-to-root component starts with ``_``
@@ -181,55 +154,63 @@ def discover_modules(root: Path) -> list[Path]:
 
 
 def describe(directory=None) -> list[PatchInfo]:
-    """Describe every patch module (name, group, state, upstream) without importing."""
-    directory = directory or paths.PATCHES
-    if not directory.is_dir():
-        return []
+    """Describe every patch (name, group, state, upstream) without importing.
 
-    result = []
-    for path in discover_modules(directory):
-        info = PatchInfo(
-            name=path.stem,
-            path=path,
-            group=module_group(path),
-            state=module_state(path),
-            upstream=module_upstream(path),
+    RS02: backed by the registry, so packaged patches describe the same way
+    flat ones do. For legacy modules this is exactly the old output.
+    """
+    directory = directory or paths.PATCHES
+    registry = patch_registry.load_registry(directory)
+    return [
+        PatchInfo(
+            name=descriptor.patch_id,
+            path=registry.root / descriptor.implementation_path,
+            group=descriptor.group,
+            state=descriptor.state,
+            upstream=descriptor.upstream,
         )
-        result.append(info)
-    return result
+        for descriptor in registry.descriptors
+    ]
+
+
+def _module_from_descriptor(descriptor, root: Path) -> PatchModule:
+    """Compatibility mapping registry descriptor -> legacy PatchModule shape."""
+    path = root / descriptor.implementation_path
+    return PatchModule(
+        patch_id=descriptor.patch_id,
+        path=path,
+        order=descriptor.order,
+        group=descriptor.group,
+        state=descriptor.state,
+        upstream=descriptor.upstream,
+        content_hash=descriptor.implementation_digest,
+        requires=descriptor.requires,
+        conflicts=descriptor.conflicts,
+        group_explicit=(
+            True if descriptor.representation == patch_registry.REPRESENTATION_PACKAGED
+            else patch_registry.group_is_explicit(path)
+        ),
+        catalog_root=root,
+        relative_path=descriptor.implementation_path,
+    )
 
 
 def catalog(directory=None) -> list[PatchModule]:
-    """Return every patch as a canonical, hashed module descriptor."""
+    """Return every patch (flat or packaged) as a canonical, hashed module
+    descriptor.
+
+    RS02: built from the registry's normalized descriptors; for today's flat
+    tree this is field-for-field identical to the previous output (same IDs,
+    order, groups, states, upstream refs, requires/conflicts, content hashes,
+    and duplicate rejection). Packaged patches simply appear as extra entries
+    once they exist.
+    """
     directory = directory or paths.PATCHES
-    if not directory.is_dir():
-        return []
-    result: list[PatchModule] = []
-    seen_ids: dict[str, Path] = {}
-    for path in discover_modules(directory):
-        patch_id = path.stem
-        if patch_id in seen_ids:
-            raise ValueError(
-                f"duplicate patch ID {patch_id!r}: {seen_ids[patch_id]} and {path}"
-            )
-        seen_ids[patch_id] = path
-        result.append(
-            PatchModule(
-                patch_id=patch_id,
-                path=path,
-                order=_module_order(patch_id),
-                group=module_group(path),
-                state=module_state(path),
-                upstream=module_upstream(path),
-                content_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
-                requires=_constant_strings(path, "REQUIRES"),
-                conflicts=_constant_strings(path, "CONFLICTS"),
-                group_explicit=_literal_constant(path, "GROUP") is not None,
-                catalog_root=directory,
-                relative_path=path.relative_to(directory),
-            )
-        )
-    return sorted(result, key=lambda module: (module.order, module.patch_id))
+    registry = patch_registry.load_registry(directory)
+    return [
+        _module_from_descriptor(descriptor, registry.root)
+        for descriptor in registry.descriptors
+    ]
 
 
 def resolve_exact(
@@ -347,19 +328,21 @@ def expand_composition(
 
 
 def load_resolved(selection: ResolvedPatchSet) -> list[FilePatch]:
-    """Load only the already-resolved canonical modules, in catalog order."""
+    """Load only the already-resolved canonical modules, in catalog order.
+
+    RS04: loading goes through ``patch_registry.load_implementation``
+    (descriptor-driven, byte-compile, no importlib, no path guessing).
+    """
     patches: list[FilePatch] = []
-    for descriptor in selection.modules:
-        module = _load_module(descriptor.path)
-        found = getattr(module, "PATCHES", None)
-        if found is None:
-            single = getattr(module, "PATCH", None)
-            found = [single] if single is not None else []
-        if not found:
-            raise ImportError(
-                f"{descriptor.patch_id} defines neither PATCH nor PATCHES"
-            )
-        patches.extend(found)
+    registries: dict[Path, patch_registry.PatchRegistry] = {}
+    for module in selection.modules:
+        root = module.catalog_root or paths.PATCHES
+        registry = registries.get(root)
+        if registry is None:
+            registry = patch_registry.load_registry(root)
+            registries[root] = registry
+        descriptor = registry.get(module.patch_id)
+        patches.extend(patch_registry.load_implementation(descriptor, root=root))
     return patches
 
 
@@ -413,27 +396,15 @@ def load_patches(
         states: if given, only load patches in these states (None = all states)
     """
     directory = directory or paths.PATCHES
-    if not directory.is_dir():
-        return []
-
+    # RS04: discovery AND loading go through the registry (root-level simple
+    # + patch.toml packaged; byte-compile, no importlib). For today's flat
+    # tree the filter and load behavior is exactly the old one.
+    registry = patch_registry.load_registry(directory)
     patches: list[FilePatch] = []
-    for path in discover_modules(directory):
-        # Filter by group and state metadata (without loading the module)
-        patch_group = module_group(path)
-        patch_state = module_state(path)
-
-        if groups is not None and patch_group not in groups:
+    for descriptor in registry.descriptors:
+        if groups is not None and descriptor.group not in groups:
             continue
-        if states is not None and patch_state not in states:
+        if states is not None and descriptor.state not in states:
             continue
-
-        module = _load_module(path)
-        found = getattr(module, "PATCHES", None)
-        if found is None:
-            single = getattr(module, "PATCH", None)
-            found = [single] if single is not None else []
-        if not found:
-            raise ImportError(
-                f"{path.name} defines neither PATCH nor PATCHES")
-        patches.extend(found)
+        patches.extend(patch_registry.load_implementation(descriptor, root=registry.root))
     return patches
