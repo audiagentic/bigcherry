@@ -17,6 +17,8 @@ DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
 MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
 SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
+SIGNATURE = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
+TYPES_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
 
 
 class TestDispatchSafetyContracts(unittest.TestCase):
@@ -1328,6 +1330,62 @@ class TestHi64ElapsedTimeRetry(unittest.TestCase):
         block = tuner[exhausted : tuner.index("}", tuner.index("return false;", exhausted)) + 1]
         self.assertIn("disable_smi_after_measurement_failure();", block)
         self.assertIn("return false;", block)
+
+
+class TestHi118FusionFieldPresenceFlags(unittest.TestCase):
+    """HI118: ggml_hip_fusion_kind() collapses fusion->x_bias and
+    fusion->gate_bias into one coarse has_bias bit, and never records
+    x_scale/gate_scale presence at all -- real information loss confirmed
+    against mmvq.cu's own GGML_ASSERT calls (~line 1435-1462), which handle
+    these fusion->* fields as independently-nullable. Every fusion tensor's
+    real GEOMETRY is provably derivable from fields the signature already
+    records (gate shares src0's type/stride; biases are F32 sized by
+    dst.ne[0]/n_expert) -- so only presence flags are needed, not new
+    ne/type fields, and no schema-version bump. dst_gate is deliberately
+    NOT tracked: real Brutus build confirmed it only exists on
+    ggml_cuda_mm_fusion_args_host under the experimental, non-default patch
+    1207_rd17_moe_topk_down_fold.py -- referencing it unconditionally broke
+    a real hardware build without that patch applied."""
+
+    def test_new_flag_bits_are_defined_and_do_not_collide(self):
+        header = TYPES_HEADER.read_text(encoding="utf-8")
+        enum_start = header.index("enum ggml_hip_signature_flag {")
+        enum_end = header.index("};", enum_start)
+        enum_body = header[enum_start:enum_end]
+        bits = {}
+        for name in ("GGML_HIP_SIG_SRC0_CONTIGUOUS", "GGML_HIP_SIG_SRC1_CONTIGUOUS",
+                     "GGML_HIP_SIG_DST_CONTIGUOUS", "GGML_HIP_SIG_HAS_IDS",
+                     "GGML_HIP_SIG_BROADCAST_CH", "GGML_HIP_SIG_BROADCAST_SMP",
+                     "GGML_HIP_SIG_BAD_PADDING", "GGML_HIP_SIG_FUSION_X_BIAS",
+                     "GGML_HIP_SIG_FUSION_GATE_BIAS", "GGML_HIP_SIG_FUSION_X_SCALE",
+                     "GGML_HIP_SIG_FUSION_GATE_SCALE"):
+            match = re.search(rf"{name}\s*=\s*1u\s*<<\s*(\d+)", enum_body)
+            self.assertIsNotNone(match, f"{name} not found in enum")
+            bits[name] = int(match.group(1))
+        self.assertEqual(len(bits), len(set(bits.values())), f"colliding bit positions: {bits}")
+        self.assertNotIn("GGML_HIP_SIG_FUSION_DST_GATE", enum_body)
+
+    def test_make_signature_sets_each_new_flag_from_its_own_fusion_field(self):
+        signature = SIGNATURE.read_text(encoding="utf-8")
+        block_start = signature.index("if (fusion != nullptr) {", signature.index("uint16_t flags = 0;"))
+        block_end = signature.index("\n    }", block_start)
+        block = signature[block_start:block_end]
+        self.assertIn("fusion->x_bias      != nullptr) flags |= GGML_HIP_SIG_FUSION_X_BIAS", block)
+        self.assertIn("fusion->gate_bias   != nullptr) flags |= GGML_HIP_SIG_FUSION_GATE_BIAS", block)
+        self.assertIn("fusion->x_scale     != nullptr) flags |= GGML_HIP_SIG_FUSION_X_SCALE", block)
+        self.assertIn("fusion->gate_scale  != nullptr) flags |= GGML_HIP_SIG_FUSION_GATE_SCALE", block)
+        self.assertNotIn("fusion->dst_gate", block)
+
+    def test_flags_local_var_is_assigned_to_sig_flags(self):
+        # The new bits are set on the same local `flags` accumulator every
+        # other signature flag uses -- confirms they actually reach sig.flags
+        # (and therefore the digest/JSON) rather than being computed and
+        # discarded.
+        signature = SIGNATURE.read_text(encoding="utf-8")
+        self.assertIn("sig.flags = flags;", signature)
+        fusion_flags_pos = signature.index("GGML_HIP_SIG_FUSION_X_BIAS")
+        sig_flags_assign_pos = signature.index("sig.flags = flags;")
+        self.assertLess(fusion_flags_pos, sig_flags_assign_pos)
 
 
 if __name__ == "__main__":

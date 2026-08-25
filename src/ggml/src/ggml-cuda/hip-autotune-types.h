@@ -103,6 +103,39 @@ enum ggml_hip_signature_flag {
     GGML_HIP_SIG_BROADCAST_CH    = 1u << 4, // nchannels_dst != nchannels_src0
     GGML_HIP_SIG_BROADCAST_SMP   = 1u << 5,
     GGML_HIP_SIG_BAD_PADDING     = 1u << 6, // forces the BLAS path upstream
+
+    // HI118: ggml_hip_fusion_kind() collapses fusion->x_bias and
+    // fusion->gate_bias into one coarse GGML_HIP_FUSION_BIAS/GATE_BIAS value
+    // -- real, since mmvq.cu's kernel (~line 1435-1450) handles them as two
+    // independently-nullable fields, and a dispatch could in principle carry
+    // only one. These flags record which one(s) are actually present, so a
+    // consumer reconstructing the fused computation (HI119) knows exactly
+    // which synthetic bias tensor(s) to build rather than guessing from the
+    // coarse fusion byte alone. Every fusion tensor's real GEOMETRY (not just
+    // presence) is provably derivable from fields this signature already
+    // records -- confirmed directly against mmvq.cu's own GGML_ASSERT calls,
+    // not inferred from model convention: fusion->gate must share src0's
+    // exact type and stride (`type == src0->type && ggml_are_same_stride`);
+    // fusion->x_bias/gate_bias must be F32 with `ne[0] == dst->ne[0]` and (if
+    // ids) `ne[1] == src0->ne[2]` (== this signature's own n_expert field).
+    // So no new ne/type fields are needed for gate or the biases -- only
+    // presence. x_scale/gate_scale (NVFP4-only per mmvq.cu's own comment;
+    // never observed on the real q8_0 dispatches HI108 found) get presence
+    // flags too, purely so an unexpected future dispatch using them fails
+    // closed (HI119 can explicitly reject an unhandled fusion shape) instead
+    // of silently reconstructing an incomplete computation. dst_gate is
+    // deliberately NOT tracked here: it exists only on ggml_cuda_mm_fusion_
+    // args_host under patch 1207_rd17_moe_topk_down_fold.py (an experimental,
+    // non-default patch), not in the upstream/pristine struct every other
+    // build compiles against -- confirmed the hard way (a real Brutus build
+    // without 1207 failed with "no member named 'dst_gate'"). It is also, per
+    // the struct's own comment, only meaningful when glu_op == GGML_GLU_OP_
+    // NONE, a different fusion mode than the GLU-combining case HI108/HI119
+    // care about, so dropping it costs nothing in scope.
+    GGML_HIP_SIG_FUSION_X_BIAS     = 1u << 7,
+    GGML_HIP_SIG_FUSION_GATE_BIAS  = 1u << 8,
+    GGML_HIP_SIG_FUSION_X_SCALE    = 1u << 9,
+    GGML_HIP_SIG_FUSION_GATE_SCALE = 1u << 10,
 };
 
 // How a graph pattern fused this operation. A fused operation is a different
