@@ -383,3 +383,11 @@ backend = "hip"
 state = "untested"
 external-source = "amd-ecosystem-llama-cpp"
 plan-item = "RD30"
+
+[[patch]]
+id = "1238_hi119_deterministic_init_mul_mat_id_tensors"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI119"

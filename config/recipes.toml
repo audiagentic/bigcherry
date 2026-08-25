@@ -108,11 +108,16 @@ patches = ["1237_rd30_moe_mmq_compact_grid"]
 # deterministic/full-range ids fix). Not itself a performance patch --
 # these only affect tests/test-backend-ops.cpp, gated behind
 # BIGCHERRY_TEST_DETERMINISTIC_SEED, so a normal (unset) run is unaffected.
+# HI119 extends this chain to init_mul_mat_id_tensors() -- the initializer
+# shared by every REGISTERED MUL_MAT_ID-family test_case (test_mul_mat_id,
+# test_mul_mat_vec_fusion, HI119's own new fused-GLU class), distinct from
+# 1236's test_generic_op-only fix.
 [experiment.hi105-correctness]
 patches = [
   "1222_hi67_deterministic_test_backend_ops_seed",
   "1223_hi67_machine_readable_correctness_metrics",
   "1236_hi105_deterministic_mul_mat_id_ids",
+  "1238_hi119_deterministic_init_mul_mat_id_tensors",
 ]
 
 [source.llama-native]
