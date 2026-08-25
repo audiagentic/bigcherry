@@ -41,7 +41,7 @@ import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
-from bigcherry.builds import capture_completed_build_evidence
+from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.patch_activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
