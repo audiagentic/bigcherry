@@ -65,11 +65,13 @@ class CampaignResolutionTests(unittest.TestCase):
                 if module.state == "validated" and module.patch_id in framework_patch_ids),
             14,
         )
-        # RD19 (2026-08-24) is the first validated-enhancements member;
-        # bigcherry-native's own resolved patch set must still exclude it
-        # (that's what the assertion above already proves), but the lane's
-        # promoted_enhancements metadata now reports it as available.
-        self.assertEqual(lane.promoted_enhancements, ("1200_rd19_single_gpu_meta_bypass",))
+        # RD19 was promoted to validated-enhancements on 2026-08-24, but
+        # that promotion post-dated the HI83 evidence contract with no
+        # qualifying evidence produced (see
+        # docs/planning/active/patch-system/PA05.md). Owner disposition
+        # (2026-08-25): deliberately demoted back to untested pending real
+        # HI83 evidence, so validated-enhancements is empty again.
+        self.assertEqual(lane.promoted_enhancements, ())
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(

@@ -181,7 +181,7 @@ id = "1200_rd19_single_gpu_meta_bypass"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
-state = "validated"
+state = "untested"
 external-source = "stew675-rdna-boosts"
 plan-item = "RD19"
 

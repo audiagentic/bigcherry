@@ -38,21 +38,10 @@ class TestPatchCatalogLoads(unittest.TestCase):
         )
 
 
-def _untracked_problems(problems):
-    """PA05 quarantine (runbook M3): 1200_rd19 was promoted to validated
-    AFTER the HI83 evidence contract landed, with no HI83 evidence and no
-    legitimate grandfather hash -- a pre-existing process gap tracked in
-    docs/planning/active/patch-system/PA05.md, not a cross-check
-    regression. Tolerate ONLY that single tracked problem (by patch-id
-    prefix); every other finding still fails. Self-heals to full strictness
-    once PA05 is resolved."""
-    return [p for p in problems if not p.startswith("1200_rd19_single_gpu_meta_bypass:")]
-
-
 class TestPatchCatalogCrossCheck(unittest.TestCase):
     def test_cross_check_is_clean_on_the_real_catalog(self):
         problems = patch_catalog.cross_check()
-        self.assertEqual(_untracked_problems(problems), [])
+        self.assertEqual(problems, [])
 
     def test_cross_check_detects_orphan_catalog_entry(self):
         with tempfile.TemporaryDirectory() as tmp:

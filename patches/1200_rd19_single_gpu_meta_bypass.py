@@ -75,7 +75,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "validated"
+STATE = "untested"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",
@@ -149,14 +149,14 @@ _HUNK2_NEW = """            GGML_ASSERT(!devs.empty());
 PATCH = FilePatch(
     path="src/llama.cpp",
     description="Skip the Meta device wrapper when tensor-splitting a single "
-                "GPU (rdna-boosts 3c48ecd63 / RD19)",
+    "GPU (rdna-boosts 3c48ecd63 / RD19)",
     edits=(
         Edit(
             id="rd19-single-device-explicit-list",
             anchor=_HUNK1_ANCHOR,
             rationale="llama_prepare_model_devices: the explicit-device "
-                      "tensor-split branch (LLAMA_SPLIT_MODE_TENSOR with "
-                      "params.devices set), where the Meta device is created",
+            "tensor-split branch (LLAMA_SPLIT_MODE_TENSOR with "
+            "params.devices set), where the Meta device is created",
             mode="replace",
             text=_HUNK1_NEW,
             # New-shape ONLY: the guard detects 'already applied'. It must not
@@ -168,8 +168,8 @@ PATCH = FilePatch(
             id="rd19-single-device-default-selection",
             anchor=re.escape(_HUNK2_OLD),
             rationale="llama_prepare_model_devices: the default device "
-                      "selection branch (all backends), second Meta device "
-                      "creation site",
+            "selection branch (all backends), second Meta device "
+            "creation site",
             mode="replace",
             text=_HUNK2_NEW,
             # New-shape ONLY (see hunk 1): 0 matches in the pinned file.

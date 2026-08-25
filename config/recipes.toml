@@ -25,9 +25,7 @@ patches = [
 required-state = "validated"
 
 [patch-set.validated-enhancements]
-patches = [
-  "1200_rd19_single_gpu_meta_bypass",
-]
+patches = []
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
@@ -78,7 +76,10 @@ patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 patches = ["1215_rd394041_amd_stream_moe_overlap"]
 
 [experiment.rd43-only]
-patches = ["1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"]
+patches = [
+  "1215_rd394041_amd_stream_moe_overlap",
+  "1216_rd43_concurrent_join_fusion_guard",
+]
 
 [experiment.rd44-only]
 patches = [
@@ -222,11 +223,11 @@ options = { LLAMA_BUILD_TESTS = "ON" }
 # build roles it always has, not a silently narrower set.
 [campaign.standard]
 lanes = [
-    { source = "llama-native", build = "stock", platform = "linux-multi" },
-    { source = "bigcherry-native", build = "control", platform = "linux-multi" },
-    { source = "bigcherry", build = "record", platform = "linux-multi" },
-    { source = "bigcherry", build = "tune", platform = "linux-multi" },
-    { source = "bigcherry", build = "replay", platform = "linux-multi" },
+  { source = "llama-native", build = "stock", platform = "linux-multi" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
+  { source = "bigcherry", build = "record", platform = "linux-multi" },
+  { source = "bigcherry", build = "tune", platform = "linux-multi" },
+  { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
 # Explicit compatibility aliases for the legacy CLI. These selectors are not

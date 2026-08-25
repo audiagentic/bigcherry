@@ -82,9 +82,14 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                                 f"{stem}: fork and original commit must differ (rebase)")
 
     # Patches promoted out of the first-sweep isolation contract after
-    # passing their isolated bench + review (RD19: real-hardware evidence,
-    # gpt-dev-agent PROMOTE verdict, session ses_866bf44313864664, 2026-08-24).
-    PROMOTED_RDNA_PATCHES = frozenset({"1200_rd19_single_gpu_meta_bypass"})
+    # passing their isolated bench + review. RD19 (1200_rd19) was promoted
+    # here on 2026-08-24 but that promotion post-dated the HI83 evidence
+    # contract (5cd10ff, 2026-08-22) with no qualifying evidence produced --
+    # see docs/planning/active/patch-system/PA05.md. Owner disposition
+    # (2026-08-25): deliberately demoted back to untested pending real HI83
+    # evidence, not re-added here. Empty until a real post-HI83 promotion
+    # exists.
+    PROMOTED_RDNA_PATCHES = frozenset()
 
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
         """The first-sweep isolation contract: rdna-boosts patches must NOT be
