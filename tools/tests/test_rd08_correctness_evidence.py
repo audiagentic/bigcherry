@@ -8,14 +8,31 @@ were verified this session against a real isolated worktree)."""
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from bigcherry import rd08_correctness_evidence as rd08  # noqa: E402
+_tools_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_tools_root))
+_repo_root = _tools_root.parent
+_rd08_path = (
+    _repo_root
+    / "patches"
+    / "rd"
+    / "1204_rd08_q6k_mmvq_vdr2"
+    / "validation"
+    / "rd08_correctness.py"
+)
+_rd08_spec = importlib.util.spec_from_file_location(
+    "rd08_package_validation", _rd08_path
+)
+if _rd08_spec is None or _rd08_spec.loader is None:
+    raise ImportError(f"cannot load RD08 package validation: {_rd08_path}")
+rd08 = importlib.util.module_from_spec(_rd08_spec)
+sys.modules[_rd08_spec.name] = rd08
+_rd08_spec.loader.exec_module(rd08)
 
 
 def _completed(returncode: int, stderr: str):
@@ -30,7 +47,9 @@ def _digest_line(*, name="dst", digest="abc123", call_index=0, nels=1024):
     return f"BIGCHERRY_REF_DIGEST name={name} call_index={call_index} digest={digest} nels={nels}\n"
 
 
-def _metric_line(*, tensor="dst", err="1e-05", max_abs="0.001", backend1_digest, backend2_digest):
+def _metric_line(
+    *, tensor="dst", err="1e-05", max_abs="0.001", backend1_digest, backend2_digest
+):
     return (
         f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor={tensor} "
         f"backend1=HIP0 backend2=CPU err={err} max_abs={max_abs} "
@@ -55,35 +74,46 @@ class ApplyVdr1ControlTests(unittest.TestCase):
 
     def test_reverts_exactly_the_two_semantic_lines(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             self._make_tree(tmp)
             rd08.apply_vdr1_control(tmp)
-            vecdotq_text = (tmp / "ggml" / "src" / "ggml-cuda" / "vecdotq.cuh").read_text(encoding="utf-8")
-            mmvq_text = (tmp / "ggml" / "src" / "ggml-cuda" / "mmvq.cu").read_text(encoding="utf-8")
+            vecdotq_text = (
+                tmp / "ggml" / "src" / "ggml-cuda" / "vecdotq.cuh"
+            ).read_text(encoding="utf-8")
+            mmvq_text = (tmp / "ggml" / "src" / "ggml-cuda" / "mmvq.cu").read_text(
+                encoding="utf-8"
+            )
             self.assertIn("#define VDR_Q6_K_Q8_1_MMVQ 1", vecdotq_text)
             self.assertNotIn("#define VDR_Q6_K_Q8_1_MMVQ 2", vecdotq_text)
-            self.assertIn("        case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1;\n", mmvq_text)
+            self.assertIn(
+                "        case GGML_TYPE_Q6_K:    return vec_dot_q6_K_q8_1;\n", mmvq_text
+            )
             self.assertNotIn("vec_dot_q6_K_q8_1_vdr2", mmvq_text)
 
     def test_fails_closed_when_anchor_missing(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             self._make_tree(tmp)
             (tmp / "ggml" / "src" / "ggml-cuda" / "vecdotq.cuh").write_text(
-                "#define VDR_Q6_K_Q8_1_MMVQ 3\n", encoding="utf-8",
+                "#define VDR_Q6_K_Q8_1_MMVQ 3\n",
+                encoding="utf-8",
             )
             with self.assertRaises(rd08.Rd08CorrectnessError):
                 rd08.apply_vdr1_control(tmp)
 
     def test_fails_closed_when_anchor_duplicated(self):
         import tempfile
+
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             self._make_tree(tmp)
             (tmp / "ggml" / "src" / "ggml-cuda" / "vecdotq.cuh").write_text(
-                "#define VDR_Q6_K_Q8_1_MMVQ 2\n#define VDR_Q6_K_Q8_1_MMVQ 2\n", encoding="utf-8",
+                "#define VDR_Q6_K_Q8_1_MMVQ 2\n#define VDR_Q6_K_Q8_1_MMVQ 2\n",
+                encoding="utf-8",
             )
             with self.assertRaises(rd08.Rd08CorrectnessError):
                 rd08.apply_vdr1_control(tmp)
@@ -96,6 +126,7 @@ class ControlVariantDigestTests(unittest.TestCase):
     def test_matches_hand_computed_value(self):
         import hashlib
         import json
+
         payload = [
             {"path": str(p), "old": old, "new": new}
             for p, old, new in rd08._CONTROL_EDITS
@@ -107,7 +138,9 @@ class ControlVariantDigestTests(unittest.TestCase):
 
 
 class CompareOneShapeSeedTests(unittest.TestCase):
-    def _runner_pair(self, subject_stderr: str, control_stderr: str, *, subject_rc=0, control_rc=0):
+    def _runner_pair(
+        self, subject_stderr: str, control_stderr: str, *, subject_rc=0, control_rc=0
+    ):
         calls = {"n": 0}
 
         def runner(argv, **kwargs):
@@ -128,8 +161,11 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         )
         runner = self._runner_pair(subject_stderr, control_stderr)
         row = rd08.compare_one_shape_seed(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
         )
         self.assertTrue(row.ok)
 
@@ -142,8 +178,11 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         )
         runner = self._runner_pair(subject_stderr, control_stderr)
         row = rd08.compare_one_shape_seed(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
         )
         self.assertFalse(row.ok)
 
@@ -156,8 +195,11 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         )
         runner = self._runner_pair(subject_stderr, control_stderr)
         row = rd08.compare_one_shape_seed(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
         )
         self.assertFalse(row.ok)
 
@@ -167,15 +209,18 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         subject_stderr = (
             _digest_line(digest="abc")
             + "BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor=dst backend1=HIP0 "
-              "backend2=CPU err=1e-05 max_abs=0.001 threshold=5e-4 n=1024\n"
+            "backend2=CPU err=1e-05 max_abs=0.001 threshold=5e-4 n=1024\n"
         )
         control_stderr = _digest_line(digest="abc") + _metric_line(
             backend1_digest="deadbeef", backend2_digest="cafef00d"
         )
         runner = self._runner_pair(subject_stderr, control_stderr)
         row = rd08.compare_one_shape_seed(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
         )
         self.assertFalse(row.ok)
 
@@ -188,8 +233,11 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         )
         runner = self._runner_pair(subject_stderr, control_stderr, subject_rc=1)
         row = rd08.compare_one_shape_seed(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
         )
         self.assertFalse(row.ok)
 
@@ -210,8 +258,11 @@ class RequireRd08CorrectnessEvidenceTests(unittest.TestCase):
             return _completed(0, good_stderr_control)
 
         rows = rd08.require_rd08_correctness_evidence(
-            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-            shapes=(rd08.RD08_SHAPES[0],), seeds=(1, 2), runner=runner,
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shapes=(rd08.RD08_SHAPES[0],),
+            seeds=(1, 2),
+            runner=runner,
         )
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(row.ok for row in rows))
@@ -232,8 +283,11 @@ class RequireRd08CorrectnessEvidenceTests(unittest.TestCase):
 
         with self.assertRaises(rd08.Rd08CorrectnessError) as ctx:
             rd08.require_rd08_correctness_evidence(
-                subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
-                shapes=(rd08.RD08_SHAPES[0],), seeds=(1,), runner=runner,
+                subject_binary=Path("subject-binary"),
+                control_binary=Path("control-binary"),
+                shapes=(rd08.RD08_SHAPES[0],),
+                seeds=(1,),
+                runner=runner,
             )
         message = str(ctx.exception)
         self.assertIn("ffn", message)

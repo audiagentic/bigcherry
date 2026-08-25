@@ -13,26 +13,39 @@ meaningful against a manifest generated from that same tree.
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from . import __version__
-from . import doctor
 from . import paths
 from . import patch_catalog
-from . import patch_lifecycle
 from . import patcher
 from . import patchset
-from . import pin_status
+from .release import pin_status
 from . import pin_transition
 from . import recipes
 from . import releases
 from . import source_audit
 from . import sources
 from . import upstream
+from .release import pin as _release_pin
+from .cli.diagnostics import cmd_check, cmd_doctor, cmd_status
+
+_patch_cli = importlib.import_module("bigcherry.cli.patch")
+cmd_patch_explain = _patch_cli.cmd_patch_explain
+cmd_patch_graph = _patch_cli.cmd_patch_graph
+cmd_patch_lint = _patch_cli.cmd_patch_lint
+cmd_patch_status = _patch_cli.cmd_patch_status
+cmd_patch_validate = _patch_cli.cmd_patch_validate
+cmd_patch_verify_evidence = _patch_cli.cmd_patch_verify_evidence
+_tuning_cli = importlib.import_module("bigcherry.cli.tuning")
+cmd_generate = _tuning_cli.cmd_generate
+cmd_replay_inspect = _tuning_cli.cmd_replay_inspect
 
 UPSTREAM_URL = "https://github.com/ggml-org/llama.cpp"
 
@@ -355,7 +368,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
-def _resolve_pin_sha(ref: str) -> str:
+def _legacy_resolve_pin_sha(ref: str) -> str:
     """Resolve a pin ref to a full commit SHA in the vendor clone.
 
     RE48: the transition marker is SHA-keyed; an unresolvable ref fails the
@@ -371,7 +384,7 @@ def _resolve_pin_sha(ref: str) -> str:
     return upstream._git(root, "rev-parse", f"{resolved}^{{commit}}").strip()
 
 
-def cmd_repin(args: argparse.Namespace) -> int:
+def _legacy_cmd_repin(args: argparse.Namespace) -> int:
     """Move the pin to the newest upstream release and declare the transition.
 
     RE48/RV78: repin now writes the pin-transition marker (releases/
@@ -441,7 +454,7 @@ def cmd_repin(args: argparse.Namespace) -> int:
     return 0
 
 
-def _pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
+def _legacy_pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
     """Local RepoPaths + config trees + the llama root, from the real config."""
     from . import config as campaign_config
 
@@ -455,7 +468,7 @@ def _pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
     return repo_paths, cfg, list(cfg.trees)
 
 
-def _render_pin_status(report, trees) -> str:
+def _legacy_render_pin_status(report, trees) -> str:
     lines: list[str] = []
     local = report.local
     lines.append("pin-status: local")
@@ -520,7 +533,7 @@ def _render_pin_status(report, trees) -> str:
     return "\n".join(lines)
 
 
-def cmd_pin_status(args: argparse.Namespace) -> int:
+def _legacy_cmd_pin_status(args: argparse.Namespace) -> int:
     """RE48: name the pin state. Reads only -- never mutates."""
     try:
         repo_paths, cfg, trees = _pin_status_paths()
@@ -943,258 +956,13 @@ def cmd_patches(args: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
-def cmd_patch_status(args: argparse.Namespace) -> int:
-    """EC19: computed plan/patch lifecycle status -- see patch_lifecycle.py
-    for exactly which signals are real vs reported as unknown."""
-    statuses = patch_lifecycle.compute_all()
-    if args.item:
-        statuses = {k: v for k, v in statuses.items() if k == args.item}
-        if not statuses:
-            print(
-                f"no lifecycle signal found for plan-item {args.item!r}",
-                file=sys.stderr,
-            )
-            return 1
-    if not statuses:
-        print(
-            "no plan-items with any tracked/materialized/contracted signal found",
-            file=sys.stderr,
-        )
-        return 1
-    print(patch_lifecycle.render_table(statuses))
-    return 0
-
-
-def cmd_patch_explain(args: argparse.Namespace) -> int:
-    """RE43 (external patch-management review, Section 16): everything
-    known about one patch -- source, plan, requires/conflicts, which
-    recipes/experiments select it, state, content hash, files touched."""
-    try:
-        snapshot = patch_catalog.build_snapshot()
-    except ValueError as exc:
-        print(
-            f"patch explain: could not load patches/catalog.toml: {exc}",
-            file=sys.stderr,
-        )
-        return 2
-    from . import config as campaign_config
-
-    try:
-        cfg = campaign_config.load(paths.RECIPES)
-    except (campaign_config.ConfigError, OSError):
-        cfg = None
-    try:
-        info = patch_catalog.explain(args.patch_id, snapshot, cfg)
-    except KeyError as exc:
-        print(f"patch explain: {exc}", file=sys.stderr)
-        return 1
-    print(patch_catalog.render_explanation(info))
-    return 0
-
-
-def cmd_patch_graph(args: argparse.Namespace) -> int:
-    """RE43 (external patch-management review, Section 16): textual
-    REQUIRES/CONFLICTS dependency topology. --roots restricts the view to
-    a real dependency closure (patchset.expand_composition); with no
-    roots, shows every patch that has any requires/conflicts edge."""
-    try:
-        snapshot = patch_catalog.build_snapshot()
-    except ValueError as exc:
-        print(
-            f"patch graph: could not load patches/catalog.toml: {exc}", file=sys.stderr
-        )
-        return 2
-    roots = tuple(args.roots or ())
-    try:
-        print(patch_catalog.dependency_graph(snapshot, roots=roots))
-    except ValueError as exc:
-        print(f"patch graph: {exc}", file=sys.stderr)
-        return 1
-    return 0
-
-
-def cmd_patch_lint(args: argparse.Namespace) -> int:
-    """Run the non-mutating catalog/package lint gate."""
-    problems = patch_catalog.cross_check(allow_legacy_grandfather=True)
-    if args.json:
-        print(json.dumps({"passed": not problems, "problems": problems}, indent=2, sort_keys=True))
-    else:
-        for problem in problems:
-            print(problem, file=sys.stderr)
-    return 0 if not problems else 1
-
-
-def cmd_patch_validate(args: argparse.Namespace) -> int:
-    """Verify existing evidence; hardware campaigns remain explicit."""
-    return cmd_patch_verify_evidence(args)
-
-
-def cmd_patch_verify_evidence(args: argparse.Namespace) -> int:
-    """HI83: report which STATE='validated' patches have a current,
-    qualifying patch_validation_evidence record -- purely observational,
-    not wired into apply/build (see patch_catalog.py's module docstring
-    and plan item HI83's notes for why hard enforcement is deliberately
-    deferred)."""
-    from . import config as campaign_config
-
-    cfg = campaign_config.load(paths.RECIPES)
-    modules = patchset.catalog()
-
-    if args.patch_id is not None:
-        modules = [module for module in modules if module.patch_id == args.patch_id]
-        if not modules:
-            print(f"unknown patch {args.patch_id!r}", file=sys.stderr)
-            return 1
-
-    patch_ids = [module.patch_id for module in modules]
-    statuses = patch_catalog.validation_evidence_statuses(
-        patch_ids, pinned_ref=cfg.pinned,
-        allow_legacy_grandfather=not args.no_legacy_grandfather,
-    )
-
-    if args.json:
-        print(json.dumps(
-            {
-                patch_id: {
-                    "status": status.status,
-                    "problems": list(status.problems),
-                    "campaign_digests": list(status.campaign_digests),
-                }
-                for patch_id, status in sorted(statuses.items())
-            },
-            indent=2, sort_keys=True,
-        ))
-    else:
-        for patch_id, status in sorted(statuses.items()):
-            print(f"{patch_id}: {status.status}")
-            for problem in status.problems:
-                print(f"  - {problem}")
-
-    return 0 if all(status.ok for status in statuses.values()) else 1
-
-
 # ----------------------------------------------------------------- generate
-
-
-def cmd_generate(args: argparse.Namespace) -> int:
-    from . import autotune_catalog
-
-    root = paths.llama_root(args.llama_root)
-    record = _record_for(root)
-
-    # Generating against an unpatched tree would emit a registry referencing
-    # launcher symbols that do not exist yet -- a link error much later, with
-    # nothing pointing back to the real cause.
-    if not args.force and record.stage not in (
-        "patched",
-        "generated",
-        "built",
-        "tested",
-        "tuned",
-        "validated",
-    ):
-        print(
-            "refusing to generate against an unpatched tree.\n"
-            "  run `python -m bigcherry apply` first, or pass --force.",
-            file=sys.stderr,
-        )
-        return 2
-
-    forwarded = ["--variant-set", args.variant_set, "--arch", args.arch]
-    if args.llama_root:
-        forwarded += ["--llama-root", args.llama_root]
-    if args.inventory:
-        forwarded += ["--inventory", args.inventory]
-    if args.winners:
-        forwarded += ["--winners", args.winners]
-    if args.generated_root:
-        forwarded += ["--generated-root", args.generated_root]
-    if args.dry_run:
-        forwarded += ["--dry-run"]
-
-    status = autotune_catalog.main(forwarded)
-    if status == 0 and not args.dry_run:
-        manifest_path = (
-            paths.artifact_dir(record.revision) / "hip-autotune-manifest.json"
-        )
-        if manifest_path.is_file():
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            record.manifest_hash = manifest["manifest_hash"]
-        record.advance_to("generated")
-        record.save()
-    return status
 
 
 # ------------------------------------------------------------------- status
 
 
-def cmd_status(args: argparse.Namespace) -> int:
-    root = paths.llama_root(args.llama_root)
-    revision, dirty = source_audit.git_revision(root)
-    print(f"bigcherry {__version__}")
-    print(f"  repo:     {paths.REPO_ROOT}")
-    print(f"  checkout: {root}")
-    print(f"  revision: {revision[:12]}{' (dirty)' if dirty else ''}")
-    print()
-    records = releases.all_records()
-    if not records:
-        print("  no releases recorded yet")
-        return 0
-    print(f"  {'release':<16} {'stage':<12} {'audit':<7} manifest")
-    for record in records:
-        audit = (
-            "pass" if record.audit.get("passed") else ("fail" if record.audit else "-")
-        )
-        print(
-            f"  {record.slug():<16} {record.stage:<12} {audit:<7} "
-            f"{record.manifest_hash[:12] or '-'}"
-        )
-    return 0
-
-
-def cmd_doctor(args: argparse.Namespace) -> int:
-    """Report migration assumptions without modifying source or build state."""
-    return doctor.main(as_json=args.json)
-
-
-def cmd_check(args: argparse.Namespace) -> int:
-    from . import check
-    tier = args.tier or "default"
-    report = check.run_checks(root=paths.REPO_ROOT, tier=tier, fail_fast=args.fail_fast)
-    encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    if args.json:
-        Path(args.json).write_text(encoded, encoding="utf-8")
-    else:
-        for result in report["checks"]:
-            print(f"[{result['status'].upper():6}] {result['id']}: {result['detail']}")
-    return 0 if report["passed"] else 1
-
-
 # --------------------------------------------------------------------- main
-
-
-def cmd_replay_inspect(args: argparse.Namespace) -> int:
-    """HI15/HI16: registry + cache inspection through the real C++ loader."""
-    from . import replay_inspect
-
-    tool = replay_inspect.find_tool(args.tool)
-    report = replay_inspect.run_tool(
-        tool,
-        cache=Path(args.cache) if args.cache else None,
-        interpreter=args.tool_interpreter or None,
-    )
-    if args.manifest:
-        report["manifest"] = replay_inspect.manifest_agreement(
-            report, Path(args.manifest)
-        )
-    if args.json:
-        print(json.dumps(report, indent=2, sort_keys=True))
-    else:
-        print(replay_inspect.format_report(report))
-    # The C++ exit code is the report's own classification; carry it through
-    # so the tool composes as a gate (0 ok, 1 registry anomaly, 3 cache
-    # rejected, 4 loaded-but-nothing-usable).
-    return report["_exit"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1242,7 +1010,9 @@ def build_parser() -> argparse.ArgumentParser:
     check_cmd = sub.add_parser("check", help="run deterministic local CI gates")
     check_tier = check_cmd.add_mutually_exclusive_group()
     check_tier.add_argument("--quick", action="store_const", const="quick", dest="tier")
-    check_tier.add_argument("--default", action="store_const", const="default", dest="tier")
+    check_tier.add_argument(
+        "--default", action="store_const", const="default", dest="tier"
+    )
     check_tier.add_argument("--full", action="store_const", const="full", dest="tier")
     check_cmd.add_argument("--fail-fast", action="store_true")
     check_cmd.add_argument("--json", metavar="PATH", default=None)
@@ -1333,21 +1103,28 @@ def build_parser() -> argparse.ArgumentParser:
         "into apply/build)",
     )
     patch_verify_evidence_cmd.add_argument(
-        "patch_id", nargs="?", default=None,
+        "patch_id",
+        nargs="?",
+        default=None,
         help="check only this patch instead of every patch in the catalog",
     )
     patch_verify_evidence_cmd.add_argument("--json", action="store_true")
     patch_verify_evidence_cmd.add_argument(
-        "--no-legacy-grandfather", action="store_true",
+        "--no-legacy-grandfather",
+        action="store_true",
         help="require real HI83 evidence; do not accept the one-time legacy baseline",
     )
     patch_verify_evidence_cmd.set_defaults(func=cmd_patch_verify_evidence)
 
-    patch_lint_cmd = sub.add_parser("patch-lint", help="lint patch metadata without mutation")
+    patch_lint_cmd = sub.add_parser(
+        "patch-lint", help="lint patch metadata without mutation"
+    )
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
 
-    patch_validate_cmd = sub.add_parser("patch-validate", help="verify existing patch evidence")
+    patch_validate_cmd = sub.add_parser(
+        "patch-validate", help="verify existing patch evidence"
+    )
     patch_validate_cmd.add_argument("patch_id", nargs="?", default=None)
     patch_validate_cmd.add_argument("--json", action="store_true")
     patch_validate_cmd.add_argument("--no-legacy-grandfather", action="store_true")
@@ -2104,7 +1881,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="a binary v5 replay cache whose entry signatures define the tuned set",
     )
-    inv_workload.set_defaults(func=lambda args: cmd_inventory(args, subcmd="workload-check"))
+    inv_workload.set_defaults(
+        func=lambda args: cmd_inventory(args, subcmd="workload-check")
+    )
 
     return parser
 
@@ -2192,9 +1971,7 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
             print(str(exc), file=sys.stderr)
             return 1
 
-        output = (
-            Path(args.output) if args.output else record_path.with_suffix(".hot")
-        )
+        output = Path(args.output) if args.output else record_path.with_suffix(".hot")
         measurements = Path(args.measurements) if args.measurements else None
         summary = inv_mod.write_hot_list(record, output, measurements=measurements)
 
@@ -2224,7 +2001,9 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
         if args.measurements:
             measurements_path = Path(args.measurements)
             if not measurements_path.is_file():
-                print(f"no such measurements file: {measurements_path}", file=sys.stderr)
+                print(
+                    f"no such measurements file: {measurements_path}", file=sys.stderr
+                )
                 return 2
             tuned_signatures = {
                 row["signature"]
@@ -2248,9 +2027,7 @@ def cmd_inventory(args: argparse.Namespace, *, subcmd: str) -> int:
                     cache_path.read_bytes()
                 )
             except SystemExit as exc:
-                print(
-                    f"cannot read replay cache {cache_path}: {exc}", file=sys.stderr
-                )
+                print(f"cannot read replay cache {cache_path}: {exc}", file=sys.stderr)
                 return 1
             # A valid zero-entry cache is not an error: it reports zero
             # coverage, which is the honest answer for a cache with no
@@ -2551,7 +2328,31 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0 if promotion_gate.get("passed") else 1
 
 
-def main(argv: list[str] | None = None) -> int:
+# TR03 compatibility facades: the canonical pin handlers now live in
+# bigcherry.release.pin while these names remain stable for existing callers.
+
+
+def _resolve_pin_sha(ref: str) -> str:
+    return _release_pin.resolve_pin_sha(ref)
+
+
+def _pin_status_paths():
+    return _release_pin.pin_status_paths()
+
+
+def _render_pin_status(report, trees) -> str:
+    return _release_pin.render_pin_status(report, trees)
+
+
+def cmd_repin(args: argparse.Namespace) -> int:
+    return _release_pin.cmd_repin(args)
+
+
+def cmd_pin_status(args: argparse.Namespace) -> int:
+    return _release_pin.cmd_pin_status(args)
+
+
+def _legacy_main(argv: list[str] | None = None) -> int:
     _configure_output()
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -2571,6 +2372,14 @@ def _configure_output() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(errors="backslashreplace")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Delegate the package entrypoint to the canonical CLI bootstrap."""
+    from importlib import import_module
+
+    cli_main = cast(Any, import_module("bigcherry.cli.main").main)
+    return int(cli_main(argv))
 
 
 if __name__ == "__main__":

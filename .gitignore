@@ -47,6 +47,8 @@ dist/
 wheels/
 .venv/
 env/
+!tools/env/
+!tools/env/**
 venv/
 
 # -- SQLite databases (tuning runs) --

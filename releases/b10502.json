@@ -11,9 +11,9 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "a58425e60d992f8819137c07b5c771cf0bb4e3ef",
+  "bigcherry_revision": "73068e9b4d1f612097f2efa582f046fd6013e11b",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
-  "manifest_hash": "817a920fde9284bfc8cb721057f63dd1",
+  "manifest_hash": "3dbf2119b01acaa977a4c18125cc7fab",
   "notes": "patches failed: ggml/src/ggml-cuda/common.cuh:rd17-struct-host, ggml/src/ggml-cuda/common.cuh:rd17-struct-device",
   "patches": {
     "applied_cleanly": false,
@@ -213,5 +213,5 @@
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
   "stage": "generated",
   "tree_state": "",
-  "updated_at": "2026-08-25T00:13:44.931749+00:00"
+  "updated_at": "2026-08-25T02:41:06.782735+00:00"
 }
