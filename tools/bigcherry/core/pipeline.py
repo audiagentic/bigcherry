@@ -1,0 +1,118 @@
+"""Per-source lifecycle service with provenance checks before child work."""
+
+from __future__ import annotations
+
+from typing import Callable
+
+from . import provenance
+
+# RE25.1 (GPT-auto-agent implementation plan, 2026-08-17): ArtifactRef now
+# lives in artifacts.py, beside descriptor persistence/rehydration --
+# re-exported here so every existing `from bigcherry.pipeline import
+# ArtifactRef` call site keeps working unchanged.
+from .artifacts import ArtifactRef
+
+__all__ = ["ArtifactRef", "PipelineError", "PipelineService"]
+
+
+class PipelineError(RuntimeError):
+    pass
+
+
+class PipelineService:
+    """Domain lifecycle boundary; scheduling remains outside this service."""
+
+    def __init__(
+        self,
+        executor: Callable[[str, tuple[ArtifactRef, ...]], tuple[ArtifactRef, ...]],
+    ):
+        self._executor = executor
+
+    @staticmethod
+    def _check_inputs(
+        inputs: tuple[ArtifactRef, ...], expected: dict[str, str]
+    ) -> None:
+        for artifact in inputs:
+            # RE25.3: imported-legacy evidence (raw Path imports, pre-descriptor
+            # refs) has no verifiable source identity -- checking it against the
+            # stage envelope would require trusting claims we explicitly do not
+            # trust. We skip the field check for that ONE class instead of
+            # inventing a claim: its sticky provenance class already guarantees
+            # nothing derived from it can ever be promotable release evidence.
+            # Every other class (production/development/diagnostic) carries a
+            # real identity and must match the envelope exactly.
+            try:
+                document = provenance.validate(artifact.provenance)
+            except provenance.ProvenanceError as exc:
+                raise PipelineError(
+                    f"{artifact.kind} cannot be consumed by this lifecycle "
+                    f"stage: malformed provenance: {exc}"
+                ) from exc
+            project_ns = document.get("project")
+            if (
+                isinstance(project_ns, dict)
+                and project_ns.get("provenance_class") == "imported-legacy"
+            ):
+                continue
+            try:
+                provenance.require_compatible(artifact.provenance, **expected)
+            except provenance.ProvenanceError as exc:
+                raise PipelineError(
+                    f"{artifact.kind} cannot be consumed by this lifecycle stage: {exc}"
+                ) from exc
+
+    def run(
+        self,
+        stage: str,
+        *,
+        inputs: tuple[ArtifactRef, ...] = (),
+        expected: dict[str, str],
+    ) -> tuple[ArtifactRef, ...]:
+        self._check_inputs(inputs, expected)
+        try:
+            outputs = self._executor(stage, inputs)
+        except Exception as exc:
+            raise PipelineError(
+                f"stage {stage} failed before publishing outputs: {exc}"
+            ) from exc
+        if not isinstance(outputs, tuple):
+            raise PipelineError(
+                f"stage {stage} executor returned a non-tuple output set"
+            )
+        for artifact in outputs:
+            try:
+                provenance.require_compatible(artifact.provenance, **expected)
+            except provenance.ProvenanceError as exc:
+                raise PipelineError(
+                    f"stage {stage} returned incompatible output: {exc}"
+                ) from exc
+        return outputs
+
+    def record(self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...] = ()):
+        return self.run("record", expected=expected, inputs=inputs)
+
+    def build_inventory(
+        self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]
+    ):
+        return self.run("inventory", expected=expected, inputs=inputs)
+
+    def tune(self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]):
+        return self.run("tune", expected=expected, inputs=inputs)
+
+    def promote(self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]):
+        return self.run("promote", expected=expected, inputs=inputs)
+
+    def build_replay_full(
+        self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]
+    ):
+        return self.run("replay-full", expected=expected, inputs=inputs)
+
+    def export_replay_cache(
+        self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]
+    ):
+        return self.run("replay-export", expected=expected, inputs=inputs)
+
+    def validate_replay(
+        self, *, expected: dict[str, str], inputs: tuple[ArtifactRef, ...]
+    ):
+        return self.run("replay-validate", expected=expected, inputs=inputs)

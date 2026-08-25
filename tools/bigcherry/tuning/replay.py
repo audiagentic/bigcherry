@@ -1182,7 +1182,7 @@ def _load_seed_overrides(
 
 
 def main(argv: list[str] | None = None) -> None:
-    root = Path(__file__).resolve().parent.parent.parent
+    root = Path(__file__).resolve().parent.parent.parent.parent
     parser = argparse.ArgumentParser(
         prog="bigcherry replay-cache",
         description="Build a replay cache from tuning measurements.",

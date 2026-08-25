@@ -40,7 +40,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PATCHES_ROOT = REPO_ROOT / "patches"
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
