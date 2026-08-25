@@ -111,27 +111,50 @@ enum ggml_hip_signature_flag {
     // only one. These flags record which one(s) are actually present, so a
     // consumer reconstructing the fused computation (HI119) knows exactly
     // which synthetic bias tensor(s) to build rather than guessing from the
-    // coarse fusion byte alone. Every fusion tensor's real GEOMETRY (not just
-    // presence) is provably derivable from fields this signature already
-    // records -- confirmed directly against mmvq.cu's own GGML_ASSERT calls,
-    // not inferred from model convention: fusion->gate must share src0's
-    // exact type and stride (`type == src0->type && ggml_are_same_stride`);
-    // fusion->x_bias/gate_bias must be F32 with `ne[0] == dst->ne[0]` and (if
-    // ids) `ne[1] == src0->ne[2]` (== this signature's own n_expert field).
-    // So no new ne/type fields are needed for gate or the biases -- only
-    // presence. x_scale/gate_scale (NVFP4-only per mmvq.cu's own comment;
-    // never observed on the real q8_0 dispatches HI108 found) get presence
-    // flags too, purely so an unexpected future dispatch using them fails
-    // closed (HI119 can explicitly reject an unhandled fusion shape) instead
-    // of silently reconstructing an incomplete computation. dst_gate is
-    // deliberately NOT tracked here: it exists only on ggml_cuda_mm_fusion_
-    // args_host under patch 1207_rd17_moe_topk_down_fold.py (an experimental,
-    // non-default patch), not in the upstream/pristine struct every other
-    // build compiles against -- confirmed the hard way (a real Brutus build
-    // without 1207 failed with "no member named 'dst_gate'"). It is also, per
-    // the struct's own comment, only meaningful when glu_op == GGML_GLU_OP_
-    // NONE, a different fusion mode than the GLU-combining case HI108/HI119
-    // care about, so dropping it costs nothing in scope.
+    // coarse fusion byte alone. Enough of each fusion tensor's real geometry
+    // to construct a semantically equivalent synthetic replacement (not
+    // necessarily its exact original ne/nb) is derivable from fields this
+    // signature already records -- verified against real source, corrected
+    // 2026-08-25 (dev-gpt-agent review) after an initial pass cited only
+    // mmvq.cu's own GGML_ASSERT calls, which is NOT sufficient proof on its
+    // own: ggml_are_same_stride() compares nb[] only, not ne[], so it alone
+    // does not prove gate's shape matches src0's. The real proof is one layer
+    // up, in ggml-cuda.cu's ggml_cuda_should_fuse_mul_mat() -- the gate for
+    // fusion in the first place requires `ffn_up->src[0]->type ==
+    // ffn_gate->src[0]->type && ggml_are_same_shape(...) &&
+    // ggml_are_same_stride(...)` (~ggml-cuda.cu line 1998), so a fusion this
+    // tuner ever sees already had gate's shape/type/stride matched against
+    // src0's before it could fuse at all -- mmvq.cu's assert is a redundant
+    // downstream safety check, not the source of the guarantee.
+    // fusion->x_bias/gate_bias are F32 with `ne[0] == dst->ne[0]` and (if
+    // ids) `ne[1] == src0->ne[2]` (== this signature's own n_expert field) --
+    // sufficient to build a correctly-shaped synthetic bias, though not a
+    // full round-trip of the original tensor's own ne[2]/ne[3]/nb[].
+    // x_scale/gate_scale are F32, contiguous, sized `nelements == (ids ?
+    // src0->ne[2] : 1)` under the upstream/pristine kernel path (NVFP4-only;
+    // never observed on the real q8_0 dispatches HI108 found) -- enough to
+    // build a synthetic per-expert/per-tensor scale array for that path.
+    // KNOWN REPO-WIDE GAP, not fixed here: patch 1207_rd17_moe_topk_down_
+    // fold.py's x_scale_channel_dst mode changes x_scale's real semantics
+    // (length dst->ne[1], non-NVFP4-gated, indexed by destination channel
+    // instead of expert) -- this X_SCALE presence flag does not distinguish
+    // that mode from the upstream one; out of scope for HI118/HI119's
+    // upstream-GLU-fusion case, filed separately for whoever hardens 1207's
+    // own signature coverage. dst_gate is deliberately NOT tracked here: it
+    // exists on ggml_cuda_mm_fusion_args_host only under patch
+    // patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py (RD12; an
+    // experimental, non-default patch -- 1207 only comments on sharing RD12's
+    // struct slot, it does not add the field itself, corrected 2026-08-25
+    // after initially misattributing this to 1207), not in the
+    // upstream/pristine struct every other build compiles against --
+    // confirmed the hard way (a real Brutus build without 1205 failed with
+    // "no member named 'dst_gate'"). RD12's own fused dispatch (gate set,
+    // dst_gate set, glu_op == NONE) DOES reach this tuner's family collection
+    // point and gets signed today -- it is not silently aliased with a real
+    // GLU signature (GLU's own glu_op is never NONE), but it relies on the
+    // implicit invariant "fusion == GATE with glu_op == NONE means RD12,"
+    // not an explicit flag. Filed separately for whoever hardens RD12's own
+    // signature coverage; out of scope for HI118/HI119's upstream-GLU case.
     GGML_HIP_SIG_FUSION_X_BIAS     = 1u << 7,
     GGML_HIP_SIG_FUSION_GATE_BIAS  = 1u << 8,
     GGML_HIP_SIG_FUSION_X_SCALE    = 1u << 9,

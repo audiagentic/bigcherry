@@ -1337,15 +1337,20 @@ class TestHi118FusionFieldPresenceFlags(unittest.TestCase):
     fusion->gate_bias into one coarse has_bias bit, and never records
     x_scale/gate_scale presence at all -- real information loss confirmed
     against mmvq.cu's own GGML_ASSERT calls (~line 1435-1462), which handle
-    these fusion->* fields as independently-nullable. Every fusion tensor's
-    real GEOMETRY is provably derivable from fields the signature already
-    records (gate shares src0's type/stride; biases are F32 sized by
-    dst.ne[0]/n_expert) -- so only presence flags are needed, not new
-    ne/type fields, and no schema-version bump. dst_gate is deliberately
-    NOT tracked: real Brutus build confirmed it only exists on
-    ggml_cuda_mm_fusion_args_host under the experimental, non-default patch
-    1207_rd17_moe_topk_down_fold.py -- referencing it unconditionally broke
-    a real hardware build without that patch applied."""
+    these fusion->* fields as independently-nullable. Enough of each fusion
+    tensor's real geometry to build a semantically equivalent synthetic
+    replacement is derivable from fields the signature already records
+    (gate's shape/type/stride match against src0 is actually guaranteed one
+    layer up, by ggml-cuda.cu's ggml_cuda_should_fuse_mul_mat() gating fusion
+    on it in the first place -- corrected 2026-08-25, dev-gpt-agent review:
+    mmvq.cu's ggml_are_same_stride() alone only proves stride, not shape;
+    biases are F32 sized by dst.ne[0]/n_expert) -- so only presence flags are
+    needed, not new ne/type fields, and no schema-version bump. dst_gate is
+    deliberately NOT tracked: real Brutus build confirmed it only exists on
+    ggml_cuda_mm_fusion_args_host under the experimental, non-default RD12
+    patch (patches/rd/1205_rd12_paired_mmvq_dual_output -- corrected
+    2026-08-25, initially misattributed to 1207) -- referencing it
+    unconditionally broke a real hardware build without that patch applied."""
 
     def test_new_flag_bits_are_defined_and_do_not_collide(self):
         header = TYPES_HEADER.read_text(encoding="utf-8")
