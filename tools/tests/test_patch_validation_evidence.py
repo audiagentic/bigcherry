@@ -63,7 +63,10 @@ class SubjectDigestTests(unittest.TestCase):
 
     def test_legacy_flat_without_state_uses_implementation_identity(self):
         path = self.root / "no_state.py"
-        path.write_text('"""doc"""\n', encoding="utf-8")
+        # write_bytes avoids platform newline translation (write_text would
+        # turn \n into \r\n on Windows, desyncing this raw-byte comparison
+        # from patch_validation_subject_digest's text-mode read).
+        path.write_bytes(b'"""doc"""\n')
         self.assertEqual(
             pve.patch_validation_subject_digest(path),
             pve._sha256_file(path),

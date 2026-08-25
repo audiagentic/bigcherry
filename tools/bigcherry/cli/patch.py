@@ -9,6 +9,23 @@ from argparse import Namespace
 from .. import patch_catalog, patch_lifecycle, patchset, paths, recipes
 
 
+def cmd_apply(args: Namespace) -> int:
+    from .. import __main__ as legacy
+
+    root = paths.llama_root(args.llama_root)
+    try:
+        groups, states, label = legacy._resolve_selection(args)
+    except recipes.RecipeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    ok = legacy._apply_selection(
+        root, groups, states, force=args.force, dry_run=args.dry_run
+    )
+    print(f"selection: {label}")
+    print("  RESULT: " + ("PASS" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
 def cmd_patches(args: Namespace) -> int:
     from .. import __main__ as legacy
 
@@ -208,3 +225,117 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
 def cmd_patch_validate(args: Namespace) -> int:
     """Verify existing evidence; hardware campaigns remain explicit."""
     return cmd_patch_verify_evidence(args)
+
+
+def cmd_patches(args: Namespace) -> int:
+    """Show every patch, its metadata, and whether a selection takes it.
+
+    --kind/--backend/--origin filter against patch metadata: catalog.toml
+    for legacy flat patches (RE30 phase 1's declarative metadata), and
+    patch.toml for packaged patches (patch-system PA02: patches/ may now
+    hold <id>/ package directories -- the metadata, not a directory move,
+    answers "which patches form the framework / are HIP vs Vulkan / came
+    from an external fork").
+
+    RE39: reads patches/ and patches/catalog.toml exactly once via a single
+    CatalogSnapshot, instead of the two independent scans (patchset.describe()
+    + patch_catalog.load_catalog()) this command used to make.
+    """
+    from .. import __main__ as legacy
+
+    try:
+        snapshot = patch_catalog.build_snapshot()
+    except ValueError as exc:
+        print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
+        return 2
+    if not snapshot.modules:
+        print("no patches found", file=sys.stderr)
+        return 1
+
+    try:
+        groups, states, label = legacy._resolve_selection(args)
+    except recipes.RecipeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    catalog_filter_active = bool(args.kind or args.backend or args.origin)
+
+    root = paths.llama_root(args.llama_root)
+    print(f"selection: {label}")
+    print(f"checkout:  {root}")
+    if catalog_filter_active:
+        print(
+            f"catalog:   kind={args.kind or 'any'} backend={args.backend or 'any'} "
+            f"origin={args.origin or 'any'}"
+        )
+    print()
+
+    rows, problems, selected = [], [], 0
+    for module in snapshot.modules:
+        entry = snapshot.entry_for(module.patch_id)
+        if catalog_filter_active:
+            if entry is None:
+                continue
+            if args.kind and entry.kind != args.kind:
+                continue
+            if args.backend and entry.backend != args.backend:
+                continue
+            if args.origin and entry.origin != args.origin:
+                continue
+
+        taken = (groups is None or module.group in groups) and (
+            states is None or module.state in states
+        )
+        selected += taken
+
+        note = ""
+        if module.upstream:
+            landed = patchset.upstream_landed(module.upstream, root)
+            if landed:
+                note = f"upstream {module.upstream[:8]} landed -- redundant here"
+            elif landed is None:
+                note = f"upstream {module.upstream[:8]} unknown"
+            else:
+                note = f"upstream {module.upstream[:8]} not in this checkout"
+
+        if module.state not in patchset.STATES:
+            problems.append(
+                f"{module.patch_id}: STATE={module.state!r} is not one of "
+                f"{', '.join(patchset.STATES)} -- no recipe will select it"
+            )
+
+        catalog_label = f"{entry.kind}/{entry.backend}" if entry is not None else ""
+        rows.append(
+            (
+                "[x]" if taken else "[ ]",
+                module.patch_id,
+                module.group,
+                module.state,
+                catalog_label,
+                note,
+            )
+        )
+
+    if not rows:
+        print("no patches match the given --kind/--backend/--origin filter")
+        return 0
+
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    for mark, name, group, state, catalog_label, note in rows:
+        line = (
+            f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  "
+            f"{state:<{widths[3]}}  {catalog_label:<{widths[4]}}"
+        )
+        print(f"{line}  {note}".rstrip())
+
+    print(
+        f"\n{selected} of {len(rows)} shown selected"
+        + (
+            ""
+            if not catalog_filter_active
+            else f" ({len(snapshot.modules)} total in catalog)"
+        )
+    )
+    for problem in problems:
+        print(f"warning: {problem}", file=sys.stderr)
+    return 1 if problems else 0
