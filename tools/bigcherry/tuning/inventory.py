@@ -1419,7 +1419,7 @@ def _native_medians(measurements: Path, record: Record) -> dict[str, float]:
     wrong one would silently re-base every impact figure derived from it
     (HI24).
     """
-    from .. import report
+    from ..analysis import report
 
     by_signature = {
         o["signature"]: o.get("native", "")

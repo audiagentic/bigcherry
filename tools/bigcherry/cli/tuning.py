@@ -172,7 +172,7 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
         return 0
 
     elif subcmd == "workload-check":
-        from .. import report as report_mod
+        from ..analysis import report as report_mod
 
         record_path = Path(args.record)
         if not record_path.is_file():

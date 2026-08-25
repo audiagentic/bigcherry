@@ -39,7 +39,7 @@ from . import schema
 from .. import csource
 from .. import paths
 from ..source.audit import read_types_mmq, git_revision
-from ..resource_report import ResourceError, load_blacklist
+from ..analysis.resource_report import ResourceError, load_blacklist
 
 # Architecture -> the MMQ config header that defines its table, derived from the
 # family map rather than restated, so adding an architecture in one place is
