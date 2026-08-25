@@ -118,16 +118,22 @@ int rsmi_index_for_hip_device(int hip_device) {
     return -1;
 }
 
-uint64_t current_clock_mhz(uint32_t index, uint32_t clk_type) {
+// Returns false (out_mhz left at 0) on any RSMI failure or malformed
+// response -- the caller must not treat that 0 as a real reading. Real GPU
+// clocks are never exactly 0 while the query itself succeeds, but this
+// still reports failure explicitly rather than relying on that assumption.
+bool current_clock_mhz(uint32_t index, uint32_t clk_type, uint64_t & out_mhz) {
+    out_mhz = 0;
     rsmi_frequencies_compat freq{};
     if (rsmi().gpu_clk_freq_get(index, clk_type, &freq) != RSMI_STATUS_SUCCESS_) {
-        return 0;
+        return false;
     }
     if (freq.num_supported == 0 || freq.current >= freq.num_supported ||
             freq.num_supported > RSMI_MAX_NUM_FREQUENCIES_) {
-        return 0;
+        return false;
     }
-    return freq.frequency[freq.current] / 1000000ull;  // Hz -> MHz
+    out_mhz = freq.frequency[freq.current] / 1000000ull;  // Hz -> MHz
+    return true;
 }
 
 }  // namespace
@@ -153,27 +159,31 @@ ggml_hip_device_state ggml_hip_query_device_state(int hip_device) {
     out.pci_device = (uint32_t) prop.pciDeviceID;
     out.identity_valid = true;
 
-    out.sclk_mhz = current_clock_mhz(dv, RSMI_CLK_TYPE_SYS_);
-    out.mclk_mhz = current_clock_mhz(dv, RSMI_CLK_TYPE_MEM_);
+    out.sclk_valid = current_clock_mhz(dv, RSMI_CLK_TYPE_SYS_, out.sclk_mhz);
+    out.mclk_valid = current_clock_mhz(dv, RSMI_CLK_TYPE_MEM_, out.mclk_mhz);
 
     int64_t temp = 0;
     if (rsmi().temp_metric_get(dv, RSMI_TEMP_TYPE_EDGE_, RSMI_TEMP_CURRENT_,
                                &temp) == RSMI_STATUS_SUCCESS_) {
         out.edge_temp_mc = (uint64_t) std::max<int64_t>(0, temp);
+        out.edge_temp_valid = true;
     }
     temp = 0;
     if (rsmi().temp_metric_get(dv, RSMI_TEMP_TYPE_JUNCTION_, RSMI_TEMP_CURRENT_,
                                &temp) == RSMI_STATUS_SUCCESS_) {
         out.junction_temp_mc = (uint64_t) std::max<int64_t>(0, temp);
+        out.junction_temp_valid = true;
     }
 
     uint64_t power = 0;
     if (rsmi().socket_power_get(dv, &power) == RSMI_STATUS_SUCCESS_) {
         out.socket_power_uw = power;
+        out.power_valid = true;
     }
     uint32_t busy = 0;
     if (rsmi().busy_percent_get(dv, &busy) == RSMI_STATUS_SUCCESS_) {
         out.busy_percent = busy;
+        out.busy_valid = true;
     }
 
     // Valid means "this really is the requested device's state". Individual

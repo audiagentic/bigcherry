@@ -331,6 +331,30 @@ class TestDispatchSafetyContracts(unittest.TestCase):
         self.assertIn('if (!s.valid) return "{}";', tuner)
         self.assertIn('return "{\\"status\\":\\"unavailable\\"}";', tuner)
 
+    def test_device_capture_does_not_emit_zero_for_a_single_failed_metric(self):
+        # dev-gpt-agent deep review (2026-08-25): `valid == true` only proves
+        # device identity resolved -- it does NOT prove every individual RSMI
+        # metric call succeeded. Before this fix, a metric whose RSMI call
+        # failed independently (e.g. power unsupported on this ASIC while
+        # clocks read fine) serialized as a plain numeric 0, indistinguishable
+        # from a genuinely idle/cold reading -- the exact ambiguity this
+        # struct's own header docstring claims never happens. Each metric now
+        # carries its own *_valid flag and prints JSON `null`, not 0, when
+        # that flag is false.
+        header = SMI_HEADER.read_text(encoding="utf-8")
+        smi = SMI.read_text(encoding="utf-8")
+        tuner = TUNER.read_text(encoding="utf-8")
+        for field in ("sclk_valid", "mclk_valid", "edge_temp_valid",
+                      "junction_temp_valid", "power_valid", "busy_valid"):
+            self.assertIn(field, header)
+            self.assertIn(field, smi)
+        self.assertIn("device_state_metric_u64(", tuner)
+        self.assertIn("device_state_metric_u32(", tuner)
+        self.assertIn('if (!metric_valid) return "null";', tuner)
+        # The clock-drift falsification consumer must also treat a failed
+        # clock read as unavailable, not silently proceed with a stale 0.
+        self.assertIn("!pre.sclk_valid || !post.sclk_valid", tuner)
+
     def test_hi60_counterbalanced_round_is_observation_only_and_fail_closed(self):
         tuner = TUNER.read_text(encoding="utf-8")
         helper_start = tuner.index("CounterbalancedRound run_counterbalanced_round(")

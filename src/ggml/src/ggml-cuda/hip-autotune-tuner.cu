@@ -1470,21 +1470,42 @@ int calibrated_launches_per_sample(double native_pilot_us,
 // HI52 part 2: serialise a device-state snapshot. Emits "{}" when the capture
 // is off, unavailable, or could not resolve the device -- never a row of zeros,
 // which would be indistinguishable from a genuinely idle, cold GPU.
+// Per-metric fields print as the JSON literal `null`, not a numeric 0, when
+// their `*_valid` flag is false -- an individual RSMI call (temp/power/busy)
+// can fail even though device identity resolved and `s.valid` is true, and a
+// silently-emitted 0 would be indistinguishable from a genuinely idle, cold
+// GPU (the exact ambiguity this struct exists to avoid).
+static std::string device_state_metric_u64(bool metric_valid, uint64_t value) {
+    if (!metric_valid) return "null";
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long) value);
+    return std::string(buf);
+}
+
+static std::string device_state_metric_u32(bool metric_valid, uint32_t value) {
+    if (!metric_valid) return "null";
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u", value);
+    return std::string(buf);
+}
+
 std::string device_state_json(const ggml_hip_device_state & s) {
     if (!s.valid) return "{}";
-    char buf[512];
+    char buf[640];
     snprintf(buf, sizeof(buf),
              "{\"identity_valid\":%s,\"hip_device\":%d,"
              "\"pci_bdf\":\"%04x:%02x:%02x\","
-             "\"sclk_mhz\":%llu,\"mclk_mhz\":%llu,\"edge_temp_mc\":%llu,"
-             "\"junction_temp_mc\":%llu,\"socket_power_uw\":%llu,"
-             "\"busy_percent\":%u}",
+             "\"sclk_mhz\":%s,\"mclk_mhz\":%s,\"edge_temp_mc\":%s,"
+             "\"junction_temp_mc\":%s,\"socket_power_uw\":%s,"
+             "\"busy_percent\":%s}",
              s.identity_valid ? "true" : "false", s.hip_device,
              s.pci_domain, s.pci_bus, s.pci_device,
-             (unsigned long long) s.sclk_mhz, (unsigned long long) s.mclk_mhz,
-             (unsigned long long) s.edge_temp_mc,
-             (unsigned long long) s.junction_temp_mc,
-             (unsigned long long) s.socket_power_uw, s.busy_percent);
+             device_state_metric_u64(s.sclk_valid, s.sclk_mhz).c_str(),
+             device_state_metric_u64(s.mclk_valid, s.mclk_mhz).c_str(),
+             device_state_metric_u64(s.edge_temp_valid, s.edge_temp_mc).c_str(),
+             device_state_metric_u64(s.junction_temp_valid, s.junction_temp_mc).c_str(),
+             device_state_metric_u64(s.power_valid, s.socket_power_uw).c_str(),
+             device_state_metric_u32(s.busy_valid, s.busy_percent).c_str());
     return std::string(buf);
 }
 
@@ -1557,7 +1578,12 @@ ClockDriftObservation observe_clock_drift(const ggml_hip_device_state & pre,
         out.identity_mismatch = true;
         return out;
     }
-    if (pre.sclk_mhz == 0 || post.sclk_mhz == 0 || pre.mclk_mhz == 0 ||
+    // sclk_valid/mclk_valid are the authoritative signal (added alongside
+    // the absent-not-zero fix for HI100/RE-review); the == 0 checks stay as
+    // a defensive fallback in case a future RSMI quirk reports success with
+    // a genuinely zero value.
+    if (!pre.sclk_valid || !post.sclk_valid || !pre.mclk_valid || !post.mclk_valid ||
+            pre.sclk_mhz == 0 || post.sclk_mhz == 0 || pre.mclk_mhz == 0 ||
             post.mclk_mhz == 0) {
         return out;
     }

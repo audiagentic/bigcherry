@@ -23,12 +23,27 @@ struct ggml_hip_device_state {
     uint32_t pci_domain       = 0;
     uint32_t pci_bus          = 0;
     uint32_t pci_device       = 0;
-    uint64_t sclk_mhz         = 0;   // shader/system clock, current
-    uint64_t mclk_mhz         = 0;   // memory clock, current
-    uint64_t edge_temp_mc     = 0;   // millidegrees C
-    uint64_t junction_temp_mc = 0;   // millidegrees C (hotspot)
-    uint64_t socket_power_uw  = 0;   // microwatts
-    uint32_t busy_percent     = 0;
+
+    // `valid` covers device identity only (library loaded, symbols resolved,
+    // PCI-BDF matched) -- it does NOT guarantee any individual metric below
+    // was actually read. Each metric has its own `*_valid` flag because RSMI
+    // calls fail independently (e.g. clocks readable, power unsupported on
+    // this ASIC); a metric whose `*_valid` is false must be treated as
+    // absent, never as a genuine zero reading. See device_state_json() in
+    // hip-autotune-tuner.cu, which must serialise an invalid metric as null,
+    // not as the numeric default below.
+    bool     sclk_valid          = false;
+    uint64_t sclk_mhz            = 0;   // shader/system clock, current
+    bool     mclk_valid          = false;
+    uint64_t mclk_mhz            = 0;   // memory clock, current
+    bool     edge_temp_valid     = false;
+    uint64_t edge_temp_mc        = 0;   // millidegrees C
+    bool     junction_temp_valid = false;
+    uint64_t junction_temp_mc    = 0;   // millidegrees C (hotspot)
+    bool     power_valid         = false;
+    uint64_t socket_power_uw     = 0;   // microwatts
+    bool     busy_valid          = false;
+    uint32_t busy_percent        = 0;
 };
 
 // Returns valid == false on: non-Linux, library absent, any symbol missing,
