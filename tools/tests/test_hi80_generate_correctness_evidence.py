@@ -480,6 +480,7 @@ GLU_CANONICAL_SIGNATURE = {
     "flags": 31,  # SRC0|SRC1|DST_CONTIGUOUS | HAS_IDS | BROADCAST_CH, no HI118 bias/scale bits
     "n_expert": 256, "n_expert_used": 8,
     "ne0": [2048, 256, 256, 1], "ne1": [2048, 1, 1, 1], "ned": [256, 8, 1, 1],
+    "schema_version": scm.dispatch_abi.SIGNATURE_SCHEMA_VERSION,
 }
 
 

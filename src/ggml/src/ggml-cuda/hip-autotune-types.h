@@ -27,7 +27,18 @@
 
 // Bump when a hashed field is added, removed, or reinterpreted. Older replay
 // caches and database rows are then rejected rather than misread.
-#define GGML_HIP_SIGNATURE_SCHEMA_VERSION 1
+//
+// v1 -> v2 (HI119 review follow-up): the `flags` bitfield's bits 7-10
+// (GGML_HIP_SIG_FUSION_X_BIAS/GATE_BIAS/X_SCALE/GATE_SCALE, added by HI118)
+// reinterpret previously-unused bits with new load-bearing meaning. A v1
+// signature's flags==0 in those bit positions cannot be trusted to mean "no
+// bias/scale present" -- it may simply predate the bits existing at all.
+// Bumping forces exactly the RERUN_REQUIRED/regeneration behavior this
+// schema-version field exists for, rather than letting HI119's fused-GLU
+// evidence harness silently trust an ambiguous old record. See
+// tools/bigcherry/tuning/dispatch_abi.py for the mirrored Python-side
+// constant and its own agreement test against this #define.
+#define GGML_HIP_SIGNATURE_SCHEMA_VERSION 2
 #define GGML_HIP_HARDWARE_SCHEMA_VERSION  1
 
 // 128-bit blake2b digest (standards 5.4). Persisted verbatim.

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .. import ARTIFACT_VERSION
+from . import dispatch_abi
 from . import schema
 from .. import csource
 from .. import paths
@@ -764,8 +765,20 @@ def read_correctness_evidence(measurements: Path) -> dict[str, dict[str, Any]]:
                         "error_metrics": {"nmse": nmse, "max_abs": max_abs},
                         "tolerances": {"nmse": 1e-6, "max_abs": 1e-2},
                         "signature_namespace": {
-                            "signature_schema_version": header.get("signature_schema", 1),
-                            "hardware_schema_version": header.get("hardware_schema", 1),
+                            # HI119 review follow-up: a measurements JSONL
+                            # header row predating this field's existence
+                            # means the LEGACY schema, not whatever the
+                            # current schema happens to be now -- these two
+                            # concepts must not be conflated (dispatch_abi's
+                            # own docstring).
+                            "signature_schema_version": header.get(
+                                "signature_schema",
+                                dispatch_abi.LEGACY_MISSING_SIGNATURE_SCHEMA_VERSION,
+                            ),
+                            "hardware_schema_version": header.get(
+                                "hardware_schema",
+                                dispatch_abi.LEGACY_MISSING_HARDWARE_SCHEMA_VERSION,
+                            ),
                         },
                         "build_namespace": {
                             "source_revision": header.get("source_revision", ""),
@@ -901,8 +914,8 @@ def build_manifest(root: Path, *, variant_set: str,
         "variant_set": variant_set,
         "source_revision": source_revision,
         "architectures": sorted(architectures),
-        "signature_schema_version": 1,
-        "hardware_schema_version": 1,
+        "signature_schema_version": dispatch_abi.SIGNATURE_SCHEMA_VERSION,
+        "hardware_schema_version": dispatch_abi.HARDWARE_SCHEMA_VERSION,
         "candidates": sorted((c.to_dict() for c in candidates),
                              key=lambda c: (c["family"], c["stable_name"])),
     }

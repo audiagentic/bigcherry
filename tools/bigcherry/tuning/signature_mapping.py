@@ -29,6 +29,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import dispatch_abi
+
 _GGML_H_RELATIVE = Path("ggml/include/ggml.h")
 _GGML_C_RELATIVE = Path("ggml/src/ggml.c")
 
@@ -691,6 +693,24 @@ def signature_to_moe_glu_file_line(
     forced-native/forced-candidate runs compared against the same routing,
     the same reasoning signature_to_mul_mat_id_test_file_line's own
     digest_tensor="leaf_2" choice used for the same reason."""
+    # HI119 review follow-up (dev-gpt-agent, 2026-08-25): a schema-1
+    # signature's flags==0 in the HI118 bias/scale bit positions cannot be
+    # trusted to mean "no bias/scale" -- it may simply predate those bits
+    # having any meaning at all (they were previously-unused/reserved).
+    # Only a signature stamped with the CURRENT schema (produced by a
+    # HI118-aware build) can be trusted to mean what this mapper assumes.
+    # See tools/bigcherry/tuning/dispatch_abi.py for the canonical version
+    # and src/ggml/src/ggml-cuda/hip-autotune-types.h's own v1->v2 bump note.
+    schema_version = int(signature.get("schema_version", 0))
+    if schema_version != dispatch_abi.SIGNATURE_SCHEMA_VERSION:
+        raise SignatureMappingError(
+            f"signature schema_version={schema_version!r} does not match the current "
+            f"dispatch_abi.SIGNATURE_SCHEMA_VERSION={dispatch_abi.SIGNATURE_SCHEMA_VERSION!r} "
+            "-- this signature predates (or postdates) the schema this mapper's HI118 "
+            "bias/scale-bit fail-closed checks depend on, and cannot be trusted; "
+            "regenerate it against a current build rather than mapping it as-is"
+        )
+
     op_names = load_ggml_op_names(vendor_root)
     op_id = int(signature["op"])
     op_name = op_names.get(op_id)
@@ -781,6 +801,33 @@ def signature_to_moe_glu_file_line(
         raise SignatureMappingError(
             "signature has a non-trivial 4th (batch) dimension -- this function only "
             "maps the non-batched default case"
+        )
+
+    # HI119 review follow-up (dev-gpt-agent, 2026-08-25): ggml_hip_make_
+    # signature() only records n_expert (src0->ne[2]) and n_expert_used
+    # (ids->ne[0]) from the routing/ids tensor -- it does NOT hash the ids
+    # tensor's own ne[1]/stride (its per-call-batch "m" layout). So an
+    # observed-signature match alone cannot prove the harness's synthetic
+    # ids layout matches production's for m>1 (multiple simultaneous
+    # tokens/rows) -- two different ids row layouts could hash identically.
+    # For m==1 this is moot (there is only one row, no layout ambiguity).
+    # Scope to the only case actually proven safe; ne1[2]/ned[2] are this
+    # signature's own "m" dimension (test_bigcherry_moe_glu_fusion's `cur`/
+    # dst tensors are constructed as [.., .., m]).
+    m = ne1_i[2]
+    if m != 1:
+        raise SignatureMappingError(
+            f"signature ne1[2]={m!r} (m, the per-call batch dimension) is not 1 -- "
+            "this mapper is scoped to m==1 only, since the ids/routing tensor's own "
+            "row layout for m>1 is not part of the hashed signature identity and "
+            "cannot be proven to match production by observed-signature comparison "
+            "alone (HI119 review finding); HI108's own real blocked dispatch has "
+            "m==1, so this does not narrow real coverage this slice"
+        )
+    if ned_i[2] != m:
+        raise SignatureMappingError(
+            f"signature dst m dimension ned[2]={ned_i[2]!r} disagrees with ne1[2]={m!r} "
+            "-- not a valid routed GLU signature"
         )
 
     # test_bigcherry_moe_glu_fusion's own `b` (broadcast) semantics mirror

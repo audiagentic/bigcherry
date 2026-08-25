@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from . import catalog as autotune_catalog
+from . import dispatch_abi
 from . import promotion_gate as correctness_gate
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
@@ -53,8 +54,11 @@ MAGIC = 0x59484342
 REPLAY_VERSION = 5
 REPLAY_VERSION_V4 = 4
 ARTIFACT_VERSION = 1
-SIGNATURE_SCHEMA_VERSION = 1
-HARDWARE_SCHEMA_VERSION = 1
+# HI119 review follow-up: derived from dispatch_abi (the single canonical
+# Python-side source), not a separately hand-maintained literal -- see that
+# module's own docstring for why this mattered.
+SIGNATURE_SCHEMA_VERSION = dispatch_abi.SIGNATURE_SCHEMA_VERSION
+HARDWARE_SCHEMA_VERSION = dispatch_abi.HARDWARE_SCHEMA_VERSION
 DIGEST_BYTES = 16
 PERSON_DISPATCH = b"llama-dispatch"
 _REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
@@ -281,7 +285,9 @@ def blake2b_digest(data: bytes) -> bytes:
     ).digest()
 
 
-def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str, int]:
+def validate_blob(
+    blob: bytes, *, manifest_hash: str | None = None, enforce_schema: bool = True,
+) -> dict[str, int]:
     """Preflight a v5 cache using the same bounds as the production reader.
 
     This is deliberately a structural check only: candidate ABI validation
@@ -298,6 +304,16 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     plain exact match is exactly the misparse the discriminator exists to
     prevent (HI74 fail-closed contract, mirroring the C++ loader's
     per-entry skip).
+
+    ``enforce_schema=False`` (HI119 review follow-up, 2026-08-25) skips ONLY
+    the signature/hardware schema version checks below -- every other
+    structural check (format/artifact version, checksum, bounds,
+    duplicate/unterminated entries) still runs. This exists purely for
+    offline inspection of real historical artifacts committed before a
+    schema bump (e.g. docs/reference/.../dispatch-27b-v5.cache, captured
+    under schema 1) -- every real production/merge call site keeps the
+    default True and must never pass False, since that is precisely the
+    fail-closed check a schema bump exists to enforce.
     """
     if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
         raise SystemExit("replay cache is shorter than its header")
@@ -315,9 +331,9 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
         "<HHII", blob, 12
     )
-    if sig_schema != SIGNATURE_SCHEMA_VERSION:
+    if enforce_schema and sig_schema != SIGNATURE_SCHEMA_VERSION:
         raise SystemExit("replay cache signature schema version mismatch")
-    if hw_schema != HARDWARE_SCHEMA_VERSION:
+    if enforce_schema and hw_schema != HARDWARE_SCHEMA_VERSION:
         raise SystemExit("replay cache hardware schema version mismatch")
     stored_manifest = blob[24:40]
     if manifest_hash is not None:
@@ -368,9 +384,14 @@ def validate_blob(blob: bytes, *, manifest_hash: str | None = None) -> dict[str,
     return {"entry_count": entry_count, "string_bytes": string_bytes}
 
 
-def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Read v5 entries for a deterministic merge without trusting bad bytes."""
-    validate_blob(blob)
+def read_cache(
+    blob: bytes, *, enforce_schema: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Read v5 entries for a deterministic merge without trusting bad bytes.
+
+    ``enforce_schema=False``: see validate_blob's own docstring -- offline
+    historical-artifact inspection only, never for a production/merge path."""
+    validate_blob(blob, enforce_schema=enforce_schema)
     _, version, artifact = struct.unpack_from("<III", blob)
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
         "<HHII", blob, 12
@@ -411,7 +432,9 @@ def read_cache(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     return header, entries
 
 
-def read_cache_legacy_v4(blob: bytes) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def read_cache_legacy_v4(
+    blob: bytes, *, enforce_schema: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Offline analysis-only reader for historical v4 caches.
 
     NOT a production reader. The C++ loader rejects v4 outright as
@@ -428,7 +451,16 @@ def read_cache_legacy_v4(blob: bytes) -> tuple[dict[str, Any], list[dict[str, An
     match. ``wire_entry`` is the raw 90-byte v4 entry; it must not be
     repacked into a v5 cache as-is (see the retained-entry guard in
     :func:`build`), it is only exposed for inspection.
-    """
+
+    ``enforce_schema=False`` (HI119 review follow-up, 2026-08-25): this
+    reader has TWO real callers with different safety needs -- pure offline
+    inspection of a historical artifact (schema irrelevant, the artifact is
+    definitionally historical) and :func:`build`'s merge-into-fresh-v5-cache
+    path (schema MUST gate here: merging a stale-schema v4 export's entries
+    into a current-schema v5 cache without checking would silently launder
+    old-schema data under the new schema's meaning -- the exact class of bug
+    HI119's schema bump exists to prevent). :func:`build`'s own call site
+    keeps the default True; pass False only for read-only inspection."""
     if not isinstance(blob, bytes) or len(blob) < REPLAY_HEADER_SIZE:
         raise SystemExit("replay cache is shorter than its header")
     magic, version, artifact = struct.unpack_from("<III", blob)
@@ -443,9 +475,9 @@ def read_cache_legacy_v4(blob: bytes) -> tuple[dict[str, Any], list[dict[str, An
     sig_schema, hw_schema, entry_count, string_bytes = struct.unpack_from(
         "<HHII", blob, 12
     )
-    if sig_schema != SIGNATURE_SCHEMA_VERSION:
+    if enforce_schema and sig_schema != SIGNATURE_SCHEMA_VERSION:
         raise SystemExit("replay cache signature schema version mismatch")
-    if hw_schema != HARDWARE_SCHEMA_VERSION:
+    if enforce_schema and hw_schema != HARDWARE_SCHEMA_VERSION:
         raise SystemExit("replay cache hardware schema version mismatch")
     entries_bytes = entry_count * ENT_SIZE_V4
     strings_at = REPLAY_HEADER_SIZE + entries_bytes

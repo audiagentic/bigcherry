@@ -205,14 +205,30 @@ class WorkloadCheckCacheCliTests(unittest.TestCase):
             REFERENCE_V5_CACHE.is_file(),
             f"committed acceptance fixture missing: {REFERENCE_V5_CACHE}",
         )
-        header, entries = replay_cache.read_cache(REFERENCE_V5_CACHE.read_bytes())
+        blob = REFERENCE_V5_CACHE.read_bytes()
+        # This real historical campaign artifact was captured under
+        # signature schema 1 (predates HI118/HI119's schema-2 bump) --
+        # enforce_schema=False is required to inspect it at all now, and is
+        # the documented offline-only escape hatch for exactly this case
+        # (replay_cache.validate_blob's own docstring). Structural checks
+        # (format/artifact version, checksum, bounds, duplicates) still run.
+        header, entries = replay_cache.read_cache(blob, enforce_schema=False)
         self.assertEqual(header["version"], replay_cache.REPLAY_VERSION)
+        self.assertEqual(header["signature_schema"], 1)
         self.assertEqual(len(entries), 59)
         # Do NOT assert len({e["signature"]}) == 59: the wire format permits
         # multiple entries collapsing to one signature through differing
         # dispatch/generation identities. Only the entry count is pinned.
         for entry in entries:
             self.assertRegex(entry["signature"], r"^[0-9a-f]{32}$")
+
+    def test_reference_cache_fixture_is_rejected_by_default_schema_enforcement(self):
+        # Positive proof of the schema bump's own fail-closed contract: the
+        # SAME real historical artifact is correctly refused by the default
+        # (production) read path now that it predates the current schema.
+        blob = REFERENCE_V5_CACHE.read_bytes()
+        with self.assertRaises(SystemExit):
+            replay_cache.read_cache(blob)
 
     def test_zero_entry_cache_reports_zero_coverage_without_error(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -45,9 +45,16 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- what did not). A reader must reject any schema_version it does not
 -- recognise (standards: current-only, no silent migration) rather than
 -- guess at an unlisted intermediate shape.
+-- signature_schema '2' (HI119 review follow-up, was '1'): mirrors
+-- GGML_HIP_SIGNATURE_SCHEMA_VERSION in hip-autotune-types.h and
+-- tools/bigcherry/tuning/dispatch_abi.py's SIGNATURE_SCHEMA_VERSION -- see
+-- both for why the bump. This is a fresh-DB bootstrap default only: an
+-- existing database keeps whatever value it already persisted here
+-- (INSERT OR IGNORE), and its build/signature rows retain their own
+-- per-row signature_schema/schema_version columns regardless.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
     ('schema_version',    '6'),
-    ('signature_schema',  '1'),
+    ('signature_schema',  '2'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
 
