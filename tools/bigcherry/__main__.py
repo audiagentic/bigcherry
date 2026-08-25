@@ -23,9 +23,9 @@ from typing import Any, cast
 
 from . import __version__
 from . import paths
-from . import patch_catalog
-from . import patcher
-from . import patchset
+from .patch import catalog as patch_catalog
+from .patch import apply as patcher
+from .patch import patchset
 from .release import pin_status
 from . import pin_transition
 from . import recipes

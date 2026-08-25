@@ -8,8 +8,9 @@ import tomllib
 from pathlib import Path
 from typing import cast
 
-from . import (config as campaign_config, patchset, paths, pin_status,
+from . import (config as campaign_config, paths, pin_status,
                recipes)
+from .patch import patchset
 from .context import ProjectContext
 
 
