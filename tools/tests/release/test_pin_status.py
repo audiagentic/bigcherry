@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry import pin_status  # noqa: E402
 from bigcherry import pin_transition  # noqa: E402
