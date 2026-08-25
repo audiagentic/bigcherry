@@ -633,6 +633,201 @@ def signature_to_mul_mat_id_test_file_line(
     return line, "out", "leaf_2"
 
 
+# HI118's fusion-presence flags (bits 7-10 of the signature's own `flags`
+# field), and the GATE fusion-kind value -- both defined in
+# src/ggml/src/ggml-cuda/hip-autotune-types.h's ggml_hip_signature_flag /
+# ggml_hip_fusion_kind enums. Not re-derived from the C++ source at import
+# time the way load_ggml_type_names/load_ggml_op_names are, since these are
+# small, stable, hand-verified enum positions (unlike the type/op tables,
+# which are large and genuinely at risk of drifting out of sync with the
+# vendor pin) -- see hip-autotune-types.h directly if these ever need
+# re-checking.
+_SIG_HAS_IDS = 1 << 3
+_SIG_FUSION_X_BIAS = 1 << 7
+_SIG_FUSION_GATE_BIAS = 1 << 8
+_SIG_FUSION_X_SCALE = 1 << 9
+_SIG_FUSION_GATE_SCALE = 1 << 10
+_FUSION_KIND_GATE = 2  # GGML_HIP_FUSION_GATE
+# ggml_cuda_can_fuse()'s own valid_glu_ops list (ggml-cuda.cu) -- the ONLY
+# glu_op values ggml-cuda's real fusion detector ever fuses on. A signature
+# recording any other glu_op could not have come from a real fused
+# dispatch, so is rejected here rather than silently mapped.
+_FUSABLE_GLU_OPS = {1, 2, 3}  # GEGLU, SWIGLU, SWIGLU_OAI (ggml.h's real enum order)
+
+
+def signature_to_moe_glu_file_line(
+    signature: dict[str, object], *, vendor_root: Path,
+) -> tuple[str, str, str]:
+    """HI119: maps a real fused MUL_MAT_ID(gate)+MUL_MAT_ID(up)+GLU dispatch
+    signature into a ``--moe-glu-file`` line for the registered
+    test_bigcherry_moe_glu_fusion class (patches 1239/1240) -- the
+    multi-node harness HI108's investigation found is required, since
+    test-backend-ops' --test-file/test_generic_op escape hatch can only
+    build one op per line and cannot represent this fused compound.
+
+    Scope this slice: the SIMPLE fusion pattern only (fusion kind == GATE,
+    no bias, no scale) -- confirmed sufficient for HI108's real blocked
+    routed dispatch via direct inspection of the real Qwen3.6-35B-A3B GGUF
+    (ffn_gate_exps/ffn_up_exps have only .weight tensors, no .bias/.scale
+    anywhere). Fails closed on any of HI118's bias/scale presence bits
+    (GGML_HIP_SIG_FUSION_X_BIAS/GATE_BIAS/X_SCALE/GATE_SCALE) rather than
+    silently building an incomplete fused graph -- those variants need real
+    gate-tensor geometry this mapper does not have (tracked as HI120, a
+    deliberately separate, lower-priority hardening item). Also fails
+    closed on op!=GLU, a non-GATE fusion kind, a non-routed (has_ids=false)
+    dispatch (needs a MUL_MAT-based sibling mapper, HI119 step 16, not yet
+    written), and any glu_op outside ggml_cuda_can_fuse()'s own
+    valid_glu_ops list (a signature recording any other glu_op could not
+    have come from a real fused dispatch at all).
+
+    Returns (line, target_tensor, digest_tensor) matching the other
+    mappers' calling convention: target_tensor is always "fused_glu" (the
+    test_case's own terminal, stably-named output); digest_tensor is "ids"
+    (not "cur"/the weights) because HI118/patch 1238's own subject --
+    expert-routing determinism -- is the NEW risk this fused case
+    introduces beyond what HI105's MUL_MAT_ID mapper already covers
+    (patch 1222 already gives float tensor init a proven determinism
+    guarantee); checking the ids digest is what actually proves both
+    forced-native/forced-candidate runs compared against the same routing,
+    the same reasoning signature_to_mul_mat_id_test_file_line's own
+    digest_tensor="leaf_2" choice used for the same reason."""
+    op_names = load_ggml_op_names(vendor_root)
+    op_id = int(signature["op"])
+    op_name = op_names.get(op_id)
+    if op_name is None:
+        raise SignatureMappingError(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
+    if op_name != "GLU":
+        raise SignatureMappingError(
+            f"signature_to_moe_glu_file_line only supports GLU, got op={op_name!r} (id={op_id})"
+        )
+
+    flags = int(signature.get("flags", 0))
+    if not (flags & _SIG_HAS_IDS):
+        raise SignatureMappingError(
+            f"signature op is GLU but flags={flags!r} does not have GGML_HIP_SIG_HAS_IDS "
+            "(bit 3) set -- only the MoE-routed (MUL_MAT_ID-based) fused GLU case is "
+            "supported this slice; a non-routed/dense GLU fusion needs a separate "
+            "MUL_MAT-based sibling mapper (HI119 step 16, not yet written)"
+        )
+    unsupported_fusion_bits = flags & (
+        _SIG_FUSION_X_BIAS | _SIG_FUSION_GATE_BIAS | _SIG_FUSION_X_SCALE | _SIG_FUSION_GATE_SCALE
+    )
+    if unsupported_fusion_bits:
+        raise SignatureMappingError(
+            f"signature flags={flags!r} indicate a bias/scale fusion variant (HI118 bits "
+            f"{unsupported_fusion_bits:#x} set) -- this mapper only supports the simple "
+            "gate-only fusion (no bias, no scale); see HI120"
+        )
+
+    fusion = int(signature.get("fusion", -1))
+    if fusion != _FUSION_KIND_GATE:
+        raise SignatureMappingError(
+            f"signature fusion={fusion!r} is not GGML_HIP_FUSION_GATE ({_FUSION_KIND_GATE}) -- "
+            "not a simple fused-gate GLU dispatch this mapper can represent"
+        )
+
+    glu_op = int(signature.get("glu_op", -1))
+    if glu_op not in _FUSABLE_GLU_OPS:
+        raise SignatureMappingError(
+            f"signature glu_op={glu_op!r} is not one of GEGLU/SWIGLU/SWIGLU_OAI "
+            f"({sorted(_FUSABLE_GLU_OPS)}) -- ggml-cuda's own fusion detector "
+            "(ggml_cuda_can_fuse's valid_glu_ops) never fuses this glu_op, so no real "
+            "fused dispatch could have produced this signature"
+        )
+
+    ne0 = signature.get("ne0")
+    ne1 = signature.get("ne1")
+    ned = signature.get("ned")
+    for field_name, value in (("ne0", ne0), ("ne1", ne1), ("ned", ned)):
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise SignatureMappingError(f"signature {field_name} must be a 4-element array, got {value!r}")
+    ne0_i = [int(x) for x in ne0]
+    ne1_i = [int(x) for x in ne1]
+    ned_i = [int(x) for x in ned]
+
+    n_expert = int(signature.get("n_expert", 0))
+    n_expert_used = int(signature.get("n_expert_used", 0))
+    if n_expert <= 0 or n_expert_used <= 0:
+        raise SignatureMappingError(
+            f"signature op is GLU/routed but n_expert={n_expert!r}/"
+            f"n_expert_used={n_expert_used!r} are not both positive"
+        )
+    if n_expert_used > n_expert:
+        raise SignatureMappingError(
+            f"signature n_expert_used={n_expert_used} exceeds n_expert={n_expert} -- "
+            "not a valid routed GLU signature"
+        )
+    if n_expert != ne0_i[2]:
+        raise SignatureMappingError(
+            f"signature n_expert={n_expert} disagrees with src0's own expert-count "
+            f"dimension ne0[2]={ne0_i[2]} -- not a valid routed GLU signature"
+        )
+    if n_expert_used != ned_i[1]:
+        raise SignatureMappingError(
+            f"signature n_expert_used={n_expert_used} disagrees with dst's own "
+            f"n_expert_used dimension ned[1]={ned_i[1]} -- not a valid routed GLU signature"
+        )
+    if ne0_i[0] != ne1_i[0]:
+        raise SignatureMappingError(
+            f"signature's src0/src1 shared inner (K) dimension disagrees: "
+            f"ne0[0]={ne0_i[0]}, ne1[0]={ne1_i[0]} -- not a valid routed GLU signature"
+        )
+    if ned_i[0] != ne0_i[1]:
+        raise SignatureMappingError(
+            f"signature dst rows ned[0]={ned_i[0]} disagree with src0's own output-row "
+            f"dimension ne0[1]={ne0_i[1]} -- not a valid routed GLU signature"
+        )
+    if ne0_i[3] != 1 or ne1_i[3] != 1 or ned_i[3] != 1:
+        raise SignatureMappingError(
+            "signature has a non-trivial 4th (batch) dimension -- this function only "
+            "maps the non-batched default case"
+        )
+
+    # test_bigcherry_moe_glu_fusion's own `b` (broadcast) semantics mirror
+    # ggml_mul_mat_id's real "ne1[1] broadcastable up to n_expert_used" rule
+    # exactly (confirmed real-hardware, 2026-08-25: HI108's actual blocked
+    # dispatch has ne1[1]==1, the broadcast/up-gate-projection shape, NOT
+    # ne1[1]==n_expert_used -- an earlier non-broadcast synthetic instance
+    # was checked against real hardware and found to disagree on this exact
+    # field before being fixed).
+    if ne1_i[1] == 1:
+        broadcast = True
+    elif ne1_i[1] == n_expert_used:
+        broadcast = False
+    else:
+        raise SignatureMappingError(
+            f"signature ne1[1]={ne1_i[1]} is neither 1 (broadcast) nor "
+            f"n_expert_used={n_expert_used} -- not a valid ggml_mul_mat_id broadcast shape"
+        )
+
+    type_names = load_ggml_type_names(vendor_root)
+
+    def _type_name(type_id: object) -> str:
+        name = type_names.get(int(type_id))
+        if name is None:
+            raise SignatureMappingError(f"unknown ggml_type id {type_id!r}")
+        return name.upper()
+
+    src0_type_id = int(signature["src0_type"])
+    # Validated for the enum table's own sake (raises on an unknown id) --
+    # the resolved name is otherwise unused: test_bigcherry_moe_glu_fusion's
+    # constructor takes the raw ggml_type id directly, matching
+    # --moe-glu-file's own numeric-field convention (patches/
+    # 1240_hi119_moe_glu_file_cli.py), not a string name.
+    _type_name(src0_type_id)
+
+    k = ne0_i[0]
+    n = ne0_i[1]
+    m = ned_i[2]  # n_tokens
+
+    # type glu_op k n m n_mats n_used broadcast -- exact order
+    # make_test_cases_from_moe_glu_file() (patch 1240) parses.
+    line = " ".join(str(x) for x in (
+        src0_type_id, glu_op, k, n, m, n_expert, n_expert_used, 1 if broadcast else 0,
+    ))
+    return line, "fused_glu", "ids"
+
+
 def signature_to_any_test_file_line(
     signature: dict[str, object], *, vendor_root: Path,
 ) -> tuple[str, str, str]:

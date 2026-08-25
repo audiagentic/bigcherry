@@ -123,6 +123,7 @@ def parse_correctness_metrics(stderr_text: str) -> list[CorrectnessMetric]:
 
 def run_test_backend_ops(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    moe_glu_file: Path | None = None,
     seed: int, dispatch_mode: str,
     forced_candidate: str | None, env: dict[str, str] | None = None,
     runner=subprocess.run,
@@ -137,10 +138,18 @@ def run_test_backend_ops(
     signature_to_test_file_line) describing the EXACT signature via
     test_generic_op, bypassing the fixed corpus entirely -- this is the
     real fix for that gap, not a new patch to test-backend-ops itself.
-    Exactly one of the two must be given."""
-    if (op_filter is None) == (test_file is None):
+    ``moe_glu_file`` (HI119) is a third, real alternative for a fused
+    MUL_MAT_ID(gate)+MUL_MAT_ID(up)+GLU dispatch -- test_generic_op can only
+    build ONE op per line and cannot represent this fused compound at all
+    (HI108's own investigation); points at a ``--moe-glu-file`` line (see
+    signature_mapping.signature_to_moe_glu_file_line) instead, which drives
+    the registered test_bigcherry_moe_glu_fusion class (patches 1239/1240).
+    Exactly one of the three must be given."""
+    given = [x is not None for x in (op_filter, test_file, moe_glu_file)]
+    if sum(given) != 1:
         raise EvidenceError(
-            "run_test_backend_ops requires exactly one of op_filter or test_file"
+            "run_test_backend_ops requires exactly one of op_filter, test_file "
+            "or moe_glu_file"
         )
     if seed == 0:
         raise EvidenceError(
@@ -164,7 +173,9 @@ def run_test_backend_ops(
     else:
         run_env.pop("GGML_HIP_FORCE_CANDIDATE", None)
         run_env.pop("GGML_HIP_FORCE_CANDIDATE_STRICT", None)
-    if test_file is not None:
+    if moe_glu_file is not None:
+        argv = [str(binary), "test", "--moe-glu-file", str(moe_glu_file)]
+    elif test_file is not None:
         argv = [str(binary), "test", "--test-file", str(test_file)]
     else:
         argv = [str(binary), "test", "-o", "MUL_MAT", "-p", op_filter]
@@ -203,6 +214,7 @@ class SeedEvidence:
 
 def collect_seed_evidence(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    moe_glu_file: Path | None = None,
     target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
     seed: int, env: dict[str, str] | None = None, runner=subprocess.run,
 ) -> SeedEvidence:
@@ -233,11 +245,13 @@ def collect_seed_evidence(
     seed rather than only ones that also happened to omit a digest line."""
     digest_tensor = digest_tensor if digest_tensor is not None else target_tensor
     native_run = run_test_backend_ops(
-        binary, op_filter=op_filter, test_file=test_file, seed=seed, dispatch_mode="native",
+        binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
+        seed=seed, dispatch_mode="native",
         forced_candidate=None, env=env, runner=runner,
     )
     candidate_run = run_test_backend_ops(
-        binary, op_filter=op_filter, test_file=test_file, seed=seed, dispatch_mode="replay",
+        binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
+        seed=seed, dispatch_mode="replay",
         forced_candidate=candidate_stable_name, env=env, runner=runner,
     )
 
@@ -406,6 +420,7 @@ def aggregate_seed_evidence(
 
 def generate_correctness_evidence(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    moe_glu_file: Path | None = None,
     target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
     seeds: tuple[int, ...] = (1, 2, 3),
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
@@ -425,7 +440,8 @@ def generate_correctness_evidence(
     aggregate_seed_evidence()."""
     seed_rows = [
         collect_seed_evidence(
-            binary, op_filter=op_filter, test_file=test_file, target_tensor=target_tensor,
+            binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
+            target_tensor=target_tensor,
             digest_tensor=digest_tensor,
             candidate_stable_name=candidate_stable_name, seed=seed, env=env, runner=runner,
         )
