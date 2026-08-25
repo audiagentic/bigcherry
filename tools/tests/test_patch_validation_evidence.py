@@ -61,11 +61,13 @@ class SubjectDigestTests(unittest.TestCase):
 
         self.assertNotEqual(digest_base, digest_changed)
 
-    def test_missing_state_assignment_raises(self):
+    def test_legacy_flat_without_state_uses_implementation_identity(self):
         path = self.root / "no_state.py"
         path.write_text('"""doc"""\n', encoding="utf-8")
-        with self.assertRaises(pve.ValidationEvidenceError):
-            pve.patch_validation_subject_digest(path)
+        self.assertEqual(
+            pve.patch_validation_subject_digest(path),
+            pve._sha256_file(path),
+        )
 
     def test_packaged_patch_state_lives_in_manifest(self):
         package = self.root / "9999_packaged"
