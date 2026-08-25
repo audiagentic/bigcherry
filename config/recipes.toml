@@ -118,6 +118,7 @@ patches = [
   "1223_hi67_machine_readable_correctness_metrics",
   "1236_hi105_deterministic_mul_mat_id_ids",
   "1238_hi119_deterministic_init_mul_mat_id_tensors",
+  "1239_hi119_fused_moe_glu_test_case",
 ]
 
 [source.llama-native]
