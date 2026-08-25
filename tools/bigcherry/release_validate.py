@@ -32,8 +32,8 @@ from pathlib import Path
 from typing import Any
 
 from . import paths
-from .autotune_schema import VARIANT_SETS
-from .multi_gpu_validate import validate_multi_gpu_claim
+from .tuning.schema import VARIANT_SETS
+from .tuning.multi_gpu import validate_multi_gpu_claim
 from .device_state_validate import validate_device_state_report
 
 
@@ -231,7 +231,7 @@ def validate_release_claim(record: dict[str, Any]) -> None:
     supported = record.get("supported_coverage")
     if supported is not None:
         try:
-            from .autotune_schema import validate_supported_coverage
+            from .tuning.schema import validate_supported_coverage
             validate_supported_coverage(supported)
         except (ValueError, TypeError) as exc:
             raise ReleaseGateError(

@@ -416,7 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     new_build_cmd.set_defaults(func=cmd_build_new)
 
-    from .. import autotune_schema as _schema
+    from ..tuning import schema as _schema
 
     generate = sub.add_parser(
         "generate", help="generate the candidate catalog and its artifacts"
@@ -1000,19 +1000,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _tune_journal_main(argv: list[str]) -> int:
-    from .. import tune_journal
+    from ..tuning import journal as tune_journal
 
     return tune_journal.main(argv)
 
 
 def _tune_promote_main(argv: list[str]) -> int:
-    from .. import tune_promotion
+    from ..tuning import tune_promotion
 
     return tune_promotion.main(argv)
 
 
 def _tune_null_fdr_main(argv: list[str]) -> int:
-    from .. import tune_promotion
+    from ..tuning import tune_promotion
 
     return tune_promotion.null_fdr_main(argv)
 

@@ -35,7 +35,7 @@ from typing import Any, Literal
 
 from .. import ARTIFACT_VERSION
 from .. import paths
-from ..promotion import PromotionPointer
+from ..tuning.promotion import PromotionPointer
 
 RELEASES_DIR = paths.REPO_ROOT / "releases"
 INDEX_PATH = RELEASES_DIR / "index.json"
@@ -248,7 +248,7 @@ class ReleaseRecord:
         # used to pass. release_tag must also agree, not just revision --
         # revision alone does not disambiguate a re-tagged release.
         if self.stage == "validated":
-            from ..promotion import PromotionError, PromotionPointer
+            from ..tuning.promotion import PromotionError, PromotionPointer
             try:
                 pointer = PromotionPointer.from_document(self.promotion)
             except PromotionError as exc:

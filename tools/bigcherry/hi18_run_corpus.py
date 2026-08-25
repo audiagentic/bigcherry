@@ -30,7 +30,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import reduce_correctness as rc
+from .tuning import reduction as rc
 
 PROVIDERS = ("rccl", "meta", "auto")
 

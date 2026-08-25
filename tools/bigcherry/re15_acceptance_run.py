@@ -30,7 +30,8 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import config, promotion, provenance
+from . import config, provenance
+from .tuning import promotion
 from .campaign import comparison as comparisons
 from .artifacts import ArtifactStore
 from .campaign.lane import (

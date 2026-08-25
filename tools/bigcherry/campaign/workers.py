@@ -66,7 +66,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .. import autotune_catalog
+from ..tuning import catalog as autotune_catalog
 from . import build as campaign_build
 from ..build import generated_tree
 from .. import provenance

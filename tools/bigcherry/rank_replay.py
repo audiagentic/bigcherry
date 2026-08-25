@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import ranking_policy as rp
+from .tuning import ranking as rp
 
 
 class RankReplayError(RuntimeError):
