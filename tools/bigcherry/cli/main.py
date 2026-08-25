@@ -627,7 +627,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     campaign_build_cmd.add_argument("campaign_build_args", nargs=argparse.REMAINDER)
 
-    from .. import compare_tunes as _compare_tunes
+    from ..analysis import compare_tunes as _compare_tunes
 
     compare = sub.add_parser(
         "compare-tunes", help="compare two current tuning runs by signature"
@@ -891,12 +891,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
 
-    from .. import report as _report
+    from ..analysis import report as _report
 
     _report.build_parser(sub)
 
-    from .. import impact as _impact
-    from .. import kernel_fraction as _kernel_fraction
+    from ..analysis import impact as _impact
+    from ..analysis import kernel_fraction as _kernel_fraction
 
     _impact.build_parser(sub)
     _kernel_fraction.build_parser(sub)
@@ -1042,7 +1042,7 @@ def _campaign_build_main(argv: list[str]) -> int:
 
 
 def _resource_report_main(argv: list[str]) -> int:
-    from .. import resource_report
+    from ..analysis import resource_report
 
     return resource_report.main(argv)
 
@@ -1060,7 +1060,7 @@ def _rank_replay_main(argv: list[str]) -> int:
 
 
 def _candidate_binary_size_main(argv: list[str]) -> int:
-    from .. import candidate_binary_size
+    from ..analysis import binary_size as candidate_binary_size
 
     return candidate_binary_size.main(argv)
 
