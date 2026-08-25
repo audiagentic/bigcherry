@@ -65,30 +65,27 @@ candidate timing/promotions are stale under this patch even though
 candidate identity (J) is unchanged -- re-measurement is required before
 any promotion, not just a build-clean patch.
 
-Hardware status (2026-08-25, real dual-gfx1100 Brutus rig, VALIDATED):
-  - Build: clean on both gfx1100-only and full gfx1100+gfx1201+gfx1030
-    multi-arch builds.
-  - Correctness: test-backend-ops MUL_MAT_ID passes under both native
-    (869/869) and tune (q4_K 73/73, q8_0 75/75, 100% MMQ dispatch
-    coverage) dispatch modes; a dedicated real-hardware test
-    (tools/tests/rd30_hostile_test.cu / test_rd30_hostile_routing.py)
-    checks mmq_build_moe_block_map directly against single-hot,
-    concentrated-8-of-256, Zipf-skew, uniform, and degenerate all-zero
-    routing distributions at real production scale (n_experts=256)
-    against a host-side reference implementation -- 0/5 failed.
-  - Timing: real production model (Qwen3.6-35B-A3B Q4_K_M, real
-    n_expert=256), three INTERLEAVED baseline/RD30 rounds (not a single
-    before/after) to rule out drift/noise as the explanation -- RD30 won
-    every round by +0.73%..+0.90% pp512, with the two clusters never
-    overlapping. See docs/planning/active/rdna-boost-experiments/RD30.md
-    for the full evidence trail.
-
-See docs/planning/active/rdna-boost-experiments/RD30.md for the complete
-validation record.
+Hardware status (2026-08-25, real dual-gfx1100 Brutus rig): extensive
+informal real-hardware evidence gathered (build clean on gfx1100-only and
+full multi-arch; test-backend-ops MUL_MAT_ID native 869/869 and tune
+q4_K+q8_0 148/148 passing; a dedicated hostile-routing test
+(tools/tests/rd30_hostile_test.cu / test_rd30_hostile_routing.py) matches
+a reference implementation for single-hot/concentrated/Zipf/uniform/
+all-zero distributions at real n_experts=256; three interleaved real
+production-model A/B rounds show a consistent, non-overlapping +0.73%..
++0.90% pp512 gain). STATE stays 'untested': none of this evidence has yet
+been produced through the project's own HI83-governed formal validation
+path (tools/bigcherry/patch_validation_campaign.py's isolated-worktree
+record->tune->promote->export->replay->bench->report campaign, bound to a
+machine-checked correctness-evidence record) -- that is what actually
+gates STATE='validated' here, not prose claims about manual testing, no
+matter how real the manual testing was. See
+docs/planning/active/rdna-boost-experiments/RD30.md for the full evidence
+trail and this note.
 """
 
 GROUP = "rdna-boosts"
-STATE = "validated"
+STATE = "untested"
 
 import re
 
