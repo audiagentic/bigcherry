@@ -7,11 +7,13 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from .. import paths, replay_inspect
+from .. import paths
+from ..tuning import replay_inspect
 
 
 def cmd_generate(args: Namespace) -> int:
-    from .. import __main__ as legacy, autotune_catalog
+    from .. import __main__ as legacy
+    from ..tuning import catalog as autotune_catalog
 
     root = paths.llama_root(args.llama_root)
     record = legacy._record_for(root)
@@ -76,7 +78,7 @@ def cmd_replay_inspect(args: Namespace) -> int:
 
 def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
     """Dispatch to inventory record/tuning subcommand."""
-    from .. import inventory as inv_mod
+    from ..tuning import inventory as inv_mod
 
     if subcmd == "record":
         record_path = Path(args.record)
@@ -196,7 +198,7 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
             }
             tuned_source = str(measurements_path)
         else:
-            from .. import replay_cache
+            from ..tuning import replay as replay_cache
 
             cache_path = Path(args.cache)
             if not cache_path.is_file():

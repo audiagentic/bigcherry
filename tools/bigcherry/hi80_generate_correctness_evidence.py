@@ -42,11 +42,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from . import correctness_evidence as ce
+from .tuning import correctness_evidence as ce
 from . import paths
-from . import promotion_correctness_gate as gate
-from . import signature_correctness_mapping as scm
-from . import tune_promotion
+from .tuning import promotion_gate as gate
+from .tuning import signature_mapping as scm
+from .tuning import tune_promotion
 
 
 class CliError(RuntimeError):

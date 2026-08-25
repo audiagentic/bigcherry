@@ -61,7 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from .inventory import type_name
+from .tuning.inventory import type_name
 
 ARTIFACT_VERSION = 1
 

@@ -14,7 +14,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from .tune_journal import atomic_write, canonical
+from .tuning.journal import atomic_write, canonical
 
 SCHEMA_VERSION = 1
 PERSON = b"bc-general-v1"

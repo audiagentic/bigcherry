@@ -35,7 +35,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..autotune_schema import FAMILIES
+from ..tuning.schema import FAMILIES
 
 EXPECTED_EFFECTS: tuple[str, ...] = ("performance", "correctness", "both")
 

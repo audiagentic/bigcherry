@@ -159,7 +159,7 @@ def load_observations(path: Path) -> list[dict[str, Any]]:
     result: an empty observations list would read as 'zero calls' rather than as
     'a file this loader cannot read'.
     """
-    from . import inventory  # local: inventory pulls in a large dependency tree
+    from .tuning import inventory  # local: inventory pulls in a large dependency tree
 
     record = inventory.read_jsonl(Path(path))
     return record.observations

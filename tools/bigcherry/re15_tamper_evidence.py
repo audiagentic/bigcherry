@@ -35,7 +35,8 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import lifecycle, promotion
+from . import lifecycle
+from .tuning import promotion
 from .artifacts import ArtifactLocator, ArtifactStore
 from .context import ProjectContext
 from .lifecycle import LifecycleError
