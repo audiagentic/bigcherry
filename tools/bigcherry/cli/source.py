@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
-from .. import paths, releases, source_audit
+from .. import paths
+from ..release import records as releases
+from ..source import audit as source_audit
 
 
 def cmd_audit(args: Namespace) -> int:

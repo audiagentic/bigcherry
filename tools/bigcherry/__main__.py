@@ -29,10 +29,10 @@ from . import patchset
 from .release import pin_status
 from . import pin_transition
 from . import recipes
-from . import releases
-from . import source_audit
-from . import sources
-from . import upstream
+from .release import records as releases
+from .source import audit as source_audit
+from .source import sources
+from .source import upstream
 from .release import pin as _release_pin
 from .cli.diagnostics import cmd_check, cmd_doctor, cmd_status
 

@@ -26,12 +26,13 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from . import builds, campaign_source, config as campaign_config, source_identity
+from . import builds, campaign_source, config as campaign_config
+from .source import identity as source_identity
 from .artifacts import ArtifactStore
 from .builds import BuildPlan
 from .context import ProjectContext
-from .source_identity import SourceIdentityError, git_tree_oid
-from .workspace import SourcePlan, materialize, require_clean_bigcherry
+from .source.identity import SourceIdentityError, git_tree_oid
+from .source.workspace import SourcePlan, materialize, require_clean_bigcherry
 
 Runner = Callable[[list[str], Path], None]
 

@@ -14,7 +14,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Callable
 
-from . import patch_catalog, paths, source_audit
+from . import patch_catalog, paths
+from .source import audit as source_audit
 
 TIERS = ("quick", "default", "full")
 
