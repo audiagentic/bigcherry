@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError, ArtifactStore
-from .builds import binary_hash
+from .build.builds import binary_hash
 from .parity import CampaignArm
 
 

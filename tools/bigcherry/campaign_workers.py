@@ -74,7 +74,7 @@ from . import (
     runtime_smoke,
 )
 from .artifacts import ArtifactStore
-from .builds import (
+from .build.builds import (
     BuildIdentityError,
     BuildPlan,
     binary_hash,

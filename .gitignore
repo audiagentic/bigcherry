@@ -1,5 +1,6 @@
 # -- Build artifacts --
 build/
+!tools/bigcherry/build/
 cmake-build-*/
 out/
 CMakeCache.txt
@@ -58,6 +59,7 @@ venv/
 
 # -- Tuning / replay data --
 tuning/
+!tools/bigcherry/tuning/
 dispatch-db/
 
 # -- AI tool artifacts --

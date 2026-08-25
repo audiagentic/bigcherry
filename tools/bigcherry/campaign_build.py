@@ -26,10 +26,11 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-from . import builds, campaign_source, config as campaign_config
+from . import campaign_source, config as campaign_config
+from .build import builds
 from .source import identity as source_identity
 from .artifacts import ArtifactStore
-from .builds import BuildPlan
+from .build.builds import BuildPlan
 from .context import ProjectContext
 from .source.identity import SourceIdentityError, git_tree_oid
 from .source.workspace import SourcePlan, materialize, require_clean_bigcherry

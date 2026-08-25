@@ -47,7 +47,7 @@ from . import (
 )
 from . import runtime_smoke as smoke_module
 from .artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
-from .builds import BuildPlan
+from .build.builds import BuildPlan
 from .campaign import CampaignRun
 from .campaign_execution import (
     CampaignExecutionError,
