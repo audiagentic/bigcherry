@@ -12,7 +12,8 @@ import json
 import sys
 
 from .. import config as campaign_config
-from .. import paths, pin_status, pin_transition, recipes, sources, upstream
+from .. import paths, pin_status, pin_transition, recipes
+from ..source import sources, upstream
 
 
 def resolve_pin_sha(ref: str) -> str:

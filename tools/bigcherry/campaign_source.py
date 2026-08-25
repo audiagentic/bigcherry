@@ -16,7 +16,7 @@ from pathlib import Path
 from . import campaign_resolution
 from . import config as campaign_config
 from . import patchset
-from . import workspace
+from .source import workspace
 from .context import ProjectContext
 
 

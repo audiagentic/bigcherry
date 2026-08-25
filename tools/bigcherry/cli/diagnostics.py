@@ -7,7 +7,9 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any, cast
 
-from .. import __version__, check, doctor, paths, releases, source_audit
+from .. import __version__, check, doctor, paths
+from ..source import audit as source_audit
+from ..release import records as releases
 
 
 def cmd_doctor(args: Namespace) -> int:
