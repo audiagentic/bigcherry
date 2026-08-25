@@ -365,7 +365,7 @@ def probe(
     from . import config as campaign_config
     from . import recipes as legacy_recipes
     from .artifacts import ArtifactStore
-    from .campaign_lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
+    from .campaign.lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
     from .context import ProjectContext
     from .workspace import UpstreamRepository, WorkspaceError
 

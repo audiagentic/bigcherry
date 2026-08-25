@@ -1024,7 +1024,7 @@ def _experiment_main(argv: list[str]) -> int:
 
 
 def _ab_benchmark_main(argv: list[str]) -> int:
-    from .. import ab_benchmark
+    from ..campaign import benchmark as ab_benchmark
 
     return ab_benchmark.main(argv)
 

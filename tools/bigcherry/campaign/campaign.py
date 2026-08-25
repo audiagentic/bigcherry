@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .campaign_graph import CampaignGraph
-from .resources import ResourceLock
+from .graph import CampaignGraph
+from ..resources import ResourceLock
 
 
 def _spec_hash(value: object) -> str:

@@ -39,7 +39,7 @@ from . import lifecycle, promotion
 from .artifacts import ArtifactLocator, ArtifactStore
 from .context import ProjectContext
 from .lifecycle import LifecycleError
-from .runtime_smoke import RuntimeSmokeSpec
+from .campaign.smoke import RuntimeSmokeSpec
 
 
 def _disposable_copy(source_root: Path, label: str) -> Path:

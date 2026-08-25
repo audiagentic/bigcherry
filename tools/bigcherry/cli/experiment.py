@@ -77,7 +77,7 @@ def cmd_experiment_plan(args: Namespace) -> int:
     --dry-run conventions."""
     from .. import config as campaign_config
     from ..experiment import contract as ec
-    from ..campaign_planner import CampaignPlannerError, expand_contract
+    from ..campaign.planner import CampaignPlannerError, expand_contract
 
     try:
         _, registry = _load_contract_registry(args)
@@ -125,7 +125,7 @@ def cmd_experiment_run(args: Namespace) -> int:
     from .. import config as campaign_config
     from ..experiment import contract as ec
     from ..artifacts import ArtifactStore
-    from ..campaign_planner import CampaignPlannerError, expand_contract, run_campaign
+    from ..campaign.planner import CampaignPlannerError, expand_contract, run_campaign
     from ..context import ProjectContext
 
     try:

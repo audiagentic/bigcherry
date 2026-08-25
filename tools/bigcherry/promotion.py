@@ -7,11 +7,12 @@ import hashlib
 import json
 from typing import TYPE_CHECKING
 
-from . import ab_benchmark, provenance
+from . import provenance
+from .campaign import benchmark as ab_benchmark
 from .artifacts import ArtifactError, ArtifactStore
 
 if TYPE_CHECKING:
-    from .campaign_lane import CampaignLaneResult
+    from .campaign.lane import CampaignLaneResult
 
 
 class PromotionError(ValueError):
