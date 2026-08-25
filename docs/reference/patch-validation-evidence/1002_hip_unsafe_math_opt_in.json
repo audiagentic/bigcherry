@@ -1,0 +1,323 @@
+{
+  "patch_id": "1002_hip_unsafe_math_opt_in",
+  "records": [
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
+        "bench.json": "1495643c97e7404a6aa6c1a5467965763299afe1b604713f9549b8bda743166d",
+        "coverage.json": "ac5bb20eb7a646e291738e3a5dd7db2a24b936b982f5089e7088cc8f7497e727",
+        "dispatch.cache": "a475fdb9006364aa5bdbbe06e9fe6220d4effc7b94a8cab74a8d2e3c6596127a",
+        "promoted.jsonl": "1e5c8902d890282f882054b2783464d911d91b8a97ef79e5abc6cfd99cae51bc",
+        "report.md": "03a8b585f1a4b8b3468f294d0f54943ebb9b1bcdc96ffccab948bf0f66105b12",
+        "status.json": "ab79062e4b3cdfa80798804d4accbf67249ebec747a048a3a2c0deaaa33237cc",
+        "tune.jsonl.measurements.jsonl": "17a657b2857c88e2e9e5abf141dbb9732cc25459a0dc1dd7300df4f2d2541a08"
+      },
+      "base_ref": "b10502",
+      "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+      "baseline_composition": {
+        "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b"
+      },
+      "blockers": [],
+      "build_identities": {
+        "replay": {
+          "compile_commands_digest": "5e9b864a1b1259610da2ae7d1994f8aa0b3d854e3f7a441d2216da9cf9ac3599",
+          "compile_verification_id": "e0c822fe30b3ce996751335a0cb40937",
+          "effective_build_id": "a550ae0d3830bcd73a6ed108b96f5b0b",
+          "hip_compile_commands_digest": "561fe3c55c529fe166806d8ad6b55ffd553150a4ddc84b438fb57e8bb440a741",
+          "runtime_artifacts": {
+            "ggml-base.dll": "c031735e6c77b95ac54568af099612508d7baf3d44a4d08de7ef98acf7c4c6c8",
+            "ggml-cpu.dll": "6fef0da757a20f652523ca2a152a44907a7b1176652f821f63e8a03ab39f9c75",
+            "ggml-hip.dll": "2c383fa6a48c19f609b608fe2405e31283c2d21c28b907984b76ee1d3743247c",
+            "ggml.dll": "7c72f3603e8eb873d2d98ead463d1299756f6012f4a2095d5eb4046ae2abe1f5",
+            "llama-bench-impl.dll": "0477cbf6b0f3244372a0c43dcc17c7e10a911a321c6a20ca18e416f260e3439d",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "b75876b0ef27cb3215d7d26a09a6497532702aa6be3ba22b912c8b5eff386abc",
+            "llama-server-impl.dll": "1229d9df039c1588795cf2e84be64ec2fc8857881b5d18ab88965a80a645ef75",
+            "llama-server.exe": "80bbc922b3362d4a3ac42483b233515e82c22c0c391222ebe95d173d8c5c98bb",
+            "llama.dll": "b1691789df1dc67ee0b71e3283b24090475f5fb6985ab2bea83c35b57c95c80f",
+            "mtmd.dll": "b468ac8da8ca29493e3c886cd39914225e02ddbb59d3411c48e75dfb711ce6ab"
+          },
+          "runtime_bundle_hash": "63e3932f9a18aa60fb07b81a6dabb152"
+        },
+        "stock": {
+          "compile_commands_digest": "3df2769c0c1e324d77d787e41dcc4f4745716cab2eb3a0c91228a44cbf220054",
+          "compile_verification_id": "9dca6bc8eaef3bc06082bb711fd00ce9",
+          "effective_build_id": "d1087a891aad9f709fc1471a3a1ad967",
+          "hip_compile_commands_digest": "ff91495de1d9442021ab1eff49250e2e46de4e66829455de881e5e84828e09d6",
+          "runtime_artifacts": {
+            "ggml-base.dll": "f6f51990673f674250a33a082ea64724a9e90e02437f43d0fb5b63a71d811869",
+            "ggml-cpu.dll": "6c23b70cb64aa966e39d16c3fca774180ad865e9b7615c6cfce7729a565fdfbd",
+            "ggml-hip.dll": "015ddfd1e337a6d9b8b59f3875e106b2b9aafb8400f4e910100110578802b7cc",
+            "ggml.dll": "d2ae5e7b40c9b41c26f74109e70e5137bd81f57d04ca9d4415f8c2ae8adfc8c8",
+            "llama-bench-impl.dll": "d040ab2589a4f3ab7ae3accecf6b337d9ead735e7cc5f0f5c2910a9f014071e4",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "bcff5c36001d0c3d52db13b5f879710a2ee256f705a468c4856eebfad3393c4d",
+            "llama.dll": "489329732202f356fa824772c98bc41c017e064fcb78b3103953adf3259a0ec5"
+          },
+          "runtime_bundle_hash": "d0783be936e528d86bd7e8265b8e5a79"
+        },
+        "tune": {
+          "compile_commands_digest": "d1afe394cc42d69a1244d470a7c197089fd8880e34a9eafcbeba573f2b3d2ec5",
+          "compile_verification_id": "15db1b8bad6e16030f6a70eb42747759",
+          "effective_build_id": "0ec28367ab16dcbda8fad07733901644",
+          "hip_compile_commands_digest": "0f044542a8d4d9bc6e93035ae3c1b1a7524598e3c5d4b9384cc5068a31148838",
+          "runtime_artifacts": {
+            "ggml-base.dll": "c031735e6c77b95ac54568af099612508d7baf3d44a4d08de7ef98acf7c4c6c8",
+            "ggml-cpu.dll": "6fef0da757a20f652523ca2a152a44907a7b1176652f821f63e8a03ab39f9c75",
+            "ggml-hip.dll": "c01792f0be6afffa4ff5ef6fe672cd789f3cf9b367bf9f9f9f0d3457f7775e33",
+            "ggml.dll": "7c72f3603e8eb873d2d98ead463d1299756f6012f4a2095d5eb4046ae2abe1f5",
+            "llama-bench-impl.dll": "0477cbf6b0f3244372a0c43dcc17c7e10a911a321c6a20ca18e416f260e3439d",
+            "llama-bench.exe": "13b0c35b26617fe0350634f16bd9bcd7dfa7762a6ba21a02d112d97cc68e2732",
+            "llama-common.dll": "b75876b0ef27cb3215d7d26a09a6497532702aa6be3ba22b912c8b5eff386abc",
+            "llama-server-impl.dll": "25df462c7588f0541253177e60ae617428315e68b8453ce18cc9ec5629d568a0",
+            "llama-server.exe": "80bbc922b3362d4a3ac42483b233515e82c22c0c391222ebe95d173d8c5c98bb",
+            "llama.dll": "b1691789df1dc67ee0b71e3283b24090475f5fb6985ab2bea83c35b57c95c80f",
+            "mtmd.dll": "b468ac8da8ca29493e3c886cd39914225e02ddbb59d3411c48e75dfb711ce6ab"
+          },
+          "runtime_bundle_hash": "234c34682a8cd0ab9f2d0da4f40cce62"
+        }
+      },
+      "campaign_artifacts": [
+        {
+          "path": "status.json",
+          "sha256": "ab79062e4b3cdfa80798804d4accbf67249ebec747a048a3a2c0deaaa33237cc"
+        },
+        {
+          "path": "bench.json",
+          "sha256": "1495643c97e7404a6aa6c1a5467965763299afe1b604713f9549b8bda743166d"
+        },
+        {
+          "path": "report.md",
+          "sha256": "03a8b585f1a4b8b3468f294d0f54943ebb9b1bcdc96ffccab948bf0f66105b12"
+        },
+        {
+          "path": "tune.jsonl.measurements.jsonl",
+          "sha256": "17a657b2857c88e2e9e5abf141dbb9732cc25459a0dc1dd7300df4f2d2541a08"
+        },
+        {
+          "path": "promoted.jsonl",
+          "sha256": "1e5c8902d890282f882054b2783464d911d91b8a97ef79e5abc6cfd99cae51bc"
+        },
+        {
+          "path": "coverage.json",
+          "sha256": "ac5bb20eb7a646e291738e3a5dd7db2a24b936b982f5089e7088cc8f7497e727"
+        },
+        {
+          "path": "dispatch.cache",
+          "sha256": "a475fdb9006364aa5bdbbe06e9fe6220d4effc7b94a8cab74a8d2e3c6596127a"
+        }
+      ],
+      "campaign_identity_digest": "28187858a6ea2e15c47fec49010c78a7f986595b8a4e84d66fae5495777da153",
+      "check_results": {
+        "activation": {
+          "detail": "",
+          "disposition": "unknown",
+          "mechanism": "",
+          "status": "unknown"
+        },
+        "correctness": {
+          "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+          "campaign_identity_digest": "28187858a6ea2e15c47fec49010c78a7f986595b8a4e84d66fae5495777da153",
+          "detail": "",
+          "disposition": "unknown",
+          "gpu_architectures": [
+            "gfx1100"
+          ],
+          "mechanism": "",
+          "patch_id": "1002_hip_unsafe_math_opt_in",
+          "patch_validation_subject_digest": "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2",
+          "patched_source_tree": "2ed987c7725ea1a0ebf574f07bc27e3045d10f52",
+          "schema_version": 1
+        }
+      },
+      "contract_hash": null,
+      "contract_id": null,
+      "control_composition": {
+        "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "9f244037a453ff388f5ef9443306a121345fa6cca5367ad1206327c07123afee"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "38be2407a5f60810003697d69007b182233df855475944bcec0a151cf3c80774"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0820_measurement_signature_shapes",
+            "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+          ],
+          [
+            "0830_split_reduce_telemetry",
+            "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1000_rdna4_mmq_q2k_q6k_fix",
+            "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c"
+          ],
+          [
+            "1100_hi70_direct_op_evidence",
+            "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd"
+          ],
+          [
+            "1200_rd19_single_gpu_meta_bypass",
+            "23f551c9dbb2331d798150942121c1ad5bdeb68dd38e78f5960476476dd3b8d5"
+          ]
+        ]
+      },
+      "control_tree": "c8dfad285b6d942eda2f9f452f564949b2925200",
+      "correctness": {
+        "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+        "campaign_identity_digest": "28187858a6ea2e15c47fec49010c78a7f986595b8a4e84d66fae5495777da153",
+        "detail": "",
+        "disposition": "unknown",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "",
+        "patch_id": "1002_hip_unsafe_math_opt_in",
+        "patch_validation_subject_digest": "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2",
+        "patched_source_tree": "2ed987c7725ea1a0ebf574f07bc27e3045d10f52",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "514fdb644271a2ebf0fa930c84c6abe2e9e6cab0df954253aee45026d7fa95a5",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1100"
+        ]
+      },
+      "patch_id": "1002_hip_unsafe_math_opt_in",
+      "patch_implementation_digest": "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2",
+      "patch_validation_subject_digest": "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2",
+      "patched_source_tree": "2ed987c7725ea1a0ebf574f07bc27e3045d10f52",
+      "record_digest": "b53d93d640c66f8492abc21a0374432693deaef27d26ffc93f84ca8c7c65f644",
+      "record_schema_version": 2,
+      "representation": "simple",
+      "stock_tree": "87f6dbbe2eb76cdda777527c2ee83b4ab5efb55f",
+      "subject_composition": {
+        "base_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "9f244037a453ff388f5ef9443306a121345fa6cca5367ad1206327c07123afee"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "38be2407a5f60810003697d69007b182233df855475944bcec0a151cf3c80774"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0820_measurement_signature_shapes",
+            "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+          ],
+          [
+            "0830_split_reduce_telemetry",
+            "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1000_rdna4_mmq_q2k_q6k_fix",
+            "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c"
+          ],
+          [
+            "1002_hip_unsafe_math_opt_in",
+            "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2"
+          ],
+          [
+            "1100_hi70_direct_op_evidence",
+            "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd"
+          ],
+          [
+            "1200_rd19_single_gpu_meta_bypass",
+            "23f551c9dbb2331d798150942121c1ad5bdeb68dd38e78f5960476476dd3b8d5"
+          ]
+        ]
+      },
+      "subject_tree": "2ed987c7725ea1a0ebf574f07bc27e3045d10f52",
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "abb4af2910ed625887862f6c70f1dc3fa59729a1d1461daf1d6939b71816b2ac"
+    }
+  ],
+  "schema_version": 2
+}
