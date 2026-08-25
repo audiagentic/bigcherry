@@ -240,6 +240,68 @@ class GenerateForRowTests(_Base):
             )
 
 
+class HI112BatchedSrc1PipelineTests(_Base):
+    """HI112 (gpt-dev-agent review, 2026-08-25): the earlier real-hardware
+    confirmation invoked test-backend-ops directly, bypassing the actual
+    production pipeline this class exercises -- generate_for_row() ->
+    dispatch_db -> promotion_correctness_gate. Proves a real HI109-shaped
+    batched-src1 MUL_MAT signature (weights non-batched, src1 batched by 3
+    MTP draft tokens, matching HI109's real observed batch counts of 2-4)
+    drives real evidence through the actual orchestration and passes the
+    real gate -- not just that signature_to_test_file_line() builds a
+    syntactically valid line in isolation."""
+
+    BATCHED_SIGNATURE_HEX = "77" * 16
+
+    BATCHED_CANONICAL_SIGNATURE = {
+        "op": 2,  # GGML_OP_MUL_MAT in the fixture vendor tree
+        "src0_type": 0, "src1_type": 0, "dst_type": 0,  # f32
+        "ne0": [2880, 32, 1, 1],
+        "ne1": [2880, 1, 3, 1],
+        "ned": [32, 1, 3, 1],
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.conn.execute(
+            "INSERT INTO signature (signature_digest, base_digest, schema_version, op, "
+            "src0_type, src1_type, dst_type, m, n, k, canonical_json) VALUES "
+            "(?, x'02', 1, 'MUL_MAT', 'f32', 'f32', 'f32', 32, 3, 2880, ?)",
+            (bytes.fromhex(self.BATCHED_SIGNATURE_HEX), json.dumps(self.BATCHED_CANONICAL_SIGNATURE)),
+        )
+        self.batched_signature_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+            "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', "
+            "'final', 1)",
+            (self.build_id, self.hardware_id, self.batched_signature_id,
+             bytes.fromhex("88" * 16), self.candidate_id),
+        )
+        self.conn.commit()
+        self.batched_row = {
+            "dispatch": "88" * 16,
+            "signature": self.BATCHED_SIGNATURE_HEX,
+            "hardware": HARDWARE_HEX,
+            "native": "native",
+            "provisional_winner": "mmq:fb1",
+        }
+
+    def test_batched_src1_row_writes_evidence_and_passes_the_real_gate(self):
+        outcome = cli.generate_for_row(
+            self.conn, self.batched_row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=_fake_runner_factory(),
+        )
+        self.assertIn("wrote evidence_id=", outcome)
+        identity = gate.resolve_promotion_identity(
+            self.conn, dispatch_hex="88" * 16, signature_hex=self.BATCHED_SIGNATURE_HEX,
+            hardware_hex=HARDWARE_HEX, native_name="native", candidate_name="mmq:fb1",
+        )
+        passed, status = gate.evaluate_correctness_gate(self.conn, identity)
+        self.assertTrue(passed, status)
+
+
 # HI105 (dev-gpt-agent review, 2026-08-24): proves the real bug found at
 # HEAD 7f2e04c is fixed -- generate_for_row() previously called
 # signature_to_test_file_line() (MUL_MAT-only) unconditionally, so a real
