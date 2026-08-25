@@ -139,8 +139,8 @@ def test_moe_glu_file_reader_uses_the_same_constructor_argument_order(tmp_path):
     func_start = text.index("static std::vector<std::unique_ptr<test_case>> make_test_cases_from_moe_glu_file(")
     func_end = text.index("\n}", func_start)
     body = text[func_start:func_end]
-    assert "iss >> k >> n >> m >> n_mats >> n_used;" in body
-    assert "new test_bigcherry_moe_glu_fusion(type, glu_op, k, n, m, n_mats, n_used)" in body
+    assert "iss >> k >> n >> m >> n_mats >> n_used >> broadcast;" in body
+    assert "new test_bigcherry_moe_glu_fusion(type, glu_op, k, n, m, n_mats, n_used, broadcast != 0)" in body
 
 
 def test_moe_glu_file_path_takes_priority_over_test_file_and_eval_switch(tmp_path):
