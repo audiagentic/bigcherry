@@ -391,3 +391,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI119"
+
+[[patch]]
+id = "1239_hi119_fused_moe_glu_test_case"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI119"
