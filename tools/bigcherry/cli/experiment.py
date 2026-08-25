@@ -11,7 +11,7 @@ from .. import paths
 
 
 def _load_contract_registry(args: Namespace):
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
 
     contracts_path = (
         Path(args.contracts) if args.contracts else paths.EXPERIMENT_CONTRACTS
@@ -24,7 +24,7 @@ def cmd_experiment_validate(args: Namespace) -> int:
     if named) without running anything -- EC01/EC02's own validation, the
     cheap check before any real campaign work (same discipline as
     `patcher.apply_all(dry_run=True)` before a real build)."""
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
 
     try:
         _, registry = _load_contract_registry(args)
@@ -47,7 +47,7 @@ def cmd_experiment_validate(args: Namespace) -> int:
 
 
 def cmd_experiment_list(args: Namespace) -> int:
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
 
     try:
         _, registry = _load_contract_registry(args)
@@ -76,7 +76,7 @@ def cmd_experiment_plan(args: Namespace) -> int:
     without executing them -- a dry-run, matching this project's existing
     --dry-run conventions."""
     from .. import config as campaign_config
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
     from ..campaign_planner import CampaignPlannerError, expand_contract
 
     try:
@@ -123,7 +123,7 @@ def cmd_experiment_run(args: Namespace) -> int:
     tools/bigcherry/re15_acceptance_run.py's stage-by-stage pattern) on
     top of this lane execution to close that gap."""
     from .. import config as campaign_config
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
     from ..artifacts import ArtifactStore
     from ..campaign_planner import CampaignPlannerError, expand_contract, run_campaign
     from ..context import ProjectContext
@@ -164,7 +164,7 @@ def cmd_experiment_report(args: Namespace) -> int:
     a caller that ran EC06/EC07/EC08/EC09 against real measurements --
     this command does not itself run anything, matching how `report`
     stays a pure rendering step over already-collected evidence)."""
-    from .. import experiment_contract as ec
+    from ..experiment import contract as ec
 
     try:
         _, registry = _load_contract_registry(args)

@@ -1016,7 +1016,7 @@ def _tune_null_fdr_main(argv: list[str]) -> int:
 
 
 def _experiment_main(argv: list[str]) -> int:
-    from .. import experiment_bundle
+    from ..experiment import bundle as experiment_bundle
 
     return experiment_bundle.main(argv)
 
