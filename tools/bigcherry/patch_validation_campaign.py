@@ -694,8 +694,35 @@ def run(args: argparse.Namespace) -> int:
 
     activation_evidence = None
     activation_verdict = None
+    trace_marker_regex = args.trace_marker_regex
+    trace_description = args.trace_description
+    if validation_plan is not None:
+        trace_specs = tuple(
+            spec for spec in validation_plan.checks
+            if spec.capability == "activation" and spec.validator == "trace-marker"
+        )
+        if len(trace_specs) > 1:
+            raise PatchCampaignError(
+                f"{args.patch}: validation plan declares multiple trace-marker activation checks"
+            )
+        if trace_specs:
+            configured_marker = trace_specs[0].config.get("marker-regex")
+            if not isinstance(configured_marker, str) or not configured_marker:
+                raise PatchCampaignError(
+                    f"{args.patch}: trace-marker activation check has no marker-regex"
+                )
+            if trace_marker_regex is not None and trace_marker_regex != configured_marker:
+                raise PatchCampaignError(
+                    f"{args.patch}: CLI trace marker conflicts with validation.toml"
+                )
+            trace_marker_regex = configured_marker
+            trace_description = trace_description or f"{args.patch} activation"
+        elif trace_marker_regex is not None or trace_description is not None:
+            raise PatchCampaignError(
+                f"{args.patch}: trace CLI options require a trace-marker validation check"
+            )
     trace_result = run_trace_activation_probes(
-        marker_regex=args.trace_marker_regex, description=args.trace_description,
+        marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
         bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
