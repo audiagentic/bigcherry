@@ -842,13 +842,14 @@ class Campaign:
         )
         return repromoted
 
-    def s4_export(self, promoted: Path) -> Path:
+    def s4_export(self, promoted: Path, dispatch_db: Path) -> Path:
         stage = "S4_export"
         cache = self.workdir / "dispatch.cache"
         self.write_status(stage, "running")
         _run_module(
             "bigcherry.replay_cache", str(promoted),
             "--manifest", str(self.manifest), "--output", str(cache),
+            "--dispatch-db", str(dispatch_db),
         )
         if not cache.exists() or cache.stat().st_size == 0:
             raise CampaignError(f"{stage}: no cache produced")
@@ -1181,7 +1182,7 @@ class Campaign:
         dispatch_db = self.s2c_dispatch_db(measurements)
         promoted = self.s3_promote(measurements, dispatch_db)
         promoted = self.s3b_correctness_evidence(measurements, dispatch_db, promoted)
-        cache = self.s4_export(promoted)
+        cache = self.s4_export(promoted, dispatch_db)
         coverage = self.s5_replay(cache)
         if self.stock_bench and self.tune_bench and self.replay_bench:
             bench_path = self.s6_bench(cache)
