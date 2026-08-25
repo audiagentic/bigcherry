@@ -22,15 +22,15 @@ def cmd_build_new(args: Namespace) -> int:
     """
     from .. import config as campaign_config
     from ..artifacts import ArtifactStore
-    from ..campaign_lane import smoke_environment_for_hip_devices
-    from ..campaign_planner import (
+    from ..campaign.lane import smoke_environment_for_hip_devices
+    from ..campaign.planner import (
         CampaignPlannerError,
         CampaignRequest,
         plan,
         run_campaign,
     )
     from ..context import ProjectContext
-    from ..runtime_smoke import RuntimeSmokeSpec
+    from ..campaign.smoke import RuntimeSmokeSpec
 
     if sum(bool(x) for x in (args.lane, args.all, args.profile)) != 1:
         print(

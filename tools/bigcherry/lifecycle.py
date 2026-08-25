@@ -32,8 +32,9 @@ from pathlib import Path
 from typing import Any
 
 from . import inventory as inventory_module
-from . import paths, provenance, replay_cache, runtime_smoke, tune_promotion
-from .ab_benchmark import validate_replay_coverage
+from . import paths, provenance, replay_cache, tune_promotion
+from .campaign import smoke as runtime_smoke
+from .campaign.benchmark import validate_replay_coverage
 from .artifacts import ArtifactLocator, ArtifactRef, ArtifactStore
 from .context import ProjectContext
 from .inventory import CampaignDatabaseIdentity

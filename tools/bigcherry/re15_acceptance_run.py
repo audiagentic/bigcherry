@@ -30,9 +30,10 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import comparisons, config, promotion, provenance
+from . import config, promotion, provenance
+from .campaign import comparison as comparisons
 from .artifacts import ArtifactStore
-from .campaign_lane import (
+from .campaign.lane import (
     CampaignLaneError,
     CampaignLaneExecutionSpec,
     CampaignLaneResult,
@@ -42,8 +43,8 @@ from .campaign_lane import (
 from .context import ProjectContext
 from . import lifecycle
 from .lifecycle import LifecycleError
-from .releases import ReleaseRecord
-from .runtime_smoke import RuntimeSmokeSpec
+from .release.records import ReleaseRecord
+from .campaign.smoke import RuntimeSmokeSpec
 
 
 def _source_root(context: ProjectContext, lane: CampaignLaneResult) -> Path:

@@ -28,10 +28,10 @@ from pathlib import Path
 
 from . import config
 from .artifacts import ArtifactStore
-from .campaign_lane import (CampaignLaneError, CampaignLaneExecutionSpec,
+from .campaign.lane import (CampaignLaneError, CampaignLaneExecutionSpec,
                             execute_campaign_lane, smoke_environment_for_hip_devices)
 from .context import ProjectContext
-from .runtime_smoke import RuntimeSmokeSpec
+from .campaign.smoke import RuntimeSmokeSpec
 
 
 def main(argv: list[str] | None = None) -> int:
