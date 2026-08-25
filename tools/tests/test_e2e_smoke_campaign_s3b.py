@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bigcherry import e2e_smoke_campaign  # noqa: E402
 from bigcherry.e2e_smoke_campaign import Campaign, CampaignError  # noqa: E402
 
 
@@ -83,6 +84,57 @@ class S3bCorrectnessEvidenceTests(unittest.TestCase):
         ])
         with self.assertRaisesRegex(CampaignError, "could not locate the blocked dispatch rows"):
             campaign.s3b_correctness_evidence(self.measurements, self.dispatch_db, self.promoted)
+
+
+class S4ExportDispatchDbWiringTests(unittest.TestCase):
+    """HI103 regression: a real end-to-end campaign on Brutus (qwen0.8b,
+    2026-08-25) found S4_export never passed --dispatch-db to
+    bigcherry.replay_cache, so it hard-failed exporting any promoted row
+    whose winner is non-native -- replay_cache.py's own RV49 correctness
+    re-verification refuses to export without it. Pin the wiring here so
+    it cannot silently regress again."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+        self.model = self.root / "model.gguf"
+        self.manifest = self.root / "manifest.json"
+        self.tune_server = self.root / "tune-server"
+        self.replay_server = self.root / "replay-server"
+        for p in (self.model, self.tune_server, self.replay_server):
+            p.write_bytes(b"stub")
+        self.manifest.write_text("{}", encoding="utf-8")
+
+        self.promoted = self.root / "promoted.jsonl"
+        self.dispatch_db = self.root / "dispatch.sqlite"
+
+    def test_s4_export_passes_dispatch_db_to_replay_cache(self):
+        campaign = Campaign(
+            model=self.model, tune_server=self.tune_server, replay_server=self.replay_server,
+            manifest=self.manifest, workdir=self.root / "campaign",
+        )
+        captured: dict[str, tuple] = {}
+
+        def fake_run_module(module, *args):
+            captured["module"] = module
+            captured["args"] = args
+            cache_path = Path(args[args.index("--output") + 1])
+            cache_path.write_bytes(b"cache")
+            return ""
+
+        original = e2e_smoke_campaign._run_module
+        e2e_smoke_campaign._run_module = fake_run_module
+        try:
+            campaign.s4_export(self.promoted, self.dispatch_db)
+        finally:
+            e2e_smoke_campaign._run_module = original
+
+        self.assertEqual(captured["module"], "bigcherry.replay_cache")
+        self.assertIn("--dispatch-db", captured["args"])
+        idx = captured["args"].index("--dispatch-db")
+        self.assertEqual(captured["args"][idx + 1], str(self.dispatch_db))
 
 
 if __name__ == "__main__":
