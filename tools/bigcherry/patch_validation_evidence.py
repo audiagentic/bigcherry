@@ -161,6 +161,11 @@ def patch_validation_subject_digest(path: Path) -> str:
         payload = {"implementation": text, "metadata": normalized_manifest}
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    # Legacy flat patches may keep lifecycle state solely in catalog.toml.
+    # Their implementation bytes are already state-independent, so the raw
+    # implementation digest is the stable validation subject identity.
+    if len(matches) == 0:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
     raise ValidationEvidenceError(
         f"{path}: expected exactly one literal STATE assignment or a packaged patch.toml state"
     )
