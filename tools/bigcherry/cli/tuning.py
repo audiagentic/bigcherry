@@ -72,3 +72,182 @@ def cmd_replay_inspect(args: Namespace) -> int:
     else:
         print(replay_inspect.format_report(report))
     return report["_exit"]
+
+
+def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
+    """Dispatch to inventory record/tuning subcommand."""
+    from .. import inventory as inv_mod
+
+    if subcmd == "record":
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        inventory = inv_mod.build_inventory(record)
+        inventory_path = (
+            Path(args.inventory)
+            if args.inventory
+            else record_path.with_suffix(".inventory.json")
+        )
+        inventory_path.write_text(
+            json.dumps(inventory, indent=2) + "\n", encoding="utf-8", newline=""
+        )
+
+        database_path = (
+            Path(args.database) if args.database else record_path.with_suffix(".sqlite")
+        )
+        counts = inv_mod.build_database(
+            record, database_path, paths.SQL / "dispatch-db.sql"
+        )
+
+        print(f"read {len(record.observations)} observation(s) from {record_path}")
+        print(f"  types: mmq={inventory['mmq_types']} mmvq={inventory['mmvq_types']}")
+        print(f"         mmvf={inventory['mmvf_types']} mmf={inventory['mmf_types']}")
+        print(f"  widths: {inventory['widths']}")
+        print(f"  blas observed: {inventory['uses_blas']}")
+        print(f"  inventory: {inventory_path}")
+        print(
+            f"  database:  {database_path} "
+            f"({counts['signatures']} signatures, {counts['hardware']} hardware)"
+        )
+        return 0
+
+    elif subcmd == "tuning":
+        meas_path = Path(args.measurements)
+        if not meas_path.is_file():
+            print(f"no such measurements file: {meas_path}", file=sys.stderr)
+            return 2
+
+        db_path = (
+            Path(args.database) if args.database else meas_path.with_suffix(".sqlite")
+        )
+        manifest_path = Path(args.manifest) if args.manifest else None
+
+        counts = inv_mod.load_measurements(
+            meas_path,
+            db_path,
+            paths.SQL / "dispatch-db.sql",
+            manifest_path=manifest_path,
+            signature_source_paths=[Path(p) for p in args.signature_source],
+        )
+
+        print(
+            f"loaded {counts['results']} result(s) with "
+            f"{counts['measurements']} measurement(s) and "
+            f"{counts['candidates']} candidate(s) into {db_path}"
+        )
+        return 0
+
+    elif subcmd == "hot-list":
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        output = Path(args.output) if args.output else record_path.with_suffix(".hot")
+        measurements = Path(args.measurements) if args.measurements else None
+        summary = inv_mod.write_hot_list(record, output, measurements=measurements)
+
+        print(f"wrote {output}")
+        print(f"  {summary['signatures']} signature(s), basis {summary['basis']}")
+        for row in summary["rows"][:5]:
+            print(
+                f"  {row['rank']:>3}  {row['signature'][:16]}  "
+                f"{row['calls']:>8} calls  {row['share_pct']:6.2f}%  "
+                f"cum {row['cum_share_pct']:6.2f}%"
+            )
+        return 0
+
+    elif subcmd == "workload-check":
+        from .. import report as report_mod
+
+        record_path = Path(args.record)
+        if not record_path.is_file():
+            print(f"no such record file: {record_path}", file=sys.stderr)
+            return 2
+        try:
+            record = inv_mod.read_jsonl(record_path)
+        except inv_mod.RecordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+        if args.measurements:
+            measurements_path = Path(args.measurements)
+            if not measurements_path.is_file():
+                print(
+                    f"no such measurements file: {measurements_path}", file=sys.stderr
+                )
+                return 2
+            tuned_signatures = {
+                row["signature"]
+                for row in report_mod.read_measurements_jsonl(measurements_path)
+                if row.get("signature")
+            }
+            tuned_source = str(measurements_path)
+        else:
+            from .. import replay_cache
+
+            cache_path = Path(args.cache)
+            if not cache_path.is_file():
+                print(f"no such cache file: {cache_path}", file=sys.stderr)
+                return 2
+            # read_cache()/validate_blob() fail closed with SystemExit on
+            # truncation, bad magic/checksum, v4 input, or unrecognised
+            # match_kind; translate that into a normal CLI error here rather
+            # than letting a library exception escape.
+            try:
+                cache_header, cache_entries = replay_cache.read_cache(
+                    cache_path.read_bytes()
+                )
+            except SystemExit as exc:
+                print(f"cannot read replay cache {cache_path}: {exc}", file=sys.stderr)
+                return 1
+            # A valid zero-entry cache is not an error: it reports zero
+            # coverage, which is the honest answer for a cache with no
+            # winners.
+            tuned_signatures = {entry["signature"] for entry in cache_entries}
+            tuned_source = (
+                f"{cache_path} (v{cache_header['version']} replay cache, "
+                f"{len(cache_entries)} entries)"
+            )
+
+        record_digest = inv_mod.workload_digest(
+            o["signature"] for o in record.observations if o.get("signature")
+        )
+        tuned_digest = inv_mod.workload_digest(tuned_signatures)
+        overlap = inv_mod.workload_overlap(record, tuned_signatures)
+
+        print(f"workload  {record_digest}  ({record_path})")
+        print(f"tuned     {tuned_digest}  ({tuned_source})", end="")
+        print("  DIFFERENT" if record_digest != tuned_digest else "  SAME")
+        print()
+        print(
+            f"coverage  {overlap['signatures_covered']} of "
+            f"{overlap['signatures_observed']} observed signatures have a tuned winner"
+        )
+        print(
+            f"          {overlap['calls_covered']} of {overlap['calls_observed']} "
+            f"calls covered ({overlap['covered_share_pct']:.1f}%)"
+        )
+        print()
+        print(
+            "Advisory only: this does not gate any cache load or promotion "
+            "decision -- it says the tune was measured for a different "
+            "workload, not that it is unsafe."
+        )
+        return 0
+
+    else:
+        # Backward compat: positional arg means record mode (no subcommand)
+        return cmd_inventory(args, subcmd="record")

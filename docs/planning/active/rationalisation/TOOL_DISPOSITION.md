@@ -394,12 +394,13 @@ Every in-scope script has exactly one provisional disposition. No implementation
 
 Inventory count: 383 script/tool files (vendor, build/cache, and artifacts excluded).
 
-## Baseline blockers recorded, not repaired
+## Baseline blockers: reviewed and dispositioned (2026-08-25)
 
-- `bigcherry check` quick/default/full fail truthfully for the known RD19 evidence-state defect and shared `overlay.vendor_sync` differences.
-- Full unittest discovery reports 1802 tests, 1 failure, 1 Windows symlink-privilege error, and 3 skips.
-- The legacy flat subject-digest failure is recorded for owner triage; TR00 does not alter validation semantics.
+- RD19 evidence-state defect: resolved independently under **PA05** (completed) — owner deliberately demoted `1200_rd19_single_gpu_meta_bypass` from `validated` back to `untested` rather than fabricate HI83 hardware evidence. `bigcherry check --quick` now passes (`patch-catalog: ok`). Tracking review **RV82** closed as incorporated.
+- `overlay.vendor_sync` (default/full check): remains a live, unrelated finding — 7 `ggml-cuda/hip-autotune-*` files differ between `src/` and the compiled `vendor/llama.cpp` tree at review time, consistent with in-progress uncommitted edits elsewhere in this working tree. Not a TR00 defect; not repaired here.
+- Legacy flat subject-digest test failure (`test_legacy_flat_without_state_uses_implementation_identity`): root-caused and fixed. It was a Windows-only test-fixture bug — the fixture wrote its file via `path.write_text(...)`, which Windows silently translates `\n` to `\r\n` on disk, desyncing the raw-byte comparison (`_sha256_file`) from `patch_validation_subject_digest`'s text-mode (universal-newline) read. Fixed by writing the fixture with `path.write_bytes(...)` instead; no change to `patch_validation_subject_digest` itself. Full module (25 tests) now passes.
+- Windows symlink-privilege error (`test_rv80_symlink_escape_rejected`): confirmed pre-existing and environment-specific (also independently logged in RD30.md); left as-is, not a TR00 concern.
 
 ## Exit status
 
-TR00 inventory is captured. TR00 remains open until the baseline is reviewed and the two pre-existing test issues are dispositioned without fabricating green evidence.
+TR00 inventory is captured and both pre-existing test/check issues from the original baseline are now dispositioned: one resolved upstream (RD19/PA05), one fixed directly (subject-digest test fixture). No evidence was fabricated and no other actor's catalog decision was silently reversed.
