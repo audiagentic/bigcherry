@@ -307,6 +307,25 @@ ggml_hip_dispatch_signature_v1 ggml_hip_make_signature(
         sig.n_expert_used = ids->ne[0];
     }
 
+    // HI118: ggml_hip_fusion_kind()'s coarse fusion/glu_op fields collapse
+    // x_bias and gate_bias into one "has_bias" bit -- record which specific
+    // fusion tensor(s) are present so a consumer reconstructing the fused
+    // computation (HI119) knows exactly what to synthesize. Geometry itself
+    // needs no new fields here: mmvq.cu's own GGML_ASSERT calls prove gate
+    // always shares src0's type/stride, and both biases are always F32 sized
+    // by dst.ne[0]/n_expert (fields this signature already records).
+    if (fusion != nullptr) {
+        if (fusion->x_bias      != nullptr) flags |= GGML_HIP_SIG_FUSION_X_BIAS;
+        if (fusion->gate_bias   != nullptr) flags |= GGML_HIP_SIG_FUSION_GATE_BIAS;
+        if (fusion->x_scale     != nullptr) flags |= GGML_HIP_SIG_FUSION_X_SCALE;
+        if (fusion->gate_scale  != nullptr) flags |= GGML_HIP_SIG_FUSION_GATE_SCALE;
+        // the struct's sixth fusion field is deliberately NOT read here --
+        // see hip-autotune-types.h's GGML_HIP_SIG_FUSION_X_SCALE/GATE_SCALE
+        // comment: it only exists on this struct under the experimental,
+        // non-default patch 1207, and a build without that patch (confirmed
+        // on real Brutus hardware) fails to compile against it at all.
+    }
+
     if (src0->ne[2] != 0 && dst->ne[2] != src0->ne[2]) {
         flags |= GGML_HIP_SIG_BROADCAST_CH;
     }
