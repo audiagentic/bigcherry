@@ -12,14 +12,18 @@ tune_promotion.promote()'s RV49 gate (promotion_correctness_gate.py) checks
 for, closing the loop this item's own notes describe as "not done this
 session" at HI80's original filing.
 
-MUL_MAT and MUL_MAT_ID only this slice (HI105 added the latter): any row
-whose op has no mapper in signature_to_any_test_file_line() is reported and
-skipped, not treated as a hard CLI failure, since HI80 never claimed op
-coverage beyond what it has actually verified against that op's own real
-test_case subclass (e.g. GLU is a real, different op with its own
-test-backend-ops class, and is NOT covered even though a fused MUL_MAT_ID+GLU
-signature carries the same has_ids/n_expert fields -- see
-signature_to_mul_mat_id_test_file_line's own docstring).
+MUL_MAT, MUL_MAT_ID, and (as of HI119) the routed/MUL_MAT_ID-based simple
+fused GLU case this slice: any row whose op has no mapper (in
+signature_to_any_test_file_line() for MUL_MAT/MUL_MAT_ID, or
+signature_to_moe_glu_file_line() for the fused-GLU branch below) is
+reported and skipped, not treated as a hard CLI failure, since HI80 never
+claimed op coverage beyond what it has actually verified against that op's
+own real test_case subclass. The fused-GLU branch additionally requires
+the observed dispatch signature (from a real record-mode run of the same
+synthetic graph) to match the requested row's own signature exactly --
+proof the fused dispatch was actually executed, not just that CPU-vs-GPU
+numerics happened to match (a future ggml-cuda fusion-detection regression
+could otherwise silently pass this check on unfused execution).
 
 Fails closed per row, not globally: a genuine evidence-generation failure
 (EvidenceError -- e.g. a digest mismatch, a nonzero exit) or an unsupported/
@@ -96,6 +100,48 @@ def _load_signature_dict(conn: sqlite3.Connection, signature_id: int) -> dict[st
     return json.loads(row[0])
 
 
+def _observed_signature_hex(
+    binary: Path, *, moe_glu_file: Path, seed: int, runner=subprocess.run,
+) -> str:
+    """HI119's mandatory evidence gate (dev-gpt-agent design review,
+    2026-08-25): correctness PASS must require proof the fused dispatch
+    signature this evidence is FOR was actually executed, not just that
+    CPU-vs-GPU numerics happened to match -- a future ggml-cuda fusion-
+    detection regression could make the harness silently execute two
+    ordinary MUL_MAT_IDs plus a standalone GLU instead of a real fused
+    dispatch, and CPU comparison would still pass, wrongly certifying
+    correctness for a candidate that was never actually exercised as
+    fused.
+
+    Runs the SAME --moe-glu-file line once under GGML_HIP_DISPATCH_MODE=
+    record and reads back the REAL signature hex test-backend-ops' own
+    dispatch-recording code computed for the resulting dispatch (the same
+    hashing code that wrote the original production dispatch_db's own
+    `signature` column) -- no digest is recomputed in Python; two hex
+    strings from the same real C++ code are compared directly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        record_db = Path(tmp) / "observed.jsonl"
+        run_env = {"GGML_HIP_DISPATCH_DB": str(record_db)}
+        result = ce.run_test_backend_ops(
+            binary, moe_glu_file=moe_glu_file, seed=seed, dispatch_mode="record",
+            forced_candidate=None, env=run_env, runner=runner,
+        )
+        if result.returncode != 0 or not record_db.is_file():
+            raise CliError(
+                f"observed-signature record-mode run failed (exit {result.returncode}) "
+                f"or produced no dispatch_db -- cannot verify the fused dispatch was "
+                f"actually executed:\n{result.stdout}\n{result.stderr}"
+            )
+        for line in record_db.read_text(encoding="utf-8").splitlines():
+            row = json.loads(line)
+            if row.get("kind") == "observation" and isinstance(row.get("signature"), str):
+                return row["signature"]
+    raise CliError(
+        "observed-signature record-mode run produced no observation row -- "
+        "cannot verify the fused dispatch was actually executed"
+    )
+
+
 def generate_for_row(
     conn: sqlite3.Connection, row: dict[str, Any], *,
     binary: Path, vendor_root: Path, seeds: tuple[int, ...],
@@ -144,24 +190,66 @@ def generate_for_row(
     # SignatureMappingError, which main()'s loop reports as SKIPPED without
     # incrementing failed, so a run could exit 0 having generated evidence
     # for nothing.
-    test_file_line, target_tensor, digest_tensor = scm.signature_to_any_test_file_line(
-        signature_dict, vendor_root=vendor_root
-    )
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".txt", delete=False, encoding="utf-8"
-    ) as handle:
-        handle.write(test_file_line + "\n")
-        test_file_path = Path(handle.name)
-    try:
-        aggregate = ce.generate_correctness_evidence(
-            binary, test_file=test_file_path, target_tensor=target_tensor,
-            digest_tensor=digest_tensor,
-            candidate_stable_name=candidate_name, seeds=seeds,
-            headroom_fraction=headroom_fraction, contract_version=contract_version,
-            runner=runner,
+    # HI119: GLU is a real, structurally different case -- every GLU
+    # dispatch signature this tuner records is a fused MUL_MAT_ID(gate)+
+    # MUL_MAT_ID(up)+GLU compound (HI108's own investigation), which
+    # test-backend-ops' --test-file/test_generic_op escape hatch cannot
+    # represent (one op per line). Route it through the --moe-glu-file
+    # mechanism (patches 1239/1240) instead of signature_to_any_test_file_
+    # line's ordinary single-op dispatch, with the mandatory observed-
+    # signature-digest gate the fused case specifically needs.
+    op_names = scm.load_ggml_op_names(vendor_root)
+    op_name = op_names.get(int(signature_dict.get("op", -1)))
+    if op_name == "GLU":
+        moe_glu_line, target_tensor, digest_tensor = scm.signature_to_moe_glu_file_line(
+            signature_dict, vendor_root=vendor_root
         )
-    finally:
-        test_file_path.unlink(missing_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(moe_glu_line + "\n")
+            moe_glu_path = Path(handle.name)
+        try:
+            observed_hex = _observed_signature_hex(
+                binary, moe_glu_file=moe_glu_path, seed=seeds[0], runner=runner,
+            )
+            if observed_hex != signature_hex:
+                raise CliError(
+                    f"dispatch={dispatch_hex}: observed fused-dispatch signature "
+                    f"{observed_hex!r} does not match the requested row's own "
+                    f"signature {signature_hex!r} -- the synthetic --moe-glu-file "
+                    f"graph did not reproduce the real fused dispatch (possible "
+                    f"ggml-cuda fusion-detection regression); refusing to certify "
+                    f"correctness for a candidate that may not have run fused"
+                )
+            aggregate = ce.generate_correctness_evidence(
+                binary, moe_glu_file=moe_glu_path, target_tensor=target_tensor,
+                digest_tensor=digest_tensor,
+                candidate_stable_name=candidate_name, seeds=seeds,
+                headroom_fraction=headroom_fraction, contract_version=contract_version,
+                runner=runner,
+            )
+        finally:
+            moe_glu_path.unlink(missing_ok=True)
+    else:
+        test_file_line, target_tensor, digest_tensor = scm.signature_to_any_test_file_line(
+            signature_dict, vendor_root=vendor_root
+        )
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(test_file_line + "\n")
+            test_file_path = Path(handle.name)
+        try:
+            aggregate = ce.generate_correctness_evidence(
+                binary, test_file=test_file_path, target_tensor=target_tensor,
+                digest_tensor=digest_tensor,
+                candidate_stable_name=candidate_name, seeds=seeds,
+                headroom_fraction=headroom_fraction, contract_version=contract_version,
+                runner=runner,
+            )
+        finally:
+            test_file_path.unlink(missing_ok=True)
     evidence_id = ce.write_correctness_evidence(
         conn, build_id=identity.build_id, hardware_id=identity.hardware_id,
         signature_id=identity.signature_id, candidate_id=identity.candidate_id,
