@@ -399,3 +399,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI119"
+
+[[patch]]
+id = "1240_hi119_moe_glu_file_cli"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI119"
