@@ -35,13 +35,15 @@ an NMSE-only check.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from . import correctness_evidence as ce
-from . import patch_source_isolation as psi
+ce = importlib.import_module("bigcherry.correctness_evidence")
+psi = importlib.import_module("bigcherry.patch_source_isolation")
 
 RD08_PATCH_STACK: tuple[str, ...] = (
     "1204_rd08_q6k_mmvq_vdr2",
@@ -92,7 +94,14 @@ def apply_vdr1_control(source_dir: Path) -> None:
     narrower control would invalidate the entire comparison without any
     visible symptom."""
     for rel_path, old, new in _CONTROL_EDITS:
-        target = source_dir / rel_path
+        source_root = source_dir.resolve()
+        target = (source_dir / rel_path).resolve()
+        try:
+            target.relative_to(source_root)
+        except ValueError as exc:
+            raise Rd08CorrectnessError(
+                f"VDR1 control path escapes source root: {rel_path}"
+            ) from exc
         text = target.read_text(encoding="utf-8")
         before = text.count(old)
         if before != 1:
@@ -111,7 +120,10 @@ def apply_vdr1_control(source_dir: Path) -> None:
 
 
 def materialize_rd08_variants(
-    *, base_repo: Path, worktree_root: Path, base_revision: str,
+    *,
+    base_repo: Path,
+    worktree_root: Path,
+    base_revision: str,
 ) -> tuple[Path, Path]:
     """Return (subject_src, control_src): the VDR2-subject and VDR1-control
     isolated worktrees, both carrying RD08_PATCH_STACK on top of the source's
@@ -122,21 +134,31 @@ def materialize_rd08_variants(
     validator, topological order) -- never a lifecycle-state scan -- and the
     base ref resolves to the immutable SHA that enters the v2 identity."""
     resolved_revision, composition = psi.resolve_source_composition(
-        "bigcherry", extra_patches=RD08_PATCH_STACK,
-        base_ref=base_revision, base_repo=base_repo,
+        "bigcherry",
+        extra_patches=RD08_PATCH_STACK,
+        base_ref=base_revision,
+        base_repo=base_repo,
     )
     subject_src = psi.materialize_source_variant(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
-        variant_name="rd08-vdr2-subject", variant_digest="none",
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
+        variant_name="rd08-vdr2-subject",
+        variant_digest="none",
     )
     control_src = psi.materialize_source_variant(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
         variant_name="rd08-vdr1-control",
-        variant_digest=_control_variant_digest(), apply_variant=apply_vdr1_control,
+        variant_digest=_control_variant_digest(),
+        apply_variant=apply_vdr1_control,
     )
     return subject_src, control_src
 
@@ -175,10 +197,10 @@ class ShapeSeedComparison:
     seed: int
     subject_status: str
     control_status: str
-    subject_digest: ce.RefDigest | None
-    control_digest: ce.RefDigest | None
-    subject_metric: ce.CorrectnessMetric | None
-    control_metric: ce.CorrectnessMetric | None
+    subject_digest: Any
+    control_digest: Any
+    subject_metric: Any
+    control_metric: Any
 
     @property
     def ok(self) -> bool:
@@ -192,12 +214,17 @@ class ShapeSeedComparison:
             and self.control_metric is not None
             and self.subject_metric.backend1_digest is not None
             and self.control_metric.backend1_digest is not None
-            and self.subject_metric.backend1_digest == self.control_metric.backend1_digest
+            and self.subject_metric.backend1_digest
+            == self.control_metric.backend1_digest
         )
 
 
 def compare_one_shape_seed(
-    *, subject_binary: Path, control_binary: Path, shape: Rd08Shape, seed: int,
+    *,
+    subject_binary: Path,
+    control_binary: Path,
+    shape: Rd08Shape,
+    seed: int,
     runner=subprocess.run,
 ) -> ShapeSeedComparison:
     """Run one RD08 decode shape at one deterministic seed against BOTH
@@ -211,12 +238,20 @@ def compare_one_shape_seed(
     rows before deciding, rather than stopping at the first failure.
     """
     subject_run = ce.run_test_backend_ops(
-        subject_binary, op_filter=op_filter(shape), seed=seed,
-        dispatch_mode="native", forced_candidate=None, runner=runner,
+        subject_binary,
+        op_filter=op_filter(shape),
+        seed=seed,
+        dispatch_mode="native",
+        forced_candidate=None,
+        runner=runner,
     )
     control_run = ce.run_test_backend_ops(
-        control_binary, op_filter=op_filter(shape), seed=seed,
-        dispatch_mode="native", forced_candidate=None, runner=runner,
+        control_binary,
+        op_filter=op_filter(shape),
+        seed=seed,
+        dispatch_mode="native",
+        forced_candidate=None,
+        runner=runner,
     )
 
     subject_status = "ok" if subject_run.returncode == 0 else "failed"
@@ -228,16 +263,23 @@ def compare_one_shape_seed(
     control_metric = ce.find_metric_for_tensor(control_run.stderr, "dst")
 
     return ShapeSeedComparison(
-        shape_name=shape.name, seed=seed,
-        subject_status=subject_status, control_status=control_status,
-        subject_digest=subject_digest, control_digest=control_digest,
-        subject_metric=subject_metric, control_metric=control_metric,
+        shape_name=shape.name,
+        seed=seed,
+        subject_status=subject_status,
+        control_status=control_status,
+        subject_digest=subject_digest,
+        control_digest=control_digest,
+        subject_metric=subject_metric,
+        control_metric=control_metric,
     )
 
 
 def require_rd08_correctness_evidence(
-    *, subject_binary: Path, control_binary: Path,
-    shapes: tuple[Rd08Shape, ...] = RD08_SHAPES, seeds: tuple[int, ...] = RD08_SEEDS,
+    *,
+    subject_binary: Path,
+    control_binary: Path,
+    shapes: tuple[Rd08Shape, ...] = RD08_SHAPES,
+    seeds: tuple[int, ...] = RD08_SEEDS,
     runner=subprocess.run,
 ) -> tuple[ShapeSeedComparison, ...]:
     """Run every (shape, seed) pair and fail closed with a specific reason
@@ -252,8 +294,11 @@ def require_rd08_correctness_evidence(
     for shape in shapes:
         for seed in seeds:
             row = compare_one_shape_seed(
-                subject_binary=subject_binary, control_binary=control_binary,
-                shape=shape, seed=seed, runner=runner,
+                subject_binary=subject_binary,
+                control_binary=control_binary,
+                shape=shape,
+                seed=seed,
+                runner=runner,
             )
             if not row.ok:
                 raise Rd08CorrectnessError(

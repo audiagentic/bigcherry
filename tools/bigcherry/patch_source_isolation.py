@@ -36,8 +36,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCHES_ROOT = REPO_ROOT / "patches"
@@ -51,7 +52,10 @@ class PatchSourceIsolationError(RuntimeError):
 
 def _stable_digest(payload: dict[str, Any]) -> str:
     encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -62,6 +66,7 @@ def _patch_registry():
     paths + function-level import)."""
     sys.path.insert(0, str(REPO_ROOT / "tools"))
     from bigcherry import patch_registry  # noqa: E402
+
     return patch_registry
 
 
@@ -96,7 +101,9 @@ def overlay_digest(overlay_root: Path | None) -> str:
     """sha256 over the sorted ``(relpath, sha256)`` of every file under the
     source overlay (bigcherry's ``src/`` additions). State-independent and
     deterministic. ``overlay_root=None`` (stock) hashes the empty set."""
-    encoded = json.dumps(_overlay_files(overlay_root), separators=(",", ":")).encode("utf-8")
+    encoded = json.dumps(_overlay_files(overlay_root), separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -108,7 +115,8 @@ def composition_digest(composition: Sequence[tuple[str, str]]) -> str:
     ``patch.toml`` changes requires/order with unchanged ``patch.py`` digests.
     The empty composition (stock) hashes the empty list."""
     encoded = json.dumps(
-        [list(entry) for entry in composition], separators=(",", ":"),
+        [list(entry) for entry in composition],
+        separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -128,7 +136,8 @@ def _make_source_identity_v2(
     The requested ref is recorded in the manifest separately and is NOT part of
     the hashed payload."""
     schema = (
-        "bigcherry-patch-source-variant-v2" if variant_name is not None
+        "bigcherry-patch-source-variant-v2"
+        if variant_name is not None
         else "bigcherry-patch-source-v2"
     )
     payload = {
@@ -161,17 +170,16 @@ def patch_implementation_digest(patch_name: str) -> str:
     try:
         descriptor = registry.get(patch_name)
     except Exception as exc:
-        raise PatchSourceIsolationError(f"patch module does not exist: {patch_name!r}") from exc
+        raise PatchSourceIsolationError(
+            f"patch module does not exist: {patch_name!r}"
+        ) from exc
     return hashlib.sha256(
         (registry.root / descriptor.implementation_path).read_bytes()
     ).hexdigest()
 
 
 def _run(argv: list[str], *, cwd: Path, check: bool = True) -> str:
-    result = subprocess.run(
-        argv, cwd=cwd, check=check, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True,
-    )
+    result = subprocess.run(argv, cwd=cwd, check=check, capture_output=True, text=True)
     if check and result.returncode != 0:
         raise PatchSourceIsolationError(
             f"{' '.join(argv)} (cwd={cwd}) failed: {result.stderr.strip()}"
@@ -202,16 +210,26 @@ def git_worktree_tree(repo: Path) -> str:
         env = os.environ.copy()
         env["GIT_INDEX_FILE"] = str(index)
         subprocess.run(
-            ["git", "read-tree", "HEAD"], cwd=repo, env=env, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ["git", "read-tree", "HEAD"],
+            cwd=repo,
+            env=env,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
-            ["git", "add", "-A", "--", "."], cwd=repo, env=env, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            ["git", "add", "-A", "--", "."],
+            cwd=repo,
+            env=env,
+            check=True,
+            capture_output=True,
         )
         result = subprocess.run(
-            ["git", "write-tree"], cwd=repo, env=env, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            ["git", "write-tree"],
+            cwd=repo,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         return result.stdout.strip()
 
@@ -228,7 +246,10 @@ def _manifest_path(source_dir: Path) -> Path:
 def _write_manifest(source_dir: Path, manifest: dict[str, Any]) -> None:
     path = _manifest_path(source_dir)
     fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+        text=True,
     )
     temporary_path = Path(temporary_name)
     try:
@@ -401,8 +422,10 @@ def _materialize_v2(
     actual on-disk tree hash both match this exact identity.
     """
     identity = _make_source_identity_v2(
-        resolved_revision=resolved_revision, composition=composition,
-        overlay_root=overlay_root, variant_name=variant_name,
+        resolved_revision=resolved_revision,
+        composition=composition,
+        overlay_root=overlay_root,
+        variant_name=variant_name,
         variant_digest=variant_digest,
     )
     source_dir = worktree_root / identity["source_key"]
@@ -412,7 +435,10 @@ def _materialize_v2(
 
     _add_worktree(base_repo, source_dir, resolved_revision)
     _apply_composition(
-        source_dir, composition, overlay_root=overlay_root, root=PATCHES_ROOT,
+        source_dir,
+        composition,
+        overlay_root=overlay_root,
+        root=PATCHES_ROOT,
     )
 
     if apply_variant is not None:
@@ -446,9 +472,12 @@ def verify_composition_idempotent(
     """
     before = git_worktree_tree(source)
     again = materialize_composition(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=composition,
-        overlay_root=overlay_root, requested_revision=requested_revision,
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=composition,
+        overlay_root=overlay_root,
+        requested_revision=requested_revision,
     )
     return again == source and git_worktree_tree(again) == before
 
@@ -473,9 +502,12 @@ def materialize_composition(
     baseline) is RETIRED (runbook 12 / RV80-B6).
     """
     return _materialize_v2(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=tuple(composition),
-        overlay_root=overlay_root, requested_revision=requested_revision,
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=tuple(composition),
+        overlay_root=overlay_root,
+        requested_revision=requested_revision,
     )
 
 
@@ -495,7 +527,7 @@ def materialize_source_variant(
     post-composition variant transform ("subject vs control" evidence).
 
     The two worktrees differ ONLY by the content-addressed transform applied
-    on top of the identical composition (e.g. rd08_correctness_evidence.py's
+    on top of the identical composition (e.g. the RD08 package-local correctness producer's
     VDR1-control / VDR2-subject pair). ``variant_digest`` MUST be a stable
     digest over the actual transform content (never a bare name) so two
     different transforms can never collide on the same source_key.
@@ -507,16 +539,23 @@ def materialize_source_variant(
     :func:`resolve_source_composition`), never from a lifecycle-state scan.
     """
     return _materialize_v2(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=tuple(composition),
-        overlay_root=overlay_root, requested_revision=requested_revision,
-        variant_name=variant_name, variant_digest=variant_digest,
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=tuple(composition),
+        overlay_root=overlay_root,
+        requested_revision=requested_revision,
+        variant_name=variant_name,
+        variant_digest=variant_digest,
         apply_variant=apply_variant,
     )
 
 
 def materialize_stock_source(
-    *, base_repo: Path, worktree_root: Path, base_revision: str,
+    *,
+    base_repo: Path,
+    worktree_root: Path,
+    base_revision: str,
 ) -> Path:
     """A genuinely pristine pinned-upstream worktree for stock bench
     comparison: v2 identity with the EMPTY composition and no overlay. The
@@ -525,8 +564,11 @@ def materialize_stock_source(
     informationally only)."""
     resolved_revision = resolve_base_revision(base_revision, repo=base_repo)
     return _materialize_v2(
-        base_repo=base_repo, worktree_root=worktree_root,
-        resolved_revision=resolved_revision, composition=(), overlay_root=None,
+        base_repo=base_repo,
+        worktree_root=worktree_root,
+        resolved_revision=resolved_revision,
+        composition=(),
+        overlay_root=None,
         requested_revision=base_revision,
     )
 
@@ -560,7 +602,10 @@ def resolve_source_composition(
             "resolve_source_composition: base_repo is required"
         )
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry import config as campaign_config, campaign_resolution, patchset, paths  # noqa: E402
+    from bigcherry import campaign_resolution  # noqa: E402
+    from bigcherry import config as campaign_config  # noqa: E402
+    from bigcherry import paths  # noqa: E402
+    from bigcherry import patchset  # noqa: E402
 
     resolved_revision = resolve_base_revision(base_ref, repo=base_repo)
     cfg = campaign_config.load(recipes or paths.RECIPES)
@@ -589,8 +634,9 @@ def resolve_source_composition(
         (
             module.patch_id,
             hashlib.sha256(
-                (registry.root / registry.get(module.patch_id).implementation_path)
-                .read_bytes()
+                (
+                    registry.root / registry.get(module.patch_id).implementation_path
+                ).read_bytes()
             ).hexdigest(),
         )
         for module in resolved.modules
@@ -604,7 +650,11 @@ def remove_worktree(base_repo: Path, source_dir: Path) -> None:
     rmtree so `git worktree list` in base_repo doesn't accumulate stale
     registrations for a directory that no longer exists."""
     if source_dir.exists():
-        _run(["git", "worktree", "remove", "--force", str(source_dir)], cwd=base_repo, check=False)
+        _run(
+            ["git", "worktree", "remove", "--force", str(source_dir)],
+            cwd=base_repo,
+            check=False,
+        )
     shutil.rmtree(source_dir, ignore_errors=True)
     _manifest_path(source_dir).unlink(missing_ok=True)
     _run(["git", "worktree", "prune"], cwd=base_repo, check=False)

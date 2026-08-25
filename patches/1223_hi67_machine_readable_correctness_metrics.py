@@ -37,7 +37,7 @@ from bigcherry.patcher import Edit, FilePatch
 
 REQUIRES = ("1222_hi67_deterministic_test_backend_ops_seed",)
 
-_METRIC_LINE = '''
+_METRIC_LINE = """
             double bigcherry_max_abs = 0.0;
             for (size_t bi = 0; bi < f1.size(); bi++) {
                 bigcherry_max_abs = std::max(bigcherry_max_abs, (double) std::fabs(f1[bi] - f2[bi]));
@@ -69,20 +69,20 @@ _METRIC_LINE = '''
                     (unsigned long long) bigcherry_backend1_digest,
                     (unsigned long long) bigcherry_backend2_digest);
             }
-'''
+"""
 
 PATCH = FilePatch(
     path="tests/test-backend-ops.cpp",
     description="print machine-readable BIGCHERRY_CORRECTNESS_METRIC lines (NMSE + max_abs + "
-                "threshold, per compared tensor) so HI67's evidence generator can consume the "
-                "same comparison test-backend-ops already performs (HI67 slice 2b)",
+    "threshold, per compared tensor) so HI67's evidence generator can consume the "
+    "same comparison test-backend-ops already performs (HI67 slice 2b)",
     edits=(
         Edit(
             id="hi67-correctness-metric-line",
             anchor=r"double err = ud->tc->err\(f1\.data\(\), f2\.data\(\), f1\.size\(\)\);",
             mode="insert_after",
             rationale="right after err (NMSE) is computed in the graph-compare callback, "
-                       "before the pass/fail check that follows it",
+            "before the pass/fail check that follows it",
             text=_METRIC_LINE,
             guard=r"bigcherry \(HI67 slice 2b\): err here is NMSE",
             max_span_lines=5,
