@@ -8,7 +8,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import patcher, patchset
+from ..patch import apply as patcher
+from ..patch import patchset
 from ..context import ProjectContext
 from .identity import describe
 

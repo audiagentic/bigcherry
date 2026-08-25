@@ -454,9 +454,9 @@ class LoaderTests(unittest.TestCase):
             patch_registry.load_implementation(registry.get("0100_foo"), root=self.root)
 
     def test_loader_uses_byte_compilation_not_importlib(self) -> None:
-        source = (Path(__file__).resolve().parents[1] / "bigcherry" / "patch_registry.py").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            Path(__file__).resolve().parents[1] / "bigcherry" / "patch" / "registry.py"
+        ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -469,14 +469,14 @@ class LoaderTests(unittest.TestCase):
 
 class ArchitectureTests(unittest.TestCase):
     """Runbook section 11 dependency-DAG pin: the registry imports only
-    {paths, patcher} (+ stdlib); never patchset/check/patch_catalog."""
+    {paths, apply} (+ stdlib); never patchset/check/catalog/validation/source."""
 
-    _FORBIDDEN = {"patchset", "check", "patch_catalog", "patch_validation", "patch_source_isolation"}
+    _FORBIDDEN = {"patchset", "check", "catalog", "validation", "source"}
 
     def test_registry_import_boundary(self) -> None:
-        source = (Path(__file__).resolve().parents[1] / "bigcherry" / "patch_registry.py").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            Path(__file__).resolve().parents[1] / "bigcherry" / "patch" / "registry.py"
+        ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         imported: set[str] = set()
         for node in ast.walk(tree):
@@ -488,7 +488,7 @@ class ArchitectureTests(unittest.TestCase):
                          and name not in sys.stdlib_module_names}
         self.assertFalse(self._FORBIDDEN & local_modules,
                          f"registry imports forbidden local modules: {self._FORBIDDEN & local_modules}")
-        allowed_local = {"bigcherry", "paths", "patcher"}
+        allowed_local = {"bigcherry", "paths", "apply"}
         self.assertTrue(local_modules <= allowed_local,
                         f"registry local imports exceed the allowed set: {local_modules - allowed_local}")
 

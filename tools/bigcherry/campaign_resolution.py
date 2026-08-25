@@ -6,7 +6,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from . import config, patchset
+from . import config
+from .patch import patchset
 
 
 class ResolutionError(ValueError):

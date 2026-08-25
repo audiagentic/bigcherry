@@ -6,7 +6,10 @@ import json
 import sys
 from argparse import Namespace
 
-from .. import patch_catalog, patch_lifecycle, patchset, paths, recipes
+from .. import paths, recipes
+from ..patch import catalog as patch_catalog
+from ..patch import lifecycle as patch_lifecycle
+from ..patch import patchset
 
 
 def cmd_apply(args: Namespace) -> int:

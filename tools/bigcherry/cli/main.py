@@ -14,7 +14,9 @@ import json
 import sys
 from pathlib import Path
 
-from .. import __version__, patch_catalog, patchset, recipes
+from .. import __version__, recipes
+from ..patch import catalog as patch_catalog
+from ..patch import patchset
 from ..source import sources
 from ..release import pin as _release_pin
 from .build import cmd_build_new
