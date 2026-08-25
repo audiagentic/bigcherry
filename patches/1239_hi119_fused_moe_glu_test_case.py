@@ -94,9 +94,16 @@ struct test_bigcherry_moe_glu_fusion : public test_case {
     const int64_t m;
     const int n_mats;
     const int n_used;
+    const bool b; // broadcast: cur's middle dim is 1 (broadcast to every
+                  // selected expert) rather than n_used -- ggml_mul_mat_id's
+                  // real "ne1[1] broadcastable up to n_expert_used" rule.
+                  // HI108's real routed dispatch (7ef2471585a5aa6fbb49384ef
+                  // e566ac5) uses the broadcast form (ne1=[k,1,1,1]), the
+                  // real up/gate-projection shape -- confirmed against the
+                  // plan item's own recorded ne1, not assumed.
 
     std::string vars() override {
-        return VARS_TO_STR7(type, glu_op, k, n, m, n_mats, n_used);
+        return VARS_TO_STR8(type, glu_op, k, n, m, n_mats, n_used, b);
     }
 
     std::string op_desc(ggml_tensor * t) override {
@@ -113,8 +120,8 @@ struct test_bigcherry_moe_glu_fusion : public test_case {
     test_bigcherry_moe_glu_fusion(ggml_type type = GGML_TYPE_F32,
             ggml_glu_op glu_op = GGML_GLU_OP_SWIGLU,
             int64_t k = 256, int64_t n = 32, int64_t m = 4,
-            int n_mats = 8, int n_used = 2)
-        : type(type), glu_op(glu_op), k(k), n(n), m(m), n_mats(n_mats), n_used(n_used) {
+            int n_mats = 8, int n_used = 2, bool b = true)
+        : type(type), glu_op(glu_op), k(k), n(n), m(m), n_mats(n_mats), n_used(n_used), b(b) {
         GGML_ASSERT(n_used <= n_mats);
     }
 
@@ -131,7 +138,7 @@ struct test_bigcherry_moe_glu_fusion : public test_case {
             ggml_set_name(ids, "view_of_ids");
         }
 
-        ggml_tensor * cur = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, k, n_used, m);
+        ggml_tensor * cur = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, k, this->b ? 1 : n_used, m);
         ggml_set_name(cur, "cur");
 
         // gate/up MUST share the exact same cur/ids tensor OBJECTS (not
@@ -167,18 +174,22 @@ _REGISTRATION = '''    test_cases.emplace_back(new test_opt_step_adamw(GGML_TYPE
 
     // bigcherry (HI119): real fused MUL_MAT_ID(gate)+MUL_MAT_ID(up)+GLU
     // shapes -- see patches/1239_hi119_fused_moe_glu_test_case.py. The
-    // Q8_0/k=2048/n=256/n_mats=256/n_used=8/SWIGLU case matches HI108's real
-    // routed blocked dispatch (7ef2471585a5aa6fbb49384efe566ac5, Qwen3.6-35B-
-    // A3B) exactly; F32 is a fast correctness sanity baseline, not a real
-    // production shape. Registering fixed instances here is a stopgap for
-    // HI119's own step 7 (parameterize generically from an arbitrary real
-    // dispatch signature, not hard-coded shapes) -- tracked as still open in
+    // Q8_0/k=2048/n=256/n_mats=256/n_used=8/b=true/SWIGLU case matches
+    // HI108's real routed blocked dispatch
+    // (7ef2471585a5aa6fbb49384efe566ac5, Qwen3.6-35B-A3B) exactly,
+    // including the broadcast (ne1[1]==1) shape its real ne1 field records
+    // -- an earlier non-broadcast (b=false) instance was checked against
+    // real hardware and found to NOT match ne1 exactly, fixed here. F32 is
+    // a fast correctness sanity baseline, not a real production shape.
+    // Registering fixed instances here is a stopgap for HI119's own step 7
+    // (parameterize generically from an arbitrary real dispatch signature,
+    // not hard-coded shapes) -- tracked as still open in
     // docs/planning/active/hip-autotune/HI119.md.
     for (ggml_glu_op glu_op : {GGML_GLU_OP_SWIGLU, GGML_GLU_OP_GEGLU}) {
         test_cases.emplace_back(new test_bigcherry_moe_glu_fusion(
-            GGML_TYPE_Q8_0, glu_op, /*k=*/2048, /*n=*/256, /*m=*/1, /*n_mats=*/256, /*n_used=*/8));
+            GGML_TYPE_Q8_0, glu_op, /*k=*/2048, /*n=*/256, /*m=*/1, /*n_mats=*/256, /*n_used=*/8, /*b=*/true));
         test_cases.emplace_back(new test_bigcherry_moe_glu_fusion(
-            GGML_TYPE_F32, glu_op, /*k=*/256, /*n=*/32, /*m=*/2, /*n_mats=*/8, /*n_used=*/2));
+            GGML_TYPE_F32, glu_op, /*k=*/256, /*n=*/32, /*m=*/2, /*n_mats=*/8, /*n_used=*/2, /*b=*/false));
     }'''
 
 _REGISTRATION_ANCHOR = _re.escape(_csource.strip_noise(_REGISTRATION_ANCHOR_SOURCE, "c"))
