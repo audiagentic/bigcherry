@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import paths
+from . import dispatch_abi
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
 
@@ -599,8 +600,8 @@ def build_database(
             (
                 header.get("source_revision", ""),
                 header.get("manifest_hash", ""),
-                header.get("signature_schema", 1),
-                header.get("hardware_schema", 1),
+                header.get("signature_schema", dispatch_abi.LEGACY_MISSING_SIGNATURE_SCHEMA_VERSION),
+                header.get("hardware_schema", dispatch_abi.LEGACY_MISSING_HARDWARE_SCHEMA_VERSION),
                 header.get("variant_set", "inventory"),
                 header.get("build_descriptor_hash"),
                 resolved_source_slice_id,
@@ -897,8 +898,8 @@ def load_measurements(
         # the same header defaults build_database() uses, and the INSERT
         # below uses them too (it previously hardcoded 1/1, which would
         # contradict this lookup whenever a header carried schema > 1).
-        signature_schema = header.get("signature_schema", 1)
-        hardware_schema = header.get("hardware_schema", 1)
+        signature_schema = header.get("signature_schema", dispatch_abi.LEGACY_MISSING_SIGNATURE_SCHEMA_VERSION)
+        hardware_schema = header.get("hardware_schema", dispatch_abi.LEGACY_MISSING_HARDWARE_SCHEMA_VERSION)
 
         # RE09/RV50 schema-4: the lookup is now scoped to the REAL identity
         # for this load, using the partial-unique-index-backed columns --

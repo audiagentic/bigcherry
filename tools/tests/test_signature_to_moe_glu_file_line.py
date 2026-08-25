@@ -66,6 +66,7 @@ _REAL_SIGNATURE = {
     "ne0": [2048, 256, 256, 1], "ne1": [2048, 1, 1, 1], "ned": [256, 8, 1, 1],
     "op": 4,  # GGML_OP_GLU in this fixture's enum
     "src0_type": 8, "src1_type": 0,
+    "schema_version": scm.dispatch_abi.SIGNATURE_SCHEMA_VERSION,
 }
 
 
@@ -153,6 +154,29 @@ def test_non_broadcast_shape_maps_broadcast_zero(tmp_path):
     sig["ne1"] = [2048, 8, 1, 1]  # ne1[1] == n_expert_used, the non-broadcast form
     line, _, _ = scm.signature_to_moe_glu_file_line(sig, vendor_root=vendor)
     assert line == "8 2 2048 256 1 256 8 0"
+
+
+def test_rejects_stale_schema_version(tmp_path):
+    vendor = _write_fixture_vendor(tmp_path)
+    sig = dict(_REAL_SIGNATURE)
+    sig["schema_version"] = 1  # pre-HI118 schema -- flags bits 7-10 are meaningless
+    try:
+        scm.signature_to_moe_glu_file_line(sig, vendor_root=vendor)
+        assert False, "expected SignatureMappingError"
+    except scm.SignatureMappingError as exc:
+        assert "schema_version" in str(exc)
+
+
+def test_rejects_batched_m_dimension(tmp_path):
+    vendor = _write_fixture_vendor(tmp_path)
+    sig = dict(_REAL_SIGNATURE)
+    sig["ne1"] = [2048, 1, 3, 1]  # m=3 -- ids layout for m>1 isn't hashed
+    sig["ned"] = [256, 8, 3, 1]
+    try:
+        scm.signature_to_moe_glu_file_line(sig, vendor_root=vendor)
+        assert False, "expected SignatureMappingError"
+    except scm.SignatureMappingError as exc:
+        assert "m==1" in str(exc) or "m, the per-call batch dimension" in str(exc)
 
 
 def test_rejects_invalid_ne1_middle_dimension(tmp_path):

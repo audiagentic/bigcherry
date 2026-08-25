@@ -118,14 +118,27 @@ class V4LegacyReaderTests(unittest.TestCase):
         if not CAMPAIGN_V4.is_file():
             self.skipTest("historical campaign artifact not present")
         blob = CAMPAIGN_V4.read_bytes()
-        header, entries = replay_cache.read_cache_legacy_v4(blob)
+        # Real historical campaign artifact, captured under signature schema
+        # 1 (predates HI118/HI119's schema-2 bump) -- enforce_schema=False
+        # is the documented offline-inspection-only escape hatch for this
+        # exact case (read_cache_legacy_v4's own docstring); the merge path
+        # in build() keeps the default True and must never pass False.
+        header, entries = replay_cache.read_cache_legacy_v4(blob, enforce_schema=False)
         self.assertEqual(header["version"], 4)
+        self.assertEqual(header["signature_schema"], 1)
         self.assertEqual(len(entries), 59)
         for entry in entries:
             self.assertEqual(len(entry["wire_entry"]), replay_cache.ENT_SIZE_V4)
             self.assertEqual(entry["transform_id"], 0)
             self.assertIsNone(entry["match_kind"])
             self.assertEqual(entry["portable_key"], entry["dispatch"])
+
+    def test_real_campaign_v4_artifact_rejected_by_default_schema_enforcement(self):
+        if not CAMPAIGN_V4.is_file():
+            self.skipTest("historical campaign artifact not present")
+        blob = CAMPAIGN_V4.read_bytes()
+        with self.assertRaises(SystemExit):
+            replay_cache.read_cache_legacy_v4(blob)
 
     def test_synthetic_v4_blob_round_trips_legacy_reader(self):
         manifest, ggml_h, measurements = _fixture("A" * 32, self.root)

@@ -191,7 +191,10 @@ class ReplayCacheWireTests(unittest.TestCase):
         self.assertEqual((magic, version, artifact),
                          (replay_cache.MAGIC, replay_cache.REPLAY_VERSION,
                           replay_cache.ARTIFACT_VERSION))
-        self.assertEqual(struct.unpack_from("<HHII", blob, 12), (1, 1, 1, 15))
+        self.assertEqual(
+            struct.unpack_from("<HHII", blob, 12),
+            (replay_cache.SIGNATURE_SCHEMA_VERSION, replay_cache.HARDWARE_SCHEMA_VERSION, 1, 15),
+        )
         payload = blob[replay_cache.REPLAY_HEADER_SIZE:]
         expected = hashlib.blake2b(
             payload, digest_size=16, person=replay_cache.PERSON_DISPATCH).digest()

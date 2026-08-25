@@ -132,10 +132,30 @@ def _observed_signature_hex(
                 f"or produced no dispatch_db -- cannot verify the fused dispatch was "
                 f"actually executed:\n{result.stdout}\n{result.stderr}"
             )
-        for line in record_db.read_text(encoding="utf-8").splitlines():
-            row = json.loads(line)
-            if row.get("kind") == "observation" and isinstance(row.get("signature"), str):
-                return row["signature"]
+        # HI119 review follow-up (dev-gpt-agent, 2026-08-25): record mode is
+        # keyed by (signature, hardware), so a single run can legitimately
+        # emit more than one observation row (e.g. multiple graph nodes or
+        # repeat calls within the same process) -- taking the FIRST row
+        # unconditionally was not a stable semantic contract. Collect every
+        # DISTINCT observed signature instead: exactly one is the only
+        # trustworthy outcome (zero means nothing was observed; more than
+        # one distinct value means this run cannot unambiguously identify
+        # which observation corresponds to the requested dispatch).
+        observed_signatures = {
+            row["signature"]
+            for line in record_db.read_text(encoding="utf-8").splitlines()
+            for row in [json.loads(line)]
+            if row.get("kind") == "observation" and isinstance(row.get("signature"), str)
+        }
+        if len(observed_signatures) == 1:
+            return next(iter(observed_signatures))
+        if len(observed_signatures) > 1:
+            raise CliError(
+                f"observed-signature record-mode run produced {len(observed_signatures)} "
+                f"DISTINCT observed signatures ({sorted(observed_signatures)!r}) -- cannot "
+                f"unambiguously determine which one corresponds to this run; refusing to "
+                f"certify correctness rather than guessing"
+            )
     raise CliError(
         "observed-signature record-mode run produced no observation row -- "
         "cannot verify the fused dispatch was actually executed"
