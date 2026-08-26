@@ -62,6 +62,34 @@ class CampaignGraphTests(unittest.TestCase):
             self.assertIsNotNone(first.inspect())
             first.release()
 
+    def test_release_never_deletes_a_lock_this_instance_did_not_acquire(self):
+        # RD100: a losing contender's cleanup used to call release()
+        # unconditionally on every lock it *constructed*, not just the ones
+        # it actually acquired -- so a failed second process could delete
+        # the first process's still-live lock out from under it, letting a
+        # third process acquire the same resource while the first was still
+        # using it. release() must now be a no-op unless this exact
+        # instance's acquire() succeeded.
+        with tempfile.TemporaryDirectory() as directory:
+            winner = ResourceLock(Path(directory), "build:plan-x")
+            loser = ResourceLock(Path(directory), "build:plan-x")
+            winner.acquire()
+            with self.assertRaises(ResourceError):
+                loser.acquire()
+
+            # The losing contender never held the lock -- releasing it must
+            # not touch the winner's still-live lock.
+            loser.release()
+            self.assertIsNotNone(winner.inspect())
+
+            # A third process must still see the resource as claimed.
+            third = ResourceLock(Path(directory), "build:plan-x")
+            with self.assertRaises(ResourceError):
+                third.acquire()
+
+            winner.release()
+            self.assertIsNone(winner.inspect())
+
 
 if __name__ == "__main__":
     unittest.main()

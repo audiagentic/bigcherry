@@ -20,6 +20,13 @@ class ResourceLock:
         self.resource_id = resource_id
         safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", resource_id)
         self.path = self.root / (safe + ".lock")
+        # RD100: a lock this instance never successfully acquired must never
+        # be released by it -- release() used to be callable unconditionally,
+        # so a caller that iterated every lock it *tried* to acquire (not
+        # just the ones that succeeded) could delete another process's live
+        # lock out from under it, breaking mutual exclusion entirely (two
+        # processes then both entered the same build directory concurrently).
+        self._acquired = False
 
     def acquire(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -32,8 +39,13 @@ class ResourceLock:
             "started_at": time.time(), "resource_id": self.resource_id,
         }
         (self.path / "owner.json").write_text(json.dumps(owner, sort_keys=True) + "\n", encoding="utf-8")
+        self._acquired = True
 
     def release(self) -> None:
+        if not self._acquired:
+            # Never held (or already released) by this instance -- a no-op,
+            # not a delete of whatever/whoever currently owns the path.
+            return
         owner = self.path / "owner.json"
         owner.unlink(missing_ok=True)
         try:
@@ -42,6 +54,7 @@ class ResourceLock:
             pass
         except OSError as exc:
             raise ResourceError(f"resource lock is not empty: {self.path}") from exc
+        self._acquired = False
 
     def inspect(self) -> dict[str, object] | None:
         if not self.path.is_dir():
