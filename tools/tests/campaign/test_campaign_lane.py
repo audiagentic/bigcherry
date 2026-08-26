@@ -795,6 +795,37 @@ GGML_HIP:BOOL=ON
                     worker(())
             self.assertFalse(any(call.args[0][0] != "git" for call in run.call_args_list))
 
+    def test_mutation_immediately_before_configure_is_caught_before_configure_runs(self):
+        """Adversarial-review follow-up: the worker-entry check and the
+        post-compile check leave a real window between them -- computing
+        configure_args doesn't read source_root, but a mutation landing in
+        exactly that gap was previously caught only AFTER configure and
+        compile had already run against the mutated tree. PA09 requires an
+        attestation immediately before CMake configure specifically, not
+        merely "somewhere before compile finishes"."""
+        with tempfile.TemporaryDirectory() as directory:
+            source, _, _, _, worker = self._fixture(Path(directory))
+
+            real_configure_args = campaign_workers.campaign_build.cmake_configure_args
+            real_run = subprocess.run
+
+            def mutate_then_compute_args(*args, **kwargs):
+                (source / "source.txt").write_text("mutated between args and configure\n",
+                                                     encoding="utf-8")
+                return real_configure_args(*args, **kwargs)
+
+            def no_compile(command, **kwargs):
+                if command[0] == "git":
+                    return real_run(command, **kwargs)
+                raise AssertionError("configure/build must not run once source is mutated")
+
+            with patch.object(
+                campaign_workers.campaign_build, "cmake_configure_args",
+                side_effect=mutate_then_compute_args,
+            ), patch("bigcherry.campaign.workers.subprocess.run", side_effect=no_compile):
+                with self.assertRaisesRegex(CampaignBuildError, "source attestation failed"):
+                    worker(())
+
     def test_source_mutation_during_compile_fails_before_publication(self):
         with tempfile.TemporaryDirectory() as directory:
             source, context, store, plan, worker = self._fixture(Path(directory))

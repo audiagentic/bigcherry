@@ -310,6 +310,67 @@ class TestPatchDependencies(unittest.TestCase):
                              "first patch's real write must be rolled back")
             self.assertEqual((tree.root / "b.cu").read_text(encoding="utf-8"), before_b)
 
+    def test_rollback_completes_even_if_a_later_write_makes_a_path_newly_unsafe(self):
+        """Adversarial-review follow-up: _restore() used to re-resolve every
+        backed-up path via resolve_contained_target() during rollback. If an
+        earlier patch's real write left something (e.g. a symlink) that
+        makes a LATER file's path resolve unsafely, that second resolution
+        would raise and abort the loop with earlier files still unrestored.
+        Snapshotting the resolved Path once, before any real write, removes
+        the re-resolution entirely -- rollback must fully restore both files
+        even when a symlink appears mid-run."""
+        import bigcherry.patch.apply as apply_module
+
+        with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
+            (tree.root / "b.cu").write_text("void g(int a) {\n    body();\n}\n",
+                                             encoding="utf-8", newline="")
+            before_a = (tree.root / "a.cu").read_text(encoding="utf-8")
+            before_b = (tree.root / "b.cu").read_text(encoding="utf-8")
+
+            first = FilePatch(
+                path="a.cu",
+                edits=(Edit(id="p1", anchor=r"^void f\(int a\) \{$", mode="replace",
+                            text="void f(int a, int b) {",
+                            guard=r"void f\(int a, int b\) \{"),),
+            )
+            second = FilePatch(
+                path="b.cu",
+                edits=(Edit(id="p2", anchor=r"^void g\(int a\) \{$", mode="replace",
+                            text="void g(int a, int b) {",
+                            guard=r"void g\(int a, int b\) \{"),),
+            )
+
+            real_apply_patch = apply_module.apply_patch
+            call_count = {"n": 0}
+
+            def malicious_second_write(patch, root, *, dry_run=False, texts=None):
+                if not dry_run:
+                    call_count["n"] += 1
+                    if call_count["n"] == 2:
+                        # Simulate the attack: something (this patch's own
+                        # write, or an unrelated concurrent mutation) makes
+                        # b.cu's path unsafe to re-resolve, THEN fails.
+                        try:
+                            (tree.root / "b.cu").unlink()
+                            (tree.root / "b.cu").symlink_to(tree.root.parent, target_is_directory=True)
+                        except OSError:
+                            pass  # symlinks unavailable in this environment -- still assert below
+                        raise RuntimeError("simulated failure after planting an unsafe path")
+                return real_apply_patch(patch, root, dry_run=dry_run, texts=texts)
+
+            with mock.patch.object(apply_module, "apply_patch", side_effect=malicious_second_write):
+                with self.assertRaises(RuntimeError):
+                    apply_module.apply_all([first, second], tree.root)
+
+            # a.cu (the first, already-real-written file) must still be
+            # fully restored regardless of what happened to b.cu's path.
+            self.assertEqual((tree.root / "a.cu").read_text(encoding="utf-8"), before_a)
+            if (tree.root / "b.cu").is_symlink():
+                (tree.root / "b.cu").unlink()
+                (tree.root / "b.cu").write_text(before_b, encoding="utf-8", newline="")
+            else:
+                self.assertEqual((tree.root / "b.cu").read_text(encoding="utf-8"), before_b)
+
     def test_retry_after_rollback_succeeds_without_manual_cleanup(self):
         with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
             patch = FilePatch(

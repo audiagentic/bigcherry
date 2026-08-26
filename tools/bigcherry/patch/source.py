@@ -44,6 +44,7 @@ from typing import Any
 from bigcherry.core import paths
 from bigcherry.patch.apply import (
     PATCH_APPLICATION_SEMANTICS_VERSION,
+    PatchError,
     resolve_contained_target,
 )
 
@@ -484,8 +485,13 @@ def _manifest_path(source_dir: Path) -> Path:
 def _write_manifest(source_dir: Path, manifest: dict[str, Any]) -> None:
     # PA12: shared with campaign/build.py's canonical-source metadata write
     # rather than each maintaining its own temp-file+fsync+replace copy.
+    # read_only=True (adversarial-review follow-up, PA10): this manifest's
+    # own fields are what _verify_reuse() compares re-derived live facts
+    # against -- an editable sidecar undermines that comparison. See
+    # atomic_write_json()'s docstring for what this does and does not
+    # defend against.
     from bigcherry.source.identity import atomic_write_json
-    atomic_write_json(_manifest_path(source_dir), manifest)
+    atomic_write_json(_manifest_path(source_dir), manifest, read_only=True)
 
 
 def _read_manifest(source_dir: Path) -> dict[str, Any] | None:
@@ -596,6 +602,7 @@ def _apply_composition(
     *,
     overlay_root: Path | None,
     root: Path | None = None,
+    expected_overlay_digest: str | None = None,
 ) -> None:
     """Overlay bigcherry's own source additions (EXACTLY the files whose bytes
     are in the identity's overlay_digest), then apply the EXPLICIT composition
@@ -606,6 +613,16 @@ def _apply_composition(
     actually SHIP: on top of the explicitly resolved named composition, not
     bare upstream (RD08's anchor-dependency failure is why the composition
     step exists at all).
+
+    ``expected_overlay_digest`` (adversarial-review follow-up): the per-file
+    digest check below only proves each individual file's bytes are
+    self-consistent between the two ``_overlay_files()`` reads inside THIS
+    call -- it does not prove the overlay SET (which files exist at all) is
+    still the one ``_make_source_identity_v2()`` hashed into ``source_key``
+    when identity was first computed. A file added or removed from
+    ``overlay_root`` between those two moments could otherwise be silently
+    applied under the OLD identity. When supplied, the recomputed
+    ``overlay_digest()`` must match exactly, or this raises.
     """
     registry = _patch_registry().load_registry(root or PATCHES_ROOT)
     from bigcherry import patcher  # noqa: E402
@@ -614,11 +631,25 @@ def _apply_composition(
         overlay_entries = _overlay_files(overlay_root)
     else:
         overlay_entries = []
+    if expected_overlay_digest is not None:
+        actual_overlay_digest = hashlib.sha256(
+            json.dumps(overlay_entries, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if actual_overlay_digest != expected_overlay_digest:
+            raise PatchSourceIsolationError(
+                f"overlay file set changed between identity computation and "
+                f"application: {actual_overlay_digest} != {expected_overlay_digest}"
+            )
     for relative, file_digest in overlay_entries:
         # overlay_entries is non-empty only when overlay_root is present.
         assert overlay_root is not None
         source = overlay_root / relative
-        target = source_dir / relative
+        try:
+            target = resolve_contained_target(source_dir, relative)
+        except PatchError as exc:
+            raise PatchSourceIsolationError(
+                f"overlay target escapes source root: {exc}"
+            ) from exc
         target.parent.mkdir(parents=True, exist_ok=True)
         data = source.read_bytes()
         actual = hashlib.sha256(data).hexdigest()
@@ -699,6 +730,7 @@ def _materialize_v2(
             composition,
             overlay_root=overlay_root,
             root=PATCHES_ROOT,
+            expected_overlay_digest=identity["overlay_digest"],
         )
 
         if variant_transform is not None:

@@ -351,20 +351,51 @@ def apply_all(patches: list[FilePatch], root: Path, *,
     # no valid metadata. Snapshot every file this run *could* touch before
     # writing anything for real, and restore all of them the instant one
     # patch's real pass fails.
-    touched_paths = {p.path for p in patches}
-    backup: dict[str, str | None] = {}
+    # Preserve patch order (not set iteration order, which CPython does not
+    # guarantee to match it) and resolve+snapshot each target ONCE here,
+    # keeping the already-validated Path rather than the bare relative
+    # string. Adversarial-review follow-up: _restore() previously called
+    # resolve_contained_target() again for every file, including ones
+    # already restored -- if an EARLIER patch's real write left something
+    # that makes a LATER file's path newly unsafe (e.g. it created a
+    # symlink another touched path now resolves through), that second
+    # resolution can raise and abort the loop with earlier files still
+    # unrestored. Resolving once, before any real write happens, removes
+    # that window entirely: restoration never re-derives a path that could
+    # have been invalidated by the very writes it is undoing.
+    touched_paths: list[str] = []
+    seen: set[str] = set()
+    for p in patches:
+        if p.path not in seen:
+            seen.add(p.path)
+            touched_paths.append(p.path)
+    backup: list[tuple[Path, str | None]] = []
     for relative in touched_paths:
         target = resolve_contained_target(root, relative)
-        backup[relative] = target.read_text(encoding="utf-8") if target.is_file() else None
+        original = target.read_text(encoding="utf-8") if target.is_file() else None
+        backup.append((target, original))
 
     def _restore() -> None:
-        for relative, original in backup.items():
-            target = resolve_contained_target(root, relative)
-            if original is None:
-                if target.is_file():
-                    target.unlink()
-            else:
-                target.write_text(original, encoding="utf-8", newline="")
+        # Undo in reverse application order, and never let one file's
+        # restore failure stop the others -- a partial rollback that stops
+        # at the first error is exactly the partial-tree state this whole
+        # mechanism exists to prevent. Collect failures and raise once all
+        # restorable files have been attempted.
+        errors: list[BaseException] = []
+        for target, original in reversed(backup):
+            try:
+                if original is None:
+                    if target.is_file():
+                        target.unlink()
+                else:
+                    target.write_text(original, encoding="utf-8", newline="")
+            except OSError as exc:
+                errors.append(exc)
+        if errors:
+            raise PatchError(
+                f"rollback failed to restore {len(errors)} file(s) after a "
+                f"partial apply_all() failure: {errors!r}"
+            )
 
     try:
         results = [apply_patch(p, root) for p in patches]
