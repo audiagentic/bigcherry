@@ -85,6 +85,7 @@ from ..build.builds import (
 )
 from ..core.context import ProjectContext
 from ..core.pipeline import ArtifactRef
+from ..source import identity as source_identity
 
 
 #: Need names the generate/build workers know how to interpret. Fail
@@ -92,6 +93,97 @@ from ..core.pipeline import ArtifactRef
 #: an unknown need kind yet (only inventory_hash/winners_hash), so a need
 #: name outside this set has nowhere safe to record its identity.
 SUPPORTED_BUILD_NEEDS = frozenset({"inventory", "promoted-winners"})
+
+
+def _source_metadata_path(source_root: Path) -> Path:
+    return source_root.parent / f"{source_root.name}.metadata.json"
+
+
+def _source_attestation(
+    source_root: Path,
+    *,
+    upstream_revision: str | None = None,
+    source_slice_id: str | None = None,
+    expected: source_identity.SourceAttestation | None = None,
+) -> source_identity.SourceAttestation | None:
+    """Resolve the materialisation attestation without trusting its fields.
+
+    Production materialisations carry the record beside the source worktree.
+    The explicit argument is useful for direct callers/tests.  A source with
+    no record is supported only when it is a live git tree; the current facts
+    are captured before the worker starts.  Existing fake-worker fixtures
+    intentionally use a nonexistent source path and retain their old seam.
+    """
+    if expected is not None:
+        return expected
+
+    metadata_path = _source_metadata_path(source_root)
+    if metadata_path.is_file():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            allowed = frozenset(metadata.get("allowed_untracked", ()))
+            result = source_identity.SourceAttestation(
+                upstream_revision=str(metadata["upstream_revision"]),
+                tree_oid=str(metadata["source_tree_oid"]),
+                object_format=str(metadata["git_object_format"]),
+                source_slice_id=str(metadata["source_slice_id"]),
+                allowed_untracked=allowed,
+            )
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+            raise campaign_build.CampaignBuildError(
+                f"invalid source attestation metadata at {metadata_path}: {exc}"
+            ) from exc
+        if upstream_revision is not None and result.upstream_revision != upstream_revision:
+            raise campaign_build.CampaignBuildError(
+                "source attestation upstream revision disagrees with the worker request"
+            )
+        if source_slice_id is not None and result.source_slice_id != source_slice_id:
+            raise campaign_build.CampaignBuildError(
+                "source attestation source_slice_id disagrees with the worker request"
+            )
+        return result
+
+    # A missing source is retained as a compatibility seam for unit fixtures
+    # whose fake compiler never reads cwd.  Real CMake still fails if such a
+    # path reaches execution; no actual source tree can bypass this check.
+    if not source_root.is_dir():
+        return None
+
+    actual_revision = source_identity.git_revision(source_root)
+    if upstream_revision is not None and actual_revision != upstream_revision:
+        raise campaign_build.CampaignBuildError(
+            "source HEAD does not match the worker's upstream revision"
+        )
+    object_format = source_identity.git_object_format(source_root)
+    allowed = frozenset()
+    tree_oid = source_identity.git_tree_oid(source_root, allowed_untracked=set(allowed))
+    derived_slice_id = source_identity.source_slice_id(
+        upstream_revision=actual_revision,
+        tree_oid=tree_oid,
+        object_format=object_format,
+    )
+    if source_slice_id is not None and derived_slice_id != source_slice_id:
+        raise campaign_build.CampaignBuildError(
+            "live source facts do not derive the requested source_slice_id"
+        )
+    return source_identity.SourceAttestation(
+        upstream_revision=actual_revision,
+        tree_oid=tree_oid,
+        object_format=object_format,
+        source_slice_id=derived_slice_id,
+        allowed_untracked=allowed,
+    )
+
+
+def _verify_source(source_root: Path, expected: source_identity.SourceAttestation | None) -> None:
+    if expected is None:
+        return
+    try:
+        source_identity.verify_source_attestation(source_root, expected)
+    except source_identity.SourceIdentityError as exc:
+        raise campaign_build.CampaignBuildError(
+            f"source attestation failed for {source_root}: {exc}"
+        ) from exc
 
 
 def make_generate_worker(
@@ -102,6 +194,7 @@ def make_generate_worker(
     variant_set: str,
     architectures: list[str],
     upstream_revision: str,
+    source_attestation: source_identity.SourceAttestation | None = None,
     required_needs: frozenset[str] = frozenset({"inventory"}),
 ):
     """Returns the callable ``_run_generate`` expects: takes a by-kind
@@ -114,6 +207,12 @@ def make_generate_worker(
     runs) or knows there isn't one (needs=[] builds) -- generate
     "discovering" it was backwards.
     """
+
+    expected_source = _source_attestation(
+        source_root,
+        upstream_revision=upstream_revision,
+        expected=source_attestation,
+    )
 
     def generate(inputs: Any) -> dict[str, Any]:
         actual = frozenset(inputs)
@@ -147,6 +246,9 @@ def make_generate_worker(
             else None
         )
 
+        # The source worktree is an input just like the explicit artifacts;
+        # prove it immediately before the first operation that reads it.
+        _verify_source(source_root, expected_source)
         manifest = autotune_catalog.build_manifest(
             source_root,
             variant_set=variant_set,
@@ -192,6 +294,7 @@ def make_build_worker(
     project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
     backend: str = "hip",
+    source_attestation: source_identity.SourceAttestation | None = None,
 ):
     """Returns the callable ``_run_build_scoped`` expects for the build
     stage: takes generate's output ArtifactRef tuple (or none at all, for
@@ -212,8 +315,16 @@ def make_build_worker(
     -- this parameter only controls bundle membership, not what gets built.
     """
     lane_inputs = lane_inputs or {}
+    expected_source = _source_attestation(
+        source_root,
+        source_slice_id=source_slice_id,
+        expected=source_attestation,
+    )
 
     def run_build(inputs: tuple[ArtifactRef, ...]) -> tuple[ArtifactRef, ...]:
+        # Covers both cache reuse and fresh publication before any build-tree
+        # output keyed by source_slice_id is trusted.
+        _verify_source(source_root, expected_source)
         # Computed unconditionally (a cheap Path join): the post-compile
         # re-verify below needs it typed as a plain Path rather than
         # Path | None, and for a non-generated build it is never read.
@@ -308,6 +419,10 @@ def make_build_worker(
         metadata: dict[str, Any] | None = None
         reused = False
         if metadata_path.is_file():
+            # Re-check directly at the cache boundary as well: a source can
+            # change after the initial worker entry check while metadata is
+            # being inspected.
+            _verify_source(source_root, expected_source)
             # A prior build claims to have already produced this exact
             # (source_slice_id, build_plan_id, binary) triple -- content-
             # addressed by construction (build_directory() is keyed on
@@ -408,6 +523,10 @@ def make_build_worker(
                 check=True,
             )
 
+            # A source mutation during configure/compile invalidates the
+            # provenance claim even if the compiler produced an executable.
+            _verify_source(source_root, expected_source)
+
             binary = _resolve_binary(binary)
             if not binary.is_file():
                 raise campaign_build.CampaignBuildError(
@@ -460,6 +579,10 @@ def make_build_worker(
                 "neither a cache hit passed reuse validation nor a fresh build "
                 "completed; refusing to publish unattributed artifacts"
             )
+
+        # Final boundary for both fresh and reused outputs, immediately before
+        # provenance construction and publication.
+        _verify_source(source_root, expected_source)
 
         # RE25.2: typed provenance with the REAL build identity (the
         # effective_build_id validate_reuse() itself trusts) and the full
