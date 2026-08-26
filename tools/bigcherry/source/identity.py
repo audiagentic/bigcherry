@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import fcntl  # POSIX only
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt  # Windows only
+except ImportError:
+    msvcrt = None  # type: ignore[assignment]
 
 
 class SourceIdentityError(ValueError):
@@ -243,3 +255,83 @@ def atomic_write_json(
             pass
         finally:
             os.close(parent_fd)
+
+
+class PlanLockTimeout(RuntimeError):
+    """A materialization-plan lock could not be acquired within the deadline."""
+
+
+def _try_lock(fd: int) -> bool:
+    """One non-blocking attempt to take an exclusive OS advisory lock on
+    ``fd``. True on success. The lock is tied to the open file descriptor:
+    the OS releases it automatically if this process dies (crash, kill -9,
+    power loss) without an explicit unlock -- this is what gives PA12's
+    locking its "auto-release on process exit" property for free, rather
+    than needing a separate liveness/heartbeat mechanism."""
+    if fcntl is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+    if msvcrt is not None:
+        try:
+            # msvcrt has no whole-file lock; lock one byte at a fixed offset
+            # as the mutex region -- every locker of the same path contends
+            # on the same byte.
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    raise RuntimeError("no supported file-locking primitive on this platform")
+
+
+def _unlock(fd: int) -> None:
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    elif msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        with contextlib.suppress(OSError):
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
+@contextlib.contextmanager
+def plan_lock(work_root: Path, plan_id: str, *, timeout_seconds: float = 300.0, poll_interval: float = 0.2):
+    """Exclusive critical section for one materialization plan (PA12 L6.2).
+
+    Two processes computing the same materialization plan concurrently must
+    not both create/mutate the same worktree/cache record -- this serializes
+    the whole inspect-cache -> materialize -> attest -> publish-metadata
+    sequence per ``plan_id``. The lock file lives under
+    ``<work_root>/locks/source-<plan_id>.lock``, matching the review's
+    suggested layout; callers supply ``work_root`` explicitly rather than
+    this function guessing it via a fixed ``Path.parents[N]`` offset.
+
+    Process-safe (real OS advisory lock, not a lockfile-existence convention
+    -- immune to a stale lock file surviving a crash) and auto-released on
+    process exit (the OS drops the lock when the fd closes, including an
+    abnormal process exit). Raises ``PlanLockTimeout`` rather than blocking
+    forever if the lock cannot be acquired within ``timeout_seconds``.
+    """
+    lock_dir = Path(work_root) / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"source-{plan_id}.lock"
+
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        deadline = time.monotonic() + timeout_seconds
+        while not _try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise PlanLockTimeout(
+                    f"could not acquire materialization-plan lock for "
+                    f"{plan_id!r} at {lock_path} within {timeout_seconds}s "
+                    f"-- another process is likely materializing this same plan"
+                )
+            time.sleep(poll_interval)
+        try:
+            yield lock_path
+        finally:
+            _unlock(fd)
+    finally:
+        os.close(fd)

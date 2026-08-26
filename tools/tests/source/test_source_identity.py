@@ -146,5 +146,74 @@ class AtomicWriteJsonTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"a": 1})
 
 
+class PlanLockTests(unittest.TestCase):
+    """PA12 (source/patch identity hardening L6.2): two concurrent
+    materializations of the same plan must serialize, not race."""
+
+    def test_two_threads_serialize_on_the_same_plan_id(self):
+        import threading
+        import time
+        from bigcherry.source.identity import plan_lock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            events: list[tuple[str, str]] = []
+            lock_guard = threading.Lock()
+
+            def worker(name: str) -> None:
+                with plan_lock(root, "shared-plan", timeout_seconds=10):
+                    with lock_guard:
+                        events.append((name, "enter"))
+                    time.sleep(0.15)
+                    with lock_guard:
+                        events.append((name, "exit"))
+
+            t1 = threading.Thread(target=worker, args=("a",))
+            t2 = threading.Thread(target=worker, args=("b",))
+            t1.start()
+            time.sleep(0.03)
+            t2.start()
+            t1.join(timeout=10)
+            t2.join(timeout=10)
+
+            # Whichever thread entered first must also exit before the
+            # other enters -- no interleaving of the two critical sections.
+            first = events[0][0]
+            self.assertEqual(events[1], (first, "exit"))
+
+    def test_different_plan_ids_do_not_contend(self):
+        from bigcherry.source.identity import plan_lock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with plan_lock(root, "plan-a", timeout_seconds=5):
+                with plan_lock(root, "plan-b", timeout_seconds=5):
+                    pass  # must not deadlock or time out
+
+    def test_timeout_raises_when_lock_is_held(self):
+        import threading
+        import time
+        from bigcherry.source.identity import PlanLockTimeout, plan_lock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            holder_ready = threading.Event()
+            release = threading.Event()
+
+            def holder() -> None:
+                with plan_lock(root, "contended", timeout_seconds=5):
+                    holder_ready.set()
+                    release.wait(timeout=5)
+
+            t = threading.Thread(target=holder)
+            t.start()
+            self.assertTrue(holder_ready.wait(timeout=5))
+            with self.assertRaises(PlanLockTimeout):
+                with plan_lock(root, "contended", timeout_seconds=0.3, poll_interval=0.05):
+                    pass
+            release.set()
+            t.join(timeout=5)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -675,6 +675,8 @@ def _materialize_v2(
     state-independent v2 manifest. Reuse is only permitted when manifest AND
     actual on-disk tree hash both match this exact identity.
     """
+    from bigcherry.source.identity import plan_lock
+
     identity = _make_source_identity_v2(
         resolved_revision=resolved_revision,
         composition=composition,
@@ -683,37 +685,42 @@ def _materialize_v2(
     )
     source_dir = worktree_root / identity["source_key"]
 
-    if source_dir.exists() and _verify_reuse(source_dir, identity):
+    # PA12 (L6.2): serialize the whole inspect-cache -> add-worktree ->
+    # apply-composition -> write-manifest sequence per source_key, so two
+    # processes materializing the same identity concurrently cannot both
+    # try to `git worktree add` into the same destination.
+    with plan_lock(worktree_root, identity["source_key"]):
+        if source_dir.exists() and _verify_reuse(source_dir, identity):
+            return source_dir
+
+        _add_worktree(base_repo, source_dir, resolved_revision)
+        _apply_composition(
+            source_dir,
+            composition,
+            overlay_root=overlay_root,
+            root=PATCHES_ROOT,
+        )
+
+        if variant_transform is not None:
+            variant_transform.apply(source_dir)
+
+        source_tree_oid = git_worktree_tree(source_dir)
+        manifest = {
+            **identity,
+            "materialization_plan_id": identity["source_key"],
+            "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+            "requested_revision": requested_revision,
+            "head": git_head(source_dir),
+            "source_tree_oid": source_tree_oid,
+            "source_slice_id": _source_slice_id(
+                source_dir=source_dir,
+                upstream_revision=resolved_revision,
+                tree_oid=source_tree_oid,
+            ),
+            "patched_tree": source_tree_oid,
+        }
+        _write_manifest(source_dir, manifest)
         return source_dir
-
-    _add_worktree(base_repo, source_dir, resolved_revision)
-    _apply_composition(
-        source_dir,
-        composition,
-        overlay_root=overlay_root,
-        root=PATCHES_ROOT,
-    )
-
-    if variant_transform is not None:
-        variant_transform.apply(source_dir)
-
-    source_tree_oid = git_worktree_tree(source_dir)
-    manifest = {
-        **identity,
-        "materialization_plan_id": identity["source_key"],
-        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-        "requested_revision": requested_revision,
-        "head": git_head(source_dir),
-        "source_tree_oid": source_tree_oid,
-        "source_slice_id": _source_slice_id(
-            source_dir=source_dir,
-            upstream_revision=resolved_revision,
-            tree_oid=source_tree_oid,
-        ),
-        "patched_tree": source_tree_oid,
-    }
-    _write_manifest(source_dir, manifest)
-    return source_dir
 
 
 def verify_composition_idempotent(
