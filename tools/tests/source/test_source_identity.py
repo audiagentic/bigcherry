@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.source.identity import SourceIdentityError, git_tree_oid, source_slice_id  # noqa: E402
+from bigcherry.source.identity import (  # noqa: E402
+    SourceIdentityError, atomic_write_json, git_tree_oid, source_slice_id,
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -103,6 +108,42 @@ class SourceIdentityTests(unittest.TestCase):
         changed = source_slice_id(upstream_revision="a" * 40, tree_oid="c" * 40)
         self.assertEqual(first, same)
         self.assertNotEqual(first, changed)
+
+
+class AtomicWriteJsonTests(unittest.TestCase):
+    """PA12 (source/patch identity hardening L6.1): shared atomic JSON
+    writer -- temp file + fsync + os.replace(), so a crash mid-write cannot
+    leave truncated metadata beside a valid source worktree."""
+
+    def test_write_then_read_round_trips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            atomic_write_json(path, {"a": 1, "b": [1, 2, 3]})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"a": 1, "b": [1, 2, 3]})
+
+    def test_no_temp_file_left_behind_on_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            atomic_write_json(path, {"a": 1})
+            leftovers = [p for p in Path(directory).iterdir() if p != path]
+            self.assertEqual(leftovers, [])
+
+    def test_previous_valid_content_survives_a_write_interruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            atomic_write_json(path, {"version": 1})
+            with mock.patch("os.replace", side_effect=OSError("simulated crash")):
+                with self.assertRaises(OSError):
+                    atomic_write_json(path, {"version": 2})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"version": 1})
+            leftovers = [p for p in Path(directory).iterdir() if p != path]
+            self.assertEqual(leftovers, [], "the failed temp file must be cleaned up, not left behind")
+
+    def test_fsync_parent_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            atomic_write_json(path, {"a": 1}, fsync_parent=False)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"a": 1})
 
 
 if __name__ == "__main__":
