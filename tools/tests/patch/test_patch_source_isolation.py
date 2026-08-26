@@ -517,22 +517,79 @@ patch-sets = ["framework"]
         a = psi.materialize_source_variant(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=composition,
-            variant_name="v1", variant_digest="digest-a",
+            transform=psi.SourceTransform(
+                name="v1", schema_version=1,
+                operations=(("replace", "a.txt", "one", "one"),),
+            ),
         )
         b = psi.materialize_source_variant(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=composition,
-            variant_name="v1", variant_digest="digest-b",
+            transform=psi.SourceTransform(
+                name="v1", schema_version=1,
+                operations=(("replace", "a.txt", "two", "two"),),
+            ),
         )
         self.assertNotEqual(a, b)
         again = psi.materialize_source_variant(
             base_repo=self.upstream, worktree_root=self.worktrees,
             resolved_revision=self.base_rev, composition=composition,
-            variant_name="v1", variant_digest="digest-a",
+            transform=psi.SourceTransform(
+                name="v1", schema_version=1,
+                operations=(("replace", "a.txt", "one", "one"),),
+            ),
         )
         self.assertEqual(again, a)
         manifest = json.loads(psi._manifest_path(a).read_text(encoding="utf-8"))
         self.assertEqual(manifest["schema"], "bigcherry-patch-source-variant-v2")
+
+    def test_source_transform_digest_is_stable_for_same_content(self) -> None:
+        first = psi.SourceTransform(
+            name="control", schema_version=1,
+            operations=(("replace", "a.txt", "one", "ONE"),),
+        )
+        second = psi.SourceTransform(
+            name="control", schema_version=1,
+            operations=(("replace", "a.txt", "one", "ONE"),),
+        )
+        self.assertEqual(first.digest, second.digest)
+
+    def test_callable_implementation_change_changes_digest(self) -> None:
+        def apply_v1(source_dir: Path) -> None:
+            (source_dir / "a.txt").write_text("variant-one\n", encoding="utf-8")
+
+        def apply_v2(source_dir: Path) -> None:
+            (source_dir / "a.txt").write_text("variant-two\n", encoding="utf-8")
+
+        first = psi.SourceTransform.from_callable("control", apply_v1)
+        second = psi.SourceTransform.from_callable("control", apply_v2)
+        self.assertNotEqual(first.digest, second.digest)
+
+    def test_legacy_digest_cannot_force_stale_callable_reuse(self) -> None:
+        self._flat()
+        composition = self._composition("0001_flat")
+
+        def apply_v1(source_dir: Path) -> None:
+            (source_dir / "a.txt").write_text("control-v1\n", encoding="utf-8")
+
+        def apply_v2(source_dir: Path) -> None:
+            (source_dir / "a.txt").write_text("control-v2\n", encoding="utf-8")
+
+        first = psi.materialize_source_variant(
+            base_repo=self.upstream, worktree_root=self.worktrees,
+            resolved_revision=self.base_rev, composition=composition,
+            variant_name="control", variant_digest="unchanged-label",
+            apply_variant=apply_v1,
+        )
+        second = psi.materialize_source_variant(
+            base_repo=self.upstream, worktree_root=self.worktrees,
+            resolved_revision=self.base_rev, composition=composition,
+            variant_name="control", variant_digest="unchanged-label",
+            apply_variant=apply_v2,
+        )
+        self.assertNotEqual(first, second)
+        self.assertEqual((first / "a.txt").read_text(encoding="utf-8"), "control-v1\n")
+        self.assertEqual((second / "a.txt").read_text(encoding="utf-8"), "control-v2\n")
 
     # 12. Stock = empty composition + no overlay: distinct key, reusable,
     #     pristine content.

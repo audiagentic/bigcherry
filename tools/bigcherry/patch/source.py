@@ -30,6 +30,7 @@ detected and rejected rather than silently trusted.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -37,16 +38,23 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import CodeType
 from typing import Any
 
 from bigcherry.core import paths
-from bigcherry.patch.apply import PATCH_APPLICATION_SEMANTICS_VERSION
+from bigcherry.patch.apply import (
+    PATCH_APPLICATION_SEMANTICS_VERSION,
+    resolve_contained_target,
+)
 
 REPO_ROOT = paths.REPO_ROOT
 PATCHES_ROOT = REPO_ROOT / "patches"
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
+SOURCE_TRANSFORM_SCHEMA_VERSION = 1
+SOURCE_TRANSFORM_SEMANTICS_VERSION = 1
 
 
 class PatchSourceIsolationError(RuntimeError):
@@ -61,6 +69,222 @@ def _stable_digest(payload: dict[str, Any]) -> str:
         ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _code_definition(code: CodeType) -> dict[str, Any]:
+    """Return a location-independent, JSON-serializable code definition."""
+
+    def constant(value: Any) -> Any:
+        if isinstance(value, CodeType):
+            return {"code": _code_definition(value)}
+        if isinstance(value, bytes):
+            return {"bytes": value.hex()}
+        if value is Ellipsis:
+            return {"ellipsis": True}
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        return {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
+
+    return {
+        "argcount": code.co_argcount,
+        "posonlyargcount": code.co_posonlyargcount,
+        "kwonlyargcount": code.co_kwonlyargcount,
+        "flags": code.co_flags,
+        "code": code.co_code.hex(),
+        "constants": [constant(value) for value in code.co_consts],
+        "names": list(code.co_names),
+        "varnames": list(code.co_varnames),
+        "freevars": list(code.co_freevars),
+        "cellvars": list(code.co_cellvars),
+    }
+
+
+def _fingerprint_value(value: Any, seen: set[int] | None = None) -> Any:
+    """Serialize callable dependencies that can affect transform behavior."""
+
+    seen = set() if seen is None else seen
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return {"bytes": value.hex()}
+    if isinstance(value, Path):
+        return {"path": value.as_posix()}
+    if isinstance(value, CodeType):
+        return {"code": _code_definition(value)}
+    identity = id(value)
+    if identity in seen:
+        return {"cycle": f"{type(value).__module__}.{type(value).__qualname__}"}
+    seen.add(identity)
+    try:
+        if isinstance(value, tuple):
+            return {"tuple": [_fingerprint_value(item, seen) for item in value]}
+        if isinstance(value, list):
+            return {"list": [_fingerprint_value(item, seen) for item in value]}
+        if isinstance(value, dict):
+            entries = [
+                (_fingerprint_value(key, seen), _fingerprint_value(item, seen))
+                for key, item in value.items()
+            ]
+            return {"dict": sorted(entries, key=lambda entry: repr(entry[0]))}
+        if isinstance(value, (set, frozenset)):
+            return {
+                type(value).__name__: sorted(
+                    (_fingerprint_value(item, seen) for item in value), key=repr
+                )
+            }
+        if inspect.ismodule(value):
+            return {"module": value.__name__}
+        if inspect.isfunction(value) or inspect.ismethod(value):
+            function = value.__func__ if inspect.ismethod(value) else value
+            return {
+                "function": f"{function.__module__}.{function.__qualname__}",
+                "code": _code_definition(function.__code__),
+            }
+        if isinstance(value, type):
+            return {"type": f"{value.__module__}.{value.__qualname__}"}
+        if hasattr(value, "__dict__"):
+            return {
+                "object": f"{type(value).__module__}.{type(value).__qualname__}",
+                "state": _fingerprint_value(vars(value), seen),
+            }
+        return {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
+    finally:
+        seen.discard(identity)
+
+
+def _callable_implementation_digest(apply_variant: Callable[[Path], None]) -> str:
+    """Digest callable code, its referenced globals, and transform semantics.
+
+    The legacy API accepted a separate digest string. This fingerprint is
+    derived from the callable itself instead, including module bytes so edits
+    to referenced module-level transform definitions cannot retain a stale
+    source identity.
+    """
+
+    function = apply_variant
+    if not inspect.isfunction(function) and not inspect.ismethod(function):
+        function = getattr(function, "__call__", None)
+    code = getattr(function, "__code__", None)
+    globals_dict = getattr(function, "__globals__", {})
+    if code is None or not callable(function):
+        raise PatchSourceIsolationError(
+            "variant transform must be a Python callable with inspectable code"
+        )
+    module_name = getattr(function, "__module__", None)
+    module_file_digest = None
+    module = inspect.getmodule(function)
+    if module is not None:
+        module_file = getattr(module, "__file__", None)
+        if module_file:
+            try:
+                module_file_digest = hashlib.sha256(Path(module_file).read_bytes()).hexdigest()
+            except OSError as exc:
+                raise PatchSourceIsolationError(
+                    f"cannot read variant implementation module {module_file!r}"
+                ) from exc
+    referenced_globals = {
+        name: _fingerprint_value(globals_dict[name])
+        for name in sorted(code.co_names)
+        if name in globals_dict
+    }
+    closure = getattr(function, "__closure__", None)
+    closure_values = (
+        [_fingerprint_value(cell.cell_contents) for cell in closure]
+        if closure is not None
+        else []
+    )
+    payload = {
+        "semantics_version": SOURCE_TRANSFORM_SEMANTICS_VERSION,
+        "module": module_name,
+        "qualname": getattr(function, "__qualname__", None),
+        "module_bytes": module_file_digest,
+        "code": _code_definition(code),
+        "globals": referenced_globals,
+        "closure": closure_values,
+    }
+    return _stable_digest(payload)
+
+
+@dataclass(frozen=True)
+class SourceTransform:
+    """Immutable, content-addressed definition of a source variant.
+
+    Structured operations use ``("replace", relative_path, old, new)`` and
+    are applied with exactly-one-match semantics. ``from_callable`` is the
+    compatibility bridge for existing registered/importable Python transforms;
+    its operation contains a derived implementation fingerprint, never a
+    caller-provided digest.
+    """
+
+    name: str
+    schema_version: int
+    operations: tuple[Any, ...]
+    _apply_variant: Callable[[Path], None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("source transform name must not be empty")
+        if not isinstance(self.schema_version, int) or isinstance(self.schema_version, bool):
+            raise TypeError("source transform schema_version must be an integer")
+        if not isinstance(self.operations, tuple):
+            raise TypeError("source transform operations must be a tuple")
+        try:
+            _stable_digest(self.definition)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("source transform operations must be JSON-serializable") from exc
+
+    @property
+    def definition(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "schema_version": self.schema_version,
+            "semantics_version": SOURCE_TRANSFORM_SEMANTICS_VERSION,
+            "operations": self.operations,
+        }
+
+    @property
+    def digest(self) -> str:
+        return _stable_digest(self.definition)
+
+    @classmethod
+    def from_callable(
+        cls, name: str, apply_variant: Callable[[Path], None], *, schema_version: int = 1
+    ) -> "SourceTransform":
+        implementation_digest = _callable_implementation_digest(apply_variant)
+        return cls(
+            name=name,
+            schema_version=schema_version,
+            operations=(("callable", implementation_digest),),
+            _apply_variant=apply_variant,
+        )
+
+    def apply(self, source_dir: Path) -> None:
+        if self._apply_variant is not None:
+            self._apply_variant(source_dir)
+            return
+        for operation in self.operations:
+            if not isinstance(operation, (tuple, list)) or len(operation) != 4:
+                raise PatchSourceIsolationError(
+                    f"unsupported source transform operation: {operation!r}"
+                )
+            kind, relative, old, new = operation
+            if kind != "replace" or not all(isinstance(value, str) for value in (relative, old, new)):
+                raise PatchSourceIsolationError(
+                    f"unsupported source transform operation: {operation!r}"
+                )
+            try:
+                target = resolve_contained_target(source_dir, relative)
+            except Exception as exc:
+                raise PatchSourceIsolationError(str(exc)) from exc
+            text = target.read_text(encoding="utf-8")
+            matches = text.count(old)
+            if matches != 1:
+                raise PatchSourceIsolationError(
+                    f"source transform expected exactly one {old!r} match in {relative!r}, found {matches}"
+                )
+            target.write_text(text.replace(old, new, 1), encoding="utf-8", newline="")
 
 
 def _patch_registry():
@@ -129,8 +353,7 @@ def _make_source_identity_v2(
     resolved_revision: str,
     composition: Sequence[tuple[str, str]],
     overlay_root: Path | None,
-    variant_name: str | None = None,
-    variant_digest: str | None = None,
+    variant_transform: SourceTransform | None = None,
 ) -> dict[str, Any]:
     """``bigcherry-patch-source-v2`` (variants: ``-variant-v2``). The payload is
     STATE-INDEPENDENT (RV80/B2): no lifecycle-state scan -- only (a) the
@@ -140,7 +363,7 @@ def _make_source_identity_v2(
     the hashed payload."""
     schema = (
         "bigcherry-patch-source-variant-v2"
-        if variant_name is not None
+        if variant_transform is not None
         else "bigcherry-patch-source-v2"
     )
     payload = {
@@ -153,9 +376,14 @@ def _make_source_identity_v2(
         # guard handling, ...) that also determines its output bytes.
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
     }
-    if variant_name is not None:
-        payload["variant_name"] = variant_name
-        payload["variant_digest"] = variant_digest
+    if variant_transform is not None:
+        payload["variant_name"] = variant_transform.name
+        # Manifest JSON normalizes tuples to lists; normalize the identity
+        # payload the same way so reuse compares the exact persisted shape.
+        payload["variant_transform"] = json.loads(
+            json.dumps(variant_transform.definition, ensure_ascii=False)
+        )
+        payload["variant_digest"] = variant_transform.digest
     return {**payload, "source_key": _stable_digest(payload)}
 
 
@@ -453,9 +681,7 @@ def _materialize_v2(
     composition: Sequence[tuple[str, str]],
     overlay_root: Path | None,
     requested_revision: str | None = None,
-    variant_name: str | None = None,
-    variant_digest: str | None = None,
-    apply_variant: Callable[[Path], None] | None = None,
+    variant_transform: SourceTransform | None = None,
 ) -> Path:
     """The single v2 worktree-construction path (RV80/B2).
 
@@ -469,8 +695,7 @@ def _materialize_v2(
         resolved_revision=resolved_revision,
         composition=composition,
         overlay_root=overlay_root,
-        variant_name=variant_name,
-        variant_digest=variant_digest,
+        variant_transform=variant_transform,
     )
     source_dir = worktree_root / identity["source_key"]
 
@@ -485,8 +710,8 @@ def _materialize_v2(
         root=PATCHES_ROOT,
     )
 
-    if apply_variant is not None:
-        apply_variant(source_dir)
+    if variant_transform is not None:
+        variant_transform.apply(source_dir)
 
     source_tree_oid = git_worktree_tree(source_dir)
     manifest = {
@@ -569,10 +794,13 @@ def materialize_source_variant(
     worktree_root: Path,
     resolved_revision: str,
     composition: Sequence[tuple[str, str]],
-    variant_name: str,
-    variant_digest: str,
+    variant_name: str | None = None,
     overlay_root: Path | None = None,
     requested_revision: str | None = None,
+    transform: SourceTransform | None = None,
+    # Backward-compatible input only. This value is deliberately not used as
+    # identity evidence; the transform digest is always derived below.
+    variant_digest: str | None = None,
     apply_variant: Callable[[Path], None] | None = None,
 ) -> Path:
     """Materialize an isolated worktree for an EXPLICIT composition plus a
@@ -580,16 +808,40 @@ def materialize_source_variant(
 
     The two worktrees differ ONLY by the content-addressed transform applied
     on top of the identical composition (e.g. the RD08 package-local correctness producer's
-    VDR1-control / VDR2-subject pair). ``variant_digest`` MUST be a stable
-    digest over the actual transform content (never a bare name) so two
-    different transforms can never collide on the same source_key.
+    VDR1-control / VDR2-subject pair). ``transform.digest`` is derived from
+    the exact immutable transform definition. The legacy ``variant_digest``
+    argument is ignored and retained solely so older callers fail safe while
+    migrating.
 
     RV80/B2: the identity is ``bigcherry-patch-source-variant-v2`` -- the
     same state-independent payload as :func:`materialize_composition` plus
-    ``variant_name`` + ``variant_digest``. The v1 state-scan identity is
+    ``variant_name`` + the derived transform digest. The v1 state-scan identity is
     retired; the composition comes explicitly from the caller (e.g. via
     :func:`resolve_source_composition`), never from a lifecycle-state scan.
     """
+    if transform is not None and apply_variant is not None:
+        raise TypeError("pass either transform or apply_variant, not both")
+    if transform is None:
+        if apply_variant is None:
+            if variant_name is None:
+                raise TypeError("variant_name is required when transform is omitted")
+            transform = SourceTransform(
+                name=variant_name,
+                schema_version=SOURCE_TRANSFORM_SCHEMA_VERSION,
+                operations=(),
+            )
+        else:
+            if variant_name is None:
+                variant_name = getattr(apply_variant, "__qualname__", "variant")
+            transform = SourceTransform.from_callable(variant_name, apply_variant)
+    elif variant_name is not None and variant_name != transform.name:
+        raise ValueError(
+            f"variant_name {variant_name!r} disagrees with transform name {transform.name!r}"
+        )
+
+    # A caller may retain an old label forever; only the derived transform can
+    # authorize cache reuse.
+    del variant_digest
     return _materialize_v2(
         base_repo=base_repo,
         worktree_root=worktree_root,
@@ -597,9 +849,7 @@ def materialize_source_variant(
         composition=tuple(composition),
         overlay_root=overlay_root,
         requested_revision=requested_revision,
-        variant_name=variant_name,
-        variant_digest=variant_digest,
-        apply_variant=apply_variant,
+        variant_transform=transform,
     )
 
 
