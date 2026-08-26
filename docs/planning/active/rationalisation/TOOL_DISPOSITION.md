@@ -120,6 +120,8 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `tmp/tune-off.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/tune-on.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/verify_slice_a.py` | **DELETE** | Plan-specific or scratch probe; deletion requires caller/reference proof in TR05. |
+| `tools/lab/hi24-slice-a/verify_slice_a.py` | **TRANSITIONAL** | RA13 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
+| `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/bigcherry/__init__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/__main__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/ab_benchmark.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |

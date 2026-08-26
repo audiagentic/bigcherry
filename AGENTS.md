@@ -5,6 +5,16 @@
 Never use `git stash`, `git reset`, `git rebase` — this is a shared, multi-agent working tree and destructuve git commands can silently collide with another session's live edits. If work needs to be set
 aside, split it into its own deliberate check-in group or leave it uncommitted.
 
+## Tooling architecture and governance
+
+Before adding, moving, or retiring any `tools/bigcherry` module, script, lab
+experiment, or compatibility shim, read [`docs/reference/TOOLING.md`](docs/reference/TOOLING.md) —
+it is the normative source for domain ownership, the compatibility-shim
+policy, lab/non-package boundaries, hygiene checks, and evidence/acceptance
+rules produced by the tooling-rationalisation program (TR00–TR18,
+`docs/planning/*/rationalisation/`). Do not create a second campaign engine,
+patch loader, or evidence framework without an explicit architecture review.
+
 <!-- ag:managed:begin -->
 _Managed by AUDiaGentic — generated from component configs. Edit the owning component and re-run surface apply; edits here are overwritten._
 

@@ -81,6 +81,38 @@ class CheckTests(TestCase):
         ])
         self.assertIn("overlay.vendor_sync", report["checks"][1]["detail"])
 
+    def test_retained_wrapper_allowlists_are_exact_and_contract_sensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "tools" / "bigcherry"
+            product.mkdir(parents=True)
+            (product / "inventory.py").write_text(
+                "import importlib\n"
+                "importlib.import_module('bigcherry.tuning.inventory')\n",
+                encoding="utf-8",
+            )
+            (product / "patcher.py").write_text(
+                "import importlib\n"
+                "importlib.import_module('bigcherry.unrelated')\n",
+                encoding="utf-8",
+            )
+
+            findings = check.tooling_hygiene(root)
+
+            self.assertEqual(
+                [(item.code, item.path) for item in findings],
+                [("TR14.ROOT_FACADE", "tools/bigcherry/patcher.py")],
+            )
+
+    def test_source_root_uses_path_authority_instead_of_fixed_parent_depth(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "bigcherry"
+            / "patch"
+            / "source.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"\.parents\[\d+\]")
+
     def test_deterministic_order_and_success(self) -> None:
         specs = (
             check.CheckSpec("a", "quick", lambda root: None),

@@ -57,10 +57,27 @@ class HygieneDiagnostic:
         return asdict(self)
 
 
+# These are forwarding entry points retained by completed TR05 slices.  Keep
+# this name-based allowlist deliberately limited to the two documented roots;
+# any new tools/*.py file must be classified before it can pass hygiene.
 _TOP_LEVEL_PYTHON_ALLOWLIST = frozenset({
     "residency_gates.py",
     "verify_slice_a.py",
 })
+_ROOT_ENVIRONMENT_SCRIPT_ALLOWLIST = {
+    "tools/rocm-env.ps1": "RA06 keeps the source-compatible dot-source wrapper while tools/env owns the implementation",
+    "tools/rocm-env.sh": "RA06 keeps the source-compatible source wrapper while tools/env owns the implementation",
+}
+_ROOT_FACADE_ALLOWLIST = {
+    "tools/bigcherry/inventory.py": "RA38 retains the documented python -m bigcherry.inventory entry point",
+    "tools/bigcherry/patcher.py": "RA38 retains the public packaged-patch API for external patch modules",
+    "tools/bigcherry/replay_cache.py": "RA38 retains the documented python -m bigcherry.replay_cache entry point",
+}
+_ROOT_FACADE_TARGETS = {
+    "tools/bigcherry/inventory.py": "bigcherry.tuning.inventory",
+    "tools/bigcherry/patcher.py": "bigcherry.patch.apply",
+    "tools/bigcherry/replay_cache.py": "bigcherry.tuning.replay",
+}
 _PROTECTED_DOMAINS = frozenset({
     "release",
     "source",
@@ -172,6 +189,9 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     "move it to tools/bigcherry/<domain>/ or retain it only as an explicit compatibility wrapper",
                 ))
             if path.is_file() and path.suffix.lower() in {".bat", ".cmd", ".ps1", ".sh"}:
+                relative = _relative(root, path)
+                if relative in _ROOT_ENVIRONMENT_SCRIPT_ALLOWLIST:
+                    continue
                 findings.append(_diagnostic(
                     root, "TR14.ENVIRONMENT_SCRIPT", "warning", path,
                     "environment or shell tooling is at the tools root",
@@ -232,10 +252,21 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     ))
 
             target = _facade_target(path)
-            if target is not None and path.name not in {"__init__.py", "__main__.py"}:
+            allowlisted_facade = _ROOT_FACADE_ALLOWLIST.get(relative)
+            expected_target = _ROOT_FACADE_TARGETS.get(relative)
+            if (
+                target is not None
+                and path.name not in {"__init__.py", "__main__.py"}
+                and (allowlisted_facade is None or target != expected_target)
+            ):
+                contract_detail = (
+                    f"; expected retained compatibility contract: {allowlisted_facade}"
+                    if allowlisted_facade is not None
+                    else ""
+                )
                 findings.append(_diagnostic(
                     root, "TR14.ROOT_FACADE", "warning", path,
-                    f"root compatibility facade duplicates canonical module {target}",
+                    f"root compatibility facade duplicates canonical module {target}{contract_detail}",
                     "migrate supported consumers, document the owner and retire the facade only with compatibility evidence",
                 ))
 
