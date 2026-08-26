@@ -352,6 +352,24 @@ def materialize_source(
     plan = campaign_source.resolve_materialization_inputs(context, plan)
     identity = campaign_source.resolve_materialization_identity(context, plan)
     plan_id = campaign_source.materialization_plan_id(identity)
+    # PA12 (L6.2): two processes computing this same plan_id must not both
+    # create/reuse/mutate the same destination worktree -- serialize the
+    # whole inspect-cache -> materialize -> attest -> publish-metadata
+    # sequence below per plan_id, not just the final write.
+    with source_identity.plan_lock(context.work_root, plan_id):
+        return _materialize_source_locked(
+            context, plan, identity, plan_id, allow_dirty_bigcherry=allow_dirty_bigcherry,
+        )
+
+
+def _materialize_source_locked(
+    context: ProjectContext,
+    plan: SourcePlan,
+    identity: dict[str, Any],
+    plan_id: str,
+    *,
+    allow_dirty_bigcherry: bool,
+) -> dict[str, Any]:
     destination = context.work_root / "sources" / plan_id
     metadata_path = _source_metadata_path(destination)
 
