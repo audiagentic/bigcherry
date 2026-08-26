@@ -652,6 +652,7 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
 
 def _validate_correctness_gate(
     entries: dict[str, dict[str, Any]], dispatch_db: Path | None,
+    source_build_id: int | None = None,
 ) -> None:
     """Fail closed (HI67/RV49): every non-native winner ships only after it
     independently passes the real CPU-reference correctness gate for its
@@ -709,6 +710,7 @@ def _validate_correctness_gate(
                 dispatch_hex=digest_hex, signature_hex=signature_hex,
                 hardware_hex=hardware_hex, native_name=native,
                 candidate_name=winner,
+                source_build_id=source_build_id,
             )
             try:
                 correctness_gate.require_correctness_binding(conn, binding)
@@ -757,7 +759,16 @@ def build(
     )
     if not results:
         raise SystemExit(f"no winning results in {measurements}")
+    source_build_id = None
     if seed_file is None:
+        projected_provenance = producer_header.get("hi121_source_provenance") if producer_header else None
+        if isinstance(projected_provenance, dict) and "source_build_id" in projected_provenance:
+            source_build_id = projected_provenance["source_build_id"]
+            if isinstance(source_build_id, bool) or not isinstance(source_build_id, int) or source_build_id < 1:
+                raise SystemExit(
+                    "refusing to export: measurements hi121_source_provenance.source_build_id "
+                    "must be a positive integer"
+                )
         expected_revision = manifest.get("source_revision")
         if not isinstance(expected_revision, str) or not expected_revision:
             raise SystemExit(
@@ -865,7 +876,7 @@ def build(
     # Runs on every entry, including seed overrides applied just above --
     # unlike _validate_promotion_gate, which a seed override is explicitly
     # allowed to bypass (HI22), this gate is never bypassable (HI67).
-    _validate_correctness_gate(entries, dispatch_db)
+    _validate_correctness_gate(entries, dispatch_db, source_build_id)
 
     current_entries: list[dict[str, Any]] = []
     producer_revision = manifest.get("source_revision")
