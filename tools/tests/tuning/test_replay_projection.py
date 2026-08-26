@@ -279,7 +279,24 @@ class ProjectMeasurementsTests(unittest.TestCase):
         # S1 (plain MUL_MAT) needs only CORE; S2 (GLU) needs all 4 HI118
         # presence caps too -- a CORE-only source producer cannot certify S2.
         self._set_source_capabilities(CORE_ONLY_HEX)
+        source_manifest = json.loads(json.dumps(self.manifest))
+        source_manifest["producer_capabilities"] = CORE_ONLY_HEX
+        source_manifest["manifest_hash"] = catalog.manifest_hash(source_manifest)
+        source_manifest["build_descriptor"] = catalog.build_descriptor(source_manifest)
+        source_manifest_path = self.tmp_path / "core-only-source-manifest.json"
+        source_manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+        self.conn.execute(
+            "UPDATE build SET manifest_hash = ?, build_descriptor_hash = ? WHERE build_id = ?",
+            (
+                source_manifest["manifest_hash"],
+                source_manifest["build_descriptor"]["descriptor_hash"],
+                self.build_id,
+            ),
+        )
+        self.conn.commit()
         header = dict(self.header, producer_capabilities=CORE_ONLY_HEX)
+        header["manifest_hash"] = source_manifest["manifest_hash"]
+        header["build_descriptor_hash"] = source_manifest["build_descriptor"]["descriptor_hash"]
         self.measurements_path.write_text(
             json.dumps(header) + "\n" + json.dumps(self.s1_result) + "\n" + json.dumps(self.s2_result) + "\n",
             encoding="utf-8",
@@ -287,7 +304,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         summary = rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=source_manifest_path,
             target_manifest_path=self.manifest_path, vendor_root=self.vendor,
         )
         self.assertEqual(summary.retained, 1)
@@ -423,6 +440,51 @@ class ProjectMeasurementsTests(unittest.TestCase):
                 self.measurements_path, self.tmp_path / "out.jsonl",
                 dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
                 target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_source_manifest_hash_mismatch_with_db_is_rejected(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        forged_source = json.loads(json.dumps(self.manifest))
+        forged_source["candidates"][0]["config"] = {"forged": True}
+        forged_source["manifest_hash"] = catalog.manifest_hash(forged_source)
+        forged_source["build_descriptor"] = catalog.build_descriptor(forged_source)
+        forged_source_path = self.tmp_path / "forged-source-manifest.json"
+        forged_source_path.write_text(json.dumps(forged_source), encoding="utf-8")
+        with self.assertRaisesRegex(rp.ProjectionError, "DB manifest_hash"):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                source_manifest_path=forged_source_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_null_db_descriptor_is_not_projectable(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        self.conn.execute(
+            "UPDATE build SET build_descriptor_hash = NULL WHERE build_id = ?",
+            (self.build_id,),
+        )
+        self.conn.commit()
+        with self.assertRaisesRegex(rp.ProjectionError, "descriptor-less"):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_target_manifest_without_descriptor_is_not_projectable(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        target_manifest = json.loads(json.dumps(self.manifest))
+        del target_manifest["build_descriptor"]
+        target_manifest_path = self.tmp_path / "target-without-descriptor.json"
+        target_manifest_path.write_text(json.dumps(target_manifest), encoding="utf-8")
+        with self.assertRaisesRegex(rp.ProjectionError, "target manifest has no build_descriptor"):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                source_manifest_path=self.manifest_path,
+                target_manifest_path=target_manifest_path, vendor_root=self.vendor,
             )
 
     def test_forged_winner_claim_is_rejected_when_candidate_exists_in_both_manifests(self):

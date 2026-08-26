@@ -751,16 +751,38 @@ def _verify_and_persist_hip_capabilities(
             "load_measurements: header manifest_hash does not match the supplied "
             "manifest's own manifest_hash"
         )
-    manifest_descriptor_hash = (manifest.get("build_descriptor") or {}).get("descriptor_hash")
-    if header.get("build_descriptor_hash") != manifest_descriptor_hash:
+    embedded_descriptor = manifest.get("build_descriptor")
+    if not isinstance(embedded_descriptor, dict):
         raise RecordError(
-            "load_measurements: header build_descriptor_hash does not match the "
-            "supplied manifest's own build_descriptor.descriptor_hash"
+            "load_measurements: supplied manifest has no build_descriptor; refusing "
+            "to persist a capability claim without a complete descriptor"
         )
     if catalog.manifest_hash(manifest) != manifest.get("manifest_hash"):
         raise RecordError(
             "load_measurements: recomputed manifest_hash does not match the manifest's "
             "own manifest_hash field -- the manifest file may be corrupted or hand-edited"
+        )
+    try:
+        recomputed_descriptor = catalog.build_descriptor(manifest)
+    except (KeyError, TypeError, ValueError, catalog.CatalogError) as exc:
+        raise RecordError(
+            "load_measurements: supplied manifest build_descriptor cannot be "
+            "recomputed from the manifest's content"
+        ) from exc
+    if recomputed_descriptor != embedded_descriptor:
+        raise RecordError(
+            "load_measurements: supplied manifest's embedded build_descriptor does "
+            "not exactly match catalog.build_descriptor() recomputed from its content"
+        )
+    manifest_descriptor_hash = recomputed_descriptor.get("descriptor_hash")
+    if not isinstance(manifest_descriptor_hash, str) or not manifest_descriptor_hash:
+        raise RecordError(
+            "load_measurements: recomputed manifest build_descriptor has no valid hash"
+        )
+    if header.get("build_descriptor_hash") != manifest_descriptor_hash:
+        raise RecordError(
+            "load_measurements: header build_descriptor_hash does not match the "
+            "supplied manifest's independently recomputed build descriptor hash"
         )
     if header_caps_hex != manifest_caps_hex:
         raise RecordError(
