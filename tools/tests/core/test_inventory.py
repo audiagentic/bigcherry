@@ -1200,6 +1200,66 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_supplied_fake_verifier_accepts_matching_digest(self):
+        # Test double only: this is not the production C++ digest authority.
+        signature_hex = "d" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        seen = []
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    path, db.db_path, schema_path, manifest_path=None,
+                    signature_digest_verifier=lambda value: (seen.append(value) or signature_hex),
+                )
+            self.assertEqual(seen, [canonical])
+        finally:
+            os.unlink(path)
+
+    def test_supplied_fake_verifier_rejects_mismatching_digest(self):
+        # Test double only: a fake disagreement exercises the trust-boundary hook.
+        signature_hex = "e" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "does not match.*verifier"):
+                    inventory.load_measurements(
+                        path, db.db_path, schema_path, manifest_path=None,
+                        signature_digest_verifier=lambda _value: "f" * 32,
+                    )
+        finally:
+            os.unlink(path)
+
+    def test_omitting_verifier_preserves_first_sighting_behavior(self):
+        signature_hex = "f" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+                self.assertEqual(
+                    db.query(
+                        "SELECT COUNT(*) FROM signature WHERE signature_digest=?",
+                        (bytes.fromhex(signature_hex),),
+                    )[0][0],
+                    1,
+                )
+        finally:
+            os.unlink(path)
+
 
 class TestHipCapabilityPersistence(unittest.TestCase):
     """HI121 M2: load_measurements() verifies the compiled producer's own
