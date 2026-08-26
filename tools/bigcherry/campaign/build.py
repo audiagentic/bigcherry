@@ -464,9 +464,11 @@ def materialize_source(
     record["source_plan_id"] = campaign_source.source_plan_id(plan)
     record["materialization_plan_id"] = plan_id
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata_path.write_text(
-        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    # PA12: temp-file + fsync + os.replace(), shared with patch/source.py's
+    # HI82 manifest writer rather than this call site's own plain
+    # write_text() -- a crash mid-write must not leave truncated metadata
+    # beside an otherwise-valid source worktree.
+    source_identity.atomic_write_json(metadata_path, record)
     return record
 
 

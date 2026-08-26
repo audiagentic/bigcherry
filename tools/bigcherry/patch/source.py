@@ -32,11 +32,9 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -484,24 +482,10 @@ def _manifest_path(source_dir: Path) -> Path:
 
 
 def _write_manifest(source_dir: Path, manifest: dict[str, Any]) -> None:
-    path = _manifest_path(source_dir)
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-        text=True,
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(manifest, handle, indent=2, sort_keys=True, ensure_ascii=False)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    # PA12: shared with campaign/build.py's canonical-source metadata write
+    # rather than each maintaining its own temp-file+fsync+replace copy.
+    from bigcherry.source.identity import atomic_write_json
+    atomic_write_json(_manifest_path(source_dir), manifest)
 
 
 def _read_manifest(source_dir: Path) -> dict[str, Any] | None:
