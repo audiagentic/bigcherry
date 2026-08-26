@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -73,6 +75,16 @@ class ToolingBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn("bigcherry", runner)
         self.assertNotIn("tools.tests", runner)
+
+    def test_lab_template_runner_requires_copy(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(TOOLS_ROOT / "lab" / "_template" / "run.py")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Copy this template", result.stderr + result.stdout)
 
     def test_top_level_tools_are_explicitly_allowlisted_during_transition(self) -> None:
         actual = {path.name for path in TOOLS_ROOT.glob("*.py")}

@@ -10,9 +10,9 @@ plan-specific, start in `tools/lab/<plan-topic>/`.
 | --- | --- |
 | TR00 | Inventory and disposition map captured in [`TOOL_DISPOSITION.md`](../planning/active/rationalisation/TOOL_DISPOSITION.md). It is a baseline, not proof that every listed move or delete is complete. |
 | TR01–TR10 | The CLI split and canonical release, source, build, experiment, patch, campaign, tuning, core, and analysis domains are established. Root import paths still exist where compatibility or unresolved ownership requires them. |
-| TR11 | Test-domain reorganisation has started: release tests are under `tools/tests/release/`; the remaining test tree is not fully migrated. |
-| TR12 / RA37 | Analysis implementations are under `tools/bigcherry/analysis/`; RA37 remains in progress while shared-worktree/full-tier residuals are tracked. |
-| TR13 / RA38 | One verified root facade (`campaign_graph.py`) was retired. 58 root compatibility facades remain; RA38 remains in progress. |
+| TR11 / RA35–RA36 | All in-scope test modules are classified under domain packages (`build`, `patch`, `campaign`, `tuning`, `core`, `analysis`, `integration`, `hardware`, `fixtures`, `source`, and `release`); discovery remains the acceptance gate. |
+| TR12 / RA37 | Analysis implementations are under `tools/bigcherry/analysis/`; six obsolete facades plus the candidate-report root facade were removed, with three analysis consumers/facades retained or migrated as documented. RA37 remains in progress pending full check-tier closure. |
+| TR13 / RA38 | Verified consumers were migrated and 55 root facades retired. Three compatibility shims remain (`patcher`, `inventory`, `replay_cache`) with owners and retirement conditions; RA38 remains in progress. |
 | TR14 / RA39 | Deterministic hygiene diagnostics are registered in `bigcherry check --quick`; RA39 remains in progress because current findings and unrelated check blockers are intentionally visible. |
 | TR15 / RA40 | This documentation reconciliation. It does not close RA37–RA39 or claim unresolved phases complete. |
 
@@ -56,8 +56,8 @@ TR14 findings use stable codes, including:
 
 Warnings and errors are findings, not permission to silently delete or
 reclassify files. Current findings are deliberately documented in RA39:
-67 hygiene findings, 7 shared `overlay.vendor_sync` files, a known Windows
-full-tier subprocess failure, and pre-existing schema-version test failures.
+TR14 hygiene findings, 7 shared `overlay.vendor_sync` files, and any remaining
+platform/toolchain limitations from the latest recorded validation run.
 
 ## Lab, environment, and tests
 
@@ -68,18 +68,18 @@ mutation/safety notes, and disposition. Generated lab outputs belong under
 `artifacts/lab/<experiment>/`. Environment shell setup belongs in `tools/env/`
 and does not own product state, evidence, or validation.
 
-Permanent tests currently live in `tools/tests`, with only the release-domain
-slice moved under `tools/tests/release/`; do not infer that all tests have been
-domain-migrated. Hardware and benchmark results must be explicitly observed.
+Permanent tests live under domain packages beneath `tools/tests/`; each
+package has a discovery marker and nested path assumptions are validated.
+Hardware and benchmark results must be explicitly observed.
 
 ## Evidence and acceptance boundaries
 
 PA04 software implementation is complete, but acceptance remains open pending
 isolated campaign execution and synchronization of shared `overlay.vendor_sync`
-state; do not overwrite or stage those external files. PA05 is completed by the
-owner decision to demote RD19 from `validated` to `untested` pending future
-qualifying HI83 evidence. No hardware evidence may be inferred from either
-status.
+state; do not overwrite or stage those external files. PA05 remains in progress:
+RD19 is demoted from `validated` to `untested` pending future qualifying HI83
+evidence, but the plan/acceptance record is not closed. No hardware evidence
+may be inferred from either status.
 
 ## Agent/process rules
 

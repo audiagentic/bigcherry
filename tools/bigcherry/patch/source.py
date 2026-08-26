@@ -40,7 +40,9 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from bigcherry.core import paths
+
+REPO_ROOT = paths.REPO_ROOT
 PATCHES_ROOT = REPO_ROOT / "patches"
 MANIFEST_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
