@@ -76,6 +76,22 @@ MMF_NWARPS = tuple(range(1, 9))
 
 IMPLEMENTATION_VERSION = 1
 
+# Candidate identity is deliberately source-derived.  The files below are the
+# CUDA/HIP implementation surface that dispatches and launches each family;
+# the stable-name/config fields remain the candidate's selection identity, but
+# these bytes are the implementation identity used for cross-build replay.
+# This is intentionally a conservative, explicit slice rather than a git
+# revision: unrelated source changes (for example a marker file) must not
+# invalidate an otherwise safe candidate reuse.
+IMPLEMENTATION_IDENTITY_SCHEMA_VERSION = 1
+_IMPLEMENTATION_SOURCE_FILES = {
+    "mmq": ("hip-autotune-dispatch.cu", "mmq.cu"),
+    "mmvq": ("hip-autotune-dispatch.cu", "mmvq.cu"),
+    "mmvf": ("hip-autotune-dispatch.cu", "mmvf.cu"),
+    "mmf": ("hip-autotune-dispatch.cu", "mmf.cu"),
+    "blas": ("hip-autotune-dispatch.cu", "ggml-cuda.cu"),
+}
+
 
 class CatalogError(RuntimeError):
     pass
@@ -198,9 +214,11 @@ class Candidate:
     graph_safe: bool = False
     deterministic: bool = True
     implementation_version: int = IMPLEMENTATION_VERSION
+    implementation_digest: str | None = field(default=None, repr=False)
+    implementation_source_files: tuple[str, ...] = field(default_factory=tuple, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "stable_name": self.stable_name,
             "family": self.family,
             "source_class": self.source_class,
@@ -211,6 +229,68 @@ class Candidate:
             "deterministic": self.deterministic,
             "config": self.config,
         }
+        if self.implementation_digest is not None:
+            result["implementation_digest"] = self.implementation_digest
+            result["implementation_source_files"] = list(self.implementation_source_files)
+        return result
+
+
+def candidate_implementation_source_files(candidate: Candidate | dict[str, Any]) -> tuple[str, ...]:
+    """Return the real source-file slice used for a candidate's implementation.
+
+    The current catalog has no patch ID or per-candidate source path.  Family
+    dispatch and kernel translation units are therefore the narrowest stable
+    mapping available in the manifest-generation inputs.  A later catalog
+    schema can replace this with explicit patch/composition references.
+    """
+    family = candidate.family if isinstance(candidate, Candidate) else candidate.get("family")
+    if family not in _IMPLEMENTATION_SOURCE_FILES:
+        raise CatalogError(f"no implementation source mapping for family {family!r}")
+    files = list(_IMPLEMENTATION_SOURCE_FILES[family])
+    architectures = candidate.architectures if isinstance(candidate, Candidate) else candidate.get("architectures", [])
+    if family == "mmq":
+        files.extend(ARCH_CONFIG_HEADERS[arch] for arch in architectures)
+    return tuple(dict.fromkeys(files))
+
+
+def candidate_implementation_digest(
+    candidate: Candidate | dict[str, Any], root: Path,
+) -> str:
+    """Hash the content-addressed implementation slice for ``candidate``.
+
+    Each entry includes a POSIX-relative path and its SHA-256, matching the
+    patch source/composition precedent.  This proves only that the selected
+    source files have the same bytes; it does not prove compiler flags,
+    transitive headers outside this slice, vendor libraries, or GPU behavior.
+    Applied patch effects are covered when they alter these files, but the
+    manifest currently has no patch/composition identity to hash directly.
+    """
+    source_root = paths.cuda_dir(Path(root))
+    relative_files = candidate_implementation_source_files(candidate)
+    entries = []
+    for relative in relative_files:
+        path = source_root / relative
+        if not path.is_file():
+            raise CatalogError(
+                f"candidate implementation source file is missing: {path}")
+        entries.append({
+            "path": relative.replace("\\", "/"),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        })
+    payload = {
+        "schema_version": IMPLEMENTATION_IDENTITY_SCHEMA_VERSION,
+        "family": candidate.family if isinstance(candidate, Candidate) else candidate.get("family"),
+        "source_class": candidate.source_class if isinstance(candidate, Candidate) else candidate.get("source_class"),
+        "files": entries,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _attach_implementation_digests(candidates: Iterable[Candidate], root: Path) -> None:
+    for candidate in candidates:
+        candidate.implementation_source_files = candidate_implementation_source_files(candidate)
+        candidate.implementation_digest = candidate_implementation_digest(candidate, root)
 
 
 @dataclass
@@ -897,6 +977,11 @@ def build_manifest(root: Path, *, variant_set: str,
                 f"e.g. {sorted(unknown)[0]}. The measurements came from a "
                 f"different inventory or architecture set than this build.")
         candidates = kept
+
+    # Persist the source-derived implementation identity in every candidate
+    # descriptor.  This must happen after replay-slim filtering so the emitted
+    # manifest is the exact identity set that the build will compile.
+    _attach_implementation_digests(candidates, root)
 
     # HI67 (RV49) note: production correctness proof is no longer gated here.
     # A Candidate is reusable across many signatures/architectures, so

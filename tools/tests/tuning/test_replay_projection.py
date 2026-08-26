@@ -69,10 +69,15 @@ def _write_fixture_vendor(tmp_path: Path, *, producer_capabilities_hex: str) -> 
         f"#define GGML_HIP_PRODUCER_CAPABILITIES_HI UINT64_C({hex(hi)})\n",
         encoding="utf-8",
     )
+    cuda = vendor / "ggml" / "src" / "ggml-cuda"
+    for name in ("hip-autotune-dispatch.cu", "mmvq.cu", "mmq.cu", "mmvf.cu", "mmf.cu", "ggml-cuda.cu"):
+        (cuda / name).write_text(f"// fixture implementation: {name}\n", encoding="utf-8")
+    (cuda / "mmq-config-rdna3.cuh").write_text("// fixture MMQ table\n", encoding="utf-8")
     return vendor
 
 
-def _make_manifest(*, producer_capabilities_hex: str, source_revision: str) -> dict:
+def _make_manifest(*, producer_capabilities_hex: str, source_revision: str,
+                   vendor_root: Path | None = None) -> dict:
     families = ("mmvq", "mmq", "mmvf", "mmf", "blas")
     manifest = {
         "artifact_version": 1,
@@ -96,6 +101,14 @@ def _make_manifest(*, producer_capabilities_hex: str, source_revision: str) -> d
             "by_source_class": {"native_wrapper": len(families)},
         },
     }
+    if vendor_root is not None:
+        for candidate in manifest["candidates"]:
+            candidate["implementation_source_files"] = list(
+                catalog.candidate_implementation_source_files(candidate)
+            )
+            candidate["implementation_digest"] = catalog.candidate_implementation_digest(
+                candidate, vendor_root
+            )
     manifest["manifest_hash"] = catalog.manifest_hash(manifest)
     manifest["build_descriptor"] = catalog.build_descriptor(manifest)
     return manifest
@@ -115,7 +128,11 @@ class ProjectMeasurementsTests(unittest.TestCase):
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
 
-        self.manifest = _make_manifest(producer_capabilities_hex=ALL_FIVE_HEX, source_revision=self.source_revision)
+        self.manifest = _make_manifest(
+            producer_capabilities_hex=ALL_FIVE_HEX,
+            source_revision=self.source_revision,
+            vendor_root=self.vendor,
+        )
         self.manifest_path = self.tmp_path / "manifest.json"
         self.manifest_path.write_text(json.dumps(self.manifest), encoding="utf-8")
 
@@ -322,7 +339,8 @@ class ProjectMeasurementsTests(unittest.TestCase):
         )
         core_only_revision = _git_init_and_commit(core_only_vendor)
         core_only_manifest = _make_manifest(
-            producer_capabilities_hex=CORE_ONLY_HEX, source_revision=core_only_revision
+            producer_capabilities_hex=CORE_ONLY_HEX, source_revision=core_only_revision,
+            vendor_root=core_only_vendor,
         )
         core_only_manifest_path = self.tmp_path / "core-only-manifest.json"
         core_only_manifest_path.write_text(json.dumps(core_only_manifest), encoding="utf-8")
@@ -366,7 +384,11 @@ class ProjectMeasurementsTests(unittest.TestCase):
         (target_vendor / "MARKER.txt").write_text("target-root\n", encoding="utf-8")
         target_revision = _git_init_and_commit(target_vendor)
         self.assertNotEqual(target_revision, self.source_revision)
-        target_manifest = _make_manifest(producer_capabilities_hex=ALL_FIVE_HEX, source_revision=target_revision)
+        target_manifest = _make_manifest(
+            producer_capabilities_hex=ALL_FIVE_HEX,
+            source_revision=target_revision,
+            vendor_root=target_vendor,
+        )
         target_manifest_path = self.tmp_path / "target-manifest.json"
         target_manifest_path.write_text(json.dumps(target_manifest), encoding="utf-8")
 
@@ -390,6 +412,50 @@ class ProjectMeasurementsTests(unittest.TestCase):
         header, entries = replay_module.read_cache(blob)
         self.assertEqual(header["version"], replay_module.REPLAY_VERSION)
         self.assertEqual(len(entries), 2)
+
+    def test_identical_candidate_descriptors_with_changed_kernel_are_not_reused(self):
+        """The old descriptor-only check accepted this exact false positive."""
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        target_vendor = _write_fixture_vendor(
+            self.tmp_path / "changed-kernel-root",
+            producer_capabilities_hex=ALL_FIVE_HEX,
+        )
+        (target_vendor / "ggml" / "src" / "ggml-cuda" / "mmvq.cu").write_text(
+            "// different kernel implementation\n", encoding="utf-8"
+        )
+        target_revision = _git_init_and_commit(target_vendor)
+        target_manifest = _make_manifest(
+            producer_capabilities_hex=ALL_FIVE_HEX,
+            source_revision=target_revision,
+            vendor_root=target_vendor,
+        )
+        target_manifest_path = self.tmp_path / "changed-kernel-manifest.json"
+        target_manifest_path.write_text(json.dumps(target_manifest), encoding="utf-8")
+
+        source_candidate = self.manifest["candidates"][0]
+        target_candidate = target_manifest["candidates"][0]
+        self.assertEqual(
+            {k: v for k, v in source_candidate.items() if k not in (
+                "implementation_digest", "implementation_source_files"
+            )},
+            {k: v for k, v in target_candidate.items() if k not in (
+                "implementation_digest", "implementation_source_files"
+            )},
+        )
+        self.assertNotEqual(
+            source_candidate["implementation_digest"],
+            target_candidate["implementation_digest"],
+        )
+
+        output = self.tmp_path / "changed-kernel-out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            source_manifest_path=self.manifest_path,
+            target_manifest_path=target_manifest_path, vendor_root=target_vendor,
+        )
+        self.assertEqual(summary.retained, 0)
+        self.assertEqual(summary.omitted_candidate_mismatch, 2)
 
     def test_retained_rows_are_preserved_byte_for_byte(self):
         # round 9's explicit requirement: retained result rows must be the

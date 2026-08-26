@@ -353,7 +353,25 @@ def _candidate_implementation_is_equivalent(
     target_candidate = target_candidates_by_name.get(winner_name)
     if source_candidate is None or target_candidate is None:
         return False
-    return source_candidate == target_candidate
+    # Descriptor equality remains required.  It is not sufficient because the
+    # descriptor's implementation_version is manually maintained.  Catalog
+    # generation now persists a source-derived digest for the explicit
+    # family dispatch/kernel slice; missing or malformed identities fail
+    # closed.  This proves only equality of that file slice, not compiler
+    # flags, unlisted transitive headers, vendor libraries, or GPU behavior.
+    # There is no candidate->patch/composition reference in the current
+    # catalog, so patch effects are covered only when they change this slice.
+    if source_candidate != target_candidate:
+        return False
+    source_digest = source_candidate.get("implementation_digest")
+    target_digest = target_candidate.get("implementation_digest")
+    return (
+        isinstance(source_digest, str)
+        and bool(source_digest)
+        and isinstance(target_digest, str)
+        and bool(target_digest)
+        and source_digest == target_digest
+    )
 
 
 def _load_target_capabilities(target_manifest: dict[str, Any], *, vendor_root: Path) -> CapabilityMask128:
