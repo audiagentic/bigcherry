@@ -33,7 +33,9 @@ from ..source import identity as source_identity
 from ..core.artifacts import ArtifactStore
 from ..build.builds import BuildPlan
 from ..core.context import ProjectContext
-from ..source.identity import SourceIdentityError, git_tree_oid
+from ..source.identity import (
+    SourceAttestation, SourceIdentityError, git_tree_oid, verify_source_attestation,
+)
 from ..source.workspace import SourcePlan, materialize, require_clean_bigcherry
 
 Runner = Callable[[list[str], Path], None]
@@ -347,6 +349,7 @@ def materialize_source(
     """
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
 
+    plan = campaign_source.resolve_materialization_inputs(context, plan)
     identity = campaign_source.resolve_materialization_identity(context, plan)
     plan_id = campaign_source.materialization_plan_id(identity)
     destination = context.work_root / "sources" / plan_id
@@ -382,10 +385,15 @@ def materialize_source(
         # materialisation (by anything, not necessarily this code) must
         # fail closed rather than be silently compiled.
         try:
-            actual_tree_oid = git_tree_oid(
-                destination, allowed_untracked=set(cached.get("allowed_untracked", ()))
-            )
-        except SourceIdentityError as exc:
+            verify_source_attestation(destination, SourceAttestation(
+                upstream_revision=cached_plan["upstream_revision"],
+                tree_oid=cached["source_tree_oid"],
+                object_format=cached["git_object_format"],
+                source_slice_id=cached["source_slice_id"],
+                allowed_untracked=frozenset(cached.get("allowed_untracked", ())),
+            ))
+            actual_tree_oid = cached["source_tree_oid"]
+        except (SourceIdentityError, KeyError) as exc:
             raise CampaignBuildError(
                 f"cached source directory {destination} failed re-verification: {exc}"
             ) from exc
@@ -411,7 +419,7 @@ def materialize_source(
         recomputed_source_slice_id = source_identity.source_slice_id(
             upstream_revision=identity["upstream_revision"],
             tree_oid=actual_tree_oid,
-            object_format=cached.get("git_object_format", "sha1"),
+            object_format=cached["git_object_format"],
         )
         recomputed_source_plan_id = campaign_source.source_plan_id(plan)
         for label, recomputed, cached_value in (

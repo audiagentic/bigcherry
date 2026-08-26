@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from . import resolution as campaign_resolution
@@ -50,6 +51,52 @@ def _overlay_content_hash(overlay_root: Path) -> str | None:
     return digest.hexdigest()
 
 
+def resolve_materialization_inputs(
+    context: ProjectContext, plan: workspace.SourcePlan,
+) -> workspace.SourcePlan:
+    """Resolve patch paths/digests and overlay paths/digests exactly once."""
+    selection = patchset.resolve_exact(
+        plan.patch_ids, directory=context.patches_root,
+        required_state=plan.required_state,
+    )
+    patches = tuple(
+        workspace.ResolvedPatchInput(
+            patch_id=module.patch_id,
+            implementation_path=module.relative_path or module.path.relative_to(
+                context.patches_root
+            ),
+            implementation_digest=module.content_hash,
+        )
+        for module in selection.modules
+    )
+    overlays: list[workspace.ResolvedOverlayInput] = []
+    if plan.overlay_enabled and context.overlay_root.is_dir():
+        for source in sorted(context.overlay_root.rglob("*")):
+            if source.is_file():
+                overlays.append(workspace.ResolvedOverlayInput(
+                    relative_path=source.relative_to(context.overlay_root).as_posix(),
+                    content_digest=hashlib.sha256(source.read_bytes()).hexdigest(),
+                ))
+    return replace(
+        plan, resolved_patch_inputs=patches,
+        resolved_overlay_inputs=tuple(overlays),
+        inputs_resolved=True,
+    )
+
+
+def _overlay_hash_from_inputs(
+    inputs: tuple[workspace.ResolvedOverlayInput, ...],
+) -> str | None:
+    if not inputs:
+        return None
+    digest = hashlib.blake2b(b"bigcherry/overlay-content/v2\0")
+    for item in inputs:
+        digest.update(len(item.relative_path).to_bytes(4, "big"))
+        digest.update(item.relative_path.encode("utf-8"))
+        digest.update(item.content_digest.encode("ascii"))
+    return digest.hexdigest()
+
+
 def resolve_materialization_identity(
     context: ProjectContext, plan: workspace.SourcePlan,
 ) -> dict[str, object]:
@@ -78,19 +125,17 @@ def resolve_materialization_identity(
     provenance -- the simpler of the two fixes discussed, not the
     architecturally larger physical-cache/logical-provenance split.
     """
-    selection = patchset.resolve_exact(
-        plan.patch_ids, directory=context.patches_root,
-        required_state=plan.required_state,
-    )
+    if not plan.inputs_resolved:
+        plan = resolve_materialization_inputs(context, plan)
     return {
         "upstream_revision": plan.upstream_revision,
         "overlay_enabled": plan.overlay_enabled,
         "overlay_content_hash": (
-            _overlay_content_hash(context.overlay_root) if plan.overlay_enabled else None
+            _overlay_hash_from_inputs(plan.resolved_overlay_inputs)
         ),
         "patches": [
-            {"patch_id": module.patch_id, "content_hash": module.content_hash}
-            for module in selection.modules
+            {"patch_id": item.patch_id, "content_hash": item.implementation_digest}
+            for item in plan.resolved_patch_inputs
         ],
         "required_state": plan.required_state,
         "patch_set_id": plan.patch_set_id,

@@ -728,6 +728,7 @@ def load_implementation(
     descriptor: PatchDescriptor,
     *,
     root: Path | None = None,
+    expected_digest: str | None = None,
 ) -> list[FilePatch]:
     """Load a patch's production implementation (runbook 12/13), for EITHER
     representation: read current bytes, compile directly, execute in a
@@ -752,7 +753,8 @@ def load_implementation(
         )
     raw = path.read_bytes()
     actual_digest = _sha256_bytes(raw)
-    if actual_digest != descriptor.implementation_digest:
+    expected = expected_digest or descriptor.implementation_digest
+    if actual_digest != expected or descriptor.implementation_digest != expected:
         raise PatchRegistryError(
             f"{descriptor.patch_id}: implementation bytes at "
             f"{descriptor.implementation_path} no longer match the descriptor "

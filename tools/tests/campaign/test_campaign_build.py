@@ -296,6 +296,43 @@ class MaterializeSourceTests(unittest.TestCase):
             with self.assertRaises(CampaignBuildError):
                 materialize_source(context, plan, allow_dirty_bigcherry=True)
 
+    def test_cache_reuse_rejects_head_change_even_when_tree_is_identical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision_a = _init_upstream(root)
+            # Different commit identity, identical tree.
+            _git(upstream, "commit", "--allow-empty", "-m", "different commit")
+            revision_b = _git(upstream, "rev-parse", "HEAD")
+            context = _context(root, upstream)
+            plan = SourcePlan(revision_a, False, (), None)
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+            from bigcherry.campaign import source as campaign_source
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            destination = context.work_root / "sources" / plan_id
+            _git(destination, "reset", "--hard", revision_b)
+            with self.assertRaises(CampaignBuildError):
+                materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+    def test_cache_reuse_rejects_forged_object_format(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+            from bigcherry.campaign import source as campaign_source
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            metadata_path = context.work_root / "sources" / f"{plan_id}.metadata.json"
+            import json
+            record = json.loads(metadata_path.read_text(encoding="utf-8"))
+            record["git_object_format"] = "sha256"
+            record["source_slice_id"] = "forged"
+            metadata_path.write_text(json.dumps(record), encoding="utf-8")
+            with self.assertRaises(CampaignBuildError):
+                materialize_source(context, plan, allow_dirty_bigcherry=True)
+
 
 class PublishBuildOutputsTests(unittest.TestCase):
     def test_publish_verifies_every_artifact(self):
