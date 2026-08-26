@@ -16,6 +16,7 @@ from pathlib import Path
 from . import resolution as campaign_resolution
 from ..core import config as campaign_config
 from ..patch import patchset
+from ..patch.apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from ..source import workspace
 from ..core.context import ProjectContext
 
@@ -94,6 +95,10 @@ def resolve_materialization_identity(
         "required_state": plan.required_state,
         "patch_set_id": plan.patch_set_id,
         "classification": plan.classification,
+        # PA07 (source/patch identity hardening L1.2): a patch's own content
+        # digest cannot see a change to the SHARED application semantics
+        # (apply.py/core/csource.py) that also determines its output bytes.
+        "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
     }
 
 

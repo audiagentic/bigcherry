@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from bigcherry.core import paths
+from bigcherry.patch.apply import PATCH_APPLICATION_SEMANTICS_VERSION
 
 REPO_ROOT = paths.REPO_ROOT
 PATCHES_ROOT = REPO_ROOT / "patches"
@@ -147,6 +148,10 @@ def _make_source_identity_v2(
         "resolved_revision": resolved_revision,
         "overlay_digest": overlay_digest(overlay_root),
         "composition": [list(entry) for entry in composition],
+        # PA07 (L1.2): a patch's own digest cannot see a change to the
+        # SHARED application semantics (anchor matching, noise stripping,
+        # guard handling, ...) that also determines its output bytes.
+        "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
     }
     if variant_name is not None:
         payload["variant_name"] = variant_name
@@ -205,35 +210,40 @@ def git_worktree_tree(repo: Path) -> str:
     throwaway index, not the operator's real staging area. Captures
     tracked modifications, deletions, and untracked non-ignored additions
     (exactly what a patch's edits + any new files it adds would produce).
-    Ignored files (build output) are deliberately excluded.
+    Untracked materialization files are included. Ignored files are rejected
+    by the canonical source-identity implementation instead of being silently
+    excluded from the tree.
     """
-    with tempfile.TemporaryDirectory(prefix="bigcherry-git-index-") as td:
-        index = Path(td) / "index"
-        env = os.environ.copy()
-        env["GIT_INDEX_FILE"] = str(index)
-        subprocess.run(
-            ["git", "read-tree", "HEAD"],
-            cwd=repo,
-            env=env,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "add", "-A", "--", "."],
-            cwd=repo,
-            env=env,
-            check=True,
-            capture_output=True,
-        )
-        result = subprocess.run(
-            ["git", "write-tree"],
-            cwd=repo,
-            env=env,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip()
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from bigcherry.source.identity import SourceIdentityError, git_tree_oid  # noqa: E402
+
+    status = _run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=repo
+    )
+    allowed_untracked = {
+        line[3:].strip().replace("\\", "/")
+        for line in status.splitlines()
+        if line.startswith("?? ")
+    }
+    try:
+        return git_tree_oid(repo, allowed_untracked=allowed_untracked)
+    except SourceIdentityError as exc:
+        raise PatchSourceIsolationError(str(exc)) from exc
+
+
+def _git_object_format(repo: Path) -> str:
+    return _run(["git", "rev-parse", "--show-object-format"], cwd=repo)
+
+
+def _source_slice_id(*, source_dir: Path, upstream_revision: str, tree_oid: str) -> str:
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from bigcherry.source.identity import source_slice_id  # noqa: E402
+
+    return source_slice_id(
+        upstream_revision=upstream_revision,
+        tree_oid=tree_oid,
+        object_format=_git_object_format(source_dir),
+    )
 
 
 def _manifest_path(source_dir: Path) -> Path:
@@ -288,6 +298,12 @@ def _verify_reuse(source_dir: Path, expected_identity: dict[str, str]) -> bool:
         # rebuilds from scratch rather than trusting an unmanaged tree.
         return False
 
+    if manifest.get("manifest_schema_version") != MANIFEST_SCHEMA_VERSION:
+        raise PatchSourceIsolationError(
+            f"unsupported or missing manifest schema at {source_dir}: "
+            f"{manifest.get('manifest_schema_version')!r}"
+        )
+
     # Iterate the identity's own keys (not a hardcoded tuple) so this check
     # naturally covers both the stock identity (no framework_baseline_digest
     # key at all) and the patched identity (which has one) without drifting
@@ -307,11 +323,37 @@ def _verify_reuse(source_dir: Path, expected_identity: dict[str, str]) -> bool:
         )
 
     actual_tree = git_worktree_tree(source_dir)
-    if actual_tree != manifest.get("patched_tree"):
+    if actual_tree != manifest.get("source_tree_oid"):
         raise PatchSourceIsolationError(
             f"patched source tree was modified after materialization at "
-            f"{source_dir}: manifest tree={manifest.get('patched_tree')!r}, "
+            f"{source_dir}: manifest tree={manifest.get('source_tree_oid')!r}, "
             f"actual tree={actual_tree!r}"
+        )
+
+    if manifest.get("patched_tree") != manifest.get("source_tree_oid"):
+        raise PatchSourceIsolationError(
+            f"manifest tree attestations disagree at {source_dir}: "
+            f"patched_tree={manifest.get('patched_tree')!r}, "
+            f"source_tree_oid={manifest.get('source_tree_oid')!r}"
+        )
+
+    actual_slice_id = _source_slice_id(
+        source_dir=source_dir,
+        upstream_revision=expected_identity["resolved_revision"],
+        tree_oid=actual_tree,
+    )
+    if manifest.get("source_slice_id") != actual_slice_id:
+        raise PatchSourceIsolationError(
+            f"source slice provenance mismatch at {source_dir}: "
+            f"manifest={manifest.get('source_slice_id')!r}, "
+            f"actual={actual_slice_id!r}"
+        )
+
+    if manifest.get("materialization_plan_id") != expected_identity.get("source_key"):
+        raise PatchSourceIsolationError(
+            f"materialization plan provenance mismatch at {source_dir}: "
+            f"manifest={manifest.get('materialization_plan_id')!r}, "
+            f"expected={expected_identity.get('source_key')!r}"
         )
 
     return True
@@ -446,12 +488,20 @@ def _materialize_v2(
     if apply_variant is not None:
         apply_variant(source_dir)
 
+    source_tree_oid = git_worktree_tree(source_dir)
     manifest = {
         **identity,
+        "materialization_plan_id": identity["source_key"],
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "requested_revision": requested_revision,
         "head": git_head(source_dir),
-        "patched_tree": git_worktree_tree(source_dir),
+        "source_tree_oid": source_tree_oid,
+        "source_slice_id": _source_slice_id(
+            source_dir=source_dir,
+            upstream_revision=resolved_revision,
+            tree_oid=source_tree_oid,
+        ),
+        "patched_tree": source_tree_oid,
     }
     _write_manifest(source_dir, manifest)
     return source_dir

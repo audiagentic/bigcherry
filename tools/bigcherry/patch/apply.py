@@ -36,6 +36,18 @@ class PatchError(RuntimeError):
     """An edit could not be applied. The message names the failing anchor."""
 
 
+#: PA07 (source/patch identity hardening L1.2): the SHARED semantics every
+#: patch's output depends on beyond its own implementation bytes -- anchor
+#: matching, noise stripping (core/csource.py), guard handling, replace_all,
+#: applies_if, span limits, newline/encoding behavior. A patch's own digest
+#: (patch_implementation_digest()) cannot see a change here: apply.py or
+#: core/csource.py changing behavior can change output bytes while every
+#: patch.py's digest stays identical. Bump ONLY when a change here can
+#: change materialised source output -- never for docstring/comment-only
+#: edits, never for this constant's own reassignment.
+PATCH_APPLICATION_SEMANTICS_VERSION = 1
+
+
 def resolve_contained_target(root: Path, relative: str) -> Path:
     """Resolve ``relative`` against ``root``, refusing any path or symlink
     that would let the write land outside ``root``.
@@ -329,7 +341,39 @@ def apply_all(patches: list[FilePatch], root: Path, *,
 
     # Replay against disk. The results are recomputed rather than reused so a
     # tree changed between the two passes is caught rather than assumed.
-    return [apply_patch(p, root) for p in patches]
+    #
+    # PA07 (source/patch identity hardening L1.1): the real-write pass below
+    # can still fail partway -- a later patch's anchor no longer matching
+    # once an earlier patch's write actually landed, or a genuine I/O error.
+    # Without a rollback, that leaves the tree (and the content-addressed
+    # cache directory workspace.materialize() writes it into) half-patched,
+    # which is worse than untouched: it looks like a completed worktree with
+    # no valid metadata. Snapshot every file this run *could* touch before
+    # writing anything for real, and restore all of them the instant one
+    # patch's real pass fails.
+    touched_paths = {p.path for p in patches}
+    backup: dict[str, str | None] = {}
+    for relative in touched_paths:
+        target = resolve_contained_target(root, relative)
+        backup[relative] = target.read_text(encoding="utf-8") if target.is_file() else None
+
+    def _restore() -> None:
+        for relative, original in backup.items():
+            target = resolve_contained_target(root, relative)
+            if original is None:
+                if target.is_file():
+                    target.unlink()
+            else:
+                target.write_text(original, encoding="utf-8", newline="")
+
+    try:
+        results = [apply_patch(p, root) for p in patches]
+    except Exception:
+        _restore()
+        raise
+    if any(not r.ok for r in results):
+        _restore()
+    return results
 
 
 def format_results(results: list[PatchResult]) -> str:

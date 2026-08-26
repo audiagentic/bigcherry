@@ -18,6 +18,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -128,6 +129,9 @@ class MaterializationTests(unittest.TestCase):
         self.assertEqual(manifest["schema"], "bigcherry-patch-source-v2")
         self.assertEqual(manifest["composition"][0][0], "0001_flat")
         self.assertEqual(manifest["resolved_revision"], self.base_rev)
+        self.assertEqual(manifest["materialization_plan_id"], manifest["source_key"])
+        self.assertEqual(manifest["source_tree_oid"], manifest["patched_tree"])
+        self.assertTrue(manifest["source_slice_id"])
         # Cache reuse: same identity -> same directory, no error.
         again = self._materialize("0001_flat")
         self.assertEqual(again, source)
@@ -146,6 +150,57 @@ class MaterializationTests(unittest.TestCase):
         (source / "a.txt").write_text("tampered\n", encoding="utf-8")
         with self.assertRaisesRegex(psi.PatchSourceIsolationError, "modified after materialization"):
             self._materialize("0001_flat")
+
+    def test_tampered_tree_and_manifest_tree_rejected(self) -> None:
+        self._flat()
+        source = self._materialize("0001_flat")
+        (source / "a.txt").write_text("tampered\n", encoding="utf-8")
+        manifest_path = psi._manifest_path(source)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["patched_tree"] = psi.git_worktree_tree(source)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(psi.PatchSourceIsolationError):
+            self._materialize("0001_flat")
+
+    def test_tampered_tree_and_source_ids_rejected(self) -> None:
+        self._flat()
+        source = self._materialize("0001_flat")
+        (source / "a.txt").write_text("tampered\n", encoding="utf-8")
+        manifest_path = psi._manifest_path(source)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        tree = psi.git_worktree_tree(source)
+        manifest["source_tree_oid"] = tree
+        manifest["source_slice_id"] = psi._source_slice_id(
+            source_dir=source, upstream_revision=self.base_rev, tree_oid=tree
+        )
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(psi.PatchSourceIsolationError):
+            self._materialize("0001_flat")
+
+    def test_ignored_file_rejected_on_reuse(self) -> None:
+        self._flat()
+        source = self._materialize("0001_flat")
+        (source / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+        (source / "ignored.txt").write_text("must not be ignored\n", encoding="utf-8")
+        with self.assertRaisesRegex(psi.PatchSourceIsolationError, "ignored"):
+            self._materialize("0001_flat")
+
+    def test_manifest_schema_must_be_exact_current_version(self) -> None:
+        self._flat()
+        for value in (None, 0, 2):
+            source = self._materialize("0001_flat")
+            manifest_path = psi._manifest_path(source)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if value is None:
+                del manifest["manifest_schema_version"]
+            else:
+                manifest["manifest_schema_version"] = value
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(psi.PatchSourceIsolationError, "schema"):
+                self._materialize("0001_flat")
+            manifest["manifest_schema_version"] = 1
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(self._materialize("0001_flat"), source)
 
     def test_missing_manifest_not_trusted(self) -> None:
         self._flat()
@@ -183,6 +238,32 @@ class MaterializationTests(unittest.TestCase):
         self.assertIn("three", (second / "a.txt").read_text(encoding="utf-8"))
         self.assertNotIn("three", (first / "a.txt").read_text(encoding="utf-8"))
 
+    def test_semantics_version_change_changes_plan_identity(self) -> None:
+        """PA07 (L1.2): the same patch bytes + same composition must give
+        the same source_key only when patch_application_semantics_version
+        also matches -- a bump there must change identity even though no
+        patch.py digest changed."""
+        self._flat()
+        selection = patchset.resolve_exact(("0001_flat",), directory=self.patches_root)
+        composition = tuple(
+            (module.patch_id, module.content_hash) for module in selection.modules
+        )
+        same_semantics_a = psi._make_source_identity_v2(
+            resolved_revision=self.base_rev, composition=composition, overlay_root=None,
+        )
+        same_semantics_b = psi._make_source_identity_v2(
+            resolved_revision=self.base_rev, composition=composition, overlay_root=None,
+        )
+        self.assertEqual(same_semantics_a["source_key"], same_semantics_b["source_key"])
+
+        import bigcherry.patch.apply as apply_module
+        with mock.patch.object(apply_module, "PATCH_APPLICATION_SEMANTICS_VERSION", 2), \
+             mock.patch.object(psi, "PATCH_APPLICATION_SEMANTICS_VERSION", 2):
+            bumped = psi._make_source_identity_v2(
+                resolved_revision=self.base_rev, composition=composition, overlay_root=None,
+            )
+        self.assertNotEqual(same_semantics_a["source_key"], bumped["source_key"])
+
     def test_legacy_package_migration_tree_equivalence(self) -> None:
         # Same edit expressed as a flat module and as a package: the
         # materialized CONTENT trees must be byte-identical (migration
@@ -196,6 +277,10 @@ class MaterializationTests(unittest.TestCase):
         legacy_tree = psi.git_worktree_tree(legacy_source)
         packaged_tree = psi.git_worktree_tree(packaged_source)
         self.assertEqual(legacy_tree, packaged_tree)
+        legacy_manifest = json.loads(psi._manifest_path(legacy_source).read_text(encoding="utf-8"))
+        packaged_manifest = json.loads(psi._manifest_path(packaged_source).read_text(encoding="utf-8"))
+        self.assertNotEqual(legacy_manifest["materialization_plan_id"], packaged_manifest["materialization_plan_id"])
+        self.assertEqual(legacy_manifest["source_slice_id"], packaged_manifest["source_slice_id"])
 
 
 class Rv80AcceptanceTests(MaterializationTests):

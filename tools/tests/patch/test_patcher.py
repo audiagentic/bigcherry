@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -265,6 +266,61 @@ class TestPatchDependencies(unittest.TestCase):
             self.assertFalse(all(r.ok for r in results))
             self.assertEqual(tree.read(), before,
                              "a failure anywhere must leave the tree untouched")
+
+    def test_real_pass_failure_after_a_successful_write_rolls_back(self):
+        """PA07 (L1.1): the trial pass proves both patches CAN be placed, but
+        a real-pass failure (state drift, I/O error, anything) after the
+        first patch's write already landed on disk must not leave that write
+        behind -- the whole run is all-or-nothing, not just the trial."""
+        import bigcherry.patch.apply as apply_module
+
+        with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
+            (tree.root / "b.cu").write_text("void g(int a) {\n    body();\n}\n",
+                                             encoding="utf-8", newline="")
+            first = FilePatch(
+                path="a.cu",
+                edits=(Edit(id="p1", anchor=r"^void f\(int a\) \{$", mode="replace",
+                            text="void f(int a, int b) {",
+                            guard=r"void f\(int a, int b\) \{"),),
+            )
+            second = FilePatch(
+                path="b.cu",
+                edits=(Edit(id="p2", anchor=r"^void g\(int a\) \{$", mode="replace",
+                            text="void g(int a, int b) {",
+                            guard=r"void g\(int a, int b\) \{"),),
+            )
+            before_a = (tree.root / "a.cu").read_text(encoding="utf-8")
+            before_b = (tree.root / "b.cu").read_text(encoding="utf-8")
+
+            real_apply_patch = apply_module.apply_patch
+            call_count = {"n": 0}
+
+            def flaky_apply_patch(patch, root, *, dry_run=False, texts=None):
+                if not dry_run:
+                    call_count["n"] += 1
+                    if call_count["n"] == 2:
+                        raise RuntimeError("simulated I/O failure on second real write")
+                return real_apply_patch(patch, root, dry_run=dry_run, texts=texts)
+
+            with mock.patch.object(apply_module, "apply_patch", side_effect=flaky_apply_patch):
+                with self.assertRaises(RuntimeError):
+                    apply_module.apply_all([first, second], tree.root)
+
+            self.assertEqual((tree.root / "a.cu").read_text(encoding="utf-8"), before_a,
+                             "first patch's real write must be rolled back")
+            self.assertEqual((tree.root / "b.cu").read_text(encoding="utf-8"), before_b)
+
+    def test_retry_after_rollback_succeeds_without_manual_cleanup(self):
+        with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
+            patch = FilePatch(
+                path="a.cu",
+                edits=(Edit(id="p1", anchor=r"^void f\(int a\) \{$", mode="replace",
+                            text="void f(int a, int b) {",
+                            guard=r"void f\(int a, int b\) \{"),),
+            )
+            results = apply_all([patch], tree.root)
+            self.assertTrue(all(r.ok for r in results))
+            self.assertIn("void f(int a, int b) {", tree.read())
 
 
 class TestAppliesIf(unittest.TestCase):
