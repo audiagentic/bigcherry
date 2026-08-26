@@ -190,34 +190,22 @@ class MaterializationTests(unittest.TestCase):
         with self.assertRaises(psi.PatchSourceIsolationError):
             self._materialize("0001_flat")
 
-    @unittest.expectedFailure
     def test_tampered_tree_with_fully_self_consistent_forged_manifest_rejected(self) -> None:
-        """KNOWN OPEN GAP (adversarial-review follow-up, PA10) -- this is an
-        expectedFailure, not a passing guarantee: remove the decorator only
-        once this is actually fixed.
-
-        Every OTHER tamper test in this file updates just ONE or TWO of
-        {patched_tree, source_tree_oid, source_slice_id} at a time, so
-        rejection there comes from the redundant-alias cross-check
-        (patched_tree vs source_tree_oid), not from a real binding to the
-        ORIGINALLY attested output. This test makes ALL THREE
-        self-consistent with a tampered tree -- the strongest forgery the
-        manifest fields alone can produce, after also removing the
+        """PA14 (adversarial-review follow-up, was an expectedFailure under
+        PA10 -- now fixed): every OTHER tamper test in this file updates
+        just ONE or TWO of {patched_tree, source_tree_oid, source_slice_id}
+        at a time, so rejection there comes from the redundant-alias
+        cross-check (patched_tree vs source_tree_oid), not from a real
+        binding to the ORIGINALLY attested output. This test makes ALL
+        THREE self-consistent with a tampered tree -- the strongest forgery
+        the manifest fields alone can produce, after also removing the
         read-only protection atomic_write_json(read_only=True) adds. No
-        manifest field in this design is independently authoritative: every
-        comparison in _verify_reuse() is "live fact == a field in the SAME
-        mutable sidecar the tamperer can also edit". The read-only bit
-        (real, and kept) raises the bar against accidental/buggy mutation,
-        which is this review's primary threat model elsewhere, but a
-        determined tamperer with filesystem write access to source_dir's
-        parent can chmod it back to writable first.
-
-        Closing this for real needs either (a) a write-once audit ledger
-        recorded somewhere OUTSIDE this same writable directory, or (b) a
-        deterministic re-materialization comparison on reuse (re-run
-        _add_worktree + _apply_composition into a scratch location and
-        compare tree hashes) -- both reviewer-suggested, both out of scope
-        for this pass. Tracked in patch-system/PA10's notes."""
+        manifest field alone is authoritative; what actually catches this
+        is _verify_by_rematerialization()'s deterministic re-materialization
+        comparison, the final check in _verify_reuse() -- it re-derives the
+        expected tree from scratch (re-run add-worktree + apply-composition
+        into a throwaway location) rather than trusting any persisted
+        value."""
         self._flat()
         source = self._materialize("0001_flat")
         (source / "a.txt").write_text("tampered\n", encoding="utf-8")

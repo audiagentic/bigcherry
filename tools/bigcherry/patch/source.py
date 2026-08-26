@@ -35,6 +35,7 @@ import json
 import shutil
 import subprocess
 import sys
+import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -501,13 +502,76 @@ def _read_manifest(source_dir: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _verify_reuse(source_dir: Path, expected_identity: dict[str, str]) -> bool:
+def _verify_by_rematerialization(
+    source_dir: Path, live_tree_oid: str, *,
+    base_repo: Path, resolved_revision: str,
+    composition: Sequence[tuple[str, str]], overlay_root: Path | None,
+    variant_transform: "SourceTransform | None",
+) -> None:
+    """Deterministic re-materialization comparison (PA14, adversarial-review
+    follow-up).
+
+    Every check in _verify_reuse() above this point proves the manifest is
+    internally SELF-consistent -- but every field it compares against lives
+    in the same writable manifest.json sidecar a tamperer with filesystem
+    access to source_dir's parent could also edit consistently. No manifest
+    field is independently authoritative under that threat model. A
+    separate write-once ledger doesn't solve this either: it would need to
+    live somewhere the same execution identity that writes source_dir
+    cannot also write, and no such boundary exists in this project's real
+    deployment model.
+
+    The only thing that IS authoritative is re-deriving the expected tree
+    from scratch: re-run the exact same add-worktree + apply-composition +
+    variant-transform sequence into a throwaway location and compare its
+    tree OID against the live one. This does not depend on trusting
+    anything previously written to disk by this module.
+    """
+    scratch_dir = source_dir.parent / f".verify-{uuid.uuid4().hex}"
+    try:
+        _add_worktree(base_repo, scratch_dir, resolved_revision)
+        _apply_composition(scratch_dir, composition, overlay_root=overlay_root, root=PATCHES_ROOT)
+        if variant_transform is not None:
+            variant_transform.apply(scratch_dir)
+        expected_tree = git_worktree_tree(scratch_dir)
+    finally:
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+        _run(["git", "worktree", "prune"], cwd=base_repo, check=False)
+
+    if expected_tree != live_tree_oid:
+        raise PatchSourceIsolationError(
+            f"deterministic re-materialization mismatch at {source_dir}: "
+            f"expected tree (freshly re-derived from base+composition+overlay) "
+            f"{expected_tree!r} != live tree {live_tree_oid!r} -- the manifest's "
+            f"self-reported identity fields cannot be trusted; refusing reuse"
+        )
+
+
+def _verify_reuse(
+    source_dir: Path, expected_identity: dict[str, str], *,
+    base_repo: Path | None = None,
+    resolved_revision: str | None = None,
+    composition: Sequence[tuple[str, str]] | None = None,
+    overlay_root: Path | None = None,
+    variant_transform: "SourceTransform | None" = None,
+) -> bool:
     """True if source_dir can be reused as-is for expected_identity.
 
     Fails CLOSED (raises, does not silently return False and let the
     caller quietly rebuild over a suspicious directory) when a manifest
     exists but disagrees with reality -- that state means something wrote
     into this identity's directory without going through this module.
+
+    ``base_repo``/``resolved_revision``/``composition``/``overlay_root``/
+    ``variant_transform``: when all of ``base_repo`` and
+    ``resolved_revision`` are supplied, the FINAL check (after every cheap
+    manifest-field comparison below has already passed) is a deterministic
+    re-materialization comparison (see _verify_by_rematerialization) --
+    the only check in this function that is not just self-consistency
+    against a value this same module could have written. Callers that omit
+    them get every check except that one (kept optional so this function's
+    existing unit-level callers/tests are not forced to supply a full
+    materialization context just to exercise the cheaper checks).
     """
     manifest = _read_manifest(source_dir)
     if manifest is None:
@@ -572,6 +636,14 @@ def _verify_reuse(source_dir: Path, expected_identity: dict[str, str]) -> bool:
             f"materialization plan provenance mismatch at {source_dir}: "
             f"manifest={manifest.get('materialization_plan_id')!r}, "
             f"expected={expected_identity.get('source_key')!r}"
+        )
+
+    if base_repo is not None and resolved_revision is not None:
+        _verify_by_rematerialization(
+            source_dir, actual_tree,
+            base_repo=base_repo, resolved_revision=resolved_revision,
+            composition=composition or (), overlay_root=overlay_root,
+            variant_transform=variant_transform,
         )
 
     return True
@@ -721,7 +793,12 @@ def _materialize_v2(
     # processes materializing the same identity concurrently cannot both
     # try to `git worktree add` into the same destination.
     with plan_lock(worktree_root, identity["source_key"]):
-        if source_dir.exists() and _verify_reuse(source_dir, identity):
+        if source_dir.exists() and _verify_reuse(
+            source_dir, identity,
+            base_repo=base_repo, resolved_revision=resolved_revision,
+            composition=composition, overlay_root=overlay_root,
+            variant_transform=variant_transform,
+        ):
             return source_dir
 
         _add_worktree(base_repo, source_dir, resolved_revision)
