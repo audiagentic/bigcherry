@@ -62,13 +62,15 @@ def require_campaign_success(
     immediately after every ``CampaignRun.execute()`` call.
     """
     bad = {
-        stage_id: record.state
+        stage_id: record
         for stage_id, record in records.items()
         if record.state not in {"succeeded", "reused"}
     }
     if bad:
         detail = ", ".join(
-            f"{stage_id}={state}" for stage_id, state in sorted(bad.items())
+            f"{stage_id}={record.state}"
+            + (f" ({record.error})" if record.error else "")
+            for stage_id, record in sorted(bad.items())
         )
         raise CampaignExecutionError(f"{label} campaign failed: {detail}")
 

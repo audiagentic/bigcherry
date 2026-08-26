@@ -24,6 +24,12 @@ class StageRecord:
     state: str
     spec_hash: str
     output_hashes: tuple[str, ...] = ()
+    # RD100: execute()'s except-block used to discard the actual exception
+    # entirely -- a failed stage recorded only its own stage_id and state,
+    # so every failure surfaced to a caller/CLI as an opaque "X=failed"
+    # with no way to learn why. Captured here so require_campaign_success()
+    # (and anything else reading records) can report the real cause.
+    error: str | None = None
 
 
 class CampaignRun:
@@ -87,8 +93,10 @@ class CampaignRun:
                 self.records[stage_id] = StageRecord(
                     stage_id, "succeeded", digest, tuple(outputs)
                 )
-            except Exception:
-                self.records[stage_id] = StageRecord(stage_id, "failed", digest)
+            except Exception as exc:
+                self.records[stage_id] = StageRecord(
+                    stage_id, "failed", digest, error=f"{type(exc).__name__}: {exc}"
+                )
             finally:
                 for lock in reversed(locks):
                     if lock.inspect() is not None:
