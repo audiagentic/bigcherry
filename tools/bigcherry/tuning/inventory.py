@@ -24,7 +24,7 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..core import paths
 from . import catalog
@@ -823,6 +823,7 @@ def load_measurements(
     manifest_path: Path | None = None,
     signature_source_paths: list[Path] | None = None,
     identity: CampaignDatabaseIdentity | None = None,
+    signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None,
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
@@ -855,6 +856,16 @@ def load_measurements(
     If ``manifest_path`` is provided, candidate rows are populated from
     the manifest's full descriptor data; otherwise only the stable_name
     and family (derived from the name prefix) are recorded.
+
+    ``signature_digest_verifier`` is an optional trust-boundary hook for a
+    caller running the real compiled HIP autotune runtime. It receives each
+    non-empty resolved canonical signature object and must return the digest
+    hex produced by that runtime; a disagreement raises ``RecordError``.
+    This module deliberately does not implement the C++ canonicalization or
+    hashing algorithm in Python. With the default ``None``, ingestion keeps
+    the existing offline behavior: the first (digest, canonical) pairing is
+    accepted on faith. Missing canonical data is not verifiable through this
+    hook.
     """
     # Read measurements JSONL
     results: list[dict[str, Any]] = []
@@ -1276,13 +1287,35 @@ def load_measurements(
             signature_hex = result.get("signature", "")
             if len(signature_hex) != 32:
                 return None
-            if signature_hex in signature_cache:
-                return signature_cache[signature_hex]
             canonical = result.get("canonical") or signature_shapes.get(
                 signature_hex, {}
             )
             if not isinstance(canonical, dict):
                 canonical = {}
+            if signature_digest_verifier is not None and canonical:
+                try:
+                    verified_hex = signature_digest_verifier(canonical)
+                except Exception as exc:
+                    raise RecordError(
+                        f"signature {signature_hex!r} digest verifier failed"
+                    ) from exc
+                if (
+                    not isinstance(verified_hex, str)
+                    or len(verified_hex) != 32
+                    or any(c not in "0123456789abcdefABCDEF" for c in verified_hex)
+                ):
+                    raise RecordError(
+                        f"signature {signature_hex!r} digest verifier returned "
+                        f"invalid digest {verified_hex!r}"
+                    )
+                if verified_hex.lower() != signature_hex.lower():
+                    raise RecordError(
+                        f"signature {signature_hex!r} does not match the digest "
+                        f"independently computed by the supplied verifier "
+                        f"({verified_hex!r})"
+                    )
+            if signature_hex in signature_cache:
+                return signature_cache[signature_hex]
             ned = canonical.get("ned", [0, 0, 0, 0])
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
             has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
