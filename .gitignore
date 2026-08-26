@@ -60,6 +60,7 @@ venv/
 # -- Tuning / replay data --
 tuning/
 !tools/bigcherry/tuning/
+!tools/tests/tuning/
 dispatch-db/
 
 # -- AI tool artifacts --

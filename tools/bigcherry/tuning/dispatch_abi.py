@@ -26,14 +26,33 @@ silently drifting.
 
 from __future__ import annotations
 
-# The CURRENT schema BigCherry's own HIP dispatch code produces. Bump this
-# (and GGML_HIP_SIGNATURE_SCHEMA_VERSION in hip-autotune-types.h, and
-# sql/dispatch-db.sql's schema_meta seed row, in the same commit) whenever a
-# signature field's meaning is reinterpreted -- e.g. HI118's new bias/scale
-# presence flag bits, which is what forced this module into existence: a
-# schema-1 signature cannot be trusted to mean "no bias/scale" for those
-# bits, since schema 1 predates them having any meaning at all.
-SIGNATURE_SCHEMA_VERSION = 2
+# HI121 (round 9): the identity epoch is now FROZEN at 2. Additive/scoped
+# semantic content (a new independent flag bit, a new optional field scoped
+# to the op classes that actually use it) and new producer capabilities
+# (tools/bigcherry/tuning/hip_capabilities.py) NEVER bump this -- the whole
+# point of HI121's two-axis model (semantic content vs. producer knowledge)
+# is that a new semantic distinction is expressed as a new capability bit
+# plus (if needed) a new content field, not as a global epoch bump that
+# invalidates every existing signature's digest regardless of relevance.
+#
+# Bump this ONLY when the canonical signature REPRESENTATION/encoding itself
+# changes incompatibly (e.g. the canonicalization algorithm changes, or an
+# EXISTING hashed field's on-wire meaning is reinterpreted such that old and
+# new semantics cannot be distinguished through content + capability
+# applicability alone) -- and bump GGML_HIP_SIGNATURE_SCHEMA_VERSION in
+# hip-autotune-types.h and sql/dispatch-db.sql's schema_meta seed row in the
+# same commit. This is exactly the HI118/HI119 case that forced the 1->2
+# bump: schema 1 had no way to represent "producer evaluated bias/scale
+# presence at all", so the reinterpretation was of the canonical
+# representation's own completeness, not an ordinary additive change.
+SIGNATURE_IDENTITY_EPOCH = 2
+
+# Compatibility name: several existing call sites and serialized artifact
+# fields (JSONL headers, manifests) already say "signature_schema" -- this
+# alias keeps that vocabulary working without a second independently
+# hand-maintained constant. Always equal to SIGNATURE_IDENTITY_EPOCH; never
+# assign it separately.
+SIGNATURE_SCHEMA_VERSION = SIGNATURE_IDENTITY_EPOCH
 HARDWARE_SCHEMA_VERSION = 1
 
 # The schema a historical artifact meant when it PREDATES this field
