@@ -161,25 +161,63 @@ def _load_source_capabilities(
 def _require_row_belongs_to_build(
     conn: sqlite3.Connection, *, source_build_id: int, row: dict[str, Any], signature_hex: str,
 ) -> None:
-    """A verified build-level capability attestation is not proof that any
-    GIVEN result row in the CURRENT artifact actually belongs to that build
-    -- rows could be edited, mixed in from another artifact, or otherwise
-    not the ones the attestation covers. Requires this row's own dispatch
-    digest to resolve to a real measurement row recorded against
-    source_build_id for this exact signature."""
+    """Prove that the artifact row is the exact DB-recorded winner identity.
+
+    A verified build-level capability attestation is not proof that any GIVEN
+    result row in the CURRENT artifact actually belongs to that build -- rows
+    could be edited, mixed in from another artifact, or otherwise not be the
+    ones the attestation covers.  Bind every identity-bearing field available
+    in the artifact to the authoritative winner row, including the winner's
+    candidate and native names.  The candidate join also makes sure the
+    winner's foreign key resolves to the candidate with that stable name in
+    this same build; a dispatch/signature membership check alone cannot prove
+    any of those claims.
+    """
     dispatch_hex = row.get("dispatch")
     if not isinstance(dispatch_hex, str):
         raise ProjectionError(f"result row missing a valid dispatch digest: {row!r}")
+    hardware_hex = row.get("hardware")
+    if not isinstance(hardware_hex, str):
+        raise ProjectionError(f"result row missing a valid hardware digest: {row!r}")
+    winner_name = row.get("winner")
+    if not isinstance(winner_name, str):
+        raise ProjectionError(f"result row missing a valid winner: {row!r}")
+    native_name = row.get("native")
+    if not isinstance(native_name, str):
+        raise ProjectionError(f"result row missing a valid native candidate: {row!r}")
+    try:
+        dispatch_bytes = bytes.fromhex(dispatch_hex)
+        hardware_bytes = bytes.fromhex(hardware_hex)
+        signature_bytes = bytes.fromhex(signature_hex)
+    except ValueError as exc:
+        raise ProjectionError(f"result row contains a malformed identity digest: {row!r}") from exc
     match = conn.execute(
-        "SELECT 1 FROM measurement m JOIN signature s ON m.signature_id = s.signature_id "
-        "WHERE m.build_id = ? AND m.dispatch_digest = ? AND s.signature_digest = ?",
-        (source_build_id, bytes.fromhex(dispatch_hex), bytes.fromhex(signature_hex)),
+        "SELECT 1 "
+        "FROM measurement m "
+        "JOIN winner w ON w.build_id = m.build_id "
+        " AND w.hardware_id = m.hardware_id "
+        " AND w.signature_id = m.signature_id "
+        " AND w.dispatch_digest = m.dispatch_digest "
+        "JOIN hardware h ON h.hardware_id = w.hardware_id "
+        " AND h.hardware_digest = ? "
+        "JOIN signature s ON s.signature_id = w.signature_id "
+        " AND s.signature_digest = ? "
+        "JOIN candidate c ON c.candidate_id = w.candidate_id "
+        " AND c.build_id = w.build_id "
+        " AND c.stable_name = w.stable_name "
+        "WHERE w.build_id = ? "
+        " AND w.dispatch_digest = ? "
+        " AND w.stable_name = ? "
+        " AND w.native_stable_name = ?",
+        (hardware_bytes, signature_bytes, source_build_id, dispatch_bytes, winner_name, native_name),
     ).fetchone()
     if match is None:
         raise ProjectionError(
-            f"result row (dispatch={dispatch_hex!r}, signature={signature_hex!r}) does not "
-            f"resolve to any measurement recorded against build_id={source_build_id} -- this "
-            f"row cannot be proven to belong to the build whose capabilities were verified"
+            f"result row identity (dispatch={dispatch_hex!r}, signature={signature_hex!r}, "
+            f"hardware={hardware_hex!r}, winner={winner_name!r}, native={native_name!r}) "
+            f"does not resolve to the authoritative winner recorded against "
+            f"build_id={source_build_id} -- this row cannot be proven to belong to the "
+            f"build whose capabilities were verified"
         )
 
 
