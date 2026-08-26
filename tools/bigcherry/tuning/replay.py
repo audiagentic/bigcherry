@@ -653,6 +653,7 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
 def _validate_correctness_gate(
     entries: dict[str, dict[str, Any]], dispatch_db: Path | None,
     source_build_id: int | None = None,
+    source_provenance: dict[str, Any] | None = None,
 ) -> None:
     """Fail closed (HI67/RV49): every non-native winner ships only after it
     independently passes the real CPU-reference correctness gate for its
@@ -676,6 +677,7 @@ def _validate_correctness_gate(
     """
     violations: list[tuple[str, str | None, str]] = []
     conn: sqlite3.Connection | None = None
+    source_build_id_verified = False
     try:
         for digest_hex, record in sorted(entries.items()):
             if bool(record.get("measurement_failure")):
@@ -684,6 +686,68 @@ def _validate_correctness_gate(
             native = record.get("native")
             if winner == native:
                 continue  # native state; no correctness evidence required
+            if source_build_id is not None and not source_build_id_verified:
+                # Adversarial-review follow-up (HI126 composition gap): a
+                # projected artifact's hi121_source_provenance.source_build_id
+                # was previously trusted as-is (only range/type checked) and
+                # fed directly into resolve_promotion_identity()'s
+                # "AND build_id=?" constraint. Nothing proved that build_id
+                # actually corresponds to the REST of the same provenance
+                # tuple (source_revision/manifest_hash/build_descriptor_hash)
+                # recorded right beside it in the same header -- an attacker
+                # could retarget source_build_id to a DIFFERENT build sharing
+                # the same dispatch/signature/hardware triple and inherit ITS
+                # correctness evidence instead. Cross-check the claimed
+                # build_id against the real DB row for it before trusting it
+                # for anything. Deliberately lazy (only once, only when a
+                # non-native winner actually needs correctness resolution) --
+                # an all-native export must not be forced to require
+                # --dispatch-db just because a header happens to carry
+                # provenance nobody is going to use.
+                if not isinstance(source_provenance, dict):
+                    raise SystemExit(
+                        "refusing to export: source_build_id present without its "
+                        "hi121_source_provenance tuple to bind it to"
+                    )
+                if dispatch_db is None:
+                    raise SystemExit(
+                        "refusing to export: hi121_source_provenance.source_build_id is "
+                        "present but no --dispatch-db was supplied to verify it against"
+                    )
+                if conn is None:
+                    conn = sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+                build_row = conn.execute(
+                    "SELECT source_revision, manifest_hash, build_descriptor_hash "
+                    "FROM build WHERE build_id = ?",
+                    (source_build_id,),
+                ).fetchone()
+                if build_row is None:
+                    raise SystemExit(
+                        f"refusing to export: hi121_source_provenance.source_build_id="
+                        f"{source_build_id} does not exist in {dispatch_db}"
+                    )
+                db_source_revision, db_manifest_hash, db_descriptor_hash = build_row
+                claimed_revision = source_provenance.get("source_revision")
+                claimed_manifest_hash = source_provenance.get("manifest_hash")
+                claimed_descriptor_hash = source_provenance.get("build_descriptor_hash")
+                if claimed_revision != db_source_revision or claimed_manifest_hash != db_manifest_hash:
+                    raise SystemExit(
+                        f"refusing to export: hi121_source_provenance claims source_build_id="
+                        f"{source_build_id} but its source_revision/manifest_hash do not match "
+                        f"that build's real DB row -- source_build_id is not bound to the rest "
+                        f"of its own provenance tuple"
+                    )
+                if (
+                    db_descriptor_hash is not None
+                    and claimed_descriptor_hash is not None
+                    and claimed_descriptor_hash != db_descriptor_hash
+                ):
+                    raise SystemExit(
+                        f"refusing to export: hi121_source_provenance claims source_build_id="
+                        f"{source_build_id} but its build_descriptor_hash does not match that "
+                        f"build's real DB row"
+                    )
+                source_build_id_verified = True
             signature_hex = record.get("signature")
             hardware_hex = record.get("hardware")
             if not isinstance(signature_hex, str) or not isinstance(hardware_hex, str):
@@ -760,6 +824,7 @@ def build(
     if not results:
         raise SystemExit(f"no winning results in {measurements}")
     source_build_id = None
+    projected_provenance = None
     if seed_file is None:
         projected_provenance = producer_header.get("hi121_source_provenance") if producer_header else None
         if isinstance(projected_provenance, dict) and "source_build_id" in projected_provenance:
@@ -876,7 +941,7 @@ def build(
     # Runs on every entry, including seed overrides applied just above --
     # unlike _validate_promotion_gate, which a seed override is explicitly
     # allowed to bypass (HI22), this gate is never bypassable (HI67).
-    _validate_correctness_gate(entries, dispatch_db, source_build_id)
+    _validate_correctness_gate(entries, dispatch_db, source_build_id, projected_provenance)
 
     current_entries: list[dict[str, Any]] = []
     producer_revision = manifest.get("source_revision")

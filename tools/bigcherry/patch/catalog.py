@@ -135,6 +135,7 @@ def resolve_for_context(
     context: PatchContext,
     *,
     catalog_path: Path | None = None,
+    resolved_base_revision: str | None = None,
 ) -> tuple[str, ...]:
     """Check an explicit patch selection against ``context``.
 
@@ -166,6 +167,7 @@ def resolve_for_context(
         from .. import patch_admission
         patch_admission.require_admission(
             patch_ids, mode="production", catalog_path=catalog_path,
+            resolved_base_revision=resolved_base_revision,
         )
     return tuple(patch_ids)
 

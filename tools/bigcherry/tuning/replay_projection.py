@@ -417,6 +417,40 @@ def _load_target_capabilities(target_manifest: dict[str, Any], *, vendor_root: P
             f"vendor_root {vendor_root} has uncommitted changes -- refusing to trust its "
             f"declared source_revision/producer_capabilities identity against a dirty tree"
         )
+    # Adversarial-review follow-up (HI124 composition gap): everything above
+    # proves vendor_root IS the exact, clean revision the target manifest
+    # claims -- it does NOT prove any given candidate's embedded
+    # implementation_digest was actually computed from THIS root's real
+    # files. Without this, a self-consistent target manifest could copy a
+    # stale (e.g. source-side) implementation_digest into its own candidate
+    # entries: manifest_hash/descriptor recompute cleanly (they hash
+    # whatever is in the dict, forged value included), the git revision
+    # check passes (a real, correctly-identified checkout), and
+    # _candidate_implementation_is_equivalent() would then compare two
+    # digests that were never independently verified against live target
+    # bytes. Recompute every candidate's digest fresh from vendor_root and
+    # require it to match the manifest's embedded value exactly.
+    for candidate in target_manifest.get("candidates", []):
+        if not isinstance(candidate, dict):
+            continue
+        embedded_digest = candidate.get("implementation_digest")
+        if not isinstance(embedded_digest, str) or not embedded_digest:
+            continue
+        try:
+            recomputed_digest = catalog.candidate_implementation_digest(candidate, vendor_root)
+        except catalog.CatalogError as exc:
+            raise ProjectionError(
+                f"target candidate {candidate.get('stable_name')!r} implementation digest "
+                f"cannot be recomputed from vendor_root {vendor_root}: {exc}"
+            ) from exc
+        if recomputed_digest != embedded_digest:
+            raise ProjectionError(
+                f"target candidate {candidate.get('stable_name')!r} embedded "
+                f"implementation_digest={embedded_digest!r} does not match the digest "
+                f"independently recomputed from vendor_root {vendor_root} "
+                f"({recomputed_digest!r}) -- the manifest was not generated from this "
+                f"root's real implementation source"
+            )
     declared = hc.load_declared_producer_capabilities(vendor_root)
     try:
         claimed = CapabilityMask128.from_hex(caps_hex)
