@@ -1211,12 +1211,36 @@ def load_measurements(
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
             has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
             cursor = connection.execute(
-                "SELECT signature_id FROM signature WHERE signature_digest = ?",
+                "SELECT signature_id, canonical_json FROM signature WHERE signature_digest = ?",
                 (bytes.fromhex(signature_hex),),
             )
             row = cursor.fetchone()
             if row:
-                signature_id = row[0]
+                signature_id, stored_canonical_json = row
+                # HI121 review follow-up: a digest is supposed to be a hash
+                # of its own canonical content, but this loader never
+                # verifies that (see signature_capabilities.py's own
+                # docstring on why a from-scratch Python digest
+                # reimplementation was deliberately NOT built as the fix).
+                # Silently keeping the FIRST canonical ever seen for a given
+                # digest and ignoring every later, DIFFERENT one would let
+                # corrupted/inconsistent canonical content go undetected
+                # indefinitely. This is a real, cheap, C++-independent
+                # mitigation: cross-check every real (non-empty) canonical
+                # dict this loader ever sees for a digest against what's
+                # already stored, and fail closed on disagreement -- it
+                # cannot prove the FIRST stored canonical is correct (that
+                # still requires the real C++ digest authority), but it does
+                # catch the same digest ever being paired with two
+                # DIFFERENT canonical shapes, which a correct producer must
+                # never do.
+                if canonical and canonical != json.loads(stored_canonical_json):
+                    raise RecordError(
+                        f"signature {signature_hex!r} was already stored with different "
+                        f"canonical content than this load supplies -- a digest must "
+                        f"correspond to exactly one canonical shape; refusing to trust "
+                        f"either as authoritative"
+                    )
             else:
                 cursor = connection.execute(
                     "INSERT INTO signature (signature_digest, base_digest, "

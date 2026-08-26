@@ -1128,6 +1128,78 @@ class TestLoadMeasurements(unittest.TestCase):
             inventory._validate_measurement_result(result, 2)
 
 
+class TestSignatureCanonicalConsistency(unittest.TestCase):
+    """HI121 review follow-up: a digest must correspond to exactly one
+    canonical shape -- _resolve_signature() cross-checks every real
+    (non-empty) canonical dict it sees for a digest against what's already
+    stored, rather than silently keeping the first and ignoring the rest."""
+
+    def _result_with_signature(self, *, signature_hex: str, canonical: dict) -> dict:
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        result["signature"] = signature_hex
+        result["canonical"] = canonical
+        return result
+
+    def test_identical_canonical_on_repeat_sighting_is_fine(self):
+        signature_hex = "a" * 32
+        canonical = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+                rows = db.query("SELECT COUNT(*) FROM signature WHERE signature_digest=?", (bytes.fromhex(signature_hex),))
+                self.assertEqual(rows[0][0], 1)
+        finally:
+            os.unlink(path)
+
+    def test_conflicting_canonical_for_same_digest_raises(self):
+        # The in-memory signature_cache short-circuits repeat lookups WITHIN
+        # one load_measurements() call, so this needs two separate loads
+        # against the same DB -- the realistic scenario anyway: two
+        # different measurement runs/files loaded into one persistent DB,
+        # not two rows a single real producer emitted in one run.
+        signature_hex = "b" * 32
+        canonical_a = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        canonical_b = {"op": "MUL_MAT_ID", "schema_version": 2, "flags": 8, "ne0": [5, 6, 7, 8], "ned": [5, 6, 7, 8]}
+        path_a = make_jsonl_file(
+            TUNING_HEADER, self._result_with_signature(signature_hex=signature_hex, canonical=canonical_a),
+        )
+        path_b = make_jsonl_file(
+            TUNING_HEADER, self._result_with_signature(signature_hex=signature_hex, canonical=canonical_b),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(path_a, db.db_path, schema_path, manifest_path=None)
+                with self.assertRaisesRegex(RecordError, "different canonical content"):
+                    inventory.load_measurements(path_b, db.db_path, schema_path, manifest_path=None)
+        finally:
+            os.unlink(path_a)
+            os.unlink(path_b)
+
+    def test_missing_canonical_on_repeat_sighting_does_not_raise(self):
+        # Absence of canonical data is not a disagreement -- a row that
+        # simply doesn't carry the field must not be treated as a conflict
+        # against an already-stored real canonical shape.
+        signature_hex = "c" * 32
+        canonical = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        with_canonical = self._result_with_signature(signature_hex=signature_hex, canonical=canonical)
+        without_canonical = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        without_canonical["signature"] = signature_hex
+        path = make_jsonl_file(TUNING_HEADER, with_canonical, without_canonical)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+        finally:
+            os.unlink(path)
+
+
 class TestHipCapabilityPersistence(unittest.TestCase):
     """HI121 M2: load_measurements() verifies the compiled producer's own
     self-reported capability mask against the supplied manifest before

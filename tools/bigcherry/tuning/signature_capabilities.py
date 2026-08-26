@@ -49,15 +49,32 @@ from .capabilities import CapabilityMask128
 # signature_mapping.py's own private constants (kept independent rather than
 # imported, since that module marks them private/internal to its own
 # MUL_MAT_ID/GLU mapping logic).
+_SIG_SRC0_CONTIGUOUS = 1 << 0
+_SIG_SRC1_CONTIGUOUS = 1 << 1
+_SIG_DST_CONTIGUOUS = 1 << 2
 _SIG_HAS_IDS = 1 << 3
+_SIG_BROADCAST_CH = 1 << 4
+_SIG_BROADCAST_SMP = 1 << 5
+_SIG_BAD_PADDING = 1 << 6
 _SIG_FUSION_X_BIAS = 1 << 7
 _SIG_FUSION_GATE_BIAS = 1 << 8
 _SIG_FUSION_X_SCALE = 1 << 9
 _SIG_FUSION_GATE_SCALE = 1 << 10
 _HI118_AUX_FLAGS = _SIG_FUSION_X_BIAS | _SIG_FUSION_GATE_BIAS | _SIG_FUSION_X_SCALE | _SIG_FUSION_GATE_SCALE
 
+# Every flags bit ggml_hip_signature_flag (hip-autotune-types.h) currently
+# defines. A bit outside this mask is a semantic distinction this module has
+# never been audited against -- round 9 explicitly requires that case fail
+# closed rather than silently returning CORE_SIGNATURE_V1 for a signature
+# that may carry meaning this rule set doesn't know to check.
+_KNOWN_FLAGS_MASK = (
+    _SIG_SRC0_CONTIGUOUS | _SIG_SRC1_CONTIGUOUS | _SIG_DST_CONTIGUOUS | _SIG_HAS_IDS
+    | _SIG_BROADCAST_CH | _SIG_BROADCAST_SMP | _SIG_BAD_PADDING | _HI118_AUX_FLAGS
+)
+
 _FUSION_KIND_NONE = 0  # GGML_HIP_FUSION_NONE
 _FUSION_KIND_GATE = 2  # GGML_HIP_FUSION_GATE
+_FUSION_KIND_GATE_BIAS = 3  # GGML_HIP_FUSION_GATE_BIAS
 _FUSABLE_GLU_OPS = {1, 2, 3}  # GEGLU, SWIGLU, SWIGLU_OAI (ggml.h's real enum order)
 
 
@@ -101,6 +118,12 @@ def hip_required_capabilities(
     flags = _require_int(signature, "flags")
     fusion = _require_int(signature, "fusion")
     glu_op = _require_int(signature, "glu_op")
+    if flags < 0 or (flags & ~_KNOWN_FLAGS_MASK) != 0:
+        raise UnsupportedSignatureDomain(
+            f"signature flags={flags!r} sets bit(s) outside the known flags mask "
+            f"({_KNOWN_FLAGS_MASK:#x}) -- this signature may carry a semantic distinction "
+            f"this rule set has never been audited against; refusing to guess"
+        )
     has_ids = bool(flags & _SIG_HAS_IDS)
     has_aux = bool(flags & _HI118_AUX_FLAGS)
 
@@ -133,9 +156,21 @@ def hip_required_capabilities(
                 "(MUL_MAT_ID-based) fused GLU case has an audited rule; a non-routed/dense GLU "
                 "fusion needs its own sibling rule, not yet written"
             )
-        if fusion != _FUSION_KIND_GATE:
+        # ggml_hip_fusion_kind() (hip-autotune-signature.cpp) classifies a
+        # GATE fusion that ALSO has a real x_bias/gate_bias tensor as
+        # GGML_HIP_FUSION_GATE_BIAS (3), not GATE (2) -- confirmed against
+        # real source. A real biased GLU dispatch therefore never has
+        # fusion==GATE; checking only for GATE here would fail closed on
+        # every real biased dispatch forever, even after a producer declares
+        # the bias-presence capabilities specifically to support them. Both
+        # real representations are accepted; the required-capabilities
+        # result is identical either way (all four presence capabilities),
+        # since a GATE signature's biases are unknown-not-necessarily-absent
+        # exactly the same way a GATE_BIAS signature's scales are.
+        if fusion not in (_FUSION_KIND_GATE, _FUSION_KIND_GATE_BIAS):
             raise UnsupportedSignatureDomain(
-                f"GLU signature fusion={fusion!r} is not GGML_HIP_FUSION_GATE ({_FUSION_KIND_GATE}) -- "
+                f"GLU signature fusion={fusion!r} is neither GGML_HIP_FUSION_GATE "
+                f"({_FUSION_KIND_GATE}) nor GGML_HIP_FUSION_GATE_BIAS ({_FUSION_KIND_GATE_BIAS}) -- "
                 f"no audited rule for this fusion kind"
             )
         if glu_op not in _FUSABLE_GLU_OPS:
