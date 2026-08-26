@@ -135,7 +135,12 @@ class _Harness:
             ),
         )
 
-    def worker(self, local_provenance_class: ProvenanceClass = "development", backend: str = "hip"):
+    def worker(
+        self,
+        local_provenance_class: ProvenanceClass = "development",
+        backend: str = "hip",
+        extra_binary_names: tuple[str, ...] = (),
+    ):
         return campaign_workers.make_build_worker(
             context=self.context,
             source_root=self.directory / "source",
@@ -147,7 +152,8 @@ class _Harness:
             binary_relative_path="bin/llama-bench",
             source_slice_id=self.source_slice_id,
             workload_id=self.workload_id,
-            cmake_targets=("llama-bench",),
+            cmake_targets=("llama-bench",) + extra_binary_names,
+            extra_binary_names=extra_binary_names,
             # RE25.3: these are mechanism/reuse tests with fixture (not
             # production) provenance docs; development class keeps the
             # production-only publish-time kind contract out of scope.
@@ -159,6 +165,7 @@ class _Harness:
         self,
         cmake_cache_text: str = _CMAKE_CACHE,
         hip_so_content: bytes = b"hip-dispatch-v1",
+        extra_binary_names: tuple[str, ...] = (),
     ):
         build_dir = build_directory(self.context, self.source_slice_id, self.build_plan)
 
@@ -175,6 +182,8 @@ class _Harness:
                 (build_dir / "bin" / "libggml-hip.so.0.19.0").write_bytes(
                     hip_so_content
                 )
+                for name in extra_binary_names:
+                    (build_dir / "bin" / name).write_bytes(f"extra-{name}".encode())
             else:
                 (build_dir / "CMakeCache.txt").write_text(
                     cmake_cache_text, encoding="utf-8"
@@ -488,6 +497,47 @@ class ReuseTests(unittest.TestCase):
             self.assertEqual(Path(first_dir), (build_dir / "generated-inputs").resolve())
             self.assertNotIn("run1", first_dir)
             self.assertNotIn("run2", second_dir)
+
+    def test_missing_extra_binary_forces_recompile_not_silent_reuse(self):
+        # RD100 (gpt-auto-agent review follow-up): current_runtime_hash was
+        # left None whenever an expected extra binary was absent, so
+        # validate_reuse() skipped the runtime-bundle comparison entirely --
+        # but `reused` was still computed from compile_inputs_hash alone,
+        # so a build_dir missing a requested extra binary (e.g. pruned, or
+        # from before this lane asked for it) could be treated as a valid
+        # reuse and returned without ever recompiling the missing artifact.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run",
+                harness.fake_compiler(extra_binary_names=("extra-tool",)),
+            ):
+                harness.worker(extra_binary_names=("extra-tool",))(
+                    harness.generate_inputs()
+                )
+            first_calls = len(harness.calls)
+            self.assertEqual(first_calls, 2)
+
+            build_dir = build_directory(
+                harness.context, harness.source_slice_id, harness.build_plan
+            )
+            (build_dir / "bin" / "extra-tool").unlink()
+
+            # Same identity, same generated content (a genuine reuse
+            # candidate) -- but the extra binary is now missing. This must
+            # recompile, not silently report success while missing the
+            # requested extra.
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run",
+                harness.fake_compiler(extra_binary_names=("extra-tool",)),
+            ):
+                refs = harness.worker(extra_binary_names=("extra-tool",))(
+                    harness.generate_inputs()
+                )
+
+            self.assertEqual(len(harness.calls), first_calls + 2)  # recompiled
+            self.assertTrue((build_dir / "bin" / "extra-tool").is_file())
+            self.assertEqual(len(refs), 2)
 
     def test_dependent_library_tampered_fails_closed_even_though_launcher_is_untouched(
         self,

@@ -376,6 +376,50 @@ class CachedWorktreeTamperFailsClosedTests(unittest.TestCase):
                 materialize_source(context, plan, allow_dirty_bigcherry=True)
 
 
+class FailedMaterializationDoesNotPoisonThePlanIdTests(unittest.TestCase):
+    def test_a_transient_failure_after_the_worktree_is_added_can_be_retried(self):
+        # RD100 (gpt-auto-agent review follow-up): materialize() adds the
+        # git worktree FIRST, then applies overlay/patches -- a failure in
+        # that second phase used to leave `destination` on disk (a real,
+        # registered git worktree) with no metadata.json beside it. Every
+        # later attempt at the SAME plan_id (same patches/overlay/revision)
+        # hit "source directory exists without matching metadata -- refusing
+        # to materialise over it" forever, with no automatic recovery --
+        # permanently poisoning that identity over a transient failure.
+        from unittest.mock import patch as mock_patch
+        from bigcherry.patch import apply as patcher
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+
+            real_apply_all = patcher.apply_all
+            with mock_patch.object(
+                patcher, "apply_all", side_effect=WorkspaceError("transient failure")
+            ):
+                with self.assertRaises(WorkspaceError):
+                    materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            from bigcherry.campaign import source as campaign_source
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            destination = context.work_root / "sources" / plan_id
+            # The failed attempt must not have left a poisoned worktree
+            # behind -- cleanup runs even though apply_all never touches
+            # the filesystem itself (this stub just raises), proving the
+            # cleanup path activates on ANY materialize() failure, not only
+            # ones that happen to leave files.
+            self.assertFalse(destination.exists())
+
+            # A genuinely working retry, with the exact same plan/identity,
+            # must succeed -- not hit the poisoned-directory error.
+            with mock_patch.object(patcher, "apply_all", side_effect=real_apply_all):
+                metadata = materialize_source(context, plan, allow_dirty_bigcherry=True)
+            self.assertTrue(metadata["source_slice_id"])
+
+
 class DirtyBigCherryRejectedOnBothPathsTests(unittest.TestCase):
     def test_dirty_bigcherry_rejects_fresh_materialisation(self):
         with tempfile.TemporaryDirectory() as directory:

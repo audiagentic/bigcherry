@@ -36,7 +36,9 @@ from ..core.context import ProjectContext
 from ..source.identity import (
     SourceAttestation, SourceIdentityError, git_tree_oid, verify_source_attestation,
 )
-from ..source.workspace import SourcePlan, materialize, require_clean_bigcherry
+from ..source.workspace import (
+    SourcePlan, UpstreamRepository, materialize, require_clean_bigcherry,
+)
 
 Runner = Callable[[list[str], Path], None]
 
@@ -347,6 +349,8 @@ def materialize_source(
     cache-hit branch -- ``materialize()``'s own check only guards the
     fresh-creation path, which a cache hit never reaches.
     """
+    # Cheap fail-fast before even computing identity/waiting on the lock --
+    # the authoritative check is the one repeated inside the lock below.
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
 
     plan = campaign_source.resolve_materialization_inputs(context, plan)
@@ -357,6 +361,14 @@ def materialize_source(
     # whole inspect-cache -> materialize -> attest -> publish-metadata
     # sequence below per plan_id, not just the final write.
     with source_identity.plan_lock(context.work_root, plan_id):
+        # RD100 (gpt-auto-agent review follow-up): the check above ran
+        # BEFORE waiting on plan_lock -- a contended lock can mean a real,
+        # possibly long wait (up to plan_lock's own timeout), during which
+        # the shared BigCherry tree could become dirty. Re-check now that
+        # the lock is actually held, immediately before any cache-hit
+        # decision or fresh materialisation, so the property this check
+        # exists to guarantee is still true at the moment it's relied on.
+        require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
         return _materialize_source_locked(
             context, plan, identity, plan_id, allow_dirty_bigcherry=allow_dirty_bigcherry,
         )
@@ -464,9 +476,30 @@ def _materialize_source_locked(
             f"metadata -- refusing to materialise over it"
         )
 
-    metadata = materialize(
-        context, plan, destination, allow_dirty_bigcherry=allow_dirty_bigcherry
-    )
+    try:
+        metadata = materialize(
+            context, plan, destination, allow_dirty_bigcherry=allow_dirty_bigcherry
+        )
+    except BaseException:
+        # RD100 (gpt-auto-agent review follow-up): materialize() can fail
+        # partway through (worktree added, then an overlay hash mismatch or
+        # patch application failure) and leave `destination` on disk with
+        # no metadata file -- exactly the state the check above refuses to
+        # materialise over. Without cleanup here, this plan_id is
+        # permanently poisoned: every future attempt hits the same
+        # "exists without matching metadata" error forever, with no
+        # automatic recovery. Best-effort cleanup, never masking the
+        # original failure -- a cleanup error must not hide why
+        # materialisation actually failed.
+        if destination.exists():
+            try:
+                if (destination / ".git").exists():
+                    UpstreamRepository(context.upstream_repo).remove_worktree(destination)
+                else:
+                    shutil.rmtree(destination, ignore_errors=True)
+            except Exception:
+                pass
+        raise
     record = dict(metadata)
     record["overlay_content_hash"] = identity["overlay_content_hash"]
     # RE05 (RV48 audit): the three source identities, all explicit in the
