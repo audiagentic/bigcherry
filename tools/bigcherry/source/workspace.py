@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..patch import apply as patcher
+from ..patch.apply import PatchError, resolve_contained_target
 from ..patch import patchset
 from ..core.context import ProjectContext
 from .identity import describe
@@ -165,7 +166,10 @@ def materialize(
             if not source.is_file():
                 continue
             relative = source.relative_to(context.overlay_root)
-            target = destination / relative
+            try:
+                target = resolve_contained_target(destination, relative.as_posix())
+            except PatchError as exc:
+                raise WorkspaceError(f"overlay target escapes source root: {exc}") from exc
             was_present = target.exists()
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
