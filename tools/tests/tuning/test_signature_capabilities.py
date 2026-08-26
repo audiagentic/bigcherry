@@ -161,16 +161,47 @@ class GluTests(unittest.TestCase):
             with self.assertRaises(sc.UnsupportedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
-    def test_glu_with_bias_content_bits_set_still_requires_all_four(self):
+    def test_glu_with_real_gate_bias_fusion_kind_still_requires_all_four(self):
+        # ggml_hip_fusion_kind() (verified against real source) classifies a
+        # GATE fusion that ALSO has a real bias tensor as GGML_HIP_FUSION_
+        # GATE_BIAS (3), never GATE (2) -- this is the ACTUAL representation
+        # a real biased GLU dispatch has, not fusion=2 with bias bits set.
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
-            sig = dict(GLU_ALL_ZERO, flags=GLU_ALL_ZERO["flags"] | (1 << 7) | (1 << 8))
+            sig = dict(GLU_ALL_ZERO, fusion=3, flags=GLU_ALL_ZERO["flags"] | (1 << 7) | (1 << 8))
+            required = sc.hip_required_capabilities(sig, vendor_root=vendor)
+            self.assertEqual(required, ALL_FOUR_CAPS)
+
+    def test_glu_gate_bias_fusion_with_zero_content_bits_still_requires_all_four(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            sig = dict(GLU_ALL_ZERO, fusion=3)
             required = sc.hip_required_capabilities(sig, vendor_root=vendor)
             self.assertEqual(required, ALL_FOUR_CAPS)
 
 
 class GeneralTests(unittest.TestCase):
+    def test_unknown_flag_bit_is_unsupported(self):
+        # A bit outside hip-autotune-types.h's current ggml_hip_signature_flag
+        # range must fail closed, never silently return CORE_SIGNATURE_V1 for
+        # a signature that may carry meaning this rule set never audited.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            sig = dict(PLAIN_MUL_MAT, flags=1 << 11)
+            with self.assertRaises(sc.UnsupportedSignatureDomain):
+                sc.hip_required_capabilities(sig, vendor_root=vendor)
+
+    def test_unknown_flag_bit_on_glu_is_also_unsupported(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            sig = dict(GLU_ALL_ZERO, flags=GLU_ALL_ZERO["flags"] | (1 << 15))
+            with self.assertRaises(sc.UnsupportedSignatureDomain):
+                sc.hip_required_capabilities(sig, vendor_root=vendor)
+
     def test_unknown_op_is_unsupported(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

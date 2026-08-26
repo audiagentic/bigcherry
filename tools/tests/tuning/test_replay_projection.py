@@ -4,6 +4,7 @@ selective, capability-gated reuse feeding into the UNCHANGED replay.build()."""
 from __future__ import annotations
 
 import json
+import subprocess
 import sqlite3
 import sys
 import tempfile
@@ -16,15 +17,28 @@ from bigcherry.tuning import catalog  # noqa: E402
 from bigcherry.tuning import dispatch_abi  # noqa: E402
 from bigcherry.tuning import replay as replay_module  # noqa: E402
 from bigcherry.tuning import replay_projection as rp  # noqa: E402
+from bigcherry.source.audit import git_revision  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_SQL = REPO_ROOT / "sql" / "dispatch-db.sql"
 
 EPOCH = dispatch_abi.SIGNATURE_IDENTITY_EPOCH
 
-SOURCE_REVISION = "b" * 40
 CORE_ONLY_HEX = "0" * 31 + "1"  # CORE_SIGNATURE_V1 only
 ALL_FIVE_HEX = "0000000000000000000000000000001f"  # CORE + all 4 HI118 presence caps
+
+
+def _git_init_and_commit(root: Path) -> str:
+    """Real git repo, real commit -- _load_target_capabilities() verifies
+    vendor_root's ACTUAL git revision against what a manifest claims, so a
+    fixture claiming a made-up 40-hex-char revision can no longer pass."""
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=root, check=True)
+    revision, _dirty = git_revision(root, check_dirty=False)
+    return revision
 
 
 def _write_fixture_vendor(tmp_path: Path, *, producer_capabilities_hex: str) -> Path:
@@ -58,12 +72,12 @@ def _write_fixture_vendor(tmp_path: Path, *, producer_capabilities_hex: str) -> 
     return vendor
 
 
-def _make_manifest(*, producer_capabilities_hex: str) -> dict:
+def _make_manifest(*, producer_capabilities_hex: str, source_revision: str) -> dict:
     families = ("mmvq", "mmq", "mmvf", "mmf", "blas")
     manifest = {
         "artifact_version": 1,
         "variant_set": "inventory",
-        "source_revision": SOURCE_REVISION,
+        "source_revision": source_revision,
         "architectures": ["gfx1100"],
         "signature_schema_version": EPOCH,
         "hardware_schema_version": 1,
@@ -94,20 +108,21 @@ class ProjectMeasurementsTests(unittest.TestCase):
         self.tmp_path = Path(self._tmp.name)
 
         self.vendor = _write_fixture_vendor(self.tmp_path, producer_capabilities_hex=ALL_FIVE_HEX)
+        self.source_revision = _git_init_and_commit(self.vendor)
 
         self.dispatch_db = self.tmp_path / "dispatch.sqlite"
         self.conn = sqlite3.connect(str(self.dispatch_db))
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
 
-        self.manifest = _make_manifest(producer_capabilities_hex=ALL_FIVE_HEX)
+        self.manifest = _make_manifest(producer_capabilities_hex=ALL_FIVE_HEX, source_revision=self.source_revision)
         self.manifest_path = self.tmp_path / "manifest.json"
         self.manifest_path.write_text(json.dumps(self.manifest), encoding="utf-8")
 
         self.conn.execute(
             "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
             "hardware_schema, variant_set) VALUES (?, ?, ?, 1, 'inventory')",
-            (SOURCE_REVISION, self.manifest["manifest_hash"], EPOCH),
+            (self.source_revision, self.manifest["manifest_hash"], EPOCH),
         )
         self.build_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -134,7 +149,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         self.header = {
             "kind": "header",
             "artifact_version": 1,
-            "source_revision": SOURCE_REVISION,
+            "source_revision": self.source_revision,
             "manifest_hash": self.manifest["manifest_hash"],
             "variant_set": "inventory",
         }
@@ -144,14 +159,14 @@ class ProjectMeasurementsTests(unittest.TestCase):
             "dispatch": replay_module.portable_tuning_key(hardware_hex, self.s1_hex),
             "signature": self.s1_hex, "hardware": hardware_hex,
             "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
-            "source_revision": SOURCE_REVISION, "manifest_hash": self.manifest["manifest_hash"],
+            "source_revision": self.source_revision, "manifest_hash": self.manifest["manifest_hash"],
         }
         self.s2_result = {
             "kind": "result",
             "dispatch": replay_module.portable_tuning_key(hardware_hex, self.s2_hex),
             "signature": self.s2_hex, "hardware": hardware_hex,
             "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
-            "source_revision": SOURCE_REVISION, "manifest_hash": self.manifest["manifest_hash"],
+            "source_revision": self.source_revision, "manifest_hash": self.manifest["manifest_hash"],
         }
         self.measurements_path = self.tmp_path / "measurements.jsonl"
         with self.measurements_path.open("w", encoding="utf-8") as handle:
@@ -216,9 +231,12 @@ class ProjectMeasurementsTests(unittest.TestCase):
         # HI121's own added strengthening: the TARGET must also hold the
         # required capabilities, not just the source.
         self._set_source_capabilities(ALL_FIVE_HEX)
-        core_only_manifest = _make_manifest(producer_capabilities_hex=CORE_ONLY_HEX)
         core_only_vendor = _write_fixture_vendor(
             self.tmp_path / "core-only-target", producer_capabilities_hex=CORE_ONLY_HEX
+        )
+        core_only_revision = _git_init_and_commit(core_only_vendor)
+        core_only_manifest = _make_manifest(
+            producer_capabilities_hex=CORE_ONLY_HEX, source_revision=core_only_revision
         )
         core_only_manifest_path = self.tmp_path / "core-only-manifest.json"
         core_only_manifest_path.write_text(json.dumps(core_only_manifest), encoding="utf-8")
@@ -247,11 +265,102 @@ class ProjectMeasurementsTests(unittest.TestCase):
         self.assertEqual(header["version"], replay_module.REPLAY_VERSION)
         self.assertEqual(len(entries), 2)
 
+    def test_genuine_cross_revision_projection_feeds_replay_build(self):
+        # The central multi-generation use case: source and target are
+        # DIFFERENT real revisions/builds. Without the output header being
+        # target-bound, replay.build()'s own real requirement (producer
+        # header source_revision == target manifest source_revision) would
+        # reject this unconditionally, even though every row is legitimately
+        # capability-compatible.
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        target_vendor = _write_fixture_vendor(self.tmp_path / "target-root", producer_capabilities_hex=ALL_FIVE_HEX)
+        # Distinct tree content so this real commit hashes differently from
+        # self.vendor's -- otherwise two git commits with byte-identical
+        # trees made within the same second can hash identically.
+        (target_vendor / "MARKER.txt").write_text("target-root\n", encoding="utf-8")
+        target_revision = _git_init_and_commit(target_vendor)
+        self.assertNotEqual(target_revision, self.source_revision)
+        target_manifest = _make_manifest(producer_capabilities_hex=ALL_FIVE_HEX, source_revision=target_revision)
+        target_manifest_path = self.tmp_path / "target-manifest.json"
+        target_manifest_path.write_text(json.dumps(target_manifest), encoding="utf-8")
+
+        output = self.tmp_path / "out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            target_manifest_path=target_manifest_path, vendor_root=target_vendor,
+        )
+        self.assertEqual(summary.retained, 2)
+
+        output_header = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(output_header["source_revision"], target_revision)
+        self.assertEqual(output_header["manifest_hash"], target_manifest["manifest_hash"])
+        self.assertEqual(output_header["hi121_source_provenance"]["source_revision"], self.source_revision)
+        self.assertEqual(output_header["hi121_source_provenance"]["source_build_id"], self.build_id)
+
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(output, target_manifest_path, ggml_h)
+        header, entries = replay_module.read_cache(blob)
+        self.assertEqual(header["version"], replay_module.REPLAY_VERSION)
+        self.assertEqual(len(entries), 2)
+
+    def test_retained_rows_are_preserved_byte_for_byte(self):
+        # round 9's explicit requirement: retained result rows must be the
+        # ORIGINAL bytes, not a json.dumps() re-serialization (which can
+        # silently change whitespace/escaping/key order).
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        # Rewrite the measurements file with deliberately unusual (but valid)
+        # formatting for the S1 result line -- extra whitespace, different
+        # key order -- that json.dumps(..., separators=(",", ":")) would
+        # normalize away if the row were re-serialized.
+        original_lines = self.measurements_path.read_text(encoding="utf-8").splitlines()
+        s1_line_index = next(
+            i for i, line in enumerate(original_lines)
+            if json.loads(line).get("signature") == self.s1_hex
+        )
+        reordered = {"kind": "result", "winner": self.s1_result["winner"]}
+        reordered.update({k: v for k, v in self.s1_result.items() if k not in reordered})
+        odd_line = json.dumps(reordered, indent=None, separators=(", ", ": "))
+        original_lines[s1_line_index] = odd_line
+        self.measurements_path.write_text("\n".join(original_lines) + "\n", encoding="utf-8")
+
+        output = self.tmp_path / "out.jsonl"
+        rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+        )
+        output_lines = output.read_text(encoding="utf-8").splitlines()
+        matching = [line for line in output_lines if self.s1_hex in line]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0], odd_line, "retained row must be the original raw bytes, not re-serialized")
+
+    def test_header_capability_forgery_is_rejected(self):
+        # A measurements artifact whose header CLAIMS a different producer_
+        # capabilities than what's actually DB-attested for source_build_id
+        # must be rejected -- trusting the DB attestation alone (without
+        # checking THIS artifact's own claim against it) would let a forged/
+        # different artifact silently inherit someone else's attestation.
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        forged_header = dict(self.header)
+        forged_header["producer_capabilities"] = CORE_ONLY_HEX
+        lines = [json.dumps(forged_header)] + [
+            line for line in self.measurements_path.read_text(encoding="utf-8").splitlines()[1:]
+        ]
+        self.measurements_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
     def test_wrong_source_build_id_header_mismatch_raises(self):
         self.conn.execute(
             "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
-            "hardware_schema, variant_set) VALUES ('c'||?, 'different', ?, 1, 'inventory')",
-            (SOURCE_REVISION[1:], EPOCH),
+            "hardware_schema, variant_set) VALUES (?, 'different', ?, 1, 'inventory')",
+            ("c" * 40, EPOCH),
         )
         other_build_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         self.conn.execute(
@@ -290,11 +399,13 @@ class ProjectMeasurementsTests(unittest.TestCase):
     def test_target_manifest_from_wrong_source_root_raises(self):
         self._set_source_capabilities(ALL_FIVE_HEX)
         wrong_vendor = _write_fixture_vendor(self.tmp_path / "wrong-root", producer_capabilities_hex=CORE_ONLY_HEX)
+        _git_init_and_commit(wrong_vendor)  # a real, but DIFFERENT, revision than self.manifest claims
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
                 dispatch_db=self.dispatch_db, source_build_id=self.build_id,
-                # manifest claims ALL_FIVE_HEX but this vendor_root only declares CORE_ONLY_HEX
+                # manifest claims self.source_revision but this vendor_root is at a different
+                # real revision (and also only declares CORE_ONLY_HEX, not ALL_FIVE_HEX)
                 target_manifest_path=self.manifest_path, vendor_root=wrong_vendor,
             )
 
