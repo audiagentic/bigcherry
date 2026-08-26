@@ -36,6 +36,63 @@ class PatchError(RuntimeError):
     """An edit could not be applied. The message names the failing anchor."""
 
 
+def resolve_contained_target(root: Path, relative: str) -> Path:
+    """Resolve ``relative`` against ``root``, refusing any path or symlink
+    that would let the write land outside ``root``.
+
+    Registry-level path validation (patch/registry.py) protects where a
+    patch.py *definition* lives; it says nothing about the paths a patch's
+    own edits write to. ``root`` here is typically a checkout of untrusted
+    upstream source (llama.cpp), which could in principle carry a symlink
+    that redirects an innocuous-looking relative path outside the isolated
+    worktree -- git_tree_oid()/git_worktree_tree() only ever walk *inside*
+    the tree, so such a write would be invisible to source-identity hashing
+    while still mutating real filesystem state outside it.
+    """
+    if not relative or relative.strip() == "":
+        raise PatchError("patch target path is empty")
+    candidate = Path(relative)
+    if candidate.is_absolute():
+        raise PatchError(f"patch target path must be relative, got absolute path: {relative!r}")
+    if ".." in candidate.parts:
+        raise PatchError(f"patch target path must not contain '..' components: {relative!r}")
+
+    resolved_root = root.resolve(strict=True)
+
+    # Walk the parent chain from the root down, rejecting any component that
+    # is itself a symlink -- a symlinked *directory* partway down the path
+    # is exactly as dangerous as a symlinked leaf file, since everything
+    # written "through" it lands wherever the link points.
+    current = resolved_root
+    for part in candidate.parts[:-1]:
+        current = current / part
+        if current.is_symlink():
+            raise PatchError(
+                f"patch target path {relative!r} passes through a symlink at "
+                f"{current} -- refusing to write through a path component "
+                f"that could redirect outside the source root"
+            )
+
+    target = resolved_root / candidate
+    if target.is_symlink():
+        raise PatchError(
+            f"patch target {relative!r} is itself a symlink -- refusing to "
+            f"write through it since its destination is not guaranteed to "
+            f"be contained by the source root"
+        )
+
+    resolved_parent = target.parent.resolve() if target.parent.exists() else target.parent
+    try:
+        resolved_parent.relative_to(resolved_root)
+    except ValueError as exc:
+        raise PatchError(
+            f"patch target {relative!r} resolves to {target}, which is not "
+            f"contained by source root {resolved_root}"
+        ) from exc
+
+    return target
+
+
 @dataclass(frozen=True)
 class Edit:
     """One anchored modification to a file.
@@ -178,7 +235,7 @@ def apply_patch(patch: FilePatch, root: Path, *, dry_run: bool = False,
     through means the trial pass sees the tree as it will actually be.
     """
     result = PatchResult(path=patch.path)
-    target = root / patch.path
+    target = resolve_contained_target(root, patch.path)
 
     if texts is not None and patch.path in texts:
         text = texts[patch.path]

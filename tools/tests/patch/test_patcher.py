@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.core import csource # noqa: E402
 from bigcherry.patcher import (  # noqa: E402
-    Edit, FilePatch, apply_all, apply_patch,
+    Edit, FilePatch, PatchError, apply_all, apply_patch, resolve_contained_target,
 )
 
 
@@ -284,6 +284,72 @@ class TestAppliesIf(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(result.results[0].status, "not-applicable")
             self.assertNotIn("INSERTED", tree.read())
+
+
+class TestPatchTargetContainment(unittest.TestCase):
+    """PA06 (source/patch identity hardening L0.1): a patch target must be
+    contained by the source root -- no absolute path, `..` escape, or
+    symlink-mediated redirection outside it."""
+
+    def test_relative_traversal_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaises(PatchError):
+                resolve_contained_target(root, "../outside.txt")
+
+    def test_absolute_path_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaises(PatchError):
+                resolve_contained_target(root, str(root.parent / "outside.txt"))
+
+    def test_nested_traversal_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaises(PatchError):
+                resolve_contained_target(root, "a/b/../../../outside.txt")
+
+    def test_intermediate_symlink_escape_rejected(self):
+        with tempfile.TemporaryDirectory() as outside_tmp, tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = Path(outside_tmp)
+            link = root / "linked"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("symlink creation not permitted in this environment")
+            with self.assertRaises(PatchError):
+                resolve_contained_target(root, "linked/escape.txt")
+
+    def test_final_symlink_target_rejected(self):
+        with tempfile.TemporaryDirectory() as outside_tmp, tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside_file = Path(outside_tmp) / "secret.txt"
+            outside_file.write_text("secret", encoding="utf-8")
+            link = root / "leaf.txt"
+            try:
+                link.symlink_to(outside_file)
+            except OSError:
+                self.skipTest("symlink creation not permitted in this environment")
+            with self.assertRaises(PatchError):
+                resolve_contained_target(root, "leaf.txt")
+
+    def test_normal_nested_target_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = resolve_contained_target(root, "nested/dir/file.txt")
+            self.assertEqual(target, (root.resolve(strict=True) / "nested" / "dir" / "file.txt"))
+
+    def test_rejection_occurs_before_any_mutation(self):
+        with TempTree("keep.txt", "original") as tree:
+            patch = FilePatch(
+                path="../outside.txt",
+                edits=(Edit(id="e", anchor=r"^original$", text="\nadded", guard=r"^added$"),),
+            )
+            with self.assertRaises(PatchError):
+                apply_patch(patch, tree.root)
+            self.assertEqual(tree.read(), "original")
+            self.assertFalse((tree.root.parent / "outside.txt").exists())
 
 
 if __name__ == "__main__":
