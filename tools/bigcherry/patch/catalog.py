@@ -22,11 +22,10 @@ a patch.
 
 This module remains read-only with respect to patch lifecycle state and
 catalog contents. The HI83 evidence functions below
-(``validation_evidence_statuses``/``require_validation_evidence``) are
-verifiers, not the production admission boundary -- as of this writing
-nothing calls them from a live ``bigcherry apply``/``bigcherry build``
-path; wiring a hard gate is a deliberate, separately-adjudicated decision
-(see plan item HI83's notes for the current status and why).
+(``validation_evidence_statuses``/``require_validation_evidence``) remain
+verifiers. The separate ``patch_admission`` module is the production
+post-selection boundary; this module only exposes verifier inputs and keeps
+composition and admission authorities separate.
 
 Revised 2026-08-22 per GPT review (req_b87ea92609fa45fe): the previous
 wording ("read-only, additive metadata -- it does not change what apply/
@@ -158,6 +157,16 @@ def resolve_for_context(
             f"patch selection is not applicable to backend {context.backend!r}: "
             + "; ".join(errors)
         )
+    # HI102: this is the production build/campaign admission seam.  Keep it
+    # after applicability and after composition has already been resolved:
+    # admission may reject the selection, but must never filter or substitute
+    # patches.  Synthetic catalogs remain composition-only so unit fixtures do
+    # not accidentally consult the real repository's evidence directory.
+    if catalog_path is None or Path(catalog_path).resolve() == paths.PATCH_CATALOG.resolve():
+        from .. import patch_admission
+        patch_admission.require_admission(
+            patch_ids, mode="production", catalog_path=catalog_path,
+        )
     return tuple(patch_ids)
 
 
@@ -255,6 +264,8 @@ def validation_evidence_statuses(
     pinned_ref: str | None = None,
     evidence_root: Path | None = None,
     allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
+    default_validation_architectures: tuple[str, ...] = (),
 ) -> dict[str, patch_validation_evidence.EvidenceCheck]:
     entries = load_catalog(catalog_path)
     modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
@@ -291,10 +302,13 @@ def validation_evidence_statuses(
             if packaged_descriptor is not None
             else entry.validation_architectures
         )
+        if not required_archs:
+            required_archs = default_validation_architectures
         result[patch_id] = patch_validation_evidence.verify_validated_patch(
             module, pinned_ref=pinned_ref,
             required_architectures=required_archs,
             root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
+            resolved_base_revision=resolved_base_revision,
         )
     return result
 
@@ -307,6 +321,8 @@ def require_validation_evidence(
     pinned_ref: str | None = None,
     evidence_root: Path | None = None,
     allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
+    default_validation_architectures: tuple[str, ...] = (),
 ) -> None:
     """Raise ValueError describing every STATE='validated' patch (among
     patch_ids) whose evidence is missing or stale. Callers decide whether
@@ -315,6 +331,8 @@ def require_validation_evidence(
     statuses = validation_evidence_statuses(
         patch_ids, catalog_path=catalog_path, patches_dir=patches_dir, pinned_ref=pinned_ref,
         evidence_root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
+        resolved_base_revision=resolved_base_revision,
+        default_validation_architectures=default_validation_architectures,
     )
     failures = [(patch_id, status) for patch_id, status in statuses.items() if not status.ok]
     if not failures:
@@ -334,6 +352,7 @@ def cross_check(
     pinned_ref: str | None = None,
     evidence_root: Path | None = None,
     allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
 ) -> list[str]:
     """Verify one-to-one coverage between the catalog and discovered patch
     modules, and that each entry's ``state`` matches its module's real STATE
@@ -383,6 +402,7 @@ def cross_check(
             sorted(set(entries) & modules), catalog_path=catalog_path, patches_dir=patches_dir,
             pinned_ref=pinned_ref, evidence_root=evidence_root,
             allow_legacy_grandfather=allow_legacy_grandfather,
+            resolved_base_revision=resolved_base_revision,
         )
         for patch_id, status in statuses.items():
             if status.ok:
