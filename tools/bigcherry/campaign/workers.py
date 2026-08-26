@@ -516,6 +516,14 @@ def make_build_worker(
                 cxx_compiler=platform.cxx_compiler,
                 backend=backend,
             )
+            # Adversarial-review follow-up: the worker-entry check above and
+            # the post-compile check below leave a real window between them
+            # -- computing configure_args does not touch source_root, but a
+            # mutation landing exactly here would previously be caught only
+            # AFTER configure and compile had already run against it.
+            # PA09's own required boundary is "immediately before CMake
+            # configure", not "somewhere before compile finishes".
+            _verify_source(source_root, expected_source)
             subprocess.run(configure_args, cwd=source_root, check=True)
             subprocess.run(
                 campaign_build.cmake_build_args(build_dir, targets=cmake_targets),

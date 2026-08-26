@@ -1,6 +1,7 @@
 # -- Build artifacts --
 build/
 !tools/bigcherry/build/
+!tools/tests/build/
 cmake-build-*/
 out/
 CMakeCache.txt

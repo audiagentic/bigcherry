@@ -53,6 +53,17 @@ backend = "hip"
 """
 
 
+def _unlock_manifest(manifest_path: Path) -> None:
+    """PA10 (adversarial-review follow-up): manifest.json is written
+    read-only. A test simulating a determined tamperer who edits/deletes it
+    directly must first remove that OS-level protection explicitly, the
+    same way a real attacker with filesystem access to the directory
+    would (chmod, or delete+recreate) -- the read-only bit is documented
+    defense-in-depth against casual/accidental mutation, not a claim that
+    editing is impossible for someone with write access to the directory."""
+    manifest_path.chmod(0o644)
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(root), *args], check=True, capture_output=True, text=True
@@ -158,6 +169,7 @@ class MaterializationTests(unittest.TestCase):
         manifest_path = psi._manifest_path(source)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["patched_tree"] = psi.git_worktree_tree(source)
+        _unlock_manifest(manifest_path)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaises(psi.PatchSourceIsolationError):
             self._materialize("0001_flat")
@@ -173,9 +185,61 @@ class MaterializationTests(unittest.TestCase):
         manifest["source_slice_id"] = psi._source_slice_id(
             source_dir=source, upstream_revision=self.base_rev, tree_oid=tree
         )
+        _unlock_manifest(manifest_path)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaises(psi.PatchSourceIsolationError):
             self._materialize("0001_flat")
+
+    @unittest.expectedFailure
+    def test_tampered_tree_with_fully_self_consistent_forged_manifest_rejected(self) -> None:
+        """KNOWN OPEN GAP (adversarial-review follow-up, PA10) -- this is an
+        expectedFailure, not a passing guarantee: remove the decorator only
+        once this is actually fixed.
+
+        Every OTHER tamper test in this file updates just ONE or TWO of
+        {patched_tree, source_tree_oid, source_slice_id} at a time, so
+        rejection there comes from the redundant-alias cross-check
+        (patched_tree vs source_tree_oid), not from a real binding to the
+        ORIGINALLY attested output. This test makes ALL THREE
+        self-consistent with a tampered tree -- the strongest forgery the
+        manifest fields alone can produce, after also removing the
+        read-only protection atomic_write_json(read_only=True) adds. No
+        manifest field in this design is independently authoritative: every
+        comparison in _verify_reuse() is "live fact == a field in the SAME
+        mutable sidecar the tamperer can also edit". The read-only bit
+        (real, and kept) raises the bar against accidental/buggy mutation,
+        which is this review's primary threat model elsewhere, but a
+        determined tamperer with filesystem write access to source_dir's
+        parent can chmod it back to writable first.
+
+        Closing this for real needs either (a) a write-once audit ledger
+        recorded somewhere OUTSIDE this same writable directory, or (b) a
+        deterministic re-materialization comparison on reuse (re-run
+        _add_worktree + _apply_composition into a scratch location and
+        compare tree hashes) -- both reviewer-suggested, both out of scope
+        for this pass. Tracked in patch-system/PA10's notes."""
+        self._flat()
+        source = self._materialize("0001_flat")
+        (source / "a.txt").write_text("tampered\n", encoding="utf-8")
+        manifest_path = psi._manifest_path(source)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        tree = psi.git_worktree_tree(source)
+        manifest["patched_tree"] = tree
+        manifest["source_tree_oid"] = tree
+        manifest["source_slice_id"] = psi._source_slice_id(
+            source_dir=source, upstream_revision=self.base_rev, tree_oid=tree
+        )
+        _unlock_manifest(manifest_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaises(psi.PatchSourceIsolationError):
+            self._materialize("0001_flat")
+
+    def test_manifest_is_read_only_after_write(self) -> None:
+        self._flat()
+        source = self._materialize("0001_flat")
+        manifest_path = psi._manifest_path(source)
+        with self.assertRaises(OSError):
+            manifest_path.write_text("{}", encoding="utf-8")
 
     def test_ignored_file_rejected_on_reuse(self) -> None:
         self._flat()
@@ -195,17 +259,21 @@ class MaterializationTests(unittest.TestCase):
                 del manifest["manifest_schema_version"]
             else:
                 manifest["manifest_schema_version"] = value
+            _unlock_manifest(manifest_path)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             with self.assertRaisesRegex(psi.PatchSourceIsolationError, "schema"):
                 self._materialize("0001_flat")
             manifest["manifest_schema_version"] = 1
+            _unlock_manifest(manifest_path)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             self.assertEqual(self._materialize("0001_flat"), source)
 
     def test_missing_manifest_not_trusted(self) -> None:
         self._flat()
         source = self._materialize("0001_flat")
-        psi._manifest_path(source).unlink()
+        manifest_path = psi._manifest_path(source)
+        _unlock_manifest(manifest_path)
+        manifest_path.unlink()
         # Not trusted -> rebuilt from scratch, still correct.
         again = self._materialize("0001_flat")
         self.assertEqual(again, source)
@@ -220,6 +288,7 @@ class MaterializationTests(unittest.TestCase):
         # Tamper an IDENTITY field (the _verify_reuse key loop) -- a wrong
         # identity is a provenance mismatch, raised fail-closed.
         manifest["resolved_revision"] = "0" * 40
+        _unlock_manifest(manifest_path)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaisesRegex(psi.PatchSourceIsolationError, "provenance mismatch"):
             self._materialize("0001_flat")
@@ -328,6 +397,67 @@ class Rv80AcceptanceTests(MaterializationTests):
         )
         self.assertNotEqual(first, second)
         self.assertEqual((second / "src" / "extra" / "new.cpp").read_text(encoding="utf-8"), "v2\n")
+
+    def test_overlay_target_symlink_escape_rejected(self) -> None:
+        """Adversarial-review follow-up: _apply_composition()'s overlay copy
+        previously did `target = source_dir / relative` with no containment
+        check -- a symlink already present in the destination worktree
+        (e.g. planted by a malicious upstream commit) could redirect an
+        overlay write outside source_dir."""
+        self._flat()
+        overlay = self.base / "overlay"
+        (overlay / "src").mkdir(parents=True)
+        (overlay / "src" / "escape.txt").write_text("payload\n", encoding="utf-8")
+        outside = self.base / "outside"
+        outside.mkdir()
+
+        real_apply_worktree = psi._add_worktree
+
+        def add_worktree_with_symlink(base_repo, worktree_dir, base_revision):
+            real_apply_worktree(base_repo, worktree_dir, base_revision)
+            (worktree_dir / "src").symlink_to(outside, target_is_directory=True)
+
+        with mock.patch.object(psi, "_add_worktree", side_effect=add_worktree_with_symlink):
+            try:
+                with self.assertRaises(psi.PatchSourceIsolationError):
+                    psi.materialize_composition(
+                        base_repo=self.upstream, worktree_root=self.worktrees,
+                        resolved_revision=self.base_rev,
+                        composition=self._composition("0001_flat"),
+                        overlay_root=overlay,
+                    )
+            except OSError:
+                self.skipTest("symlink creation not permitted in this environment")
+        self.assertFalse((outside / "escape.txt").exists())
+
+    def test_overlay_file_added_after_identity_computed_is_rejected(self) -> None:
+        """Adversarial-review follow-up: the per-file digest check inside
+        _apply_composition() only proved each file's bytes were consistent
+        within that one call -- it never proved the overlay FILE SET still
+        matched what _make_source_identity_v2() hashed into source_key. A
+        file added to overlay_root between identity computation and
+        materialization would previously be silently applied under the old,
+        now-stale identity."""
+        self._flat()
+        overlay = self.base / "overlay"
+        (overlay / "src").mkdir(parents=True)
+        (overlay / "src" / "a.txt").write_text("a\n", encoding="utf-8")
+
+        composition = self._composition("0001_flat")
+        identity = psi._make_source_identity_v2(
+            resolved_revision=self.base_rev, composition=composition, overlay_root=overlay,
+        )
+        # A file appears in the overlay AFTER identity was computed --
+        # source_key above is now stale relative to the real overlay set.
+        (overlay / "src" / "b.txt").write_text("b\n", encoding="utf-8")
+
+        source_dir = self.worktrees / identity["source_key"]
+        psi._add_worktree(self.upstream, source_dir, self.base_rev)
+        with self.assertRaisesRegex(psi.PatchSourceIsolationError, "overlay file set changed"):
+            psi._apply_composition(
+                source_dir, composition, overlay_root=overlay, root=self.patches_root,
+                expected_overlay_digest=identity["overlay_digest"],
+            )
 
     # 3. Patch implementation change -> new identity (composition entry
     #    digest in payload).

@@ -209,6 +209,7 @@ def verify_source_attestation(root: Path, expected: SourceAttestation) -> None:
 
 def atomic_write_json(
     path: Path, document: object, *, fsync_file: bool = True, fsync_parent: bool = True,
+    read_only: bool = False,
 ) -> None:
     """Write JSON to ``path`` via temp-file + fsync + ``os.replace()``.
 
@@ -223,6 +224,18 @@ def atomic_write_json(
     rename -- on POSIX, the rename itself is not guaranteed durable until
     the directory entry is flushed; skipped automatically where the
     platform does not support directory fsync (e.g. Windows).
+
+    ``read_only`` (adversarial-review follow-up): chmods the final file to
+    0o444 after the atomic replace. A manifest whose own fields are later
+    compared against re-derived live facts (HI82's ``_verify_reuse()``) is
+    only as trustworthy as those fields being un-editable after the one
+    legitimate writer produced them -- an in-place edit of the manifest
+    JSON is a much easier attack than mutating a git worktree convincingly.
+    This is NOT a defense against a privileged/determined attacker who can
+    chmod the file back to writable first (that requires an independently
+    authoritative binding, which this does not implement); it is real
+    defense-in-depth against accidental, buggy, or casual mutation, which
+    is this review's primary threat model throughout.
     """
     path = Path(path)
     fd, temporary_name = tempfile.mkstemp(
@@ -236,8 +249,12 @@ def atomic_write_json(
             handle.flush()
             if fsync_file:
                 os.fsync(handle.fileno())
+        if read_only:
+            os.chmod(temporary_path, 0o444)
         os.replace(temporary_path, path)
     except BaseException:
+        with contextlib.suppress(OSError):
+            temporary_path.chmod(0o644)
         temporary_path.unlink(missing_ok=True)
         raise
 
