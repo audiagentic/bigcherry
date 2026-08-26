@@ -184,6 +184,16 @@ class ProjectMeasurementsTests(unittest.TestCase):
                     candidate_id,
                 ),
             )
+            self.conn.execute(
+                "INSERT INTO winner (build_id, hardware_id, signature_id, objective, dispatch_digest, "
+                "candidate_id, stable_name, native_stable_name, is_native, improvement_pct, "
+                "median_us, p95_us) VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, 1, 0.0, 1.0, 1.0)",
+                (
+                    self.build_id, hardware_id, signature_id,
+                    bytes.fromhex(replay_module.portable_tuning_key(hardware_hex, signature_hex)),
+                    candidate_id, "mmvq:native:v1", "mmvq:native:v1",
+                ),
+            )
         self.conn.commit()
 
         self.header = {
@@ -215,6 +225,18 @@ class ProjectMeasurementsTests(unittest.TestCase):
             handle.write(json.dumps(self.header) + "\n")
             handle.write(json.dumps(self.s1_result) + "\n")
             handle.write(json.dumps(self.s2_result) + "\n")
+
+    def _rewrite_result(self, signature_hex: str, **updates: str) -> None:
+        lines = self.measurements_path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            record = json.loads(line)
+            if record.get("signature") == signature_hex:
+                record.update(updates)
+                lines[index] = json.dumps(record)
+                break
+        else:
+            self.fail(f"no result row for signature {signature_hex}")
+        self.measurements_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def tearDown(self):
         self.conn.close()
@@ -396,6 +418,51 @@ class ProjectMeasurementsTests(unittest.TestCase):
             line for line in self.measurements_path.read_text(encoding="utf-8").splitlines()[1:]
         ]
         self.measurements_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_forged_winner_claim_is_rejected_when_candidate_exists_in_both_manifests(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        # This is a real candidate in both manifests, so manifest candidate
+        # equivalence alone would accept the forged claim.
+        forged_name = "mmq:native:v1"
+        self._rewrite_result(self.s1_hex, winner=forged_name)
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_forged_native_claim_is_rejected_when_candidate_exists_in_both_manifests(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        forged_name = "mmq:native:v1"
+        self._rewrite_result(self.s1_hex, native=forged_name)
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_forged_hardware_claim_is_rejected(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        self._rewrite_result(self.s1_hex, hardware="cc" * 16)
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_forged_winner_native_and_hardware_claims_are_rejected_together(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        forged_name = "mmq:native:v1"
+        self._rewrite_result(self.s1_hex, winner=forged_name, native=forged_name, hardware="cc" * 16)
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
