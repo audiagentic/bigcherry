@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -102,3 +103,93 @@ def describe(*, root: Path, upstream_revision: str, allowed_untracked: set[str] 
             object_format=_run(root, "rev-parse", "--show-object-format"),
         ),
     }
+
+
+@dataclass(frozen=True)
+class SourceAttestation:
+    """Immutable identity facts captured for one materialised source tree."""
+
+    upstream_revision: str
+    tree_oid: str
+    object_format: str
+    source_slice_id: str
+    allowed_untracked: frozenset[str] = frozenset()
+
+
+def git_revision(root: Path) -> str:
+    """Return the live worktree HEAD revision."""
+
+    return _run(root, "rev-parse", "HEAD")
+
+
+def git_object_format(root: Path) -> str:
+    """Return the live repository object format."""
+
+    return _run(root, "rev-parse", "--show-object-format")
+
+
+def verify_source_attestation(root: Path, expected: SourceAttestation) -> None:
+    """Fail closed unless ``root`` still matches a captured source identity.
+
+    The revision, object format, tree OID, worktree policy, and source-slice
+    ID are all re-derived from the live repository.  Values in ``expected``
+    are assertions to compare, never a source of truth.
+    """
+
+    actual_revision = git_revision(root)
+    if actual_revision != expected.upstream_revision:
+        raise SourceIdentityError(
+            "source HEAD does not match attestation: "
+            f"{actual_revision!r} != {expected.upstream_revision!r}"
+        )
+
+    actual_format = git_object_format(root)
+    if actual_format != expected.object_format:
+        raise SourceIdentityError(
+            "source object format does not match attestation: "
+            f"{actual_format!r} != {expected.object_format!r}"
+        )
+
+    allowed_untracked = set(expected.allowed_untracked)
+    status = _run(root, "status", "--porcelain", "--untracked-files=all")
+    unexpected: list[str] = []
+    for line in status.splitlines():
+        if not line:
+            continue
+        code, _, name = line.partition(" ")
+        name = name.strip().replace("\\", "/")
+        if code == "??" and name not in allowed_untracked:
+            unexpected.append(line)
+
+    ignored = _run(root, "status", "--porcelain", "--ignored", "--untracked-files=all")
+    ignored_paths = [
+        line[3:].strip() for line in ignored.splitlines() if line.startswith("!! ")
+    ]
+    if unexpected or ignored_paths:
+        detail = unexpected + [f"ignored: {path}" for path in ignored_paths]
+        raise SourceIdentityError("unexpected source worktree files: " + "; ".join(detail))
+
+    # A clean tree has the HEAD tree exactly; avoid creating a temporary index
+    # and re-hashing every file at each worker boundary.  Any tracked change
+    # or permitted untracked file takes the existing full-tree path, which
+    # preserves exact post-overlay/post-patch identity semantics.
+    if not status:
+        actual_tree_oid = _run(root, "rev-parse", "HEAD^{tree}")
+    else:
+        actual_tree_oid = git_tree_oid(root, allowed_untracked=allowed_untracked)
+    if actual_tree_oid != expected.tree_oid:
+        raise SourceIdentityError(
+            "source tree OID does not match attestation: "
+            f"{actual_tree_oid!r} != {expected.tree_oid!r}"
+        )
+
+    actual_source_slice_id = source_slice_id(
+        upstream_revision=actual_revision,
+        tree_oid=actual_tree_oid,
+        object_format=actual_format,
+    )
+    if actual_source_slice_id != expected.source_slice_id:
+        raise SourceIdentityError(
+            "source_slice_id does not match live source facts: "
+            f"{actual_source_slice_id!r} != {expected.source_slice_id!r}"
+        )

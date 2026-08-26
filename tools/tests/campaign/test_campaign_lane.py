@@ -36,6 +36,15 @@ from bigcherry.campaign.lane import (
 from bigcherry.core.context import ProjectContext  # noqa: E402
 from bigcherry.core.pipeline import ArtifactRef  # noqa: E402
 from bigcherry.campaign.smoke import RuntimeSmokeSpec  # noqa: E402
+from bigcherry.campaign import workers as campaign_workers  # noqa: E402
+from bigcherry.campaign.build import CampaignBuildError  # noqa: E402
+from bigcherry.build.builds import BuildPlan, build_directory  # noqa: E402
+from bigcherry.source.identity import (  # noqa: E402
+    SourceAttestation,
+    git_object_format,
+    git_tree_oid,
+    source_slice_id,
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -694,6 +703,131 @@ class Re25ProvenanceLineageTests(unittest.TestCase):
                 )
 
             self.assertEqual(result.effective_build_id, "eb-test-123")
+
+
+class SourceAttestationWorkerTests(unittest.TestCase):
+    _CMAKE_CACHE = """\
+CMAKE_C_COMPILER:FILEPATH=/usr/bin/cc
+CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+CMAKE_BUILD_TYPE:STRING=Release
+AMDGPU_TARGETS:STRING=gfx1100
+GGML_HIP:BOOL=ON
+"""
+
+    def _fixture(self, root: Path):
+        source = root / "source"
+        _git(root, "init", str(source))
+        _git(source, "config", "user.email", "test@example.invalid")
+        _git(source, "config", "user.name", "Test")
+        (source / "source.txt").write_text("one\n", encoding="utf-8")
+        _git(source, "add", "source.txt")
+        _git(source, "commit", "-m", "initial")
+
+        context = ProjectContext(
+            project_root=root,
+            config_path=root / "recipes.toml",
+            artifacts_root=root / "artifacts",
+            work_root=root / "work",
+            upstream_repo=root / "upstream",
+            overlay_root=root / "overlay",
+            patches_root=root / "patches",
+        )
+        store = ArtifactStore(root / "store")
+        revision = _git(source, "rev-parse", "HEAD")
+        object_format = git_object_format(source)
+        tree_oid = git_tree_oid(source)
+        slice_id = source_slice_id(
+            upstream_revision=revision,
+            tree_oid=tree_oid,
+            object_format=object_format,
+        )
+        attestation = SourceAttestation(
+            upstream_revision=revision,
+            tree_oid=tree_oid,
+            object_format=object_format,
+            source_slice_id=slice_id,
+        )
+        plan = BuildPlan(
+            source_slice_id=slice_id,
+            phase="stock",
+            platform="linux-multi",
+            targets=("gfx1100",),
+            variant_set=None,
+        )
+        platform = campaign_config.Platform(
+            name="linux-multi", targets=("gfx1100",), options=()
+        )
+        build_cfg = campaign_config.Build(
+            name="stock", options=(), variant_set=None, needs=frozenset()
+        )
+        worker = campaign_workers.make_build_worker(
+            context=context,
+            source_root=source,
+            run_id="run1",
+            build_plan=plan,
+            platform=platform,
+            build=build_cfg,
+            store=store,
+            binary_relative_path="bin/llama-bench",
+            source_slice_id=slice_id,
+            workload_id=None,
+            has_generate_stage=False,
+            local_provenance_class="development",
+            source_attestation=attestation,
+        )
+        return source, context, store, plan, worker
+
+    def test_tracked_source_mutation_fails_before_configure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, _, _, _, worker = self._fixture(Path(directory))
+            (source / "source.txt").write_text("mutated\n", encoding="utf-8")
+            real_run = subprocess.run
+
+            def no_compile(command, **kwargs):
+                if command[0] == "git":
+                    return real_run(command, **kwargs)
+                raise AssertionError("configure/build must not run")
+
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run", side_effect=no_compile
+            ) as run:
+                with self.assertRaisesRegex(CampaignBuildError, "source attestation failed"):
+                    worker(())
+            self.assertFalse(any(call.args[0][0] != "git" for call in run.call_args_list))
+
+    def test_source_mutation_during_compile_fails_before_publication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, context, store, plan, worker = self._fixture(Path(directory))
+            build_dir = build_directory(context, plan.source_slice_id, plan)
+            calls = []
+            real_run = subprocess.run
+
+            def fake_compiler(command, cwd=None, check=None, **kwargs):
+                if command[0] == "git":
+                    return real_run(command, cwd=cwd, check=check, **kwargs)
+                calls.append(command)
+                if "--build" in command:
+                    (source / "source.txt").write_text("mutated during compile\n", encoding="utf-8")
+                    binary = build_dir / "bin" / "llama-bench"
+                    binary.parent.mkdir(parents=True, exist_ok=True)
+                    binary.write_bytes(b"compiled")
+                else:
+                    build_dir.mkdir(parents=True, exist_ok=True)
+                    (build_dir / "CMakeCache.txt").write_text(
+                        self._CMAKE_CACHE, encoding="utf-8"
+                    )
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run", side_effect=fake_compiler
+            ):
+                with self.assertRaisesRegex(CampaignBuildError, "source attestation failed"):
+                    worker(())
+
+            self.assertEqual(len(calls), 2)
+            self.assertFalse(
+                any(path.is_file() for path in store.root.rglob("*"))
+            )
 
 
 class SmokeEnvironmentHelperTests(unittest.TestCase):
