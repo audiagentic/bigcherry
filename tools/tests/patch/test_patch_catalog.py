@@ -6,9 +6,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.core import paths # noqa: E402
 from bigcherry.patch import catalog as patch_catalog # noqa: E402
 
 
@@ -202,6 +204,31 @@ class TestPatchContext(unittest.TestCase):
                 patch_catalog.resolve_for_context(
                     ["clashes"], ctx, catalog_path=catalog_path
                 )
+
+    def test_resolved_base_revision_is_forwarded_to_the_admission_gate(self):
+        """Adversarial-review follow-up (HI102): resolve_for_context() must
+        actually thread a caller-supplied resolved_base_revision through to
+        patch_admission.require_admission() at the real production seam --
+        a prior pass added the parameter but never wired a real call site
+        to actually populate it, so live-revision enforcement was
+        documented as done while never actually invoked in production."""
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog_path = self._catalog(
+                tmp,
+                (
+                    '[[patch]]\nid = "any"\nkind = "framework"\norigin = "local"\n'
+                    'backend = "agnostic"\nstate = "validated"\n'
+                ),
+            )
+            ctx = patch_catalog.PatchContext(backend="hip")
+            with mock.patch.object(paths, "PATCH_CATALOG", catalog_path), \
+                 mock.patch("bigcherry.patch_admission.require_admission") as mocked:
+                patch_catalog.resolve_for_context(
+                    ["any"], ctx, catalog_path=catalog_path,
+                    resolved_base_revision="deadbeef" * 5,
+                )
+            mocked.assert_called_once()
+            self.assertEqual(mocked.call_args.kwargs.get("resolved_base_revision"), "deadbeef" * 5)
 
     def test_patches_for_backend_on_the_real_catalog_is_empty_for_vulkan(self):
         """No Vulkan patches exist yet -- an empty result is the CORRECT

@@ -22,6 +22,7 @@ Three properties matter more than cleverness here:
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -388,7 +389,33 @@ def apply_all(patches: list[FilePatch], root: Path, *,
                     if target.is_file():
                         target.unlink()
                 else:
-                    target.write_text(original, encoding="utf-8", newline="")
+                    # Adversarial-review follow-up: resolving `target` to a
+                    # Path once at snapshot time does NOT pin it against a
+                    # filesystem race -- Path.write_text() re-resolves the
+                    # path (and follows any symlink present) at the moment
+                    # it actually opens the file, which happens here, well
+                    # after snapshotting. If something (an earlier patch's
+                    # own write, or an unrelated concurrent mutation)
+                    # replaced this exact path with a symlink in between,
+                    # a plain write_text() would follow it and write the
+                    # restored contents somewhere outside root. Open with
+                    # O_NOFOLLOW so the OS itself refuses to open through a
+                    # symlink (ELOOP) instead of silently following one --
+                    # this collapses the check-then-write gap into a single
+                    # atomic syscall rather than trusting a is_symlink()
+                    # check a moment before the write. O_NOFOLLOW does not
+                    # exist on Windows; the remaining risk there is
+                    # unchanged from before this fix (Windows symlink
+                    # creation itself requires elevated privilege, unlike
+                    # POSIX, so this is a materially smaller residual gap).
+                    nofollow = getattr(os, "O_NOFOLLOW", 0)
+                    fd = os.open(
+                        str(target),
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow,
+                        0o644,
+                    )
+                    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                        handle.write(original)
             except OSError as exc:
                 errors.append(exc)
         if errors:

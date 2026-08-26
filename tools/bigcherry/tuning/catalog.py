@@ -83,12 +83,38 @@ IMPLEMENTATION_VERSION = 1
 # This is intentionally a conservative, explicit slice rather than a git
 # revision: unrelated source changes (for example a marker file) must not
 # invalidate an otherwise safe candidate reuse.
-IMPLEMENTATION_IDENTITY_SCHEMA_VERSION = 1
+#
+# Adversarial-review follow-up (schema bumped 1->2): the original slice
+# hashed only each family's own .cu translation unit plus the shared
+# dispatch file, which MISSED real device-kernel implementation headers a
+# family's .cu directly #includes -- confirmed on the real b10502 vendor
+# checkout that mmvq.cu pulls in vecdotq.cuh (the actual dot-product
+# kernels), mmvq-autotune.cuh, quantize.cuh, and unary.cuh, none of which
+# were hashed, so a change to the real kernel math in vecdotq.cuh would
+# have silently left mmvq's implementation_digest unchanged. Each family's
+# list below is now its .cu file's own REAL, DIRECT, same-directory quoted
+# #include set (confirmed against the real vendor tree, not guessed) --
+# still not a full transitive closure (a header included BY one of these
+# headers, in turn, is not walked), which remains a known, documented
+# limitation, not a claim of complete coverage.
+IMPLEMENTATION_IDENTITY_SCHEMA_VERSION = 2
 _IMPLEMENTATION_SOURCE_FILES = {
-    "mmq": ("hip-autotune-dispatch.cu", "mmq.cu"),
-    "mmvq": ("hip-autotune-dispatch.cu", "mmvq.cu"),
-    "mmvf": ("hip-autotune-dispatch.cu", "mmvf.cu"),
-    "mmf": ("hip-autotune-dispatch.cu", "mmf.cu"),
+    "mmq": (
+        "hip-autotune-dispatch.cu", "mmq.cu",
+        "common.cuh", "mmq.cuh", "quantize.cuh", "mmid.cuh",
+    ),
+    "mmvq": (
+        "hip-autotune-dispatch.cu", "mmvq.cu",
+        "mmvq.cuh", "mmvq-autotune.cuh", "quantize.cuh", "unary.cuh", "vecdotq.cuh",
+    ),
+    "mmvf": (
+        "hip-autotune-dispatch.cu", "mmvf.cu",
+        "common.cuh", "unary.cuh", "mmvf.cuh", "convert.cuh",
+    ),
+    "mmf": (
+        "hip-autotune-dispatch.cu", "mmf.cu",
+        "mmf.cuh", "mmid.cuh",
+    ),
     "blas": ("hip-autotune-dispatch.cu", "ggml-cuda.cu"),
 }
 

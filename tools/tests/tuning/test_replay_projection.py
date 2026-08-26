@@ -70,7 +70,16 @@ def _write_fixture_vendor(tmp_path: Path, *, producer_capabilities_hex: str) -> 
         encoding="utf-8",
     )
     cuda = vendor / "ggml" / "src" / "ggml-cuda"
-    for name in ("hip-autotune-dispatch.cu", "mmvq.cu", "mmq.cu", "mmvf.cu", "mmf.cu", "ggml-cuda.cu"):
+    for name in (
+        "hip-autotune-dispatch.cu", "mmvq.cu", "mmq.cu", "mmvf.cu", "mmf.cu", "ggml-cuda.cu",
+        # HI124 (adversarial-review follow-up): the real per-family direct
+        # #include headers, now part of the hashed implementation slice --
+        # the fixture must provide them or candidate_implementation_digest()
+        # fails closed with a missing-file CatalogError.
+        "common.cuh", "mmq.cuh", "quantize.cuh", "mmid.cuh",
+        "mmvq.cuh", "mmvq-autotune.cuh", "unary.cuh", "vecdotq.cuh",
+        "mmvf.cuh", "convert.cuh", "mmf.cuh",
+    ):
         (cuda / name).write_text(f"// fixture implementation: {name}\n", encoding="utf-8")
     (cuda / "mmq-config-rdna3.cuh").write_text("// fixture MMQ table\n", encoding="utf-8")
     return vendor
@@ -457,6 +466,52 @@ class ProjectMeasurementsTests(unittest.TestCase):
         self.assertEqual(summary.retained, 0)
         self.assertEqual(summary.omitted_candidate_mismatch, 2)
 
+    def test_target_manifest_with_forged_implementation_digest_rejected(self):
+        """Adversarial-review follow-up: _load_target_capabilities() proved
+        vendor_root IS the exact, clean revision the target manifest claims,
+        but never re-verified that a candidate's embedded implementation_digest
+        was actually computed from THAT root's real files -- a target
+        manifest could copy an old (source-side) digest into its own
+        candidate entries, self-consistently recompute manifest_hash/
+        descriptor from the tampered dict, pass the git-revision check (a
+        real, correctly-identified, clean checkout), and still get treated
+        as equivalent to the source. This must now be rejected."""
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        target_vendor = _write_fixture_vendor(
+            self.tmp_path / "forged-digest-root", producer_capabilities_hex=ALL_FIVE_HEX,
+        )
+        (target_vendor / "ggml" / "src" / "ggml-cuda" / "mmvq.cu").write_text(
+            "// a genuinely different kernel implementation\n", encoding="utf-8"
+        )
+        target_revision = _git_init_and_commit(target_vendor)
+        target_manifest = _make_manifest(
+            producer_capabilities_hex=ALL_FIVE_HEX,
+            source_revision=target_revision,
+            vendor_root=target_vendor,
+        )
+        # Forge: copy the SOURCE's own (stale, real-for-a-different-root)
+        # mmvq implementation_digest over the target's freshly-recomputed
+        # one, then recompute manifest_hash/descriptor from the tampered
+        # dict so the manifest is fully self-consistent.
+        source_mmvq = next(c for c in self.manifest["candidates"] if c["family"] == "mmvq")
+        target_mmvq = next(c for c in target_manifest["candidates"] if c["family"] == "mmvq")
+        self.assertNotEqual(source_mmvq["implementation_digest"], target_mmvq["implementation_digest"])
+        target_mmvq["implementation_digest"] = source_mmvq["implementation_digest"]
+        target_mmvq["implementation_source_files"] = list(source_mmvq["implementation_source_files"])
+        target_manifest["manifest_hash"] = catalog.manifest_hash(target_manifest)
+        target_manifest["build_descriptor"] = catalog.build_descriptor(target_manifest)
+
+        target_manifest_path = self.tmp_path / "forged-digest-manifest.json"
+        target_manifest_path.write_text(json.dumps(target_manifest), encoding="utf-8")
+
+        with self.assertRaisesRegex(rp.ProjectionError, "does not match the digest independently recomputed"):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "forged-digest-out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                source_manifest_path=self.manifest_path,
+                target_manifest_path=target_manifest_path, vendor_root=target_vendor,
+            )
+
     def test_retained_rows_are_preserved_byte_for_byte(self):
         # round 9's explicit requirement: retained result rows must be the
         # ORIGINAL bytes, not a json.dumps() re-serialization (which can
@@ -651,6 +706,103 @@ class ProjectMeasurementsTests(unittest.TestCase):
                 # real revision (and also only declares CORE_ONLY_HEX, not ALL_FIVE_HEX)
                 target_manifest_path=self.manifest_path, vendor_root=wrong_vendor,
             )
+
+
+class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
+    """Adversarial-review follow-up (HI126 composition gap): replay.build()'s
+    _validate_correctness_gate() previously trusted a projected artifact's
+    hi121_source_provenance.source_build_id as-is (only range/type checked),
+    feeding it directly into resolve_promotion_identity()'s build_id
+    constraint with no proof that build_id actually corresponds to the REST
+    of the same provenance tuple recorded right beside it in the same
+    header. An attacker could retarget source_build_id to a DIFFERENT real
+    build sharing the same dispatch/signature/hardware and inherit ITS
+    correctness evidence."""
+
+    def _make_db(self, root: Path) -> tuple[Path, int, int]:
+        db_path = root / "dispatch.sqlite"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+        conn.execute(
+            "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+            "hardware_schema, variant_set, build_descriptor_hash) VALUES "
+            "(?, 'aaaa', 1, 1, 'inventory', 'desc-a')",
+            ("a" * 40,),
+        )
+        build_a = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+            "hardware_schema, variant_set, build_descriptor_hash) VALUES "
+            "(?, 'bbbb', 1, 1, 'inventory', 'desc-b')",
+            ("b" * 40,),
+        )
+        build_b = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+        conn.close()
+        return db_path, build_a, build_b
+
+    def test_source_build_id_pointing_at_wrong_build_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch_db, build_a, build_b = self._make_db(root)
+            entries = {
+                "d" * 32: {
+                    "kind": "result", "dispatch": "d" * 32,
+                    "winner": "candidate", "native": "native",
+                    "signature": "c" * 32, "hardware": "e" * 32,
+                },
+            }
+            # Header claims build_a's own real source_revision/manifest_hash,
+            # but the source_build_id field points at build_b instead.
+            forged_provenance = {
+                "source_build_id": build_b,
+                "source_revision": "a" * 40,
+                "manifest_hash": "aaaa",
+                "build_descriptor_hash": "desc-a",
+            }
+            with self.assertRaisesRegex(SystemExit, "not bound to the rest"):
+                replay_module._validate_correctness_gate(
+                    entries, dispatch_db, build_b, forged_provenance,
+                )
+
+    def test_source_build_id_matching_its_own_provenance_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch_db, build_a, _build_b = self._make_db(root)
+            entries = {
+                "d" * 32: {
+                    "kind": "result", "dispatch": "d" * 32,
+                    "winner": "mmvq:native:v1", "native": "mmvq:native:v1",
+                },
+            }
+            real_provenance = {
+                "source_build_id": build_a,
+                "source_revision": "a" * 40,
+                "manifest_hash": "aaaa",
+                "build_descriptor_hash": "desc-a",
+            }
+            # winner == native here, so the correctness gate never even
+            # needs to resolve a binding -- this just proves a CORRECT
+            # provenance tuple doesn't spuriously raise.
+            replay_module._validate_correctness_gate(
+                entries, dispatch_db, build_a, real_provenance,
+            )
+
+    def test_source_build_id_without_provenance_tuple_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch_db, build_a, _build_b = self._make_db(root)
+            entries = {
+                "d" * 32: {
+                    "kind": "result", "dispatch": "d" * 32,
+                    "winner": "candidate", "native": "native",
+                    "signature": "c" * 32, "hardware": "e" * 32,
+                },
+            }
+            with self.assertRaisesRegex(SystemExit, "without its"):
+                replay_module._validate_correctness_gate(
+                    entries, dispatch_db, build_a, None,
+                )
 
 
 if __name__ == "__main__":

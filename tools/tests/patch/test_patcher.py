@@ -371,6 +371,62 @@ class TestPatchDependencies(unittest.TestCase):
             else:
                 self.assertEqual((tree.root / "b.cu").read_text(encoding="utf-8"), before_b)
 
+    def test_rollback_refuses_to_follow_a_symlink_to_an_outside_regular_file(self):
+        """Adversarial-review follow-up: the prior regression only tested a
+        symlink to a DIRECTORY, which write_text() would have failed on
+        anyway (IsADirectoryError) even without any fix -- it never proved
+        the real attack, a symlink to an outside REGULAR file, which a
+        plain write_text() would happily follow and overwrite. _restore()
+        must refuse to write through such a symlink (O_NOFOLLOW), not
+        silently corrupt the outside file."""
+        import bigcherry.patch.apply as apply_module
+
+        with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
+            (tree.root / "b.cu").write_text("void g(int a) {\n    body();\n}\n",
+                                             encoding="utf-8", newline="")
+            outside_dir = tree.root.parent / f"outside-{id(tree)}"
+            outside_dir.mkdir(exist_ok=True)
+            outside_file = outside_dir / "secret.txt"
+            outside_file.write_text("do not touch\n", encoding="utf-8")
+            self.addCleanup(lambda: outside_file.unlink(missing_ok=True))
+            self.addCleanup(lambda: outside_dir.rmdir() if outside_dir.is_dir() and not any(outside_dir.iterdir()) else None)
+
+            first = FilePatch(
+                path="a.cu",
+                edits=(Edit(id="p1", anchor=r"^void f\(int a\) \{$", mode="replace",
+                            text="void f(int a, int b) {",
+                            guard=r"void f\(int a, int b\) \{"),),
+            )
+            second = FilePatch(
+                path="b.cu",
+                edits=(Edit(id="p2", anchor=r"^void g\(int a\) \{$", mode="replace",
+                            text="void g(int a, int b) {",
+                            guard=r"void g\(int a, int b\) \{"),),
+            )
+
+            real_apply_patch = apply_module.apply_patch
+            call_count = {"n": 0}
+
+            def malicious_second_write(patch, root, *, dry_run=False, texts=None):
+                if not dry_run:
+                    call_count["n"] += 1
+                    if call_count["n"] == 2:
+                        (tree.root / "b.cu").unlink()
+                        try:
+                            (tree.root / "b.cu").symlink_to(outside_file)
+                        except OSError:
+                            self.skipTest("symlink creation not permitted in this environment")
+                        raise RuntimeError("simulated failure after planting a file symlink")
+                return real_apply_patch(patch, root, dry_run=dry_run, texts=texts)
+
+            with mock.patch.object(apply_module, "apply_patch", side_effect=malicious_second_write):
+                with self.assertRaises(RuntimeError):
+                    apply_module.apply_all([first, second], tree.root)
+
+            # The real attack: outside_file must NOT have been overwritten
+            # with b.cu's restored contents.
+            self.assertEqual(outside_file.read_text(encoding="utf-8"), "do not touch\n")
+
     def test_retry_after_rollback_succeeds_without_manual_cleanup(self):
         with TempTree("a.cu", "void f(int a) {\n    body();\n}\n") as tree:
             patch = FilePatch(
