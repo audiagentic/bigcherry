@@ -55,6 +55,7 @@ class PromotionIdentity:
 def resolve_promotion_identity(
     conn: sqlite3.Connection, *, dispatch_hex: str, signature_hex: str,
     hardware_hex: str, native_name: str, candidate_name: str,
+    source_build_id: int | None = None,
 ) -> PromotionIdentity:
     """Resolve one promotable row's real DB identity, read-only.
 
@@ -87,11 +88,17 @@ def resolve_promotion_identity(
     # identity_scope split deliberately allows two distinct campaign builds
     # to share. Ambiguous (more than one build_id) or absent (zero) both
     # fail closed rather than guessing.
-    build_rows = conn.execute(
+    build_query = (
         "SELECT DISTINCT build_id FROM measurement "
-        "WHERE signature_id = ? AND hardware_id = ? AND dispatch_digest = ?",
-        (signature_id, hardware_id, bytes.fromhex(dispatch_hex)),
-    ).fetchall()
+        "WHERE signature_id = ? AND hardware_id = ? AND dispatch_digest = ?"
+    )
+    build_params: tuple[object, ...] = (
+        signature_id, hardware_id, bytes.fromhex(dispatch_hex),
+    )
+    if source_build_id is not None:
+        build_query += " AND build_id = ?"
+        build_params += (source_build_id,)
+    build_rows = conn.execute(build_query, build_params).fetchall()
     if len(build_rows) != 1:
         raise CorrectnessGateError(
             f"expected exactly one build for dispatch {dispatch_hex!r} "
@@ -133,6 +140,7 @@ class CorrectnessBinding:
     hardware_hex: str
     native_name: str
     candidate_name: str
+    source_build_id: int | None = None
 
 
 def resolve_correctness_binding(
@@ -146,7 +154,7 @@ def resolve_correctness_binding(
     return resolve_promotion_identity(
         conn, dispatch_hex=binding.dispatch_hex, signature_hex=binding.signature_hex,
         hardware_hex=binding.hardware_hex, native_name=binding.native_name,
-        candidate_name=binding.candidate_name,
+        candidate_name=binding.candidate_name, source_build_id=binding.source_build_id,
     )
 
 

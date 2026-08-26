@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.tuning import correctness_evidence as ce # noqa: E402
+from bigcherry.tuning import promotion_gate # noqa: E402
 from bigcherry.core import paths # noqa: E402
 from bigcherry import replay_cache  # noqa: E402
 
@@ -172,6 +173,61 @@ class PromotionGateTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(SystemExit, "2 unsafe measurement result"):
             replay_cache._validate_promotion_gate(entries)
+
+
+class MultiBuildIdentityTests(unittest.TestCase):
+    """HI126: projected artifacts identify the source generation explicitly."""
+
+    def test_projected_source_build_resolves_while_ordinary_artifact_stays_ambiguous(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch_hex = replay_cache.portable_tuning_key("d" * 32, "c" * 32)
+            db_path = _passing_dispatch_db(
+                root, dispatch_hex=dispatch_hex, signature_hex="c" * 32,
+                hardware_hex="d" * 32, native_name="native",
+                candidate_name="candidate",
+            )
+            conn = sqlite3.connect(db_path)
+            source_build_id = conn.execute("SELECT build_id FROM build").fetchone()[0]
+            hardware_id = conn.execute("SELECT hardware_id FROM hardware").fetchone()[0]
+            signature_id = conn.execute("SELECT signature_id FROM signature").fetchone()[0]
+            conn.execute(
+                "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+                "hardware_schema, variant_set) VALUES ('e' || printf('%039d', 0), "
+                "'f' || printf('%031d', 0), 1, 1, 'inventory')"
+            )
+            second_build_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+                "implementation_version, architectures, architecture_mask, graph_safe, "
+                "deterministic, config_json) VALUES (?, 'native', 'mmvq', "
+                "'native_wrapper', 1, '[]', 0, 1, 1, '{}')",
+                (second_build_id,),
+            )
+            second_candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO measurement (build_id, hardware_id, signature_id, "
+                "dispatch_digest, candidate_id, objective, stage, accepted) "
+                "SELECT ?, hardware_id, signature_id, dispatch_digest, ?, "
+                "objective, stage, accepted FROM measurement WHERE build_id = ?",
+                (second_build_id, second_candidate_id, source_build_id),
+            )
+            conn.commit()
+
+            binding = promotion_gate.CorrectnessBinding(
+                dispatch_hex=dispatch_hex, signature_hex="c" * 32,
+                hardware_hex="d" * 32, native_name="native",
+                candidate_name="candidate", source_build_id=source_build_id,
+            )
+            identity = promotion_gate.resolve_correctness_binding(conn, binding)
+            self.assertEqual(identity.build_id, source_build_id)
+            with self.assertRaisesRegex(promotion_gate.CorrectnessGateError, "exactly one build"):
+                promotion_gate.resolve_promotion_identity(
+                    conn, dispatch_hex=dispatch_hex, signature_hex="c" * 32,
+                    hardware_hex="d" * 32, native_name="native",
+                    candidate_name="candidate",
+                )
+            conn.close()
 
 
 class SeedOverrideBypassesGateTests(unittest.TestCase):
