@@ -6,6 +6,7 @@ Run with: python -m unittest tools.tests.test_inventory
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 import sys
@@ -1342,6 +1343,39 @@ class TestHipCapabilityPersistence(unittest.TestCase):
                     )
                 row = db.query("SELECT COUNT(*) FROM build_capability")
                 self.assertEqual(row[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_fabricated_self_consistent_embedded_descriptor_is_rejected(self):
+        # The embedded descriptor can be made internally self-consistent by an
+        # attacker, but it must still equal catalog.build_descriptor() derived
+        # from the manifest's actual content.
+        manifest, header = self._manifest_and_header()
+        fabricated = dict(manifest["build_descriptor"])
+        fabricated["candidate_count"] += 1
+        descriptor_payload = json.dumps(
+            {k: v for k, v in fabricated.items() if k != "descriptor_hash"},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        fabricated["descriptor_hash"] = hashlib.blake2b(
+            descriptor_payload.encode("utf-8"), digest_size=16
+        ).hexdigest()
+        manifest["build_descriptor"] = fabricated
+        header["build_descriptor_hash"] = fabricated["descriptor_hash"]
+        meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "embedded build_descriptor"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) FROM build_capability")[0][0], 0
+                )
         finally:
             os.unlink(meas_path)
             os.unlink(manifest_path)

@@ -76,7 +76,7 @@ def _load_source_capabilities(
     this build's source_revision/manifest_hash) is a different question this
     function must independently answer -- never just trust the DB row because
     SOME artifact once satisfied it. Requires the CURRENT header's own
-    producer_capabilities and build_descriptor_hash (when present) to agree
+    producer_capabilities and build_descriptor_hash to agree
     with the DB, matching inventory.py's ingest-time strength rather than a
     weaker subset of it.
     """
@@ -102,13 +102,18 @@ def _load_source_capabilities(
     # case that must NOT be treated as HI121-projectable -- it has no way to
     # prove it is the artifact the DB attestation was ever checked against.
     header_descriptor_hash = header.get("build_descriptor_hash")
-    if not isinstance(header_descriptor_hash, str):
+    if not isinstance(db_descriptor_hash, str) or not db_descriptor_hash:
+        raise ProjectionError(
+            f"source_build_id={source_build_id} has no build_descriptor_hash in the DB -- "
+            "a descriptor-less build is capability-unknown and is not HI121-projectable"
+        )
+    if not isinstance(header_descriptor_hash, str) or not header_descriptor_hash:
         raise ProjectionError(
             "measurements header has no build_descriptor_hash -- an artifact predating this "
             "field cannot be proven to be the one its build's capability attestation was "
             "verified against, and is not HI121-projectable"
         )
-    if db_descriptor_hash is not None and header_descriptor_hash != db_descriptor_hash:
+    if header_descriptor_hash != db_descriptor_hash:
         raise ProjectionError(
             f"measurements header build_descriptor_hash={header_descriptor_hash!r} does not "
             f"match build_id={source_build_id}'s own build_descriptor_hash={db_descriptor_hash!r}"
@@ -156,6 +161,113 @@ def _load_source_capabilities(
             f"to trust an attestation this specific artifact was never verified against"
         )
     return db_mask
+
+
+def _recompute_manifest_descriptor(
+    manifest: dict[str, Any], *, label: str,
+) -> dict[str, Any]:
+    """Prove that a manifest's embedded descriptor is derived from its content."""
+    embedded = manifest.get("build_descriptor")
+    if not isinstance(embedded, dict):
+        raise ProjectionError(
+            f"{label} manifest has no build_descriptor -- a descriptor-less manifest "
+            "is not HI121-projectable"
+        )
+    try:
+        recomputed = catalog.build_descriptor(manifest)
+    except (KeyError, TypeError, ValueError, catalog.CatalogError) as exc:
+        raise ProjectionError(
+            f"{label} manifest build_descriptor cannot be recomputed from its content"
+        ) from exc
+    if recomputed != embedded:
+        raise ProjectionError(
+            f"{label} manifest's embedded build_descriptor does not exactly match "
+            "catalog.build_descriptor() recomputed from the manifest content"
+        )
+    descriptor_hash = recomputed.get("descriptor_hash")
+    if not isinstance(descriptor_hash, str) or not descriptor_hash:
+        raise ProjectionError(
+            f"{label} manifest has no non-empty recomputed build_descriptor hash"
+        )
+    return recomputed
+
+
+def _load_source_manifest(
+    conn: sqlite3.Connection, *, source_manifest_path: Path,
+    source_build_id: int, header: dict[str, Any],
+) -> tuple[dict[str, Any], CapabilityMask128]:
+    """Load only a source manifest proven to describe ``source_build_id``.
+
+    Candidate descriptors are intentionally not inspected by the caller until
+    every manifest, header, DB, and capability attestation check below passes.
+    """
+    try:
+        manifest = json.loads(Path(source_manifest_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ProjectionError(f"source manifest {source_manifest_path} is not valid JSON") from exc
+    if not isinstance(manifest, dict):
+        raise ProjectionError(f"source manifest {source_manifest_path} is not a JSON object")
+
+    build_row = conn.execute(
+        "SELECT source_revision, manifest_hash FROM build WHERE build_id = ?",
+        (source_build_id,),
+    ).fetchone()
+    if build_row is None:
+        raise ProjectionError(f"source_build_id={source_build_id} does not exist in this dispatch_db")
+    db_source_revision, db_manifest_hash = build_row
+
+    try:
+        recomputed_manifest_hash = catalog.manifest_hash(manifest)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProjectionError(
+            "source manifest hash cannot be recomputed from its content"
+        ) from exc
+    if recomputed_manifest_hash != manifest.get("manifest_hash"):
+        raise ProjectionError(
+            "source manifest's recomputed manifest_hash does not match its own "
+            "manifest_hash field -- the manifest file may be corrupted or hand-edited"
+        )
+    if manifest.get("manifest_hash") != db_manifest_hash:
+        raise ProjectionError(
+            f"source manifest manifest_hash={manifest.get('manifest_hash')!r} does not "
+            f"match source_build_id={source_build_id}'s DB manifest_hash={db_manifest_hash!r}"
+        )
+
+    manifest_revision = manifest.get("source_revision")
+    if not isinstance(manifest_revision, str) or not manifest_revision:
+        raise ProjectionError("source manifest has no source_revision field")
+    if manifest_revision != db_source_revision or manifest_revision != header.get("source_revision"):
+        raise ProjectionError(
+            "source manifest source_revision does not match both the source build DB row "
+            "and the current measurements header"
+        )
+    if manifest.get("manifest_hash") != header.get("manifest_hash"):
+        raise ProjectionError(
+            "source manifest manifest_hash does not match the current measurements header"
+        )
+
+    descriptor = _recompute_manifest_descriptor(manifest, label="source")
+    source_caps = _load_source_capabilities(
+        conn, source_build_id=source_build_id, header=header,
+    )
+    manifest_caps_hex = manifest.get("producer_capabilities")
+    if not isinstance(manifest_caps_hex, str):
+        raise ProjectionError("source manifest has no producer_capabilities field")
+    try:
+        manifest_caps = CapabilityMask128.from_hex(manifest_caps_hex)
+    except CapabilityMaskError as exc:
+        raise ProjectionError(f"source manifest's producer_capabilities is malformed: {exc}") from exc
+    if manifest_caps != source_caps:
+        raise ProjectionError(
+            f"source manifest producer_capabilities={manifest_caps_hex!r} does not match "
+            f"source_build_id={source_build_id}'s DB/header attestation {source_caps.to_hex()!r}"
+        )
+    if descriptor["descriptor_hash"] != header.get("build_descriptor_hash"):
+        raise ProjectionError(
+            "source manifest's recomputed build_descriptor hash does not match the "
+            "current measurements header"
+        )
+    return manifest, source_caps
 
 
 def _require_row_belongs_to_build(
@@ -245,14 +357,21 @@ def _candidate_implementation_is_equivalent(
 
 
 def _load_target_capabilities(target_manifest: dict[str, Any], *, vendor_root: Path) -> CapabilityMask128:
+    if not isinstance(target_manifest, dict):
+        raise ProjectionError("target manifest is not a JSON object")
     caps_hex = target_manifest.get("producer_capabilities")
     if not isinstance(caps_hex, str):
         raise ProjectionError("target manifest has no producer_capabilities field")
-    if catalog.manifest_hash(target_manifest) != target_manifest.get("manifest_hash"):
+    try:
+        manifest_hash = catalog.manifest_hash(target_manifest)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProjectionError("target manifest hash cannot be recomputed from its content") from exc
+    if manifest_hash != target_manifest.get("manifest_hash"):
         raise ProjectionError(
             "target manifest's recomputed manifest_hash does not match its own manifest_hash "
             "field -- the manifest file may be corrupted or hand-edited"
         )
+    _recompute_manifest_descriptor(target_manifest, label="target")
     # manifest_hash() deliberately excludes source_revision (it is scoped to
     # variant_set/candidate set, per replay.py's own comment on the same
     # point) -- so a correct manifest_hash alone does not prove vendor_root
@@ -386,10 +505,7 @@ def project_measurements(
     header, results = replay_module.read_results(measurements_path, require_header=True)
     raw_lines = _raw_result_lines_by_dispatch(measurements_path)
 
-    source_manifest = json.loads(Path(source_manifest_path).read_text(encoding="utf-8"))
-    source_candidates_by_name = {c["stable_name"]: c for c in source_manifest.get("candidates", [])}
     target_manifest = json.loads(Path(target_manifest_path).read_text(encoding="utf-8"))
-    target_candidates_by_name = {c["stable_name"]: c for c in target_manifest.get("candidates", [])}
     target_caps = _load_target_capabilities(target_manifest, vendor_root=vendor_root)
 
     conn = sqlite3.connect(f"file:{Path(dispatch_db)}?mode=ro", uri=True)
@@ -398,7 +514,16 @@ def project_measurements(
             inventory._require_current_schema(conn)
         except inventory.RecordError as exc:
             raise ProjectionError(str(exc)) from exc
-        source_caps = _load_source_capabilities(conn, source_build_id=source_build_id, header=header)
+        source_manifest, source_caps = _load_source_manifest(
+            conn, source_manifest_path=source_manifest_path,
+            source_build_id=source_build_id, header=header,
+        )
+        source_candidates_by_name = {
+            c["stable_name"]: c for c in source_manifest.get("candidates", [])
+        }
+        target_candidates_by_name = {
+            c["stable_name"]: c for c in target_manifest.get("candidates", [])
+        }
 
         examined = 0
         retained_dispatches: list[str] = []
