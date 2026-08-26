@@ -39,7 +39,7 @@ from .patch import (
     cmd_patches,
 )
 from .source import cmd_audit, cmd_pull
-from .tuning import cmd_generate, cmd_inventory, cmd_replay_inspect
+from .tuning import cmd_generate, cmd_inventory, cmd_project_replay, cmd_replay_inspect
 
 _CLI_DESCRIPTION = """The ``bigcherry`` command line.
 
@@ -323,6 +323,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="machine-readable report"
     )
     replay_inspect_cmd.set_defaults(func=cmd_replay_inspect)
+
+    project_replay_cmd = sub.add_parser(
+        "project-replay",
+        help=(
+            "HI121 M4: filter a measurements JSONL to the rows a specific "
+            "target HIP build's verified producer capabilities can safely "
+            "reuse -- offline only, does not touch replay.py's own reader/"
+            "writer or the production C++ resolver"
+        ),
+    )
+    project_replay_cmd.add_argument("measurements", help="source measurements JSONL")
+    project_replay_cmd.add_argument(
+        "--dispatch-db", required=True, help="dispatch_db carrying the source build's "
+        "verified producer_capabilities attestation"
+    )
+    project_replay_cmd.add_argument(
+        "--source-build-id", required=True, type=int,
+        help="build_id (in --dispatch-db) the measurements were produced by",
+    )
+    project_replay_cmd.add_argument(
+        "--target-manifest", required=True,
+        help="hip-autotune-manifest.json for the target build",
+    )
+    project_replay_cmd.add_argument(
+        "--vendor-root", required=True,
+        help="materialized llama.cpp source root for the TARGET build "
+        "(its own producer_capabilities declaration is read from here)",
+    )
+    project_replay_cmd.add_argument("--output", required=True, help="projected measurements JSONL to write")
+    project_replay_cmd.add_argument("--json", action="store_true", help="machine-readable summary")
+    project_replay_cmd.set_defaults(func=cmd_project_replay)
 
     # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
     # else -- a canonical-v2 interface only, never a translation layer for

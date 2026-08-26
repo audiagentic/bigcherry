@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from . import benchmark as ab_benchmark
-from .. import provenance
-from ..artifacts import ArtifactRef, ArtifactStore
+from ..core import provenance
+from ..core.artifacts import ArtifactRef, ArtifactStore
 
 
 class ComparisonError(ValueError):

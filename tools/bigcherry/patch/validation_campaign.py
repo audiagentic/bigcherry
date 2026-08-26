@@ -16,7 +16,7 @@ patch's catalog state (validated/rejected/untested) -- promoting a patch
 out of "untested" is a separate, deliberate decision.
 
 Usage:
-    python -m bigcherry.patch_validation_campaign \\
+    python -m bigcherry.patch.validation_campaign \\
         --patch <patch-id> \\
         --model G:/models/qwen3.5-2b/Qwen_Qwen3.5-2B-Q4_K_M.gguf \\
         --hip-path H:/.../vendor/rocm/7.1 --amdgpu-targets gfx1100 \\
@@ -480,8 +480,9 @@ def run(args: argparse.Namespace) -> int:
     )
 
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry import patch_source_isolation as psi  # noqa: E402
-    from bigcherry import patch_registry, patch_validation, paths as bc_paths  # noqa: E402
+    from bigcherry.patch import source as psi # noqa: E402
+    from bigcherry.patch import registry as patch_registry, validation as patch_validation
+    from bigcherry.core import paths as bc_paths # noqa: E402
 
     registry = patch_registry.load_registry(bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
@@ -761,8 +762,8 @@ def run(args: argparse.Namespace) -> int:
     # deferred). A campaign with no correctness evidence and/or no
     # activation probe for this patch still writes a real record; it is
     # simply not eligible_for_validated_state.
-    from bigcherry import config as campaign_config  # noqa: E402
-    from bigcherry import patch_validation_evidence  # noqa: E402
+    from bigcherry.core import config as campaign_config # noqa: E402
+    from bigcherry.patch import evidence as patch_validation_evidence # noqa: E402
 
     cfg = campaign_config.load(bc_paths.RECIPES)
     # RS04: the evidence record's patch file path resolves through the

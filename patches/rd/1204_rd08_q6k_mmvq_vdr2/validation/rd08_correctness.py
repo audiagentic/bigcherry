@@ -42,8 +42,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-ce = importlib.import_module("bigcherry.correctness_evidence")
-psi = importlib.import_module("bigcherry.patch_source_isolation")
+ce = importlib.import_module("bigcherry.tuning.correctness_evidence")
+psi = importlib.import_module("bigcherry.patch.source")
 
 RD08_PATCH_STACK: tuple[str, ...] = (
     "1204_rd08_q6k_mmvq_vdr2",

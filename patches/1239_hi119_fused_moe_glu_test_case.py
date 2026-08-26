@@ -76,7 +76,7 @@ REQUIRES = (
 
 import re as _re
 
-from bigcherry import csource as _csource
+from bigcherry.core import csource as _csource
 from bigcherry.patcher import Edit, FilePatch
 
 _NEW_STRUCT = '''

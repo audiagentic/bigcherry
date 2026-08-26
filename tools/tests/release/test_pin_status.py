@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry import pin_status  # noqa: E402
+from bigcherry.release import pin_status # noqa: E402
 from bigcherry import pin_transition  # noqa: E402
 
 _PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
@@ -258,7 +258,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
             _paths_for(self.local_root), trees, probe=self._probe())
 
     def test_aggregate_converged(self):
-        from bigcherry.config import Tree
+        from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b2", "b2")
         trees = (Tree(name="brutus", alias="brutus", path=str(b),
                       required=True, role="campaign",
@@ -268,7 +268,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
         self.assertEqual(report.remotes[0].verdict, "consistent")
 
     def test_aggregate_diverges(self):
-        from bigcherry.config import Tree
+        from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b1", "b1")
         trees = (Tree(name="brutus", alias="brutus", path=str(b),
                       required=True, role="campaign",
@@ -277,7 +277,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
         self.assertIs(report.converged, False)
 
     def test_complete_pass(self):
-        from bigcherry.config import Tree
+        from bigcherry.core.config import Tree
         b = _fake_tree(self.tmp, "b", self.upstream, "b2", "b2")
         trees = (Tree(name="brutus", alias="brutus", path=str(b),
                       required=True, role="campaign",
@@ -286,7 +286,7 @@ class RemoteAndAggregateTests(unittest.TestCase):
         self.assertEqual(pin_status.complete_failures(report, trees), [])
 
     def test_complete_fails_on_unreachable_required(self):
-        from bigcherry.config import Tree
+        from bigcherry.core.config import Tree
 
         def probe(alias, path):
             raise pin_status.PinStatusError("refused")
@@ -345,7 +345,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
     """(e)+(f): repin writes the marker atomically with the pin move; pull
     refuses while the marker is uncommitted.
 
-    cmd_repin/cmd_pull read module-level bigcherry.paths / bigcherry.recipes
+    cmd_repin/cmd_pull read module-level bigcherry.core.paths / bigcherry.recipes
     constants, so the tests monkeypatch those to the fake tree and restore
     them afterwards. repin deliberately does NOT check out the vendor (the
     checkout happens on the next `pull`), so after repin the tree is
@@ -353,7 +353,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
     """
 
     def setUp(self):
-        import bigcherry.paths as bigcherry_paths
+        import bigcherry.core.paths as bigcherry_paths
         import bigcherry.recipes as bigcherry_recipes
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
@@ -420,7 +420,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from argparse import Namespace
         from unittest import mock
 
-        import bigcherry.sources as bigcherry_sources
+        import bigcherry.source.sources as bigcherry_sources
         from bigcherry import __main__ as bigcherry_main
 
         with mock.patch.object(
@@ -443,7 +443,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from io import StringIO
         from unittest import mock
 
-        import bigcherry.sources as bigcherry_sources
+        import bigcherry.source.sources as bigcherry_sources
         from bigcherry import __main__ as bigcherry_main
 
         with mock.patch.object(

@@ -30,12 +30,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import paths
+from .core import paths
 
 
 def _default_marker_path() -> Path:
     """Computed at call time (not import time) so a redirected
-    bigcherry.paths.REPO_ROOT takes effect."""
+    bigcherry.core.paths.REPO_ROOT takes effect."""
     return paths.REPO_ROOT / "releases" / "pin-transition.json"
 
 

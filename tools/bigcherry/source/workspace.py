@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..patch import apply as patcher
 from ..patch import patchset
-from ..context import ProjectContext
+from ..core.context import ProjectContext
 from .identity import describe
 
 

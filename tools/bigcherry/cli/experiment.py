@@ -7,7 +7,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from .. import paths
+from ..core import paths
 
 
 def _load_contract_registry(args: Namespace):
@@ -75,7 +75,7 @@ def cmd_experiment_plan(args: Namespace) -> int:
     """Show what campaign lanes a contract would expand into (EC03),
     without executing them -- a dry-run, matching this project's existing
     --dry-run conventions."""
-    from .. import config as campaign_config
+    from ..core import config as campaign_config
     from ..experiment import contract as ec
     from ..campaign.planner import CampaignPlannerError, expand_contract
 
@@ -122,11 +122,11 @@ def cmd_experiment_run(args: Namespace) -> int:
     itself capture; wire a real comparison harness (see
     tools/bigcherry/re15_acceptance_run.py's stage-by-stage pattern) on
     top of this lane execution to close that gap."""
-    from .. import config as campaign_config
+    from ..core import config as campaign_config
     from ..experiment import contract as ec
-    from ..artifacts import ArtifactStore
+    from ..core.artifacts import ArtifactStore
     from ..campaign.planner import CampaignPlannerError, expand_contract, run_campaign
-    from ..context import ProjectContext
+    from ..core.context import ProjectContext
 
     try:
         _, registry = _load_contract_registry(args)

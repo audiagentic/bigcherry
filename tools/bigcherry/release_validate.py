@@ -31,7 +31,7 @@ from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import Any
 
-from . import paths
+from .core import paths
 from .tuning.schema import VARIANT_SETS
 from .tuning.multi_gpu import validate_multi_gpu_claim
 from .device_state_validate import validate_device_state_report
@@ -362,12 +362,12 @@ def probe(
     ``fetch_ref`` only fetches into it, it is never mutated any other way
     from here.
     """
-    from . import config as campaign_config
+    from .core import config as campaign_config
     from . import recipes as legacy_recipes
-    from .artifacts import ArtifactStore
+    from .core.artifacts import ArtifactStore
     from .campaign.lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
-    from .context import ProjectContext
-    from .workspace import UpstreamRepository, WorkspaceError
+    from .core.context import ProjectContext
+    from .source.workspace import UpstreamRepository, WorkspaceError
 
     run = staging_root / safe_name(run_id)
     if run.exists():

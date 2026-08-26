@@ -32,13 +32,13 @@ from pathlib import Path
 from typing import Any
 
 from .tuning import inventory as inventory_module
-from . import paths, provenance
+from .core import paths, provenance
 from .tuning import replay as replay_cache
 from .tuning import tune_promotion
 from .campaign import smoke as runtime_smoke
 from .campaign.benchmark import validate_replay_coverage
-from .artifacts import ArtifactLocator, ArtifactRef, ArtifactStore
-from .context import ProjectContext
+from .core.artifacts import ArtifactLocator, ArtifactRef, ArtifactStore
+from .core.context import ProjectContext
 from .tuning.inventory import CampaignDatabaseIdentity
 
 

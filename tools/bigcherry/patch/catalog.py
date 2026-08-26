@@ -44,9 +44,9 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import config as campaign_config
+from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
-from .. import paths
+from ..core import paths
 from . import patchset
 
 KINDS = ("framework", "upstream-backport", "enhancement")

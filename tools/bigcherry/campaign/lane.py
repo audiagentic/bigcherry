@@ -40,11 +40,11 @@ from . import build as campaign_build
 from . import plan as campaign_plan
 from . import source as campaign_source
 from . import workers as campaign_workers
-from .. import config as campaign_config
+from ..core import config as campaign_config
 from ..patch import catalog as patch_catalog
 from ..patch import patchset
 from . import smoke as smoke_module
-from ..artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
+from ..core.artifacts import ArtifactDescriptor, ArtifactLocator, ArtifactStore
 from ..build.builds import BuildPlan
 from .campaign import CampaignRun
 from .execution import (
@@ -54,9 +54,9 @@ from .execution import (
     require_campaign_success,
     source_provenance_from_metadata,
 )
-from ..context import ProjectContext
-from ..pipeline import ArtifactRef
-from ..provenance import (
+from ..core.context import ProjectContext
+from ..core.pipeline import ArtifactRef
+from ..core.provenance import (
     BuildProvenance,
     CampaignProvenance,
     ProvenanceClass,

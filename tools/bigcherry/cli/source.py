@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from argparse import Namespace
 
-from .. import paths
+from ..core import paths
 from ..release import records as releases
 from ..source import audit as source_audit
 

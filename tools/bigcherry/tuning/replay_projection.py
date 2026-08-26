@@ -1,0 +1,191 @@
+"""HI121 M4: offline, capability-gated compatibility projection of a
+measurements JSONL for a specific target build.
+
+Framing (see docs/planning/active/hip-autotune/HI121.md): the dispatch_db
+measurement history is a durable, multi-generation knowledge store; a
+replay cache is a cheap, TARGET-SPECIFIC PROJECTION of only the
+measurements known to be safe for that one binary. This module produces
+that projection -- it never touches the production C++ resolver, the
+replay wire format, or replay.py's own reader/writer, which stay exactly
+as they are today. The projected file is an ordinary measurements JSONL
+that `replay.build()` consumes completely unchanged.
+
+Filtering rule per result row, all of which must hold to retain a row:
+  * the row's own signature digest resolves to a real dispatch_db signature
+    row with parseable canonical content (an unresolvable signature is a
+    data problem, not a capability problem -- fails the whole projection,
+    not just that row, since it means this measurements/dispatch_db pairing
+    itself is suspect);
+  * hip_required_capabilities() does not raise UnsupportedSignatureDomain
+    for that signature's canonical content;
+  * the SOURCE build's verified, DB-attested producer_capabilities mask
+    (build_capability, persisted once at ingest time by inventory.py's
+    _verify_and_persist_hip_capabilities -- never re-derived here) is a
+    superset of what's required;
+  * the TARGET build's producer_capabilities (read from its manifest,
+    itself verified against its own materialized source root) is ALSO a
+    superset of what's required -- a target that cannot itself distinguish
+    the relevant semantics must not receive the row either, even if the
+    source could (see HI121 round 9's own self-review finding).
+
+Retained rows are copied byte-for-byte from the source JSON object --
+this function never mutates a result row's own content.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from . import catalog
+from . import hip_capabilities as hc
+from . import replay as replay_module
+from . import signature_capabilities as sc
+from .capabilities import CapabilityMask128, CapabilityMaskError
+
+
+class ProjectionError(RuntimeError):
+    """The requested compatibility projection cannot be proven safe."""
+
+
+@dataclass(frozen=True)
+class ProjectionSummary:
+    examined: int
+    retained: int
+    omitted_missing_producer_capability: int
+    omitted_missing_target_capability: int
+    omitted_unsupported_domain: int
+
+
+def _load_source_capabilities(
+    conn: sqlite3.Connection, *, source_build_id: int, header: dict[str, Any] | None,
+) -> CapabilityMask128:
+    build_row = conn.execute(
+        "SELECT source_revision, manifest_hash FROM build WHERE build_id = ?",
+        (source_build_id,),
+    ).fetchone()
+    if build_row is None:
+        raise ProjectionError(f"source_build_id={source_build_id} does not exist in this dispatch_db")
+    if header is not None:
+        if header.get("source_revision") != build_row[0] or header.get("manifest_hash") != build_row[1]:
+            raise ProjectionError(
+                f"measurements header does not match build_id={source_build_id}'s own "
+                f"source_revision/manifest_hash -- refusing to project against the wrong build"
+            )
+
+    cap_row = conn.execute(
+        "SELECT producer_capabilities FROM build_capability WHERE build_id = ? AND backend = 'hip'",
+        (source_build_id,),
+    ).fetchone()
+    if cap_row is None:
+        raise ProjectionError(
+            f"source_build_id={source_build_id} has no verified hip producer_capabilities "
+            f"attestation (see inventory.load_measurements' manifest-verified ingest) -- "
+            f"cannot determine what this build's producer actually knew how to evaluate"
+        )
+    return CapabilityMask128.from_bytes(cap_row[0])
+
+
+def _load_target_capabilities(target_manifest: dict[str, Any], *, vendor_root: Path) -> CapabilityMask128:
+    caps_hex = target_manifest.get("producer_capabilities")
+    if not isinstance(caps_hex, str):
+        raise ProjectionError("target manifest has no producer_capabilities field")
+    if catalog.manifest_hash(target_manifest) != target_manifest.get("manifest_hash"):
+        raise ProjectionError(
+            "target manifest's recomputed manifest_hash does not match its own manifest_hash "
+            "field -- the manifest file may be corrupted or hand-edited"
+        )
+    declared = hc.load_declared_producer_capabilities(vendor_root)
+    try:
+        claimed = CapabilityMask128.from_hex(caps_hex)
+    except CapabilityMaskError as exc:
+        raise ProjectionError(f"target manifest's producer_capabilities is malformed: {exc}") from exc
+    if declared != claimed:
+        raise ProjectionError(
+            f"target manifest claims producer_capabilities={caps_hex!r}, but the target "
+            f"vendor_root's OWN source declaration is {declared.to_hex()!r} -- this manifest "
+            f"was not generated from the exact source root it claims"
+        )
+    return claimed
+
+
+def _load_canonical_signature(conn: sqlite3.Connection, signature_hex: str) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT canonical_json FROM signature WHERE signature_digest = ?",
+        (bytes.fromhex(signature_hex),),
+    ).fetchone()
+    if row is None:
+        raise ProjectionError(
+            f"no signature row for signature digest {signature_hex!r} -- this measurements "
+            f"file was not ingested into the supplied dispatch_db"
+        )
+    return json.loads(row[0])
+
+
+def project_measurements(
+    measurements_path: Path, output_path: Path, *,
+    dispatch_db: Path, source_build_id: int,
+    target_manifest_path: Path, vendor_root: Path,
+) -> ProjectionSummary:
+    """Filter one measurements artifact to rows safe for a target HIP build.
+
+    Raises ProjectionError for anything that makes the WHOLE projection
+    untrustworthy (unresolvable build/capability provenance, a malformed or
+    misattributed target manifest) -- an individual row's own applicability
+    failure is instead counted and omitted, never raised, since "this one
+    signature needs a rerun" is an expected, ordinary outcome.
+    """
+    header, results = replay_module.read_results(measurements_path, require_header=True)
+
+    target_manifest = json.loads(Path(target_manifest_path).read_text(encoding="utf-8"))
+    target_caps = _load_target_capabilities(target_manifest, vendor_root=vendor_root)
+
+    conn = sqlite3.connect(str(dispatch_db))
+    try:
+        source_caps = _load_source_capabilities(conn, source_build_id=source_build_id, header=header)
+
+        examined = 0
+        retained_rows: list[dict[str, Any]] = []
+        omitted_missing_producer = 0
+        omitted_missing_target = 0
+        omitted_unsupported = 0
+
+        for row in results:
+            examined += 1
+            signature_hex = row.get("signature")
+            if not isinstance(signature_hex, str):
+                raise ProjectionError(f"result row missing a valid signature digest: {row!r}")
+            canonical = _load_canonical_signature(conn, signature_hex)
+            try:
+                required = sc.hip_required_capabilities(canonical, vendor_root=vendor_root)
+            except sc.UnsupportedSignatureDomain:
+                omitted_unsupported += 1
+                continue
+            if not source_caps.contains(required):
+                omitted_missing_producer += 1
+                continue
+            if not target_caps.contains(required):
+                omitted_missing_target += 1
+                continue
+            retained_rows.append(row)
+    finally:
+        conn.close()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as handle:
+        if header is not None:
+            handle.write(json.dumps(header, separators=(",", ":")) + "\n")
+        for row in retained_rows:
+            handle.write(json.dumps(row, separators=(",", ":")) + "\n")
+
+    return ProjectionSummary(
+        examined=examined,
+        retained=len(retained_rows),
+        omitted_missing_producer_capability=omitted_missing_producer,
+        omitted_missing_target_capability=omitted_missing_target,
+        omitted_unsupported_domain=omitted_unsupported,
+    )

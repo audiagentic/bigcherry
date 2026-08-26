@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__
-from . import paths
+from .core import paths
 from .patch import catalog as patch_catalog
 from .patch import apply as patcher
 from .patch import patchset
@@ -319,7 +319,7 @@ def _legacy_cmd_repin(args: argparse.Namespace) -> int:
 
 def _legacy_pin_status_paths() -> tuple[pin_status.RepoPaths, object, list]:
     """Local RepoPaths + config trees + the llama root, from the real config."""
-    from . import config as campaign_config
+    from .core import config as campaign_config
 
     cfg = campaign_config.load(paths.RECIPES)
     repo_paths = pin_status.RepoPaths(

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .artifacts import ArtifactError, ArtifactStore
+from .core.artifacts import ArtifactError, ArtifactStore
 from .build.builds import binary_hash
 from .parity import CampaignArm
 

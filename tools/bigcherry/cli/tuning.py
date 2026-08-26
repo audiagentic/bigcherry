@@ -7,7 +7,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from .. import paths
+from ..core import paths
 from ..tuning import replay_inspect
 
 
@@ -74,6 +74,45 @@ def cmd_replay_inspect(args: Namespace) -> int:
     else:
         print(replay_inspect.format_report(report))
     return report["_exit"]
+
+
+def cmd_project_replay(args: Namespace) -> int:
+    """HI121 M4: project a measurements JSONL to the rows a specific target
+    HIP build can safely reuse, using its own verified producer-capability
+    provenance -- never touches replay.py's own reader/writer, wire format,
+    or the production C++ resolver. See tuning.replay_projection."""
+    from ..tuning import replay_projection
+
+    try:
+        summary = replay_projection.project_measurements(
+            Path(args.measurements),
+            Path(args.output),
+            dispatch_db=Path(args.dispatch_db),
+            source_build_id=args.source_build_id,
+            target_manifest_path=Path(args.target_manifest),
+            vendor_root=Path(args.vendor_root),
+        )
+    except replay_projection.ProjectionError as exc:
+        print(f"project-replay: {exc}", file=sys.stderr)
+        return 1
+
+    report = {
+        "examined": summary.examined,
+        "retained": summary.retained,
+        "omitted_missing_producer_capability": summary.omitted_missing_producer_capability,
+        "omitted_missing_target_capability": summary.omitted_missing_target_capability,
+        "omitted_unsupported_domain": summary.omitted_unsupported_domain,
+    }
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(
+            f"examined {report['examined']}, retained {report['retained']} -- "
+            f"omitted: {report['omitted_missing_producer_capability']} missing-producer-capability, "
+            f"{report['omitted_missing_target_capability']} missing-target-capability, "
+            f"{report['omitted_unsupported_domain']} unsupported-domain"
+        )
+    return 0
 
 
 def cmd_inventory(args: Namespace, *, subcmd: str) -> int:

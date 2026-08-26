@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from .. import paths
+from ..core import paths
 from .apply import FilePatch
 
 # The "validation framework semantic version" (runbook 14.2). Bumping it
@@ -438,7 +438,7 @@ def _contract_hash(contract_id: str, *, contracts_path: Path | None = None) -> s
         raise PatchRegistryError(
             f"experiment contract {contract_id!r} referenced but no contract file at {file_path}"
         )
-    from bigcherry import experiment_contract  # noqa: PLC0415 (A1: one-way leaf import)
+    from bigcherry.experiment import contract as experiment_contract # noqa: PLC0415 (A1: one-way leaf import)
 
     try:
         contracts = experiment_contract.load_contracts(file_path)
@@ -635,7 +635,7 @@ def describe_all(
     Identical discovery and structural validation (ID pattern, path/symlink
     escape, duplicate IDs, TOML schema) EXCEPT it does not fail closed on an
     invalid lifecycle ``state``: the raw state is preserved so the reporting
-    facade (:func:`bigcherry.patchset.describe`) can surface it
+    facade (:func:`bigcherry.patch.patchset.describe`) can surface it
     (``state_valid=False``) instead of crashing on a typo'd ``STATE``.
 
     Every strict path -- ``load_registry``, ``catalog``, ``resolve_exact``,

@@ -3801,6 +3801,11 @@ void ggml_hip_tuner_flush() {
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"compiler\":\"%s\",\"hip_version\":\"%s\","
             "\"variant_set\":\"%s\",\"build_descriptor_hash\":\"%s\","
+            // HI121: this compiled binary's own producer capability
+            // self-report -- see hip-autotune-record.cpp's identical
+            // emission for why this must be the compiled declaration, never
+            // re-derived from another field.
+            "\"producer_capabilities\":\"%016llx%016llx\","
             "\"host_sync_overhead_us\":%.3f,\"host_sync_overhead_valid\":%s,"
             GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_FMT_ONE)
             "\"warmup_launches\":%d,\"replacement_threshold_pct\":%.4f,"
@@ -3813,6 +3818,8 @@ void ggml_hip_tuner_flush() {
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_COMPILER_STR, GGML_HIP_VERSION_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR, GGML_HIP_AUTOTUNE_DESCRIPTOR_HASH_STR,
+            (unsigned long long) GGML_HIP_PRODUCER_CAPABILITIES_HI,
+            (unsigned long long) GGML_HIP_PRODUCER_CAPABILITIES_LO,
             sync_overhead.us, sync_overhead.valid ? "true" : "false"
             GGML_HIP_TUNER_CONFIG_FIELDS(GGML_HIP_TUNER_HEADER_ARG_ONE)
             , config.warmup_launches, config.replacement_threshold_pct,

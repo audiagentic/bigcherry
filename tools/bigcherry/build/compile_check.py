@@ -16,7 +16,7 @@ landing any change touching hip-autotune-*.cu/.cuh/.h:
                second configure+build, not a flag flip on one tree)
 
 Usage:
-    python -m bigcherry.compile_check --hip-path H:/.../vendor/rocm/7.1 \\
+python -m bigcherry.build.compile_check --hip-path H:/.../vendor/rocm/7.1 \\
         --amdgpu-targets gfx1100 --workdir C:/bcw-check
 """
 

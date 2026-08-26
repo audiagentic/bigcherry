@@ -91,7 +91,7 @@ def build_focal_comparison(
     (``patchset.expand_composition``), fail-closed.
     """
     if registry is None:
-        from .. import paths
+        from ..core import paths
 
         registry = patch_registry.load_registry(paths.PATCHES if root is None else root)
     try:

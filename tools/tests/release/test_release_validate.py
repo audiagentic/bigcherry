@@ -245,7 +245,7 @@ class _ProbeHarness:
         _git(root, "clone", str(self.origin), str(self.mirror))
 
     def patches(self, calls: list | None = None):
-        from bigcherry.context import ProjectContext
+        from bigcherry.core.context import ProjectContext
 
         calls = calls if calls is not None else []
         real_resolve = ProjectContext.resolve.__func__
@@ -261,7 +261,7 @@ class _ProbeHarness:
 
         return (
             mock.patch.object(ProjectContext, "resolve", classmethod(fake_resolve)),
-            mock.patch("bigcherry.campaign_workers.subprocess.run", _fake_compiler(calls)),
+            mock.patch("bigcherry.campaign.workers.subprocess.run", _fake_compiler(calls)),
         )
 
 
@@ -354,7 +354,7 @@ class ProbeTests(unittest.TestCase):
                 return real_run(args, cwd=cwd, check=check, **kwargs)
 
             with patches[0], mock.patch(
-                "bigcherry.campaign_workers.subprocess.run", side_effect=failing_run):
+                "bigcherry.campaign.workers.subprocess.run", side_effect=failing_run):
                 code, path = release_validate.probe(
                     "r2", root / "staging", "HEAD", "test-source")
             self.assertEqual(code, 1)

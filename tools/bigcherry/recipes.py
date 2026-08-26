@@ -5,7 +5,7 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from . import paths
+from .core import paths
 
 RECIPES_PATH = paths.RECIPES
 FOLLOW_PIN = "pinned"
@@ -221,7 +221,7 @@ def load_config(path=None) -> Config:
 def _load_v2_compat(path: Path, raw: dict) -> Config:
     """Expose v2 builds to the legacy CLI through an explicit adapter.
 
-    Campaign code uses :mod:`bigcherry.config` directly.  This adapter exists
+    Campaign code uses :mod:`bigcherry.core.config` directly.  This adapter exists
     only so old pull/audit/build commands can continue operating while the
     campaign path migrates.  It accepts only the explicit ``compat.recipe``
     aliases shipped in the v2 file; it never converts selectors into v2 source

@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from ..context import ProjectContext
+from ..core.context import ProjectContext
 
 
 class BuildIdentityError(ValueError):
