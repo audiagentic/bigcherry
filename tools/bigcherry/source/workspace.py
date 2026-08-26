@@ -5,12 +5,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import uuid
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..patch import apply as patcher
 from ..patch.apply import PatchError, resolve_contained_target
 from ..patch import patchset
+from ..patch import registry as patch_registry
 from ..core.context import ProjectContext
 from .identity import describe
 
@@ -109,6 +111,22 @@ class SourcePlan:
     #: actual human review boundary and is already explicit in recipes.toml
     #: itself, not re-decided here.
     classification: str | None = None
+    resolved_patch_inputs: tuple["ResolvedPatchInput", ...] = ()
+    resolved_overlay_inputs: tuple["ResolvedOverlayInput", ...] = ()
+    inputs_resolved: bool = False
+
+
+@dataclass(frozen=True)
+class ResolvedPatchInput:
+    patch_id: str
+    implementation_path: Path
+    implementation_digest: str
+
+
+@dataclass(frozen=True)
+class ResolvedOverlayInput:
+    relative_path: str
+    content_digest: str
 
 
 def bigcherry_revision(context: ProjectContext) -> str:
@@ -162,25 +180,36 @@ def materialize(
     repository.add_detached_worktree(plan.upstream_revision, destination)
     allowed_untracked: set[str] = set()
     if plan.overlay_enabled:
-        for source in sorted(context.overlay_root.rglob("*")):
-            if not source.is_file():
-                continue
-            relative = source.relative_to(context.overlay_root)
+        for resolved in plan.resolved_overlay_inputs:
+            source = context.overlay_root / resolved.relative_path
+            raw = source.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != resolved.content_digest:
+                raise WorkspaceError(
+                    f"overlay bytes changed after plan resolution: {resolved.relative_path}"
+                )
+            relative = Path(resolved.relative_path)
             try:
                 target = resolve_contained_target(destination, relative.as_posix())
             except PatchError as exc:
                 raise WorkspaceError(f"overlay target escapes source root: {exc}") from exc
             was_present = target.exists()
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
+            target.write_bytes(raw)
             if not was_present:
                 allowed_untracked.add(relative.as_posix())
-    selection = patchset.resolve_exact(
-        plan.patch_ids,
-        directory=context.patches_root,
-        required_state=plan.required_state,
-    )
-    results = patcher.apply_all(patchset.load_resolved(selection), destination)
+    if not plan.inputs_resolved:
+        raise WorkspaceError("source plan has no resolved patch/overlay inputs")
+    registry = patch_registry.load_registry(context.patches_root)
+    loaded = []
+    for resolved in plan.resolved_patch_inputs:
+        descriptor = registry.get(resolved.patch_id)
+        if descriptor.implementation_path != resolved.implementation_path:
+            raise WorkspaceError(f"patch path changed after plan resolution: {resolved.patch_id}")
+        loaded.extend(patch_registry.load_implementation(
+            descriptor, root=context.patches_root,
+            expected_digest=resolved.implementation_digest,
+        ))
+    results = patcher.apply_all(loaded, destination)
     if not all(result.ok for result in results):
         raise WorkspaceError("source patch application failed")
     metadata = describe(
@@ -192,8 +221,8 @@ def materialize(
         "upstream_revision": plan.upstream_revision,
         "overlay_enabled": plan.overlay_enabled,
         "patches": [
-            {"patch_id": item.patch_id, "content_hash": item.content_hash}
-            for item in selection.modules
+            {"patch_id": item.patch_id, "content_hash": item.implementation_digest}
+            for item in plan.resolved_patch_inputs
         ],
         "required_state": plan.required_state,
         # RE03 (RV48 audit): the reviewed logical-composition identity,
