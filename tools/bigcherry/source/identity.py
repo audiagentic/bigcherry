@@ -193,3 +193,53 @@ def verify_source_attestation(root: Path, expected: SourceAttestation) -> None:
             "source_slice_id does not match live source facts: "
             f"{actual_source_slice_id!r} != {expected.source_slice_id!r}"
         )
+
+
+def atomic_write_json(
+    path: Path, document: object, *, fsync_file: bool = True, fsync_parent: bool = True,
+) -> None:
+    """Write JSON to ``path`` via temp-file + fsync + ``os.replace()``.
+
+    PA12 (source/patch identity hardening L6.1): HI82's manifest writer
+    (patch/source.py::_write_manifest) already did this; canonical campaign
+    metadata (campaign/build.py::materialize_source()) used a plain
+    ``write_text()``, so a crash mid-write could leave truncated metadata
+    beside an otherwise-valid source worktree. Shared here so both call
+    sites use one implementation instead of maintaining two.
+
+    ``fsync_parent`` additionally fsyncs the containing directory after the
+    rename -- on POSIX, the rename itself is not guaranteed durable until
+    the directory entry is flushed; skipped automatically where the
+    platform does not support directory fsync (e.g. Windows).
+    """
+    path = Path(path)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(document, handle, indent=2, sort_keys=True, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            if fsync_file:
+                os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+    if fsync_parent:
+        try:
+            parent_fd = os.open(str(path.parent), os.O_RDONLY)
+        except OSError:
+            # Windows (and some filesystems) do not support opening a
+            # directory for fsync -- the temp-file-plus-replace already
+            # gives atomicity of content, this is best-effort durability.
+            return
+        try:
+            os.fsync(parent_fd)
+        except OSError:
+            pass
+        finally:
+            os.close(parent_fd)
