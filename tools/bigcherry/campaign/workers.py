@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -505,12 +506,31 @@ def make_build_worker(
 
         if not reused:
             inventory_ref = lane_inputs.get("inventory")
+            # RD100: generated_root is a run_id-scoped staging path (see this
+            # module's own docstring -- deliberate for the generate/build
+            # handoff), but GGML_HIP_AUTOTUNE_GENERATED_DIR passes it to
+            # CMake as an absolute path option, and that path leaks into the
+            # compiled output (include search paths / embedded diagnostics),
+            # making two builds of IDENTICAL generated content byte-different
+            # whenever run_id differs -- which then collides with
+            # ArtifactStore's immutability check on a re-publish. Copy the
+            # already-verified generated/ tree into a build_dir-scoped
+            # (stable, content-addressed by construction) location and point
+            # CMake at THAT instead, so the same (source_slice_id,
+            # build_plan_id) always compiles against the same absolute path
+            # regardless of which run_id produced it.
+            cmake_generated_root = generated_root
+            if has_generate_stage:
+                cmake_generated_root = build_dir / "generated-inputs"
+                if cmake_generated_root.exists():
+                    shutil.rmtree(cmake_generated_root)
+                shutil.copytree(generated_root, cmake_generated_root)
             configure_args = campaign_build.cmake_configure_args(
                 build,
                 platform,
                 source_root,
                 build_dir,
-                generated_root=generated_root,
+                generated_root=cmake_generated_root,
                 inventory=inventory_ref.path if inventory_ref is not None else None,
                 c_compiler=platform.c_compiler,
                 cxx_compiler=platform.cxx_compiler,

@@ -437,6 +437,58 @@ class ReuseTests(unittest.TestCase):
                 arch_b_tree_document["compile_inputs_hash"],
             )
 
+    def test_cmake_generated_dir_is_stable_across_run_ids(self):
+        # RD100: GGML_HIP_AUTOTUNE_GENERATED_DIR used to be the raw,
+        # run_id-scoped staging path (work_root/runs/<run_id>/generate/
+        # generated) -- an absolute path that differs on every invocation
+        # and leaks into the compiled output (include search paths /
+        # embedded diagnostics), making two builds of IDENTICAL generated
+        # content byte-different purely because run_id differed. That then
+        # collided with ArtifactStore's immutability check on re-publish.
+        # A build worker must always pass the SAME (build_dir-scoped)
+        # absolute path to CMake for the same (source_slice_id,
+        # build_plan_id), regardless of which run_id's generate stage
+        # produced the content.
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            build_dir = build_directory(
+                harness.context, harness.source_slice_id, harness.build_plan
+            )
+
+            def generated_dir_arg(cmd: list[str]) -> str:
+                prefix = "-DGGML_HIP_AUTOTUNE_GENERATED_DIR="
+                (arg,) = (a for a in cmd if a.startswith(prefix))
+                return arg[len(prefix):]
+
+            harness.run_id = "run1"
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run", harness.fake_compiler()
+            ):
+                harness.worker()(
+                    harness.generate_inputs(registry_content="content-a", label="a")
+                )
+            first_configure = harness.calls[0]
+            first_dir = generated_dir_arg(first_configure)
+
+            # Force a second REAL compile (not a reuse) by changing the
+            # generated content, same as the arch-a/arch-b test above --
+            # but this time also change run_id, which previously would have
+            # changed the generated-dir path passed to CMake too.
+            harness.run_id = "run2"
+            with patch(
+                "bigcherry.campaign.workers.subprocess.run", harness.fake_compiler()
+            ):
+                harness.worker()(
+                    harness.generate_inputs(registry_content="content-b", label="b")
+                )
+            second_configure = harness.calls[2]
+            second_dir = generated_dir_arg(second_configure)
+
+            self.assertEqual(first_dir, second_dir)
+            self.assertEqual(Path(first_dir), (build_dir / "generated-inputs").resolve())
+            self.assertNotIn("run1", first_dir)
+            self.assertNotIn("run2", second_dir)
+
     def test_dependent_library_tampered_fails_closed_even_though_launcher_is_untouched(
         self,
     ):
