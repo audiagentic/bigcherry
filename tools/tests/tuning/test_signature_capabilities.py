@@ -3,6 +3,7 @@ rules -- the central "zero-and-known != zero-and-unknown" distinction."""
 
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -173,13 +174,25 @@ class GluTests(unittest.TestCase):
             required = sc.hip_required_capabilities(sig, vendor_root=vendor)
             self.assertEqual(required, ALL_FOUR_CAPS)
 
-    def test_glu_gate_bias_fusion_with_zero_content_bits_still_requires_all_four(self):
+    def test_glu_gate_bias_fusion_with_zero_bias_flags_is_self_contradictory(self):
+        # ggml_hip_fusion_kind() cannot classify GATE_BIAS without a real
+        # bias tensor present, and the content flags are set from the same
+        # pointers -- fusion=GATE_BIAS with neither bias flag set is a
+        # second impossible state, not a valid "zero means unknown" case.
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, fusion=3)
-            required = sc.hip_required_capabilities(sig, vendor_root=vendor)
-            self.assertEqual(required, ALL_FOUR_CAPS)
+            with self.assertRaises(sc.UnsupportedSignatureDomain):
+                sc.hip_required_capabilities(sig, vendor_root=vendor)
+
+    def test_glu_gate_fusion_with_a_bias_flag_set_is_self_contradictory(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            sig = dict(GLU_ALL_ZERO, fusion=2, flags=GLU_ALL_ZERO["flags"] | (1 << 7))
+            with self.assertRaises(sc.UnsupportedSignatureDomain):
+                sc.hip_required_capabilities(sig, vendor_root=vendor)
 
 
 class GeneralTests(unittest.TestCase):
@@ -225,6 +238,33 @@ class GeneralTests(unittest.TestCase):
             sig = dict(PLAIN_MUL_MAT, op="not-an-int")
             with self.assertRaises(sc.UnsupportedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
+
+
+class FusionKindEnumParityTests(unittest.TestCase):
+    """HI121 review follow-up (P1): signature_capabilities.py hand-transcribes
+    _FUSION_KIND_NONE/GATE/GATE_BIAS as bare ints rather than reading them
+    from source, unlike hip_capabilities.py's declared-capabilities loader.
+    This repo carries the real ggml_hip_fusion_kind enum directly (it is
+    bigcherry's own authored instrumentation file, not fetched from an
+    external vendor tree), so its values can be checked directly against the
+    real source rather than only trusted by hand."""
+
+    def test_fusion_kind_constants_match_real_source_enum(self):
+        types_h = (
+            Path(__file__).resolve().parents[3]
+            / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types.h"
+        )
+        text = types_h.read_text(encoding="utf-8")
+        match = re.search(r"enum ggml_hip_fusion_kind \{(.*?)\};", text, re.DOTALL)
+        self.assertIsNotNone(match, "could not find enum ggml_hip_fusion_kind in hip-autotune-types.h")
+        real_values: dict[str, int] = {}
+        for line in match.group(1).splitlines():
+            entry = re.match(r"\s*(GGML_HIP_FUSION_\w+)\s*=\s*(\d+)", line)
+            if entry:
+                real_values[entry.group(1)] = int(entry.group(2))
+        self.assertEqual(real_values["GGML_HIP_FUSION_NONE"], sc._FUSION_KIND_NONE)
+        self.assertEqual(real_values["GGML_HIP_FUSION_GATE"], sc._FUSION_KIND_GATE)
+        self.assertEqual(real_values["GGML_HIP_FUSION_GATE_BIAS"], sc._FUSION_KIND_GATE_BIAS)
 
 
 if __name__ == "__main__":

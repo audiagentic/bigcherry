@@ -173,6 +173,28 @@ def hip_required_capabilities(
                 f"({_FUSION_KIND_GATE}) nor GGML_HIP_FUSION_GATE_BIAS ({_FUSION_KIND_GATE_BIAS}) -- "
                 f"no audited rule for this fusion kind"
             )
+        # HI121 review follow-up: ggml_hip_fusion_kind() classifies GATE_BIAS
+        # (verified against real source) precisely when at least one of
+        # fusion->x_bias/gate_bias is non-null, and the X_BIAS/GATE_BIAS
+        # content flags are set from those SAME pointers -- so GATE_BIAS
+        # with NEITHER bias flag set, or GATE with EITHER bias flag set, is
+        # a self-contradictory signature no real dispatch could produce.
+        # Accepting either as "well-formed, just needs all 4 capabilities"
+        # (as an earlier version of this fixture/rule did) admits a second
+        # impossible state instead of fixing the first one.
+        has_any_bias_flag = bool(flags & (_SIG_FUSION_X_BIAS | _SIG_FUSION_GATE_BIAS))
+        if fusion == _FUSION_KIND_GATE_BIAS and not has_any_bias_flag:
+            raise UnsupportedSignatureDomain(
+                "GLU signature has fusion=GATE_BIAS but neither X_BIAS nor GATE_BIAS content "
+                "flag is set -- ggml_hip_fusion_kind() cannot classify GATE_BIAS without a "
+                "real bias tensor present; this combination cannot come from a real dispatch"
+            )
+        if fusion == _FUSION_KIND_GATE and has_any_bias_flag:
+            raise UnsupportedSignatureDomain(
+                "GLU signature has fusion=GATE but a bias content flag is set -- "
+                "ggml_hip_fusion_kind() would have classified a real bias-bearing dispatch as "
+                "GATE_BIAS, not GATE; this combination cannot come from a real dispatch"
+            )
         if glu_op not in _FUSABLE_GLU_OPS:
             raise UnsupportedSignatureDomain(
                 f"GLU signature glu_op={glu_op!r} is not one of GEGLU/SWIGLU/SWIGLU_OAI "
