@@ -26,8 +26,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import paths
+from ..core import paths
+from . import catalog
 from . import dispatch_abi
+from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
 
@@ -713,6 +715,84 @@ def build_database(
         connection.close()
 
 
+def _verify_and_persist_hip_capabilities(
+    connection: sqlite3.Connection, *,
+    header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
+) -> None:
+    """HI121 M2: verify the compiled producer's own self-reported capability
+    mask (measurements header's ``producer_capabilities``) against the
+    manifest that claims to describe that same build, and persist it to
+    ``build_capability`` ONLY once every provenance check passes.
+
+    Absence of a verified manifest binding (no manifest_path given, or an
+    older manifest/header predating this field) means NO build_capability
+    row is written -- capability-unknown, never inferred from
+    signature_schema, commit date, or any other proxy. This is the one hard
+    requirement HI121's design calls out for this function: Python must not
+    be able to arbitrarily self-declare or backfill a capability claim.
+    """
+    if manifest is None:
+        return
+    header_caps_hex = header.get("producer_capabilities")
+    manifest_caps_hex = manifest.get("producer_capabilities")
+    if not isinstance(header_caps_hex, str) or not isinstance(manifest_caps_hex, str):
+        # Older measurements/manifest predate this field -- nothing to
+        # verify or persist yet, not an error.
+        return
+
+    if header.get("source_revision") != manifest.get("source_revision"):
+        raise RecordError(
+            "load_measurements: header source_revision does not match the supplied "
+            "manifest's source_revision -- refusing to persist a producer capability "
+            "claim against a manifest that may describe different source"
+        )
+    if header.get("manifest_hash") != manifest.get("manifest_hash"):
+        raise RecordError(
+            "load_measurements: header manifest_hash does not match the supplied "
+            "manifest's own manifest_hash"
+        )
+    manifest_descriptor_hash = (manifest.get("build_descriptor") or {}).get("descriptor_hash")
+    if header.get("build_descriptor_hash") != manifest_descriptor_hash:
+        raise RecordError(
+            "load_measurements: header build_descriptor_hash does not match the "
+            "supplied manifest's own build_descriptor.descriptor_hash"
+        )
+    if catalog.manifest_hash(manifest) != manifest.get("manifest_hash"):
+        raise RecordError(
+            "load_measurements: recomputed manifest_hash does not match the manifest's "
+            "own manifest_hash field -- the manifest file may be corrupted or hand-edited"
+        )
+    if header_caps_hex != manifest_caps_hex:
+        raise RecordError(
+            f"load_measurements: compiled producer's self-reported capability mask "
+            f"({header_caps_hex!r}) does not match the manifest's claimed "
+            f"producer_capabilities ({manifest_caps_hex!r}) -- refusing to certify what "
+            f"this build actually knows how to evaluate"
+        )
+
+    try:
+        mask = CapabilityMask128.from_hex(header_caps_hex)
+    except CapabilityMaskError as exc:
+        raise RecordError(f"load_measurements: malformed producer_capabilities hex: {exc}") from exc
+
+    existing = connection.execute(
+        "SELECT producer_capabilities FROM build_capability WHERE build_id = ? AND backend = 'hip'",
+        (build_id,),
+    ).fetchone()
+    if existing is not None:
+        if existing[0] != mask.to_bytes():
+            raise RecordError(
+                "load_measurements: build_id already has a DIFFERENT hip producer_capabilities "
+                "row on file -- capability claims are immutable once persisted, never silently "
+                "overwritten"
+            )
+        return
+    connection.execute(
+        "INSERT INTO build_capability (build_id, backend, producer_capabilities) VALUES (?, 'hip', ?)",
+        (build_id, mask.to_bytes()),
+    )
+
+
 def load_measurements(
     measurements_path: Path,
     database_path: Path,
@@ -814,6 +894,7 @@ def load_measurements(
 
     # Resolve manifest → candidate lookup if provided
     manifest_by_name: dict[str, dict[str, Any]] = {}
+    manifest: dict[str, Any] | None = None
     if manifest_path and manifest_path.is_file():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -979,6 +1060,10 @@ def load_measurements(
                 ),
             )
             build_id = cursor.lastrowid
+
+        _verify_and_persist_hip_capabilities(
+            connection, header=header, manifest=manifest, build_id=build_id
+        )
 
         signatures = sorted(
             {

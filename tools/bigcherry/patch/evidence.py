@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from .. import paths
+from ..core import paths
 from . import patchset
 from .activation import ActivationEvidence
 

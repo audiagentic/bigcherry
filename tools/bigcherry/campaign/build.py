@@ -27,12 +27,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import source as campaign_source
-from .. import config as campaign_config
+from ..core import config as campaign_config
 from ..build import builds
 from ..source import identity as source_identity
-from ..artifacts import ArtifactStore
+from ..core.artifacts import ArtifactStore
 from ..build.builds import BuildPlan
-from ..context import ProjectContext
+from ..core.context import ProjectContext
 from ..source.identity import SourceIdentityError, git_tree_oid
 from ..source.workspace import SourcePlan, materialize, require_clean_bigcherry
 

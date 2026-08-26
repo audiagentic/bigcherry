@@ -69,9 +69,9 @@ from typing import Any
 from ..tuning import catalog as autotune_catalog
 from . import build as campaign_build
 from ..build import generated_tree
-from .. import provenance
+from ..core import provenance
 from . import smoke as runtime_smoke
-from ..artifacts import ArtifactStore
+from ..core.artifacts import ArtifactStore
 from ..build.builds import (
     BuildIdentityError,
     BuildPlan,
@@ -83,8 +83,8 @@ from ..build.builds import (
     runtime_bundle_hash,
     validate_reuse,
 )
-from ..context import ProjectContext
-from ..pipeline import ArtifactRef
+from ..core.context import ProjectContext
+from ..core.pipeline import ArtifactRef
 
 
 #: Need names the generate/build workers know how to interpret. Fail

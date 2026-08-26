@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from .. import ARTIFACT_VERSION
-from .. import paths
+from ..core import paths
 from ..tuning.promotion import PromotionPointer
 
 RELEASES_DIR = paths.REPO_ROOT / "releases"
@@ -281,7 +281,7 @@ class ReleaseRecord:
 
 def promote(record: ReleaseRecord, pointer: PromotionPointer) -> None:
     """Advance ``record`` to ``validated`` via a real campaign-backed
-    :class:`~bigcherry.promotion.PromotionPointer` (RE13) -- the only
+    :class:`~bigcherry.tuning.promotion.PromotionPointer` (RE13) -- the only
     supported way to reach ``validated``. Does not save; the caller decides
     when to persist, same as every other stage transition in this module.
     """
@@ -408,7 +408,7 @@ def summarise_audit(report: dict[str, Any], *, strict: bool) -> dict[str, Any]:
     The full report goes to ``artifacts/``; what belongs in the tracked record
     is the verdict plus the identity of anything that failed.
     """
-    from ..source_audit import passed as audit_passed
+    from ..source.audit import passed as audit_passed
     failures = [c["id"] for c in report["checks"] if not c["ok"]]
     return {
         "passed": audit_passed(report, strict=strict),

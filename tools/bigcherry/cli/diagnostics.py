@@ -7,7 +7,8 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any, cast
 
-from .. import __version__, check, doctor, paths
+from .. import __version__, check, doctor
+from ..core import paths
 from ..source import audit as source_audit
 from ..release import records as releases
 

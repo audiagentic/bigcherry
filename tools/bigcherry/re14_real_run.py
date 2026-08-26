@@ -26,11 +26,11 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import config
-from .artifacts import ArtifactStore
+from .core import config
+from .core.artifacts import ArtifactStore
 from .campaign.lane import (CampaignLaneError, CampaignLaneExecutionSpec,
                             execute_campaign_lane, smoke_environment_for_hip_devices)
-from .context import ProjectContext
+from .core.context import ProjectContext
 from .campaign.smoke import RuntimeSmokeSpec
 
 

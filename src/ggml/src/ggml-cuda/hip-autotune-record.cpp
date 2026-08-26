@@ -280,17 +280,27 @@ void ggml_hip_record_flush() {
     // One header line, then one line per observation. JSON Lines rather than a
     // single document so a truncated file is still readable up to its last
     // complete line -- which is the whole point of surviving a killed run.
+    // HI121: the producer capability mask THIS compiled binary actually
+    // declares (GGML_HIP_PRODUCER_CAPABILITIES_LO/HI, hip-autotune-types.h)
+    // -- a consumer verifies this against what a manifest CLAIMS was
+    // compiled before trusting any capability-gated measurement reuse, so
+    // it must be the compiled binary's own self-report, not re-derived from
+    // any other field. Same 32-lowercase-hex, HI-then-LO representation
+    // Python's CapabilityMask128.to_hex() produces.
     fprintf(file,
             "{\"kind\":\"header\",\"artifact_version\":%d,"
             "\"source_revision\":\"%s\",\"manifest_hash\":\"%s\","
             "\"variant_set\":\"%s\",\"signature_schema\":%d,"
-            "\"hardware_schema\":%d,\"signatures\":%zu}\n",
+            "\"hardware_schema\":%d,\"producer_capabilities\":\"%016llx%016llx\","
+            "\"signatures\":%zu}\n",
             GGML_HIP_AUTOTUNE_ARTIFACT_VERSION,
             GGML_HIP_AUTOTUNE_SOURCE_REVISION_STR,
             GGML_HIP_AUTOTUNE_MANIFEST_HASH_STR,
             GGML_HIP_AUTOTUNE_VARIANT_SET_STR,
             GGML_HIP_SIGNATURE_SCHEMA_VERSION,
             GGML_HIP_HARDWARE_SCHEMA_VERSION,
+            (unsigned long long) GGML_HIP_PRODUCER_CAPABILITIES_HI,
+            (unsigned long long) GGML_HIP_PRODUCER_CAPABILITIES_LO,
             g_observations.size());
 
     for (const auto & entry : g_observations) {

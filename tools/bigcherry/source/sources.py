@@ -31,7 +31,8 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from .. import paths, recipes
+from ..core import paths
+from .. import recipes
 from ..patch import registry as _patch_reg
 
 REGISTRY_NAME = "external-sources.toml"

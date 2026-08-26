@@ -25,12 +25,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from .. import provenance
-from ..artifacts import ArtifactStore
+from ..core import provenance
+from ..core.artifacts import ArtifactStore
 from .campaign import StageRecord
 from .graph import CampaignGraph
-from ..pipeline import ArtifactRef, PipelineService
-from ..provenance import (
+from ..core.pipeline import ArtifactRef, PipelineService
+from ..core.provenance import (
     BuildInputProvenance,
     BuildProvenance,
     CampaignProvenance,

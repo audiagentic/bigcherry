@@ -6,7 +6,8 @@ import json
 import sys
 from argparse import Namespace
 
-from .. import paths, recipes
+from ..core import paths
+from .. import recipes
 from ..patch import catalog as patch_catalog
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
@@ -139,7 +140,7 @@ def cmd_patch_explain(args: Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    from .. import config as campaign_config
+    from ..core import config as campaign_config
 
     try:
         cfg = campaign_config.load(paths.RECIPES)
@@ -188,7 +189,7 @@ def cmd_patch_lint(args: Namespace) -> int:
 
 def cmd_patch_verify_evidence(args: Namespace) -> int:
     """Report current validation evidence for selected patches."""
-    from .. import config as campaign_config
+    from ..core import config as campaign_config
 
     cfg = campaign_config.load(paths.RECIPES)
     modules = patchset.catalog()

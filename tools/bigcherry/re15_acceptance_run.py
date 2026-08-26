@@ -30,10 +30,10 @@ import sys
 import uuid
 from pathlib import Path
 
-from . import config, provenance
+from .core import config, provenance
 from .tuning import promotion
 from .campaign import comparison as comparisons
-from .artifacts import ArtifactStore
+from .core.artifacts import ArtifactStore
 from .campaign.lane import (
     CampaignLaneError,
     CampaignLaneExecutionSpec,
@@ -41,7 +41,7 @@ from .campaign.lane import (
     execute_campaign_lane,
     smoke_environment_for_hip_devices,
 )
-from .context import ProjectContext
+from .core.context import ProjectContext
 from . import lifecycle
 from .lifecycle import LifecycleError
 from .release.records import ReleaseRecord
@@ -349,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
         record = ReleaseRecord(revision=record_lane.resolved_revision,
                                 release_tag=f"re15-acceptance-{run_id}")
         record.stage = "patched"
-        from .releases import promote as releases_promote
+        from .release.records import promote as releases_promote
         releases_promote(record, pointer)
         record.validate()
         assert record.stage == "validated"

@@ -33,10 +33,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from bigcherry import config, paths
-from bigcherry.artifacts import ArtifactStore
-from bigcherry.campaign_lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
-from bigcherry.context import ProjectContext
+from bigcherry.core import config, paths
+from bigcherry.core.artifacts import ArtifactStore
+from bigcherry.campaign.lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
+from bigcherry.core.context import ProjectContext
 
 # Deliberately excludes gfx1100 -- see module docstring: those kernels
 # still get built (main() always builds for the platform's full declared

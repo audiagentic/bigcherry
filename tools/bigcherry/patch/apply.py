@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from .. import csource
+from ..core import csource
 
 Mode = Literal["insert_after", "insert_before", "replace", "replace_all"]
 

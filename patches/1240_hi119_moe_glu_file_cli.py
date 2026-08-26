@@ -43,7 +43,7 @@ REQUIRES = (
 
 import re as _re
 
-from bigcherry import csource as _csource
+from bigcherry.core import csource as _csource
 from bigcherry.patcher import Edit, FilePatch
 
 _FUNC_ANCHOR_SOURCE = '''static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mode mode, const char * op_names_filter, const char * params_filter,

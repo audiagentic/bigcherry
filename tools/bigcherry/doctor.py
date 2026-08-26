@@ -8,10 +8,11 @@ import tomllib
 from pathlib import Path
 from typing import cast
 
-from . import (config as campaign_config, paths, pin_status,
-               recipes)
+from .core import config as campaign_config, paths
+from .release import pin_status
+from . import recipes
 from .patch import patchset
-from .context import ProjectContext
+from .core.context import ProjectContext
 
 
 def _git(root: Path, *args: str) -> str | None:

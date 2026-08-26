@@ -6,7 +6,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from .. import pin_status
+from ..release import pin_status
 
 
 def cmd_build_new(args: Namespace) -> int:
@@ -20,8 +20,8 @@ def cmd_build_new(args: Namespace) -> int:
     simply does not define them); 1 if one or more planned lanes execute and
     fail; 0 only if every planned lane succeeds.
     """
-    from .. import config as campaign_config
-    from ..artifacts import ArtifactStore
+    from ..core import config as campaign_config
+    from ..core.artifacts import ArtifactStore
     from ..campaign.lane import smoke_environment_for_hip_devices
     from ..campaign.planner import (
         CampaignPlannerError,
@@ -29,7 +29,7 @@ def cmd_build_new(args: Namespace) -> int:
         plan,
         run_campaign,
     )
-    from ..context import ProjectContext
+    from ..core.context import ProjectContext
     from ..campaign.smoke import RuntimeSmokeSpec
 
     if sum(bool(x) for x in (args.lane, args.all, args.profile)) != 1:

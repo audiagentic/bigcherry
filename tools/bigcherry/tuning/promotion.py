@@ -7,9 +7,9 @@ import hashlib
 import json
 from typing import TYPE_CHECKING
 
-from .. import provenance
+from ..core import provenance
 from ..campaign import benchmark as ab_benchmark
-from ..artifacts import ArtifactError, ArtifactStore
+from ..core.artifacts import ArtifactError, ArtifactStore
 
 if TYPE_CHECKING:
     from ..campaign.lane import CampaignLaneResult

@@ -1,0 +1,880 @@
+"""Fresh-confirmation and experiment-wide promotion tests."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bigcherry.tuning import correctness_evidence as ce # noqa: E402
+from bigcherry.tuning import tune_promotion # noqa: E402
+
+SCHEMA_SQL = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+HARDWARE_HEX = "33" * 16
+
+
+def empty_dispatch_db(root: Path) -> Path:
+    """A real, schema-migrated dispatch DB with no rows -- the fixture for
+    every existing test that never expected a real promotion (HI67 slice 3
+    made dispatch_db a required promote() input; these rows have no
+    correctness evidence, so they can only ever be rejected on the
+    correctness gate if they'd otherwise have promoted -- see
+    correctness_gated_dispatch_db() for the fixture that DOES promote)."""
+    path = root / "dispatch.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+    conn.close()
+    return path
+
+
+def correctness_gated_dispatch_db(root: Path, *, dispatch_hex: str) -> Path:
+    """A dispatch DB carrying real, passing correctness_evidence for the
+    given dispatch's (signature, hardware, candidate) identity -- for tests
+    that need a row to actually reach 'promoted' post-HI67."""
+    path = root / "dispatch.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+    conn.execute(
+        "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
+        "hardware_schema, variant_set) VALUES (?, ?, 1, 1, 'inventory')",
+        ("a" * 40, "a" * 32),
+    )
+    build_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO hardware (hardware_digest, architecture, architecture_code, "
+        "wave_size, compute_units, feature_flags, canonical_json) VALUES "
+        "(?, 'gfx1100', 1, 32, 96, 0, '{}')",
+        (bytes.fromhex(HARDWARE_HEX),),
+    )
+    hardware_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO signature (signature_digest, base_digest, schema_version, op, "
+        "src0_type, src1_type, dst_type, m, n, k, canonical_json) VALUES "
+        "(?, x'02', 1, 'MUL_MAT', 'q8_0', 'f32', 'f32', 1, 1, 1, '{}')",
+        (bytes.fromhex(dispatch_hex),),
+    )
+    signature_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'native', 'mmq', 'native_wrapper', "
+        "1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    native_candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+        "implementation_version, architectures, architecture_mask, graph_safe, "
+        "deterministic, config_json) VALUES (?, 'candidate', 'mmq', "
+        "'existing_alternative', 1, '[]', 0, 1, 1, '{}')",
+        (build_id,),
+    )
+    candidate_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute(
+        "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+        "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', "
+        "'final', 1)",
+        (build_id, hardware_id, signature_id, bytes.fromhex(dispatch_hex), candidate_id),
+    )
+    seeds = [
+        ce.SeedEvidence(seed=i, reference_digest=f"d{i}", e_n_nmse=1e-05, e_c_nmse=2e-05,
+                         max_abs_native=0.001, max_abs_candidate=0.0009,
+                         native_execution_status="ok", candidate_execution_status="ok",
+                         threshold_t=5e-4)
+        for i in (1, 2, 3)
+    ]
+    aggregate = ce.aggregate_seed_evidence(seeds)
+    conn.execute(
+        "INSERT INTO correctness_evidence (build_id, hardware_id, signature_id, "
+        "candidate_id, native_candidate_id, contract_version, threshold_t, "
+        "headroom_fraction, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+        "seed_count, tool_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'v1')",
+        (build_id, hardware_id, signature_id, candidate_id, native_candidate_id,
+         aggregate.contract_version, aggregate.threshold_t, aggregate.headroom_fraction,
+         aggregate.e_n_nmse, aggregate.e_c_nmse, aggregate.max_abs_native,
+         aggregate.max_abs_candidate, len(aggregate.seed_rows)),
+    )
+    evidence_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for row in aggregate.seed_rows:
+        conn.execute(
+            "INSERT INTO correctness_evidence_seed (correctness_evidence_id, seed, "
+            "reference_digest, e_n_nmse, e_c_nmse, max_abs_native, max_abs_candidate, "
+            "native_execution_status, candidate_execution_status, threshold_t) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
+             row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
+             row.candidate_execution_status, row.threshold_t),
+        )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def result(dispatch: str, p: float, winner: float) -> dict:
+    signature = dispatch
+    return {
+        "kind": "result",
+        "dispatch": dispatch,
+        "native": "native",
+        "signature": signature,
+        "hardware": HARDWARE_HEX,
+        "winner": "candidate",
+        "promotion_status": "pending_bh",
+        "provisional_winner": "candidate",
+        "schedule_seed": int.from_bytes(bytes.fromhex(signature)[:4], "little"),
+        "schedule": {
+            "schema_version": 1,
+            "selection_algorithm": "seeded-rotation-v1",
+            "confirmation_algorithm": "seeded-alternation-v1",
+            "candidates": ["candidate", "native", "native#twin"],
+        },
+        "improvement_pct": 100.0 * (100.0 - winner) / 100.0,
+        "confirmation": {
+            "p_value": p,
+            "effect_pct": 100.0 * (100.0 - winner) / 100.0,
+            "wins": 12,
+            "rounds": 12,
+            "native_us": [100.0] * 12,
+            "winner_us": [winner] * 12,
+        },
+    }
+
+
+class PromotionTests(unittest.TestCase):
+    HEADER = {
+        "kind": "header",
+        "artifact_version": 1,
+        "source_revision": "a" * 40,
+        "manifest_hash": "a" * 32,
+    }
+
+    def test_nonpositive_event_durations_are_not_bootstrap_evidence(self):
+        low, high = tune_promotion.paired_bootstrap(
+            [10.0, 10.0, 10.0],
+            [9.0, -100.0, 9.0],
+            seed=7,
+            resamples=1000,
+        )
+        self.assertAlmostEqual(low, 10.0)
+        self.assertAlmostEqual(high, 10.0)
+
+    def test_bootstrap_resamples_ratio_of_medians(self):
+        low, high = tune_promotion.paired_bootstrap(
+            [10.0, 20.0, 30.0],
+            [5.0, 10.0, 15.0],
+            seed=7,
+            resamples=1000,
+        )
+        self.assertAlmostEqual(low, 50.0)
+        self.assertAlmostEqual(high, 50.0)
+
+    def test_bootstrap_uses_even_sample_median_average(self):
+        self.assertEqual(tune_promotion._median([10.0, 20.0, 30.0, 40.0]), 25.0)
+
+    def test_confirmation_rejected_is_in_hypotheses_but_cannot_promote(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row["promotion_status"] = "confirmation_rejected"
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            report = tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root), resamples=1000
+            )
+            self.assertEqual(report["hypotheses"], 1)
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "confirmation_rejected")
+
+    def test_inconsistent_persisted_effect_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row["confirmation"]["effect_pct"] = 99.0
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                tune_promotion.PromotionError, "does not match"
+            ):
+                tune_promotion.promote(
+                    source, output, dispatch_db=empty_dispatch_db(root), resamples=1000
+                )
+
+    def test_rejection_reason_is_classified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 99.5)
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root),
+                threshold_pct=1.0, resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
+
+    def test_bh_and_bootstrap_promote_only_supported_winner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.9, 99.5),
+            ]
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            report = tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(report["promoted"], 1)
+            self.assertEqual(promoted[1]["promotion_status"], "promoted")
+            self.assertEqual(promoted[2]["promotion_status"], "rejected_effect")
+            self.assertEqual(promoted[2]["winner"], "native")
+            self.assertAlmostEqual(promoted[1]["promotion"]["q_value"], 0.002)
+            self.assertAlmostEqual(promoted[2]["promotion"]["q_value"], 0.9)
+
+    def test_bh_adjusted_values_are_exact_and_monotone(self):
+        adjusted = tune_promotion.benjamini_hochberg(
+            [
+                ("d", 0.04),
+                ("a", 0.001),
+                ("c", 0.03),
+                ("b", 0.02),
+            ]
+        )
+        self.assertEqual(
+            adjusted,
+            {
+                "a": 0.004,
+                "b": 0.04,
+                "c": 0.04,
+                "d": 0.04,
+            },
+        )
+
+    def test_null_fdr_simulation_is_reproducible_and_controlled(self):
+        first = tune_promotion.simulate_null_fdr(
+            experiments=2000,
+            hypotheses=41,
+            q=0.05,
+            seed=340024,
+        )
+        second = tune_promotion.simulate_null_fdr(
+            experiments=2000,
+            hypotheses=41,
+            q=0.05,
+            seed=340024,
+        )
+        self.assertEqual(first, second)
+        self.assertLess(first["empirical_fdr"], 0.07)
+        self.assertEqual(len(first["runs"]), 2000)
+
+    def test_non_current_pending_state_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.jsonl"
+            row = result("a" * 32, 0.001, 95.0)
+            row.pop("promotion_status")
+            source.write_text(json.dumps(self.HEADER) + "\n" + json.dumps(row) + "\n")
+            with self.assertRaisesRegex(tune_promotion.PromotionError, "pending_bh"):
+                tune_promotion.promote(
+                    source, root / "out", dispatch_db=empty_dispatch_db(root)
+                )
+
+    def test_promotion_is_deterministic_for_same_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.9, 99.5),
+            ]
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            db = empty_dispatch_db(root)
+            first = tune_promotion.promote(
+                source, root / "out1.jsonl", dispatch_db=db, resamples=1000
+            )
+            second = tune_promotion.promote(
+                source, root / "out2.jsonl", dispatch_db=db, resamples=1000
+            )
+            self.assertEqual(first["content_hash"], second["content_hash"])
+
+    def test_ranking_coverage_ignores_synthetic_twin(self):
+        # The fixture schedule carries ["candidate", "native",
+        # "native#twin"]: ranking coverage must be taken over the real
+        # finalists only, so a decision naming exactly candidate+native is
+        # complete.
+        row = result("a" * 32, 0.001, 95.0)
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "candidate",
+                "candidates": [
+                    {"name": "native", "verdict": "qualified"},
+                    {"name": "candidate", "verdict": "winner"},
+                ],
+            }
+        ]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
+    def test_schedule_rejects_duplicate_unsuffixed_native(self):
+        # The C++ bug this guards against: emitting raw stable names puts the
+        # twin into the schedule as a second plain "native".
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"]["candidates"] = ["candidate", "native", "native"]
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "drift"):
+            tune_promotion.validate_schedule(row)
+
+    def test_adaptive_evidence_counts_remain_registry_counts(self):
+        # Candidate cardinality (three emitted rows incl. the synthetic twin)
+        # and measurement-instance cardinality intentionally differ: the stage
+        # funnel stays over the registry.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update({"generated": 2, "applicable": 2, "eligible": 2, "measured": 2})
+        row["candidates"] = [
+            {"name": "native", "samples": 10},
+            {"name": "native#twin", "samples": 10},
+            {"name": "candidate", "samples": 10},
+        ]
+        tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_schedule_seed_and_position_drift_are_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule_seed"] += 1
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "seed drift"):
+            tune_promotion.validate_schedule(row)
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"]["candidates"] = ["native", "candidate", "native#twin"]
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "position drift"):
+            tune_promotion.validate_schedule(row)
+
+    def test_adaptive_evidence_rejects_short_confirmation(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["confirmation"]["native_us"] = [100.0] * 7
+        row["confirmation"]["winner_us"] = [95.0] * 7
+        row["confirmation"]["rounds"] = 7
+        row["confirmation"]["wins"] = 7
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "insufficient"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_adaptive_evidence_rejects_inconsistent_final_samples(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["candidates"] = [
+            {"name": "candidate", "samples": 3, "samples_us": [95.0, 95.0]}
+        ]
+        header = dict(
+            self.HEADER, final_samples=2, screen_samples=4, confirmation_samples=8
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "samples_us"):
+            tune_promotion.validate_adaptive_evidence(row, header)
+
+    def test_adaptive_evidence_rejects_unresolved_canary_challenger(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 4.0,
+            }
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "unresolved"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_hi68_canary_terminal_state_matrix_is_accepted(self):
+        # Producer/consumer contract (HI68): every terminal triple the C++
+        # canary state machine can emit must validate here. The zero-probe
+        # unresolved row is the P1 case: noise_canary_retries=0 makes it legal.
+        legal = [
+            {
+                "canary_state": "not_available",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+            },
+            {
+                "canary_state": "pass",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 1.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 0,
+                "canary_fresh_block": False,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 1,
+                "canary_fresh_block": True,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 9.0,
+            },
+        ]
+        for fields in legal:
+            with self.subTest(fields=fields):
+                row = result("a" * 32, 0.001, 95.0)
+                row.update(fields)
+                tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_hi68_illegal_canary_terminal_states_are_rejected(self):
+        illegal = [
+            {
+                "canary_state": "pass",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 1.0,
+            },
+            {
+                "canary_state": "unresolved",
+                "canary_retries": 0,
+                "canary_fresh_block": True,
+                "provisional_winner": "native",
+                "canary_pair": "native#twin",
+                "canary_pct": 7.0,
+            },
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 0,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+            # Explicit fresh=false on retried_pass is the NEW schema saying the
+            # producer contradicted itself: rejected (unlike the legacy row
+            # below, where the field is simply absent).
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": False,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            },
+        ]
+        for fields in illegal:
+            with self.subTest(fields=fields):
+                row = result("a" * 32, 0.001, 95.0)
+                row.update(fields)
+                with self.assertRaises(tune_promotion.PromotionError):
+                    tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_legacy_retried_pass_without_fresh_field_still_validates(self):
+        # Pre-HI68 artifacts carry retried_pass with the pair-replacement
+        # semantics and no canary_fresh_block key at all; the field's ABSENCE
+        # (not a false value) is what marks them legacy.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_non_bool_canary_fresh_block_flag_is_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": 1,
+                "canary_fresh_block": 1,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "fresh-block flag"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_bool_canary_retries_count_is_rejected(self):
+        # isinstance(True, int) is True in Python: without an explicit bool
+        # guard a JSON boolean would be accepted as retry count 1 and slip
+        # into the terminal matrix. The evidence schema is type-strict.
+        row = result("a" * 32, 0.001, 95.0)
+        row.update(
+            {
+                "canary_state": "retried_pass",
+                "canary_retries": True,
+                "canary_fresh_block": True,
+                "canary_pair": "native#twin",
+                "canary_pct": 0.5,
+            }
+        )
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "retry count"):
+            tune_promotion.validate_adaptive_evidence(row, self.HEADER)
+
+    def test_production_policy_hash_is_deterministic(self):
+        first = tune_promotion.production_policy_hash("latency-v1", 1)
+        second = tune_promotion.production_policy_hash("latency-v1", 1)
+        self.assertEqual(first, second)
+        self.assertNotEqual(
+            first, tune_promotion.production_policy_hash("latency-v1", 2)
+        )
+
+    def test_ranking_coverage_requires_policy_identity_and_all_finalists(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["schedule"] = {"candidates": ["native", "candidate"]}
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "candidate",
+                "candidates": [
+                    {"name": "native", "verdict": "qualified"},
+                    {"name": "candidate", "verdict": "winner"},
+                ],
+            }
+        ]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+        row["ranking_decisions"][0]["candidates"].pop()
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "coverage"):
+            tune_promotion._validate_policy_identity(row, header)
+
+    def test_native_only_ranking_decision_has_no_selection_schedule(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["native"] = "native"
+        row["provisional_winner"] = "native"
+        row.pop("schedule")
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "native",
+                "candidates": [{"name": "native", "verdict": "winner"}],
+            }
+        ]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
+    def test_ranking_provisional_winner_and_status_are_consistent(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["provisional_winner"] = "native"
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "status"):
+            tune_promotion._validate_provisional_status(row)
+
+    def test_policy_hash_tampering_is_rejected(self):
+        row = result("a" * 32, 0.001, 95.0)
+        row["production_policy"] = {
+            "name": "latency-v1",
+            "version": 1,
+            "policy_hash": "0" * 32,
+        }
+        header = dict(self.HEADER, production_policy="latency-v1")
+        with self.assertRaisesRegex(tune_promotion.PromotionError, "hash"):
+            tune_promotion._validate_policy_identity(row, header)
+
+    def test_confirmation_reduction_excludes_aligned_ties(self):
+        confirmation = {
+            "rounds": 2,
+            "wins": 2,
+            "native_us": [100.0, 100.0, 100.0],
+            "winner_us": [90.0, 100.0, 80.0],
+        }
+        native, winner = tune_promotion._paired_rounds(confirmation)
+        self.assertEqual(native, [100.0, 100.0])
+        self.assertEqual(winner, [90.0, 80.0])
+
+    def test_confirmation_reduction_tolerates_six_decimal_near_ties(self):
+        # RE28: two rounds whose full-precision timings differ by less than
+        # what %.3f serialization could preserve (a real, pre-fix producer
+        # bug) must NOT collide once the producer emits six decimals -- the
+        # C++ sign test and this offline reduction have to agree on which
+        # rounds are genuine ties.
+        confirmation = {
+            "rounds": 2,
+            "wins": 1,
+            "native_us": [61.520123, 100.0],
+            "winner_us": [61.520987, 90.0],
+        }
+        native, winner = tune_promotion._paired_rounds(confirmation)
+        self.assertEqual(native, [61.520123, 100.0])
+        self.assertEqual(winner, [61.520987, 90.0])
+
+    def test_effect_keeps_tied_samples_like_cpp_median(self):
+        confirmation = {
+            "rounds": 8,
+            "wins": 8,
+            "native_us": [100.0] * 9,
+            "winner_us": [90.0] * 8 + [100.0],
+            "effect_pct": 10.0,
+        }
+        self.assertAlmostEqual(tune_promotion._validated_effect(confirmation), 10.0)
+
+    def test_native_retention_can_have_no_challenger_winner_verdict(self):
+        row = result("b" * 32, 0.001, 100.0)
+        row["provisional_winner"] = "native"
+        row["winner"] = "native"
+        row["promotion_status"] = "native"
+        row["production_policy"] = {"name": "latency-v1", "version": 1}
+        row["ranking_decisions"] = [
+            {
+                "policy_name": "latency-v1",
+                "policy_version": 1,
+                "is_production": True,
+                "predicted_winner": "native",
+                "candidates": [
+                    {"name": "native", "verdict": "outside_tie_band"},
+                    {"name": "candidate", "verdict": "near_tie_below_threshold"},
+                ],
+            }
+        ]
+        header = dict(self.HEADER, production_policy="latency-v1")
+        tune_promotion._validate_policy_identity(row, header)
+
+
+def native_retained_row(dispatch: str, *, reason: str) -> dict:
+    """A row shaped like the tuner's early-reject paths (HI30 provisional_winner
+    fix, 2026-08-21): promotion_status "native", provisional_winner == native,
+    no schedule/confirmation/ranking evidence -- exactly what
+    "native not eligible; run rejected", "tuning experiment poisoned; later
+    measurements suppressed", "clock drift retime unresolved; run rejected",
+    "determinism measurement failed; tuning experiment poisoned", and
+    "confirmation measurement failed; tuning experiment poisoned" all emit."""
+    return {
+        "kind": "result",
+        "dispatch": dispatch,
+        "native": "native",
+        "signature": dispatch,
+        "hardware": HARDWARE_HEX,
+        "winner": "native",
+        "promotion_status": "native",
+        "provisional_winner": "native",
+        "reason": reason,
+    }
+
+
+class NativeRetainedContractTests(unittest.TestCase):
+    """HI79: promotion-contract coverage for the tuner's early-reject paths
+    (mixed-outcome rows), the class of case that only surfaced from real
+    hardware output in the 2026-08-21 qwen2b E2E campaign session. Two real
+    bugs lived here: (1) tune_promotion.py rejected the C++ emitter's
+    legitimate default-empty ranking_decisions:[] as a malformed claim, and
+    (2) 7 places in hip-autotune-tuner.cu left provisional_winner empty on
+    these exact paths, which _validate_provisional_status correctly rejects
+    -- that fix belongs in the emitter, not by loosening this check (see
+    test_missing_provisional_winner_is_still_rejected below)."""
+
+    HEADER = PromotionTests.HEADER
+
+    EARLY_REJECT_REASONS = [
+        "native not eligible; run rejected",
+        "tuning disabled after fatal measurement failure",
+        "tuning experiment poisoned; later measurements suppressed",
+        "clock drift retime unresolved; run rejected",
+        "determinism measurement failed; tuning experiment poisoned",
+        "confirmation measurement failed; tuning experiment poisoned",
+    ]
+
+    def test_every_early_reject_reason_promotes_cleanly_as_native(self):
+        for reason in self.EARLY_REJECT_REASONS:
+            with self.subTest(reason=reason):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    source, output = root / "source.jsonl", root / "promoted.jsonl"
+                    row = native_retained_row("a" * 32, reason=reason)
+                    source.write_text(
+                        "".join(
+                            json.dumps(row_) + "\n" for row_ in [self.HEADER, row]
+                        ),
+                        encoding="utf-8",
+                    )
+                    report = tune_promotion.promote(
+                        source, output, dispatch_db=empty_dispatch_db(root),
+                        resamples=1000,
+                    )
+                    self.assertEqual(report["promoted"], 0)
+                    self.assertEqual(report["hypotheses"], 0)
+                    promoted = [
+                        json.loads(line) for line in output.read_text().splitlines()
+                    ]
+                    self.assertEqual(promoted[1]["promotion_status"], "native")
+
+    def test_empty_ranking_decisions_on_a_native_row_does_not_raise(self):
+        # The actual bug: the C++ emitter always writes this field, defaulting
+        # to "[]" for early-reject rows -- an empty array carries no ranking
+        # claim to validate, unlike a genuinely malformed one.
+        row = native_retained_row("a" * 32, reason="native not eligible; run rejected")
+        row["ranking_decisions"] = []
+        tune_promotion._validate_policy_identity(row, self.HEADER)
+
+    def test_missing_provisional_winner_is_still_rejected(self):
+        # Guards the validator itself: an empty provisional_winner alongside a
+        # present promotion_status is genuinely malformed (this was the
+        # pre-fix shape hip-autotune-tuner.cu emitted on 7 early-reject
+        # paths) -- the fix belongs in the C++ emitter, not by loosening this
+        # check, so it must keep failing closed.
+        row = native_retained_row("a" * 32, reason="native not eligible; run rejected")
+        row["provisional_winner"] = ""
+        with self.assertRaisesRegex(
+            tune_promotion.PromotionError, "provisional winner identity is missing"
+        ):
+            tune_promotion._validate_provisional_status(row)
+
+    def test_rejected_bh_is_reachable_when_statistics_pass_but_bh_rejects(self):
+        # Both rows individually pass effect/CI; only the second's BH-adjusted
+        # q-value (p=0.5 against q=0.05, count=2) exceeds the threshold, so
+        # promote() must classify it as rejected_bh specifically -- not
+        # rejected_effect or rejected_ci, which would misreport why it lost.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            rows = [
+                self.HEADER,
+                result("a" * 32, 0.001, 95.0),
+                result("b" * 32, 0.5, 95.0),
+            ]
+            source.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+            )
+            tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[2]["promotion_status"], "rejected_bh")
+            self.assertEqual(promoted[2]["winner"], "native")
+
+    def test_rejected_ci_is_reachable_when_effect_passes_but_ci_crosses_zero(self):
+        # Median effect is comfortably above threshold_pct, but half the
+        # paired rounds favor native and half favor the challenger by a wide
+        # margin -- high enough bootstrap variance that the 95% CI's lower
+        # bound crosses zero even though the point estimate does not.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 90.0)
+            native_us = [100.0] * 12
+            winner_us = [60.0] * 7 + [220.0] * 5
+            row["confirmation"]["native_us"] = native_us
+            row["confirmation"]["winner_us"] = winner_us
+            row["confirmation"]["wins"] = 7
+            row["confirmation"]["rounds"] = 12
+            row["confirmation"]["effect_pct"] = 100.0 * (
+                tune_promotion._median(native_us) - tune_promotion._median(winner_us)
+            ) / tune_promotion._median(native_us)
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            tune_promotion.promote(
+                source, output,
+                dispatch_db=correctness_gated_dispatch_db(root, dispatch_hex="a" * 32),
+                threshold_pct=1.0, resamples=2000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_ci")
+            self.assertEqual(promoted[1]["winner"], "native")
+
+
+class CorrectnessGateIntegrationTests(unittest.TestCase):
+    """HI67 slice 3: the correctness gate is a HARD AND with the existing
+    BH/bootstrap statistical criteria, exercised through the real promote()
+    entry point end to end (not just promotion_correctness_gate.py in
+    isolation)."""
+
+    HEADER = PromotionTests.HEADER
+
+    def _promote_one_row(self, root: Path, dispatch_db: Path):
+        source, output = root / "source.jsonl", root / "promoted.jsonl"
+        row = result("a" * 32, 0.001, 95.0)  # statistically a clean promotion
+        source.write_text(
+            "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+            encoding="utf-8",
+        )
+        report = tune_promotion.promote(
+            source, output, dispatch_db=dispatch_db, resamples=1000
+        )
+        rows = [json.loads(line) for line in output.read_text().splitlines()]
+        return report, rows[1]
+
+    def test_statistically_clean_promotion_is_rejected_without_correctness_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report, row = self._promote_one_row(root, empty_dispatch_db(root))
+            self.assertEqual(report["promoted"], 0)
+            self.assertEqual(row["promotion_status"], "rejected_no_correctness_evidence")
+            self.assertEqual(row["winner"], "native")
+
+    def test_statistically_clean_promotion_passes_with_valid_correctness_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = correctness_gated_dispatch_db(root, dispatch_hex="a" * 32)
+            report, row = self._promote_one_row(root, db)
+            self.assertEqual(report["promoted"], 1)
+            self.assertEqual(row["promotion_status"], "promoted")
+
+    def test_statistical_rejection_reason_is_preserved_over_correctness_status(self):
+        # A row that fails the STATISTICAL gate must keep its own rejection
+        # reason (rejected_effect here), never get relabeled with a
+        # correctness-gate status -- correctness only ever narrows an
+        # otherwise-passing row, it does not explain an already-failing one.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / "source.jsonl", root / "promoted.jsonl"
+            row = result("a" * 32, 0.001, 99.5)  # improvement below default threshold_pct
+            source.write_text(
+                "".join(json.dumps(row_) + "\n" for row_ in [self.HEADER, row]),
+                encoding="utf-8",
+            )
+            tune_promotion.promote(
+                source, output, dispatch_db=empty_dispatch_db(root),
+                threshold_pct=1.0, resamples=1000,
+            )
+            promoted = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(promoted[1]["promotion_status"], "rejected_effect")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .. import ARTIFACT_VERSION
-from .. import csource
-from .. import paths
+from ..core import csource
+from ..core import paths
 
 # --------------------------------------------------------------------- expected
 

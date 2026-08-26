@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .. import config
+from ..core import config
 from ..patch import patchset
 
 

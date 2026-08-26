@@ -11,8 +11,11 @@ import argparse
 import json
 import sys
 
-from .. import config as campaign_config
-from .. import paths, pin_status, pin_transition, recipes
+from ..core import config as campaign_config
+from ..core import paths
+from ..release import pin_status
+from .. import pin_transition
+from .. import recipes
 from ..source import sources, upstream
 
 

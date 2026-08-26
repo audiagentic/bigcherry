@@ -31,7 +31,7 @@ from pathlib import Path
 from types import ModuleType
 
 from . import registry as patch_registry
-from .. import paths
+from ..core import paths
 from .apply import FilePatch
 
 STATES: tuple[str, ...] = ("validated", "rejected", "untested")

@@ -34,12 +34,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Mapping
 
-from .. import config as campaign_config
+from ..core import config as campaign_config
 from ..experiment import contract as experiment_contract
-from ..artifacts import ArtifactStore
+from ..core.artifacts import ArtifactStore
 from .lane import (CampaignLaneExecutionSpec, CampaignLaneResult,
                             LaneInputValue, execute_campaign_lane)
-from ..context import ProjectContext
+from ..core.context import ProjectContext
 from .smoke import RuntimeSmokeSpec
 
 

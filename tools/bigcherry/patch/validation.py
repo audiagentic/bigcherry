@@ -463,7 +463,7 @@ def load_contract_for_descriptor(
     """
     if descriptor.experiment_contract is None:
         return None
-    from .. import paths
+    from ..core import paths
 
     path = Path(contracts_path) if contracts_path is not None else paths.EXPERIMENT_CONTRACTS
     registry = experiment_contract.load_contracts(path)
@@ -496,7 +496,7 @@ def build_plan_for_patch(
     otherwise). The adapter may add requirements' producers, never remove
     contract/framework requirements (section 18).
     """
-    from .. import paths
+    from ..core import paths
 
     contract = load_contract_for_descriptor(descriptor, contracts_path=contracts_path)
     binding = bind_contract(contract) if contract is not None else None

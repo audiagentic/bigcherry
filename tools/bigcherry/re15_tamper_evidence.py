@@ -37,8 +37,8 @@ from pathlib import Path
 
 from . import lifecycle
 from .tuning import promotion
-from .artifacts import ArtifactLocator, ArtifactStore
-from .context import ProjectContext
+from .core.artifacts import ArtifactLocator, ArtifactStore
+from .core.context import ProjectContext
 from .lifecycle import LifecycleError
 from .campaign.smoke import RuntimeSmokeSpec
 

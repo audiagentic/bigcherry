@@ -65,7 +65,7 @@ def _patch_registry():
     package member or standalone (its existing pattern: REPO_ROOT-derived
     paths + function-level import)."""
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry import patch_registry  # noqa: E402
+    from bigcherry.patch import registry as patch_registry # noqa: E402
 
     return patch_registry
 
@@ -602,10 +602,10 @@ def resolve_source_composition(
             "resolve_source_composition: base_repo is required"
         )
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry import campaign_resolution  # noqa: E402
-    from bigcherry import config as campaign_config  # noqa: E402
-    from bigcherry import paths  # noqa: E402
-    from bigcherry import patchset  # noqa: E402
+    from bigcherry.campaign import resolution as campaign_resolution # noqa: E402
+    from bigcherry.core import config as campaign_config # noqa: E402
+    from bigcherry.core import paths # noqa: E402
+    from bigcherry.patch import patchset # noqa: E402
 
     resolved_revision = resolve_base_revision(base_ref, repo=base_repo)
     cfg = campaign_config.load(recipes or paths.RECIPES)

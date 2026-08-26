@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from .tuning import correctness_evidence as ce
-from . import paths
+from .core import paths
 from .tuning import promotion_gate as gate
 from .tuning import signature_mapping as scm
 from .tuning import tune_promotion

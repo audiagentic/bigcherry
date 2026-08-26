@@ -14,10 +14,10 @@ import json
 from pathlib import Path
 
 from . import resolution as campaign_resolution
-from .. import config as campaign_config
+from ..core import config as campaign_config
 from ..patch import patchset
 from ..source import workspace
-from ..context import ProjectContext
+from ..core.context import ProjectContext
 
 
 class CampaignSourceError(ValueError):

@@ -10,9 +10,9 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bigcherry import releases  # noqa: E402
+from bigcherry.release import records as releases # noqa: E402
 from bigcherry import __main__ as bigcherry_main  # noqa: E402
-from bigcherry.promotion import PromotionError  # noqa: E402
+from bigcherry.tuning.promotion import PromotionError  # noqa: E402
 
 
 class AtomicJsonWriteTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ReleasePublicationTests(unittest.TestCase):
             with mock.patch.object(releases, "RELEASES_DIR", root), \
                     mock.patch.object(releases, "INDEX_PATH", root / "index.json"), \
                     mock.patch.object(releases, "_atomic_write_json", wraps=releases._atomic_write_json) as write:
-                from bigcherry.promotion import make_pointer
+                from bigcherry.tuning.promotion import make_pointer
                 pointer = make_pointer(
                     release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
                     campaign_run_id="run1", report=b"report-bytes",
@@ -72,7 +72,7 @@ class PromotionWiringTests(unittest.TestCase):
     PromotionPointer -- releases.promote(), not a bare stage assignment."""
 
     def _pointer(self, revision="abc123", release_tag="b10362"):
-        from bigcherry.promotion import make_pointer
+        from bigcherry.tuning.promotion import make_pointer
         return make_pointer(
             release_tag=release_tag, revision=revision, campaign_plan_id="plan1",
             campaign_run_id="run1", report=b"report-bytes",
@@ -207,7 +207,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
         # promotion pointer must not survive an evidence-invalidating
         # mutation, even though advance_to("validated") itself is now
         # unconditionally blocked as a second, independent guard.
-        from bigcherry.promotion import make_pointer
+        from bigcherry.tuning.promotion import make_pointer
         pointer = make_pointer(
             release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
             campaign_run_id="run1", report=b"report-bytes",
@@ -222,7 +222,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
         self.assertIsNone(record.promotion)
 
     def test_failed_apply_also_clears_stale_promotion_pointer(self):
-        from bigcherry.promotion import make_pointer
+        from bigcherry.tuning.promotion import make_pointer
         pointer = make_pointer(
             release_tag="b10362", revision="abc123", campaign_plan_id="plan1",
             campaign_run_id="run1", report=b"report-bytes",

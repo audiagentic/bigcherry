@@ -36,9 +36,10 @@ from typing import Any, Iterable
 
 from .. import ARTIFACT_VERSION
 from . import dispatch_abi
+from . import hip_capabilities
 from . import schema
-from .. import csource
-from .. import paths
+from ..core import csource
+from ..core import paths
 from ..source.audit import read_types_mmq, git_revision
 from ..analysis.resource_report import ResourceError, load_blacklist
 
@@ -908,6 +909,14 @@ def build_manifest(root: Path, *, variant_set: str,
     # the actual point where a binding becomes dispatchable in production --
     # not here, where it would be checked at the wrong granularity.
 
+    # HI121: the mask this materialized source root's compiled binary will
+    # actually declare (GGML_HIP_PRODUCER_CAPABILITIES_LO/HI in hip-autotune-
+    # types.h) -- read once here and folded into manifest_hash()/
+    # build_descriptor() below, so a capability change alone (no candidate
+    # list change) still opens a new build/manifest identity, and a
+    # consumer can verify what was compiled against what was declared.
+    producer_capabilities = hip_capabilities.load_declared_producer_capabilities(root).to_hex()
+
     manifest = {
         "artifact_version": ARTIFACT_VERSION,
         "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
@@ -916,6 +925,7 @@ def build_manifest(root: Path, *, variant_set: str,
         "architectures": sorted(architectures),
         "signature_schema_version": dispatch_abi.SIGNATURE_SCHEMA_VERSION,
         "hardware_schema_version": dispatch_abi.HARDWARE_SCHEMA_VERSION,
+        "producer_capabilities": producer_capabilities,
         "candidates": sorted((c.to_dict() for c in candidates),
                              key=lambda c: (c["family"], c["stable_name"])),
     }
@@ -1039,6 +1049,7 @@ def build_descriptor(manifest: dict[str, Any]) -> dict[str, Any]:
         "source_revision": manifest["source_revision"],
         "variant_set": manifest["variant_set"],
         "manifest_hash": manifest["manifest_hash"],
+        "producer_capabilities": manifest["producer_capabilities"],
         "candidate_count": summary["total"],
         "by_family": summary["by_family"],
         "by_source_class": summary["by_source_class"],
@@ -1091,6 +1102,7 @@ def manifest_hash(manifest: dict[str, Any]) -> str:
         "architectures": manifest["architectures"],
         "signature_schema_version": manifest["signature_schema_version"],
         "hardware_schema_version": manifest["hardware_schema_version"],
+        "producer_capabilities": manifest["producer_capabilities"],
         "candidates": manifest["candidates"],
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))

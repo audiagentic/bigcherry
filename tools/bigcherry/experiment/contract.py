@@ -621,7 +621,7 @@ def known_source_ids_from_external_sources(
 
     resolved = Path(path) if path is not None else None
     if resolved is None:
-        from .. import paths
+        from ..core import paths
         resolved = paths.EXTERNAL_SOURCES
     try:
         raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))

@@ -46,7 +46,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import paths
+from ..core import paths
 from . import patchset
 from ..source import sources
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .graph import CampaignGraph
-from ..resources import ResourceLock
+from ..core.resources import ResourceLock
 
 
 def _spec_hash(value: object) -> str:
