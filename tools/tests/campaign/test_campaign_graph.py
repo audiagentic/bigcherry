@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 import sys
@@ -58,9 +60,39 @@ class CampaignGraphTests(unittest.TestCase):
             second = ResourceLock(Path(directory), "gpu:0")
             first.acquire()
             with self.assertRaises(ResourceError):
-                second.acquire()
+                second.acquire(timeout_seconds=0.05, poll_interval=0.01)
             self.assertIsNotNone(first.inspect())
             first.release()
+
+    def test_acquire_waits_for_a_contended_lock_then_succeeds(self):
+        # RD100: acquire() used to be fail-fast -- a single mkdir() attempt,
+        # immediate ResourceError on contention. On a real shared
+        # multi-agent host, two non-conflicting requests contending for the
+        # same resource is expected; the second one should wait for the
+        # first to finish, not die outright.
+        with tempfile.TemporaryDirectory() as directory:
+            first = ResourceLock(Path(directory), "gpu:0")
+            second = ResourceLock(Path(directory), "gpu:0")
+            first.acquire()
+
+            def release_shortly():
+                time.sleep(0.1)
+                first.release()
+
+            releaser = threading.Thread(target=release_shortly)
+            releaser.start()
+            second.acquire(timeout_seconds=5.0, poll_interval=0.02)
+            releaser.join()
+            self.assertIsNotNone(second.inspect())
+            second.release()
+
+    def test_acquire_times_out_on_a_permanently_held_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = ResourceLock(Path(directory), "gpu:0")
+            second = ResourceLock(Path(directory), "gpu:0")
+            first.acquire()
+            with self.assertRaises(ResourceError):
+                second.acquire(timeout_seconds=0.1, poll_interval=0.02)
 
     def test_release_never_deletes_a_lock_this_instance_did_not_acquire(self):
         # RD100: a losing contender's cleanup used to call release()
@@ -75,7 +107,7 @@ class CampaignGraphTests(unittest.TestCase):
             loser = ResourceLock(Path(directory), "build:plan-x")
             winner.acquire()
             with self.assertRaises(ResourceError):
-                loser.acquire()
+                loser.acquire(timeout_seconds=0.05, poll_interval=0.01)
 
             # The losing contender never held the lock -- releasing it must
             # not touch the winner's still-live lock.
@@ -85,7 +117,7 @@ class CampaignGraphTests(unittest.TestCase):
             # A third process must still see the resource as claimed.
             third = ResourceLock(Path(directory), "build:plan-x")
             with self.assertRaises(ResourceError):
-                third.acquire()
+                third.acquire(timeout_seconds=0.05, poll_interval=0.01)
 
             winner.release()
             self.assertIsNone(winner.inspect())

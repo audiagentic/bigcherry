@@ -450,7 +450,8 @@ def make_build_worker(
                 # cmake_targets set was never built here), not corruption,
                 # so only compute a comparable hash when every expected
                 # member is actually present.
-                if binary.is_file() and all(p.is_file() for p in extra_binaries):
+                extras_present = all(p.is_file() for p in extra_binaries)
+                if binary.is_file() and extras_present:
                     current_runtime_hash = runtime_bundle_hash(
                         {
                             artifact.name: binary_hash(artifact)
@@ -500,7 +501,8 @@ def make_build_worker(
             # identity) -- after validate_reuse() has proven it, not before.
             metadata = cached_metadata
             reused = (
-                cached_metadata.get("generated_compile_inputs_hash")
+                extras_present
+                and cached_metadata.get("generated_compile_inputs_hash")
                 == compile_inputs_hash
             )
 

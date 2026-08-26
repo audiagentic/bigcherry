@@ -28,17 +28,50 @@ class ResourceLock:
         # processes then both entered the same build directory concurrently).
         self._acquired = False
 
-    def acquire(self) -> None:
+    def acquire(self, *, timeout_seconds: float = 300.0, poll_interval: float = 0.2) -> None:
+        """Claim the resource, waiting for a live contender to finish first.
+
+        RD100 (gpt-auto-agent review follow-up): this used to be fail-fast --
+        a single ``mkdir()`` attempt, immediate ``ResourceError`` on
+        contention. On the documented shared multi-agent Brutus host, two
+        legitimate, non-conflicting build requests contending for the same
+        resource (e.g. two lanes both wanting a GPU claim, or the same
+        build-plan resource from two processes racing to publish the same
+        content-addressed result) is a real, expected occurrence, not a
+        hypothetical -- fail-fast there just means the second one dies for
+        no reason instead of proceeding once the first is done. Bounded
+        (not indefinite) so a genuinely stuck/abandoned lock still surfaces
+        as an error rather than hanging forever.
+        """
         self.root.mkdir(parents=True, exist_ok=True)
-        try:
-            self.path.mkdir()
-        except FileExistsError as exc:
-            raise ResourceError(f"resource is already claimed: {self.resource_id}") from exc
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                self.path.mkdir()
+                break
+            except FileExistsError as exc:
+                if time.monotonic() >= deadline:
+                    raise ResourceError(
+                        f"resource is already claimed: {self.resource_id} "
+                        f"(waited {timeout_seconds}s)"
+                    ) from exc
+                time.sleep(poll_interval)
         owner = {
             "hostname": socket.gethostname(), "pid": os.getpid(),
             "started_at": time.time(), "resource_id": self.resource_id,
         }
-        (self.path / "owner.json").write_text(json.dumps(owner, sort_keys=True) + "\n", encoding="utf-8")
+        try:
+            (self.path / "owner.json").write_text(
+                json.dumps(owner, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        except OSError:
+            # The directory claim succeeded but recording ownership didn't --
+            # leaving the bare directory behind would strand the lock
+            # forever (release() below refuses to touch a lock this instance
+            # never marked _acquired, and no OTHER instance can tell this
+            # abandoned directory apart from a live one via inspect() alone).
+            self.path.rmdir()
+            raise
         self._acquired = True
 
     def release(self) -> None:

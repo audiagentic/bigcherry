@@ -66,10 +66,12 @@ Recipes intentionally avoid the name "profile" — three unrelated PROFILES alre
 ### Repinning
 
 ```bash
-cd $BC/tools && python3 -m bigcherry repin [b<ref>]
+cd $BC/tools && python3 -m bigcherry repin [--ref <ref>]
 ```
 
-Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comments intact. Recipes with `ref = "pinned"` (the default) now build from the new ref; recipes naming an explicit ref (e.g., `ref = "b10257"`) remain frozen and do not move. This lets you keep a historical recipe around for comparison without the file bloating.
+Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comments intact (omit `--ref` to query for the newest upstream release). Recipes with `ref = "pinned"` (the default) now build from the new ref; recipes naming an explicit ref (e.g., `ref = "b10257"`) remain frozen and do not move. This lets you keep a historical recipe around for comparison without the file bloating.
+
+**Note:** `--recipe`/`--groups`/`--states` (below) select *which patches get applied to the shared checkout* — they remain real, current flags on `audit`/`apply`/`patches`. `build` itself no longer takes them -- it moved to the campaign engine's isolated, content-addressed per-lane sources, where each lane names its exact patch set directly rather than mutating one shared checkout.
 
 ### Patch state semantics
 
@@ -83,35 +85,41 @@ State is orthogonal to **group** (core/upstream-fixes) — state is a durable ju
 
 A recipe's effective tree state is `tree_state_key(ref, groups, states)`, a 16-character hex digest of the ref, patch groups, and patch states. This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
 
-**Why it matters:** The 3-recipe default set (`upstream` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: upstream is unpatched, the other two select validated patches. Running `build --all` resets the tree *once*, not three times, saving ~25 minutes.
+**Why it matters:** the 3-recipe default set (`upstream` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: upstream is unpatched, the other two select validated patches -- relevant to `apply`/`patches`, which still share one mutable checkout across recipes. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
 
 ### The bootstrap dependency chain
 
-- **`native`** — Just the dispatch layer, no tuning. Prerequisite for measuring (`record`).
-- **`record`** — Measures signatures a real workload exercises. Produces `inventory.json`.
-- **`tune`** (requires `needs = "inventory"`) — Measures candidates against the workload. Produces `.measurements.jsonl`.
-- **`replay`** (requires `needs = "inventory"`) — Compiles the replay layer. Loads winners from measurements or exports them fresh to a cache.
+Applies to `[build.<name>]` entries in `config/recipes.toml`, selected via `build --lane SOURCE:BUILD:PLATFORM` or `--profile <name>` -- `needs` there is the literal, authoritative list; the summary below is illustrative, not exhaustive.
+
+- **`stock`/`control`** — Just the dispatch layer, no tuning. Prerequisite for measuring (`record`).
+- **`record`** — Measures signatures a real workload exercises. Produces `inventory.json` (via `bigcherry inventory record`).
+- **`tune`** (`needs = ["inventory"]`) — Measures candidates against the workload. Produces `.measurements.jsonl`.
+- **`replay`** (`needs = ["inventory", "promoted-winners"]`) — Compiles the replay layer. Loads winners from a promoted/exported dispatch cache (see [TEST.md](TEST.md)'s "Getting winners onto the hot path").
 
 ### Normal workflow
 
 ```bash
-# 1. Verify the tree (audit + apply)
+# 1. Verify the tree (audit + apply) -- shared-checkout patch selection
 cd $BC/tools && python3 -m bigcherry audit
 python3 -m bigcherry apply
 
-# 2. Build a single recipe (e.g., bigcherry)
-python3 -m bigcherry build --recipe bigcherry
+# 2. Build via the campaign engine (canonical v2 -- isolated per-lane sources)
+python3 -m bigcherry build --lane bigcherry:record:linux-multi
+# ...or a named profile from config/recipes.toml's [campaign.<name>]:
+python3 -m bigcherry build --profile standard
+# --all is shorthand for --profile standard
 
-# 3. Or build all recipes with default=true
-python3 -m bigcherry build --all
-
-# 4. View what patches a recipe would use
+# 3. View what patches a recipe would use (apply/patches only, not build)
 python3 -m bigcherry patches --recipe release
 ```
 
+See `build --help` for the full current flag set (`--lane`/`--profile`/`--all`, `--inventory`/`--winners`, `--model`/`--hip-visible-devices` for real runtime-smoke validation, `--binary-relative-path` to select which binary a lane publishes as its primary artifact, e.g. `bin/llama-server` for a real server build vs the `bin/llama-bench` default). `--recipe`/`--groups`/`--states`/`--variant-set`/`--force`/`--target` are NOT valid `build` flags -- argparse rejects them outright (exit 2); those select patches for `apply`/`patches` against the one shared checkout, a different axis from `build`'s isolated per-lane sources.
+
 ## Two gaps to know about
 
-1. **`build` does not call `generate`** — it assumes the cmake options already exist. The first `generate --variant-set X` must run before `build` uses that variant-set, or cmake will reject the missing signature file. The separation lets you generate once (deterministic, ~1 min) and reuse across multiple compile variants.
+These apply to the **manual build cycle** below (standalone `generate` + raw cmake against `$BC`'s one shared checkout) -- `bigcherry build --lane`/`--profile` (the campaign engine) runs its own `generate` stage automatically per lane and does not have this gap.
+
+1. **Manual `build` does not call `generate`** — it assumes the cmake options already exist. The first `generate --variant-set X` must run before `build` uses that variant-set, or cmake will reject the missing signature file. The separation lets you generate once (deterministic, ~1 min) and reuse across multiple compile variants.
 
 2. **`replay-slim` needs `--winners`** — the slim catalog selects only the variants that a tuning run chose. You must run `generate --variant-set replay-slim --inventory ... --winners <measurements>` *before* building replay-slim, or the catalog will be empty and replay will fall back to native silently.
 
