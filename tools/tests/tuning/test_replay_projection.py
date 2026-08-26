@@ -121,8 +121,11 @@ class ProjectMeasurementsTests(unittest.TestCase):
 
         self.conn.execute(
             "INSERT INTO build (source_revision, manifest_hash, signature_schema, "
-            "hardware_schema, variant_set) VALUES (?, ?, ?, 1, 'inventory')",
-            (self.source_revision, self.manifest["manifest_hash"], EPOCH),
+            "hardware_schema, variant_set, build_descriptor_hash) VALUES (?, ?, ?, 1, 'inventory', ?)",
+            (
+                self.source_revision, self.manifest["manifest_hash"], EPOCH,
+                self.manifest["build_descriptor"]["descriptor_hash"],
+            ),
         )
         self.build_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -144,6 +147,43 @@ class ProjectMeasurementsTests(unittest.TestCase):
             "(?, x'02', ?, 'MUL_MAT_ID', 'q8_0', 'f32', 'f32', 1, 1, 1, ?)",
             (bytes.fromhex(self.s2_hex), EPOCH, json.dumps(s2_canonical)),
         )
+
+        hardware_hex = "bb" * 16
+        self.conn.execute(
+            "INSERT INTO hardware (hardware_digest, architecture, architecture_code, "
+            "wave_size, compute_units, feature_flags, canonical_json) VALUES "
+            "(?, 'gfx1100', 1100, 32, 1, 0, '{}')",
+            (bytes.fromhex(hardware_hex),),
+        )
+        hardware_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        self.conn.execute(
+            "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+            "implementation_version, architectures, architecture_mask, graph_safe, "
+            "deterministic, config_json) VALUES "
+            "(?, 'mmvq:native:v1', 'mmvq', 'native_wrapper', 1, '[\"gfx1100\"]', 1, 1, 1, '{}')",
+            (self.build_id,),
+        )
+        candidate_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        s1_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s1_hex),),
+        ).fetchone()[0]
+        s2_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s2_hex),),
+        ).fetchone()[0]
+        for signature_id, signature_hex in ((s1_signature_id, self.s1_hex), (s2_signature_id, self.s2_hex)):
+            self.conn.execute(
+                "INSERT INTO measurement (build_id, hardware_id, signature_id, dispatch_digest, "
+                "candidate_id, objective, stage, accepted) VALUES (?, ?, ?, ?, ?, 'latency', 'final', 1)",
+                (
+                    self.build_id, hardware_id, signature_id,
+                    bytes.fromhex(replay_module.portable_tuning_key(hardware_hex, signature_hex)),
+                    candidate_id,
+                ),
+            )
         self.conn.commit()
 
         self.header = {
@@ -151,6 +191,8 @@ class ProjectMeasurementsTests(unittest.TestCase):
             "artifact_version": 1,
             "source_revision": self.source_revision,
             "manifest_hash": self.manifest["manifest_hash"],
+            "build_descriptor_hash": self.manifest["build_descriptor"]["descriptor_hash"],
+            "producer_capabilities": ALL_FIVE_HEX,
             "variant_set": "inventory",
         }
         hardware_hex = "bb" * 16
@@ -189,7 +231,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
-                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
                 target_manifest_path=self.manifest_path, vendor_root=self.vendor,
             )
 
@@ -198,7 +240,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         summary = rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=self.manifest_path, vendor_root=self.vendor,
         )
         self.assertEqual(summary.examined, 2)
@@ -215,10 +257,15 @@ class ProjectMeasurementsTests(unittest.TestCase):
         # S1 (plain MUL_MAT) needs only CORE; S2 (GLU) needs all 4 HI118
         # presence caps too -- a CORE-only source producer cannot certify S2.
         self._set_source_capabilities(CORE_ONLY_HEX)
+        header = dict(self.header, producer_capabilities=CORE_ONLY_HEX)
+        self.measurements_path.write_text(
+            json.dumps(header) + "\n" + json.dumps(self.s1_result) + "\n" + json.dumps(self.s2_result) + "\n",
+            encoding="utf-8",
+        )
         output = self.tmp_path / "out.jsonl"
         summary = rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=self.manifest_path, vendor_root=self.vendor,
         )
         self.assertEqual(summary.retained, 1)
@@ -244,7 +291,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         summary = rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=core_only_manifest_path, vendor_root=core_only_vendor,
         )
         self.assertEqual(summary.retained, 1)
@@ -255,7 +302,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=self.manifest_path, vendor_root=self.vendor,
         )
         ggml_h = self.tmp_path / "ggml.h"
@@ -287,7 +334,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         summary = rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=target_manifest_path, vendor_root=target_vendor,
         )
         self.assertEqual(summary.retained, 2)
@@ -328,7 +375,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         output = self.tmp_path / "out.jsonl"
         rp.project_measurements(
             self.measurements_path, output,
-            dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
             target_manifest_path=self.manifest_path, vendor_root=self.vendor,
         )
         output_lines = output.read_text(encoding="utf-8").splitlines()
@@ -352,7 +399,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
-                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
                 target_manifest_path=self.manifest_path, vendor_root=self.vendor,
             )
 
@@ -372,7 +419,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
-                dispatch_db=self.dispatch_db, source_build_id=other_build_id,
+                dispatch_db=self.dispatch_db, source_build_id=other_build_id, source_manifest_path=self.manifest_path,
                 target_manifest_path=self.manifest_path, vendor_root=self.vendor,
             )
 
@@ -385,6 +432,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
             "project-replay", str(self.measurements_path),
             "--dispatch-db", str(self.dispatch_db),
             "--source-build-id", str(self.build_id),
+            "--source-manifest", str(self.manifest_path),
             "--target-manifest", str(self.manifest_path),
             "--vendor-root", str(self.vendor),
             "--output", str(output),
@@ -403,7 +451,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
         with self.assertRaises(rp.ProjectionError):
             rp.project_measurements(
                 self.measurements_path, self.tmp_path / "out.jsonl",
-                dispatch_db=self.dispatch_db, source_build_id=self.build_id,
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
                 # manifest claims self.source_revision but this vendor_root is at a different
                 # real revision (and also only declares CORE_ONLY_HEX, not ALL_FIVE_HEX)
                 target_manifest_path=self.manifest_path, vendor_root=wrong_vendor,

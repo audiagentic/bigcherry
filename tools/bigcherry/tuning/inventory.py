@@ -874,6 +874,22 @@ def load_measurements(
             f"bigcherry measurements file, or the run died before its first "
             f"flush."
         )
+    if "hi121_source_provenance" in header:
+        # HI121 review follow-up: replay_projection.project_measurements()
+        # marks its output with this key precisely so it can never be
+        # mistaken for an ordinary producer measurements header -- a
+        # projected artifact's header is deliberately REWRITTEN to the
+        # target build's own source_revision/manifest_hash so it can feed
+        # replay.build(), which means it would otherwise satisfy every
+        # check this function has and let rows genuinely measured on a
+        # DIFFERENT build silently enter the DB under the target's build
+        # identity. A projection is a target-specific EXPORT artifact, not
+        # a new measurement -- it must never be re-ingested.
+        raise RecordError(
+            f"{measurements_path}: this is a HI121 replay-projection artifact "
+            f"(carries hi121_source_provenance), not a producer measurements file -- "
+            f"refusing to ingest a projection as if it were a genuine new measurement"
+        )
 
     # Recover canonical shapes from record/replay diagnostics when older
     # measurement artifacts predate inline `canonical` metadata.
@@ -1029,6 +1045,44 @@ def load_measurements(
         build_row = cursor.fetchone()
         if build_row:
             build_id = build_row[0]
+            if identity_scope == "campaign":
+                # HI121 review follow-up: the campaign-identity lookup above
+                # resolves purely by (source_slice_id, build_plan_id,
+                # effective_build_id) -- unlike the legacy-imported path,
+                # which already requires source_revision/manifest_hash/
+                # build_descriptor_hash to match IN the lookup query itself.
+                # Without this re-check, a genuine campaign-identity
+                # collision (the same triple reused for what is actually a
+                # different build's provenance) would silently resolve to
+                # the WRONG existing build_id, and any capability/candidate/
+                # measurement write below would then be attached to a build
+                # whose provenance this header/manifest never actually
+                # described.
+                existing_provenance = connection.execute(
+                    "SELECT source_revision, manifest_hash, build_descriptor_hash "
+                    "FROM build WHERE build_id = ?",
+                    (build_id,),
+                ).fetchone()
+                if existing_provenance is not None and (
+                    existing_provenance[0] != source_revision
+                    or existing_provenance[1] != manifest_hash
+                    or (
+                        existing_provenance[2] is not None
+                        and build_descriptor_hash is not None
+                        and existing_provenance[2] != build_descriptor_hash
+                    )
+                ):
+                    raise RecordError(
+                        f"load_measurements: campaign identity "
+                        f"(source_slice_id={resolved_source_slice_id!r}, "
+                        f"build_plan_id={resolved_build_plan_id!r}, "
+                        f"effective_build_id={resolved_effective_build_id!r}) already resolves to "
+                        f"build_id={build_id} with DIFFERENT provenance "
+                        f"(source_revision={existing_provenance[0]!r}, manifest_hash={existing_provenance[1]!r}) "
+                        f"than this header/manifest describes (source_revision={source_revision!r}, "
+                        f"manifest_hash={manifest_hash!r}) -- refusing to attach this load's evidence "
+                        f"to a build it does not actually describe"
+                    )
         else:
             # `compiler` is HI12 E6 -- omitted here for a while even after the
             # tuner started writing it in the header, which is exactly the

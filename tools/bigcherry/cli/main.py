@@ -343,6 +343,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="build_id (in --dispatch-db) the measurements were produced by",
     )
     project_replay_cmd.add_argument(
+        "--source-manifest", required=True,
+        help="hip-autotune-manifest.json the source build was produced against "
+        "(used to verify candidate-implementation equivalence against the target)",
+    )
+    project_replay_cmd.add_argument(
         "--target-manifest", required=True,
         help="hip-autotune-manifest.json for the target build",
     )

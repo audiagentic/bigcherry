@@ -61,6 +61,16 @@ CREATE INDEX vk_winner_dispatch_idx
 
 UPDATE schema_meta SET value = '7' WHERE key = 'schema_version';
 
-COMMIT;
+-- Fail closed on any foreign-key violation introduced by this migration,
+-- BEFORE committing. A bare `PRAGMA foreign_key_check;` after COMMIT is
+-- merely advisory here -- executescript() does not inspect the rows a
+-- PRAGMA query returns, so a real violation would silently pass. Route the
+-- check through the same CHECK-constraint-abort trick used for the
+-- schema-version guard above: inserting any violation row raises.
+CREATE TEMP TABLE _hi121_fk_guard (x INTEGER CHECK (0));
 
-PRAGMA foreign_key_check;
+INSERT INTO _hi121_fk_guard SELECT 1 FROM pragma_foreign_key_check();
+
+DROP TABLE _hi121_fk_guard;
+
+COMMIT;

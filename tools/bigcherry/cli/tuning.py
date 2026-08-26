@@ -89,10 +89,11 @@ def cmd_project_replay(args: Namespace) -> int:
             Path(args.output),
             dispatch_db=Path(args.dispatch_db),
             source_build_id=args.source_build_id,
+            source_manifest_path=Path(args.source_manifest),
             target_manifest_path=Path(args.target_manifest),
             vendor_root=Path(args.vendor_root),
         )
-    except replay_projection.ProjectionError as exc:
+    except (replay_projection.ProjectionError, OSError, ValueError, KeyError) as exc:
         print(f"project-replay: {exc}", file=sys.stderr)
         return 1
 
