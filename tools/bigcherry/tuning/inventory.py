@@ -35,7 +35,7 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "6"
+CURRENT_DB_SCHEMA_VERSION = "7"
 #: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
 #: hardware/signature/candidate/observation/measurement/winner), purely
 #: additive -- zero changes to any schema-4 table/column/index. Real
@@ -48,6 +48,13 @@ CURRENT_DB_SCHEMA_VERSION = "6"
 #: to any schema-5 table/column/index (HIP or vk_*). Real existing schema-5
 #: databases migrate to 6 in place via the unconditional UPDATE at the end
 #: of sql/dispatch-db.sql; no data is lost or reshaped.
+#: Schema 7 (HI121, 2026-08-26): added build_capability (backend-scoped
+#: producer semantic-knowledge attestation) and fixed winner_dispatch_idx/
+#: vk_winner_dispatch_idx being wrongly global-unique instead of build-
+#: scoped. UNLIKE schema 5/6, an existing schema-6 database is NOT migrated
+#: by an unconditional UPDATE in dispatch-db.sql -- the index fix requires
+#: DROP/CREATE INDEX, which sql/migrations/0007_producer_capabilities.sql
+#: must be run explicitly to apply (see that file's own docstring for why).
 
 
 @dataclass(frozen=True)

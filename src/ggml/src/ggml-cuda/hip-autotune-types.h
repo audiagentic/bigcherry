@@ -25,21 +25,60 @@
 // the machinery they depend on.
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_DISPATCH)
 
-// Bump when a hashed field is added, removed, or reinterpreted. Older replay
-// caches and database rows are then rejected rather than misread.
+// HI121 (round 9): this is now a FROZEN identity epoch, not a counter bumped
+// for every new semantic distinction. Additive/scoped semantic content (a
+// new independent flag bit, a field scoped to the op classes that use it)
+// and new producer capabilities (GGML_HIP_PRODUCER_CAPABILITIES_LO/HI below)
+// never bump this -- HI121's whole point is that those are expressed as new
+// capability bits (a compatibility-gate concern, checked offline, never
+// hashed) instead of a global epoch bump that invalidates every existing
+// signature's digest regardless of whether it's even affected.
+//
+// Bump ONLY when the canonical signature REPRESENTATION/encoding itself
+// changes incompatibly -- the canonicalization algorithm changes, or an
+// EXISTING hashed field's on-wire meaning is reinterpreted such that old and
+// new semantics cannot be told apart through content + capability
+// applicability alone. Older replay caches and database rows are then
+// rejected rather than misread.
 //
 // v1 -> v2 (HI119 review follow-up): the `flags` bitfield's bits 7-10
 // (GGML_HIP_SIG_FUSION_X_BIAS/GATE_BIAS/X_SCALE/GATE_SCALE, added by HI118)
-// reinterpret previously-unused bits with new load-bearing meaning. A v1
-// signature's flags==0 in those bit positions cannot be trusted to mean "no
-// bias/scale present" -- it may simply predate the bits existing at all.
-// Bumping forces exactly the RERUN_REQUIRED/regeneration behavior this
-// schema-version field exists for, rather than letting HI119's fused-GLU
-// evidence harness silently trust an ambiguous old record. See
-// tools/bigcherry/tuning/dispatch_abi.py for the mirrored Python-side
-// constant and its own agreement test against this #define.
+// reinterpreted previously-unused bits with new load-bearing meaning, and
+// schema 1 had no way to represent "producer evaluated bias/scale presence
+// at all" -- a v1 signature's flags==0 there cannot be trusted to mean "no
+// bias/scale present". That was a real representational-completeness gap,
+// not an ordinary additive change, which is why it was the one case that
+// did warrant a bump. See tools/bigcherry/tuning/dispatch_abi.py for the
+// mirrored Python-side constant (SIGNATURE_IDENTITY_EPOCH) and its own
+// agreement test against this #define.
 #define GGML_HIP_SIGNATURE_SCHEMA_VERSION 2
 #define GGML_HIP_HARDWARE_SCHEMA_VERSION  1
+
+// HI121: source-owned declaration of what THIS producer's code knows how to
+// correctly evaluate -- a distinct axis from the signature's own content
+// (GGML_HIP_SIG_* flags above, which describe what a dispatch actually HAS).
+// APPEND-ONLY: capability IDs are permanent once allocated, never reused or
+// renamed. A discovered evaluator bug is fixed by allocating a NEW `*_V2`
+// bit and updating the relevant applicability rule to require it --
+// `*_V1` is never redefined, so old measurements that only ever claimed
+// `*_V1` correctly stop qualifying once `*_V2` is required, rather than
+// silently being treated as still-correct.
+//
+// This is a plain compile-time declaration, not inferred from any other
+// code's behavior (deliberately -- see tools/bigcherry/tuning/hip_capabilities.py's
+// own docstring for why behavioral/source-pattern inference was rejected as
+// an unsafe capability authority). The compiled record/tuner producer emits
+// these same two values in its own JSON header so a consumer can verify
+// what was actually compiled, not just what a manifest claims was compiled.
+//
+// bit 0  CORE_SIGNATURE_V1              -- op/types/prec, coarse fusion+glu_op,
+//                                          extents/strides, expert counts, flags 0-6
+// bit 1  FUSION_X_BIAS_PRESENCE_V1      -- correctly evaluates fusion->x_bias
+// bit 2  FUSION_GATE_BIAS_PRESENCE_V1   -- correctly evaluates fusion->gate_bias
+// bit 3  FUSION_X_SCALE_PRESENCE_V1     -- correctly evaluates fusion->x_scale
+// bit 4  FUSION_GATE_SCALE_PRESENCE_V1  -- correctly evaluates fusion->gate_scale
+#define GGML_HIP_PRODUCER_CAPABILITIES_LO UINT64_C(0x000000000000001f)
+#define GGML_HIP_PRODUCER_CAPABILITIES_HI UINT64_C(0x0000000000000000)
 
 // 128-bit blake2b digest (standards 5.4). Persisted verbatim.
 #define GGML_HIP_DIGEST_BYTES 16

@@ -52,8 +52,11 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- existing database keeps whatever value it already persisted here
 -- (INSERT OR IGNORE), and its build/signature rows retain their own
 -- per-row signature_schema/schema_version columns regardless.
+-- schema_version '7' (HI121): adds build_capability and fixes
+-- winner_dispatch_idx/vk_winner_dispatch_idx being wrongly global-unique.
+-- See sql/migrations/0007_producer_capabilities.sql.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '6'),
+    ('schema_version',    '7'),
     ('signature_schema',  '2'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -104,6 +107,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS build_legacy_identity_uq
     ON build(source_revision, manifest_hash, signature_schema,
              hardware_schema, variant_set, build_descriptor_hash)
     WHERE identity_scope = 'legacy-imported';
+
+-- ---------------------------------------------------------- build_capability
+-- HI121: backend-scoped producer semantic-knowledge declaration.
+-- producer_capabilities is the canonical 128-bit mask for THIS backend,
+-- source-owned (see src/ggml/src/ggml-cuda/hip-autotune-types.h's
+-- GGML_HIP_PRODUCER_CAPABILITIES_LO/HI) and cross-checked against the
+-- compiled producer's own self-report before being persisted here -- never
+-- inferred from signature_schema, source_revision, or commit date.
+-- Backend-scoped (not a bare build.producer_capabilities column) because
+-- `build` is shared by both the HIP (winner) and Vulkan (vk_winner) tables,
+-- and one unqualified mask would be ambiguous between their independent
+-- capability namespaces.
+-- Absence of a row means UNKNOWN, never an implicit zero/default capability
+-- set -- a build with no row here is simply not eligible for capability-
+-- gated measurement reuse.
+CREATE TABLE IF NOT EXISTS build_capability (
+    build_id              INTEGER NOT NULL REFERENCES build(build_id),
+    backend               TEXT    NOT NULL,
+    producer_capabilities BLOB    NOT NULL,
+    PRIMARY KEY (build_id, backend),
+    CHECK (length(producer_capabilities) = 16)
+);
 
 -- ------------------------------------------------------------------ hardware
 -- Executing GPU *class*, never a device ordinal (standards 1, 10.1).
@@ -297,7 +322,15 @@ CREATE TABLE IF NOT EXISTS winner (
 CREATE INDEX IF NOT EXISTS winner_improvement_idx
     ON winner(build_id, improvement_pct DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS winner_dispatch_idx
+-- HI121 schema 7: this was wrongly a UNIQUE index. winner's own row identity
+-- (UNIQUE (build_id, hardware_id, objective, dispatch_digest) above) is
+-- already correctly build-scoped -- a separate GLOBAL unique index on just
+-- (dispatch_digest, objective) contradicted that by preventing two DIFFERENT
+-- builds from ever both retaining a winner for the same portable dispatch,
+-- which is exactly the case HI121's capability-gated multi-generation
+-- measurement reuse needs to allow. Plain lookup index now; no uniqueness
+-- is weakened, since the real uniqueness still lives on the table itself.
+CREATE INDEX IF NOT EXISTS winner_dispatch_idx
     ON winner(dispatch_digest, objective);
 
 -- --------------------------------------------------------------- replay_miss
@@ -661,7 +694,10 @@ CREATE TABLE IF NOT EXISTS vk_winner (
     UNIQUE (build_id, vk_hardware_id, objective, dispatch_digest)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS vk_winner_dispatch_idx
+-- HI121 schema 7: same fix as winner_dispatch_idx above -- vk_winner's own
+-- row identity is already build-scoped, so this index must not be globally
+-- unique either.
+CREATE INDEX IF NOT EXISTS vk_winner_dispatch_idx
     ON vk_winner(dispatch_digest, objective);
 
 -- ==========================================================================
