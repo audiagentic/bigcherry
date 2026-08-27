@@ -166,13 +166,46 @@ class BuildGpuProfilePassTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (out_dir / "run_rccl_api_trace.csv").write_text(
-                "Kind,Name\nRCCL_API,ncclAllReduce\n", encoding="utf-8",
+                '"Domain","Function"\n"RCCL_API","ncclAllReduce"\n', encoding="utf-8",
             )
             gp = rocprof.build_gpu_profile_pass(
                 label="1", output_dir=out_dir, expected_gpu_count=2,
             )
             self.assertEqual(gp.capture_status, "complete")
             self.assertTrue(gp.rccl_activity_seen)
+
+    def test_rccl_init_only_trace_is_not_activity(self):
+        # HI134 real-hardware finding (hi134-meta-baseline-01, Brutus {0,1,2},
+        # GGML_HIP_REDUCE_PLAN=meta): ncclGetVersion/ncclGetUniqueId/
+        # ncclCommInitAll/ncclCommGetAsyncError/ncclCommDestroy all appear in
+        # the RCCL trace even when META handled every actual reduce and no
+        # collective (ncclAllReduce/ncclGroupEnd/etc) ever ran. A trace
+        # containing only these calls must not be reported as RCCL activity.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            out_dir = Path(directory)
+            (out_dir / "run_kernel_trace.csv").write_text(
+                _HEADER
+                + _row("GPU0", "kernel_a", 0, 1000)
+                + _row("GPU1", "kernel_a", 0, 1000),
+                encoding="utf-8",
+            )
+            (out_dir / "run_rccl_api_trace.csv").write_text(
+                '"Domain","Function"\n'
+                '"RCCL_API","ncclGetUniqueId"\n'
+                '"RCCL_API","ncclGetVersion"\n'
+                '"RCCL_API","ncclCommInitAll"\n'
+                '"RCCL_API","ncclCommGetAsyncError"\n'
+                '"RCCL_API","ncclCommDestroy"\n',
+                encoding="utf-8",
+            )
+            gp = rocprof.build_gpu_profile_pass(
+                label="1", output_dir=out_dir, expected_gpu_count=2,
+                expected_reduction_provider="meta",
+            )
+            self.assertFalse(gp.rccl_activity_seen)
+            self.assertEqual(gp.capture_status, "complete")
 
     def test_no_kernel_trace_file_raises(self):
         import tempfile
