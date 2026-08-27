@@ -70,6 +70,8 @@ class WorkflowReceipt:
     replay: StageIdentity | None
     promoted_before_evidence: int
     promoted_after_evidence: int
+    verified_winners: int
+    quarantined_unsupported_winners: int
     dispatch_cache_path: str | None
     replay_coverage: dict | None
     started_at: str
@@ -306,10 +308,11 @@ def _stage_load_and_promote(
     offline/manual-CLI path, which stays unaffected."""
     dispatch_db = workdir / "tune.sqlite"
     try:
-        inv_mod.load_measurements(
+        ingest_counts = inv_mod.load_measurements(
             tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
             manifest_path=tune_manifest_path,
             signature_digest_verifier=signature_digest_verifier,
+            unsupported_signature_policy="quarantine",
             # adversarial-review follow-up (2026-08-27): without this, a
             # missing/unreadable tune_manifest_path or an older header
             # predating producer_capabilities would silently commit an
@@ -318,6 +321,14 @@ def _stage_load_and_promote(
             # whole wiring pass exists to close.
             require_strengthened_ingest=True,
         )
+        if "winner_verifications" not in ingest_counts:
+            raise TuneCampaignError(
+                "strengthened ingest did not report verified winner counts"
+            )
+        if int(ingest_counts["winner_verifications"]) <= 0:
+            raise TuneCampaignError(
+                "strengthened ingest produced zero verified winners"
+            )
     except inv_mod.RecordError as exc:
         # Fail closed, never silently retry unverified (HI125 close-out
         # step 6's explicit policy) -- an UnsupportedSignatureDomain or a
@@ -329,6 +340,10 @@ def _stage_load_and_promote(
     result = tune_promotion.promote(
         tune_measurements, promoted_path,
         dispatch_db=dispatch_db, q=q, threshold_pct=threshold_pct, resamples=resamples,
+    )
+    result["winner_verifications"] = int(ingest_counts.get("winner_verifications", 0))
+    result["quarantined_unsupported_winners"] = int(
+        ingest_counts.get("quarantined_unsupported_winners", 0)
     )
     missing_evidence = _count_missing_correctness_evidence(promoted_path)
     return dispatch_db, result, int(result.get("promoted", 0)), missing_evidence
@@ -383,6 +398,7 @@ def _stage_replay_export(
     ggml_h = target_source_root / "ggml" / "include" / "ggml.h"
     cache_bytes = replay_mod.build(
         promoted_path, target_manifest_path, ggml_h, dispatch_db=dispatch_db,
+        require_winner_verification=True,
     )
     cache_path = workdir / "dispatch.cache"
     cache_path.write_bytes(cache_bytes)
@@ -571,7 +587,7 @@ def run_tune_campaign(
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(
-        schema_version=2,
+        schema_version=3,
         campaign_run_id=campaign_run_id,
         model_path=str(model_path),
         platform_name=platform_name,
@@ -591,6 +607,10 @@ def run_tune_campaign(
         ),
         promoted_before_evidence=promoted_before,
         promoted_after_evidence=promoted_after,
+        verified_winners=int(_first_promote_result.get("winner_verifications", 0)),
+        quarantined_unsupported_winners=int(
+            _first_promote_result.get("quarantined_unsupported_winners", 0)
+        ),
         dispatch_cache_path=str(dispatch_cache_path) if dispatch_cache_path else None,
         replay_coverage=replay_coverage,
         started_at=started_at,

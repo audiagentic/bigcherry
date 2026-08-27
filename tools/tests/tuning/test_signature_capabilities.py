@@ -84,7 +84,7 @@ class MulMatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, glu_op=2)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_mul_mat_with_aux_flags_is_unsupported(self):
@@ -92,7 +92,7 @@ class MulMatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, flags=1 << 7)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_mul_mat_with_has_ids_set_is_unsupported(self):
@@ -100,7 +100,7 @@ class MulMatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, flags=1 << 3)  # MUL_MAT should never have HAS_IDS
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_mul_mat_id_without_has_ids_is_unsupported(self):
@@ -108,7 +108,7 @@ class MulMatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(MUL_MAT_ID, flags=0)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
 
@@ -127,7 +127,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, flags=0)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_non_gate_fusion_is_unsupported(self):
@@ -135,7 +135,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, fusion=1)  # BIAS, not GATE
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_unfusable_glu_op_is_unsupported(self):
@@ -143,7 +143,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, glu_op=0)  # REGLU, never fused
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_x_scale_flag_set_is_unsupported_pending_hi120(self):
@@ -151,7 +151,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, flags=GLU_ALL_ZERO["flags"] | (1 << 9))
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_gate_scale_flag_set_is_unsupported_pending_hi120(self):
@@ -159,7 +159,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, flags=GLU_ALL_ZERO["flags"] | (1 << 10))
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_with_real_gate_bias_fusion_kind_still_requires_all_four(self):
@@ -183,7 +183,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, fusion=3)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_gate_fusion_with_a_bias_flag_set_is_self_contradictory(self):
@@ -191,7 +191,7 @@ class GluTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, fusion=2, flags=GLU_ALL_ZERO["flags"] | (1 << 7))
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
 
@@ -204,7 +204,7 @@ class GeneralTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, flags=1 << 11)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_unknown_flag_bit_on_glu_is_also_unsupported(self):
@@ -212,7 +212,7 @@ class GeneralTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(GLU_ALL_ZERO, flags=GLU_ALL_ZERO["flags"] | (1 << 15))
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_unknown_op_is_unsupported(self):
@@ -220,7 +220,7 @@ class GeneralTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, op=1)  # ADD
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_wrong_schema_version_is_unsupported(self):
@@ -228,7 +228,7 @@ class GeneralTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, schema_version=1)
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_non_int_field_is_unsupported(self):
@@ -236,7 +236,7 @@ class GeneralTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
             sig = dict(PLAIN_MUL_MAT, op="not-an-int")
-            with self.assertRaises(sc.UnsupportedSignatureDomain):
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
 

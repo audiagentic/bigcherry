@@ -24,11 +24,12 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from ..core import paths
 from . import catalog
 from . import dispatch_abi
+from . import signature_capabilities as sc
 from . import verification_state
 from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
@@ -36,6 +37,13 @@ from ..identity_separation import IdentitySeparationError, validate_measurement_
 
 class RecordError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class _ResolvedSignature:
+    signature_id: int | None
+    verifier_passed: bool
+    quarantined_unaudited: bool
 
 
 CURRENT_DB_SCHEMA_VERSION = "8"
@@ -878,6 +886,7 @@ def load_measurements(
     identity: CampaignDatabaseIdentity | None = None,
     signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None,
     require_strengthened_ingest: bool = False,
+    unsupported_signature_policy: Literal["error", "quarantine"] = "error",
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
@@ -933,6 +942,11 @@ def load_measurements(
     at all quietly produced zero ``winner_verification`` rows with no
     error and no visible signal in this function's return value.
     """
+    if unsupported_signature_policy not in ("error", "quarantine"):
+        raise RecordError(
+            "load_measurements: unsupported_signature_policy must be 'error' or 'quarantine'"
+        )
+
     # Read measurements JSONL
     results: list[dict[str, Any]] = []
     header: dict[str, Any] | None = None
@@ -1389,10 +1403,10 @@ def load_measurements(
         # cache hits too, independent of whether a DB row lookup happens.
         signature_seen_canonical: dict[str, dict[str, Any]] = {}
 
-        def _resolve_signature(result: dict[str, Any]) -> int | None:
+        def _resolve_signature(result: dict[str, Any]) -> _ResolvedSignature:
             signature_hex = result.get("signature", "")
             if len(signature_hex) != 32:
-                return None
+                return _ResolvedSignature(None, False, False)
             canonical = result.get("canonical") or signature_shapes.get(
                 signature_hex, {}
             )
@@ -1409,14 +1423,23 @@ def load_measurements(
                     f"C++ digest verification was requested and cannot be "
                     f"skipped"
                 )
+            verifier_passed = False
+            quarantined_unaudited = False
             if signature_digest_verifier is not None and canonical:
                 try:
                     verified_hex = signature_digest_verifier(canonical)
+                except sc.UnauditedSignatureDomain as exc:
+                    if unsupported_signature_policy == "error":
+                        raise RecordError(
+                            f"signature {signature_hex!r} is outside the audited "
+                            "signature domain"
+                        ) from exc
+                    quarantined_unaudited = True
                 except Exception as exc:
                     raise RecordError(
                         f"signature {signature_hex!r} digest verifier failed"
                     ) from exc
-                if (
+                if not quarantined_unaudited and (
                     not isinstance(verified_hex, str)
                     or len(verified_hex) != 32
                     or any(c not in "0123456789abcdefABCDEF" for c in verified_hex)
@@ -1425,12 +1448,13 @@ def load_measurements(
                         f"signature {signature_hex!r} digest verifier returned "
                         f"invalid digest {verified_hex!r}"
                     )
-                if verified_hex.lower() != signature_hex.lower():
+                if not quarantined_unaudited and verified_hex.lower() != signature_hex.lower():
                     raise RecordError(
                         f"signature {signature_hex!r} does not match the digest "
                         f"independently computed by the supplied verifier "
                         f"({verified_hex!r})"
                     )
+                verifier_passed = not quarantined_unaudited
             if signature_hex in signature_cache:
                 if (
                     canonical
@@ -1443,7 +1467,9 @@ def load_measurements(
                         f"must correspond to exactly one canonical shape; refusing "
                         f"to trust either as authoritative"
                     )
-                return signature_cache[signature_hex]
+                return _ResolvedSignature(
+                    signature_cache[signature_hex], verifier_passed, quarantined_unaudited,
+                )
             ned = canonical.get("ned", [0, 0, 0, 0])
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
             has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
@@ -1505,7 +1531,7 @@ def load_measurements(
             if canonical:
                 signature_seen_canonical[signature_hex] = canonical
             signature_cache[signature_hex] = signature_id
-            return signature_id
+            return _ResolvedSignature(signature_id, verifier_passed, quarantined_unaudited)
 
         def _resolve_candidate(name: str) -> int:
             if name in candidate_cache:
@@ -1561,6 +1587,8 @@ def load_measurements(
         # Process each tuning result
         results_inserted = 0
         measurements_inserted = 0
+        winner_verifications = 0
+        quarantined_unsupported_winners = 0
 
         for result in results:
             hardware_id = _resolve_hardware(result)
@@ -1599,7 +1627,8 @@ def load_measurements(
                 "noisy": "GGML_HIP_REJECT_NOISY",
             }
 
-            signature_id = _resolve_signature(result)
+            resolved_signature = _resolve_signature(result)
+            signature_id = resolved_signature.signature_id
 
             # Insert measurement rows for each candidate.
             #
@@ -1771,9 +1800,13 @@ def load_measurements(
                 # possibly-unverified insert that a naive (build,signature)
                 # key would have conflated with this one.
                 if strengthened_ingest and signature_id is not None:
-                    verification_state.record_winner_verification(
-                        connection, winner_id=winner_cursor.lastrowid,
-                    )
+                    if resolved_signature.verifier_passed:
+                        verification_state.record_winner_verification(
+                            connection, winner_id=winner_cursor.lastrowid,
+                        )
+                        winner_verifications += 1
+                    elif resolved_signature.quarantined_unaudited:
+                        quarantined_unsupported_winners += 1
 
         connection.commit()
         return {
@@ -1781,6 +1814,8 @@ def load_measurements(
             "results": results_inserted,
             "measurements": measurements_inserted,
             "candidates": len(candidate_cache),
+            "winner_verifications": winner_verifications,
+            "quarantined_unsupported_winners": quarantined_unsupported_winners,
         }
     finally:
         connection.close()

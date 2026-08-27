@@ -885,6 +885,51 @@ class WinnerVerificationGateTests(unittest.TestCase):
                 target_manifest_path=self.manifest_path, vendor_root=self.vendor,
             )
 
+    def test_same_generation_require_winner_verification_excludes_unattested(self):
+        # HI136: same-generation replay must apply the same per-winner gate as
+        # projection. One genuine re-attested winner is retained; the exact
+        # genuine but unattested winner is omitted.
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s1_hex),),
+        ).fetchone()[0]
+        winner_id = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, signature_id),
+        ).fetchone()[0]
+        verification_state.record_winner_verification(self.conn, winner_id=winner_id)
+        self.conn.commit()
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["signature"], self.s1_hex)
+
+    def test_same_generation_default_keeps_unattested_rows_unchanged(self):
+        # The new parameter is opt-in; legacy/manual callers retain the
+        # previous export behavior when it is omitted.
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(self.measurements_path, self.manifest_path, ggml_h)
+        _header, entries = replay_module.read_cache(blob)
+        self.assertEqual(len(entries), 2)
+
+    def test_same_generation_forged_row_hard_fails_before_attestation(self):
+        self._rewrite_result(self.s1_hex, winner="not-a-real-candidate")
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            replay_module.build(
+                self.measurements_path, self.manifest_path, ggml_h,
+                dispatch_db=self.dispatch_db, require_winner_verification=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
