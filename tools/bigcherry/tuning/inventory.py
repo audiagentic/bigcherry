@@ -877,6 +877,7 @@ def load_measurements(
     signature_source_paths: list[Path] | None = None,
     identity: CampaignDatabaseIdentity | None = None,
     signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None,
+    require_strengthened_ingest: bool = False,
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
@@ -919,6 +920,18 @@ def load_measurements(
     the existing offline behavior: the first (digest, canonical) pairing is
     accepted on faith. Missing canonical data is not verifiable through this
     hook.
+
+    ``require_strengthened_ingest`` (HI125 close-out step 6, adversarial-
+    review follow-up): when True, this load must actually achieve HI127's
+    strengthened-ingest attestation or it raises ``RecordError`` instead of
+    silently committing an unattested load -- closing a real gap where a
+    caller could supply ``signature_digest_verifier`` believing every
+    winner would be attested, while a missing/unreadable manifest_path (a
+    plain ``.is_file()`` check silently treats a typo'd or nonexistent path
+    as "no manifest supplied"), an older header/manifest pair predating
+    ``producer_capabilities``, or a winner with no ``signature_id`` linkage
+    at all quietly produced zero ``winner_verification`` rows with no
+    error and no visible signal in this function's return value.
     """
     # Read measurements JSONL
     results: list[dict[str, Any]] = []
@@ -1214,6 +1227,27 @@ def load_measurements(
         # write below with signature_digest_verifier is not None means this
         # row's specific canonical already passed.
         strengthened_ingest = build_attested and signature_digest_verifier is not None
+        if require_strengthened_ingest and not strengthened_ingest:
+            # HI125 close-out step 6 (adversarial-review follow-up): a
+            # caller that explicitly requires strengthened ingest (the real
+            # production tune-campaign path, or an operator who supplied
+            # --signature-verifier-binary on the manual CLI) must never
+            # silently get an unattested load instead -- build_attested can
+            # be False for reasons that are each individually "not an
+            # error" in the DEFAULT (non-required) path (no manifest
+            # supplied, manifest_path pointing at a file that does not
+            # exist -- see the plain `manifest_path.is_file()` check above,
+            # which silently treats a typo'd/missing path as "no manifest"
+            # -- or an older header/manifest pair predating the capability
+            # field) but are each a real, nameable failure when the caller
+            # asked for the strengthened guarantee specifically.
+            raise RecordError(
+                "load_measurements: require_strengthened_ingest=True but this load could not "
+                "establish HI127's strengthened-ingest proof (manifest missing/unreadable, "
+                "header/manifest predates producer_capabilities, or no signature_digest_verifier "
+                "was supplied) -- refusing to silently commit an unattested load when the caller "
+                "explicitly required attestation"
+            )
 
         signatures = sorted(
             {
@@ -1664,6 +1698,20 @@ def load_measurements(
                     None,
                 )
                 is_native = 1 if winner_name == native_name else 0
+
+                if require_strengthened_ingest and signature_id is None:
+                    # This winner has no signature linkage at all -- HI125's
+                    # per-row canonical/digest verification can never run
+                    # for it (there is nothing to verify), so it can never
+                    # be attested. A caller that required the strengthened
+                    # guarantee for this whole load must not silently
+                    # commit a winner that structurally cannot ever satisfy
+                    # it.
+                    raise RecordError(
+                        f"load_measurements: require_strengthened_ingest=True but winner "
+                        f"{winner_name!r} (dispatch={dispatch_hex!r}) has no signature_id -- "
+                        f"this row cannot be C++-verified and cannot be attested"
+                    )
 
                 # Find winner's measurement for median/p95
                 winner_median = None

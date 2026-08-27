@@ -298,6 +298,7 @@ class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
 
             def fake_load_measurements(*_args, **kwargs):
                 captured["signature_digest_verifier"] = kwargs.get("signature_digest_verifier")
+                captured["require_strengthened_ingest"] = kwargs.get("require_strengthened_ingest")
                 return {"results": 0, "measurements": 0, "candidates": 0}
 
             verifier = lambda _c: "0" * 32  # noqa: E731
@@ -314,6 +315,55 @@ class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
                 )
 
             self.assertIs(captured["signature_digest_verifier"], verifier)
+            self.assertTrue(captured["require_strengthened_ingest"])
+
+    def test_missing_manifest_file_aborts_with_zero_db_writes(self):
+        # Real (unmocked) inv_mod.load_measurements() call: a manifest path
+        # that does not exist on disk must abort the WHOLE campaign as
+        # TuneCampaignError via require_strengthened_ingest=True -- not
+        # silently commit an unattested load, which is exactly what a bare
+        # `manifest_path.is_file()` check inside load_measurements() would
+        # otherwise do (treating a missing file as "no manifest supplied").
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            measurements = workdir / "tune.measurements.jsonl"
+            header = {
+                "kind": "header", "artifact_version": 1,
+                "source_revision": "a" * 40, "manifest_hash": "deadbeef",
+                "variant_set": "workload-max", "build_descriptor_hash": "desc",
+                "producer_capabilities": "0000000000000000000000000000001f",
+            }
+            result = {
+                "kind": "result", "dispatch": "e" * 32, "winner": "mmq:native:v1",
+                "signature": "9" * 32, "canonical": {"op": "MUL_MAT", "flags": 0},
+                "improvement_pct": 0.0, "candidates": [
+                    {"name": "mmq:native:v1", "status": "ok", "median_us": 1.0,
+                     "mad_us": 0.0, "p95_us": 1.0, "host_median_us": 0.4,
+                     "nmse": 0.0, "max_abs": 0.0, "workspace": 0, "samples": 1},
+                ],
+            }
+            measurements.write_text(
+                json.dumps(header) + "\n" + json.dumps(result) + "\n", encoding="utf-8",
+            )
+            nonexistent_manifest = workdir / "does-not-exist.json"
+
+            with self.assertRaises(workflow.TuneCampaignError):
+                workflow._stage_load_and_promote(
+                    tune_measurements=measurements, tune_manifest_path=nonexistent_manifest,
+                    workdir=workdir, q=0.05, threshold_pct=1.0, resamples=100,
+                    signature_digest_verifier=lambda _c: "9" * 32,
+                )
+
+            dispatch_db = workdir / "tune.sqlite"
+            if dispatch_db.is_file():
+                import sqlite3
+                conn = sqlite3.connect(str(dispatch_db))
+                try:
+                    self.assertEqual(conn.execute("SELECT COUNT(*) FROM winner").fetchone()[0], 0)
+                finally:
+                    conn.close()
 
 
 class StageSignatureVerifierTests(unittest.TestCase):
@@ -347,6 +397,40 @@ class StageSignatureVerifierTests(unittest.TestCase):
         self.assertEqual(captured["binary_relative_path"], "bin/test-backend-ops")
         self.assertEqual(captured["experiment"], "hi105-correctness")
         self.assertIs(lane_result, fake_result)
+
+    def test_multi_device_campaign_scopes_verifier_to_first_device_only(self):
+        # adversarial-review follow-up: test-backend-ops loops over every
+        # visible device and requires aggregate success, so a multi-device
+        # campaign ("0,1") must not hand the WHOLE set to the verifier --
+        # only its first device, since HI125 only needs to prove canonical
+        # ->digest correspondence once on any one real device.
+        from unittest.mock import MagicMock, patch
+
+        fake_result = MagicMock()
+        fake_result.binary_ref.path = Path("/fake/bin/test-backend-ops")
+        fake_result.source_root = Path("/fake/source-root")
+
+        captured_runner_devices = {}
+
+        def fake_make_verifier(*, binary, vendor_root, seed, runner):
+            # Probe the runner's closure by calling it and inspecting the
+            # env it injects.
+            captured = {}
+            with patch.object(workflow.subprocess, "run", side_effect=lambda argv, **kw: captured.update(kw)):
+                runner(["test-backend-ops"], env={})
+            captured_runner_devices["value"] = captured["env"]["HIP_VISIBLE_DEVICES"]
+            return lambda c: "0" * 32
+
+        with (
+            patch.object(workflow, "_plan_and_run_one_lane", return_value=fake_result),
+            patch.object(workflow.sdv, "make_signature_digest_verifier", side_effect=fake_make_verifier),
+        ):
+            workflow._stage_signature_verifier(
+                context=None, cfg=None, store=None, run_id="run-1",
+                platform_name="linux-multi", source_name="bigcherry", devices="0,1",
+            )
+
+        self.assertEqual(captured_runner_devices["value"], "0")
 
     def test_gpu_scoped_runner_injects_hip_visible_devices_without_dropping_caller_env(self):
         from unittest.mock import patch
