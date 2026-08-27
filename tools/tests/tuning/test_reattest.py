@@ -335,6 +335,25 @@ class ReattestWinnersTests(unittest.TestCase):
             self.conn.execute("SELECT COUNT(*) FROM winner_verification").fetchone()[0], 0,
         )
 
+    def test_header_manifest_disagreement_raises_reattestation_error_not_record_error(self):
+        # HI128 review round 3 (dev-gpt-agent): verify_hip_build_artifacts()
+        # raises inventory.RecordError directly -- reattest_winners() must
+        # normalize that to ReattestationError so a caller catching only
+        # the latter (as cli/tuning.py's cmd_reattest does) is never
+        # bypassed by a raw RecordError escaping instead.
+        lines = self.measurements_path.read_text(encoding="utf-8").splitlines()
+        header = json.loads(lines[0])
+        header["manifest_hash"] = "not-the-real-manifest-hash"
+        lines[0] = json.dumps(header)
+        self.measurements_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        with self.assertRaises(ra.ReattestationError):
+            ra.reattest_winners(
+                self.dispatch_db, source_build_id=self.build_id,
+                measurements_path=self.measurements_path, manifest_path=self.manifest_path,
+                signature_digest_verifier=lambda _c: self.s1_hex,
+            )
+
     def test_dry_run_detects_row_changed_during_final_check(self):
         # The dry-run's second, final-state read-only pass must catch a row
         # whose identity changed after Phase A's own check -- simulated
