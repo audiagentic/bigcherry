@@ -278,6 +278,26 @@ tune-context = 4096
 production-context = 64000
 min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
 
+[runtime-profile.hi134-layer-split-control]
+# HI134 step 5: negative control for the __amd_rocclr_copyBufferRectAligned
+# investigation (present whenever device 3 / RDNA2 6900XT participates in a
+# -sm tensor run, independent of device count -- see HI134.md). -sm layer
+# never constructs comm_ctx/META at all, so if Rect still appears here it is
+# not reduction-specific and BigCherry-side tuning of META is not the fix.
+# Otherwise identical to production-dual-xtx's non-tensor-split settings
+# (flash-attn/ubatch/batch/threads/spec/cache-type) so the comparison isolates
+# split-mode, not other config differences.
+server-args = [
+  "-sm", "layer", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
 [runtime-profile.production-safe-single]
 server-args = ["--flash-attn", "on"]
 tune-context = 4096
