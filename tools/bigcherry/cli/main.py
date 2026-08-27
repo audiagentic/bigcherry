@@ -1126,6 +1126,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
     )
+    # HI125 close-out step 6: opt-in C++-authoritative digest verification
+    # for the manual inventory-tuning path -- omitted, this preserves
+    # today's exact unverified-ingest behavior. Supplying it creates
+    # HI127 winner_verification attestations, same as the campaign path.
+    inv_tuning.add_argument(
+        "--signature-verifier-binary",
+        default=None,
+        help="compiled test-backend-ops binary built with GGML_HIP_AUTOTUNE_RECORD=ON "
+        "-- enables real C++ digest verification (requires --signature-verifier-vendor-root "
+        "and --manifest too)",
+    )
+    inv_tuning.add_argument(
+        "--signature-verifier-vendor-root",
+        default=None,
+        help="source root the signature-verifier-binary was built from",
+    )
+    inv_tuning.add_argument(
+        "--signature-verifier-seed", type=int, default=1, help="test-backend-ops --seed",
+    )
     inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
 
     # Hot list: rank observed signatures by estimated time contribution

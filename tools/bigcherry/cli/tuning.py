@@ -236,12 +236,44 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
         )
         manifest_path = Path(args.manifest) if args.manifest else None
 
+        # HI125 close-out step 6: --signature-verifier-binary/-vendor-root
+        # are an all-or-none pair, and require --manifest too -- without a
+        # manifest, build_attested is always False (HI127's own gate) and
+        # this expensive real C++ verification would create zero
+        # winner_verification attestations, silently wasting an operator's
+        # GPU time on nothing.
+        verifier_binary = args.signature_verifier_binary
+        verifier_vendor_root = args.signature_verifier_vendor_root
+        if bool(verifier_binary) != bool(verifier_vendor_root):
+            print(
+                "inventory tuning: --signature-verifier-binary and "
+                "--signature-verifier-vendor-root must be supplied together",
+                file=sys.stderr,
+            )
+            return 2
+        signature_digest_verifier = None
+        if verifier_binary:
+            if manifest_path is None:
+                print(
+                    "inventory tuning: --manifest is required when a signature "
+                    "verifier is supplied -- otherwise no winner can be attested",
+                    file=sys.stderr,
+                )
+                return 2
+            from ..tuning import signature_digest_verification as sdv
+            signature_digest_verifier = sdv.make_signature_digest_verifier(
+                binary=Path(verifier_binary),
+                vendor_root=Path(verifier_vendor_root),
+                seed=args.signature_verifier_seed,
+            )
+
         counts = inv_mod.load_measurements(
             meas_path,
             db_path,
             paths.SQL / "dispatch-db.sql",
             manifest_path=manifest_path,
             signature_source_paths=[Path(p) for p in args.signature_source],
+            signature_digest_verifier=signature_digest_verifier,
         )
 
         print(

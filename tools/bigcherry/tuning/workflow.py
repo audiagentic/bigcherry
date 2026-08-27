@@ -15,12 +15,15 @@ request; there is no mock/simulation mode.
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 from . import inventory as inv_mod
 from . import replay as replay_mod
+from . import signature_digest_verification as sdv
 from . import tune_promotion
 from .server_runner import ServerRunner
 from .. import hi80_generate_correctness_evidence as hi80
@@ -58,6 +61,11 @@ class WorkflowReceipt:
     effective_tune_context: int
     record: StageIdentity
     tune: StageIdentity
+    #: HI125 close-out step 6: the dedicated RECORD=ON + hi105-correctness
+    #: test-backend-ops lane that authorized strengthened winner_verification
+    #: attestation for this run's ingest -- kept auditable here rather than
+    #: discarded, since it is now a trust-bearing lane like the others.
+    signature_verifier: StageIdentity
     correctness: StageIdentity | None
     replay: StageIdentity | None
     promoted_before_evidence: int
@@ -192,6 +200,62 @@ def _stage_tune(
     return lane_result, measurements_path
 
 
+def _gpu_scoped_test_backend_ops_runner(devices: str):
+    """A subprocess runner for signature_digest_verification's real
+    test-backend-ops calls, scoped to this campaign's own GPU selection --
+    correctness_evidence.run_test_backend_ops() passes an explicit ``env``
+    dict straight to subprocess.run(), which REPLACES the ambient
+    environment entirely rather than merging with it, so without this the
+    verifier subprocess would not inherit HIP_VISIBLE_DEVICES the way
+    ServerRunner's own env_overrides do for the record/tune stages."""
+
+    def _runner(argv, **kwargs):
+        env = dict(kwargs.get("env") or {})
+        env.setdefault("HIP_VISIBLE_DEVICES", devices)
+        kwargs["env"] = env
+        return subprocess.run(argv, **kwargs)
+
+    return _runner
+
+
+def _stage_signature_verifier(
+    *, context, cfg, store, run_id, platform_name, source_name, devices: str, seed: int = 1,
+) -> tuple[CampaignLaneResult, Callable[[dict[str, Any]], str]]:
+    """HI125 close-out step 6: a DEDICATED lane building a RECORD=ON
+    test-backend-ops under the hi105-correctness experiment (which carries
+    the additional patches signature_digest_verification's MUL_MAT_ID and
+    routed-GLU mappers need -- a plain record-lane test-backend-ops is
+    insufficient for HI121's full audited domain).
+
+    Deliberately NOT built by adding extra_cmake_targets to the real
+    record lane (build_name="record", binary_relative_path="bin/llama-
+    server"): campaign/lane.py's _execute_build_phase() folds every
+    requested cmake target -- including any extras -- into
+    BuildPlan.requested_targets, which is part of that lane's own declared
+    build identity, and the worker also includes extra binaries in the
+    runtime artifact/bundle hash. Adding test-backend-ops there would
+    change the REAL production record lane's build_plan_id/runtime bundle
+    identity for a reason that has nothing to do with what that lane
+    actually produces for the campaign. A separate lane keeps the trust-
+    bearing verifier binary's own identity auditable (see
+    WorkflowReceipt.signature_verifier) without perturbing production
+    record-lane provenance at all.
+    """
+    lane_result = _plan_and_run_one_lane(
+        context=context, cfg=cfg, store=store, source_name=source_name,
+        build_name="record", platform_name=platform_name, run_id=run_id,
+        binary_relative_path="bin/test-backend-ops",
+        experiment="hi105-correctness",
+    )
+    verifier = sdv.make_signature_digest_verifier(
+        binary=lane_result.binary_ref.path,
+        vendor_root=lane_result.source_root,
+        seed=seed,
+        runner=_gpu_scoped_test_backend_ops_runner(devices),
+    )
+    return lane_result, verifier
+
+
 def _count_missing_correctness_evidence(promoted_path: Path) -> int:
     """How many rows are stuck on `rejected_no_correctness_evidence` --
     gpt review (2026-08-27): `promote()`'s own return dict has no such
@@ -215,14 +279,29 @@ def _count_missing_correctness_evidence(promoted_path: Path) -> int:
 
 
 def _stage_load_and_promote(
-    *, tune_measurements: Path, tune_manifest_path: Path | None, workdir: Path,
+    *, tune_measurements: Path, tune_manifest_path: Path, workdir: Path,
     q: float, threshold_pct: float, resamples: int,
+    signature_digest_verifier: Callable[[dict[str, Any]], str],
 ) -> tuple[Path, dict, int, int]:
+    """Ingest + promote for the real campaign path -- ``signature_digest_
+    verifier`` is a REQUIRED keyword (no default) so a future third call
+    site here cannot silently revert to unverified ingestion by omission;
+    inv_mod.load_measurements() itself still defaults it to None for the
+    offline/manual-CLI path, which stays unaffected."""
     dispatch_db = workdir / "tune.sqlite"
-    inv_mod.load_measurements(
-        tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
-        manifest_path=tune_manifest_path,
-    )
+    try:
+        inv_mod.load_measurements(
+            tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
+            manifest_path=tune_manifest_path,
+            signature_digest_verifier=signature_digest_verifier,
+        )
+    except inv_mod.RecordError as exc:
+        # Fail closed, never silently retry unverified (HI125 close-out
+        # step 6's explicit policy) -- an UnsupportedSignatureDomain or a
+        # genuine verification failure aborts the whole campaign rather
+        # than degrading to un-attested ingestion an operator would not
+        # know to distrust.
+        raise TuneCampaignError(f"strengthened ingest failed: {exc}") from exc
     promoted_path = workdir / "promoted.jsonl"
     result = tune_promotion.promote(
         tune_measurements, promoted_path,
@@ -383,14 +462,28 @@ def run_tune_campaign(
         runtime_profile=profile, screen_samples=tune_screen_samples,
         final_samples=tune_final_samples, workdir=workdir,
     )
-    tune_manifest_path = (
-        Path(tune_result.manifest_ref.path) if tune_result.manifest_ref else None
+    if tune_result.manifest_ref is None:
+        # HI125 close-out step 6: strengthened ingest needs a real manifest
+        # to establish inventory.verify_hip_build_artifacts()'s capability
+        # proof -- without one, build_attested is always False and
+        # winner_verification is never written, silently defeating the
+        # whole point of wiring a verifier in at all.
+        raise TuneCampaignError(
+            "tune build produced no manifest_ref -- strengthened ingest is impossible"
+        )
+    tune_manifest_path = Path(tune_result.manifest_ref.path)
+
+    signature_verifier_result, signature_digest_verifier = _stage_signature_verifier(
+        context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-signature-verifier",
+        platform_name=platform_name, source_name=source_name, devices=devices,
     )
+
     dispatch_db, _first_promote_result, promoted_before, missing_evidence = (
         _stage_load_and_promote(
             tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
             workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
             resamples=promotion_resamples,
+            signature_digest_verifier=signature_digest_verifier,
         )
     )
 
@@ -416,6 +509,11 @@ def run_tune_campaign(
                 tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
                 workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
                 resamples=promotion_resamples,
+                # Same memoized verifier instance reused across both loads --
+                # correctness-evidence generation changes promotion evidence/
+                # state, not canonical->digest identity, so the first pass's
+                # already-verified canonicals hit the memo cache for free.
+                signature_digest_verifier=signature_digest_verifier,
             )
         )
 
@@ -450,7 +548,7 @@ def run_tune_campaign(
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(
-        schema_version=1,
+        schema_version=2,
         campaign_run_id=campaign_run_id,
         model_path=str(model_path),
         platform_name=platform_name,
@@ -459,6 +557,7 @@ def run_tune_campaign(
         effective_tune_context=profile.tune_context,
         record=_stage_identity(record_result),
         tune=_stage_identity(tune_result),
+        signature_verifier=_stage_identity(signature_verifier_result),
         correctness=(
             _stage_identity(correctness_result)
             if correctness_result is not None else None
