@@ -131,13 +131,30 @@ def parse_kernel_trace(kernel_trace_csv: Path) -> tuple[KernelStat, ...]:
     return tuple(sorted(stats, key=lambda k: k.total_us, reverse=True))
 
 
+# HI134: real-hardware evidence (2026-08-28, hi134-meta-baseline-01, Brutus
+# {0,1,2}) found that ANY row in the RCCL trace is not evidence a real
+# collective ran. ncclGetVersion/ncclGetUniqueId/ncclCommInitAll/
+# ncclCommGetAsyncError/ncclCommDestroy all appear even under
+# GGML_HIP_REDUCE_PLAN=meta, where every actual reduce call is diverted to
+# META and RCCL never performs a collective (ncclCommInitAll succeeding is
+# expected per HI85 -- the crash there is inside the collective kernel
+# launch, not init). Only these function names indicate a real collective
+# was attempted.
+_RCCL_COLLECTIVE_FUNCTIONS = frozenset((
+    "ncclAllReduce", "ncclBroadcast", "ncclReduce", "ncclAllGather",
+    "ncclReduceScatter", "ncclSend", "ncclRecv", "ncclGroupEnd",
+))
+
+
 def _rccl_activity_seen(output_dir: Path) -> bool:
     rccl_csv = _find_one(output_dir, "*rccl*trace.csv") or _find_one(output_dir, "*rccl*.csv")
     if rccl_csv is None or not rccl_csv.is_file():
         return False
     with rccl_csv.open(encoding="utf-8", newline="") as f:
-        rows = list(csv.reader(f))
-    return len(rows) > 1  # header + at least one real row
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None or "Function" not in reader.fieldnames:
+            return False
+        return any(row.get("Function") in _RCCL_COLLECTIVE_FUNCTIONS for row in reader)
 
 
 def build_gpu_profile_pass(
