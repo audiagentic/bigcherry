@@ -319,6 +319,15 @@ class StaleReportTests(unittest.TestCase):
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(stale, self.upstream)
 
+    def test_selector_widened_since_report_is_stale(self):
+        # No patch bytes, overlay, or revision moved -- just the selector's
+        # OWN resolution changed (e.g. an uncommitted config/recipes.toml
+        # edit widening a recipe), which none of the digest/SHA checks would
+        # otherwise notice.
+        (self.patches_root / "0200_extra.py").write_text(CLEAN_PATCH, encoding="utf-8")
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase._require_fresh(dict(self.report), self.upstream)
+
     def test_apply_known_good_rejects_stale_report(self):
         report_path = self.base / "report.json"
         stale = dict(self.report, upstream_revision="0" * 40)
@@ -410,13 +419,21 @@ class ApplyKnownGoodTests(unittest.TestCase):
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="generated")
+        record.promotion = {"fake": "pointer"}
+        record.manifest_hash = "fake-hash"
         with mock.patch("bigcherry.__main__._record_for", return_value=record):
             with self.assertRaises(rebase.RebaseCheckError):
                 rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
-            # --force explicitly accepts invalidating later-stage evidence.
+            # --force explicitly accepts invalidating later-stage evidence --
+            # but it must actually invalidate it, not silently leave a
+            # 'generated' tree's promotion/manifest pointing at a checkout
+            # that was just replaced with an incomplete composition.
             result = rebase.apply_known_good(self.upstream, report_path, force=True, dry_run=False)
         self.assertTrue(result.ok)
         self.assertTrue(result.partial)
+        self.assertEqual(record.stage, "broken")
+        self.assertIsNone(record.promotion)
+        self.assertEqual(record.manifest_hash, "")
 
 
 if __name__ == "__main__":
