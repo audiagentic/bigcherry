@@ -130,12 +130,26 @@ class GluTests(unittest.TestCase):
             with self.assertRaises(sc.UnauditedSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
-    def test_glu_non_gate_fusion_is_unsupported(self):
+    def test_glu_bias_fusion_with_nonzero_glu_op_is_invalid(self):
+        # adversarial-review follow-up: fusion=BIAS means no gate tensor at
+        # all, so it can never legitimately carry a nonzero glu_op (the real
+        # producer only sets glu_op when fusion->gate is non-null) -- this
+        # combination cannot come from a real dispatch and must be INVALID,
+        # not merely unaudited (it was previously misclassified as
+        # UnauditedSignatureDomain, eligible for HI136 quarantine).
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             vendor = _write_fixture_vendor(Path(tmp))
-            sig = dict(GLU_ALL_ZERO, fusion=1)  # BIAS, not GATE
-            with self.assertRaises(sc.UnauditedSignatureDomain):
+            sig = dict(GLU_ALL_ZERO, fusion=1)  # BIAS, not GATE, but glu_op still 2
+            with self.assertRaises(sc.InvalidSignatureDomain):
+                sc.hip_required_capabilities(sig, vendor_root=vendor)
+
+    def test_glu_unknown_fusion_kind_is_invalid(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            sig = dict(GLU_ALL_ZERO, fusion=99)
+            with self.assertRaises(sc.InvalidSignatureDomain):
                 sc.hip_required_capabilities(sig, vendor_root=vendor)
 
     def test_glu_unfusable_glu_op_is_unsupported(self):

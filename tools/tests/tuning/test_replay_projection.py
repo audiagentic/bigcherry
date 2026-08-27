@@ -930,6 +930,62 @@ class WinnerVerificationGateTests(unittest.TestCase):
                 dispatch_db=self.dispatch_db, require_winner_verification=True,
             )
 
+    def test_spoofed_seeded_field_does_not_bypass_attestation(self):
+        # adversarial-review follow-up: read_results() preserves arbitrary
+        # JSON fields from the measurements artifact verbatim, so a forged
+        # row could set "seeded": true itself hoping to be treated as an
+        # operator seed override. Authority must come ONLY from membership
+        # in the real, independently-loaded seed_overrides dict (no
+        # --seed-file supplied here at all) -- the row must still be
+        # excluded, exactly like any other unattested genuine measurement.
+        # Attest the OTHER row (s2) so the export doesn't fail simply
+        # because nothing survives at all -- this isolates the assertion to
+        # "the spoofed row specifically was excluded," not "everything was."
+        s2_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s2_hex),),
+        ).fetchone()[0]
+        s2_winner_id = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, s2_signature_id),
+        ).fetchone()[0]
+        verification_state.record_winner_verification(self.conn, winner_id=s2_winner_id)
+        self.conn.commit()
+
+        self._rewrite_result(self.s1_hex, seeded=True)
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        signatures = {entry["signature"] for entry in entries}
+        self.assertNotIn(self.s1_hex, signatures)
+        self.assertIn(self.s2_hex, signatures)
+
+    def test_genuine_seed_file_override_still_exempt_from_attestation(self):
+        # A REAL --seed-file entry (independent operator authority, HI22)
+        # must remain exempt even though the underlying measurement was
+        # never strengthened-attested -- this is the positive control for
+        # the fix above: it isn't that seed overrides stopped working, only
+        # that the artifact's own claim of being seeded is no longer trusted.
+        seed_dispatch = replay_module.portable_tuning_key("bb" * 16, self.s1_hex)
+        seed_file = self.tmp_path / "seed.json"
+        seed_file.write_text(
+            json.dumps({seed_dispatch: "mmvq:native:v1"}), encoding="utf-8",
+        )
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+            seed_file=seed_file,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        digests = {entry["dispatch"] for entry in entries}
+        self.assertIn(seed_dispatch, digests)
+
 
 if __name__ == "__main__":
     unittest.main()

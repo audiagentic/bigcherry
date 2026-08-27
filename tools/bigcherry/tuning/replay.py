@@ -938,7 +938,16 @@ def build(
             for digest_hex, record in sorted(entries.items()):
                 # Explicit operator seed overrides retain their existing
                 # authority semantics; this gate protects measured winners.
-                if record.get("seeded"):
+                # adversarial-review follow-up: authority MUST come from
+                # membership in the independently-loaded seed_overrides
+                # dict, never from the record's own "seeded" field --
+                # read_results() preserves arbitrary JSON fields from the
+                # measurements artifact verbatim, so a forged/promoted row
+                # could otherwise smuggle "seeded": true past this gate and
+                # bypass winner_verification entirely (a native winner is
+                # especially exposed, since existing gates already treat
+                # native as safe without requiring correctness evidence).
+                if digest_hex in seed_overrides:
                     verified_entries[digest_hex] = record
                     continue
                 signature_hex = record.get("signature")
