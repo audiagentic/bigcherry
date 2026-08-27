@@ -369,10 +369,11 @@ class MaterializeSourceTests(unittest.TestCase):
             # with filesystem access to both would do exactly this.
             (destination / "source.txt").write_text("forged content\n", encoding="utf-8")
             forged_tree_oid = source_identity.git_tree_oid(destination)
-            forged_slice_id = source_identity.source_slice_id(
-                upstream_revision=revision, tree_oid=forged_tree_oid, object_format="sha1",
-            )
             record = json.loads(metadata_path.read_text(encoding="utf-8"))
+            forged_slice_id = source_identity.source_slice_id(
+                upstream_revision=revision, tree_oid=forged_tree_oid,
+                object_format=record["git_object_format"],
+            )
             record["source_tree_oid"] = forged_tree_oid
             record["source_slice_id"] = forged_slice_id
             metadata_path.chmod(0o644)
@@ -389,6 +390,34 @@ class MaterializeSourceTests(unittest.TestCase):
                 materialize_source(
                     context, plan, allow_dirty_bigcherry=True, verify_strict=True,
                 )
+
+    def test_verify_strict_succeeds_on_an_untampered_overlay_that_adds_a_new_file(self):
+        """PA17/C2 regression (adversarial-review follow-up): an overlay
+        that adds a NEW file -- the entire point of an overlay -- makes
+        that file untracked in the fresh scratch worktree
+        _verify_by_rematerialization() builds. git_tree_oid() raises on
+        any untracked file not explicitly allowed, so the scratch
+        comparison must be given the SAME allowed_untracked set
+        materialize() itself computed, or a completely legitimate,
+        untampered cache hit would fail closed for the wrong reason."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            context.overlay_root.mkdir(parents=True, exist_ok=True)
+            (context.overlay_root / "new_overlay_file.txt").write_text(
+                "added by overlay\n", encoding="utf-8"
+            )
+            plan = SourcePlan(revision, True, (), None)
+
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+            # Must not raise: the untampered cache hit's scratch
+            # re-materialization also has the new overlay file as an
+            # (allowed) untracked addition, so the tree OIDs must agree.
+            served = materialize_source(
+                context, plan, allow_dirty_bigcherry=True, verify_strict=True,
+            )
+            self.assertIn("source_tree_oid", served)
 
 
 class PublishBuildOutputsTests(unittest.TestCase):
