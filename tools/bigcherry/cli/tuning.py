@@ -293,3 +293,69 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
     else:
         # Backward compat: positional arg means record mode (no subcommand)
         return cmd_inventory(args, subcmd="record")
+
+
+def cmd_tune_campaign(args: Namespace) -> int:
+    """HI130: the full record->tune->correctness->promote->replay pipeline
+    as one command. See tuning/workflow.py for the actual orchestration --
+    this handler only resolves CLI-level context/config and renders the
+    result, mirroring cli/build.py::cmd_build_new's own shape.
+    """
+    from ..core import config as campaign_config
+    from ..core.artifacts import ArtifactStore
+    from ..core.context import ProjectContext
+    from ..tuning import workflow
+    from dataclasses import asdict
+
+    context = ProjectContext.resolve(
+        work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
+    )
+    try:
+        cfg = campaign_config.load(context.config_path)
+    except campaign_config.ConfigError as exc:
+        print(f"tune-campaign: {exc}", file=sys.stderr)
+        return 2
+
+    if args.runtime_profile not in cfg.runtime_profiles:
+        print(
+            f"tune-campaign: no runtime-profile named {args.runtime_profile!r} -- "
+            f"known: {sorted(cfg.runtime_profiles)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    store = ArtifactStore(context.work_root / "artifacts-store")
+    try:
+        receipt = workflow.run_tune_campaign(
+            context=context,
+            cfg=cfg,
+            store=store,
+            model_path=Path(args.model),
+            platform_name=args.platform,
+            devices=args.devices,
+            runtime_profile_name=args.runtime_profile,
+            source_name=args.source,
+            run_id=args.run_id,
+            workdir=Path(args.workdir) if args.workdir else None,
+            tune_screen_samples=args.tune_screen_samples,
+            tune_final_samples=args.tune_final_samples,
+            correctness_seeds=tuple(int(s) for s in args.correctness_seeds.split(",")),
+            promotion_q=args.q,
+            promotion_threshold_pct=args.threshold_pct,
+            promotion_resamples=args.resamples,
+        )
+    except workflow.TuneCampaignError as exc:
+        print(f"tune-campaign: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(asdict(receipt), indent=2, sort_keys=True))
+    else:
+        print(f"campaign_run_id: {receipt.campaign_run_id}")
+        print(f"promoted: {receipt.promoted_before_evidence} -> {receipt.promoted_after_evidence}")
+        if receipt.replay_coverage is not None:
+            print(f"replay coverage: {receipt.replay_coverage}")
+        print(
+            f"receipt: {context.work_root / 'tune-campaigns' / receipt.campaign_run_id / 'tune-campaign-receipt.json'}"
+        )
+    return 0

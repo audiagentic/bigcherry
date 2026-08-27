@@ -237,6 +237,32 @@ lanes = [
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
+# HI130: named server-args + tuner-context bundles for `bigcherry
+# tune-campaign --runtime-profile <name>`, so a real production launch
+# profile (matching the dual-xtx-27b bench-harness baseline) is
+# reproducible from one flag instead of hand-assembling matching launch
+# flags each time. tune-context is deliberately separate from and smaller
+# than production-context -- the tuner's per-candidate timing workspace
+# needs VRAM headroom beyond weights+KV-cache (a real single-GPU R9700 27B
+# tune run OOM'd at the model's own max context; -c 4096 fixed it).
+[runtime-profile.production-dual-xtx]
+server-args = [
+  "-sm", "tensor", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
+[runtime-profile.production-safe-single]
+server-args = ["--flash-attn", "on"]
+tune-context = 4096
+production-context = 8192
+min-free-vram-bytes-per-device = 1073741824  # 1GiB headroom
+
 # Explicit compatibility aliases for the legacy CLI. These selectors are not
 # production source composition; the v2 source definitions above are.
 [compat.recipe.dev]

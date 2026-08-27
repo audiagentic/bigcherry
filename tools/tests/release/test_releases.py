@@ -66,6 +66,45 @@ class ReleasePublicationTests(unittest.TestCase):
             self.assertEqual(len(json.loads((root / "index.json").read_text(
                 encoding="utf-8"))["releases"]), 1)
 
+    def test_resaving_unchanged_content_does_not_dirty_the_files(self):
+        # HI130: save()/_rebuild_index() used to unconditionally rewrite
+        # updated_at/generated_at even when nothing substantive changed --
+        # an idempotent audit/apply/generate re-save would still dirty
+        # tracked releases/*.json, tripping require_clean_bigcherry() on the
+        # campaign build engine for no real reason.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch.object(releases, "RELEASES_DIR", root), \
+                    mock.patch.object(releases, "INDEX_PATH", root / "index.json"):
+                record = releases.ReleaseRecord(revision="abc123", release_tag="b10362")
+                path = record.save()
+                first_bytes = path.read_bytes()
+                first_index_bytes = (root / "index.json").read_bytes()
+                first_updated_at = record.updated_at
+
+                # A second save() of an equivalent record (same substantive
+                # content, fresh object) must not touch either file's bytes.
+                record2 = releases.ReleaseRecord(revision="abc123", release_tag="b10362")
+                with mock.patch.object(
+                    releases, "_atomic_write_json", wraps=releases._atomic_write_json,
+                ) as write:
+                    record2.save()
+                self.assertEqual(write.call_count, 0)
+                self.assertEqual(path.read_bytes(), first_bytes)
+                self.assertEqual((root / "index.json").read_bytes(), first_index_bytes)
+                self.assertEqual(record2.updated_at, first_updated_at)
+
+                # A real content change still writes for real.
+                record3 = releases.ReleaseRecord(
+                    revision="abc123", release_tag="b10362", stage="broken",
+                )
+                with mock.patch.object(
+                    releases, "_atomic_write_json", wraps=releases._atomic_write_json,
+                ) as write:
+                    record3.save()
+                self.assertEqual(write.call_count, 2)
+                self.assertNotEqual(path.read_bytes(), first_bytes)
+
 
 class PromotionWiringTests(unittest.TestCase):
     """RE13: `validated` can only be reached through a real, campaign-backed

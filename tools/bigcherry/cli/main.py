@@ -39,7 +39,13 @@ from .patch import (
     cmd_patches,
 )
 from .source import cmd_audit, cmd_pull
-from .tuning import cmd_generate, cmd_inventory, cmd_project_replay, cmd_replay_inspect
+from .tuning import (
+    cmd_generate,
+    cmd_inventory,
+    cmd_project_replay,
+    cmd_replay_inspect,
+    cmd_tune_campaign,
+)
 
 _CLI_DESCRIPTION = """The ``bigcherry`` command line.
 
@@ -451,6 +457,39 @@ def build_parser() -> argparse.ArgumentParser:
         "'--source bigcherry-native --experiment rd19-only'",
     )
     new_build_cmd.set_defaults(func=cmd_build_new)
+
+    # HI130: the full record->tune->correctness->promote->replay pipeline
+    # as one command -- see tuning/workflow.py for the actual orchestration.
+    tune_campaign_cmd = sub.add_parser(
+        "tune-campaign",
+        help="run the full record->tune->correctness->promote->replay pipeline as one command",
+    )
+    tune_campaign_cmd.add_argument("--llama-root", default=None)
+    tune_campaign_cmd.add_argument("--source", default="bigcherry")
+    tune_campaign_cmd.add_argument("--platform", required=True, help="e.g. linux-multi")
+    tune_campaign_cmd.add_argument("--model", required=True, help="gguf model path")
+    tune_campaign_cmd.add_argument(
+        "--devices", required=True, help="HIP_VISIBLE_DEVICES value, e.g. '0,1'"
+    )
+    tune_campaign_cmd.add_argument(
+        "--runtime-profile", required=True,
+        help="named profile from config/recipes.toml's [runtime-profile.<name>] "
+        "(e.g. 'production-dual-xtx', 'production-safe-single')",
+    )
+    tune_campaign_cmd.add_argument(
+        "--workdir", default=None, help="defaults to work_root/tune-campaigns/<run_id>"
+    )
+    tune_campaign_cmd.add_argument("--run-id", default=None)
+    tune_campaign_cmd.add_argument("--tune-screen-samples", type=int, default=3)
+    tune_campaign_cmd.add_argument("--tune-final-samples", type=int, default=15)
+    tune_campaign_cmd.add_argument("--correctness-seeds", default="1,2,3")
+    tune_campaign_cmd.add_argument("--q", type=float, default=0.05)
+    tune_campaign_cmd.add_argument("--threshold-pct", type=float, default=1.0)
+    tune_campaign_cmd.add_argument("--resamples", type=int, default=10_000)
+    tune_campaign_cmd.add_argument(
+        "--json", action="store_true", help="print the WorkflowReceipt as JSON to stdout"
+    )
+    tune_campaign_cmd.set_defaults(func=cmd_tune_campaign)
 
     from ..tuning import schema as _schema
 

@@ -41,6 +41,18 @@ def _strings(raw: object, where: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
+def _argv(raw: object, where: str) -> tuple[str, ...]:
+    """An ordered list of strings where duplicates are expected and
+    meaningful (e.g. a CLI argv: repeated flag VALUES like "q8_0" appearing
+    twice for two different flags are normal), unlike ``_strings()``'s set
+    semantics (patch/architecture lists, where a duplicate is a mistake)."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+        raise ConfigError(f"{where} must be a list of non-empty strings")
+    return tuple(raw)
+
+
 def _options(raw: object, where: str) -> tuple[tuple[str, str], ...]:
     table = _table(raw, where)
     result: list[tuple[str, str]] = []
@@ -124,6 +136,28 @@ class CampaignProfile:
 
 
 @dataclass(frozen=True)
+class RuntimeProfile:
+    """HI130: server args + tuner context bundled together and named, so a
+    tune-campaign run is reproducible from one --runtime-profile flag
+    instead of an operator hand-assembling matching launch flags each time.
+
+    ``tune_context`` is deliberately separate from ``production_context``:
+    the tuner's per-candidate timing workspace needs VRAM headroom beyond
+    just weights+KV-cache, so tune-mode must never inherit a model's own
+    (possibly huge) max context by default -- that OOM'd a real single-GPU
+    R9700 27B tune run this session. ``min_free_vram_bytes_per_device`` is a
+    preflight threshold (see core/gpu.py), not a soft hint -- a request that
+    fails it is rejected before launch, never silently downgraded.
+    """
+
+    name: str
+    server_args: tuple[str, ...]
+    tune_context: int
+    production_context: int
+    min_free_vram_bytes_per_device: int
+
+
+@dataclass(frozen=True)
 class Tree:
     """RE48: a known working tree of this repo, probed by pin-status.
 
@@ -154,6 +188,13 @@ class Config:
     # RE48: default () keeps every pre-RE48 `Config(...)` constructor
     # (which never knew `trees`) source-compatible.
     trees: tuple[Tree, ...] = ()
+    # HI130: default {} keeps every pre-HI130 `Config(...)` constructor
+    # (which never knew `runtime_profiles`) source-compatible.
+    runtime_profiles: dict[str, RuntimeProfile] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.runtime_profiles is None:
+            object.__setattr__(self, "runtime_profiles", {})
 
 
 def load(path: str | Path) -> Config:
@@ -183,6 +224,7 @@ def load(path: str | Path) -> Config:
             "compat",
             "campaign",
             "trees",
+            "runtime-profile",
         }
     )
     if unknown_top_level:
@@ -367,6 +409,39 @@ def load(path: str | Path) -> Config:
             )
         campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
 
+    runtime_profiles: dict[str, RuntimeProfile] = {}
+    for name, body in _table(raw.get("runtime-profile"), "runtime-profile").items():
+        data = _table(body, f"runtime-profile.{name}")
+        tune_context = data.get("tune-context")
+        if not isinstance(tune_context, int) or isinstance(tune_context, bool) or tune_context <= 0:
+            raise ConfigError(f"runtime-profile.{name}.tune-context must be a positive integer")
+        production_context = data.get("production-context")
+        if (
+            not isinstance(production_context, int)
+            or isinstance(production_context, bool)
+            or production_context <= 0
+        ):
+            raise ConfigError(
+                f"runtime-profile.{name}.production-context must be a positive integer"
+            )
+        min_free_vram = data.get("min-free-vram-bytes-per-device")
+        if (
+            not isinstance(min_free_vram, int)
+            or isinstance(min_free_vram, bool)
+            or min_free_vram < 0
+        ):
+            raise ConfigError(
+                f"runtime-profile.{name}.min-free-vram-bytes-per-device must be a "
+                f"non-negative integer"
+            )
+        runtime_profiles[name] = RuntimeProfile(
+            name=name,
+            server_args=_argv(data.get("server-args"), f"runtime-profile.{name}.server-args"),
+            tune_context=tune_context,
+            production_context=production_context,
+            min_free_vram_bytes_per_device=min_free_vram,
+        )
+
     return Config(
         pinned,
         patch_sets,
@@ -377,4 +452,5 @@ def load(path: str | Path) -> Config:
         campaigns,
         path,
         tuple(trees),
+        runtime_profiles,
     )
