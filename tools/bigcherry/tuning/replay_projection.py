@@ -46,6 +46,7 @@ from . import hip_capabilities as hc
 from . import inventory
 from . import replay as replay_module
 from . import signature_capabilities as sc
+from . import verification_state
 from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..source.audit import git_revision
 
@@ -62,6 +63,7 @@ class ProjectionSummary:
     omitted_missing_target_capability: int
     omitted_unsupported_domain: int
     omitted_candidate_mismatch: int
+    omitted_unverified_source: int
 
 
 def _load_source_capabilities(
@@ -272,8 +274,9 @@ def _load_source_manifest(
 
 def _require_row_belongs_to_build(
     conn: sqlite3.Connection, *, source_build_id: int, row: dict[str, Any], signature_hex: str,
-) -> None:
-    """Prove that the artifact row is the exact DB-recorded winner identity.
+) -> int:
+    """Prove that the artifact row is the exact DB-recorded winner identity,
+    and return that winner row's own winner_id.
 
     A verified build-level capability attestation is not proof that any GIVEN
     result row in the CURRENT artifact actually belongs to that build -- rows
@@ -284,6 +287,14 @@ def _require_row_belongs_to_build(
     winner's foreign key resolves to the candidate with that stable name in
     this same build; a dispatch/signature membership check alone cannot prove
     any of those claims.
+
+    Returning winner_id (rather than just a bool) lets the caller separately
+    ask HI127's own question -- was THIS EXACT winner row ever ingested
+    through the HI125-strengthened path -- without a second, redundant
+    lookup. Row identity and verification state are deliberately two
+    different checks: a forged/mismatched row must remain a hard
+    ProjectionError, while a genuine but pre-HI127 (unattested) row is
+    instead an ordinary, counted omission -- see the caller.
     """
     dispatch_hex = row.get("dispatch")
     if not isinstance(dispatch_hex, str):
@@ -304,7 +315,7 @@ def _require_row_belongs_to_build(
     except ValueError as exc:
         raise ProjectionError(f"result row contains a malformed identity digest: {row!r}") from exc
     match = conn.execute(
-        "SELECT 1 "
+        "SELECT w.winner_id "
         "FROM measurement m "
         "JOIN winner w ON w.build_id = m.build_id "
         " AND w.hardware_id = m.hardware_id "
@@ -331,6 +342,7 @@ def _require_row_belongs_to_build(
             f"build_id={source_build_id} -- this row cannot be proven to belong to the "
             f"build whose capabilities were verified"
         )
+    return match[0]
 
 
 def _candidate_implementation_is_equivalent(
@@ -583,15 +595,27 @@ def project_measurements(
         omitted_missing_target = 0
         omitted_unsupported = 0
         omitted_candidate = 0
+        omitted_unverified = 0
 
         for row in results:
             examined += 1
             signature_hex = row.get("signature")
             if not isinstance(signature_hex, str):
                 raise ProjectionError(f"result row missing a valid signature digest: {row!r}")
-            _require_row_belongs_to_build(
+            winner_id = _require_row_belongs_to_build(
                 conn, source_build_id=source_build_id, row=row, signature_hex=signature_hex,
             )
+            # HI127: row-binding proved this row IS the authoritative winner
+            # recorded against source_build_id; now ask the separate question
+            # of whether that exact winner row was ever ingested through the
+            # HI125-strengthened path. A genuine pre-HI127 (unattested) row
+            # is an ordinary, expected omission -- never a ProjectionError,
+            # since raising here would treat "not yet re-attested" the same
+            # as "cannot be proven to belong to this build", which are not
+            # the same failure at all.
+            if not verification_state.is_winner_verified(conn, winner_id=winner_id):
+                omitted_unverified += 1
+                continue
             canonical = _load_canonical_signature(conn, signature_hex)
             try:
                 required = sc.hip_required_capabilities(canonical, vendor_root=vendor_root)
@@ -648,4 +672,5 @@ def project_measurements(
         omitted_missing_target_capability=omitted_missing_target,
         omitted_unsupported_domain=omitted_unsupported,
         omitted_candidate_mismatch=omitted_candidate,
+        omitted_unverified_source=omitted_unverified,
     )

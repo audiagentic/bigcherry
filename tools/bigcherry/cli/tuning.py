@@ -103,6 +103,7 @@ def cmd_project_replay(args: Namespace) -> int:
         "omitted_missing_producer_capability": summary.omitted_missing_producer_capability,
         "omitted_missing_target_capability": summary.omitted_missing_target_capability,
         "omitted_unsupported_domain": summary.omitted_unsupported_domain,
+        "omitted_unverified_source": summary.omitted_unverified_source,
     }
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -111,7 +112,8 @@ def cmd_project_replay(args: Namespace) -> int:
             f"examined {report['examined']}, retained {report['retained']} -- "
             f"omitted: {report['omitted_missing_producer_capability']} missing-producer-capability, "
             f"{report['omitted_missing_target_capability']} missing-target-capability, "
-            f"{report['omitted_unsupported_domain']} unsupported-domain"
+            f"{report['omitted_unsupported_domain']} unsupported-domain, "
+            f"{report['omitted_unverified_source']} unverified-source"
         )
     return 0
 

@@ -17,6 +17,7 @@ from bigcherry.tuning import catalog  # noqa: E402
 from bigcherry.tuning import dispatch_abi  # noqa: E402
 from bigcherry.tuning import replay as replay_module  # noqa: E402
 from bigcherry.tuning import replay_projection as rp  # noqa: E402
+from bigcherry.tuning import verification_state  # noqa: E402
 from bigcherry.source.audit import git_revision  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -210,7 +211,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
                     candidate_id,
                 ),
             )
-            self.conn.execute(
+            winner_cursor = self.conn.execute(
                 "INSERT INTO winner (build_id, hardware_id, signature_id, objective, dispatch_digest, "
                 "candidate_id, stable_name, native_stable_name, is_native, improvement_pct, "
                 "median_us, p95_us) VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, 1, 0.0, 1.0, 1.0)",
@@ -219,6 +220,13 @@ class ProjectMeasurementsTests(unittest.TestCase):
                     bytes.fromhex(replay_module.portable_tuning_key(hardware_hex, signature_hex)),
                     candidate_id, "mmvq:native:v1", "mmvq:native:v1",
                 ),
+            )
+            # HI127: this fixture's winner rows are the DEFAULT "already
+            # strengthened-ingest attested" case, since these tests exercise
+            # capability/candidate projection semantics, not HI127 itself --
+            # see WinnerVerificationGateTests below for the unattested case.
+            verification_state.record_winner_verification(
+                self.conn, winner_id=winner_cursor.lastrowid,
             )
         self.conn.commit()
 
@@ -803,6 +811,79 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
                 replay_module._validate_correctness_gate(
                     entries, dispatch_db, build_a, None,
                 )
+
+
+class WinnerVerificationGateTests(unittest.TestCase):
+    """HI127: an unattested winner row is omitted, not raised, and a forged
+    row remains a hard ProjectionError regardless of attestation state.
+
+    Reuses ProjectMeasurementsTests' own setUp (not subclassed, to avoid
+    re-running its whole inherited test suite here) then strips the default
+    attestation it applies, since these tests specifically exercise the
+    UNattested case."""
+
+    def setUp(self):
+        ProjectMeasurementsTests.setUp(self)
+        self.conn.execute("DELETE FROM winner_verification")
+        self.conn.commit()
+
+    def tearDown(self):
+        ProjectMeasurementsTests.tearDown(self)
+
+    def _rewrite_result(self, signature_hex: str, **updates: str) -> None:
+        ProjectMeasurementsTests._rewrite_result(self, signature_hex, **updates)
+
+    def _set_source_capabilities(self, mask_hex: str) -> None:
+        ProjectMeasurementsTests._set_source_capabilities(self, mask_hex)
+
+    def test_unattested_winner_is_omitted_not_raised(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        output = self.tmp_path / "out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+            target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+        )
+        self.assertEqual(summary.examined, 2)
+        self.assertEqual(summary.retained, 0)
+        self.assertEqual(summary.omitted_unverified_source, 2)
+
+    def test_reattested_winner_id_is_retained(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        s1_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s1_hex),),
+        ).fetchone()[0]
+        winner_row = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, s1_signature_id),
+        ).fetchone()
+        verification_state.record_winner_verification(self.conn, winner_id=winner_row[0])
+        self.conn.commit()
+        output = self.tmp_path / "out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+            target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+        )
+        self.assertEqual(summary.retained, 1)
+        self.assertEqual(summary.omitted_unverified_source, 1)
+        results = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()
+                   if json.loads(line).get("kind") == "result"]
+        self.assertEqual(results[0]["signature"], self.s1_hex)
+
+    def test_forged_row_still_raises_regardless_of_verification_state(self):
+        # A row that fails identity-binding must remain a hard error even
+        # though this test class has zero winner_verification rows -- the
+        # two checks are independent; row-forgery is never "just unverified."
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        self._rewrite_result(self.s1_hex, winner="not-a-real-candidate")
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
 
 
 if __name__ == "__main__":

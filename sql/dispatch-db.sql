@@ -55,8 +55,20 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- schema_version '7' (HI121): adds build_capability and fixes
 -- winner_dispatch_idx/vk_winner_dispatch_idx being wrongly global-unique.
 -- See sql/migrations/0007_producer_capabilities.sql.
+-- schema_version '8' (HI121 close-out step 6, HI127): adds
+-- winner_verification, a per-WINNER (not per-signature, not per-build)
+-- attestation that this exact winner row was ingested through the HI125-
+-- strengthened path (build capability/descriptor proof passed AND this
+-- row's canonical/digest passed C++ verification). Per-winner, not
+-- per-(build,signature), because inventory.py's own INSERT OR REPLACE INTO
+-- winner does not preserve winner_id across a replace -- a later
+-- unverified re-ingest of the same (build, hardware, signature) key gets a
+-- genuinely NEW winner_id, and winner_verification's ON DELETE CASCADE FK
+-- means the old attestation is destroyed along with the old row it
+-- attested, never left dangling against a replacement it never proved
+-- anything about. See sql/migrations/0008_winner_verification.sql.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '7'),
+    ('schema_version',    '8'),
     ('signature_schema',  '2'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -332,6 +344,25 @@ CREATE INDEX IF NOT EXISTS winner_improvement_idx
 -- is weakened, since the real uniqueness still lives on the table itself.
 CREATE INDEX IF NOT EXISTS winner_dispatch_idx
     ON winner(dispatch_digest, objective);
+
+-- ------------------------------------------------------- winner_verification
+-- HI121 close-out step 6 (HI127): per-winner attestation that THIS row was
+-- ingested through the HI125-strengthened path. Absence means UNKNOWN/
+-- not-strengthened, never an implicit pass -- same "absence means unknown"
+-- policy build_capability already established, not a new convention.
+-- ON DELETE CASCADE is load-bearing: inventory.py's INSERT OR REPLACE INTO
+-- winner does not preserve winner_id across a conflict, so a later
+-- unverified re-ingest of the same (build,hardware,objective,dispatch)
+-- key deletes the old winner row (and, via this cascade, its stale
+-- attestation) and creates a brand-new, correctly unattested winner_id --
+-- no separate bookkeeping needed to detect "this winner was replaced".
+CREATE TABLE IF NOT EXISTS winner_verification (
+    winner_id             INTEGER PRIMARY KEY
+                           REFERENCES winner(winner_id) ON DELETE CASCADE,
+    verification_profile  TEXT    NOT NULL,
+    verified_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    CHECK (verification_profile = 'hi121-strengthened-ingest-v1')
+);
 
 -- --------------------------------------------------------------- replay_miss
 -- Bounded miss log written by replay builds via GGML_HIP_DISPATCH_MISS.

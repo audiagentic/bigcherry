@@ -29,6 +29,7 @@ from typing import Any, Callable
 from ..core import paths
 from . import catalog
 from . import dispatch_abi
+from . import verification_state
 from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
@@ -37,7 +38,7 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "7"
+CURRENT_DB_SCHEMA_VERSION = "8"
 #: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
 #: hardware/signature/candidate/observation/measurement/winner), purely
 #: additive -- zero changes to any schema-4 table/column/index. Real
@@ -718,7 +719,7 @@ def build_database(
 def _verify_and_persist_hip_capabilities(
     connection: sqlite3.Connection, *,
     header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
-) -> None:
+) -> bool:
     """HI121 M2: verify the compiled producer's own self-reported capability
     mask (measurements header's ``producer_capabilities``) against the
     manifest that claims to describe that same build, and persist it to
@@ -730,15 +731,23 @@ def _verify_and_persist_hip_capabilities(
     signature_schema, commit date, or any other proxy. This is the one hard
     requirement HI121's design calls out for this function: Python must not
     be able to arbitrarily self-declare or backfill a capability claim.
+
+    HI127: the return value additionally feeds ``winner_verification`` --
+    True means every check in this function ran and passed for THIS load
+    (including when an identical build_capability row already existed);
+    False means this load could not establish the current build/header/
+    manifest capability/descriptor proof at all (missing manifest, or a
+    measurements/manifest predating the capability field), which is a
+    normal, non-error outcome, not a failure of this function.
     """
     if manifest is None:
-        return
+        return False
     header_caps_hex = header.get("producer_capabilities")
     manifest_caps_hex = manifest.get("producer_capabilities")
     if not isinstance(header_caps_hex, str) or not isinstance(manifest_caps_hex, str):
         # Older measurements/manifest predate this field -- nothing to
         # verify or persist yet, not an error.
-        return
+        return False
 
     if header.get("source_revision") != manifest.get("source_revision"):
         raise RecordError(
@@ -808,11 +817,12 @@ def _verify_and_persist_hip_capabilities(
                 "row on file -- capability claims are immutable once persisted, never silently "
                 "overwritten"
             )
-        return
+        return True
     connection.execute(
         "INSERT INTO build_capability (build_id, backend, producer_capabilities) VALUES (?, 'hip', ?)",
         (build_id, mask.to_bytes()),
     )
+    return True
 
 
 def load_measurements(
@@ -1148,9 +1158,19 @@ def load_measurements(
             )
             build_id = cursor.lastrowid
 
-        _verify_and_persist_hip_capabilities(
+        build_attested = _verify_and_persist_hip_capabilities(
             connection, header=header, manifest=manifest, build_id=build_id
         )
+        # HI127: a winner ingested under this load only qualifies for the
+        # strengthened-ingest attestation when BOTH halves of HI121's trust
+        # chain held for this exact load -- the build's own capability/
+        # descriptor proof (build_attested) AND a real C++ digest verifier
+        # being supplied at all. Per-row canonical/digest verification
+        # itself already happened (and raised on failure) inside
+        # _resolve_signature() via HI125's hardening -- reaching the winner
+        # write below with signature_digest_verifier is not None means this
+        # row's specific canonical already passed.
+        strengthened_ingest = build_attested and signature_digest_verifier is not None
 
         signatures = sorted(
             {
@@ -1617,7 +1637,7 @@ def load_measurements(
 
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
 
-                connection.execute(
+                winner_cursor = connection.execute(
                     "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, run_id, objective, "
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
@@ -1653,6 +1673,16 @@ def load_measurements(
                     ),
                 )
                 results_inserted += 1
+                # HI127: INSERT OR REPLACE gives a genuinely NEW winner rowid
+                # on a conflict (winner_id is not in the column list above),
+                # so this lastrowid always identifies exactly the row THIS
+                # load just wrote -- never a stale rowid from a prior,
+                # possibly-unverified insert that a naive (build,signature)
+                # key would have conflated with this one.
+                if strengthened_ingest and signature_id is not None:
+                    verification_state.record_winner_verification(
+                        connection, winner_id=winner_cursor.lastrowid,
+                    )
 
         connection.commit()
         return {
