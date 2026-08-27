@@ -143,6 +143,180 @@ def _percent(raw: object, where: str) -> float | None:
     return value
 
 
+def _non_negative_int(raw: object, where: str) -> int:
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        raise ExperimentContractError(
+            f"{where} must be a non-negative integer, got {raw!r}"
+        )
+    return raw
+
+
+def _optional_bool(raw: object, where: str) -> bool | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, bool):
+        raise ExperimentContractError(f"{where} must be a boolean")
+    return raw
+
+
+@dataclass(frozen=True, order=True)
+class DriverVersion:
+    """Comparable, structured driver version; free-form version strings are
+    intentionally not accepted by the contract schema."""
+
+    major: int
+    minor: int
+    patch: int = 0
+
+    def __post_init__(self) -> None:
+        for name, value in (("major", self.major), ("minor", self.minor),
+                            ("patch", self.patch)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ExperimentContractError(
+                    f"driver version {name} must be a non-negative integer, got {value!r}"
+                )
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
+def _driver_version(raw: object, where: str) -> DriverVersion:
+    if isinstance(raw, DriverVersion):
+        return raw
+    if not isinstance(raw, list) or len(raw) not in (2, 3):
+        raise ExperimentContractError(
+            f"{where} must be a [major, minor] or [major, minor, patch] integer list"
+        )
+    values = [_non_negative_int(value, f"{where}[{index}]")
+              for index, value in enumerate(raw)]
+    return DriverVersion(*values)
+
+
+@dataclass(frozen=True)
+class GpuCountConstraint:
+    """Inclusive GPU-count range. At least one bound must be declared."""
+
+    minimum: int | None = None
+    maximum: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.minimum is None and self.maximum is None:
+            raise ExperimentContractError(
+                "gpu_count must declare minimum and/or maximum"
+            )
+        for name, value in (("minimum", self.minimum), ("maximum", self.maximum)):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 1
+            ):
+                raise ExperimentContractError(
+                    f"gpu_count.{name} must be a positive integer, got {value!r}"
+                )
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ExperimentContractError(
+                "gpu_count.minimum must not exceed gpu_count.maximum"
+            )
+
+    def matches(self, actual: int) -> bool:
+        return ((self.minimum is None or actual >= self.minimum)
+                and (self.maximum is None or actual <= self.maximum))
+
+
+def _gpu_count_constraint(raw: object, where: str) -> GpuCountConstraint | None:
+    if raw is None:
+        return None
+    data = _table(raw, where)
+    unknown = sorted(set(data) - {"minimum", "maximum"})
+    if unknown:
+        raise ExperimentContractError(
+            f"{where} names unknown field(s): {', '.join(unknown)}"
+        )
+    minimum = data.get("minimum")
+    maximum = data.get("maximum")
+    if minimum is not None:
+        minimum = _non_negative_int(minimum, f"{where}.minimum")
+        if minimum == 0:
+            raise ExperimentContractError(f"{where}.minimum must be >= 1")
+    if maximum is not None:
+        maximum = _non_negative_int(maximum, f"{where}.maximum")
+        if maximum == 0:
+            raise ExperimentContractError(f"{where}.maximum must be >= 1")
+    return GpuCountConstraint(minimum=minimum, maximum=maximum)
+
+
+@dataclass(frozen=True)
+class DriverVersionConstraint:
+    """Inclusive structured driver-version range."""
+
+    minimum: DriverVersion | None = None
+    maximum: DriverVersion | None = None
+
+    def __post_init__(self) -> None:
+        if self.minimum is None and self.maximum is None:
+            raise ExperimentContractError(
+                "driver must declare minimum and/or maximum"
+            )
+        for name, value in (("minimum", self.minimum), ("maximum", self.maximum)):
+            if value is not None and not isinstance(value, DriverVersion):
+                raise ExperimentContractError(
+                    f"driver.{name} must be a DriverVersion or absent"
+                )
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ExperimentContractError(
+                "driver.minimum must not exceed driver.maximum"
+            )
+
+    def matches(self, actual: DriverVersion) -> bool:
+        return ((self.minimum is None or actual >= self.minimum)
+                and (self.maximum is None or actual <= self.maximum))
+
+
+def _driver_constraint(raw: object, where: str) -> DriverVersionConstraint | None:
+    if raw is None:
+        return None
+    data = _table(raw, where)
+    unknown = sorted(set(data) - {"minimum", "maximum"})
+    if unknown:
+        raise ExperimentContractError(
+            f"{where} names unknown field(s): {', '.join(unknown)}"
+        )
+    return DriverVersionConstraint(
+        minimum=(_driver_version(data["minimum"], f"{where}.minimum")
+                 if data.get("minimum") is not None else None),
+        maximum=(_driver_version(data["maximum"], f"{where}.maximum")
+                 if data.get("maximum") is not None else None),
+    )
+
+
+@dataclass(frozen=True)
+class DeviceTraits:
+    """Verified hardware facts supplied by an external detector or test.
+
+    ``driver_version`` is optional because the current repository has no
+    driver-detection implementation. A scope requiring ``driver`` therefore
+    fails closed unless a detector supplies this field explicitly.
+    """
+
+    integrated: bool
+    uma: bool
+    peer_access: bool
+    gpu_count: int
+    driver_version: DriverVersion | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (("integrated", self.integrated), ("uma", self.uma),
+                            ("peer_access", self.peer_access)):
+            if not isinstance(value, bool):
+                raise ExperimentContractError(f"hardware.{name} must be a boolean")
+        if isinstance(self.gpu_count, bool) or not isinstance(self.gpu_count, int) or self.gpu_count < 1:
+            raise ExperimentContractError(
+                f"hardware.gpu_count must be a positive integer, got {self.gpu_count!r}"
+            )
+        if self.driver_version is not None and not isinstance(self.driver_version, DriverVersion):
+            raise ExperimentContractError(
+                "hardware.driver_version must be a DriverVersion or absent"
+            )
+
+
 @dataclass(frozen=True)
 class SourceRef:
     source_id: str
@@ -177,9 +351,70 @@ class Target:
 
 @dataclass(frozen=True)
 class Scope:
+    """Execution scope, including optional verified device-trait requirements.
+
+    RD22's real requirement can now be expressed as
+    ``Scope(backend="hip", architectures=("gfx1151",), weight_types=(),
+    integrated=True, uma=True)``. The architecture remains useful for
+    compilation coverage, while integrated/UMA is the correctness eligibility
+    fact that distinguishes RD22 from discrete devices.
+
+    In TOML, a multi-GPU requirement is ``[scope.gpu_count]`` with
+    ``minimum = 2``; a driver requirement is ``[scope.driver]`` with a
+    structured ``minimum = [major, minor, patch]``. Version strings are not
+    accepted.
+    """
+
     backend: str
     architectures: tuple[str, ...]
     weight_types: tuple[str, ...]
+    integrated: bool | None = None
+    uma: bool | None = None
+    peer_access: bool | None = None
+    gpu_count: GpuCountConstraint | None = None
+    driver: DriverVersionConstraint | None = None
+
+
+def evaluate_scope_eligibility(scope: Scope, hardware: DeviceTraits | None) -> bool:
+    """Return whether verified hardware satisfies device-trait requirements.
+
+    Trait-bearing scopes require an explicit ``DeviceTraits`` observation;
+    missing observations, including an unavailable driver version, raise
+    ``ExperimentContractError`` rather than passing silently. A legacy scope
+    with no trait requirements remains eligible without hardware facts.
+    """
+    requirements_declared = any((scope.integrated is not None, scope.uma is not None,
+                                scope.peer_access is not None, scope.gpu_count is not None,
+                                scope.driver is not None))
+    if not requirements_declared:
+        return True
+    if hardware is None:
+        raise ExperimentContractError(
+            "device-trait eligibility cannot be verified without hardware traits"
+        )
+    if scope.integrated is not None and scope.integrated != hardware.integrated:
+        return False
+    if scope.uma is not None and scope.uma != hardware.uma:
+        return False
+    if scope.peer_access is not None and scope.peer_access != hardware.peer_access:
+        return False
+    if scope.gpu_count is not None and not scope.gpu_count.matches(hardware.gpu_count):
+        return False
+    if scope.driver is not None:
+        if hardware.driver_version is None:
+            raise ExperimentContractError(
+                "driver-version eligibility cannot be verified: hardware driver "
+                "detection is unavailable"
+            )
+        if not scope.driver.matches(hardware.driver_version):
+            return False
+    return True
+
+
+def _version_payload(version: DriverVersion | None) -> list[int] | None:
+    if version is None:
+        return None
+    return [version.major, version.minor, version.patch]
 
 
 @dataclass(frozen=True)
@@ -286,6 +521,23 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             "backend": contract.scope.backend,
             "architectures": list(contract.scope.architectures),
             "weight_types": list(contract.scope.weight_types),
+            "integrated": contract.scope.integrated,
+            "uma": contract.scope.uma,
+            "peer_access": contract.scope.peer_access,
+            "gpu_count": (
+                {
+                    "minimum": contract.scope.gpu_count.minimum,
+                    "maximum": contract.scope.gpu_count.maximum,
+                }
+                if contract.scope.gpu_count is not None else None
+            ),
+            "driver": (
+                {
+                    "minimum": _version_payload(contract.scope.driver.minimum),
+                    "maximum": _version_payload(contract.scope.driver.maximum),
+                }
+                if contract.scope.driver is not None else None
+            ),
         },
         "positive": {"models": list(contract.positive.models),
                      "workloads": list(contract.positive.workloads)},
@@ -315,7 +567,7 @@ def _contract_digest(contract: ExperimentContract) -> str:
         _identity_payload(contract), sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return hashlib.blake2b(
-        b"bigcherry/experiment-contract/v1\0" + encoded, digest_size=16
+        b"bigcherry/experiment-contract/v2\0" + encoded, digest_size=16
     ).hexdigest()
 
 
@@ -399,11 +651,26 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     prerequisites = _strings(data.get("prerequisites"), f"{where}.prerequisites")
 
     scope_data = _table(data.get("scope"), f"{where}.scope")
+    unknown_scope = sorted(set(scope_data) - {
+        "backend", "architectures", "weight_types", "integrated", "uma",
+        "peer_access", "gpu_count", "driver",
+    })
+    if unknown_scope:
+        raise ExperimentContractError(
+            f"{where}.scope names unknown field(s): {', '.join(unknown_scope)}"
+        )
     scope = Scope(
         backend=_required_string(scope_data.get("backend"), f"{where}.scope.backend"),
         architectures=_strings(scope_data.get("architectures"), f"{where}.scope.architectures",
                                 required=True),
         weight_types=_strings(scope_data.get("weight_types"), f"{where}.scope.weight_types"),
+        integrated=_optional_bool(scope_data.get("integrated"), f"{where}.scope.integrated"),
+        uma=_optional_bool(scope_data.get("uma"), f"{where}.scope.uma"),
+        peer_access=_optional_bool(
+            scope_data.get("peer_access"), f"{where}.scope.peer_access"),
+        gpu_count=_gpu_count_constraint(
+            scope_data.get("gpu_count"), f"{where}.scope.gpu_count"),
+        driver=_driver_constraint(scope_data.get("driver"), f"{where}.scope.driver"),
     )
 
     def _evaluation_set(key: str) -> EvaluationSet:
@@ -1228,6 +1495,19 @@ def render_report(
     lines.append(f"- architectures: {', '.join(contract.scope.architectures)}")
     if contract.scope.weight_types:
         lines.append(f"- weight_types: {', '.join(contract.scope.weight_types)}")
+    for name in ("integrated", "uma", "peer_access"):
+        value = getattr(contract.scope, name)
+        if value is not None:
+            lines.append(f"- {name}: {value}")
+    if contract.scope.gpu_count is not None:
+        lines.append(
+            f"- gpu_count: {contract.scope.gpu_count.minimum or '*'}.."
+            f"{contract.scope.gpu_count.maximum or '*'}"
+        )
+    if contract.scope.driver is not None:
+        minimum = contract.scope.driver.minimum or "*"
+        maximum = contract.scope.driver.maximum or "*"
+        lines.append(f"- driver: {minimum}..{maximum}")
     lines.append("")
 
     lines.append("## Winners (positive lanes)")
