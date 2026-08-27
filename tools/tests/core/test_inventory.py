@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry import inventory  # noqa: E402
 from bigcherry.inventory import Record, RecordError  # noqa: E402
 from bigcherry.tuning import catalog  # noqa: E402
+from bigcherry.tuning import signature_capabilities as sc  # noqa: E402
 
 
 # ------------------------------------------------------------------ fixtures
@@ -1595,6 +1596,114 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
                 )
                 row = db.query("SELECT COUNT(*) FROM winner_verification")
                 self.assertEqual(row[0][0], 1)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_quarantine_keeps_mixed_load_and_reports_per_winner_counts(self):
+        manifest, header = self._manifest_and_header()
+        audited_hex = "9" * 32
+        unaudited_hex = "8" * 32
+        audited = self._result(
+            signature_hex=audited_hex,
+            canonical={"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]},
+        )
+        unaudited = self._result(
+            signature_hex=unaudited_hex,
+            canonical={"op": "ADD", "flags": 0},
+        )
+        unaudited["dispatch"] = "d" * 32
+        meas_path = make_jsonl_file(header, audited, unaudited)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+
+        def verifier(canonical):
+            if canonical["op"] == "ADD":
+                raise sc.UnauditedSignatureDomain("ADD is not audited")
+            return audited_hex
+
+        try:
+            with TempDB() as db:
+                counts = inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=verifier,
+                    require_strengthened_ingest=True,
+                    unsupported_signature_policy="quarantine",
+                )
+                self.assertEqual(counts["winner_verifications"], 1)
+                self.assertEqual(counts["quarantined_unsupported_winners"], 1)
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 1)
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 2)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_default_error_policy_still_aborts_unaudited_winner(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        meas_path = make_jsonl_file(header, result)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.UnauditedSignatureDomain("ADD is not audited")
+                        ),
+                        require_strengthened_ingest=True,
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_invalid_signature_is_fatal_even_under_quarantine(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        meas_path = make_jsonl_file(header, result)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.InvalidSignatureDomain("malformed signature")
+                        ),
+                        require_strengthened_ingest=True,
+                        unsupported_signature_policy="quarantine",
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_quarantined_repeat_sighting_still_rejects_canonical_disagreement(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        first = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        second = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 1})
+        second["dispatch"] = "d" * 32
+        meas_path = make_jsonl_file(header, first, second)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "different canonical content"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.UnauditedSignatureDomain("ADD is not audited")
+                        ),
+                        require_strengthened_ingest=True,
+                        unsupported_signature_policy="quarantine",
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
         finally:
             os.unlink(meas_path)
             os.unlink(manifest_path)

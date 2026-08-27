@@ -99,7 +99,7 @@ class StageReplayExportTests(unittest.TestCase):
             fake_replay_mod.build.assert_called_once_with(
                 promoted_path, target_manifest_path,
                 target_source_root / "ggml" / "include" / "ggml.h",
-                dispatch_db=dispatch_db,
+                dispatch_db=dispatch_db, require_winner_verification=True,
             )
             self.assertEqual(result.read_bytes(), b"cache-bytes")
 
@@ -299,7 +299,12 @@ class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
             def fake_load_measurements(*_args, **kwargs):
                 captured["signature_digest_verifier"] = kwargs.get("signature_digest_verifier")
                 captured["require_strengthened_ingest"] = kwargs.get("require_strengthened_ingest")
-                return {"results": 0, "measurements": 0, "candidates": 0}
+                captured["unsupported_signature_policy"] = kwargs.get("unsupported_signature_policy")
+                return {
+                    "results": 0, "measurements": 0, "candidates": 0,
+                    "winner_verifications": 1,
+                    "quarantined_unsupported_winners": 2,
+                }
 
             verifier = lambda _c: "0" * 32  # noqa: E731
 
@@ -316,6 +321,31 @@ class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
 
             self.assertIs(captured["signature_digest_verifier"], verifier)
             self.assertTrue(captured["require_strengthened_ingest"])
+            self.assertEqual(captured["unsupported_signature_policy"], "quarantine")
+
+    def test_zero_verified_winners_aborts_production_stage(self):
+        from unittest.mock import patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            measurements = workdir / "tune.measurements.jsonl"
+            measurements.write_text("", encoding="utf-8")
+            manifest = workdir / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            with patch.object(
+                workflow.inv_mod,
+                "load_measurements",
+                return_value={"winner_verifications": 0, "quarantined_unsupported_winners": 1},
+            ):
+                with self.assertRaisesRegex(
+                    workflow.TuneCampaignError, "zero verified winners"
+                ):
+                    workflow._stage_load_and_promote(
+                        tune_measurements=measurements, tune_manifest_path=manifest,
+                        workdir=workdir, q=0.05, threshold_pct=1.0, resamples=100,
+                        signature_digest_verifier=lambda _c: "0" * 32,
+                    )
 
     def test_missing_manifest_file_aborts_with_zero_db_writes(self):
         # Real (unmocked) inv_mod.load_measurements() call: a manifest path
