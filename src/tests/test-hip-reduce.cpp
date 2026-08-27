@@ -308,13 +308,12 @@ int main(int argc, char ** argv) {
         }
     }
 
-    // HI18 D=2 slice: mechanics above are device-count-generic (see HI84
-    // for the planned D=3/D=4 extension), but this build only claims D=2
-    // hardware evidence. Relax this guard, not the mechanics, when HI84
-    // starts.
-    if (D != 2) {
-        fail("HI18 currently qualifies D=2 only (got " + std::to_string(D) +
-             " devices) -- see HI84 for the planned N>2 extension");
+    // HI84: mechanics are device-count-generic; bounded to 2..4 to match
+    // real Brutus hardware (4 physical GPUs) rather than opening this to
+    // META's own much wider GGML_BACKEND_META_MAX_DEVICES=16 ceiling.
+    if (D < 2 || D > 4) {
+        fail("this probe qualifies D=2..4 (got " + std::to_string(D) +
+             " devices)");
     }
 
     const char * env_plan = std::getenv("GGML_HIP_REDUCE_PLAN");
