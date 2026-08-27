@@ -402,21 +402,41 @@ def _verify_by_rematerialization(
 
     Mirrors patch/source.py's HI82 ``_verify_by_rematerialization`` --
     the scratch directory never enters any persisted identity, and
-    cleanup is registration-aware (git worktree, not a bare rmtree) on
-    both the success and failure paths.
+    cleanup can never raise (unconditional rmtree + worktree prune,
+    exactly like HI82's own finally block) regardless of how far
+    materialize() got before failing.
     """
     scratch_dir = context.work_root / "sources" / f".verify-{uuid.uuid4().hex}"
     try:
-        materialize(context, plan, scratch_dir, allow_dirty_bigcherry=allow_dirty_bigcherry)
-        actual_tree_oid = git_tree_oid(scratch_dir)
+        # Adversarial-review follow-up: an overlay that adds NEW files (the
+        # whole point of an overlay) makes them untracked in the fresh
+        # scratch worktree. materialize() already computed and returned the
+        # exact allowed_untracked set for this plan (workspace.materialize's
+        # own describe() call uses it) -- git_tree_oid() must be given that
+        # SAME set here, or it raises on every legitimate overlay-added file
+        # as an "unexpected" untracked file, breaking verify_strict for the
+        # common (overlay-enabled) case instead of just the tampered one.
+        scratch_metadata = materialize(
+            context, plan, scratch_dir, allow_dirty_bigcherry=allow_dirty_bigcherry,
+        )
+        actual_tree_oid = git_tree_oid(
+            scratch_dir,
+            allowed_untracked=set(scratch_metadata.get("allowed_untracked", ())),
+        )
     finally:
-        try:
-            if (scratch_dir / ".git").exists():
-                UpstreamRepository(context.upstream_repo).remove_worktree(scratch_dir)
-            else:
-                shutil.rmtree(scratch_dir, ignore_errors=True)
-        except Exception:
-            pass
+        # HI82's own proven-safe order: rmtree the directory FIRST (it may
+        # be a real git worktree registration, a partial one, or not exist
+        # at all if materialize() failed before add_detached_worktree even
+        # ran -- all three are fine to rmtree), THEN `git worktree prune`
+        # to clean up the now-dangling registration. Unlike
+        # UpstreamRepository.remove_worktree() ("remove --force"), prune
+        # never raises on a directory that's already gone, so this cleanup
+        # can never itself fail regardless of how far materialize() got.
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+        subprocess.run(
+            ["git", "worktree", "prune"], cwd=context.upstream_repo, check=False,
+            capture_output=True,
+        )
     if actual_tree_oid != expected_tree_oid:
         raise CampaignBuildError(
             f"deterministic re-materialization mismatch for plan (expected "
