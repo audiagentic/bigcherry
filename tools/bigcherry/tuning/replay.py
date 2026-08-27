@@ -40,6 +40,7 @@ from typing import Any
 from . import catalog as autotune_catalog
 from . import dispatch_abi
 from . import promotion_gate as correctness_gate
+from . import verification_state
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
 MAGIC = 0x59484342
@@ -808,6 +809,7 @@ def build(
     merge_into: Path | None = None,
     keep_generations: int = 3,
     generation: int = 0,
+    require_winner_verification: bool = False,
 ) -> bytes:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     by_name = {c["stable_name"]: c for c in manifest["candidates"]}
@@ -903,19 +905,6 @@ def build(
             # dispatch signature.  This makes precedence deterministic.
             override["signature"] = signature.lower()
 
-    # The gate runs on every dispatch NOT covered by an explicit seed --
-    # a seed is a separate operator decision carrying its own provenance
-    # (HI22), not the tuner's, and must not be blocked by (or need to pass)
-    # the promotion state of whatever raw measurement happened to exist for
-    # that same digest.
-    _validate_promotion_gate(
-        {
-            digest_hex: record
-            for digest_hex, record in entries.items()
-            if digest_hex not in seed_overrides
-        }
-    )
-
     if seed_overrides:
         # Apply overrides: replace or insert entries
         for digest_hex, override in seed_overrides.items():
@@ -937,6 +926,52 @@ def build(
             if "native" in override:
                 entry["native"] = override["native"]
             entries[digest_hex] = entry
+
+    if require_winner_verification:
+        if dispatch_db is None:
+            raise SystemExit(
+                "refusing to export: require_winner_verification=True requires --dispatch-db"
+            )
+        verified_entries: dict[str, dict[str, Any]] = {}
+        conn = sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+        try:
+            for digest_hex, record in sorted(entries.items()):
+                # Explicit operator seed overrides retain their existing
+                # authority semantics; this gate protects measured winners.
+                if record.get("seeded"):
+                    verified_entries[digest_hex] = record
+                    continue
+                signature_hex = record.get("signature")
+                try:
+                    winner_id = verification_state.require_winner_row(
+                        conn, row=record, signature_hex=signature_hex,
+                    )
+                except verification_state.WinnerRowIdentityError as exc:
+                    raise SystemExit(
+                        f"refusing to export: measured result {digest_hex!r} "
+                        f"failed exact winner identity binding: {exc}"
+                    ) from exc
+                if verification_state.is_winner_verified(conn, winner_id=winner_id):
+                    verified_entries[digest_hex] = record
+        finally:
+            conn.close()
+        entries = verified_entries
+        if not entries:
+            raise SystemExit(
+                "refusing to export: no measured winners carry current winner_verification"
+            )
+
+    # The gate runs on every retained dispatch NOT covered by an explicit
+    # seed. A seed is a separate operator decision carrying its own
+    # provenance (HI22), not the tuner's, and must not be blocked by (or need
+    # to pass) the promotion state of a raw measurement for that digest.
+    _validate_promotion_gate(
+        {
+            digest_hex: record
+            for digest_hex, record in entries.items()
+            if digest_hex not in seed_overrides
+        }
+    )
 
     # Runs on every entry, including seed overrides applied just above --
     # unlike _validate_promotion_gate, which a seed override is explicitly

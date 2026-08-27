@@ -284,74 +284,13 @@ def _load_source_manifest(
 def _require_row_belongs_to_build(
     conn: sqlite3.Connection, *, source_build_id: int, row: dict[str, Any], signature_hex: str,
 ) -> int:
-    """Prove that the artifact row is the exact DB-recorded winner identity,
-    and return that winner row's own winner_id.
-
-    A verified build-level capability attestation is not proof that any GIVEN
-    result row in the CURRENT artifact actually belongs to that build -- rows
-    could be edited, mixed in from another artifact, or otherwise not be the
-    ones the attestation covers.  Bind every identity-bearing field available
-    in the artifact to the authoritative winner row, including the winner's
-    candidate and native names.  The candidate join also makes sure the
-    winner's foreign key resolves to the candidate with that stable name in
-    this same build; a dispatch/signature membership check alone cannot prove
-    any of those claims.
-
-    Returning winner_id (rather than just a bool) lets the caller separately
-    ask HI127's own question -- was THIS EXACT winner row ever ingested
-    through the HI125-strengthened path -- without a second, redundant
-    lookup. Row identity and verification state are deliberately two
-    different checks: a forged/mismatched row must remain a hard
-    ProjectionError, while a genuine but pre-HI127 (unattested) row is
-    instead an ordinary, counted omission -- see the caller.
-    """
-    dispatch_hex = row.get("dispatch")
-    if not isinstance(dispatch_hex, str):
-        raise ProjectionError(f"result row missing a valid dispatch digest: {row!r}")
-    hardware_hex = row.get("hardware")
-    if not isinstance(hardware_hex, str):
-        raise ProjectionError(f"result row missing a valid hardware digest: {row!r}")
-    winner_name = row.get("winner")
-    if not isinstance(winner_name, str):
-        raise ProjectionError(f"result row missing a valid winner: {row!r}")
-    native_name = row.get("native")
-    if not isinstance(native_name, str):
-        raise ProjectionError(f"result row missing a valid native candidate: {row!r}")
     try:
-        dispatch_bytes = bytes.fromhex(dispatch_hex)
-        hardware_bytes = bytes.fromhex(hardware_hex)
-        signature_bytes = bytes.fromhex(signature_hex)
-    except ValueError as exc:
-        raise ProjectionError(f"result row contains a malformed identity digest: {row!r}") from exc
-    match = conn.execute(
-        "SELECT w.winner_id "
-        "FROM measurement m "
-        "JOIN winner w ON w.build_id = m.build_id "
-        " AND w.hardware_id = m.hardware_id "
-        " AND w.signature_id = m.signature_id "
-        " AND w.dispatch_digest = m.dispatch_digest "
-        "JOIN hardware h ON h.hardware_id = w.hardware_id "
-        " AND h.hardware_digest = ? "
-        "JOIN signature s ON s.signature_id = w.signature_id "
-        " AND s.signature_digest = ? "
-        "JOIN candidate c ON c.candidate_id = w.candidate_id "
-        " AND c.build_id = w.build_id "
-        " AND c.stable_name = w.stable_name "
-        "WHERE w.build_id = ? "
-        " AND w.dispatch_digest = ? "
-        " AND w.stable_name = ? "
-        " AND w.native_stable_name = ?",
-        (hardware_bytes, signature_bytes, source_build_id, dispatch_bytes, winner_name, native_name),
-    ).fetchone()
-    if match is None:
-        raise ProjectionError(
-            f"result row identity (dispatch={dispatch_hex!r}, signature={signature_hex!r}, "
-            f"hardware={hardware_hex!r}, winner={winner_name!r}, native={native_name!r}) "
-            f"does not resolve to the authoritative winner recorded against "
-            f"build_id={source_build_id} -- this row cannot be proven to belong to the "
-            f"build whose capabilities were verified"
+        return verification_state.require_winner_row(
+            conn, row=row, signature_hex=signature_hex,
+            source_build_id=source_build_id,
         )
-    return match[0]
+    except verification_state.WinnerRowIdentityError as exc:
+        raise ProjectionError(str(exc)) from exc
 
 
 def _candidate_implementation_is_equivalent(
@@ -628,9 +567,13 @@ def project_measurements(
             canonical = _load_canonical_signature(conn, signature_hex)
             try:
                 required = sc.hip_required_capabilities(canonical, vendor_root=vendor_root)
-            except sc.UnsupportedSignatureDomain:
+            except sc.UnauditedSignatureDomain:
                 omitted_unsupported += 1
                 continue
+            except sc.InvalidSignatureDomain as exc:
+                raise ProjectionError(
+                    f"source signature {signature_hex!r} is structurally invalid"
+                ) from exc
             if not source_caps.contains(required):
                 omitted_missing_producer += 1
                 continue
