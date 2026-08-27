@@ -309,7 +309,17 @@ def reattest_winners(
     manifest_path = Path(manifest_path)
     database_path = Path(database_path)
 
-    header, results = replay_module.read_results(measurements_path, require_header=True)
+    # Every failure mode below makes the WHOLE pass untrustworthy (a
+    # malformed/unreadable artifact, a projection mistaken for original
+    # evidence, or a header/manifest disagreement) -- normalize all of them
+    # to ReattestationError so a caller catching only that type (as
+    # cli/tuning.py's cmd_reattest does) cannot be bypassed by, say, a
+    # corrupt manifest raising a bare RecordError/SystemExit/OSError
+    # instead.
+    try:
+        header, results = replay_module.read_results(measurements_path, require_header=True)
+    except SystemExit as exc:
+        raise ReattestationError(f"{measurements_path}: {exc}") from exc
     if "hi121_source_provenance" in header:
         raise ReattestationError(
             f"{measurements_path} is a HI121 replay-projection artifact (carries "
@@ -317,8 +327,14 @@ def reattest_winners(
             f"refusing to re-attest a projection as if it were the original evidence"
         )
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    proof = inventory.verify_hip_build_artifacts(header=header, manifest=manifest)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ReattestationError(f"{manifest_path}: not readable/valid JSON: {exc}") from exc
+    try:
+        proof = inventory.verify_hip_build_artifacts(header=header, manifest=manifest)
+    except inventory.RecordError as exc:
+        raise ReattestationError(str(exc)) from exc
     if proof is None:
         raise ReattestationError(
             f"{measurements_path}/{manifest_path} do not establish a HIP build capability "
@@ -351,7 +367,10 @@ def reattest_winners(
         # includes this one.
         final_ro_conn = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
         try:
-            inventory._require_current_schema(final_ro_conn)
+            try:
+                inventory._require_current_schema(final_ro_conn)
+            except inventory.RecordError as exc:
+                raise ReattestationError(str(exc)) from exc
             _require_build_provenance_matches(final_ro_conn, source_build_id=source_build_id, proof=proof)
             for proven_row in proven:
                 row = {
@@ -389,15 +408,29 @@ def reattest_winners(
             rw_conn.execute("PRAGMA foreign_keys = ON")
             rw_conn.execute("BEGIN IMMEDIATE")
             try:
-                inventory._require_current_schema(rw_conn)
+                try:
+                    inventory._require_current_schema(rw_conn)
+                except inventory.RecordError as exc:
+                    raise ReattestationError(str(exc)) from exc
                 needs_descriptor, needs_capability = _require_build_provenance_matches(
                     rw_conn, source_build_id=source_build_id, proof=proof,
                 )
                 if needs_descriptor:
-                    rw_conn.execute(
-                        "UPDATE build SET build_descriptor_hash = ? WHERE build_id = ?",
-                        (proof.build_descriptor_hash, source_build_id),
-                    )
+                    try:
+                        rw_conn.execute(
+                            "UPDATE build SET build_descriptor_hash = ? WHERE build_id = ?",
+                            (proof.build_descriptor_hash, source_build_id),
+                        )
+                    except sqlite3.IntegrityError as exc:
+                        # e.g. build_legacy_identity_uq: backfilling this
+                        # build's descriptor would collide with a different
+                        # existing build that already shares its legacy
+                        # identity plus this descriptor -- a real conflict,
+                        # not something this module can safely resolve.
+                        raise ReattestationError(
+                            f"backfilling build_descriptor_hash for source_build_id="
+                            f"{source_build_id} would violate a database constraint: {exc}"
+                        ) from exc
                     backfilled_descriptor = True
                 if needs_capability:
                     rw_conn.execute(
