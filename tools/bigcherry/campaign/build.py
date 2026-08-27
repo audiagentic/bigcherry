@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -329,6 +330,7 @@ def materialize_source(
     plan: SourcePlan,
     *,
     allow_dirty_bigcherry: bool = False,
+    verify_strict: bool = False,
 ) -> dict[str, Any]:
     """Materialise ``plan`` into an isolated, content-identified worktree.
 
@@ -348,6 +350,22 @@ def materialize_source(
     The dirty-BigCherry-tree check runs unconditionally here, BEFORE the
     cache-hit branch -- ``materialize()``'s own check only guards the
     fresh-creation path, which a cache hit never reaches.
+
+    ``verify_strict`` (PA17/C2, adversarial-review follow-up): every check
+    above proves the cached destination's live bytes are self-consistent
+    with its own sidecar metadata -- none of them proves that metadata's
+    OWN claimed composition actually PRODUCES that tree, i.e. a forged
+    worktree paired with a fully self-consistent forged sidecar would
+    still pass. When True, a cache hit additionally re-runs the exact same
+    materialize() sequence into a throwaway scratch worktree and requires
+    its tree OID to match, the only check not dependent on trusting
+    anything previously written to disk by this module (mirrors HI82's
+    ``_verify_by_rematerialization``). Off by default: with N campaign
+    lanes sharing one cached source plan under the same plan_lock, this
+    repeats a full worktree-add + overlay + whole patch composition + tree
+    hash for every cache hit while the lock is held -- real GPU-campaign
+    cost, not free, so it is opt-in for strict/release verification paths
+    rather than every lane's default cache hit.
     """
     # Cheap fail-fast before even computing identity/waiting on the lock --
     # the authoritative check is the one repeated inside the lock below.
@@ -370,7 +388,42 @@ def materialize_source(
         # exists to guarantee is still true at the moment it's relied on.
         require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
         return _materialize_source_locked(
-            context, plan, identity, plan_id, allow_dirty_bigcherry=allow_dirty_bigcherry,
+            context, plan, identity, plan_id,
+            allow_dirty_bigcherry=allow_dirty_bigcherry, verify_strict=verify_strict,
+        )
+
+
+def _verify_by_rematerialization(
+    context: ProjectContext, plan: SourcePlan, *,
+    expected_tree_oid: str, allow_dirty_bigcherry: bool,
+) -> None:
+    """PA17/C2: deterministically re-derive the expected tree from scratch
+    and compare, rather than trusting anything previously written to disk.
+
+    Mirrors patch/source.py's HI82 ``_verify_by_rematerialization`` --
+    the scratch directory never enters any persisted identity, and
+    cleanup is registration-aware (git worktree, not a bare rmtree) on
+    both the success and failure paths.
+    """
+    scratch_dir = context.work_root / "sources" / f".verify-{uuid.uuid4().hex}"
+    try:
+        materialize(context, plan, scratch_dir, allow_dirty_bigcherry=allow_dirty_bigcherry)
+        actual_tree_oid = git_tree_oid(scratch_dir)
+    finally:
+        try:
+            if (scratch_dir / ".git").exists():
+                UpstreamRepository(context.upstream_repo).remove_worktree(scratch_dir)
+            else:
+                shutil.rmtree(scratch_dir, ignore_errors=True)
+        except Exception:
+            pass
+    if actual_tree_oid != expected_tree_oid:
+        raise CampaignBuildError(
+            f"deterministic re-materialization mismatch for plan (expected "
+            f"tree, freshly re-derived from base+composition+overlay, "
+            f"{actual_tree_oid!r} != cached/verified tree {expected_tree_oid!r}) "
+            f"-- the cached source directory's self-reported identity cannot "
+            f"be trusted; refusing to reuse it"
         )
 
 
@@ -381,6 +434,7 @@ def _materialize_source_locked(
     plan_id: str,
     *,
     allow_dirty_bigcherry: bool,
+    verify_strict: bool = False,
 ) -> dict[str, Any]:
     destination = context.work_root / "sources" / plan_id
     metadata_path = _source_metadata_path(destination)
@@ -468,6 +522,12 @@ def _materialize_source_locked(
                     f"re-derived value {recomputed!r} -- refusing to trust "
                     f"tampered or corrupted source metadata"
                 )
+        if verify_strict:
+            _verify_by_rematerialization(
+                context, plan,
+                expected_tree_oid=actual_tree_oid,
+                allow_dirty_bigcherry=allow_dirty_bigcherry,
+            )
         return cached
 
     if destination.exists():
@@ -519,7 +579,12 @@ def _materialize_source_locked(
     # HI82 manifest writer rather than this call site's own plain
     # write_text() -- a crash mid-write must not leave truncated metadata
     # beside an otherwise-valid source worktree.
-    source_identity.atomic_write_json(metadata_path, record)
+    # PA17 (C1): read_only=True, matching HI82's own manifest writer -- this
+    # sidecar's fields are what the cache-hit path above compares re-derived
+    # live facts against; leaving it editable is a much easier tamper vector
+    # than mutating a git worktree convincingly. Defense-in-depth only (see
+    # atomic_write_json's own docstring), not an independent trust boundary.
+    source_identity.atomic_write_json(metadata_path, record, read_only=True)
     return record
 
 

@@ -291,6 +291,11 @@ class MaterializeSourceTests(unittest.TestCase):
             import json
             record = json.loads(metadata_path.read_text(encoding="utf-8"))
             record["plan"]["upstream_revision"] = "0" * 40
+            # PA17 (C1): the metadata sidecar is now written read-only, same
+            # as HI82's own manifest -- a tamperer simulating corruption must
+            # first remove that OS-level protection, the same way a real one
+            # with filesystem access to the directory would.
+            metadata_path.chmod(0o644)
             metadata_path.write_text(json.dumps(record), encoding="utf-8")
 
             with self.assertRaises(CampaignBuildError):
@@ -329,9 +334,61 @@ class MaterializeSourceTests(unittest.TestCase):
             record = json.loads(metadata_path.read_text(encoding="utf-8"))
             record["git_object_format"] = "sha256"
             record["source_slice_id"] = "forged"
+            metadata_path.chmod(0o644)
             metadata_path.write_text(json.dumps(record), encoding="utf-8")
             with self.assertRaises(CampaignBuildError):
                 materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+    def test_verify_strict_rejects_a_forged_worktree_with_self_consistent_metadata(self):
+        """PA17/C7: a forged worktree whose sidecar metadata was ALSO
+        forged to consistently match it defeats every existing
+        self-consistency check (they only compare the metadata against
+        itself and against the live tree, never against what the plan
+        SHOULD actually produce). Only the strict re-materialization path
+        can catch this -- and it must not be a false positive on an
+        untampered cache hit, which the default (verify_strict=False)
+        path continues to serve unmodified."""
+        import json
+        from bigcherry.source import identity as source_identity
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            context = _context(root, upstream)
+            plan = SourcePlan(revision, False, (), None)
+            materialize_source(context, plan, allow_dirty_bigcherry=True)
+
+            from bigcherry.campaign import source as campaign_source
+            plan_id = campaign_source.materialization_plan_id(
+                campaign_source.resolve_materialization_identity(context, plan))
+            destination = context.work_root / "sources" / plan_id
+            metadata_path = destination.parent / f"{destination.name}.metadata.json"
+
+            # Forge the worktree content, then forge the metadata to be
+            # fully self-consistent with the forgery -- a real attacker
+            # with filesystem access to both would do exactly this.
+            (destination / "source.txt").write_text("forged content\n", encoding="utf-8")
+            forged_tree_oid = source_identity.git_tree_oid(destination)
+            forged_slice_id = source_identity.source_slice_id(
+                upstream_revision=revision, tree_oid=forged_tree_oid, object_format="sha1",
+            )
+            record = json.loads(metadata_path.read_text(encoding="utf-8"))
+            record["source_tree_oid"] = forged_tree_oid
+            record["source_slice_id"] = forged_slice_id
+            metadata_path.chmod(0o644)
+            metadata_path.write_text(json.dumps(record), encoding="utf-8")
+            metadata_path.chmod(0o444)
+
+            # Default path: every existing self-consistency check agrees
+            # with the forgery, so the (untampered-looking) cache is served.
+            served = materialize_source(context, plan, allow_dirty_bigcherry=True)
+            self.assertEqual(served["source_tree_oid"], forged_tree_oid)
+
+            # Strict path: re-derives the tree from scratch and catches it.
+            with self.assertRaises(CampaignBuildError):
+                materialize_source(
+                    context, plan, allow_dirty_bigcherry=True, verify_strict=True,
+                )
 
 
 class PublishBuildOutputsTests(unittest.TestCase):
