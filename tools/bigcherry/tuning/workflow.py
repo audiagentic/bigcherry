@@ -68,9 +68,15 @@ class WorkflowReceipt:
     finished_at: str
 
 
-def _stage_identity(result: CampaignLaneResult, run_id: str) -> StageIdentity:
+def _stage_identity(result: CampaignLaneResult) -> StageIdentity:
     return StageIdentity(
-        run_id=run_id,
+        # gpt review (2026-08-27): run_campaign()'s per-lane run_id
+        # (_lane_run_id(campaign_run_id, lane)) is what actually got used
+        # for this lane's ArtifactStore paths/provenance -- reconstructing
+        # a different string here would make the receipt's run_id
+        # unusable for re-deriving those paths even though the build
+        # itself succeeded.
+        run_id=result.run_id,
         source_slice_id=result.source_slice_id,
         build_plan_id=result.build_plan_id,
         manifest_path=str(result.manifest_ref.path) if result.manifest_ref else None,
@@ -123,7 +129,7 @@ def _stage_record(
     record_db_path = workdir / "record"
     runner = ServerRunner(
         binary=binary_path, model=model_path,
-        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context)),
+        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
             "HIP_VISIBLE_DEVICES": devices,
             "GGML_HIP_DISPATCH_MODE": "record",
@@ -167,7 +173,7 @@ def _stage_tune(
     tune_db_path = workdir / "tune"
     runner = ServerRunner(
         binary=binary_path, model=model_path,
-        extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context)),
+        extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context), *runtime_profile.server_args),
         env_overrides={
             "HIP_VISIBLE_DEVICES": devices,
             "GGML_HIP_DISPATCH_MODE": "tune",
@@ -186,10 +192,32 @@ def _stage_tune(
     return lane_result, measurements_path
 
 
+def _count_missing_correctness_evidence(promoted_path: Path) -> int:
+    """How many rows are stuck on `rejected_no_correctness_evidence` --
+    gpt review (2026-08-27): `promote()`'s own return dict has no such
+    count, and `promoted == 0` is the wrong trigger for re-running the
+    correctness-evidence stage -- a dispatch_db that already had SOME
+    reusable evidence from a prior run can promote a few candidates
+    immediately while leaving others stuck, and that partial case must
+    still trigger evidence generation for the rest, not be silently
+    skipped because promoted > 0."""
+    count = 0
+    with promoted_path.open(encoding="utf-8") as f:
+        next(f, None)  # header line
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("promotion_status") == "rejected_no_correctness_evidence":
+                count += 1
+    return count
+
+
 def _stage_load_and_promote(
     *, tune_measurements: Path, tune_manifest_path: Path | None, workdir: Path,
     q: float, threshold_pct: float, resamples: int,
-) -> tuple[Path, dict, int]:
+) -> tuple[Path, dict, int, int]:
     dispatch_db = workdir / "tune.sqlite"
     inv_mod.load_measurements(
         tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
@@ -200,7 +228,8 @@ def _stage_load_and_promote(
         tune_measurements, promoted_path,
         dispatch_db=dispatch_db, q=q, threshold_pct=threshold_pct, resamples=resamples,
     )
-    return dispatch_db, result, int(result.get("promoted", 0))
+    missing_evidence = _count_missing_correctness_evidence(promoted_path)
+    return dispatch_db, result, int(result.get("promoted", 0)), missing_evidence
 
 
 def _stage_correctness_evidence(
@@ -268,7 +297,7 @@ def _stage_replay_build_and_verify(
     coverage_path = workdir / "coverage.json"
     runner = ServerRunner(
         binary=binary_path, model=model_path,
-        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context)),
+        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
             "HIP_VISIBLE_DEVICES": devices,
             "GGML_HIP_DISPATCH_MODE": "replay",
@@ -336,30 +365,37 @@ def run_tune_campaign(
     tune_manifest_path = (
         Path(tune_result.manifest_ref.path) if tune_result.manifest_ref else None
     )
-    dispatch_db, _first_promote_result, promoted_before = _stage_load_and_promote(
-        tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
-        workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
-        resamples=promotion_resamples,
+    dispatch_db, _first_promote_result, promoted_before, missing_evidence = (
+        _stage_load_and_promote(
+            tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
+            workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
+            resamples=promotion_resamples,
+        )
     )
 
     correctness_result: CampaignLaneResult | None = None
     promoted_after = promoted_before
-    if promoted_before == 0:
-        # A rejected_no_correctness_evidence row is only interesting if the
-        # statistical gate would otherwise have accepted it -- re-promoting
-        # unconditionally is cheap and always safe (an idempotent re-run
-        # over already-decided rows), so always attempt the evidence step
-        # once before concluding 0 is the final answer.
+    if missing_evidence > 0:
+        # gpt review (2026-08-27): triggering only on promoted_before == 0
+        # missed the partial-evidence case -- a dispatch_db that already
+        # had SOME reusable evidence from a prior run promotes those
+        # candidates immediately while others stay
+        # rejected_no_correctness_evidence; that case must still generate
+        # evidence for the REMAINING candidates, not be skipped just
+        # because promoted_before > 0. Re-running is cheap and always
+        # safe (idempotent over already-decided rows).
         correctness_result = _stage_correctness_evidence(
             context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-correctness",
             platform_name=platform_name, source_name=source_name,
             inventory_path=inventory_path, tune_measurements=tune_measurements,
             dispatch_db=dispatch_db, seeds=correctness_seeds,
         )
-        _dispatch_db2, _promote_result2, promoted_after = _stage_load_and_promote(
-            tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
-            workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
-            resamples=promotion_resamples,
+        _dispatch_db2, _promote_result2, promoted_after, _missing_after = (
+            _stage_load_and_promote(
+                tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
+                workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
+                resamples=promotion_resamples,
+            )
         )
 
     replay_result: CampaignLaneResult | None = None
@@ -389,14 +425,14 @@ def run_tune_campaign(
         devices=devices,
         runtime_profile_name=runtime_profile_name,
         effective_tune_context=profile.tune_context,
-        record=_stage_identity(record_result, f"{campaign_run_id}-record"),
-        tune=_stage_identity(tune_result, f"{campaign_run_id}-tune"),
+        record=_stage_identity(record_result),
+        tune=_stage_identity(tune_result),
         correctness=(
-            _stage_identity(correctness_result, f"{campaign_run_id}-correctness")
+            _stage_identity(correctness_result)
             if correctness_result is not None else None
         ),
         replay=(
-            _stage_identity(replay_result, f"{campaign_run_id}-replay")
+            _stage_identity(replay_result)
             if replay_result is not None else None
         ),
         promoted_before_evidence=promoted_before,
