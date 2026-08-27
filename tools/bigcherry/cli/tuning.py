@@ -267,14 +267,24 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
                 seed=args.signature_verifier_seed,
             )
 
-        counts = inv_mod.load_measurements(
-            meas_path,
-            db_path,
-            paths.SQL / "dispatch-db.sql",
-            manifest_path=manifest_path,
-            signature_source_paths=[Path(p) for p in args.signature_source],
-            signature_digest_verifier=signature_digest_verifier,
-        )
+        try:
+            counts = inv_mod.load_measurements(
+                meas_path,
+                db_path,
+                paths.SQL / "dispatch-db.sql",
+                manifest_path=manifest_path,
+                signature_source_paths=[Path(p) for p in args.signature_source],
+                signature_digest_verifier=signature_digest_verifier,
+                # adversarial-review follow-up (2026-08-27): an operator who
+                # asked for real C++ verification must never silently get
+                # an unattested load instead -- e.g. a --manifest path that
+                # does not actually exist would otherwise be treated as "no
+                # manifest supplied" and quietly commit zero attestations.
+                require_strengthened_ingest=signature_digest_verifier is not None,
+            )
+        except inv_mod.RecordError as exc:
+            print(f"inventory tuning: {exc}", file=sys.stderr)
+            return 1
 
         print(
             f"loaded {counts['results']} result(s) with "

@@ -240,7 +240,19 @@ def _stage_signature_verifier(
     bearing verifier binary's own identity auditable (see
     WorkflowReceipt.signature_verifier) without perturbing production
     record-lane provenance at all.
+
+    ``devices`` is the campaign's full device selection (e.g. "0,1"), but
+    the verifier is scoped to just its FIRST device (adversarial-review
+    follow-up, 2026-08-27): test-backend-ops loops over every visible
+    backend device and requires aggregate success across all of them, so
+    passing the whole multi-device string would run every unique canonical
+    on EVERY selected GPU (wasted duplicate work) and could abort
+    verification entirely on an unrelated failure on a second/heterogeneous
+    device -- HI125's verifier only needs to prove canonical->C++ digest
+    correspondence once, on any one real device, not hardware equivalence
+    across the whole campaign's device set.
     """
+    verifier_device = str(_devices_tuple(devices)[0])
     lane_result = _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
         build_name="record", platform_name=platform_name, run_id=run_id,
@@ -251,7 +263,7 @@ def _stage_signature_verifier(
         binary=lane_result.binary_ref.path,
         vendor_root=lane_result.source_root,
         seed=seed,
-        runner=_gpu_scoped_test_backend_ops_runner(devices),
+        runner=_gpu_scoped_test_backend_ops_runner(verifier_device),
     )
     return lane_result, verifier
 
@@ -294,6 +306,13 @@ def _stage_load_and_promote(
             tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
             manifest_path=tune_manifest_path,
             signature_digest_verifier=signature_digest_verifier,
+            # adversarial-review follow-up (2026-08-27): without this, a
+            # missing/unreadable tune_manifest_path or an older header
+            # predating producer_capabilities would silently commit an
+            # UNATTESTED load even though a verifier was supplied --
+            # exactly the "believes it's strengthened but isn't" gap this
+            # whole wiring pass exists to close.
+            require_strengthened_ingest=True,
         )
     except inv_mod.RecordError as exc:
         # Fail closed, never silently retry unverified (HI125 close-out
