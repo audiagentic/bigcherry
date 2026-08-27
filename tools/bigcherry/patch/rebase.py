@@ -120,36 +120,20 @@ def _git_ok(root: Path, *args: str) -> str | None:
 
 
 def overlay_digest(overlay_root: Path | None = None) -> str:
-    """Content digest over every file under ``src/`` (path + bytes),
-    independent of filesystem iteration order. Part of a rebase report's
-    bound identity: an overlay edit changes what an anchored patch sees at
-    apply time exactly as much as a patch edit does."""
-    overlay_root = overlay_root or paths.SRC_OVERLAY
-    hasher = hashlib.sha256()
-    if overlay_root.is_dir():
-        for source in sorted(overlay_root.rglob("*")):
-            if not source.is_file():
-                continue
-            relative = source.relative_to(overlay_root).as_posix()
-            hasher.update(relative.encode("utf-8"))
-            hasher.update(b"\0")
-            hasher.update(source.read_bytes())
-            hasher.update(b"\0")
-    return hasher.hexdigest()
+    """Content digest over every file under ``src/``, independent of
+    filesystem iteration order. Part of a rebase report's bound identity:
+    an overlay edit changes what an anchored patch sees at apply time
+    exactly as much as a patch edit does.
 
-
-def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
-    """The overlay's post-install content, keyed by repo-relative path --
-    the same seed ``_apply_selection``'s dry-run path feeds ``apply_all``
-    (PA16 follow-up to the overlay/dry-run parity fix).
-
-    Decodes raw bytes directly (``bytes.decode``, not ``Path.read_text``)
-    so this performs no universal-newline translation -- ``_digest_from_texts``
-    hashes ``text.encode("utf-8")``, and that must equal ``read_bytes()``
-    exactly for it to agree with :func:`overlay_digest`'s raw-byte hash of
-    the same files, or a CRLF-containing overlay file would silently
-    produce two different digests for the same on-disk content depending
-    on which function computed it."""
+    Hashes ``read_text()`` (universal-newline-translated) content, NOT raw
+    bytes -- ``_copy_overlay()``'s real write path is
+    ``source.read_text(encoding="utf-8")`` then
+    ``target.write_text(text, newline="")``, which normalizes CRLF to LF
+    before it ever reaches a probed or patched file. Hashing raw bytes here
+    would make this function (and a stale-report check built on it) see a
+    difference between two overlay files that materialize identically, or
+    miss one that doesn't -- the digest must describe what actually gets
+    applied, not what happens to be on disk."""
     overlay_root = overlay_root or paths.SRC_OVERLAY
     texts: dict[str, str] = {}
     if overlay_root.is_dir():
@@ -157,7 +141,29 @@ def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
             if not source.is_file():
                 continue
             relative = str(source.relative_to(overlay_root)).replace("\\", "/")
-            texts[relative] = source.read_bytes().decode("utf-8")
+            texts[relative] = source.read_text(encoding="utf-8")
+    return _digest_from_texts(texts)
+
+
+def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
+    """The overlay's post-install content, keyed by repo-relative path --
+    the same seed ``_apply_selection``'s dry-run path feeds ``apply_all``
+    (PA16 follow-up to the overlay/dry-run parity fix).
+
+    Deliberately ``read_text()`` (universal-newline translation), matching
+    exactly what ``_copy_overlay()`` actually writes -- a probe reading raw
+    bytes here would see CRLF an anchor could fail on, while the real write
+    normalizes it to LF and the anchor would have matched. See
+    :func:`overlay_digest`'s docstring for the same reasoning applied to
+    the staleness digest."""
+    overlay_root = overlay_root or paths.SRC_OVERLAY
+    texts: dict[str, str] = {}
+    if overlay_root.is_dir():
+        for source in sorted(overlay_root.rglob("*")):
+            if not source.is_file():
+                continue
+            relative = str(source.relative_to(overlay_root)).replace("\\", "/")
+            texts[relative] = source.read_text(encoding="utf-8")
     return texts
 
 
@@ -700,7 +706,18 @@ def run_rebase_check(
         "bigcherry_revision": _bigcherry_revision(),
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
         "overlay_digest": _digest_from_texts(overlay_snapshot),
-        "selection": {"patch_ids": list(selection.modules and [m.patch_id for m in selection.modules] or [])},
+        "selection": {
+            "patch_ids": list(selection.modules and [m.patch_id for m in selection.modules] or []),
+            # Adversarial-review follow-up: binds the report to the SELECTOR
+            # that produced patch_ids, not just the resulting id list --
+            # otherwise a concurrent, uncommitted edit to config/recipes.toml
+            # that widens a recipe's groups/states (e.g. [A,B] -> [A,B,C])
+            # leaves every other bound identity unchanged (no patch bytes,
+            # overlay, or revision moved) and a stale report naming only
+            # [A,B] would still pass every other freshness check.
+            "recipe": recipe_name,
+            "all_patches": bool(all_patches),
+        },
         "known_good_patch_ids": list(known_good),
         "summary": summary,
         "patches": [probes[m.patch_id].to_dict() for m in selection.modules if m.patch_id in probes],
@@ -805,7 +822,30 @@ def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
             "report overlay_digest no longer matches src/ -- re-run patch-rebase-check"
         )
 
-    selected = tuple(report.get("selection", {}).get("patch_ids", ()))
+    selection_input = report.get("selection", {})
+    selected = tuple(selection_input.get("patch_ids", ()))
+    # Adversarial-review follow-up: none of the checks above notice a
+    # SELECTOR change (e.g. an uncommitted edit to config/recipes.toml that
+    # widens the recipe this report was generated for) -- no patch bytes,
+    # overlay, or revision moved, so re-deriving the id set from the same
+    # selector and requiring it to match exactly closes that gap.
+    try:
+        current_ids = set(_selection_patch_ids(
+            recipe_name=selection_input.get("recipe"),
+            all_patches=bool(selection_input.get("all_patches", False)),
+        ))
+    except RebaseCheckError as exc:
+        raise StaleRebaseReportError(
+            f"report's selector no longer resolves: {exc}"
+        ) from exc
+    if current_ids != set(selected):
+        raise StaleRebaseReportError(
+            "report's selection.patch_ids no longer matches what its own "
+            "recipe/--all selector currently resolves to "
+            f"(only in report: {sorted(set(selected) - current_ids)}, "
+            f"only live: {sorted(current_ids - set(selected))}) -- "
+            "re-run patch-rebase-check"
+        )
     patch_entries = tuple(report.get("patches", ()))
     # Adversarial-review follow-up: a report edited (by hand, or a bug) to
     # drop entries from `patches[]` while leaving `selection.patch_ids`
@@ -879,15 +919,16 @@ def apply_known_good(
     from .. import __main__ as legacy  # noqa: PLC0415 (leaf import, avoids a cycle)
 
     record = legacy._record_for(root)
+    original_stage = record.stage
     if not force and not record.audit.get("passed"):
         raise RebaseCheckError(
             "apply --known-good: tree has not passed a strict audit; run "
             "`bigcherry audit` first, or pass --force"
         )
-    if partial and not force and record.stage not in ("audited", "broken"):
+    if partial and not force and original_stage not in ("audited", "broken"):
         raise RebaseCheckError(
             "apply --known-good: a PARTIAL known-good subset is only accepted "
-            f"on a tree at stage 'audited' or 'broken' (current: {record.stage!r}) "
+            f"on a tree at stage 'audited' or 'broken' (current: {original_stage!r}) "
             "-- applying it now would leave later-stage evidence describing a "
             "composition that was never fully applied; pass --force only if "
             "you accept invalidating that evidence yourself"
@@ -927,7 +968,26 @@ def apply_known_good(
             # the tree may be half-mutated in ways record_apply_result's
             # `broken` transition exists to name.
             if ok:
-                if record.notes.startswith("patches failed:"):
+                if original_stage not in ("audited", "broken"):
+                    # Adversarial-review follow-up: this only happens when
+                    # --force overrode the eligibility guard above. The tree
+                    # just changed to an incomplete composition, but
+                    # `original_stage`'s generated/built/tested/validated
+                    # evidence (and any promotion pointer) still describes
+                    # the PREVIOUS, different tree -- leaving it in place
+                    # would be silently stale evidence, not just an
+                    # accepted override. There is no stage that means
+                    # "partially patched", so explicitly invalidate to
+                    # `broken` rather than pretend nothing changed.
+                    record.promotion = None
+                    record.manifest_hash = ""
+                    record.advance_to("broken")
+                    record.notes = (
+                        "partial known-good apply (--force) replaced a "
+                        f"'{original_stage}' tree with an incomplete "
+                        "composition -- prior stage evidence invalidated"
+                    )
+                elif record.notes.startswith("patches failed:"):
                     record.notes = ""
             else:
                 releases.record_apply_result(record, False)
