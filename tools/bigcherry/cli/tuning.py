@@ -118,6 +118,63 @@ def cmd_project_replay(args: Namespace) -> int:
     return 0
 
 
+def cmd_reattest(args: Namespace) -> int:
+    """HI121 close-out step 7 (HI128): re-verify an existing schema-8
+    winner's ORIGINAL measurements/manifest against HI127's strengthened-
+    ingest profile and attest it if it genuinely passes. See
+    tuning.reattest for the full trust argument -- this never replays
+    load_measurements() (which would mutate the evidence under
+    examination) and always requires a real, compiled HI125 verifier
+    binary, even in --dry-run."""
+    from ..tuning import reattest as reattest_module
+    from ..tuning import signature_digest_verification as sdv
+
+    verifier = sdv.make_signature_digest_verifier(
+        binary=Path(args.signature_verifier_binary),
+        vendor_root=Path(args.signature_verifier_vendor_root),
+        seed=args.seed,
+    )
+    try:
+        report = reattest_module.reattest_winners(
+            Path(args.database),
+            source_build_id=args.source_build_id,
+            measurements_path=Path(args.measurements),
+            manifest_path=Path(args.manifest),
+            signature_digest_verifier=verifier,
+            signature_source_paths=[Path(p) for p in args.signature_source],
+            dry_run=args.dry_run,
+        )
+    except reattest_module.ReattestationError as exc:
+        print(f"reattest: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "examined": report.examined,
+                "attested": report.attested,
+                "already_attested": report.already_attested,
+                "outcomes": [
+                    {"dispatch": o.dispatch, "status": o.status, "detail": o.detail}
+                    for o in report.outcomes
+                ],
+            },
+            indent=2, sort_keys=True,
+        ))
+    else:
+        print(
+            f"examined {report.examined}, attested {report.attested} "
+            f"({report.already_attested} already attested)"
+            + (" [dry-run]" if args.dry_run else "")
+        )
+        from collections import Counter
+        counts = Counter(o.status for o in report.outcomes)
+        for status, count in sorted(counts.items()):
+            if status not in ("attested", "already_attested", "would_attest"):
+                print(f"  {count} {status}")
+    return 0
+
+
 def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
     """Dispatch to inventory record/tuning subcommand."""
     from ..tuning import inventory as inv_mod
