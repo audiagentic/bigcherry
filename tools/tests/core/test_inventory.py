@@ -1260,6 +1260,27 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_verifier_requested_with_no_canonical_content_fails_closed(self):
+        """HI125 (adversarial-review follow-up): a caller that explicitly
+        supplies a verifier is asking for the production trust gate on
+        EVERY signature -- silently skipping rows with no canonical
+        content would let some signatures bypass verification entirely
+        while the caller believes the whole ingest was C++-verified."""
+        signature_hex = "1" * 32
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        result["signature"] = signature_hex
+        path = make_jsonl_file(TUNING_HEADER, result)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "no canonical content"):
+                    inventory.load_measurements(
+                        path, db.db_path, schema_path, manifest_path=None,
+                        signature_digest_verifier=lambda _value: "0" * 32,
+                    )
+        finally:
+            os.unlink(path)
+
 
 class TestHipCapabilityPersistence(unittest.TestCase):
     """HI121 M2: load_measurements() verifies the compiled producer's own

@@ -1292,6 +1292,17 @@ def load_measurements(
             )
             if not isinstance(canonical, dict):
                 canonical = {}
+            if signature_digest_verifier is not None and not canonical:
+                # HI125 (adversarial-review follow-up): silently skipping
+                # verification for missing canonical data would let a
+                # caller who explicitly requested the production trust gate
+                # believe every signature was C++-verified when rows with
+                # no canonical content simply bypassed it entirely.
+                raise RecordError(
+                    f"signature {signature_hex!r} has no canonical content; "
+                    f"C++ digest verification was requested and cannot be "
+                    f"skipped"
+                )
             if signature_digest_verifier is not None and canonical:
                 try:
                     verified_hex = signature_digest_verifier(canonical)

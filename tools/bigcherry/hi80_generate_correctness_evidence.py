@@ -49,6 +49,7 @@ from typing import Any
 from .tuning import correctness_evidence as ce
 from .core import paths
 from .tuning import promotion_gate as gate
+from .tuning import signature_digest_verification as sdv
 from .tuning import signature_mapping as scm
 from .tuning import tune_promotion
 
@@ -113,52 +114,14 @@ def _observed_signature_hex(
     correctness for a candidate that was never actually exercised as
     fused.
 
-    Runs the SAME --moe-glu-file line once under GGML_HIP_DISPATCH_MODE=
-    record and reads back the REAL signature hex test-backend-ops' own
-    dispatch-recording code computed for the resulting dispatch (the same
-    hashing code that wrote the original production dispatch_db's own
-    `signature` column) -- no digest is recomputed in Python; two hex
-    strings from the same real C++ code are compared directly."""
-    with tempfile.TemporaryDirectory() as tmp:
-        record_db = Path(tmp) / "observed.jsonl"
-        run_env = {"GGML_HIP_DISPATCH_DB": str(record_db)}
-        result = ce.run_test_backend_ops(
-            binary, moe_glu_file=moe_glu_file, seed=seed, dispatch_mode="record",
-            forced_candidate=None, env=run_env, runner=runner,
-        )
-        if result.returncode != 0 or not record_db.is_file():
-            raise CliError(
-                f"observed-signature record-mode run failed (exit {result.returncode}) "
-                f"or produced no dispatch_db -- cannot verify the fused dispatch was "
-                f"actually executed:\n{result.stdout}\n{result.stderr}"
-            )
-        # HI119 review follow-up (dev-gpt-agent, 2026-08-25): record mode is
-        # keyed by (signature, hardware), so a single run can legitimately
-        # emit more than one observation row (e.g. multiple graph nodes or
-        # repeat calls within the same process) -- taking the FIRST row
-        # unconditionally was not a stable semantic contract. Collect every
-        # DISTINCT observed signature instead: exactly one is the only
-        # trustworthy outcome (zero means nothing was observed; more than
-        # one distinct value means this run cannot unambiguously identify
-        # which observation corresponds to the requested dispatch).
-        observed_signatures = {
-            row["signature"]
-            for line in record_db.read_text(encoding="utf-8").splitlines()
-            for row in [json.loads(line)]
-            if row.get("kind") == "observation" and isinstance(row.get("signature"), str)
-        }
-        if len(observed_signatures) == 1:
-            return next(iter(observed_signatures))
-        if len(observed_signatures) > 1:
-            raise CliError(
-                f"observed-signature record-mode run produced {len(observed_signatures)} "
-                f"DISTINCT observed signatures ({sorted(observed_signatures)!r}) -- cannot "
-                f"unambiguously determine which one corresponds to this run; refusing to "
-                f"certify correctness rather than guessing"
-            )
-    raise CliError(
-        "observed-signature record-mode run produced no observation row -- "
-        "cannot verify the fused dispatch was actually executed"
+    HI121/HI125 (2026-08-27): thin delegation to
+    signature_digest_verification.observed_test_backend_ops_signature_hex(),
+    the same record-mode-run/exactly-one-distinct-signature primitive
+    generalized for the C++-authoritative canonical-digest verifier -- one
+    authoritative implementation of this real-hardware proof instead of
+    two copies drifting apart."""
+    return sdv.observed_test_backend_ops_signature_hex(
+        binary, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
     )
 
 
