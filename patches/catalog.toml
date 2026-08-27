@@ -407,3 +407,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "HI119"
+
+[[patch]]
+id = "1241_rd33_mmvq_q8_0_f32_decode"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "RD33"
