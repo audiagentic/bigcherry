@@ -268,24 +268,30 @@ def _stage_correctness_evidence(
 
 
 def _stage_replay_export(
-    *, promoted_path: Path, tune_manifest_path: Path, tune_source_root: Path,
+    *, promoted_path: Path, target_manifest_path: Path, target_source_root: Path,
     dispatch_db: Path, workdir: Path,
 ) -> Path:
-    ggml_h = tune_source_root / "ggml" / "include" / "ggml.h"
+    """Export the dispatch cache against the REPLAY build's own manifest (not
+    tune's) -- gpt review (2026-08-27, req_ec659ded425c4335): replay.build()
+    already rebinds every winner to whatever manifest it's given (tune and
+    replay legitimately have different manifest_hash by design, since
+    variant_set is baked into the hash), so the cache must be stamped with
+    the manifest of whichever binary will actually load it, or every entry
+    reads as stale/RERUN_REQUIRED against that binary's own compiled hash."""
+    ggml_h = target_source_root / "ggml" / "include" / "ggml.h"
     cache_bytes = replay_mod.build(
-        promoted_path, tune_manifest_path, ggml_h, dispatch_db=dispatch_db,
+        promoted_path, target_manifest_path, ggml_h, dispatch_db=dispatch_db,
     )
     cache_path = workdir / "dispatch.cache"
     cache_path.write_bytes(cache_bytes)
     return cache_path
 
 
-def _stage_replay_build_and_verify(
+def _stage_replay_build(
     *, context, cfg, store, run_id, platform_name, source_name,
-    inventory_path: Path, winners_path: Path, model_path: Path, devices: str,
-    runtime_profile: campaign_config.RuntimeProfile, dispatch_cache: Path, workdir: Path,
-) -> tuple[CampaignLaneResult, dict]:
-    lane_result = _plan_and_run_one_lane(
+    inventory_path: Path, winners_path: Path,
+) -> CampaignLaneResult:
+    return _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
         build_name="replay", platform_name=platform_name, run_id=run_id,
         binary_relative_path="bin/llama-server",
@@ -293,6 +299,12 @@ def _stage_replay_build_and_verify(
             "replay": (("inventory", inventory_path), ("promoted-winners", winners_path)),
         },
     )
+
+
+def _stage_replay_verify(
+    *, lane_result: CampaignLaneResult, model_path: Path, devices: str,
+    runtime_profile: campaign_config.RuntimeProfile, dispatch_cache: Path, workdir: Path,
+) -> dict:
     binary_path = lane_result.binary_ref.path
     coverage_path = workdir / "coverage.json"
     runner = ServerRunner(
@@ -309,7 +321,16 @@ def _stage_replay_build_and_verify(
     with runner:
         runner.run_completion("Explain how a compass works.", n_predict=96)
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
-    return lane_result, coverage
+    # gpt review (2026-08-27, req_ec659ded425c4335): a stale cache or any
+    # rerun_required entry means the export was bound to the wrong manifest
+    # (this exact HI130 defect) -- fail loudly instead of silently reporting
+    # a "successful" campaign that never actually used tuned dispatch.
+    if coverage.get("stale") or coverage.get("rerun_required", 0):
+        raise TuneCampaignError(
+            "replay verification found stale/rerun_required entries -- the "
+            f"exported cache does not match the replay binary's own manifest: {coverage!r}"
+        )
+    return coverage
 
 
 def run_tune_campaign(
@@ -402,18 +423,29 @@ def run_tune_campaign(
     replay_coverage: dict | None = None
     dispatch_cache_path: Path | None = None
     if promoted_after > 0:
-        if tune_manifest_path is None:
-            raise TuneCampaignError("tune build produced no manifest_ref -- cannot export replay")
-        dispatch_cache_path = _stage_replay_export(
-            promoted_path=workdir / "promoted.jsonl", tune_manifest_path=tune_manifest_path,
-            tune_source_root=tune_result.source_root, dispatch_db=dispatch_db, workdir=workdir,
-        )
-        replay_result, replay_coverage = _stage_replay_build_and_verify(
+        # Build the replay binary FIRST, then export the cache against ITS
+        # OWN manifest_ref -- not tune's. tune (workload-max) and replay
+        # (replay-full) legitimately have different manifest_hash by design
+        # (see _stage_replay_export docstring); exporting against tune's
+        # manifest stamps every cache entry with a hash the replay binary
+        # never has, so it always reads as stale. gpt review confirmed this
+        # ordering bug is the actual HI130 root cause (req_ec659ded425c4335).
+        replay_result = _stage_replay_build(
             context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-replay",
             platform_name=platform_name, source_name=source_name,
             inventory_path=inventory_path, winners_path=workdir / "promoted.jsonl",
-            model_path=model_path, devices=devices, runtime_profile=profile,
-            dispatch_cache=dispatch_cache_path, workdir=workdir,
+        )
+        if replay_result.manifest_ref is None:
+            raise TuneCampaignError("replay build produced no manifest_ref -- cannot export cache")
+        dispatch_cache_path = _stage_replay_export(
+            promoted_path=workdir / "promoted.jsonl",
+            target_manifest_path=Path(replay_result.manifest_ref.path),
+            target_source_root=replay_result.source_root,
+            dispatch_db=dispatch_db, workdir=workdir,
+        )
+        replay_coverage = _stage_replay_verify(
+            lane_result=replay_result, model_path=model_path, devices=devices,
+            runtime_profile=profile, dispatch_cache=dispatch_cache_path, workdir=workdir,
         )
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
