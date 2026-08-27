@@ -69,13 +69,16 @@ def _write_fixture_vendor(tmp_path: Path) -> Path:
     return vendor
 
 
-def _record_runner_factory(*, observed_hex="c" * 32, calls: list | None = None):
+def _record_runner_factory(*, observed_hex="c" * 32, observed_canonical=None, calls: list | None = None):
     def runner(argv, capture_output, text, env):
         if calls is not None:
             calls.append(argv)
         db_path = Path(env["GGML_HIP_DISPATCH_DB"])
         db_path.write_text(
-            json.dumps({"kind": "observation", "signature": observed_hex}) + "\n",
+            json.dumps({
+                "kind": "observation", "signature": observed_hex,
+                "canonical": observed_canonical if observed_canonical is not None else {},
+            }) + "\n",
             encoding="utf-8",
         )
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
@@ -87,11 +90,12 @@ class ObservedTestBackendOpsSignatureHexTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             test_file = Path(tmp) / "case.txt"
             test_file.write_text("dummy\n", encoding="utf-8")
-            result = sdv.observed_test_backend_ops_signature_hex(
+            result, canonical = sdv.observed_test_backend_ops_signature_hex(
                 Path("test-backend-ops"), test_file=test_file,
                 runner=_record_runner_factory(observed_hex="AB" * 16),
             )
             self.assertEqual(result, "ab" * 16)
+            self.assertEqual(canonical, {})
 
     def test_zero_observations_fails_closed(self):
         def runner(argv, capture_output, text, env):
@@ -106,8 +110,8 @@ class ObservedTestBackendOpsSignatureHexTests(unittest.TestCase):
         def runner(argv, capture_output, text, env):
             db_path = Path(env["GGML_HIP_DISPATCH_DB"])
             db_path.write_text(
-                json.dumps({"kind": "observation", "signature": "a" * 32}) + "\n"
-                + json.dumps({"kind": "observation", "signature": "b" * 32}) + "\n",
+                json.dumps({"kind": "observation", "signature": "a" * 32, "canonical": {}}) + "\n"
+                + json.dumps({"kind": "observation", "signature": "b" * 32, "canonical": {}}) + "\n",
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
@@ -119,13 +123,14 @@ class ObservedTestBackendOpsSignatureHexTests(unittest.TestCase):
     def test_repeated_identical_observations_are_fine(self):
         def runner(argv, capture_output, text, env):
             db_path = Path(env["GGML_HIP_DISPATCH_DB"])
-            row = json.dumps({"kind": "observation", "signature": "c" * 32}) + "\n"
+            row = json.dumps({"kind": "observation", "signature": "c" * 32, "canonical": {}}) + "\n"
             db_path.write_text(row + row, encoding="utf-8")
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
-        result = sdv.observed_test_backend_ops_signature_hex(
+        result, canonical = sdv.observed_test_backend_ops_signature_hex(
             Path("test-backend-ops"), test_file=Path("x"), runner=runner,
         )
         self.assertEqual(result, "c" * 32)
+        self.assertEqual(canonical, {})
 
     def test_nonzero_returncode_fails_closed(self):
         def runner(argv, capture_output, text, env):
@@ -143,7 +148,9 @@ class ObservedSignatureDigestHexTests(unittest.TestCase):
             calls: list = []
             result = sdv.observed_signature_digest_hex(
                 MUL_MAT_CANONICAL, binary=Path("test-backend-ops"), vendor_root=vendor,
-                runner=_record_runner_factory(observed_hex="d" * 32, calls=calls),
+                runner=_record_runner_factory(
+                    observed_hex="d" * 32, observed_canonical=MUL_MAT_CANONICAL, calls=calls,
+                ),
             )
             self.assertEqual(result, "d" * 32)
             self.assertEqual(len(calls), 1)
@@ -155,7 +162,9 @@ class ObservedSignatureDigestHexTests(unittest.TestCase):
             calls: list = []
             result = sdv.observed_signature_digest_hex(
                 GLU_CANONICAL, binary=Path("test-backend-ops"), vendor_root=vendor,
-                runner=_record_runner_factory(observed_hex="e" * 32, calls=calls),
+                runner=_record_runner_factory(
+                    observed_hex="e" * 32, observed_canonical=GLU_CANONICAL, calls=calls,
+                ),
             )
             self.assertEqual(result, "e" * 32)
             self.assertEqual(len(calls), 1)
@@ -200,6 +209,29 @@ class ObservedSignatureDigestHexTests(unittest.TestCase):
             self.assertEqual(calls, [])
 
 
+def _echoing_runner_factory(*, calls: list | None = None):
+    """A record-mode fake that echoes back whichever canonical the request
+    was actually for (MUL_MAT_CANONICAL via --test-file, GLU_CANONICAL via
+    --moe-glu-file) -- needed so _require_canonical_match() sees a
+    consistent, correct pairing regardless of which routing branch a given
+    call took, e.g. across two DIFFERENT canonicals sharing one verifier
+    in a memoization test."""
+    def runner(argv, capture_output, text, env):
+        if calls is not None:
+            calls.append(argv)
+        db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+        if "--moe-glu-file" in argv:
+            canonical, digest = GLU_CANONICAL, "e" * 32
+        else:
+            canonical, digest = MUL_MAT_CANONICAL, "d" * 32
+        db_path.write_text(
+            json.dumps({"kind": "observation", "signature": digest, "canonical": canonical}) + "\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+    return runner
+
+
 class MakeSignatureDigestVerifierTests(unittest.TestCase):
     def test_memoizes_per_unique_canonical(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -207,12 +239,12 @@ class MakeSignatureDigestVerifierTests(unittest.TestCase):
             calls: list = []
             verifier = sdv.make_signature_digest_verifier(
                 binary=Path("test-backend-ops"), vendor_root=vendor,
-                runner=_record_runner_factory(observed_hex="f" * 32, calls=calls),
+                runner=_echoing_runner_factory(calls=calls),
             )
             first = verifier(MUL_MAT_CANONICAL)
             second = verifier(dict(MUL_MAT_CANONICAL))  # structurally identical, new dict object
-            self.assertEqual(first, "f" * 32)
-            self.assertEqual(second, "f" * 32)
+            self.assertEqual(first, "d" * 32)
+            self.assertEqual(second, "d" * 32)
             self.assertEqual(len(calls), 1)
 
     def test_distinct_canonicals_each_invoke_the_runner(self):
@@ -221,11 +253,26 @@ class MakeSignatureDigestVerifierTests(unittest.TestCase):
             calls: list = []
             verifier = sdv.make_signature_digest_verifier(
                 binary=Path("test-backend-ops"), vendor_root=vendor,
-                runner=_record_runner_factory(observed_hex="1" * 32, calls=calls),
+                runner=_echoing_runner_factory(calls=calls),
             )
             verifier(MUL_MAT_CANONICAL)
             verifier(GLU_CANONICAL)
             self.assertEqual(len(calls), 2)
+
+    def test_poisoned_canonical_with_correct_digest_is_rejected(self):
+        """Adversarial-review follow-up (2026-08-27): a canonical tampered
+        in a field the mapper ignores (nb0, here) but producing the same
+        real digest must NOT be accepted -- digest equality alone is not
+        proof of canonical authenticity."""
+        with tempfile.TemporaryDirectory() as tmp:
+            vendor = _write_fixture_vendor(Path(tmp))
+            poisoned = dict(MUL_MAT_CANONICAL, nb0=[999, 999, 999, 999])
+            verifier = sdv.make_signature_digest_verifier(
+                binary=Path("test-backend-ops"), vendor_root=vendor,
+                runner=_echoing_runner_factory(),
+            )
+            with self.assertRaisesRegex(ce.EvidenceError, "does not match the supplied"):
+                verifier(poisoned)
 
 
 if __name__ == "__main__":

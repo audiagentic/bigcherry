@@ -119,10 +119,14 @@ def _observed_signature_hex(
     the same record-mode-run/exactly-one-distinct-signature primitive
     generalized for the C++-authoritative canonical-digest verifier -- one
     authoritative implementation of this real-hardware proof instead of
-    two copies drifting apart."""
-    return sdv.observed_test_backend_ops_signature_hex(
+    two copies drifting apart. This caller only needs the hex (it compares
+    against the row's own claimed signature_hex itself); the canonical
+    half of that primitive's return is for signature_digest_verification's
+    own poisoned-canonical check, not used here."""
+    observed_hex, _observed_canonical = sdv.observed_test_backend_ops_signature_hex(
         binary, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
     )
+    return observed_hex
 
 
 def generate_for_row(
