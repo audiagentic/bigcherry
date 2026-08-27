@@ -415,3 +415,11 @@ origin = "local"
 backend = "hip"
 state = "untested"
 plan-item = "RD33"
+
+[[patch]]
+id = "1242_hi134_meta_stage_trace"
+kind = "framework"
+origin = "local"
+backend = "hip"
+state = "untested"
+plan-item = "HI134"
