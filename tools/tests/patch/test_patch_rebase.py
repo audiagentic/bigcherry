@@ -319,6 +319,22 @@ class StaleReportTests(unittest.TestCase):
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(stale, self.upstream)
 
+    def test_requires_drift_is_stale(self):
+        # Simulates a packaged patch's patch.toml REQUIRES changing without
+        # touching patch.py -- implementation_digest alone would miss this.
+        patches = [dict(p) for p in self.report["patches"]]
+        patches[0]["requires"] = ["some_other_patch"]
+        stale = dict(self.report, patches=patches)
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase._require_fresh(stale, self.upstream)
+
+    def test_conflicts_drift_is_stale(self):
+        patches = [dict(p) for p in self.report["patches"]]
+        patches[0]["conflicts"] = ["some_other_patch"]
+        stale = dict(self.report, patches=patches)
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase._require_fresh(stale, self.upstream)
+
     def test_selector_widened_since_report_is_stale(self):
         # No patch bytes, overlay, or revision moved -- just the selector's
         # OWN resolution changed (e.g. an uncommitted config/recipes.toml
