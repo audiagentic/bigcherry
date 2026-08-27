@@ -177,6 +177,70 @@ class RebaseCheckTests(unittest.TestCase):
         self.assertEqual(loaded, report)
 
 
+PROVIDER_PATCH = """\
+from bigcherry.patcher import Edit, FilePatch
+GROUP = 'core'
+STATE = 'validated'
+PATCHES = [FilePatch(path='target.c', edits=(
+    Edit(id='implicit-provider', anchor=r'^seed$', text='\\nIMPLICIT_MARKER',
+         guard=r'^IMPLICIT_MARKER$'),
+    Edit(id='moved-anchor', anchor=r'^old_failure_anchor$', text='\\nfailed_insert',
+         guard=r'^failed_insert$', rationale='anchor renamed by upstream'),
+))]
+"""
+
+CONSUMER_PATCH = """\
+from bigcherry.patcher import Edit, FilePatch
+GROUP = 'core'
+STATE = 'validated'
+PATCHES = [FilePatch(path='target.c', edits=(
+    Edit(id='implicit-consumer', anchor=r'^IMPLICIT_MARKER$', text='\\nconsumer_insert',
+         guard=r'^consumer_insert$', rationale='intentionally undeclared dependency'),
+))]
+"""
+
+
+class QuarantineFixedPointTests(unittest.TestCase):
+    """A patch that only worked because an earlier, now-broken patch's edit
+    was silently present in the tree (no declared REQUIRES) must come out
+    QUARANTINED, distinct from a direct anchor failure -- it only shows up
+    once the pristine fixed-point reprobe removes the failed patch's
+    contribution."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-rebase-quarantine-")
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.upstream = _init_upstream(self.base)
+
+        self.patches_root = self.base / "patches"
+        self.patches_root.mkdir()
+        (self.patches_root / "0100_provider.py").write_text(PROVIDER_PATCH, encoding="utf-8")
+        (self.patches_root / "0200_consumer.py").write_text(CONSUMER_PATCH, encoding="utf-8")
+
+        self.overlay_root = self.base / "overlay"
+        self.overlay_root.mkdir()
+
+        self._old_patches = paths.PATCHES
+        self._old_overlay = paths.SRC_OVERLAY
+        paths.PATCHES = self.patches_root
+        paths.SRC_OVERLAY = self.overlay_root
+
+    def tearDown(self) -> None:
+        _git(self.upstream, "worktree", "prune")
+        paths.PATCHES = self._old_patches
+        paths.SRC_OVERLAY = self._old_overlay
+
+    def test_undeclared_dependency_is_quarantined_not_failed(self):
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
+        by_id = {p["patch_id"]: p for p in report["patches"]}
+        self.assertEqual(by_id["0100_provider"]["status"], rebase.STATUS_FAILED)
+        self.assertEqual(by_id["0200_consumer"]["status"], rebase.STATUS_QUARANTINED)
+        self.assertEqual(report["known_good_patch_ids"], [])
+        self.assertEqual(report["summary"]["quarantined"], 1)
+        self.assertEqual(report["summary"]["failed"], 1)
+
+
 class StaleReportTests(unittest.TestCase):
     """Each bound identity field must independently trigger fail-closed
     rejection -- a report that outlives the state it describes must never
@@ -246,6 +310,15 @@ class StaleReportTests(unittest.TestCase):
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(stale, self.upstream)
 
+    def test_composition_tampered_selection_is_stale(self):
+        # patches[] shrunk while selection.patch_ids was left untouched --
+        # digests for the remaining entries still match, so this must be
+        # caught by the composition-consistency check, not a digest check.
+        patches = [dict(p) for p in self.report["patches"]]
+        stale = dict(self.report, patches=patches[:0], selection={"patch_ids": ["0100_clean"]})
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase._require_fresh(stale, self.upstream)
+
     def test_apply_known_good_rejects_stale_report(self):
         report_path = self.base / "report.json"
         stale = dict(self.report, upstream_revision="0" * 40)
@@ -279,19 +352,27 @@ class ApplyKnownGoodTests(unittest.TestCase):
         paths.PATCHES = self._old_patches
         paths.SRC_OVERLAY = self._old_overlay
 
+    def _fake_record(self, *, stage: str = "audited"):
+        """A real ReleaseRecord (so release/records.py's own stage-transition
+        rules apply exactly as they would for a real apply), with .save()
+        stubbed out so nothing touches the real releases/ directory."""
+        from bigcherry.release import records as releases
+
+        record = releases.ReleaseRecord(revision="deadbeef" * 5, stage=stage)
+        record.audit = {"passed": True}
+        record.save = lambda: None
+        return record
+
     def test_apply_known_good_writes_only_the_known_good_subset(self):
         from unittest import mock
-        from types import SimpleNamespace
 
         report = rebase.run_rebase_check(self.upstream, all_patches=True)
         self.assertEqual(set(report["known_good_patch_ids"]), {"0100_clean"})
         report_path = self.base / "report.json"
         rebase.write_report(report_path, report)
 
-        fake_record = SimpleNamespace(audit={"passed": True})
-        with mock.patch(
-            "bigcherry.__main__._record_for", return_value=fake_record,
-        ):
+        record = self._fake_record(stage="audited")
+        with mock.patch("bigcherry.__main__._record_for", return_value=record):
             result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
 
         self.assertTrue(result.ok)
@@ -299,6 +380,43 @@ class ApplyKnownGoodTests(unittest.TestCase):
         self.assertEqual(result.known_good_patch_ids, ("0100_clean",))
         content = (self.upstream / "target.c").read_text(encoding="utf-8")
         self.assertIn("clean_insert", content)
+        # Partial reconciliation progress must NOT advance the release stage.
+        self.assertEqual(record.stage, "audited")
+
+    def test_apply_known_good_full_composition_advances_stage_to_patched(self):
+        from unittest import mock
+
+        (self.patches_root / "0300_failed.py").unlink()  # only the clean patch remains
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
+        self.assertEqual(set(report["known_good_patch_ids"]), {"0100_clean"})
+        self.assertEqual(set(report["selection"]["patch_ids"]), {"0100_clean"})
+        report_path = self.base / "report.json"
+        rebase.write_report(report_path, report)
+
+        record = self._fake_record(stage="audited")
+        with mock.patch("bigcherry.__main__._record_for", return_value=record):
+            result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
+
+        self.assertTrue(result.ok)
+        self.assertFalse(result.partial)
+        self.assertEqual(record.stage, "patched")
+
+    def test_partial_known_good_apply_refused_on_a_later_stage_tree(self):
+        from unittest import mock
+
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
+        self.assertTrue(set(report["known_good_patch_ids"]) < set(report["selection"]["patch_ids"]))
+        report_path = self.base / "report.json"
+        rebase.write_report(report_path, report)
+
+        record = self._fake_record(stage="generated")
+        with mock.patch("bigcherry.__main__._record_for", return_value=record):
+            with self.assertRaises(rebase.RebaseCheckError):
+                rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
+            # --force explicitly accepts invalidating later-stage evidence.
+            result = rebase.apply_known_good(self.upstream, report_path, force=True, dry_run=False)
+        self.assertTrue(result.ok)
+        self.assertTrue(result.partial)
 
 
 if __name__ == "__main__":

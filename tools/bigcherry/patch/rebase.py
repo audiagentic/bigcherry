@@ -43,6 +43,7 @@ from .. import pin_transition
 from ..core import paths
 from .apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from .apply import PatchError
+from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
 
 REPORT_SCHEMA_VERSION = 1
@@ -140,7 +141,15 @@ def overlay_digest(overlay_root: Path | None = None) -> str:
 def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
     """The overlay's post-install content, keyed by repo-relative path --
     the same seed ``_apply_selection``'s dry-run path feeds ``apply_all``
-    (PA16 follow-up to the overlay/dry-run parity fix)."""
+    (PA16 follow-up to the overlay/dry-run parity fix).
+
+    Decodes raw bytes directly (``bytes.decode``, not ``Path.read_text``)
+    so this performs no universal-newline translation -- ``_digest_from_texts``
+    hashes ``text.encode("utf-8")``, and that must equal ``read_bytes()``
+    exactly for it to agree with :func:`overlay_digest`'s raw-byte hash of
+    the same files, or a CRLF-containing overlay file would silently
+    produce two different digests for the same on-disk content depending
+    on which function computed it."""
     overlay_root = overlay_root or paths.SRC_OVERLAY
     texts: dict[str, str] = {}
     if overlay_root.is_dir():
@@ -148,8 +157,45 @@ def _overlay_texts(overlay_root: Path | None = None) -> dict[str, str]:
             if not source.is_file():
                 continue
             relative = str(source.relative_to(overlay_root)).replace("\\", "/")
-            texts[relative] = source.read_text(encoding="utf-8")
+            texts[relative] = source.read_bytes().decode("utf-8")
     return texts
+
+
+def _digest_from_texts(texts: dict[str, str]) -> str:
+    """Same algorithm as :func:`overlay_digest`, but over an in-memory
+    snapshot already taken -- so a report's ``overlay_digest`` describes
+    EXACTLY the bytes every round of the probe actually saw, not a second,
+    separately-timed disk read that a concurrent edit on this shared,
+    multi-agent working tree could see differently (adversarial-review
+    follow-up: report-generation snapshot stability)."""
+    hasher = hashlib.sha256()
+    for relative in sorted(texts):
+        hasher.update(relative.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(texts[relative].encode("utf-8"))
+        hasher.update(b"\0")
+    return hasher.hexdigest()
+
+
+def _load_module_patches(module: "patchset.PatchModule") -> list["patcher.FilePatch"]:
+    """Load one patch's implementation bound EXACTLY to the digest already
+    recorded for it (``module.content_hash``) via
+    ``registry.load_implementation``'s own ``expected_digest`` check.
+
+    ``patchset.load_resolved`` re-reads the registry and loads by ID with no
+    digest binding at all -- fine for a normal apply where the caller just
+    resolved the selection a moment ago, but this module runs across a
+    probe that can take real time on a shared, multi-agent working tree,
+    and the known-good apply path binds to a REPORT's digest, possibly
+    written much earlier. Going through the digest-checked loader directly
+    closes that TOCTOU window instead of silently executing whatever bytes
+    happen to be on disk at load time."""
+    root = module.catalog_root or paths.PATCHES
+    registry = patch_registry.load_registry(root)
+    descriptor = registry.get(module.patch_id)
+    return patch_registry.load_implementation(
+        descriptor, root=root, expected_digest=module.content_hash,
+    )
 
 
 def _selection_patch_ids(
@@ -454,7 +500,7 @@ def probe_patch(
     previous_revision: str | None,
     revision: str,
 ) -> PatchProbe:
-    file_patches = patchset.load_resolved(patchset.ResolvedPatchSet((module,)))
+    file_patches = _load_module_patches(module)
     files = [
         _probe_file_patch(
             fp, root, texts,
@@ -485,6 +531,7 @@ def quarantine_fixed_point(
     context_lines: int,
     previous_revision: str | None,
     revision: str,
+    overlay_texts: dict[str, str],
 ) -> tuple[dict[str, PatchProbe], tuple[str, ...]]:
     """Compute the stable, dependency-closed known-good subset.
 
@@ -504,7 +551,7 @@ def quarantine_fixed_point(
     final_probes: dict[str, PatchProbe] = {}
 
     while True:
-        texts = _overlay_texts()
+        texts = dict(overlay_texts)
         round_probes: dict[str, PatchProbe] = {}
         round_failed: set[str] = set()
         for patch_id in ordered_ids:
@@ -606,6 +653,13 @@ def run_rebase_check(
     selection = resolve_selection(recipe_name=recipe_name, all_patches=all_patches)
     repository = UpstreamRepository(root)
     revision = _git(root, "rev-parse", "HEAD")
+    # Snapshot the overlay ONCE, up front: every probe round and the report's
+    # own overlay_digest are computed from these exact same in-memory bytes,
+    # rather than each re-reading src/ at its own moment -- a concurrent
+    # overlay edit on this shared, multi-agent working tree could otherwise
+    # make different rounds see different input and then publish a digest
+    # describing only whatever state disk happened to be in last.
+    overlay_snapshot = _overlay_texts()
 
     with tempfile.TemporaryDirectory(prefix="bigcherry-rebase-check-") as tmp:
         worktree = Path(tmp) / "worktree"
@@ -616,6 +670,7 @@ def run_rebase_check(
                 context_lines=context_lines,
                 previous_revision=_previous_upstream_revision(revision),
                 revision=revision,
+                overlay_texts=overlay_snapshot,
             )
         except WorkspaceError as exc:
             raise RebaseCheckError(f"isolated worktree probe failed: {exc}") from exc
@@ -644,7 +699,7 @@ def run_rebase_check(
         "previous_upstream_revision": _previous_upstream_revision(revision),
         "bigcherry_revision": _bigcherry_revision(),
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
-        "overlay_digest": overlay_digest(),
+        "overlay_digest": _digest_from_texts(overlay_snapshot),
         "selection": {"patch_ids": list(selection.modules and [m.patch_id for m in selection.modules] or [])},
         "known_good_patch_ids": list(known_good),
         "summary": summary,
@@ -751,8 +806,24 @@ def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
         )
 
     selected = tuple(report.get("selection", {}).get("patch_ids", ()))
+    patch_entries = tuple(report.get("patches", ()))
+    # Adversarial-review follow-up: a report edited (by hand, or a bug) to
+    # drop entries from `patches[]` while leaving `selection.patch_ids`
+    # untouched would otherwise pass every digest check below trivially --
+    # there would just be fewer entries to check. The two lists are
+    # required to name EXACTLY the same set, closing that gap before any
+    # per-entry check runs.
+    reported_ids = {entry.get("patch_id") for entry in patch_entries}
+    if reported_ids != set(selected):
+        raise StaleRebaseReportError(
+            "report's patches[] does not name exactly its own selection.patch_ids "
+            f"(only in patches[]: {sorted(reported_ids - set(selected))}, "
+            f"only in selection: {sorted(set(selected) - reported_ids)}) -- "
+            "the report is internally inconsistent, re-run patch-rebase-check"
+        )
+
     catalog = {m.patch_id: m for m in patchset.catalog()}
-    for patch_entry in report.get("patches", ()):
+    for patch_entry in patch_entries:
         patch_id = patch_entry["patch_id"]
         current = catalog.get(patch_id)
         if current is None:
@@ -791,18 +862,19 @@ def apply_known_good(
     (``_require_fresh``) and goes through the SAME ``apply_all`` transaction
     a plain ``apply`` uses -- no separate, less-audited write path.
 
-    A partial known-good set (fewer patches than the report's full
-    selection) never advances the release record to ``patched``: it is
-    explicit reconciliation progress, not a completed, fully-patched tree.
+    A *full* known-good apply (every selected patch reproved clean) records
+    exactly what a plain ``apply`` records and can advance the release stage
+    to ``patched``. A *partial* known-good set never advances the stage --
+    it is explicit reconciliation progress, not a completed tree -- and is
+    only accepted while the record is at stage ``audited`` or ``broken``
+    (unless ``force``): applying a partial subset onto an already-later-stage
+    tree (generated/built/tested/validated) would leave that later-stage
+    evidence describing a composition that was never actually completed.
     """
     report = load_report(report_path)
     known_good = _require_fresh(report, root)
     selected = tuple(report.get("selection", {}).get("patch_ids", ()))
     partial = set(known_good) != set(selected)
-
-    resolved = patchset.resolve_exact(known_good, allow_rejected=True) if known_good else \
-        patchset.ResolvedPatchSet((), None)
-    file_patches = patchset.load_resolved(resolved)
 
     from .. import __main__ as legacy  # noqa: PLC0415 (leaf import, avoids a cycle)
 
@@ -812,6 +884,30 @@ def apply_known_good(
             "apply --known-good: tree has not passed a strict audit; run "
             "`bigcherry audit` first, or pass --force"
         )
+    if partial and not force and record.stage not in ("audited", "broken"):
+        raise RebaseCheckError(
+            "apply --known-good: a PARTIAL known-good subset is only accepted "
+            f"on a tree at stage 'audited' or 'broken' (current: {record.stage!r}) "
+            "-- applying it now would leave later-stage evidence describing a "
+            "composition that was never fully applied; pass --force only if "
+            "you accept invalidating that evidence yourself"
+        )
+
+    # Bind each implementation load to the exact digest the REPORT recorded
+    # (not merely whatever the registry resolves to right now) -- closes the
+    # TOCTOU window between _require_fresh()'s digest check above and the
+    # actual load below, on this shared, multi-agent working tree.
+    report_digests = {p["patch_id"]: p["implementation_digest"] for p in report.get("patches", ())}
+    resolved = patchset.resolve_exact(known_good, allow_rejected=True) if known_good else \
+        patchset.ResolvedPatchSet((), None)
+    file_patches: list[patcher.FilePatch] = []
+    for module in resolved.modules:
+        module_root = module.catalog_root or paths.PATCHES
+        module_registry = patch_registry.load_registry(module_root)
+        descriptor = module_registry.get(module.patch_id)
+        file_patches.extend(patch_registry.load_implementation(
+            descriptor, root=module_root, expected_digest=report_digests[module.patch_id],
+        ))
 
     overlay_backup: dict[str, str | None] = {}
     overlay_sim: dict[str, str] = {}
@@ -820,6 +916,35 @@ def apply_known_good(
     ok = all(r.ok for r in results)
     if not ok and not dry_run and overlay_backup:
         legacy._restore_overlay(root, overlay_backup)
+
+    if not dry_run:
+        record.patches = releases.summarise_patches(results)
+        if partial:
+            # Reconciliation progress only: never advance the stage, and a
+            # successful partial apply must not even look like the failure
+            # path (which explicitly demotes to `broken`) -- it *did* apply
+            # exactly what it claimed to. A failed partial apply still means
+            # the tree may be half-mutated in ways record_apply_result's
+            # `broken` transition exists to name.
+            if ok:
+                if record.notes.startswith("patches failed:"):
+                    record.notes = ""
+            else:
+                releases.record_apply_result(record, False)
+                record.notes = "patches failed: " + ", ".join(
+                    record.patches.get("failed_edits", [])
+                )
+            record.save()
+        else:
+            tree_mutated = bool(written) or any(result.changed for result in results)
+            releases.record_apply_result(record, ok, mutated=tree_mutated)
+            if not ok:
+                record.notes = "patches failed: " + ", ".join(
+                    record.patches.get("failed_edits", [])
+                )
+            elif record.notes.startswith("patches failed:"):
+                record.notes = ""
+            record.save()
 
     return ApplyKnownGoodResult(
         ok=ok,

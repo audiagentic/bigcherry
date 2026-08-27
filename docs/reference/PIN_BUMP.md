@@ -63,14 +63,22 @@ window; bump one, record, then bump the other.
    bigcherry pull --recipe bigcherry
    ```
 
-3. **Re-verify the patches against the new revision.**
-   This is a mechanical gate, not prose review: run `patch-rebase-check` in
-   an isolated worktree (it never mutates the checkout you just moved) and
-   fix everything it reports before touching `apply`/`audit`.
+3. **Audit the new upstream tree, then mechanically rebase-check the selected
+   patches against it.** `apply` (with or without `--rebase-report`) still
+   requires a passing audit on the UNPATCHED tree before it will run —
+   `patch-rebase-check` doesn't touch that gate (it's observational and can
+   run any time after `pull`), but it needs to come after `audit` in this
+   runbook or you'll hit `apply`'s refusal before you ever get to use its
+   report.
 
    ```text
+   bigcherry audit
    bigcherry patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json
    ```
+
+   This is a mechanical gate, not prose review: `patch-rebase-check` runs in
+   an isolated worktree (it never mutates the checkout you just moved) and
+   fix everything it reports before touching `apply`.
 
    Per-patch status is one of `CLEAN` / `CLEAN_NOOP` / `NOT_APPLICABLE_BY_DESIGN`
    (fine, no action) or `FAILED_NEEDS_RECONCILIATION` / `BLOCKED_BY_DEPENDENCY`
@@ -97,16 +105,21 @@ window; bump one, record, then bump the other.
    upstream revision, the BigCherry tooling revision, any patch's bytes, the
    overlay's bytes, or the patch-application semantics version. A report is
    single-use evidence for the exact state it was computed against, not a
-   standing waiver. Applying a partial known-good subset does not advance
-   the release record to `patched` — it is reconciliation progress, not a
-   finished tree; fix the reconciliation list and re-run
-   `patch-rebase-check` until the full selection is clean, then:
+   standing waiver.
 
-   ```text
-   bigcherry audit
-   ```
+   A *full* known-good apply (every selected patch reproved clean) advances
+   the release record `audited -> patched` exactly like a plain `apply`
+   would. A *partial* known-good apply is only accepted while the record is
+   at stage `audited` or `broken` — applying a partial subset onto an
+   already-`patched`-or-later tree would leave later-stage evidence
+   (generated/built/tested/validated) describing a composition that was
+   never actually fully applied, so it's refused unless you pass `--force`
+   and accept invalidating that evidence yourself. A partial apply never
+   advances the stage past `audited`: it is reconciliation progress, not a
+   finished tree. Fix the reconciliation list and re-run
+   `patch-rebase-check` (then `apply --known-good` again) until the full
+   selection is clean and the record reaches `patched`.
 
-   which advances the release record `pulled -> audited` (or `-> broken`).
    `patch-rebase-check` and `pin-status` (step 4) answer different
    questions and are never substitutes for each other: `pin-status` is pure
    revision identity (is the checkout at the pinned SHA?); `patch-rebase-check`
