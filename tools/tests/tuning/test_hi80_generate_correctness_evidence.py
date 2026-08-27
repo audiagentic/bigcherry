@@ -523,7 +523,7 @@ def _fake_glu_runner_factory(
         if mode == "record":
             db_path = Path(env["GGML_HIP_DISPATCH_DB"])
             db_path.write_text(
-                json.dumps({"kind": "observation", "signature": observed_hex}) + "\n",
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")

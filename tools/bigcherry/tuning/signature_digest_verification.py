@@ -42,10 +42,11 @@ def observed_test_backend_ops_signature_hex(
     moe_glu_file: Path | None = None,
     seed: int = 1,
     runner=subprocess.run,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     """Run ``test-backend-ops`` in record mode against one real test-file
-    or moe-glu-file line and return the single distinct signature hex its
-    own dispatch-recording code observed.
+    or moe-glu-file line and return (a) the single distinct signature hex
+    its own dispatch-recording code observed, and (b) the canonical
+    content it recorded alongside that hex.
 
     Exactly HI80's proven rule (generalized, not reimplemented twice):
     repeated observation rows for the SAME signature are fine (a graph can
@@ -53,6 +54,14 @@ def observed_test_backend_ops_signature_hex(
     one DISTINCT observed signature means this run cannot unambiguously
     identify which observation corresponds to the requested case, and
     fails closed rather than guessing.
+
+    The observed canonical (adversarial-review follow-up, 2026-08-27):
+    ``hip-autotune-record.cpp`` writes the real C++-computed
+    ``canonical_json`` alongside every observation's signature hex --
+    returning it lets a caller require it to equal the canonical it
+    SUPPLIED before trusting the digest, which this function alone cannot
+    do (it only knows what the mapper chose to reconstruct, not what the
+    caller originally claimed).
     """
     with tempfile.TemporaryDirectory() as tmp:
         record_db = Path(tmp) / "observed.jsonl"
@@ -68,7 +77,7 @@ def observed_test_backend_ops_signature_hex(
                 f"independently observe the real signature hex:\n"
                 f"{result.stdout}\n{result.stderr}"
             )
-        observed: set[str] = set()
+        observed: dict[str, dict[str, Any]] = {}
         for line in record_db.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
@@ -77,8 +86,9 @@ def observed_test_backend_ops_signature_hex(
             if row.get("kind") != "observation":
                 continue
             signature = row.get("signature")
-            if isinstance(signature, str):
-                observed.add(signature.lower())
+            canonical = row.get("canonical")
+            if isinstance(signature, str) and isinstance(canonical, dict):
+                observed[signature.lower()] = canonical
         if len(observed) != 1:
             raise ce.EvidenceError(
                 f"signature-verification record-mode run observed "
@@ -86,13 +96,45 @@ def observed_test_backend_ops_signature_hex(
                 f"1) -- cannot unambiguously identify the real hex for "
                 f"this case: {sorted(observed)!r}"
             )
-        value = next(iter(observed))
+        value, observed_canonical = next(iter(observed.items()))
         if len(value) != 32 or any(c not in "0123456789abcdef" for c in value):
             raise ce.EvidenceError(
                 f"signature-verification record-mode run observed a "
                 f"malformed signature hex: {value!r}"
             )
-        return value
+        return value, observed_canonical
+
+
+def _normalized(canonical: dict[str, Any]) -> str:
+    return json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _require_canonical_match(supplied: dict[str, Any], observed: dict[str, Any]) -> None:
+    """Adversarial-review follow-up (2026-08-27): matching digests alone
+    does not prove ``supplied`` is what the real hash was computed from --
+    the test-file-line mappers only use a SUBSET of a canonical's fields
+    (e.g. signature_to_test_file_line ignores nb0/nb1/nbd/prec/flags
+    entirely, always reconstructing the natural contiguous strides for the
+    given shape/type). A canonical with those fields tampered but the same
+    ne/type fields would make the mapper reconstruct an IDENTICAL real
+    dispatch and observe the SAME digest, letting a poisoned canonical
+    pass digest verification even though its true hash (which the real
+    signature hasher DOES cover those fields for) would differ -- exactly
+    the poisoned-first-canonical attack HI125 exists to close. Comparing
+    the REAL observed canonical (recorded by the same real C++ code that
+    computed the digest) against the supplied one closes it: for honest
+    data the mapper's reconstruction is a deterministic function of
+    ne/type, so the natural contiguous layout it produces always equals
+    a legitimately-recorded production canonical's own fields; only a
+    tampered field creates a mismatch."""
+    if _normalized(supplied) != _normalized(observed):
+        raise ce.EvidenceError(
+            "signature-verification observed canonical content does not "
+            "match the supplied canonical -- the real runtime's own "
+            "recorded content disagrees with what was claimed, even though "
+            "the resulting digest matched; refusing to trust this pairing "
+            f"(supplied={supplied!r}, observed={observed!r})"
+        )
 
 
 def observed_signature_digest_hex(
@@ -110,6 +152,12 @@ def observed_signature_digest_hex(
     test-file-line mappers still cannot represent (e.g. biased/scaled GLU)
     raises ``SignatureMappingError`` from the mapper itself -- this
     function does not invent a substitute case for it.
+
+    Digest equality ALONE does not prove ``canonical`` is what the real
+    hash was computed from -- see ``_require_canonical_match``'s docstring
+    for the concrete poisoned-canonical attack this additionally closes by
+    comparing the real observed canonical (recorded by the same C++ code
+    that computed the digest) against the one supplied here.
     """
     sc.hip_required_capabilities(canonical, vendor_root=vendor_root)
 
@@ -123,17 +171,20 @@ def observed_signature_digest_hex(
                 canonical, vendor_root=vendor_root,
             )
             case_path.write_text(line + "\n", encoding="utf-8")
-            return observed_test_backend_ops_signature_hex(
+            observed_hex, observed_canonical = observed_test_backend_ops_signature_hex(
                 binary, moe_glu_file=case_path, seed=seed, runner=runner,
             )
+        else:
+            line, _target, _digest = scm.signature_to_any_test_file_line(
+                canonical, vendor_root=vendor_root,
+            )
+            case_path.write_text(line + "\n", encoding="utf-8")
+            observed_hex, observed_canonical = observed_test_backend_ops_signature_hex(
+                binary, test_file=case_path, seed=seed, runner=runner,
+            )
 
-        line, _target, _digest = scm.signature_to_any_test_file_line(
-            canonical, vendor_root=vendor_root,
-        )
-        case_path.write_text(line + "\n", encoding="utf-8")
-        return observed_test_backend_ops_signature_hex(
-            binary, test_file=case_path, seed=seed, runner=runner,
-        )
+    _require_canonical_match(canonical, observed_canonical)
+    return observed_hex
 
 
 def make_signature_digest_verifier(
