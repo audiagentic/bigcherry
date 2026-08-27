@@ -50,6 +50,7 @@ def render_markdown(report: ProfileReport) -> str:
             f"- capture status: **{gp.capture_status}**",
             f"- GPU agents seen: {', '.join(gp.agent_ids_seen) or '(none)'} "
             f"(expected {gp.expected_gpu_count})",
+            f"- expected reduction provider: {gp.expected_reduction_provider}",
             f"- RCCL activity seen: {gp.rccl_activity_seen}",
             "",
             "| kernel | calls | total us | mean us | p95 us | VGPR | SGPR | scratch |",

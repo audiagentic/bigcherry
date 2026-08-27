@@ -17,6 +17,7 @@ pattern -- never shells out to the ``bigcherry`` CLI internally.
 
 from __future__ import annotations
 
+import os
 import statistics
 import time
 from pathlib import Path
@@ -84,6 +85,7 @@ def run_profile_campaign(
 
     devices_tuple = tuple(int(d) for d in devices.split(","))
     expected_gpu_count = len(devices_tuple)
+    expected_reduction_provider = rocprof_mod.expected_reduction_provider(os.environ)
 
     request = campaign_planner.CampaignRequest(
         selectors=(campaign_config.CampaignLaneSelector(
@@ -129,6 +131,7 @@ def run_profile_campaign(
             runner.run_completion(_control_prompt(), n_predict=n_predict)
         gpu_passes.append(rocprof_mod.build_gpu_profile_pass(
             label=label, output_dir=out_dir, expected_gpu_count=expected_gpu_count,
+            expected_reduction_provider=expected_reduction_provider,
         ))
 
     # Real stage sequence (gpt-settled): control -> GPU pass 1 -> control ->
