@@ -183,6 +183,21 @@ options = { GGML_HIP_DISPATCH_REPLAY = "ON" }
 variant-set = "replay-full"
 needs = ["inventory", "promoted-winners"]
 
+# HI130: a real per-dispatch attribution build -- GGML_HIP_REPLAY_DIAGNOSTICS
+# compiles in hit tracking (ggml_hip_replay_record_hit()), which
+# GGML_HIP_DISPATCH_HIT_LOG=<path> flushes as JSONL at clean shutdown:
+# {"dispatch":...,"signature":...,"candidate":...,"calls":N} -- literally
+# which candidate served every dispatch digest, and how many times. Kept
+# as a SEPARATE build from [build.replay] deliberately: production replay
+# builds stay free of hit-tracking overhead (see docs/reference/TEST.md's
+# "Replay diagnostics" section) -- this is a validation-only build, never
+# what ships.
+[build.replay-diagnostic]
+description = "Replay with per-dispatch hit-log attribution -- validation only, not what ships."
+options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON" }
+variant-set = "replay-full"
+needs = ["inventory", "promoted-winners"]
+
 [build.audit]
 description = "Compile-audit only: every candidate, ignoring the workload."
 options = { GGML_HIP_AUTOTUNE = "ON" }
