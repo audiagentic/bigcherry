@@ -33,15 +33,27 @@ ncclCommInitAll, compare every participating device's ggml_cuda_info()
 compute-capability identifier (already populated from HIP's
 prop.gcnArchName for AMD devices -- verified real values differ
 correctly per architecture: gfx1100/gfx1201/gfx1030 each parse to a
-distinct cc). A mismatch logs a clear warning and declines to
-internal AllReduce (which itself may further decline to META for
-device counts it doesn't support) BEFORE the crash-prone
-ncclCommInitAll call, rather than letting the process abort with no
-diagnostic path. This makes AUTO's RCCL-first default safe for a
-heterogeneous participant set instead of crashing the whole process;
-forced GGML_HIP_REDUCE_PLAN=meta already worked correctly for these
-same participant sets (HI18/HI84's own probe evidence) and remains
-unaffected by this patch.
+distinct cc).
+
+ggml_backend_cuda_comm_init_nccl() is only ever reached via the META
+backend's comm_init hook (ggml-backend-meta.cpp), which llama.cpp only
+constructs for LLAMA_SPLIT_MODE_TENSOR (llama-model.cpp's META device
+wiring is exclusive to that split mode; -sm layer never touches
+comm_ctx/META at all). So a heterogeneous-architecture participant
+set reaching this guard always means the user explicitly requested
+tensor-split -- there is no "auto, didn't really mean it" case here.
+
+Per explicit user direction (2026-08-28): silently substituting
+META's different reduction path when the user explicitly asked for
+tensor-split is not acceptable -- correctness/performance semantics
+differ, and a log-only warning is too easy to miss. So this guard
+fails closed with a hard, clearly-diagnosed abort (GGML_ABORT) instead
+of the uncatchable, undiagnosed HIP SIGABRT this item originally found
+-- and instead of silently degrading to internal/META. The abort
+message names the exact device architectures involved and points at
+HI85 for the full explanation and remediation (force GGML_HIP_REDUCE_
+PLAN=meta explicitly, or drop to -sm layer, or use a same-architecture
+device subset).
 """
 
 GROUP = "core"
@@ -85,9 +97,14 @@ _GUARD = '''
     // process with a HIP "invalid device function" error on the
     // non-matching rank, rather than returning a catchable NCCL error
     // code. Detect a mixed-architecture participant set BEFORE calling
-    // ncclCommInitAll and decline explicitly -- the alternative is an
-    // uncatchable process crash. See docs/planning/active/hip-autotune/
-    // HI85.md for the full investigation and real hardware evidence.
+    // ncclCommInitAll. This path is only ever reached via SPLIT_MODE_TENSOR
+    // (the META backend's comm_init hook), so reaching here always means
+    // the user explicitly asked for tensor-split -- silently substituting
+    // a different reduction path (internal/META) would change semantics
+    // behind the user's back. Fail closed with a clear, named abort instead
+    // of both the original uncatchable HIP SIGABRT and a silent fallback.
+    // See docs/planning/active/hip-autotune/HI85.md for the full
+    // investigation and real hardware evidence.
     bool heterogeneous_arch = false;
     for (size_t i = 1; i < ret->dev_ids.size(); ++i) {
         if (info.devices[ret->dev_ids[i]].cc != info.devices[ret->dev_ids[0]].cc) {
@@ -96,12 +113,15 @@ _GUARD = '''
         }
     }
     if (heterogeneous_arch) {
-        GGML_LOG_WARN("NCCL disabled: participating devices have different GPU "
-                      "architectures (NCCL/RCCL cannot reliably reduce across "
-                      "mixed architectures on this hardware/driver -- see HI85); "
-                      "falling back to internal AllReduce\\n");
-        ggml_backend_cuda_comm_init_internal(ret);
-        return;
+        GGML_LOG_ERROR("NCCL/RCCL cannot reduce across mixed GPU architectures "
+                       "(participating devices have different compute "
+                       "capabilities) -- this combination was requested via "
+                       "SPLIT_MODE_TENSOR and will not be silently downgraded to "
+                       "a different reduction path. See HI85. Remediation: force "
+                       "GGML_HIP_REDUCE_PLAN=meta explicitly, use -sm layer "
+                       "instead, or restrict tensor-split to a same-architecture "
+                       "device subset.\\n");
+        GGML_ABORT("heterogeneous-architecture tensor-split is unsupported (see HI85)");
     }
 '''
 
