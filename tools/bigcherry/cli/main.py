@@ -575,6 +575,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--workload", default="default", help="free-text label for the report/receipt"
     )
     profile_campaign_cmd.add_argument(
+        "--experiment", default=None,
+        help="named [experiment.<name>] patch set from config/recipes.toml "
+        "(e.g. 'rd33-only') to build with, in addition to the lane's own patches",
+    )
+    profile_campaign_cmd.add_argument(
         "--workdir", default=None, help="defaults to work_root/profile-campaigns/<run_id>"
     )
     profile_campaign_cmd.add_argument("--run-id", default=None)
