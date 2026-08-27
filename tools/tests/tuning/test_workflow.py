@@ -5,6 +5,7 @@ real hardware and is validated live on Brutus, not here).
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -62,6 +63,168 @@ class CountMissingCorrectnessEvidenceTests(unittest.TestCase):
             ]
             path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
             self.assertEqual(workflow._count_missing_correctness_evidence(path), 0)
+
+
+class StageReplayExportTests(unittest.TestCase):
+    def test_exports_against_the_supplied_target_manifest_not_some_other_one(self):
+        # HI130 regression (req_ec659ded425c4335): _stage_replay_export must
+        # bind the cache to whatever manifest/source_root it is GIVEN -- the
+        # bug was the caller handing it tune's manifest instead of replay's,
+        # not anything inside this function, but a wrong rename here would
+        # silently reintroduce the same class of defect.
+        from unittest.mock import patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            target_manifest_path = workdir / "replay-manifest.json"
+            target_manifest_path.write_text("{}", encoding="utf-8")
+            target_source_root = workdir / "replay-source-root"
+            (target_source_root / "ggml" / "include").mkdir(parents=True)
+            (target_source_root / "ggml" / "include" / "ggml.h").write_text("", encoding="utf-8")
+            promoted_path = workdir / "promoted.jsonl"
+            promoted_path.write_text("", encoding="utf-8")
+            dispatch_db = workdir / "tune.sqlite"
+
+            with patch.object(workflow, "replay_mod") as fake_replay_mod:
+                fake_replay_mod.build.return_value = b"cache-bytes"
+                result = workflow._stage_replay_export(
+                    promoted_path=promoted_path,
+                    target_manifest_path=target_manifest_path,
+                    target_source_root=target_source_root,
+                    dispatch_db=dispatch_db,
+                    workdir=workdir,
+                )
+
+            fake_replay_mod.build.assert_called_once_with(
+                promoted_path, target_manifest_path,
+                target_source_root / "ggml" / "include" / "ggml.h",
+                dispatch_db=dispatch_db,
+            )
+            self.assertEqual(result.read_bytes(), b"cache-bytes")
+
+
+class StageReplayVerifyTests(unittest.TestCase):
+    def _run_with_fake_coverage(self, coverage: dict):
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            (workdir / "coverage.json").write_text(json.dumps(coverage), encoding="utf-8")
+
+            fake_lane_result = MagicMock()
+            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+            fake_profile = MagicMock()
+            fake_profile.production_context = 4096
+            fake_profile.server_args = ()
+
+            with patch.object(workflow, "ServerRunner") as fake_runner_cls:
+                fake_runner = MagicMock()
+                fake_runner_cls.return_value.__enter__.return_value = fake_runner
+                return workflow._stage_replay_verify(
+                    lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
+                    devices="0,1", runtime_profile=fake_profile,
+                    dispatch_cache=workdir / "dispatch.cache", workdir=workdir,
+                )
+
+    def test_raises_on_stale_coverage(self):
+        # This is exactly the HI130 defect this fix targets: a stale cache
+        # must never be reported as a quiet success.
+        with self.assertRaises(workflow.TuneCampaignError):
+            self._run_with_fake_coverage({"stale": True, "rerun_required": 0})
+
+    def test_raises_on_rerun_required(self):
+        with self.assertRaises(workflow.TuneCampaignError):
+            self._run_with_fake_coverage({"stale": False, "rerun_required": 3})
+
+    def test_returns_coverage_when_clean(self):
+        coverage = {"stale": False, "rerun_required": 0, "exact": 64, "misses": 0}
+        result = self._run_with_fake_coverage(coverage)
+        self.assertEqual(result, coverage)
+
+
+class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
+    def test_replay_is_built_before_export_and_export_targets_replays_own_manifest(self):
+        # HI130's actual root-cause bug: the cache used to be exported
+        # against tune's manifest_ref BEFORE the replay lane was even built,
+        # so every entry was stamped with a hash the replay binary could
+        # never match. This pins the corrected order and data flow so it
+        # cannot silently regress: _stage_replay_build must run first, and
+        # _stage_replay_export's target_manifest_path/target_source_root
+        # must come from THAT result, never from the tune stage.
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        def fake_lane_result(run_id, manifest_path, source_root):
+            result = MagicMock()
+            result.run_id = run_id
+            result.source_slice_id = "slice1"
+            result.build_plan_id = "plan1"
+            result.manifest_ref.path = manifest_path
+            result.source_root = Path(source_root)
+            return result
+
+        calls = []
+
+        def fake_stage_replay_build(**kwargs):
+            calls.append(("build", kwargs))
+            return fake_lane_result("replay-run", "/replay/own-manifest.json", "/replay/own-source-root")
+
+        def fake_stage_replay_export(**kwargs):
+            calls.append(("export", kwargs))
+            return Path("/fake/dispatch.cache")
+
+        def fake_stage_replay_verify(**kwargs):
+            calls.append(("verify", kwargs))
+            return {"exact": 64, "stale": False, "rerun_required": 0}
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            (workdir / "promoted.jsonl").write_text("", encoding="utf-8")
+
+            tune_result = fake_lane_result("tune-run", "/tune/manifest.json", "/tune/source-root")
+            record_result = fake_lane_result("record-run", None, "/record/source-root")
+            record_result.manifest_ref = None
+
+            with (
+                patch.object(workflow, "_stage_record",
+                             return_value=(record_result, workdir / "record.jsonl")),
+                patch.object(workflow, "_stage_inventory_record",
+                             return_value=(workdir / "inventory.json", workdir / "inventory.sqlite")),
+                patch.object(workflow, "_stage_tune",
+                             return_value=(tune_result, workdir / "tune.measurements.jsonl")),
+                patch.object(workflow, "_stage_load_and_promote",
+                             return_value=(workdir / "tune.sqlite", {}, 19, 0)),
+                patch.object(workflow, "_stage_replay_build", side_effect=fake_stage_replay_build),
+                patch.object(workflow, "_stage_replay_export", side_effect=fake_stage_replay_export),
+                patch.object(workflow, "_stage_replay_verify", side_effect=fake_stage_replay_verify),
+                patch.object(workflow.gpu_mod, "preflight_context"),
+            ):
+                fake_profile = MagicMock()
+                fake_profile.tune_context = 4096
+                fake_profile.production_context = 64000
+                fake_profile.server_args = ()
+                fake_cfg = MagicMock()
+                fake_cfg.runtime_profiles = {"production-dual-xtx": fake_profile}
+                fake_context = MagicMock()
+                fake_context.work_root = workdir
+
+                workflow.run_tune_campaign(
+                    context=fake_context, cfg=fake_cfg, store=MagicMock(),
+                    model_path=Path("/fake/model.gguf"), platform_name="linux-multi",
+                    devices="0,1", runtime_profile_name="production-dual-xtx",
+                    run_id="test-run",
+                )
+
+        stage_order = [name for name, _ in calls]
+        self.assertEqual(stage_order, ["build", "export", "verify"])
+
+        export_kwargs = dict(calls[1][1])
+        self.assertEqual(export_kwargs["target_manifest_path"], Path("/replay/own-manifest.json"))
+        self.assertEqual(export_kwargs["target_source_root"], Path("/replay/own-source-root"))
+        # The tune manifest must NOT leak into the export call.
+        self.assertNotEqual(export_kwargs["target_manifest_path"], Path("/tune/manifest.json"))
 
 
 class StageIdentityTests(unittest.TestCase):
