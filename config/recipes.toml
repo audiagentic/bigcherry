@@ -109,6 +109,11 @@ patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
+[experiment.hi134-meta-stage-trace]
+# 0830 (validated, always in the default control build) is required by
+# 1242; only 1242 needs to be added on top for this experiment lane.
+patches = ["1242_hi134_meta_stage_trace"]
+
 # HI105: the CPU-reference correctness-evidence patch chain (deterministic
 # test-backend-ops init + machine-readable metrics + MUL_MAT_ID's own
 # deterministic/full-range ids fix). Not itself a performance patch --
