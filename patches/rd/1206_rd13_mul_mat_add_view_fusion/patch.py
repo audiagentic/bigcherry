@@ -31,10 +31,13 @@ What it does (performance, graph-level fusion):
   bookkeeping consumes the right number of graph nodes.
 
 Porting notes:
-  - Ported VERBATIM from the fork commit: the entire "mul_mat + add"
-    branch of ggml_cuda_try_fuse is replaced (one hunk). The pre-change
-    block is byte-identical on the framework-patched base (pin
-    4801e3c567d5 + core + upstream-fixes patches): verified 2026-08-19.
+  - The entire "mul_mat + add" branch of ggml_cuda_try_fuse is replaced
+    (one hunk). The pre-change block is byte-identical on the
+    framework-patched base (pin 4801e3c567d5 + core + upstream-fixes
+    patches): verified 2026-08-19.
+  - Safety adaptation from the fork: the RESHAPE-mediated form requires
+    ADD.src[0] to be the view and rejects a null addend; legacy direct ADD
+    matching retains its original commutative operand handling.
   - No framework patch anchors inside this block (the ggml-cuda.cu
     co-tenants 0200/0700/0830/0900/1004 all edit other regions).
   - ggml_can_fuse_subgraph is a pre-existing upstream ggml API -- no new
@@ -71,7 +74,11 @@ PROVENANCE = {
     "original-commit": "36270950deb0ba979b131fd49fed721ed1256aec",
     "snapshot-head": "9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22",
     "snapshot-base": "4df29be4f4c3673f428170fda944a5b19f743bb8",
-    "adaptations": [],
+    "adaptations": [
+        "The RESHAPE-mediated form requires ADD.src[0] to be the view and "
+        "rejects null addends; legacy direct ADD matching remains "
+        "commutative.",
+    ],
 }
 
 
@@ -159,7 +166,10 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
         if (bias_op == GGML_OP_ADD) {
             if (bias_node->src[0] == mm_or_view) {
                 bias_tensor = bias_node->src[1];
-            } else if (bias_node->src[1] == mm_or_view) {
+            } else if (!has_view && bias_node->src[1] == mm_or_view) {
+                // Preserve the pre-existing direct-ADD commutative match.
+                // The RD13 view form is intentionally strict: the view must
+                // be ADD.src[0], so a reversed/wrongly wired view cannot fuse.
                 bias_tensor = bias_node->src[0];
             } else {
                 continue;
@@ -169,6 +179,13 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
                 continue;
             }
             bias_tensor = bias_node->src[1];
+        }
+
+        // A malformed ADD/ADD_ID with no addend must never reach the fused
+        // kernel (and would otherwise make the shape check below dereference
+        // null for ADD).
+        if (bias_tensor == nullptr) {
+            continue;
         }
 
         const ggml_tensor * src0 = mm_node->src[0];
