@@ -39,7 +39,7 @@ class ServerRunner:
     def __init__(
         self, *, binary: Path, model: Path, host: str = "127.0.0.1", port: int = 8080,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
-        log_path: Path | None = None,
+        log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
     ):
         self.binary = binary
         self.model = model
@@ -48,6 +48,14 @@ class ServerRunner:
         self.extra_args = extra_args
         self.env_overrides = dict(env_overrides or {})
         self.log_path = log_path
+        # PROF01: lets a profiler (e.g. rocprofv3) wrap the real server
+        # launch without duplicating ServerRunner's own lifecycle/health/
+        # shutdown handling. The prefix is inserted before the binary path,
+        # e.g. ("rocprofv3", "--sys-trace", "--rccl-trace", "-d", str(outdir),
+        # "--") -- the caller supplies its own "--" separator since the
+        # exact flag comes before the target command for every profiler
+        # checked (rocprofv3, perf record).
+        self.command_prefix = command_prefix
         self._proc: subprocess.Popen | None = None
 
     def _base_url(self) -> str:
@@ -60,6 +68,7 @@ class ServerRunner:
         env.update(self.env_overrides)
         env["LLAMA_SERVER_ENABLE_SHUTDOWN"] = "1"
         args = [
+            *self.command_prefix,
             str(self.binary), "-m", str(self.model),
             "--port", str(self.port), "--host", self.host,
             *self.extra_args,
