@@ -1525,5 +1525,159 @@ class TestHipCapabilityPersistence(unittest.TestCase):
             os.unlink(manifest_path)
 
 
+class TestWinnerVerificationAttestation(unittest.TestCase):
+    """HI121 close-out step 6 (HI127): load_measurements() attests a winner
+    row in winner_verification only when BOTH the build capability proof
+    (HI122-124's descriptor/manifest chain) AND a real per-row signature
+    digest verifier (HI125) were actually supplied and passed -- neither
+    alone is "strengthened ingest"."""
+
+    def _manifest_and_header(self, *, producer_capabilities="0000000000000000000000000000001f"):
+        families = ("mmvq", "mmq", "mmvf", "mmf", "blas")
+        manifest = {
+            "artifact_version": 1,
+            "variant_set": "inventory",
+            "source_revision": "b" * 40,
+            "architectures": ["gfx1100"],
+            "signature_schema_version": 2,
+            "hardware_schema_version": 1,
+            "producer_capabilities": producer_capabilities,
+            "candidates": [
+                {
+                    "stable_name": f"{f}:native:v1", "family": f, "source_class": "native_wrapper",
+                    "implementation_version": 1, "architectures": ["gfx1100"], "architecture_mask": 1,
+                    "graph_safe": True, "deterministic": True, "config": {},
+                }
+                for f in families
+            ],
+            "summary": {
+                "total": len(families),
+                "by_family": dict.fromkeys(families, 1),
+                "by_source_class": {"native_wrapper": len(families)},
+            },
+        }
+        manifest["manifest_hash"] = catalog.manifest_hash(manifest)
+        manifest["build_descriptor"] = catalog.build_descriptor(manifest)
+        header = {
+            "kind": "header",
+            "artifact_version": 1,
+            "source_revision": manifest["source_revision"],
+            "manifest_hash": manifest["manifest_hash"],
+            "variant_set": "inventory",
+            "build_descriptor_hash": manifest["build_descriptor"]["descriptor_hash"],
+            "producer_capabilities": producer_capabilities,
+        }
+        return manifest, header
+
+    def _write_manifest(self, manifest: dict) -> Path:
+        path = Path(tempfile.mktemp(suffix=".json"))
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        return path
+
+    def _result(self, *, signature_hex: str, canonical: dict) -> dict:
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        result["signature"] = signature_hex
+        result["canonical"] = canonical
+        return result
+
+    def test_capability_and_verifier_both_present_attests_winner(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "9" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 1)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_verifier_alone_without_capability_attestation_does_not_attest(self):
+        # No manifest supplied -> _verify_and_persist_hip_capabilities()
+        # returns False -> strengthened_ingest must be False even though a
+        # (fake) signature verifier passed every row.
+        _, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=None,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+
+    def test_capability_alone_without_verifier_does_not_attest(self):
+        manifest, header = self._manifest_and_header()
+        meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_replacing_winner_row_gets_fresh_attestation_not_stale_cascade(self):
+        # A second load with a DIFFERENT dispatch_digest for the same
+        # (build,hardware,objective) conflicts on winner's own UNIQUE
+        # constraint -- INSERT OR REPLACE deletes the old row and creates a
+        # genuinely new winner_id, whose ON DELETE CASCADE must have already
+        # destroyed the old attestation. Reattesting the new row must not
+        # depend on any leftover state from the old one.
+        manifest, header = self._manifest_and_header()
+        manifest_path = self._write_manifest(manifest)
+        signature_hex = "7" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        first_result = self._result(signature_hex=signature_hex, canonical=canonical)
+        first_path = make_jsonl_file(header, first_result)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    first_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                first_winner_id = db.query("SELECT winner_id FROM winner_verification")[0][0]
+
+                # Same (build_id, hardware_id, objective, dispatch_digest) as
+                # the first load -- this is exactly the key winner's own
+                # UNIQUE constraint conflicts on, so INSERT OR REPLACE
+                # deletes the first row and creates a genuinely new one, even
+                # though the content is otherwise identical.
+                second_path = make_jsonl_file(header, first_result)
+                try:
+                    inventory.load_measurements(
+                        second_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                    )
+                finally:
+                    os.unlink(second_path)
+
+                rows = db.query("SELECT winner_id FROM winner_verification")
+                self.assertEqual(len(rows), 1)
+                self.assertNotEqual(rows[0][0], first_winner_id)
+        finally:
+            os.unlink(first_path)
+            os.unlink(manifest_path)
+
+
 if __name__ == "__main__":
     unittest.main()
