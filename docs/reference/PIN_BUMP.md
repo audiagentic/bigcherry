@@ -64,16 +64,53 @@ window; bump one, record, then bump the other.
    ```
 
 3. **Re-verify the patches against the new revision.**
-   Run the rebase review — `docs/reference/PIN_REBASE_REVIEW_B10502.md` is
-   the standing template (A-list action items, per-commit impact table,
-   supersession-vs-conflict classification). Fix failed/superseded patches.
-   Then:
+   This is a mechanical gate, not prose review: run `patch-rebase-check` in
+   an isolated worktree (it never mutates the checkout you just moved) and
+   fix everything it reports before touching `apply`/`audit`.
+
+   ```text
+   bigcherry patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json
+   ```
+
+   Per-patch status is one of `CLEAN` / `CLEAN_NOOP` / `NOT_APPLICABLE_BY_DESIGN`
+   (fine, no action) or `FAILED_NEEDS_RECONCILIATION` / `BLOCKED_BY_DEPENDENCY`
+   / `QUARANTINED` (needs a human: a moved/renamed anchor, or a patch that
+   only worked because an earlier, now-broken patch's edit was silently in
+   the tree — the undeclared-dependency case `QUARANTINED` exists to name).
+   The JSON report carries structured `reason_code`s and bounded
+   reconciliation context (a diff of the failing file across the pin bump
+   when the previous revision is known) instead of just an anchor-mismatch
+   count. `docs/reference/PIN_REBASE_REVIEW_B10502.md` remains the narrative
+   template for writing up what you fixed and why, once the tool has told
+   you what's actually broken.
+
+   You do not have to fix every patch before making progress: once the
+   report is clean enough to accept, apply exactly its known-good,
+   dependency-closed subset —
+
+   ```text
+   bigcherry apply --rebase-report releases/patch-rebase.json --known-good
+   ```
+
+   — which fails closed (a stale-report error naming the mismatch) if
+   *anything* about the tree has moved since the report was written: the
+   upstream revision, the BigCherry tooling revision, any patch's bytes, the
+   overlay's bytes, or the patch-application semantics version. A report is
+   single-use evidence for the exact state it was computed against, not a
+   standing waiver. Applying a partial known-good subset does not advance
+   the release record to `patched` — it is reconciliation progress, not a
+   finished tree; fix the reconciliation list and re-run
+   `patch-rebase-check` until the full selection is clean, then:
 
    ```text
    bigcherry audit
    ```
 
    which advances the release record `pulled -> audited` (or `-> broken`).
+   `patch-rebase-check` and `pin-status` (step 4) answer different
+   questions and are never substitutes for each other: `pin-status` is pure
+   revision identity (is the checkout at the pinned SHA?); `patch-rebase-check`
+   is whether the patches still apply to whatever revision is checked out.
 
 4. **`bigcherry pin-status --all-remotes`** — confirm the local tree now
    reads `consistent` (or `mid-rebase` while the checkout move of step 2 is

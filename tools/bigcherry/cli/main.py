@@ -33,6 +33,7 @@ from .patch import (
     cmd_patch_explain,
     cmd_patch_graph,
     cmd_patch_lint,
+    cmd_patch_rebase_check,
     cmd_patch_status,
     cmd_patch_validate,
     cmd_patch_verify_evidence,
@@ -142,8 +143,62 @@ def build_parser() -> argparse.ArgumentParser:
     apply_cmd.add_argument(
         "--force", action="store_true", help="patch even without a passing audit"
     )
+    apply_cmd.add_argument(
+        "--rebase-report",
+        metavar="PATH",
+        default=None,
+        help=(
+            "PA16 patch-rebase-check report authorizing an exact known-good "
+            "subset; requires --known-good, and must not be combined with "
+            "--recipe/--groups/--states"
+        ),
+    )
+    apply_cmd.add_argument(
+        "--known-good",
+        action="store_true",
+        help=(
+            "apply only the dependency-closed known-good subset proven by "
+            "--rebase-report; a stale report (any bound identity mismatch) "
+            "fails closed"
+        ),
+    )
     _add_selection_args(apply_cmd)
     apply_cmd.set_defaults(func=cmd_apply)
+
+    patch_rebase_check_cmd = sub.add_parser(
+        "patch-rebase-check",
+        help=(
+            "PA16: probe patch applicability against the current upstream "
+            "revision in an isolated detached worktree; observational, "
+            "never advances release stage"
+        ),
+    )
+    rebase_selection = patch_rebase_check_cmd.add_mutually_exclusive_group(required=True)
+    rebase_selection.add_argument(
+        "--recipe",
+        default=None,
+        choices=recipes.names() or None,
+        help="probe the exact logical patch selection for this compatibility recipe",
+    )
+    rebase_selection.add_argument(
+        "--all",
+        dest="all_patches",
+        action="store_true",
+        help="probe every non-rejected logical patch in the registry",
+    )
+    patch_rebase_check_cmd.add_argument(
+        "--json",
+        metavar="PATH",
+        default=None,
+        help="atomically write the structured patch-rebase report here",
+    )
+    patch_rebase_check_cmd.add_argument(
+        "--context-lines",
+        type=int,
+        default=3,
+        help="bounded reconciliation context lines around a failed anchor (default: 3)",
+    )
+    patch_rebase_check_cmd.set_defaults(func=cmd_patch_rebase_check)
 
     patches_cmd = sub.add_parser(
         "patches",
