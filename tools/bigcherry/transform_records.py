@@ -20,6 +20,10 @@ class TransformRecordError(ValueError):
 _HEX32 = re.compile(r"^[0-9a-fA-F]{32}$")
 _HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 _HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
+# Manifest and build-descriptor identities are BLAKE2b-128 in the generated
+# runtime headers (32 hex characters).  Keep accepting the older 256-bit
+# fixture/artifact form while validating both as real hexadecimal digests.
+_HEX32_OR_64 = re.compile(r"^[0-9a-fA-F]{32}(?:[0-9a-fA-F]{32})?$")
 _KINDS = frozenset(("transform-attempt", "transform-gap"))
 _SOURCES = frozenset(("predefined", "discovered"))
 _OUTCOMES = frozenset(("success", "rejected", "gap"))
@@ -75,12 +79,23 @@ def _provenance(record: dict[str, Any], where: str) -> dict[str, Any]:
         "source_revision": _digest(
             build.get("source_revision"), "build_provenance.source_revision", where, _HEX40),
         "manifest_hash": _digest(
-            build.get("manifest_hash"), "build_provenance.manifest_hash", where, _HEX64),
+            build.get("manifest_hash"), "build_provenance.manifest_hash", where,
+            _HEX32_OR_64),
         "build_descriptor_hash": _digest(
             build.get("build_descriptor_hash"),
-            "build_provenance.build_descriptor_hash", where, _HEX64),
+            "build_provenance.build_descriptor_hash", where, _HEX32_OR_64),
     }
     return {"hardware": normalized_hardware, "build": normalized_build}
+
+
+def _nested_metadata(record: dict[str, Any], where: str) -> dict[str, Any]:
+    source_schema = _text(record.get("source_schema", "nested-v1"),
+                          "source_schema", where)
+    complete = record.get("provenance_complete", True)
+    if complete is not True:
+        raise TransformRecordError(
+            f"{where}.provenance_complete must be true for nested records")
+    return {"source_schema": source_schema, "provenance_complete": True}
 
 
 def _transformation(record: dict[str, Any], where: str) -> dict[str, Any]:
@@ -106,6 +121,7 @@ def _validate_attempt(record: dict[str, Any], where: str) -> dict[str, Any]:
         "reason": _text(record.get("reason"), "reason", where),
         "evidence_references": _evidence(record.get("evidence_references"), where),
     }
+    normalized.update(_nested_metadata(record, where))
     provenance = _provenance(record, where)
     normalized["hardware_provenance"] = provenance["hardware"]
     normalized["build_provenance"] = provenance["build"]
@@ -149,6 +165,7 @@ def _validate_gap(record: dict[str, Any], where: str) -> dict[str, Any]:
         # records readable while making the grouping dimension explicit.
         "native_family": "unknown",
     }
+    normalized.update(_nested_metadata(record, where))
     if "native_family" in record and record["native_family"] is not None:
         normalized["native_family"] = _text(
             record["native_family"], "native_family", where).casefold()

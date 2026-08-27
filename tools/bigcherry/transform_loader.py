@@ -61,6 +61,9 @@ def _resolve_build_id(connection: sqlite3.Connection, build: dict[str, Any]) -> 
                 f"{len(rows)} builds share source_revision+manifest_hash; "
                 "refusing to bind one (fail closed)")
         return rows[0][0]
+    # Intrinsically-complete nested records bind by all three build identity
+    # columns.  The source_revision+manifest_hash-only branch above remains
+    # solely for the transitional runtime-flat schema (HI97).
     build_row = connection.execute(
         "SELECT build_id FROM build WHERE source_revision=? AND manifest_hash=? "
         "AND build_descriptor_hash=?",

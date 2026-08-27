@@ -1,0 +1,23 @@
+{
+  "case_id": "hi84-d3:cancellation:seed3",
+  "device_count": 3,
+  "element_count": 8192,
+  "generator_version": "hi18-f32-v1",
+  "input_digests": [
+    "29d1417baf9043585b73146f4cfa6932b0aa3f394948d51e848b94ab986fcb95",
+    "22be731874808d211c7195ca87a2f537a03911039fbd77ae7200904c1d8d51bb",
+    "04976a1bfdb0f2f2dbf4ce6b5c1854af4185da67738315cb597b2b032972dc94"
+  ],
+  "pattern": "cancellation",
+  "peer_access": "partial",
+  "reduction_signature_key": "split_reduce:v1:f32:8192:4096,2,1,1:n3:peer100010001",
+  "schema_version": 2,
+  "seed": 3,
+  "slice_shape": [
+    4096,
+    2,
+    1,
+    1
+  ],
+  "topology_key": "n3:peer100010001"
+}

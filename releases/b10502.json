@@ -1,20 +1,22 @@
 {
   "artifact_version": 1,
   "audit": {
-    "failed_checks": [],
-    "passed": true,
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
     "strict": true,
     "summary": {
-      "errors": 0,
-      "passed": 34,
+      "errors": 1,
+      "passed": 33,
       "total": 34,
       "warnings": 0
     }
   },
-  "bigcherry_revision": "73068e9b4d1f612097f2efa582f046fd6013e11b",
+  "bigcherry_revision": "36d62bc96409adbb7c16b5376c4a1a1d773b75c2",
   "first_seen": "2026-08-20T03:16:47.879287+00:00",
   "manifest_hash": "3dbf2119b01acaa977a4c18125cc7fab",
-  "notes": "patches failed: ggml/src/ggml-cuda/common.cuh:rd17-struct-host, ggml/src/ggml-cuda/common.cuh:rd17-struct-device",
+  "notes": "source audit failed: overlay.vendor_sync",
   "patches": {
     "applied_cleanly": false,
     "failed_edits": [
@@ -211,7 +213,7 @@
   "promotion": null,
   "release_tag": "b10502",
   "revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
-  "stage": "generated",
+  "stage": "broken",
   "tree_state": "",
-  "updated_at": "2026-08-25T02:41:06.782735+00:00"
+  "updated_at": "2026-08-26T12:46:15.309976+00:00"
 }
