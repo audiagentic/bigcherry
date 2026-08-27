@@ -211,7 +211,11 @@ def _gpu_scoped_test_backend_ops_runner(devices: str):
 
     def _runner(argv, **kwargs):
         env = dict(kwargs.get("env") or {})
-        env.setdefault("HIP_VISIBLE_DEVICES", devices)
+        # Assignment, not setdefault: the verifier's device scoping is a
+        # promise this runner exists to make, not a fallback -- a future
+        # caller supplying its own (wrong) HIP_VISIBLE_DEVICES in env=
+        # must not be able to silently defeat it.
+        env["HIP_VISIBLE_DEVICES"] = devices
         kwargs["env"] = env
         return subprocess.run(argv, **kwargs)
 
