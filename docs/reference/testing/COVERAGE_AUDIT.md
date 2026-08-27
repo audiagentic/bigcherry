@@ -1,6 +1,6 @@
 # Testable-option audit
 
-What the tuner can actually choose between, what it cannot, and why. See [FAMILY_MODEL.md](FAMILY_MODEL.md) for why these families exist, their identity rules, and what was rejected.
+What the tuner can actually choose between, what it cannot, and why. See [FAMILY_MODEL.md](../architecture/FAMILY_MODEL.md) for why these families exist, their identity rules, and what was rejected.
 
 ---
 
@@ -18,7 +18,7 @@ What the tuner can actually choose between, what it cannot, and why. See [FAMILY
 The per-type token in these names is legitimate: these kernels are compile-time
 specialised, so `q8_0` names a distinct compiled artifact rather than the
 incoming tensor. Read it as `kernel_type`. The same reasoning does **not** hold
-for BLAS, which is one library call — see [FAMILY_MODEL.md](FAMILY_MODEL.md).
+for BLAS, which is one library call — see [FAMILY_MODEL.md](../architecture/FAMILY_MODEL.md).
 
 **Family choice is the biggest lever.** Upstream selects family from a heuristic
 ladder (`ggml_cuda_should_use_mmq` and friends) tuned on other hardware and
@@ -51,7 +51,7 @@ Provider/API alternatives remain unenumerated until a runtime apply/execute
 seam proves they are executable; enumerating hipBLASLt solutions will also
 require namespacing results by exact library version (standards 16.2). Three
 of the hidden choices are llama.cpp's own heuristics, not library internals —
-see [FAMILY_MODEL.md](FAMILY_MODEL.md#blas-decomposition):
+see [FAMILY_MODEL.md](../architecture/FAMILY_MODEL.md#blas-decomposition):
 
 - **`compute_type`** (F32/F16/BF16) chosen by `fast_fp16_hardware_available`
   and gated by `GGML_PREC_F32`. Upstream already ships a global env override.
@@ -68,7 +68,7 @@ tensor-split configurations this is on the path of every split matmul. **HI18** 
 
 **FlashAttention.** A different operation, not a matmul family — it needs its own
 signature space and collection points. Not currently tuned, and out of scope for
-the matmul tuner. (WMMA is rejected as a family — see [FAMILY_MODEL.md](FAMILY_MODEL.md).)
+the matmul tuner. (WMMA is rejected as a family — see [FAMILY_MODEL.md](../architecture/FAMILY_MODEL.md).)
 
 **Signature refinements.** `alignment_class`, `occupancy_bucket` and
 `offset_modulo` are defined in the ABI but never populated —

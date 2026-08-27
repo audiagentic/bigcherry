@@ -200,7 +200,7 @@ needs = ["inventory", "promoted-winners"]
 # {"dispatch":...,"signature":...,"candidate":...,"calls":N} -- literally
 # which candidate served every dispatch digest, and how many times. Kept
 # as a SEPARATE build from [build.replay] deliberately: production replay
-# builds stay free of hit-tracking overhead (see docs/reference/TEST.md's
+# builds stay free of hit-tracking overhead (see docs/reference/testing/TEST.md's
 # "Replay diagnostics" section) -- this is a validation-only build, never
 # what ships.
 [build.replay-diagnostic]

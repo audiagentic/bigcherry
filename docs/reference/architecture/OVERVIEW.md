@@ -1,7 +1,7 @@
 # HIP Autotune — Plan Overview
 
 Derived from `llama_hip_autotune_prework` design and source-audited
-implementation material. See [PACK_REVIEW.md](PACK_REVIEW.md) for the delta
+implementation material. See [PACK_REVIEW.md](../PACK_REVIEW.md) for the delta
 between that pack, these plans, and what building against a real checkout revealed.
 
 **Original audit target:** `ggml-org/llama.cpp` at `0ef6e55edb306fcbcf73e6f1f41923cccb9cf7f8`

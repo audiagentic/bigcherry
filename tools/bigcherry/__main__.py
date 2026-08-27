@@ -319,7 +319,7 @@ def _legacy_cmd_repin(args: argparse.Namespace) -> int:
     RE48/RV78: repin now writes the pin-transition marker (releases/
     pin-transition.json) atomically with the recipes.toml rewrite. Commit
     both together -- the committed marker is what makes the in-flight state
-    'mid-rebase' instead of 'drift' (see docs/reference/PIN_BUMP.md)."""
+    'mid-rebase' instead of 'drift' (see docs/reference/build/PIN_BUMP.md)."""
     try:
         target = args.ref or upstream.latest_release()
     except upstream.UpstreamError as exc:

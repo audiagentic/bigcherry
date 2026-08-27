@@ -77,7 +77,7 @@ def cmd_pull(args: Namespace) -> int:
         )
         print(
             "commit it together with config/recipes.toml first (see "
-            "docs/reference/PIN_BUMP.md), then pull -- or delete it if the "
+            "docs/reference/build/PIN_BUMP.md), then pull -- or delete it if the "
             "bump was abandoned.",
             file=legacy.sys.stderr,
         )

@@ -378,7 +378,7 @@ def execute_tune_stage(
     # candidate gets replayed against a later call sized for a DIFFERENT
     # candidate at the same shape, which segfaulted (illegal memory
     # access) at small ubatch sizes. Confirmed required by
-    # docs/reference/TEST.md's own tuning instructions. Tune-only: the
+    # docs/reference/testing/TEST.md's own tuning instructions. Tune-only: the
     # replay/production path never sets this, so shipped inference keeps
     # graph-launch performance.
     env["GGML_CUDA_DISABLE_GRAPHS"] = "1"

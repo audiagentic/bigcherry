@@ -2,7 +2,7 @@
 
 Testing procedures, tuning workflows, dispatch modes, and coverage audits.
 
-See also: [BUILD.md](BUILD.md) — build commands and recipe configuration.
+See also: [BUILD.md](../build/BUILD.md) — build commands and recipe configuration.
 
 ## Offline tests (no GPU)
 

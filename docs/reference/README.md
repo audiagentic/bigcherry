@@ -1,19 +1,74 @@
 # Reference — by concern
 
+Organized into topical subfolders. Cross-cutting/auto-generated docs stay
+at the top level.
+
+## Architecture
+
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [HANDOFF.md](HANDOFF.md) | State of play + next actions | Picking work up; first stop |
-| [OVERVIEW.md](OVERVIEW.md) | Phases, status, principles, verification | Understanding scope and progress |
-| [FAMILY_MODEL.md](FAMILY_MODEL.md) | Six families, identity rules, rejected proposals | Designing a new family or candidate identity |
-| [COVERAGE_AUDIT.md](COVERAGE_AUDIT.md) | What the tuner can/cannot choose between; gaps | Understanding why a signature has few options |
-| [BUILD.md](BUILD.md) | Environment, recipes, cmake configuration | Building on hardware |
-| [TEST.md](TEST.md) | Test invocations, dispatch modes, tuning/coverage workflows | Testing, tuning, or running on hardware |
-| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | Architecture decisions + operational gotchas | Understanding why something is shaped a certain way; avoiding traps |
+| [architecture/OVERVIEW.md](architecture/OVERVIEW.md) | Phases, status, principles, verification | Understanding scope and progress |
+| [architecture/MULTI_GPU_DISPATCH.md](architecture/MULTI_GPU_DISPATCH.md) | Layer split vs tensor split; RCCL/internal/META reduction provider selection and fail-closed policy | Understanding what runs on multi-GPU, or debugging a heterogeneous-topology issue |
+| [architecture/FAMILY_MODEL.md](architecture/FAMILY_MODEL.md) | Six families, identity rules, rejected proposals | Designing a new family or candidate identity |
+| [architecture/DESIGN_DECISIONS.md](architecture/DESIGN_DECISIONS.md) | Architecture decisions + operational gotchas | Understanding why something is shaped a certain way; avoiding traps |
+
+## Build
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
+| [build/BUILD.md](build/BUILD.md) | Environment, recipes, cmake configuration | Building on hardware |
+| [build/PIN_BUMP.md](build/PIN_BUMP.md) | Bumping the pinned llama.cpp revision | Moving the pin forward |
+| [build/PIN_REBASE_REVIEW_B10502.md](build/PIN_REBASE_REVIEW_B10502.md) | A specific pin-rebase's review record | Tracing a past rebase's decisions |
+| [build/BIGCHERRY_BUILD_RDNA_HANDOVER.md](build/BIGCHERRY_BUILD_RDNA_HANDOVER.md) | RDNA build handover notes | Picking up RDNA-specific build work |
+
+## Testing
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
+| [testing/TEST.md](testing/TEST.md) | Test invocations, dispatch modes, tuning/coverage workflows | Testing, tuning, or running on hardware |
+| [testing/COVERAGE_AUDIT.md](testing/COVERAGE_AUDIT.md) | What the tuner can/cannot choose between; gaps | Understanding why a signature has few options |
+
+## Tooling
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
+| [tooling/TOOLING.md](tooling/TOOLING.md) | Domain map: which package owns what, migration state | Finding where a capability lives before adding a new one |
+| [tooling/TUNE_CAMPAIGN.md](tooling/TUNE_CAMPAIGN.md) | `bigcherry tune-campaign` — record→tune→correctness→promote→replay orchestrator | Running the full tuning pipeline in one command |
+| [tooling/PROFILING.md](tooling/PROFILING.md) | `bigcherry profile-campaign` — real rocprofv3 kernel/timing/resource profiling | Deep-diving why a workload spends time where it does |
+
+## Patches
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
+| [patches/PATCH_SYSTEM.md](patches/PATCH_SYSTEM.md) | Patch catalog, states, groups, composition | Understanding how patches apply and compose |
+| [patches/PATCH_AUTHORING.md](patches/PATCH_AUTHORING.md) | Writing a new patch | Authoring a patch |
+| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Validation states and evidence requirements | Promoting a patch toward validated |
+| [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
+
+## Experiments
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
+| [experiments/BigCherry_Experiment_Contract_Implementation_Guide.md](experiments/BigCherry_Experiment_Contract_Implementation_Guide.md) | Experiment-contract schema, field semantics, rationale | Defining or consuming an experiment contract |
+| [experiments/BigCherry_External_AMD_RDNA_Experiment_Backlog.md](experiments/BigCherry_External_AMD_RDNA_Experiment_Backlog.md) | External RDNA-boost experiment backlog | Picking up RD-prefixed experimental work |
+| [experiments/DUAL_XTX_BENCH_LOG.md](experiments/DUAL_XTX_BENCH_LOG.md) | Dual-XTX production benchmark log | Comparing against the production baseline |
+| [experiments/HI36A_VERDICT_27B_R9700.md](experiments/HI36A_VERDICT_27B_R9700.md) | HI36A's verdict on the 27B/R9700 case | Reviewing that specific experiment's outcome |
+| [experiments/WINNER_GENERALISATION_ANALYSIS.md](experiments/WINNER_GENERALISATION_ANALYSIS.md) | Whether winners generalize across workloads | Assessing cross-workload winner reuse |
+
+## Top level
+
+| Document | What it is | When to read it |
+| --- | --- | --- |
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
 | [TUNING-DETAIL.md](TUNING-DETAIL.md) | Per-tune results (regenerated) | Reviewing hot signatures from a specific run — consult the DB for current numbers |
 | [PACK_REVIEW.md](PACK_REVIEW.md) | Deltas vs. prework pack | Tracing why a plan diverged from the original spec |
 
-**Tuning results and model-specific data live in the database**, not in these documents. Consult the tuning DB for per-signature winners, rankings, improvements, and coverage numbers.
+**Tuning results and model-specific data live in the database**, not in
+these documents. Consult the tuning DB for per-signature winners, rankings,
+improvements, and coverage numbers.
 
-**Archived originals** are in [archive/](archive/) — the previous structure before reorganization.
+**Archived originals** are in [archive/](archive/) — the previous structure
+before reorganization, including a stale `HANDOFF.md` (no longer maintained
+as a live "state of play" doc — use the plan items under `docs/planning/`
+for current work state instead).
