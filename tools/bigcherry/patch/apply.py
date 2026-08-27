@@ -318,7 +318,8 @@ def apply_patch(patch: FilePatch, root: Path, *, dry_run: bool = False,
 
 
 def apply_all(patches: list[FilePatch], root: Path, *,
-              dry_run: bool = False) -> list[PatchResult]:
+              dry_run: bool = False,
+              initial_texts: dict[str, str] | None = None) -> list[PatchResult]:
     """Apply patches, writing nothing unless every one of them can be placed.
 
     Two passes. The first applies every patch in order to an in-memory copy of
@@ -333,8 +334,21 @@ def apply_all(patches: list[FilePatch], root: Path, *,
 
     A tree left half-patched because edit 7 of 9 lost its anchor is far worse to
     diagnose than one that was never touched, hence writing only at the end.
+
+    ``initial_texts`` (adversarial-review follow-up, patch-rebase-check
+    design): seeds the trial pass's in-memory view with content a caller
+    has already computed but not necessarily written to disk -- e.g. a
+    dry-run overlay install, whose bytes an anchored edit may target. Without
+    this, a dry-run trial reads such a target straight off disk and sees
+    PRE-overlay content, silently diverging from what a real (non-dry-run)
+    apply would actually see. Ignored (never consulted) once dry_run=False
+    reaches the second, real-write pass -- that pass always re-reads disk,
+    matching this function's existing "a tree changed between the two
+    passes is caught, not assumed" contract; callers wanting simulated
+    overlay bytes to also apply for real must still write them for real
+    first (dry_run=False), same as today.
     """
-    simulated: dict[str, str] = {}
+    simulated: dict[str, str] = dict(initial_texts) if initial_texts else {}
     trial = [apply_patch(p, root, dry_run=True, texts=simulated)
              for p in patches]
     if any(not r.ok for r in trial) or dry_run:

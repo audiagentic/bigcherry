@@ -150,8 +150,31 @@ def _uncommitted_pin_change() -> str | None:
 # -------------------------------------------------------------------- apply
 
 
-def _copy_overlay(root: Path, *, dry_run: bool) -> list[str]:
-    """Mirror ``src/`` onto the checkout. Returns the paths written."""
+def _copy_overlay(
+    root: Path, *, dry_run: bool, backup: dict[str, str | None] | None = None,
+    sim_texts: dict[str, str] | None = None,
+) -> list[str]:
+    """Mirror ``src/`` onto the checkout. Returns the paths written.
+
+    ``backup`` (adversarial-review follow-up, patch-rebase-check design):
+    when supplied, every touched target's ORIGINAL content (or ``None`` if
+    it didn't exist) is recorded before the write, keyed by the same
+    relative path returned in ``written`` -- so a caller whose subsequent
+    anchored-patch pass fails can restore the overlay to its pre-apply
+    state instead of leaving a half-applied tree (overlay written, patches
+    rolled back) that ``apply_all()``'s own transaction never covered,
+    since it only ever snapshotted the anchored-patch targets it itself
+    writes, not this function's writes.
+
+    ``sim_texts`` (adversarial-review follow-up, dry-run/apply parity gap):
+    when supplied, every touched target's POST-write content is recorded
+    here regardless of ``dry_run`` -- so a caller can feed it to
+    ``apply_all(..., initial_texts=sim_texts)`` and have an anchored edit
+    that targets an overlay-added file see the same bytes in a dry run
+    that it would see in a real apply. Without this, a dry-run trial reads
+    such a target straight off disk (pre-overlay) and silently diverges
+    from what real apply would actually do.
+    """
     written: list[str] = []
     for source in sorted(paths.SRC_OVERLAY.rglob("*")):
         if not source.is_file():
@@ -161,11 +184,40 @@ def _copy_overlay(root: Path, *, dry_run: bool) -> list[str]:
         text = source.read_text(encoding="utf-8")
         if target.is_file() and target.read_text(encoding="utf-8") == text:
             continue
+        relative_str = str(relative).replace("\\", "/")
+        if backup is not None and relative_str not in backup:
+            backup[relative_str] = target.read_text(encoding="utf-8") if target.is_file() else None
+        if sim_texts is not None:
+            sim_texts[relative_str] = text
         if not dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8", newline="")
-        written.append(str(relative).replace("\\", "/"))
+        written.append(relative_str)
     return written
+
+
+def _restore_overlay(root: Path, backup: dict[str, str | None]) -> None:
+    """Undo `_copy_overlay()`'s writes using its own captured backup.
+
+    Mirrors patch/apply.py's own rollback discipline: never let one file's
+    restore failure stop the others, and never follow a symlink planted at
+    the target path since the backup was taken.
+    """
+    import os
+
+    for relative_str, original in backup.items():
+        target = root / relative_str
+        try:
+            if original is None:
+                if target.is_file():
+                    target.unlink()
+            else:
+                nofollow = getattr(os, "O_NOFOLLOW", 0)
+                fd = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | nofollow, 0o644)
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(original)
+        except OSError:
+            pass
 
 
 def _apply_selection(
@@ -194,10 +246,23 @@ def _apply_selection(
 
     # An anchored edit extends an overlay source; install overlays before
     # resolving anchors so a fresh upstream clone follows the same path.
-    written = _copy_overlay(root, dry_run=dry_run)
+    #
+    # Adversarial-review follow-up: overlay writes were never covered by
+    # apply_all()'s own transaction -- that function only ever snapshots
+    # and rolls back the anchored-patch targets IT writes, so a subsequent
+    # anchored-patch failure previously left the overlay's writes on disk
+    # with no rollback, even though the overall selection reports ok=False.
+    # Capture the overlay's own backup here and restore it on the same
+    # failure condition, matching apply_all()'s all-or-nothing contract for
+    # the WHOLE selection, not just its own half of it.
+    overlay_backup: dict[str, str | None] = {}
+    overlay_sim: dict[str, str] = {}
+    written = _copy_overlay(root, dry_run=dry_run, backup=overlay_backup, sim_texts=overlay_sim)
     patches = patchset.load_patches(groups=groups, states=states)
-    results = patcher.apply_all(patches, root, dry_run=dry_run)
+    results = patcher.apply_all(patches, root, dry_run=dry_run, initial_texts=overlay_sim)
     ok = all(r.ok for r in results)
+    if not ok and not dry_run and overlay_backup:
+        _restore_overlay(root, overlay_backup)
     intended_tree_state = recipes.tree_state_key(
         record.release_tag or record.revision, groups, states
     )
@@ -208,7 +273,8 @@ def _apply_selection(
         verb = "would write" if dry_run else "wrote"
         print(f"overlay: {verb} {len(written)} file(s)")
     else:
-        print("overlay: skipped -- patches failed")
+        verb = "not written (dry run)" if dry_run else "rolled back"
+        print(f"overlay: {verb} -- patches failed")
     print(f"patches ({len(patches)} file(s)):")
     print(patcher.format_results(results))
 
