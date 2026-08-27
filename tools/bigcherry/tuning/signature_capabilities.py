@@ -73,8 +73,10 @@ _KNOWN_FLAGS_MASK = (
 )
 
 _FUSION_KIND_NONE = 0  # GGML_HIP_FUSION_NONE
+_FUSION_KIND_BIAS = 1  # GGML_HIP_FUSION_BIAS
 _FUSION_KIND_GATE = 2  # GGML_HIP_FUSION_GATE
 _FUSION_KIND_GATE_BIAS = 3  # GGML_HIP_FUSION_GATE_BIAS
+_KNOWN_FUSION_KINDS = {_FUSION_KIND_NONE, _FUSION_KIND_BIAS, _FUSION_KIND_GATE, _FUSION_KIND_GATE_BIAS}
 _FUSABLE_GLU_OPS = {1, 2, 3}  # GEGLU, SWIGLU, SWIGLU_OAI (ggml.h's real enum order)
 
 
@@ -135,6 +137,28 @@ def hip_required_capabilities(
     has_ids = bool(flags & _SIG_HAS_IDS)
     has_aux = bool(flags & _HI118_AUX_FLAGS)
 
+    # adversarial-review follow-up: producer-wide structural invariants,
+    # validated BEFORE any op-specific classification -- without this, a
+    # structurally impossible (fusion, glu_op) combination that no op-
+    # specific branch happens to reject explicitly falls through to the
+    # generic "op has no audited rule" fallback and gets classified as
+    # merely UNAUDITED (eligible for HI136 quarantine) rather than INVALID
+    # (always a hard failure). ggml_hip_fusion_kind() (hip-autotune-
+    # signature.cpp, verified against real source) can only ever emit one
+    # of these four values, and only sets glu_op when fusion->gate is
+    # non-null (i.e. GATE/GATE_BIAS) -- a signature claiming any other
+    # combination cannot have come from a real dispatch.
+    if fusion not in _KNOWN_FUSION_KINDS:
+        raise InvalidSignatureDomain(
+            f"signature fusion={fusion!r} is not one of the ggml_hip_fusion_kind real enum "
+            f"values ({sorted(_KNOWN_FUSION_KINDS)}) -- refusing to guess"
+        )
+    if fusion in (_FUSION_KIND_NONE, _FUSION_KIND_BIAS) and glu_op != 0:
+        raise InvalidSignatureDomain(
+            f"signature fusion={fusion!r} (NONE/BIAS) cannot carry a nonzero glu_op={glu_op!r} -- "
+            f"the real producer only sets glu_op when fusion->gate is non-null (GATE/GATE_BIAS)"
+        )
+
     if op_name in ("MUL_MAT", "MUL_MAT_ID"):
         # Defensive per round 8: this combination is not currently reachable
         # (ggml_hip_fusion_kind() cannot return NONE while glu_op is set --
@@ -164,10 +188,14 @@ def hip_required_capabilities(
                 f"({sorted(_FUSABLE_GLU_OPS)}) -- ggml-cuda's own fusion detector never "
                 f"fuses this glu_op, so no real fused dispatch could have produced this signature"
             )
-        if fusion not in (_FUSION_KIND_NONE, 1, _FUSION_KIND_GATE, _FUSION_KIND_GATE_BIAS):
-            raise InvalidSignatureDomain(
-                f"GLU signature fusion={fusion!r} is not a recognized ggml HIP fusion kind"
-            )
+        # fusion is already validated as one of _KNOWN_FUSION_KINDS above.
+        # A GLU signature with fusion=NONE/BIAS (no gate tensor) is only
+        # reachable here with glu_op==0 (nonzero glu_op on NONE/BIAS was
+        # already rejected as InvalidSignatureDomain above), and glu_op==0
+        # is unconditionally rejected by the _FUSABLE_GLU_OPS check just
+        # above as InvalidSignatureDomain too -- so no real dispatch can
+        # reach this point with fusion in (NONE, BIAS); nothing further to
+        # check here.
         if not has_ids:
             raise UnauditedSignatureDomain(
                 "GLU signature does not have GGML_HIP_SIG_HAS_IDS set -- only the MoE-routed "
