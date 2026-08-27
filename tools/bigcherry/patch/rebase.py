@@ -792,9 +792,20 @@ def load_report(path: Path) -> dict[str, Any]:
 # ---------------------------------------------------- known-good apply
 
 
-def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
+def _require_fresh(
+    report: dict[str, Any], root: Path, *,
+    overlay_snapshot_digest: str | None = None,
+) -> tuple[str, ...]:
     """Every bound identity must match the LIVE tree exactly. Fails closed
-    (StaleRebaseReportError) on the first mismatch found, naming it."""
+    (StaleRebaseReportError) on the first mismatch found, naming it.
+
+    ``overlay_snapshot_digest``: when the caller has already taken its own
+    overlay snapshot (as ``apply_known_good`` does, so it can write from
+    those exact bytes afterward), pass its digest here instead of letting
+    this function call :func:`overlay_digest` a second time -- two separate
+    disk reads of ``src/`` is exactly the TOCTOU window a snapshot-once
+    caller is trying to close. Defaults to a live read for callers (and
+    tests) that only want the freshness check itself."""
     if report.get("schema_version") != REPORT_SCHEMA_VERSION:
         raise StaleRebaseReportError(
             f"report schema_version {report.get('schema_version')!r} != "
@@ -817,7 +828,10 @@ def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
             f"report bigcherry_revision {report.get('bigcherry_revision')!r} != "
             f"live HEAD {current_bigcherry!r}"
         )
-    if report.get("overlay_digest") != overlay_digest():
+    live_overlay_digest = (
+        overlay_snapshot_digest if overlay_snapshot_digest is not None else overlay_digest()
+    )
+    if report.get("overlay_digest") != live_overlay_digest:
         raise StaleRebaseReportError(
             "report overlay_digest no longer matches src/ -- re-run patch-rebase-check"
         )
@@ -872,6 +886,22 @@ def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
             raise StaleRebaseReportError(
                 f"patch {patch_id!r} implementation changed since the report was written"
             )
+        # Adversarial-review follow-up: a packaged patch's REQUIRES/CONFLICTS
+        # live in patch.toml, a file implementation_digest never covers (that
+        # only hashes patch.py). An uncommitted patch.toml edit can change
+        # the dependency graph -- and therefore resolve_exact()'s topological
+        # order, and therefore apply_all()'s actual apply sequence -- while
+        # every digest above stays identical. The report already recorded
+        # what requires/conflicts the probe actually resolved against; require
+        # it still matches.
+        if tuple(current.requires) != tuple(patch_entry.get("requires", ())):
+            raise StaleRebaseReportError(
+                f"patch {patch_id!r} REQUIRES changed since the report was written"
+            )
+        if tuple(current.conflicts) != tuple(patch_entry.get("conflicts", ())):
+            raise StaleRebaseReportError(
+                f"patch {patch_id!r} CONFLICTS changed since the report was written"
+            )
     known_good = tuple(report.get("known_good_patch_ids", ()))
     unknown = set(known_good) - set(selected)
     if unknown:
@@ -880,6 +910,37 @@ def _require_fresh(report: dict[str, Any], root: Path) -> tuple[str, ...]:
             f"{sorted(unknown)}"
         )
     return known_good
+
+
+def _write_overlay_snapshot(
+    root: Path, texts: dict[str, str], *, dry_run: bool,
+    backup: dict[str, str | None] | None = None,
+) -> list[str]:
+    """Write exactly the overlay bytes already captured in ``texts`` --
+    never re-reads ``src/`` from disk.
+
+    Adversarial-review follow-up: ``legacy._copy_overlay()`` (used by a
+    plain ``apply``) reads ``src/`` itself at write time, which is exactly
+    right for that caller -- it never claimed anything about an earlier,
+    separately-timed digest. ``apply_known_good`` does make that claim
+    (its report's ``overlay_digest`` must still match ``src/``), so it must
+    write from the SAME bytes it just verified, not take a second,
+    independently-timed look at disk that a concurrent overlay edit could
+    answer differently.
+    """
+    written: list[str] = []
+    for relative_str in sorted(texts):
+        text = texts[relative_str]
+        target = patcher.resolve_contained_target(root, relative_str)
+        if target.is_file() and target.read_text(encoding="utf-8") == text:
+            continue
+        if backup is not None and relative_str not in backup:
+            backup[relative_str] = target.read_text(encoding="utf-8") if target.is_file() else None
+        if not dry_run:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8", newline="")
+        written.append(relative_str)
+    return written
 
 
 @dataclass
@@ -912,7 +973,14 @@ def apply_known_good(
     evidence describing a composition that was never actually completed.
     """
     report = load_report(report_path)
-    known_good = _require_fresh(report, root)
+    # Snapshot the overlay ONCE, verify it, then write from these exact
+    # bytes below -- never a second, independently-timed disk read that a
+    # concurrent overlay edit on this shared, multi-agent working tree
+    # could answer differently than the one just verified fresh.
+    overlay_snapshot = _overlay_texts()
+    known_good = _require_fresh(
+        report, root, overlay_snapshot_digest=_digest_from_texts(overlay_snapshot),
+    )
     selected = tuple(report.get("selection", {}).get("patch_ids", ()))
     partial = set(known_good) != set(selected)
 
@@ -951,9 +1019,8 @@ def apply_known_good(
         ))
 
     overlay_backup: dict[str, str | None] = {}
-    overlay_sim: dict[str, str] = {}
-    written = legacy._copy_overlay(root, dry_run=dry_run, backup=overlay_backup, sim_texts=overlay_sim)
-    results = patcher.apply_all(file_patches, root, dry_run=dry_run, initial_texts=overlay_sim)
+    written = _write_overlay_snapshot(root, overlay_snapshot, dry_run=dry_run, backup=overlay_backup)
+    results = patcher.apply_all(file_patches, root, dry_run=dry_run, initial_texts=dict(overlay_snapshot))
     ok = all(r.ok for r in results)
     if not ok and not dry_run and overlay_backup:
         legacy._restore_overlay(root, overlay_backup)
