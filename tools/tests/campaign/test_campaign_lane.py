@@ -568,6 +568,11 @@ class Re25ProvenanceLineageTests(unittest.TestCase):
             self.assertTrue(source_ns.get("source_tree_oid"))
             self.assertTrue(source_ns.get("materialization_plan_id"))
             self.assertTrue(source_ns.get("source_plan_id"))
+            # HI130: source_root is the real isolated materialization this
+            # lane built from -- must be a real, existing directory (the
+            # correctness-evidence workflow reads --llama-root from here).
+            self.assertTrue(result.source_root.is_dir())
+            self.assertTrue((result.source_root / "source.txt").is_file())
             self.assertIn(source_ns.get("git_object_format"), ("sha1", "sha256"))
             # Generate's stage outputs are descriptor-backed too.
             assert result.manifest_ref is not None

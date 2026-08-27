@@ -266,13 +266,34 @@ class ReleaseRecord:
                 raise ValueError(
                     "promotion pointer release_tag disagrees with release record")
 
+    def _comparable(self) -> dict:
+        """``asdict()`` with the purely-bookkeeping timestamp fields excluded
+        -- used to detect whether a ``save()`` would be substantively a
+        no-op, so an idempotent re-save (nothing about the release actually
+        changed) doesn't dirty the tracked file's bytes/mtime. A caller
+        touching real content (stage, promotion, manifest_hash, etc.) still
+        always writes and still gets a fresh ``updated_at``.
+        """
+        doc = asdict(self)
+        doc.pop("updated_at", None)
+        doc.pop("first_seen", None)
+        return doc
+
     def save(self) -> Path:
-        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-        self.first_seen = self.first_seen or now
-        self.updated_at = now
         RELEASES_DIR.mkdir(parents=True, exist_ok=True)
         self.validate()
         target = self.path()
+        if target.is_file():
+            existing_data = json.loads(target.read_text(encoding="utf-8"))
+            known = {f for f in ReleaseRecord.__dataclass_fields__}
+            existing = ReleaseRecord(**{k: v for k, v in existing_data.items() if k in known})
+            if existing._comparable() == self._comparable():
+                self.first_seen = existing.first_seen
+                self.updated_at = existing.updated_at
+                return target
+        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        self.first_seen = self.first_seen or now
+        self.updated_at = now
         _atomic_write_json(target, asdict(self))
         _rebuild_index()
         validate_index_consistency()
@@ -343,21 +364,32 @@ def _rebuild_index() -> None:
     so it cannot drift out of agreement with them.
     """
     records = all_records()
+    releases = [
+        {
+            "slug": r.slug(),
+            "revision": r.revision,
+            "release_tag": r.release_tag,
+            "stage": r.stage,
+            "manifest_hash": r.manifest_hash,
+            "audit_passed": bool(r.audit.get("passed")),
+            "updated_at": r.updated_at,
+        }
+        for r in records
+    ]
+    if INDEX_PATH.is_file():
+        try:
+            existing_index = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing_index = None
+        if isinstance(existing_index, dict) and existing_index.get("releases") == releases:
+            # Substantively identical to what's already on disk -- skip the
+            # write entirely rather than dirty the tracked file over a bare
+            # generated_at timestamp change.
+            return
     index = {
         "artifact_version": ARTIFACT_VERSION,
         "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-        "releases": [
-            {
-                "slug": r.slug(),
-                "revision": r.revision,
-                "release_tag": r.release_tag,
-                "stage": r.stage,
-                "manifest_hash": r.manifest_hash,
-                "audit_passed": bool(r.audit.get("passed")),
-                "updated_at": r.updated_at,
-            }
-            for r in records
-        ],
+        "releases": releases,
     }
     INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(INDEX_PATH, index)

@@ -138,6 +138,92 @@ class CampaignProfileTests(unittest.TestCase):
         self.assertEqual(cfg.campaigns, {})
 
 
+_RUNTIME_PROFILE_DOC = """
+version = 2
+pinned = "abc123"
+
+[runtime-profile.production-dual-xtx]
+server-args = ["-sm", "tensor", "--flash-attn", "on"]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648
+
+[runtime-profile.minimal]
+tune-context = 4096
+production-context = 8192
+min-free-vram-bytes-per-device = 0
+"""
+
+
+class RuntimeProfileTests(unittest.TestCase):
+    """HI130: named server-args + tuner-context bundles for
+    `bigcherry tune-campaign --runtime-profile <name>`."""
+
+    def _load(self, doc: str) -> campaign_config.Config:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "recipes.toml"
+            path.write_text(doc, encoding="utf-8")
+            return campaign_config.load(path)
+
+    def test_full_profile_parses(self):
+        cfg = self._load(_RUNTIME_PROFILE_DOC)
+        profile = cfg.runtime_profiles["production-dual-xtx"]
+        self.assertEqual(profile.name, "production-dual-xtx")
+        self.assertEqual(profile.server_args, ("-sm", "tensor", "--flash-attn", "on"))
+        self.assertEqual(profile.tune_context, 4096)
+        self.assertEqual(profile.production_context, 64000)
+        self.assertEqual(profile.min_free_vram_bytes_per_device, 2147483648)
+
+    def test_server_args_default_to_empty_tuple(self):
+        cfg = self._load(_RUNTIME_PROFILE_DOC)
+        profile = cfg.runtime_profiles["minimal"]
+        self.assertEqual(profile.server_args, ())
+        self.assertEqual(profile.min_free_vram_bytes_per_device, 0)
+
+    def test_no_runtime_profile_section_yields_empty_dict(self):
+        doc = _RUNTIME_PROFILE_DOC.split("[runtime-profile.production-dual-xtx]")[0]
+        cfg = self._load(doc)
+        self.assertEqual(cfg.runtime_profiles, {})
+
+    def test_missing_tune_context_rejected(self):
+        doc = _RUNTIME_PROFILE_DOC.replace("tune-context = 4096", "", 1)
+        with self.assertRaises(campaign_config.ConfigError):
+            self._load(doc)
+
+    def test_non_positive_tune_context_rejected(self):
+        doc = _RUNTIME_PROFILE_DOC.replace("tune-context = 4096", "tune-context = 0", 1)
+        with self.assertRaises(campaign_config.ConfigError):
+            self._load(doc)
+
+    def test_negative_min_free_vram_rejected(self):
+        doc = _RUNTIME_PROFILE_DOC.replace(
+            "min-free-vram-bytes-per-device = 2147483648",
+            "min-free-vram-bytes-per-device = -1",
+        )
+        with self.assertRaises(campaign_config.ConfigError):
+            self._load(doc)
+
+
+class RealRecipesTomlRuntimeProfilesTests(unittest.TestCase):
+    """Cross-checks the real recipes.toml runtime-profile entries this
+    session added parse cleanly and carry the expected production values."""
+
+    def test_production_dual_xtx_matches_the_real_bench_baseline(self):
+        from bigcherry.core import paths
+        cfg = campaign_config.load(paths.RECIPES)
+        profile = cfg.runtime_profiles["production-dual-xtx"]
+        self.assertIn("tensor", profile.server_args)
+        self.assertIn("draft-mtp", profile.server_args)
+        self.assertEqual(profile.tune_context, 4096)
+        self.assertEqual(profile.production_context, 64000)
+
+    def test_production_safe_single_has_a_bounded_tune_context(self):
+        from bigcherry.core import paths
+        cfg = campaign_config.load(paths.RECIPES)
+        profile = cfg.runtime_profiles["production-safe-single"]
+        self.assertEqual(profile.tune_context, 4096)
+
+
 class RealRecipesTomlCampaignStandardTests(unittest.TestCase):
     """Cross-checks the real recipes.toml campaign.standard profile added
     for RE19 against the actual current default=true recipe/build coverage

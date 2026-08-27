@@ -1,0 +1,31 @@
+{
+  "source_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+  "manifest_hash": "4ebdc7eca5904d06d28878324a5c951c",
+  "signatures_observed": 66,
+  "mmq_types": [],
+  "mmvq_types": [
+    "q8_0"
+  ],
+  "mmvf_types": [
+    "f32"
+  ],
+  "mmf_types": [],
+  "widths": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    8,
+    10,
+    12,
+    16
+  ],
+  "uses_blas": true,
+  "mmq_fallback_types": [
+    "q8_0"
+  ],
+  "mmf_eligible_types": [
+    "f32"
+  ]
+}

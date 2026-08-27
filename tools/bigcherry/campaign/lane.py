@@ -155,6 +155,11 @@ class CampaignLaneResult:
     run_id: str
     resolved_revision: str
     source_slice_id: str
+    #: HI130: the isolated source materialization this lane actually built
+    #: from -- callers that need a real --llama-root/vendor_root for this
+    #: exact build (e.g. correctness-evidence generation) previously had no
+    #: way to get it without searching ~/.cache/bigcherry/sources/ by mtime.
+    source_root: Path
     build_plan: BuildPlan
     #: None for a build with no workload at all (needs=[] --
     #: stock/control/record/audit), not a placeholder value.
@@ -840,6 +845,7 @@ def _execute_build_phase(
         run_id=run_id,
         resolved_revision=materialized.resolved_revision,
         source_slice_id=materialized.source_slice_id,
+        source_root=materialized.source_root,
         build_plan=build_plan,
         workload_id=workload_id,
         source_metadata_ref=materialized.source_metadata_ref,
