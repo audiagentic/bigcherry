@@ -110,10 +110,9 @@ patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
 [experiment.hi134-meta-stage-trace]
-# 0830 is validated/core and already in the default control build, but the
-# REQUIRES check only sees this experiment's own explicit patch list, so it
-# must be named here too even though it isn't newly added by this lane.
-patches = ["0830_split_reduce_telemetry", "1242_hi134_meta_stage_trace"]
+# 0830 (validated, always in the default control build) satisfies 1242's
+# REQUIRES via resolve_exact's context_ids param -- see patchset.py.
+patches = ["1242_hi134_meta_stage_trace"]
 
 # HI105: the CPU-reference correctness-evidence patch chain (deterministic
 # test-backend-ops init + machine-readable metrics + MUL_MAT_ID's own
