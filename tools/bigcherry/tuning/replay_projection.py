@@ -11,11 +11,20 @@ as they are today. The projected file is an ordinary measurements JSONL
 that `replay.build()` consumes completely unchanged.
 
 Filtering rule per result row, all of which must hold to retain a row:
-  * the row's own signature digest resolves to a real dispatch_db signature
-    row with parseable canonical content (an unresolvable signature is a
-    data problem, not a capability problem -- fails the whole projection,
-    not just that row, since it means this measurements/dispatch_db pairing
-    itself is suspect);
+  * (HI127, checked FIRST) the row resolves to the authoritative winner row
+    recorded against source_build_id (a forged/mismatched row is a hard
+    ProjectionError, unaffected by verification state) AND that exact
+    winner_id carries a current-profile winner_verification attestation --
+    an unattested but genuine row is instead an ordinary counted omission
+    (omitted_unverified_source) and never reaches any of the checks below,
+    so a genuine pre-HI127 row with unresolvable or malformed canonical
+    content is quarantined as unverified-source, not as a whole-projection
+    failure;
+  * for an attested row, its signature digest resolves to a real dispatch_db
+    signature row with parseable canonical content (an unresolvable
+    signature on an ATTESTED row is a data problem, not a capability
+    problem -- fails the whole projection, not just that row, since it
+    means this measurements/dispatch_db pairing itself is suspect);
   * hip_required_capabilities() does not raise UnsupportedSignatureDomain
     for that signature's canonical content;
   * the SOURCE build's verified, DB-attested producer_capabilities mask
