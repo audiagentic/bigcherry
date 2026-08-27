@@ -1158,12 +1158,34 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_conflicting_canonical_for_same_digest_within_one_load_raises(self):
+        """HI125 (adversarial-review follow-up): the in-memory
+        signature_cache short-circuits a cache HIT before it ever reaches
+        the DB-row disagreement check -- two rows in the SAME
+        load_measurements() call sharing a digest but supplying different
+        canonicals would otherwise have the second row's canonical
+        silently ignored entirely, defeating this exact check for the
+        same-load case."""
+        signature_hex = "d1" + "0" * 30
+        canonical_a = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        canonical_b = {"op": "MUL_MAT_ID", "schema_version": 2, "flags": 8, "ne0": [5, 6, 7, 8], "ned": [5, 6, 7, 8]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical_a),
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical_b),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "different canonical content earlier in this same load"):
+                    inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+        finally:
+            os.unlink(path)
+
     def test_conflicting_canonical_for_same_digest_raises(self):
-        # The in-memory signature_cache short-circuits repeat lookups WITHIN
-        # one load_measurements() call, so this needs two separate loads
-        # against the same DB -- the realistic scenario anyway: two
-        # different measurement runs/files loaded into one persistent DB,
-        # not two rows a single real producer emitted in one run.
+        # Cross-load (separate persistent-DB) disagreement -- the realistic
+        # scenario of two different measurement runs/files loaded into one
+        # persistent DB, distinct from the same-load case above.
         signature_hex = "b" * 32
         canonical_a = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         canonical_b = {"op": "MUL_MAT_ID", "schema_version": 2, "flags": 8, "ne0": [5, 6, 7, 8], "ned": [5, 6, 7, 8]}

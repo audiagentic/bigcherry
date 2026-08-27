@@ -1282,6 +1282,15 @@ def load_measurements(
         # Resolve candidate and signature names → IDs (cache lookups)
         candidate_cache: dict[str, int] = {}
         signature_cache: dict[str, int | None] = {}
+        # HI125 (adversarial-review follow-up): the repeat-sighting
+        # disagreement check below only runs on a cache MISS -- two rows
+        # in the SAME load_measurements() call sharing a digest but
+        # supplying different canonical content would otherwise have the
+        # second row's canonical silently ignored by the cache short-
+        # circuit, defeating the very check that exists to catch exactly
+        # this. Track the last non-empty canonical seen per digest across
+        # cache hits too, independent of whether a DB row lookup happens.
+        signature_seen_canonical: dict[str, dict[str, Any]] = {}
 
         def _resolve_signature(result: dict[str, Any]) -> int | None:
             signature_hex = result.get("signature", "")
@@ -1326,6 +1335,17 @@ def load_measurements(
                         f"({verified_hex!r})"
                     )
             if signature_hex in signature_cache:
+                if (
+                    canonical
+                    and signature_hex in signature_seen_canonical
+                    and canonical != signature_seen_canonical[signature_hex]
+                ):
+                    raise RecordError(
+                        f"signature {signature_hex!r} was supplied with different "
+                        f"canonical content earlier in this same load -- a digest "
+                        f"must correspond to exactly one canonical shape; refusing "
+                        f"to trust either as authoritative"
+                    )
                 return signature_cache[signature_hex]
             ned = canonical.get("ned", [0, 0, 0, 0])
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
@@ -1385,6 +1405,8 @@ def load_measurements(
                     ),
                 )
                 signature_id = cursor.lastrowid
+            if canonical:
+                signature_seen_canonical[signature_hex] = canonical
             signature_cache[signature_hex] = signature_id
             return signature_id
 
