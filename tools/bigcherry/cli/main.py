@@ -45,6 +45,7 @@ from .tuning import (
     cmd_generate,
     cmd_inventory,
     cmd_project_replay,
+    cmd_reattest,
     cmd_replay_inspect,
     cmd_tune_campaign,
 )
@@ -1171,6 +1172,40 @@ def build_parser() -> argparse.ArgumentParser:
     inv_workload.set_defaults(
         func=lambda args: cmd_inventory(args, subcmd="workload-check")
     )
+
+    # HI128: positive re-attestation of an existing winner against its
+    # original measurements/manifest -- never replays load_measurements().
+    inv_reattest = inv_sub.add_parser(
+        "reattest",
+        help="Re-verify an existing schema-8 winner against its original "
+        "measurements/manifest and attest it if it genuinely passes",
+    )
+    inv_reattest.add_argument("--database", required=True, help="schema-8 dispatch SQLite database")
+    inv_reattest.add_argument("--source-build-id", type=int, required=True, help="build_id these measurements belong to")
+    inv_reattest.add_argument("--measurements", required=True, help="the ORIGINAL measurements JSONL (not a projection)")
+    inv_reattest.add_argument("--manifest", required=True, help="the ORIGINAL manifest for source-build-id")
+    inv_reattest.add_argument(
+        "--signature-verifier-binary", required=True,
+        help="compiled test-backend-ops binary built with GGML_HIP_AUTOTUNE_RECORD=ON",
+    )
+    inv_reattest.add_argument(
+        "--signature-verifier-vendor-root", required=True,
+        help="source root the signature-verifier-binary was built from",
+    )
+    inv_reattest.add_argument(
+        "--signature-source",
+        action="append",
+        default=[],
+        help="JSONL record/replay diagnostics file to recover canonical shapes "
+        "for rows lacking inline canonical; may be repeated",
+    )
+    inv_reattest.add_argument("--seed", type=int, default=1, help="test-backend-ops --seed")
+    inv_reattest.add_argument(
+        "--dry-run", action="store_true",
+        help="run every check (including the real hardware verifier) but write nothing",
+    )
+    inv_reattest.add_argument("--json", action="store_true", help="machine-readable summary")
+    inv_reattest.set_defaults(func=cmd_reattest)
 
     return parser
 
