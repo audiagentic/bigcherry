@@ -2,7 +2,7 @@
 
 Environment setup and build commands for bigcherry recipes and manual configuration.
 
-See also: [TEST.md](TEST.md) — testing, tuning workflows, and coverage.
+See also: [TEST.md](../testing/TEST.md) — testing, tuning workflows, and coverage.
 
 ## Environment — brutus (`10.10.100.10`)
 
@@ -94,7 +94,7 @@ Applies to `[build.<name>]` entries in `config/recipes.toml`, selected via `buil
 - **`stock`/`control`** — Just the dispatch layer, no tuning. Prerequisite for measuring (`record`).
 - **`record`** — Measures signatures a real workload exercises. Produces `inventory.json` (via `bigcherry inventory record`).
 - **`tune`** (`needs = ["inventory"]`) — Measures candidates against the workload. Produces `.measurements.jsonl`.
-- **`replay`** (`needs = ["inventory", "promoted-winners"]`) — Compiles the replay layer. Loads winners from a promoted/exported dispatch cache (see [TEST.md](TEST.md)'s "Getting winners onto the hot path").
+- **`replay`** (`needs = ["inventory", "promoted-winners"]`) — Compiles the replay layer. Loads winners from a promoted/exported dispatch cache (see [TEST.md](../testing/TEST.md)'s "Getting winners onto the hot path").
 
 ### Normal workflow
 

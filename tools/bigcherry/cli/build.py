@@ -94,7 +94,7 @@ def cmd_build_new(args: Namespace) -> int:
             print(f"build: pin preflight FAIL: {reason}", file=sys.stderr)
         print(
             "build: run `bigcherry pin-status` for the full report and see "
-            "docs/reference/PIN_BUMP.md (fail closed)",
+            "docs/reference/build/PIN_BUMP.md (fail closed)",
             file=sys.stderr,
         )
         return 1

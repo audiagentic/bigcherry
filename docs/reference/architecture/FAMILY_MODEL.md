@@ -1,7 +1,7 @@
 # Family model — verified against upstream
 
 Assessment of the expanded family taxonomy, checked against the vendored
-`llama.cpp` tree rather than accepted on description. See [COVERAGE_AUDIT.md](COVERAGE_AUDIT.md) for what the tuner can and cannot choose between at runtime.
+`llama.cpp` tree rather than accepted on description. See [COVERAGE_AUDIT.md](../testing/COVERAGE_AUDIT.md) for what the tuner can and cannot choose between at runtime.
 
 ---
 

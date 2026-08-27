@@ -73,7 +73,7 @@ from bigcherry.patcher import Edit, FilePatch
 # RE40 (external patch-management review, 2026-08-20): 1205/1207 share a
 # struct anchor in ggml-cuda.cu's fusion-detection block and cannot compose
 # today (documented in both patches' own docstrings and
-# docs/reference/PIN_REBASE_REVIEW_B10502.md section 2.2). CONFLICTS makes
+# docs/reference/build/PIN_REBASE_REVIEW_B10502.md section 2.2). CONFLICTS makes
 # that real and enforced (patchset.resolve_exact() raises if both are
 # explicitly selected together) instead of relying solely on the anchor
 # collision to surface it at apply time. First-sweep policy: compatible

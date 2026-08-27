@@ -45,7 +45,7 @@ their targets in the revision `pull` just moved to) and never advances
 release stage on its own, so it can run any time after `pull`. It reports
 each patch as `CLEAN`/`CLEAN_NOOP`/`NOT_APPLICABLE_BY_DESIGN` (fine) or
 `FAILED_NEEDS_RECONCILIATION`/`BLOCKED_BY_DEPENDENCY`/`QUARANTINED` (needs a
-human) — see `docs/reference/PIN_BUMP.md` for the full bump runbook,
+human) — see `docs/reference/build/PIN_BUMP.md` for the full bump runbook,
 including how to apply just the known-good subset while the rest gets
 fixed. A *full* known-good apply (every selected patch reproved clean)
 advances the release record exactly like a plain `apply` would; a *partial*

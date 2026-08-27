@@ -2,7 +2,7 @@
 ALWAYS a full multi-arch build, covering every architecture
 recipes.toml's [platform.linux-multi] declares (today: gfx1100, gfx1201,
 gfx1030), so this never needs re-tuning when that list changes -- and run
-the project's own documented correctness recipe (docs/reference/TEST.md)
+the project's own documented correctness recipe (docs/reference/testing/TEST.md)
 against it on every architecture this host can SAFELY exercise at
 runtime: native baseline, then a screen=1/final=1 tune-mode pass
 (correctness-only, not a timing run) so every registered candidate
