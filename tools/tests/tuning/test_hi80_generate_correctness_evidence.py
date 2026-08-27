@@ -652,14 +652,18 @@ class GluGenerateForRowTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
             return _fake_glu_runner_factory()(argv, capture_output, text, env)
 
-        with self.assertRaises(cli.CliError) as ctx:
+        # HI121/HI125: _observed_signature_hex() now delegates to
+        # signature_digest_verification's generalized primitive, which
+        # raises ce.EvidenceError (not CliError) -- still caught by the
+        # CLI's own broader except (..., ce.EvidenceError, CliError).
+        with self.assertRaises(ce.EvidenceError) as ctx:
             cli.generate_for_row(
                 self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
                 seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
                 contract_version=ce.CONTRACT_VERSION, tool_version="test",
                 runner=broken_runner,
             )
-        self.assertIn("no observation row", str(ctx.exception))
+        self.assertIn("0 distinct signature(s)", str(ctx.exception))
 
 
 if __name__ == "__main__":
