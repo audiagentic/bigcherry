@@ -39,6 +39,7 @@ from .patch import (
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .profiling import cmd_profile_campaign
 from .source import cmd_audit, cmd_pull
 from .tuning import (
     cmd_generate,
@@ -545,6 +546,51 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print the WorkflowReceipt as JSON to stdout"
     )
     tune_campaign_cmd.set_defaults(func=cmd_tune_campaign)
+
+    # PROF01/HI132: repeatable rocprofv3-based GPU/runtime deep-profiling
+    # campaign -- see profiling/workflow.py for the actual orchestration.
+    # CPU call-graph profiling (perf) is reserved for HI133.
+    profile_campaign_cmd = sub.add_parser(
+        "profile-campaign",
+        help="run a repeatable rocprofv3-based deep-profiling campaign "
+        "(GPU/runtime; CPU call-graph via perf is a separate future item)",
+    )
+    profile_campaign_cmd.add_argument("--llama-root", default=None)
+    profile_campaign_cmd.add_argument("--source", default="bigcherry-native")
+    profile_campaign_cmd.add_argument(
+        "--build", default="control", dest="build",
+        help="build name from the selected source (default 'control')",
+    )
+    profile_campaign_cmd.add_argument("--platform", required=True, help="e.g. linux-multi")
+    profile_campaign_cmd.add_argument("--model", required=True, help="gguf model path")
+    profile_campaign_cmd.add_argument(
+        "--devices", required=True, help="HIP_VISIBLE_DEVICES value, e.g. '0,1'"
+    )
+    profile_campaign_cmd.add_argument(
+        "--runtime-profile", required=True,
+        help="named profile from config/recipes.toml's [runtime-profile.<name>]",
+    )
+    profile_campaign_cmd.add_argument(
+        "--workload", default="default", help="free-text label for the report/receipt"
+    )
+    profile_campaign_cmd.add_argument(
+        "--workdir", default=None, help="defaults to work_root/profile-campaigns/<run_id>"
+    )
+    profile_campaign_cmd.add_argument("--run-id", default=None)
+    profile_campaign_cmd.add_argument(
+        "--control-reps", type=int, default=10,
+        help="unprofiled reps per control block (default 10, matching this "
+        "project's own measured noise floor -- see HI132)",
+    )
+    profile_campaign_cmd.add_argument(
+        "--profile-passes", type=int, default=2,
+        help="number of rocprofv3 GPU passes (default 2, checks pass-to-pass "
+        "reproducibility rather than statistical power)",
+    )
+    profile_campaign_cmd.add_argument(
+        "--json", action="store_true", help="print the ProfileReport as JSON to stdout"
+    )
+    profile_campaign_cmd.set_defaults(func=cmd_profile_campaign)
 
     from ..tuning import schema as _schema
 
