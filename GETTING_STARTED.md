@@ -30,12 +30,23 @@ PYTHONPATH=tools python -m bigcherry check --default # deterministic local CI ga
 
 ```bash
 PYTHONPATH=tools python -m bigcherry pull   --ref <upstream-rev>
-PYTHONPATH=tools python -m bigcherry audit                # strict invariant audit — must pass before apply
-PYTHONPATH=tools python -m bigcherry apply                # src/ overlay + anchored patches
+PYTHONPATH=tools python -m bigcherry patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json
+PYTHONPATH=tools python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good  # or: apply (all-or-nothing)
+PYTHONPATH=tools python -m bigcherry audit                # strict invariant audit — must pass before generate
 PYTHONPATH=tools python -m bigcherry generate --arch all   # candidate catalog -> artifacts
 ```
 
 Each stage refuses to run on a tree that hasn't passed the stage before it.
+`patch-rebase-check` is the exception: it is observational (an isolated
+detached-worktree probe of whether the selected patches' anchors still find
+their targets in the revision `pull` just moved to) and never advances
+release stage on its own. It reports each patch as `CLEAN`/`CLEAN_NOOP`/
+`NOT_APPLICABLE_BY_DESIGN` (fine) or `FAILED_NEEDS_RECONCILIATION`/
+`BLOCKED_BY_DEPENDENCY`/`QUARANTINED` (needs a human) — see
+`docs/reference/PIN_BUMP.md` for the full bump runbook, including how to
+apply just the known-good subset while the rest gets fixed. A plain `apply`
+(no `--rebase-report`) is unchanged: still all-or-nothing, still fails
+closed on the first anchor that doesn't find its target.
 
 ## Building a binary
 
