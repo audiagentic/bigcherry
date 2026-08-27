@@ -194,6 +194,11 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                              return_value=(workdir / "inventory.json", workdir / "inventory.sqlite")),
                 patch.object(workflow, "_stage_tune",
                              return_value=(tune_result, workdir / "tune.measurements.jsonl")),
+                patch.object(workflow, "_stage_signature_verifier",
+                             return_value=(
+                                 fake_lane_result("verifier-run", "/verifier/manifest.json", "/verifier/source-root"),
+                                 lambda canonical: "0" * 32,
+                             )),
                 patch.object(workflow, "_stage_load_and_promote",
                              return_value=(workdir / "tune.sqlite", {}, 19, 0)),
                 patch.object(workflow, "_stage_replay_build", side_effect=fake_stage_replay_build),
@@ -245,6 +250,121 @@ class StageIdentityTests(unittest.TestCase):
 
         identity = workflow._stage_identity(fake_result)
         self.assertEqual(identity.run_id, "real-lane-run-id-from-run-campaign")
+
+
+class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
+    """HI125 close-out step 6: production ingest is mandatory-strengthened
+    -- signature_digest_verifier has no default, and a RecordError from
+    load_measurements() (a verification failure or unsupported-domain
+    signature) must abort as TuneCampaignError, never silently retry
+    unverified."""
+
+    def test_record_error_from_load_measurements_becomes_tune_campaign_error(self):
+        from unittest.mock import patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            measurements = workdir / "tune.measurements.jsonl"
+            measurements.write_text("", encoding="utf-8")
+            manifest = workdir / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+
+            def raising_load_measurements(*_args, **_kwargs):
+                raise workflow.inv_mod.RecordError("signature verifier rejected a canonical")
+
+            with patch.object(workflow.inv_mod, "load_measurements", side_effect=raising_load_measurements):
+                with self.assertRaisesRegex(workflow.TuneCampaignError, "strengthened ingest failed"):
+                    workflow._stage_load_and_promote(
+                        tune_measurements=measurements, tune_manifest_path=manifest,
+                        workdir=workdir, q=0.05, threshold_pct=1.0, resamples=100,
+                        signature_digest_verifier=lambda _c: "0" * 32,
+                    )
+
+    def test_signature_digest_verifier_is_forwarded_to_load_measurements(self):
+        from unittest.mock import patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            measurements = workdir / "tune.measurements.jsonl"
+            measurements.write_text("", encoding="utf-8")
+            manifest = workdir / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            promoted_path = workdir / "promoted.jsonl"
+            promoted_path.write_text("", encoding="utf-8")
+
+            captured = {}
+
+            def fake_load_measurements(*_args, **kwargs):
+                captured["signature_digest_verifier"] = kwargs.get("signature_digest_verifier")
+                return {"results": 0, "measurements": 0, "candidates": 0}
+
+            verifier = lambda _c: "0" * 32  # noqa: E731
+
+            with (
+                patch.object(workflow.inv_mod, "load_measurements", side_effect=fake_load_measurements),
+                patch.object(workflow.tune_promotion, "promote", return_value={"promoted": 0}),
+                patch.object(workflow, "_count_missing_correctness_evidence", return_value=0),
+            ):
+                workflow._stage_load_and_promote(
+                    tune_measurements=measurements, tune_manifest_path=manifest,
+                    workdir=workdir, q=0.05, threshold_pct=1.0, resamples=100,
+                    signature_digest_verifier=verifier,
+                )
+
+            self.assertIs(captured["signature_digest_verifier"], verifier)
+
+
+class StageSignatureVerifierTests(unittest.TestCase):
+    def test_uses_record_build_with_hi105_correctness_experiment(self):
+        # Must build from the SAME lane the HI125 verifier needs to be
+        # RECORD-capable AND cover MUL_MAT_ID/routed-GLU (the hi105-
+        # correctness experiment's extra patches) -- not the plain tune
+        # build, which lacks GGML_HIP_AUTOTUNE_RECORD entirely.
+        from unittest.mock import MagicMock, patch
+
+        fake_result = MagicMock()
+        fake_result.binary_ref.path = Path("/fake/bin/test-backend-ops")
+        fake_result.source_root = Path("/fake/source-root")
+
+        captured = {}
+
+        def fake_plan_and_run(**kwargs):
+            captured.update(kwargs)
+            return fake_result
+
+        with (
+            patch.object(workflow, "_plan_and_run_one_lane", side_effect=fake_plan_and_run),
+            patch.object(workflow.sdv, "make_signature_digest_verifier", return_value=lambda c: "0" * 32),
+        ):
+            lane_result, verifier = workflow._stage_signature_verifier(
+                context=None, cfg=None, store=None, run_id="run-1",
+                platform_name="linux-multi", source_name="bigcherry", devices="0",
+            )
+
+        self.assertEqual(captured["build_name"], "record")
+        self.assertEqual(captured["binary_relative_path"], "bin/test-backend-ops")
+        self.assertEqual(captured["experiment"], "hi105-correctness")
+        self.assertIs(lane_result, fake_result)
+
+    def test_gpu_scoped_runner_injects_hip_visible_devices_without_dropping_caller_env(self):
+        from unittest.mock import patch
+
+        runner = workflow._gpu_scoped_test_backend_ops_runner("0,1")
+        captured = {}
+
+        def fake_subprocess_run(argv, **kwargs):
+            captured["argv"] = argv
+            captured["env"] = kwargs.get("env")
+            return "fake-result"
+
+        with patch.object(workflow.subprocess, "run", side_effect=fake_subprocess_run):
+            result = runner(["test-backend-ops"], env={"GGML_HIP_DISPATCH_DB": "/x"})
+
+        self.assertEqual(result, "fake-result")
+        self.assertEqual(captured["env"]["HIP_VISIBLE_DEVICES"], "0,1")
+        self.assertEqual(captured["env"]["GGML_HIP_DISPATCH_DB"], "/x")
 
 
 if __name__ == "__main__":
