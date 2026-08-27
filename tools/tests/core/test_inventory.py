@@ -1636,12 +1636,15 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
             os.unlink(manifest_path)
 
     def test_replacing_winner_row_gets_fresh_attestation_not_stale_cascade(self):
-        # A second load with a DIFFERENT dispatch_digest for the same
-        # (build,hardware,objective) conflicts on winner's own UNIQUE
-        # constraint -- INSERT OR REPLACE deletes the old row and creates a
-        # genuinely new winner_id, whose ON DELETE CASCADE must have already
-        # destroyed the old attestation. Reattesting the new row must not
-        # depend on any leftover state from the old one.
+        # A second load with the SAME (build_id, hardware_id, objective,
+        # dispatch_digest) as the first conflicts on winner's own UNIQUE
+        # constraint -- INSERT OR REPLACE deletes the old row and inserts a
+        # fresh one via delete-then-insert. SQLite does not guarantee an
+        # ordinary (non-AUTOINCREMENT) INTEGER PRIMARY KEY is numerically
+        # different after such a replace, so this test does NOT assert
+        # inequality -- only the real invariant: ON DELETE CASCADE already
+        # destroyed whatever attestation belonged to the row that no longer
+        # exists, and reattesting depends on nothing left over from it.
         manifest, header = self._manifest_and_header()
         manifest_path = self._write_manifest(manifest)
         signature_hex = "7" * 32
@@ -1655,25 +1658,41 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
                     first_path, db.db_path, schema_path, manifest_path=manifest_path,
                     signature_digest_verifier=lambda _value: signature_hex,
                 )
-                first_winner_id = db.query("SELECT winner_id FROM winner_verification")[0][0]
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 1)
 
-                # Same (build_id, hardware_id, objective, dispatch_digest) as
-                # the first load -- this is exactly the key winner's own
-                # UNIQUE constraint conflicts on, so INSERT OR REPLACE
-                # deletes the first row and creates a genuinely new one, even
-                # though the content is otherwise identical.
+                # Reload the SAME row content WITHOUT a verifier -- this
+                # still replaces the winner row (same UNIQUE key), so the
+                # CASCADE must drop the prior attestation and nothing should
+                # re-create it since this load is not strengthened.
                 second_path = make_jsonl_file(header, first_result)
                 try:
                     inventory.load_measurements(
                         second_path, db.db_path, schema_path, manifest_path=manifest_path,
-                        signature_digest_verifier=lambda _value: signature_hex,
                     )
                 finally:
                     os.unlink(second_path)
 
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 0)
+
+                # A third, strengthened reload of the same key must attest
+                # exactly the CURRENT winner row -- never a stale one.
+                third_path = make_jsonl_file(header, first_result)
+                try:
+                    inventory.load_measurements(
+                        third_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                    )
+                finally:
+                    os.unlink(third_path)
+
                 rows = db.query("SELECT winner_id FROM winner_verification")
                 self.assertEqual(len(rows), 1)
-                self.assertNotEqual(rows[0][0], first_winner_id)
+                self.assertEqual(
+                    rows[0][0],
+                    db.query(
+                        "SELECT winner_id FROM winner WHERE stable_name = 'mmq:native:v1'"
+                    )[0][0],
+                )
         finally:
             os.unlink(first_path)
             os.unlink(manifest_path)
