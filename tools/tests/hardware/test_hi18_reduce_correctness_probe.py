@@ -149,11 +149,11 @@ def test_probe_fails_closed_on_missing_participant_output():
     assert "snap.device_count != D" in PROBE
 
 
-def test_probe_d2_only_guard_present_but_mechanics_are_generic():
-    assert "HI18 currently qualifies D=2 only" in PROBE
-    assert "see HI84 for the planned N>2 extension" in PROBE
-    # generic-D construction, not hard-coded to 2 -- so relaxing the guard
-    # above is the only change HI84 needs to this file's mechanics
+def test_probe_d2_to_d4_guard_present_and_mechanics_are_generic():
+    # HI84: relaxed from the original HI18 D=2-only guard to 2..4, matching
+    # real Brutus hardware (4 physical GPUs) -- mechanics below were already
+    # device-count-generic, so the guard was the only change needed.
+    assert "this probe qualifies D=2..4" in PROBE
     assert "for (size_t rank = 0; rank < cfg->device_count; ++rank)" in PROBE
     assert "static_cast<int64_t>(D)" in PROBE
 
