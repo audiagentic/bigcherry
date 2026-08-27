@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -192,7 +191,6 @@ class PlanLockTests(unittest.TestCase):
 
     def test_timeout_raises_when_lock_is_held(self):
         import threading
-        import time
         from bigcherry.source.identity import PlanLockTimeout, plan_lock
 
         with tempfile.TemporaryDirectory() as directory:
