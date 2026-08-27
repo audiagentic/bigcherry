@@ -716,38 +716,45 @@ def build_database(
         connection.close()
 
 
-def _verify_and_persist_hip_capabilities(
-    connection: sqlite3.Connection, *,
-    header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
-) -> bool:
-    """HI121 M2: verify the compiled producer's own self-reported capability
-    mask (measurements header's ``producer_capabilities``) against the
-    manifest that claims to describe that same build, and persist it to
-    ``build_capability`` ONLY once every provenance check passes.
+@dataclass(frozen=True)
+class HipBuildProof:
+    """The result of verifying a measurements header against its manifest
+    at the pure ARTIFACT level -- no database access, no build_id.
 
-    Absence of a verified manifest binding (no manifest_path given, or an
-    older manifest/header predating this field) means NO build_capability
-    row is written -- capability-unknown, never inferred from
-    signature_schema, commit date, or any other proxy. This is the one hard
-    requirement HI121's design calls out for this function: Python must not
-    be able to arbitrarily self-declare or backfill a capability claim.
+    HI128's reattest.py needs exactly this: a historical build may have NO
+    existing build_capability row and a NULL build_descriptor_hash (that is
+    precisely the pre-HI127 UNKNOWN state it exists to remediate), so the
+    proof this needs cannot depend on a DB read the way a PROJECTABILITY
+    check (replay_projection.py's _load_source_manifest(), which requires
+    build_capability to already exist) does.
+    """
 
-    HI127: the return value additionally feeds ``winner_verification`` --
-    True means every check in this function ran and passed for THIS load
-    (including when an identical build_capability row already existed);
-    False means this load could not establish the current build/header/
-    manifest capability/descriptor proof at all (missing manifest, or a
-    measurements/manifest predating the capability field), which is a
-    normal, non-error outcome, not a failure of this function.
+    source_revision: str
+    manifest_hash: str
+    build_descriptor_hash: str
+    producer_capabilities: CapabilityMask128
+
+
+def verify_hip_build_artifacts(
+    *, header: dict[str, Any], manifest: dict[str, Any] | None,
+) -> HipBuildProof | None:
+    """Verify header<->manifest agreement (source_revision, manifest_hash,
+    build_descriptor, producer_capabilities) from the ARTIFACTS ALONE --
+    the pure, DB-independent half of HI121 M2's capability proof.
+
+    Returns None (not an error) when there is genuinely nothing to verify:
+    no manifest supplied, or an older measurements/manifest pair predating
+    the producer_capabilities field. Raises RecordError for any concrete
+    disagreement between the header and the manifest.
     """
     if manifest is None:
-        return False
+        return None
     header_caps_hex = header.get("producer_capabilities")
     manifest_caps_hex = manifest.get("producer_capabilities")
     if not isinstance(header_caps_hex, str) or not isinstance(manifest_caps_hex, str):
         # Older measurements/manifest predate this field -- nothing to
         # verify or persist yet, not an error.
-        return False
+        return None
 
     if header.get("source_revision") != manifest.get("source_revision"):
         raise RecordError(
@@ -806,12 +813,48 @@ def _verify_and_persist_hip_capabilities(
     except CapabilityMaskError as exc:
         raise RecordError(f"load_measurements: malformed producer_capabilities hex: {exc}") from exc
 
+    return HipBuildProof(
+        source_revision=header.get("source_revision"),
+        manifest_hash=header.get("manifest_hash"),
+        build_descriptor_hash=manifest_descriptor_hash,
+        producer_capabilities=mask,
+    )
+
+
+def _verify_and_persist_hip_capabilities(
+    connection: sqlite3.Connection, *,
+    header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
+) -> bool:
+    """HI121 M2: verify the compiled producer's own self-reported capability
+    mask (measurements header's ``producer_capabilities``) against the
+    manifest that claims to describe that same build, and persist it to
+    ``build_capability`` ONLY once every provenance check passes.
+
+    Absence of a verified manifest binding (no manifest_path given, or an
+    older manifest/header predating this field) means NO build_capability
+    row is written -- capability-unknown, never inferred from
+    signature_schema, commit date, or any other proxy. This is the one hard
+    requirement HI121's design calls out for this function: Python must not
+    be able to arbitrarily self-declare or backfill a capability claim.
+
+    HI127: the return value additionally feeds ``winner_verification`` --
+    True means every check in this function ran and passed for THIS load
+    (including when an identical build_capability row already existed);
+    False means this load could not establish the current build/header/
+    manifest capability/descriptor proof at all (missing manifest, or a
+    measurements/manifest predating the capability field), which is a
+    normal, non-error outcome, not a failure of this function.
+    """
+    proof = verify_hip_build_artifacts(header=header, manifest=manifest)
+    if proof is None:
+        return False
+
     existing = connection.execute(
         "SELECT producer_capabilities FROM build_capability WHERE build_id = ? AND backend = 'hip'",
         (build_id,),
     ).fetchone()
     if existing is not None:
-        if existing[0] != mask.to_bytes():
+        if existing[0] != proof.producer_capabilities.to_bytes():
             raise RecordError(
                 "load_measurements: build_id already has a DIFFERENT hip producer_capabilities "
                 "row on file -- capability claims are immutable once persisted, never silently "
@@ -820,7 +863,7 @@ def _verify_and_persist_hip_capabilities(
         return True
     connection.execute(
         "INSERT INTO build_capability (build_id, backend, producer_capabilities) VALUES (?, 'hip', ?)",
-        (build_id, mask.to_bytes()),
+        (build_id, proof.producer_capabilities.to_bytes()),
     )
     return True
 

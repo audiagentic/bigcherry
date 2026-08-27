@@ -154,6 +154,8 @@ def cmd_reattest(args: Namespace) -> int:
                 "examined": report.examined,
                 "attested": report.attested,
                 "already_attested": report.already_attested,
+                "backfilled_build_descriptor": report.backfilled_build_descriptor,
+                "backfilled_build_capability": report.backfilled_build_capability,
                 "outcomes": [
                     {"dispatch": o.dispatch, "status": o.status, "detail": o.detail}
                     for o in report.outcomes
@@ -167,6 +169,10 @@ def cmd_reattest(args: Namespace) -> int:
             f"({report.already_attested} already attested)"
             + (" [dry-run]" if args.dry_run else "")
         )
+        if report.backfilled_build_descriptor:
+            print("  backfilled build_descriptor_hash")
+        if report.backfilled_build_capability:
+            print("  backfilled build_capability")
         from collections import Counter
         counts = Counter(o.status for o in report.outcomes)
         for status, count in sorted(counts.items()):
