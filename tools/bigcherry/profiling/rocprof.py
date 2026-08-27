@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import csv
 import glob
+import os
 import statistics
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from .schema import GpuProfilePass, KernelStat
@@ -23,6 +25,20 @@ from .schema import GpuProfilePass, KernelStat
 
 class RocprofError(RuntimeError):
     pass
+
+
+_REDUCTION_PROVIDERS = frozenset(("auto", "rccl", "meta"))
+
+
+def expected_reduction_provider(env: Mapping[str, str] | None = None) -> str:
+    """Return the provider the profiled process is expected to use.
+
+    ``GGML_HIP_REDUCE_PLAN`` is the existing runtime selector.  Keep this
+    normalization in lockstep with the selector's implementation: unset and
+    unknown values resolve to ``auto``.
+    """
+    value = (env if env is not None else os.environ).get("GGML_HIP_REDUCE_PLAN")
+    return value if value in _REDUCTION_PROVIDERS else "auto"
 
 
 def rocprofv3_command_prefix(*, output_dir: Path, label: str) -> tuple[str, ...]:
@@ -126,7 +142,12 @@ def _rccl_activity_seen(output_dir: Path) -> bool:
 
 def build_gpu_profile_pass(
     *, label: str, output_dir: Path, expected_gpu_count: int,
+    expected_reduction_provider: str = "auto",
 ) -> GpuProfilePass:
+    if expected_reduction_provider not in _REDUCTION_PROVIDERS:
+        raise RocprofError(
+            f"unsupported expected reduction provider {expected_reduction_provider!r}"
+        )
     kernel_trace = _find_one(output_dir, "*_kernel_trace.csv") or _find_one(output_dir, "*kernel_trace*.csv")
     if kernel_trace is None:
         raise RocprofError(
@@ -143,7 +164,7 @@ def build_gpu_profile_pass(
     if expected_gpu_count > 1:
         if len(agent_ids_seen) < expected_gpu_count:
             capture_status = "incomplete_multi_gpu_capture"
-        elif not rccl_seen:
+        elif expected_reduction_provider in ("auto", "rccl") and not rccl_seen:
             capture_status = "incomplete_multi_gpu_capture"
 
     return GpuProfilePass(
@@ -154,4 +175,5 @@ def build_gpu_profile_pass(
         rccl_activity_seen=rccl_seen,
         expected_gpu_count=expected_gpu_count,
         capture_status=capture_status,
+        expected_reduction_provider=expected_reduction_provider,
     )

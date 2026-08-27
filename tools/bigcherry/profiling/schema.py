@@ -51,6 +51,7 @@ class GpuProfilePass:
     rccl_activity_seen: bool
     expected_gpu_count: int
     capture_status: str  # "complete" | "incomplete_multi_gpu_capture"
+    expected_reduction_provider: str = "auto"
 
 
 @dataclass(frozen=True)

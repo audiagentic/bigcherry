@@ -29,6 +29,21 @@ def _row(agent, name, start, end, vgpr=24, sgpr=128, scratch=0):
 
 
 class ParseKernelTraceTests(unittest.TestCase):
+    def test_expected_reduction_provider_matches_runtime_selector(self):
+        self.assertEqual(
+            rocprof.expected_reduction_provider({"GGML_HIP_REDUCE_PLAN": "meta"}),
+            "meta",
+        )
+        self.assertEqual(
+            rocprof.expected_reduction_provider({"GGML_HIP_REDUCE_PLAN": "rccl"}),
+            "rccl",
+        )
+        self.assertEqual(rocprof.expected_reduction_provider({}), "auto")
+        self.assertEqual(
+            rocprof.expected_reduction_provider({"GGML_HIP_REDUCE_PLAN": "invalid"}),
+            "auto",
+        )
+
     def test_aggregates_multiple_dispatches_of_the_same_kernel(self):
         import tempfile
 
@@ -71,6 +86,14 @@ class ParseKernelTraceTests(unittest.TestCase):
 
 
 class BuildGpuProfilePassTests(unittest.TestCase):
+    def _write_two_gpu_kernel_trace(self, out_dir):
+        (out_dir / "run_kernel_trace.csv").write_text(
+            _HEADER
+            + _row("GPU0", "kernel_a", 0, 1000)
+            + _row("GPU1", "kernel_a", 0, 1000),
+            encoding="utf-8",
+        )
+
     def test_single_gpu_capture_is_complete(self):
         import tempfile
 
@@ -95,6 +118,7 @@ class BuildGpuProfilePassTests(unittest.TestCase):
             )
             gp = rocprof.build_gpu_profile_pass(
                 label="1", output_dir=out_dir, expected_gpu_count=2,
+                expected_reduction_provider="meta",
             )
             self.assertEqual(gp.capture_status, "incomplete_multi_gpu_capture")
 
@@ -112,8 +136,23 @@ class BuildGpuProfilePassTests(unittest.TestCase):
             # no *rccl*trace.csv written -- both agents present but no RCCL
             gp = rocprof.build_gpu_profile_pass(
                 label="1", output_dir=out_dir, expected_gpu_count=2,
+                expected_reduction_provider="rccl",
             )
             self.assertEqual(gp.capture_status, "incomplete_multi_gpu_capture")
+
+    def test_meta_expected_multi_gpu_capture_without_rccl_is_complete(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            out_dir = Path(directory)
+            self._write_two_gpu_kernel_trace(out_dir)
+            gp = rocprof.build_gpu_profile_pass(
+                label="1", output_dir=out_dir, expected_gpu_count=2,
+                expected_reduction_provider="meta",
+            )
+            self.assertEqual(gp.capture_status, "complete")
+            self.assertEqual(gp.expected_reduction_provider, "meta")
+            self.assertFalse(gp.rccl_activity_seen)
 
     def test_multi_gpu_capture_with_agents_and_rccl_is_complete(self):
         import tempfile
