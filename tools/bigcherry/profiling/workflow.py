@@ -62,6 +62,7 @@ def run_profile_campaign(
     workload_label: str,
     source_name: str = "bigcherry-native",
     build_name: str = "control",
+    experiment: str | None = None,
     run_id: str | None = None,
     workdir: Path | None = None,
     control_reps: int = 10,
@@ -90,6 +91,7 @@ def run_profile_campaign(
         ),),
         inputs_by_build={},
         binary_relative_path="bin/llama-server",
+        experiment=experiment,
     )
     lanes = campaign_planner.plan(request, cfg)
     results = campaign_planner.run_campaign(

@@ -48,6 +48,7 @@ def cmd_profile_campaign(args: Namespace) -> int:
             workload_label=args.workload,
             source_name=args.source,
             build_name=args.build,
+            experiment=args.experiment,
             run_id=args.run_id,
             workdir=Path(args.workdir) if args.workdir else None,
             control_reps=args.control_reps,
