@@ -6,4 +6,4 @@ tuning database for current results — this document is regenerated per tune.
 `gen/elig/meas` = candidates generated / eligible / actually measured.
 A large gap between eligible and measured means screening discarded them early.
 
-For how to interpret these numbers, see [COVERAGE_AUDIT.md](../../testing/COVERAGE_AUDIT.md).
+For how to interpret these numbers, see [COVERAGE_AUDIT.md](../../reference/testing/COVERAGE_AUDIT.md).

@@ -61,7 +61,7 @@ recorded name — standards 2.1).
 ## Verified: DQ_BLAS is real and expensive
 
 `ggml_cuda_mul_mat_cublas_impl` is up to three operations, not one
-([ggml-cuda.cu:1414-1624](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1414-L1624)):
+([ggml-cuda.cu:1414-1624](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1414-L1624)):
 
 1. **Input conversion** — `if (src0->type == compute_type)` else `convert_func`
    into a pool temp. Applied independently to src0 and src1, and in two variants
@@ -89,7 +89,7 @@ degenerate reading is wrong even now.
 ## Correction: DQ_BLAS and BLAS are not two entry points
 
 Both are the same function. There is exactly one BLAS entry,
-[`ggml_cuda_mul_mat_cublas`](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1642),
+[`ggml_cuda_mul_mat_cublas`](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1642),
 templated on `compute_type`, called from two sites. Whether a call is "DQ_BLAS"
 or "BLAS" is decided by `src0->type == compute_type` — and `compute_type` is
 **the candidate's own choice**.
@@ -132,7 +132,7 @@ raw `api` field in candidate identity would encode a request attribute *and*
 could name an API that cannot serve the shape.
 
 What makes the strategy tunable is upstream's own comment at
-[ggml-cuda.cu:1545](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1545):
+[ggml-cuda.cu:1545](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1545):
 
 ```text
 // Theoretically cublasGemmStridedBatchedEx would always work, even for a single matrix.
@@ -152,7 +152,7 @@ observed.api = hipblasGemmStridedBatchedEx | ...
 
 ## New finding: `output_intermediate_type` is a per-architecture guess — on our hardware
 
-[ggml-cuda.cu:1515-1520](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1515-L1520):
+[ggml-cuda.cu:1515-1520](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1515-L1520):
 
 ```cpp
 if (compute_type == GGML_TYPE_F16) {
@@ -173,7 +173,7 @@ was hiding. `output_conversion_route` earns its place in candidate identity.
 
 ## Verified: `compute_type` is selectable, and upstream already proves it
 
-[ggml-cuda.cu:1649-1688](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1649-L1688):
+[ggml-cuda.cu:1649-1688](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1649-L1688):
 
 ```cpp
 ggml_type compute_type = src0->type;
@@ -198,7 +198,7 @@ Two things fall out:
   Implementation cost is near zero.
 - `dst->op_params[0] == GGML_PREC_F32` **is** the precision equivalence class,
   and our signature already carries it as
-  [`prec`](../../../src/ggml/src/ggml-cuda/hip-autotune-types.h#L135). The review's
+  [`prec`](../../src/ggml/src/ggml-cuda/hip-autotune-types.h#L135). The review's
   `required_precision` gate is therefore computable today with no ABI change.
 
 The review's rule is adopted verbatim: *compute_type is a candidate dimension
@@ -238,7 +238,7 @@ its own signature space and collection points — a separate subsystem.
 
 ## Verified: SPLIT_REDUCE is real, with the identity corrected
 
-[ggml-cuda.cu:1135-1195](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1135-L1195)
+[ggml-cuda.cu:1135-1195](../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1135-L1195)
 selects one of three implementations by assigning `ret->try_allreduce`:
 
 ```text

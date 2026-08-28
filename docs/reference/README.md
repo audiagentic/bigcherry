@@ -18,8 +18,6 @@ at the top level.
 | --- | --- | --- |
 | [build/BUILD.md](build/BUILD.md) | Environment, recipes, cmake configuration | Building on hardware |
 | [build/PIN_BUMP.md](build/PIN_BUMP.md) | Bumping the pinned llama.cpp revision | Moving the pin forward |
-| [archive/build/PIN_REBASE_REVIEW_B10502.md](archive/build/PIN_REBASE_REVIEW_B10502.md) | A specific pin-rebase's review record | Tracing a past rebase's decisions |
-| [archive/build/BIGCHERRY_BUILD_RDNA_HANDOVER.md](archive/build/BIGCHERRY_BUILD_RDNA_HANDOVER.md) | RDNA build handover notes | Picking up RDNA-specific build work |
 
 ## Testing
 
@@ -54,29 +52,31 @@ Plan-item design, status, and decisions belong under the matching
 `docs/planning/<state>/<plan>/` directory. Campaign run bundles and generated
 measurement outputs belong under `artifacts/<campaign-id>/`; retain only a
 concise, broadly reusable decision or index in `docs/reference/experiments/`.
-Historical reviews and superseded snapshots belong under `archive/`.
+Historical reviews, handovers, imported planning sources, and superseded
+snapshots belong under [`docs/archive/`](../archive/), outside this maintained
+reference corpus. The old `docs/reference/archive/` paths are compatibility
+redirects only where historical plan links still require them.
 
 ## Experiments
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [experiments/BigCherry_Experiment_Contract_Implementation_Guide.md](experiments/BigCherry_Experiment_Contract_Implementation_Guide.md) | Experiment-contract schema, field semantics, rationale | Defining or consuming an experiment contract |
+| [experiments/EXPERIMENTAL_WORKFLOW.md](experiments/EXPERIMENTAL_WORKFLOW.md) | Repeatable diagnostic qualification, run-bundle, promotion, and archival workflow | Before turning exploratory work into a formal plan or campaign |
+| [experiments/EXPERIMENT_CONTRACT.md](experiments/EXPERIMENT_CONTRACT.md) | Current experiment-contract schema, identity, and CLI | Defining or consuming an experiment contract |
 | [../evidence/2026-08-21-hi35-hi36-27b-r9700/HI36A_VERDICT_27B_R9700.md](../evidence/2026-08-21-hi35-hi36-27b-r9700/HI36A_VERDICT_27B_R9700.md) | HI36A's verdict on the 27B/R9700 case | Reviewing that specific experiment's outcome |
 
 ## Top level
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
+| [START_HERE.md](START_HERE.md) | Stable project orientation and safe first-work checklist for new agents | Starting a fresh agent context or handing work to another agent |
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
 | [TUNING-DETAIL.md](TUNING-DETAIL.md) | Pointer to archived generated report | Consult the tuning DB or `artifacts/reports/` for current numbers |
-| [archive/PACK_REVIEW.md](archive/PACK_REVIEW.md) | Deltas vs. prework pack | Tracing why a plan diverged from the original spec |
 
 **Tuning results and model-specific data live in the database**, not in
 these documents. Consult the tuning DB for per-signature winners, rankings,
 improvements, and coverage numbers.
 
-**Archived originals** are in [archive/](archive/) — the previous structure
-before reorganization, including a stale `HANDOFF.md` (no longer maintained
-as a live "state of play" doc — use the plan items under `docs/planning/`
-for current work state instead).
+Historical originals are in [`docs/archive/`](../archive/) for provenance only;
+they are not current implementation or status guidance.

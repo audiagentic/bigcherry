@@ -7,20 +7,20 @@ Architecture decisions worth not re-litigating, plus operational traps that bite
 ### Forced variants are explicit defaulted parameters, not hidden state
 
 An earlier version used thread-locals; production then paid a read on every launch
-for a feature only the tuner uses. See [HI06](../archive/OVERVIEW.md) "Design revision".
+for a feature only the tuner uses. See the historical [HI06 snapshot](../../archive/OVERVIEW.md) only for provenance.
 
 ### Fusion is not an MMVQ candidate dimension
 
 It is chosen at runtime inside `mul_mat_vec_q_switch_fusion`; one instance serves
 both. It belongs to the signature (standards 11.1). The compiler settled it —
 including fusion in the instance name produced duplicate symbols because generated
-names collided on identical geometry. See [PACK_REVIEW](../archive/PACK_REVIEW.md) B1.
+names collided on identical geometry. See the historical [PACK_REVIEW](../../archive/PACK_REVIEW.md) B1 note only for provenance.
 
 ### MMQ J space is the config table, not `range(8, 129, 8)`
 
 The tables are sparse and uneven — CDNA defines 154 rows to RDNA3's 260.
 Enumerating all sixteen J values would manufacture candidates that abort inside
-`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See [PACK_REVIEW](../archive/PACK_REVIEW.md) A2.
+`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See the historical [PACK_REVIEW](../../archive/PACK_REVIEW.md) A2 note only for provenance.
 
 ### The catalog derives everything from upstream
 

@@ -7,8 +7,8 @@ it, controls that must not regress, boundary cases that define its safe
 envelope, correctness requirements, and promotion thresholds.
 
 This module is deliberately NOT a second candidate schema or a second
-benchmark framework -- see docs/reference/experiments/BigCherry_Experiment_Contract_Implementation_Guide.md
-section 2's non-negotiable architecture. A contract's `hypothesis.family` names
+benchmark framework; the current contract reference is
+docs/reference/experiments/EXPERIMENT_CONTRACT.md. A contract's `hypothesis.family` names
 one of the FIVE existing kernel families (mmvq/mmq/mmvf/mmf/blas, imported from
 autotune_schema.FAMILIES, not redefined here); workload tags are experiment
 metadata, never kernel-family identity; and everything downstream of contract
@@ -743,8 +743,8 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             f"{where}.acceptance.max_control_regression_pct is required -- every "
             f"contract must declare the regression budget its controls are held to, "
             f"even a correctness-only contract with no performance claim (see "
-            f"docs/reference/experiments/BigCherry_Experiment_Contract_Implementation_Guide.md "
-            f"Appendix A: RD20/RD22/RD26-class contracts still need a regression budget)"
+            f"docs/reference/experiments/EXPERIMENT_CONTRACT.md: every contract "
+            f"needs an explicit control-regression budget)"
         )
 
     source_evidence: SourceEvidence | None = None
