@@ -88,7 +88,7 @@ window; bump one, record, then bump the other.
    The JSON report carries structured `reason_code`s and bounded
    reconciliation context (a diff of the failing file across the pin bump
    when the previous revision is known) instead of just an anchor-mismatch
-   count. `docs/reference/archive/build/PIN_REBASE_REVIEW_B10502.md` remains the narrative
+   count. `docs/archive/build/PIN_REBASE_REVIEW_B10502.md` remains the historical narrative
    template for writing up what you fixed and why, once the tool has told
    you what's actually broken.
 
@@ -172,7 +172,7 @@ be named, not silently reused.
 
 | artifact | why it is pin-bound | disposition on bump |
 | --- | --- | --- |
-| kernel-fraction traces (rocprofv3 CSVs) | kernel *names* are pin-specific: the 22dc605→0adcc3bb move renamed the small_k mmvq instantiation (added `halve_iters` template parameter) with zero behaviour change — a name-keyed comparison across pins is meaningless (S1b, h36-campaign bundle README) | retrace at the new pin, or run the S1b-style equivalence check and record it |
+| kernel-fraction traces (rocprofv3 CSVs) | kernel names are pin-specific; a name-keyed comparison across upstream revisions is not evidence of a behaviour change | retrace at the new pin or run an equivalence check and record the source/build identities |
 | tune measurements + journals | per pin AND per build identity (dispatch digest mixes manifest hash + source revision) | new tune; old files are history, not input |
 | replay caches (v4) + dispatch DBs | v4 has `rerun_required` for cross-pin entries — the designed path | let the runtime report `rerun_required`; do not hand-convert |
 | inventory DBs (`*.sqlite` / `*.json`) | signatures reference revision-specific canonical shapes | regenerate from a fresh record at the new pin |

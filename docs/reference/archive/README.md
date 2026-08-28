@@ -1,7 +1,5 @@
-# Archived reference material
+# Archive location moved
 
-Files here are historical reviews, handovers, snapshots, and imported source
-documents retained for provenance. They are not current plan or implementation
-authority. Current status belongs to `docs/planning/`; maintained guidance
-belongs to `docs/reference/`; run outputs belong to `docs/evidence/` or
-`artifacts/`.
+Historical reference material now lives under [`docs/archive/`](../../archive/).
+This directory is retained only for compatibility with old links; do not add
+new maintained documentation here.
