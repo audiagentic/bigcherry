@@ -1,6 +1,48 @@
+---
+{}
+---
+
 # Tool Disposition — TR00
 
-Generated at the actual implementation-start HEAD `73068e9b4d1f612097f2efa582f046fd6013e11b`. This is a migration artifact, not a permanent registry.
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
 
 ## Rules
 
@@ -69,8 +111,8 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
-| `patches/rd/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `tmp/b1-breakdown.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-check.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-gate2-strict.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
@@ -224,7 +266,7 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `tools/bigcherry/validate_rd_patches.py` | **TRANSITIONAL** | Historical RD validator; generic validation remains authoritative. |
 | `tools/bigcherry/vk_autotune_types.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/workspace.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/candidate_report.py` | **MOVE** | Root tooling requires domain classification and canonical destination in TR05/TR12. |
+| `tools/bigcherry/analysis/candidate_report.py` | **KEEP** | Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`. |
 | `tools/pi-lens-shadow-probe.py` | **DELETE** | Unreferenced scratch probe; zero current callers/references confirmed during TR05.
 | `tools/residency_gates.py` | **MOVE** | HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI. |
 | `tools/rocm-env.ps1` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
@@ -406,3 +448,15 @@ Inventory count: 383 script/tool files (vendor, build/cache, and artifacts exclu
 ## Exit status
 
 TR00 inventory is captured and both pre-existing test/check issues from the original baseline are now dispositioned: one resolved upstream (RD19/PA05), one fixed directly (subject-digest test fixture). No evidence was fabricated and no other actor's catalog decision was silently reversed.
+
+## Change Log
+
+- 2026-08-28T01:48:44.131940+00:00 (updated-by): Updated (no visible changes)
+
+## Ledger-events
+
+
+- chg_20260828_015352_published-the-active-docs-refe_7868
+- 2026-08-28T01:53:52.318064+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260828_015434_aligned-active-planning-record_5360
+- 2026-08-28T01:54:34.237199+00:00 (updated-by): Updated: section:ledger-events

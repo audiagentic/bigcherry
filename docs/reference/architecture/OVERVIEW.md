@@ -9,7 +9,8 @@ implementation material. See [PACK_REVIEW.md](../archive/PACK_REVIEW.md) for the
 between that pack, these plans, and what building against a real checkout revealed.
 
 **Original audit target:** `ggml-org/llama.cpp` at `0ef6e55edb306fcbcf73e6f1f41923cccb9cf7f8`
-**Current working revision:** `22dc605` — all 32 audited invariants still hold
+**Historical snapshot revision:** `22dc605` — all 32 audited invariants held at
+the time of this snapshot
 **Targets:** every AMD GPU llama.cpp supports — 26 architectures, GCN4 through RDNA4
 
 Delivered as a release-tolerant **overlay** (`src/` + anchored `patches/`), not
