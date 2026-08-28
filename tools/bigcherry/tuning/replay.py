@@ -651,6 +651,52 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
         )
 
 
+# ``tune_promotion`` rewrites a rejected challenger to its native fallback
+# only for these terminal outcomes.  The original, measured challenger stays
+# in ``provisional_winner`` so its independently recorded winner attestation
+# can be checked without treating the native fallback as though it had been
+# measured as the winner.
+_NATIVE_RETENTION_PROMOTION_STATUSES = frozenset({
+    "confirmation_rejected",
+    "rejected_effect",
+    "rejected_ci",
+    "rejected_bh",
+    "rejected_no_correctness_evidence",
+    "rejected_correctness_contract",
+    "rejected_correctness",
+})
+
+
+def _winner_verification_binding(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the measured winner identity that must carry attestation.
+
+    A normal finalized row binds to its current winner.  A promotion-rejected
+    challenger is exported as native, but its attestation belongs to the
+    original measured ``provisional_winner``.  Do not make this a permissive
+    fallback: malformed transition evidence is a hard export failure.
+    """
+    winner = record.get("winner")
+    native = record.get("native")
+    provisional = record.get("provisional_winner")
+    if not isinstance(winner, str) or not isinstance(native, str):
+        raise SystemExit("refusing to export: result lacks valid winner/native identity")
+    if winner != native:
+        return record
+    if provisional is None or provisional == native:
+        return record
+    if not isinstance(provisional, str) or not provisional:
+        raise SystemExit("refusing to export: native fallback lacks a valid provisional winner")
+    status = record.get("promotion_status")
+    if status not in _NATIVE_RETENTION_PROMOTION_STATUSES:
+        raise SystemExit(
+            "refusing to export: native fallback lacks a valid native-retention "
+            f"promotion_status (got {status!r})"
+        )
+    binding = dict(record)
+    binding["winner"] = provisional
+    return binding
+
+
 def _validate_correctness_gate(
     entries: dict[str, dict[str, Any]], dispatch_db: Path | None,
     source_build_id: int | None = None,
@@ -950,10 +996,11 @@ def build(
                 if digest_hex in seed_overrides:
                     verified_entries[digest_hex] = record
                     continue
-                signature_hex = record.get("signature")
+                binding = _winner_verification_binding(record)
+                signature_hex = binding.get("signature")
                 try:
                     winner_id = verification_state.require_winner_row(
-                        conn, row=record, signature_hex=signature_hex,
+                        conn, row=binding, signature_hex=signature_hex,
                     )
                 except verification_state.WinnerRowIdentityError as exc:
                     raise SystemExit(

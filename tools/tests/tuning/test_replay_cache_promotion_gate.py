@@ -230,6 +230,45 @@ class MultiBuildIdentityTests(unittest.TestCase):
             conn.close()
 
 
+class WinnerVerificationFallbackBindingTests(unittest.TestCase):
+    """HI136: promotion's native fallback must attest its measured challenger."""
+
+    def _fallback(self, **changes) -> dict:
+        row = {
+            "dispatch": "a" * 32,
+            "signature": "b" * 32,
+            "hardware": "c" * 32,
+            "winner": "mmvq:native:v1",
+            "native": "mmvq:native:v1",
+            "provisional_winner": "mmvq:challenger:v1",
+            "promotion_status": "rejected_bh",
+        }
+        row.update(changes)
+        return row
+
+    def test_native_fallback_binds_to_measured_provisional_winner(self):
+        row = self._fallback()
+        binding = replay_cache._winner_verification_binding(row)
+        self.assertEqual(binding["winner"], "mmvq:challenger:v1")
+        self.assertEqual(row["winner"], "mmvq:native:v1")
+        for key in ("dispatch", "signature", "hardware", "native"):
+            self.assertEqual(binding[key], row[key])
+
+    def test_fallback_requires_a_terminal_native_retention_status(self):
+        for status in (None, "native", "pending_bh", "promoted", "evaluation_failed"):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(SystemExit, "native-retention"):
+                    replay_cache._winner_verification_binding(
+                        self._fallback(promotion_status=status)
+                    )
+
+    def test_native_and_promoted_challenger_keep_their_current_binding(self):
+        native = self._fallback(provisional_winner="mmvq:native:v1", promotion_status="native")
+        promoted = self._fallback(winner="mmvq:challenger:v1", promotion_status="promoted")
+        self.assertIs(replay_cache._winner_verification_binding(native), native)
+        self.assertIs(replay_cache._winner_verification_binding(promoted), promoted)
+
+
 class SeedOverrideBypassesGateTests(unittest.TestCase):
     """HI22/P0: an explicit --seed override is a separate operator decision
     with its own provenance, not the tuner's -- build() must apply it AFTER
