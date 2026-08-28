@@ -89,7 +89,7 @@ class Rd13MarkerHasViewGuardTests(unittest.TestCase):
         # fires on the pre-existing (non-RD13) fusion path too.
         text = (
             Path(__file__).resolve().parents[3]
-            / "patches" / "rd" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
+            / "patches" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
         ).read_text(encoding="utf-8")
         occurrences = text.count('if (has_view && getenv("BIGCHERRY_PATCH_TRACE") != nullptr)')
         self.assertEqual(occurrences, 2, "expected both RD13 trace sites to check has_view")

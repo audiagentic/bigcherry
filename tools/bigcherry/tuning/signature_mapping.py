@@ -494,7 +494,7 @@ def signature_to_mul_mat_id_test_file_line(
     Python entirely; ggml itself derives the correct contiguous layout for
     whatever type is given, quantized or not.
 
-    Requires patches/1236_hi105_deterministic_mul_mat_id_ids.py applied
+    Requires patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py applied
     (REQUIRES patches/1222) so two independent process invocations
     (forced-native, forced-candidate) see identical, full-expert-range
     routing for the same BIGCHERRY_TEST_DETERMINISTIC_SEED -- without it,

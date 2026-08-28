@@ -7,12 +7,15 @@ from bigcherry.patch import registry as patch_registry, validation as patch_vali
 
 
 class RD12PackageMigrationTests(unittest.TestCase):
-    def test_flat_patch_remains_first_class(self) -> None:
+    def test_simple_patch_migration_is_packaged(self) -> None:
         root = Path(__file__).resolve().parents[3] / "patches"
         registry = patch_registry.load_registry(root)
         descriptor = registry.get("1002_hip_unsafe_math_opt_in")
-        self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_SIMPLE)
+        self.assertEqual(descriptor.representation, patch_registry.REPRESENTATION_PACKAGED)
+        self.assertEqual(descriptor.package_root, Path("1002_hip_unsafe_math_opt_in"))
+        self.assertEqual(descriptor.metadata_path, Path("1002_hip_unsafe_math_opt_in/patch.toml"))
         self.assertTrue(patch_registry.load_implementation(descriptor, root=root))
+        self.assertFalse((root / "1002_hip_unsafe_math_opt_in.py").exists())
     def test_rd12_is_packaged_and_validation_owns_trace_marker(self) -> None:
         root = Path(__file__).resolve().parents[3] / "patches"
         registry = patch_registry.load_registry(root)

@@ -323,13 +323,13 @@ Examples:
 patches/1002_foo.py
     DISCOVER simple patch
 
-patches/rd/1204_x/patch.toml
+patches/1204_x/patch.toml
     DISCOVER packaged patch
 
-patches/rd/1204_x/patch.py
+patches/1204_x/patch.py
     NOT independently discovered
 
-patches/rd/1204_x/validation/checks.py
+patches/1204_x/validation/checks.py
     NOT discovered
 
 patches/_template/patch.toml
@@ -351,7 +351,7 @@ This must fail:
 ```text
 patches/1204_rd08_q6k_mmvq_vdr2.py
 
-patches/rd/1204_rd08_q6k_mmvq_vdr2/patch.toml
+patches/1204_rd08_q6k_mmvq_vdr2/patch.toml
 ```
 
 even though the physical representations differ.
@@ -359,7 +359,7 @@ even though the physical representations differ.
 Similarly, these must fail:
 
 ```text
-patches/rd/foo/patch.toml
+patches/foo/patch.toml
     id = "1204_x"
 
 patches/core/bar/patch.toml
@@ -390,7 +390,7 @@ should be mandatory.
 Therefore:
 
 ```text
-patches/rd/1204_rd08_q6k_mmvq_vdr2/patch.toml
+patches/1204_rd08_q6k_mmvq_vdr2/patch.toml
 ```
 
 must declare:
@@ -411,7 +411,7 @@ The parent grouping directories such as `rd/`, `core/`, `vulkan/`, etc. are orga
 Moving:
 
 ```text
-patches/rd/X/
+patches/X/
 ```
 
 to:
@@ -2741,9 +2741,9 @@ Create temporary repository trees testing:
 patches/foo.py
 patches/_foo.py
 patches/foo/bar.py
-patches/rd/X/patch.toml
-patches/rd/X/patch.py
-patches/rd/X/validation/checks.py
+patches/X/patch.toml
+patches/X/patch.py
+patches/X/validation/checks.py
 patches/_template/patch.toml
 patches/_template/patch.py
 ```

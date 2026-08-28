@@ -87,7 +87,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
             ("1200_rd19_single_gpu_meta_bypass", "RD19"),
             ("1201_rd20_attn_gate_tp_split", "RD20"),
         ):
-            pfile = ROOT / "patches" / f"{stem}.py"
+            pfile = ROOT / "patches" / stem / "patch.py"
             self.assertTrue(pfile.is_file(), f"missing {pfile}")
             prov = src._patch_provenance(pfile)
             self.assertIsNotNone(prov, f"{stem}: no PROVENANCE dict")
@@ -158,7 +158,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "1200_rd19_single_gpu_meta_bypass.py").write_text(
-                (ROOT / "patches" / "1200_rd19_single_gpu_meta_bypass.py")
+                (ROOT / "patches" / "1200_rd19_single_gpu_meta_bypass" / "patch.py")
                 .read_text(encoding="utf-8")
                 .replace('"plan-item": "RD19"', '"plan-item": "RD99"'),
                 encoding="utf-8",

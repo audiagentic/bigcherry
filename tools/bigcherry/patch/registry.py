@@ -1,5 +1,5 @@
 """Patch registry: one normalized, content-identified descriptor for every
-patch in ``patches/`` — flat simple patches and packaged patches alike.
+patch package in ``patches/`` (flat files are compatibility fixtures only).
 
 patch-system PA02 / RS01 (docs/planning/active/patch-system/
 PATCH_REFACTOR_RUNBOOK.md, sections 3-14). Before this module there were two
@@ -10,7 +10,7 @@ downstream code ever decides whether a patch is flat or packaged.
 
 Discovery (runbook section 4), exactly:
 
-* simple:  ``patches/*.py`` at the ROOT level only, filename not ``_``-prefixed
+* simple:  root-level ``patches/*.py`` compatibility fixtures only
 * packaged: ``patches/**/patch.toml`` at any depth, no relative path
   component may start ``_``
 * NEVER: arbitrary nested ``*.py`` (a package's ``patch.py`` and every
@@ -69,10 +69,11 @@ _PATCH_ID_PATTERN = re.compile(r"^(\d{2,})_[0-9A-Za-z_]+$")
 _PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "group", "state"})
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
     "plan-ids", "requires", "conflicts", "requires-options", "forbids-options",
-    "subsystems", "hardware", "validation-architectures",
+    "subsystems", "hardware", "validation-architectures", "backends",
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
-    "kind", "origin", "backend", "upstream", "external-source", "experiment-contract",
+    "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
+    "plan-item", "external-source", "experiment-contract",
 })
 
 
@@ -265,6 +266,12 @@ class PatchDescriptor:
     validation_path: Path | None
     validation_digest: str | None
 
+    # Catalog fields retained when packaged metadata replaces catalog.toml.
+    upstream_ref: str | None = None
+    retirement: str | None = None
+    plan_item: str | None = None
+    backends: tuple[str, ...] = ()
+
 
 # ------------------------------------------------------------------ legacy
 
@@ -299,8 +306,12 @@ def _legacy_descriptor(
         origin=None,
         backend=None,
         upstream=module_upstream(path),
+        upstream_ref=None,
+        retirement=None,
+        plan_item=None,
         external_source=None,
         plan_ids=(),
+        backends=(),
         requires=_constant_strings(path, "REQUIRES"),
         conflicts=_constant_strings(path, "CONFLICTS"),
         requires_options=(),
@@ -402,7 +413,10 @@ def _parse_patch_toml(
                 f"{where}: {key} must be one of {vocabulary}, got {value!r}"
             )
 
-    for key in ("upstream", "external-source", "experiment-contract"):
+    for key in (
+        "upstream", "upstream-ref", "retirement", "plan-item",
+        "external-source", "experiment-contract",
+    ):
         value = raw.get(key)
         if value is not None and (not isinstance(value, str) or not value):
             raise PatchRegistryError(f"{where}: {key} must be a non-empty string when present")
@@ -544,8 +558,12 @@ def _packaged_descriptor(
         origin=record.get("origin"),
         backend=record.get("backend"),
         upstream=record.get("upstream"),
+        upstream_ref=record.get("upstream-ref"),
+        retirement=record.get("retirement"),
+        plan_item=record.get("plan-item"),
         external_source=record.get("external-source"),
         plan_ids=record["plan-ids"],
+        backends=record["backends"],
         requires=record["requires"],
         conflicts=record["conflicts"],
         requires_options=record["requires-options"],

@@ -16,7 +16,7 @@ from bigcherry.patcher import apply_patch  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_PATH = ROOT / "patches" / "rd" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
+PATCH_PATH = ROOT / "patches" / "1206_rd13_mul_mat_add_view_fusion" / "patch.py"
 VENDOR_SOURCE = ROOT / "vendor" / "llama.cpp" / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
 
 
