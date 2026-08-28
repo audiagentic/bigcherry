@@ -341,9 +341,22 @@ def _stage_load_and_promote(
         tune_measurements, promoted_path,
         dispatch_db=dispatch_db, q=q, threshold_pct=threshold_pct, resamples=resamples,
     )
-    result["winner_verifications"] = int(ingest_counts.get("winner_verifications", 0))
+    # Promotion finalizes the winner identity (including challenger -> native
+    # fallback). Re-ingest that finalized artifact through the strengthened
+    # path so the dispatch DB remains the authoritative source for export.
+    try:
+        final_ingest_counts = inv_mod.load_measurements(
+            promoted_path, dispatch_db, paths.SQL / "dispatch-db.sql",
+            manifest_path=tune_manifest_path,
+            signature_digest_verifier=signature_digest_verifier,
+            unsupported_signature_policy="quarantine",
+            require_strengthened_ingest=True,
+        )
+    except inv_mod.RecordError as exc:
+        raise TuneCampaignError(f"strengthened finalized ingest failed: {exc}") from exc
+    result["winner_verifications"] = int(final_ingest_counts.get("winner_verifications", 0))
     result["quarantined_unsupported_winners"] = int(
-        ingest_counts.get("quarantined_unsupported_winners", 0)
+        final_ingest_counts.get("quarantined_unsupported_winners", 0)
     )
     missing_evidence = _count_missing_correctness_evidence(promoted_path)
     return dispatch_db, result, int(result.get("promoted", 0)), missing_evidence
@@ -439,14 +452,20 @@ def _stage_replay_verify(
     with runner:
         runner.run_completion("Explain how a compass works.", n_predict=96)
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
+    # The coverage writer nests replay counters under ``replay``.  Accept the
+    # flat shape used by older runners only for compatibility, but always gate
+    # on the actual replay counters when they are present.
+    replay_coverage = coverage.get("replay", coverage)
+    if not isinstance(replay_coverage, dict):
+        replay_coverage = {}
     # A cache that is clean but has no exact hits is also not a successful
     # replay: it proves only that nothing was stale, not that this campaign
     # actually exercised a tuned dispatch decision.  Keep all three terms in
     # the production gate so a missing ``exact`` field fails closed as well.
     if (
-        coverage.get("stale")
-        or coverage.get("rerun_required", 0)
-        or coverage.get("exact", 0) <= 0
+        replay_coverage.get("stale")
+        or replay_coverage.get("rerun_required", 0)
+        or replay_coverage.get("exact", 0) <= 0
     ):
         raise TuneCampaignError(
             "replay verification requires exact cache hits with no stale or "
