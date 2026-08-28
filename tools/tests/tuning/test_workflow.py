@@ -134,6 +134,13 @@ class StageReplayVerifyTests(unittest.TestCase):
         with self.assertRaises(workflow.TuneCampaignError):
             self._run_with_fake_coverage({"stale": True, "rerun_required": 0})
 
+    def test_accepts_nested_replay_coverage(self):
+        coverage = self._run_with_fake_coverage({
+            "families": {},
+            "replay": {"exact": 23, "stale": False, "rerun_required": 0},
+        })
+        self.assertEqual(coverage["replay"]["exact"], 23)
+
     def test_raises_on_rerun_required(self):
         with self.assertRaises(workflow.TuneCampaignError):
             self._run_with_fake_coverage({"stale": False, "rerun_required": 3})
