@@ -56,7 +56,7 @@ recorded name — standards 2.1).
 ## BLAS decomposition — the staged plan behind the native path
 
 `ggml_cuda_mul_mat_cublas_impl` is up to three operations, not one
-([ggml-cuda.cu:1414-1624](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1414-L1624)):
+([ggml-cuda.cu:1414-1624](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1414-L1624)):
 
 1. **Input conversion** — `if (src0->type == compute_type)` else `convert_func`
    into a pool temp. Applied independently to src0 and src1, and in two variants
@@ -100,7 +100,7 @@ raw `api` field in candidate identity would encode a request attribute *and*
 could name an API that cannot serve the shape.
 
 What makes it tunable is upstream's own comment at
-[ggml-cuda.cu:1545](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1545):
+[ggml-cuda.cu:1545](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1545):
 
 > Theoretically cublasGemmStridedBatchedEx would always work, even for a single matrix.
 > However, for some old NVIDIA and AMD GPUs the strided/Ex GEMM is much slower,
@@ -117,7 +117,7 @@ observed.api = hipblasGemmStridedBatchedEx | ...
 
 ### `output_intermediate_type` is a per-architecture guess — on our hardware
 
-[ggml-cuda.cu:1515-1520](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1515-L1520):
+[ggml-cuda.cu:1515-1520](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1515-L1520):
 
 For F16 compute, RDNA4 and CDNA get direct F32 output; **RDNA3 does not** — so
 on gfx1100, every F16-compute BLAS call allocates an F16 temp and runs a
@@ -125,7 +125,7 @@ separate `to_fp32_cuda` pass over the whole output.
 
 ### `compute_type` is selectable — upstream already proves it
 
-[ggml-cuda.cu:1649-1688](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1649-L1688):
+[ggml-cuda.cu:1649-1688](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1649-L1688):
 
 Upstream **already ships a global override** (`GGML_CUDA_CUBLAS_COMPUTE_TYPE`). Forcing it per candidate is the same mechanism at signature granularity, and the templated `switch` is the Option C forced-variant pattern the project already uses everywhere else. Implementation cost is near zero.
 
@@ -158,7 +158,7 @@ is *already* two routes for one type pair.
 
 ## SPLIT_REDUCE
 
-[ggml-cuda.cu:1135-1195](vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1135-L1195)
+[ggml-cuda.cu:1135-1195](../../../vendor/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu#L1135-L1195)
 selects one of three implementations by assigning `ret->try_allreduce`:
 
 `ggml_backend_cuda_comm_try_allreduce_butterfly` (assigned first), then

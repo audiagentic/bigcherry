@@ -32,8 +32,8 @@ GPT's suggestion of `GGML_HIP_FORCE_CANDIDATE=native` does not work):
 So: N = GGML_HIP_DISPATCH_MODE=native (no force var, and none is needed).
     C = GGML_HIP_DISPATCH_MODE=replay + GGML_HIP_FORCE_CANDIDATE=<name>.
 
-Requires patches/1222_hi67_deterministic_test_backend_ops_seed.py and
-patches/1223_hi67_machine_readable_correctness_metrics.py to be applied to
+Requires patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py and
+patches/1223_hi67_machine_readable_correctness_metrics/patch.py to be applied to
 the binary under test -- BIGCHERRY_TEST_DETERMINISTIC_SEED, BIGCHERRY_REF_
 DIGEST and BIGCHERRY_CORRECTNESS_METRIC do not exist without them.
 """
@@ -155,7 +155,7 @@ def run_test_backend_ops(
         raise EvidenceError(
             "seed must be nonzero -- 0 leaves BIGCHERRY_TEST_DETERMINISTIC_SEED "
             "unset in the patched test-backend-ops, disabling deterministic mode "
-            "entirely (see patches/1222_hi67_deterministic_test_backend_ops_seed.py)"
+            "entirely (see patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py)"
         )
     run_env = dict(env or {})
     run_env["BIGCHERRY_TEST_DETERMINISTIC_SEED"] = str(seed)
@@ -283,8 +283,8 @@ def collect_seed_evidence(
             f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
             f"(native found={native_digest is not None}, "
             f"candidate found={candidate_digest is not None}) -- is the binary "
-            f"built with patches/1222_hi67_deterministic_test_backend_ops_seed.py "
-            f"and patches/1223_hi67_machine_readable_correctness_metrics.py applied?"
+            f"built with patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py "
+            f"and patches/1223_hi67_machine_readable_correctness_metrics/patch.py applied?"
         )
     if native_digest.digest != candidate_digest.digest:
         raise EvidenceError(

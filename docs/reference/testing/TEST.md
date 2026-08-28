@@ -7,24 +7,30 @@ See also: [BUILD.md](../build/BUILD.md) — build commands and recipe configurat
 ## Offline tests (no GPU)
 
 ```bash
-cd $BC/tools
-python -m unittest discover -s tools/tests      # patcher tests
-python3 -m bigcherry audit                      # 32 invariants
-python3 -m bigcherry apply --dry-run            # patch placement
-python3 -m bigcherry apply                      # idempotent; safe to repeat
-python3 -m bigcherry generate --variant-set workload-max \
+cd $BC
+PYTHONPATH=tools python -m unittest discover -s tools/tests
+PYTHONPATH=tools python -m bigcherry audit
+PYTHONPATH=tools python -m bigcherry apply --dry-run
+PYTHONPATH=tools python -m bigcherry apply
+PYTHONPATH=tools python -m bigcherry generate --variant-set workload-max \
         --inventory $BC/artifacts/mtp-inventory.json
 ```
 
-Run all four after touching `src/`, `patches/` or `tools/`.
+Run all five after touching `src/`, `patches/` or `tools/`.
 
-**If you edit a patch's *text*, `git checkout` its target file first.** The
-idempotence guard sees its own output and skips:
+**Never reset or edit the shared vendor tree to retest a patch.** The
+idempotence guard correctly skips output it already owns. Inspect existing
+validation evidence with:
 
 ```bash
-cd $BC/vendor/llama.cpp && git checkout ggml/src/ggml-cuda/mmq.cu
-cd $BC/tools && python3 -m bigcherry apply
+cd $BC
+PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 ```
+
+To exercise changed patch text, use the explicit
+`bigcherry.patch.validation_campaign` workflow, which materializes isolated
+content-addressed subject and control trees; it requires a model, HIP toolchain,
+manifest, architecture, and dedicated work directory.
 
 ## Correctness
 

@@ -371,7 +371,7 @@ owning plan items as notes. Cross-reference:
 | B7 | HI15 / HI16 | noted — export/inspect tools |
 | B8 | HI11 / HI15 | noted — restart-only reload constraint |
 | B9 | HI05 | noted — divisibility refinement (low priority) |
-| B10 | HI02 / `patches/0100_cmake_options.py` | fixed — uppercase variant-set aliases added |
+| B10 | HI02 / `patches/0100_cmake_options/patch.py` | fixed — uppercase variant-set aliases added |
 | C3 | general | noted — upstream drift, audit generalization |
 | C4 | general | noted — audit survives patches |
 | C5 | HI13 | noted — transposed-vector MMVF path |

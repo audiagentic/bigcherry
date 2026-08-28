@@ -72,8 +72,9 @@ def verify_live_revision(root: Path, expected_revision: str) -> None:
 
 
 def _has_non_grandfathered_eligible(*, evidence_root: Path | None = None) -> bool:
-    root = Path(evidence_root or paths.DOCS / "reference" / "patch-validation-evidence")
-    for path in root.glob("*.json"):
+    root = Path(evidence_root) if evidence_root is not None else paths.PATCHES
+    candidates = root.glob("*.json") if evidence_root is not None else root.glob("**/evidence/*.json")
+    for path in candidates:
         if path.name == "legacy-baseline.json":
             continue
         try:

@@ -14,7 +14,7 @@ existing machinery) and never mutates the real vendor checkout. It is
 observational: running it does not advance any release stage and does not
 rewrite a patch's catalog STATE -- a patch failing against ONE upstream
 revision is revision-specific evidence, not a global lifecycle judgment
-(that stays in ``patches/*.py``'s own ``STATE`` constant, set by a human).
+(that stays in each package's ``patch.toml`` lifecycle metadata, set by a human).
 
 A report this module writes may later be handed back to ``apply
 --rebase-report PATH --known-good`` to apply exactly the dependency-closed

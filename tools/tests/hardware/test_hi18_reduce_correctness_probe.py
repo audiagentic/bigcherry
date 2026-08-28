@@ -14,14 +14,14 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py").read_text(encoding="utf-8")
 PROBE = (ROOT / "src/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
 TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi18_reduce_correctness_probe_patch",
-    ROOT / "patches" / "1224_hi18_reduce_correctness_probe.py",
+    ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)

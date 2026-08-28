@@ -17,11 +17,11 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi85_nccl_heterogeneous_arch_guard_patch",
-    ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard.py",
+    ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)

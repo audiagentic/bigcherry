@@ -57,7 +57,7 @@ class CampaignResolutionTests(unittest.TestCase):
             module.patch_id for module in self.catalog
             if module.state == "validated" and module.patch_id in framework_patch_ids
         )
-        # HI70: patches/1100_hi70_direct_op_evidence.py added a 15th
+        # HI70: patches/1100_hi70_direct_op_evidence/patch.py added a 15th
         # validated core module (deterministic direct-op correctness corpus
         # for MMQ fb1 / MMF nwarps candidates).
         self.assertEqual(len(expected), 15)

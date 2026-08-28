@@ -1,7 +1,6 @@
-"""RE41: `bigcherry patches --kind/--backend/--origin` filters against
-patches/catalog.toml -- the metadata substitute for a physical folder split.
-Patches/ stays flat indefinitely; these flags are the actual browsability
-answer this project committed to instead."""
+"""`bigcherry patches --kind/--backend/--origin` filters against the
+packaged patch.toml metadata. catalog.toml remains available for compatibility
+fixtures, but production patches are package directories."""
 
 from __future__ import annotations
 

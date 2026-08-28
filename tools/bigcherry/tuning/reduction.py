@@ -9,7 +9,7 @@ the native probe; callers pass in a `ProviderRun` per arm (from a real
 `test-hip-reduce` invocation, or a synthetic stand-in in tests).
 
 Corpus (design per GPT HI18 review, 2026-08-22, verified against
-patches/0830_split_reduce_telemetry.py and src/ggml/src/ggml-cuda/hip-
+patches/0830_split_reduce_telemetry/patch.py and src/ggml/src/ggml-cuda/hip-
 autotune-reduce-telemetry.h before implementation):
 
     case-dir/

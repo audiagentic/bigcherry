@@ -116,6 +116,10 @@ Never put a GitHub PR number into a runtime candidate name. A source optimizatio
 
 ## 8. Current patch inventory on tuning-code-rebase
 
+The entries below are patch IDs. Each implementation is package-owned at
+`patches/<patch-id>/patch.py`; package validation, evidence, and fixtures live
+alongside it when present.
+
 - 0100_cmake_options.py
 - 0200_dispatch_hook.py
 - 0300_mmq_forced_j.py
@@ -288,7 +292,7 @@ Reuse the existing generalized-key proof. Current policy defaults require at lea
 - tools/bigcherry/report.py
 - tools/bigcherry/source_identity.py
 - tools/bigcherry/identity_separation.py
-- patches/0820_measurement_signature_shapes.py
+- patches/0820_measurement_signature_shapes/patch.py
 - docs/planning/active/rdna-boost-experiments/RD24.md
 - docs/planning/active/rdna-boost-experiments/RD25.md
 - docs/planning/active/rdna-boost-experiments/RD26.md

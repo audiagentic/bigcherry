@@ -16,7 +16,7 @@ from bigcherry.patch import catalog as patch_catalog # noqa: E402
 
 class TestPatchCatalogLoads(unittest.TestCase):
     def test_loads_the_real_catalog(self):
-        entries = patch_catalog.load_catalog()
+        entries = patch_catalog.build_snapshot().metadata
         self.assertGreater(len(entries), 0)
         for entry in entries.values():
             self.assertIn(entry.kind, patch_catalog.KINDS)
@@ -27,13 +27,13 @@ class TestPatchCatalogLoads(unittest.TestCase):
         """RE30's own investigation finding: 1000 declares GROUP='upstream-fixes'
         in its Python module but is compiled into the standard framework
         patch-set -- the catalog should classify it by what it actually IS."""
-        entries = patch_catalog.load_catalog()
+        entries = patch_catalog.build_snapshot().metadata
         self.assertEqual(
             entries["1000_rdna4_mmq_q2k_q6k_fix"].kind, "upstream-backport"
         )
 
     def test_no_vulkan_patches_exist_yet(self):
-        entries = patch_catalog.load_catalog()
+        entries = patch_catalog.build_snapshot().metadata
         vulkan = [e for e in entries.values() if e.backend == "vulkan"]
         self.assertEqual(
             vulkan, [], "no Vulkan patches should exist before RE30 phase 2+"
@@ -239,7 +239,7 @@ class TestPatchContext(unittest.TestCase):
 
     def test_patches_for_backend_on_the_real_catalog_returns_all_hip_patches(self):
         result = patch_catalog.patches_for_backend("hip")
-        entries = patch_catalog.load_catalog()
+        entries = patch_catalog.build_snapshot().metadata
         expected = tuple(
             sorted(
                 pid for pid, e in entries.items() if e.backend in ("hip", "agnostic")
@@ -255,7 +255,7 @@ if __name__ == "__main__":
 
 # ---------------------------------------------------------- RS03: packaged
 # patch-system PA03/RS03: packaged patches carry their metadata in
-# patch.toml (no duplicate catalog.toml entry); legacy patches keep
+# patch.toml (no duplicate catalog.toml entry); compatibility fixtures may keep
 # catalog.toml as their authority.
 
 

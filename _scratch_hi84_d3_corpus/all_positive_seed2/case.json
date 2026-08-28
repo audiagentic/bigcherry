@@ -1,0 +1,23 @@
+{
+  "case_id": "hi84-d3:all_positive:seed2",
+  "device_count": 3,
+  "element_count": 8192,
+  "generator_version": "hi18-f32-v1",
+  "input_digests": [
+    "977355a5ac4b8e7c878465c86c90c87c8514a1dbce7b4006b1634397a5c5d606",
+    "e423208c8e968a9500d24e7de264ec247595d2ebf4d87720677414a6415fdfa2",
+    "1aab80a9141b88e2be057e9112393235c438ad0d0091b2f792964fc3faafc58f"
+  ],
+  "pattern": "all_positive",
+  "peer_access": "partial",
+  "reduction_signature_key": "split_reduce:v1:f32:8192:4096,2,1,1:n3:peer100010001",
+  "schema_version": 2,
+  "seed": 2,
+  "slice_shape": [
+    4096,
+    2,
+    1,
+    1
+  ],
+  "topology_key": "n3:peer100010001"
+}

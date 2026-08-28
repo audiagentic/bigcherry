@@ -20,8 +20,8 @@ GPT-adjudicated ship gates (req_09656b782a5d449a) these artifacts feed.
   `long-prompt-12k` (pp12288 + tg128) rep 1
 - Vendor pin: b10502 = `0adcc3bb5710` (record build, tune build, replay build)
 - **Tooling revision: `5020c68`** (the J: tree HEAD at campaign time; the
-  tree was last synced before `b2d2d75`/`663e2c3` landed). `patches/*.py` is
-  unchanged across `5020c68..HEAD`, so the vendor build is source-identical to
+  tree was last synced before `b2d2d75`/`663e2c3` landed). The packaged patch
+  implementations are unchanged across `5020c68..HEAD`, so the vendor build is source-identical to
   what the current tip would produce. Consequences: S4 catalog was generated
   without HI73 skip logic (a few extra unreachable candidates — conservative),
   and S6 used the pre-HI67-slice-3 promotion CLI (run A promoted alone; the J:
