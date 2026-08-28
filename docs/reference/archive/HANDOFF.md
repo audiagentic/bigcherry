@@ -353,7 +353,7 @@ revisit.
 
 ## PACK_REVIEW action items — incorporated into plan items
 
-All action items from `docs/reference/PACK_REVIEW.md` have been added to their
+All action items from `docs/reference/archive/PACK_REVIEW.md` have been added to their
 owning plan items as notes. Cross-reference:
 
 | Action | Plan item | Status |

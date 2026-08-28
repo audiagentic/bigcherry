@@ -1,9 +1,7 @@
-# Tuning detail: hot signatures and selected kernels
+# Tuning detail
 
-Generated from tuning runs joined against recorded inventories. Consult the
-tuning database for current results — this document is regenerated per tune.
-
-`gen/elig/meas` = candidates generated / eligible / actually measured.
-A large gap between eligible and measured means screening discarded them early.
-
-For how to interpret these numbers, see [COVERAGE_AUDIT.md](testing/COVERAGE_AUDIT.md).
+The former checked-in report was a generated snapshot and is retained at
+[`archive/hip-autotune/TUNING-DETAIL.md`](archive/hip-autotune/TUNING-DETAIL.md)
+for provenance. Current per-signature winners and rankings must be generated
+from the tuning database into `artifacts/reports/`; they are not maintained
+reference authority.

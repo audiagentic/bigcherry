@@ -18,8 +18,8 @@ at the top level.
 | --- | --- | --- |
 | [build/BUILD.md](build/BUILD.md) | Environment, recipes, cmake configuration | Building on hardware |
 | [build/PIN_BUMP.md](build/PIN_BUMP.md) | Bumping the pinned llama.cpp revision | Moving the pin forward |
-| [build/PIN_REBASE_REVIEW_B10502.md](build/PIN_REBASE_REVIEW_B10502.md) | A specific pin-rebase's review record | Tracing a past rebase's decisions |
-| [build/BIGCHERRY_BUILD_RDNA_HANDOVER.md](build/BIGCHERRY_BUILD_RDNA_HANDOVER.md) | RDNA build handover notes | Picking up RDNA-specific build work |
+| [archive/build/PIN_REBASE_REVIEW_B10502.md](archive/build/PIN_REBASE_REVIEW_B10502.md) | A specific pin-rebase's review record | Tracing a past rebase's decisions |
+| [archive/build/BIGCHERRY_BUILD_RDNA_HANDOVER.md](archive/build/BIGCHERRY_BUILD_RDNA_HANDOVER.md) | RDNA build handover notes | Picking up RDNA-specific build work |
 
 ## Testing
 
@@ -61,10 +61,7 @@ Historical reviews and superseded snapshots belong under `archive/`.
 | Document | What it is | When to read it |
 | --- | --- | --- |
 | [experiments/BigCherry_Experiment_Contract_Implementation_Guide.md](experiments/BigCherry_Experiment_Contract_Implementation_Guide.md) | Experiment-contract schema, field semantics, rationale | Defining or consuming an experiment contract |
-| [experiments/BigCherry_External_AMD_RDNA_Experiment_Backlog.md](experiments/BigCherry_External_AMD_RDNA_Experiment_Backlog.md) | External RDNA-boost experiment backlog | Picking up RD-prefixed experimental work |
-| [experiments/DUAL_XTX_BENCH_LOG.md](experiments/DUAL_XTX_BENCH_LOG.md) | Dual-XTX production benchmark log | Comparing against the production baseline |
-| [experiments/HI36A_VERDICT_27B_R9700.md](experiments/HI36A_VERDICT_27B_R9700.md) | HI36A's verdict on the 27B/R9700 case | Reviewing that specific experiment's outcome |
-| [experiments/WINNER_GENERALISATION_ANALYSIS.md](experiments/WINNER_GENERALISATION_ANALYSIS.md) | Whether winners generalize across workloads | Assessing cross-workload winner reuse |
+| [../evidence/2026-08-21-hi35-hi36-27b-r9700/HI36A_VERDICT_27B_R9700.md](../evidence/2026-08-21-hi35-hi36-27b-r9700/HI36A_VERDICT_27B_R9700.md) | HI36A's verdict on the 27B/R9700 case | Reviewing that specific experiment's outcome |
 
 ## Top level
 
@@ -72,8 +69,8 @@ Historical reviews and superseded snapshots belong under `archive/`.
 | --- | --- | --- |
 | [CANDIDATES.md](CANDIDATES.md) | Auto-generated candidate inventory | Looking up a specific candidate's config |
 | [FINDINGS.md](FINDINGS.md) | Bugs and results notable outside bigcherry — kernel/llama.cpp/ROCm bugs, exceptional tunes | You just found something a stranger to this project would want to know about |
-| [TUNING-DETAIL.md](TUNING-DETAIL.md) | Per-tune results (regenerated) | Reviewing hot signatures from a specific run — consult the DB for current numbers |
-| [PACK_REVIEW.md](PACK_REVIEW.md) | Deltas vs. prework pack | Tracing why a plan diverged from the original spec |
+| [TUNING-DETAIL.md](TUNING-DETAIL.md) | Pointer to archived generated report | Consult the tuning DB or `artifacts/reports/` for current numbers |
+| [archive/PACK_REVIEW.md](archive/PACK_REVIEW.md) | Deltas vs. prework pack | Tracing why a plan diverged from the original spec |
 
 **Tuning results and model-specific data live in the database**, not in
 these documents. Consult the tuning DB for per-signature winners, rankings,

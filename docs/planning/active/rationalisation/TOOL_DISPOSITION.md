@@ -23,54 +23,54 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `.opencode/node_modules/.bin/uuid.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `.opencode/node_modules/.bin/yaml.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `.opencode/node_modules/.bin/yaml.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
-| `docs/reference/h36-campaign-27b-r9700/pipeline.sh` | **TRANSITIONAL** | Evidence/reference-local harness; retain until caller and ownership audit completes. |
-| `patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0100_cmake_options.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0200_dispatch_hook.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0300_mmq_forced_j.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0400_mmvf_forced_block.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0500_mmf_forced_nwarps.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0600_mmvq_geometry.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0650_mmvq_native_variant.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0700_coverage_counters.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0800_server_shutdown_endpoint.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0810_replay_hit_diagnostics.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0820_measurement_signature_shapes.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0830_split_reduce_telemetry.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/0900_pool_workspace_metrics.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1000_rdna4_mmq_q2k_q6k_fix.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1002_hip_unsafe_math_opt_in.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1003_quantized_cpy_thread_block_fix.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1004_rms_norm_mul_rope_fusion.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1005_prompt_cache_checkpoint_selection.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1100_hi70_direct_op_evidence.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1200_rd19_single_gpu_meta_bypass.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1201_rd20_attn_gate_tp_split.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1202_rd04_bf16_flash_attn_tile.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1207_rd17_moe_topk_down_fold.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1208_rd21_gfx1151_mmvq_nwarps_table.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1209_rd22_integrated_gpu_host_buffer_backout.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1210_rd26_bitidentical_decode_verify_standalone.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1215_rd394041_amd_stream_moe_overlap.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1216_rd43_concurrent_join_fusion_guard.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1217_rd44_graph_opt_default_rdna35.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1221_rd50_gdn_chunked_recurrence.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1222_hi67_deterministic_test_backend_ops_seed.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1223_hi67_machine_readable_correctness_metrics.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1224_hi18_reduce_correctness_probe.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1225_hi85_nccl_heterogeneous_arch_guard.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1230_hip_autotune_inspect.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1231_hi14_graph_capture_lifecycle_evidence.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1233_rd73_stable_graph_cache_key.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1234_rd58_pin_state_buffer_multigpu_restore.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1235_rd09_q81_activation_cache_foundation.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1236_hi105_deterministic_mul_mat_id_ids.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/1237_rd30_moe_mmq_compact_grid.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/rd/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
-| `patches/rd/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; preserve flat/package support and refine in TR06. |
+| `artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/pipeline.sh` | **TRANSITIONAL** | Evidence/reference-local harness; retain until caller and ownership audit completes. |
+| `patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0300_mmq_forced_j/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0400_mmvf_forced_block/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0500_mmf_forced_nwarps/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0600_mmvq_geometry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0650_mmvq_native_variant/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0700_coverage_counters/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0800_server_shutdown_endpoint/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0810_replay_hit_diagnostics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0820_measurement_signature_shapes/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0830_split_reduce_telemetry/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/0900_pool_workspace_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1000_rdna4_mmq_q2k_q6k_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1002_hip_unsafe_math_opt_in/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1003_quantized_cpy_thread_block_fix/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1004_rms_norm_mul_rope_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1005_prompt_cache_checkpoint_selection/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1100_hi70_direct_op_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1200_rd19_single_gpu_meta_bypass/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1201_rd20_attn_gate_tp_split/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1202_rd04_bf16_flash_attn_tile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1207_rd17_moe_topk_down_fold/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1215_rd394041_amd_stream_moe_overlap/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1216_rd43_concurrent_join_fusion_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1217_rd44_graph_opt_default_rdna35/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1221_rd50_gdn_chunked_recurrence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1223_hi67_machine_readable_correctness_metrics/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1224_hi18_reduce_correctness_probe/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1230_hip_autotune_inspect/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1233_rd73_stable_graph_cache_key/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1235_rd09_q81_activation_cache_foundation/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1237_rd30_moe_mmq_compact_grid/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/1204_rd08_q6k_mmvq_vdr2/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
+| `patches/rd/1206_rd13_mul_mat_add_view_fusion/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `tmp/b1-breakdown.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-check.sh` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `tmp/b1-gate2-strict.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
@@ -193,7 +193,7 @@ Every in-scope script has exactly one provisional disposition. No implementation
 | `tools/bigcherry/provenance.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/rank_replay.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/ranking_policy.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
-| `tools/bigcherry/rd08_correctness_evidence.py` | **PACKAGE-LOCAL** | Moved to `patches/rd/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed. |
+| `tools/bigcherry/rd08_correctness_evidence.py` | **PACKAGE-LOCAL** | Moved to `patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed. |
 | `tools/bigcherry/re14_real_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
 | `tools/bigcherry/re15_acceptance_run.py` | **TRANSITIONAL** | Historical acceptance harness; preserve campaign/artifact invariants before retirement. |
 | `tools/bigcherry/re15_tamper_evidence.py` | **TRANSITIONAL** | Historical tamper/evidence harness; retain until integrity checks have a permanent owner. |
