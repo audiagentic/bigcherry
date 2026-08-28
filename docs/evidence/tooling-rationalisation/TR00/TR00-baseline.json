@@ -1,0 +1,2003 @@
+{
+  "schema_version": 1,
+  "phase": "TR00",
+  "captured_at": "2026-08-25T11:05:00+10:00",
+  "repository": "audiagentic/bigcherry",
+  "branch": "tuning-code-rebase",
+  "implementation_start_head": "73068e9b4d1f612097f2efa582f046fd6013e11b",
+  "aligned_run_sheet_head": "5e7793231c38bc7b96d33d9db6345863d429aa4e",
+  "baseline_note": "Branch advanced after the aligned edition; this actual HEAD governs this baseline. No tooling migration was performed.",
+  "working_tree": {
+    "tracked_changes": [],
+    "untracked_before_baseline": [
+      "docs/planning/active/rationalisation/RA01.md"
+    ],
+    "canonical_state_mutated": false
+  },
+  "commands": {
+    "cli_help": {
+      "command": "PYTHONPATH=tools python -m bigcherry --help",
+      "exit_code": 0,
+      "status": "passed",
+      "captured": "top-level command surface includes pull, audit, check, apply, patches, patch-*; release/pin; source/build; campaign; tuning/replay; analysis; diagnostics"
+    },
+    "check_quick": {
+      "command": "PYTHONPATH=tools python -m bigcherry check --quick",
+      "exit_code": 1,
+      "status": "truthful_blocked",
+      "reasons": [
+        "RD19 validated state has no current qualifying HI83 evidence"
+      ]
+    },
+    "check_default": {
+      "command": "PYTHONPATH=tools python -m bigcherry check --default",
+      "exit_code": 1,
+      "status": "truthful_blocked",
+      "reasons": [
+        "RD19 evidence-state defect",
+        "source overlay.vendor_sync differs in three shared vendor files"
+      ]
+    },
+    "check_full": {
+      "command": "PYTHONPATH=tools python -m bigcherry check --full",
+      "exit_code": 1,
+      "status": "truthful_blocked",
+      "reasons": [
+        "RD19 evidence-state defect",
+        "source overlay.vendor_sync differs in three shared vendor files"
+      ]
+    },
+    "unittest_discovery": {
+      "command": "PYTHONPATH=tools python -m unittest discover -s tools/tests -p test*.py",
+      "exit_code": 1,
+      "status": "baseline_regression_present",
+      "result": "Ran 1802 tests; failures=1, errors=1, skipped=3",
+      "failures": [
+        "test_patch_validation_evidence.SubjectDigestTests.test_legacy_flat_without_state_uses_implementation_identity"
+      ],
+      "errors": [
+        "test_patch_source_isolation.Rv80AcceptanceTests.test_rv80_symlink_escape_rejected: Windows symlink privilege WinError 1314"
+      ]
+    },
+    "representative_invalid_input": {
+      "command": "PYTHONPATH=tools python -m bigcherry patch-validate",
+      "exit_code": 1,
+      "status": "captured",
+      "note": "command validates existing evidence and reports not-required records; no mutation observed"
+    }
+  },
+  "protected_truth": {
+    "PA04": "in_progress; software RS12-RS18 complete; AMD RX 7900 GRE/HIP visible; migrated patch gauntlet and overlay synchronization remain open",
+    "PA05": "in_progress; RD19 remains quarantined pending qualifying HI83 evidence or owner lifecycle correction",
+    "patch_model": "flat and packaged patches coexist; package metadata remains authoritative for packaged patches"
+  },
+  "inventory_scope": {
+    "tool_files_under_tools": 271,
+    "repository_script_files_excluding_vendor_build_artifacts": 383,
+    "excluded": [
+      ".git",
+      "vendor",
+      "artifacts",
+      "build/cache directories"
+    ],
+    "required_disposition": "Every in-scope current script/tool must have exactly one disposition in TOOL_DISPOSITION.md"
+  },
+  "migration_status": "No implementation move, CLI split, boundary enforcement, hygiene check, deletion, or PA04/PA05 state mutation performed.",
+  "entries": [
+    {
+      "path": ".audiagentic/runtime/patch-system/psi_v2_block.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/download-msgpackr-prebuilds.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/download-msgpackr-prebuilds.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages-optional.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages-optional.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages-test.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages-test.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-gyp-build-optional-packages.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-which.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/node-which.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/uuid.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/uuid.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/yaml.cmd",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": ".opencode/node_modules/.bin/yaml.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/pipeline.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Evidence/reference-local harness; retain until caller and ownership audit completes."
+    },
+    {
+      "path": "patches/_template/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0100_cmake_options/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0200_dispatch_hook/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0300_mmq_forced_j/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0400_mmvf_forced_block/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0500_mmf_forced_nwarps/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0600_mmvq_geometry/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0650_mmvq_native_variant/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0700_coverage_counters/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0800_server_shutdown_endpoint/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0810_replay_hit_diagnostics/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0820_measurement_signature_shapes/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0830_split_reduce_telemetry/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/0900_pool_workspace_metrics/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1000_rdna4_mmq_q2k_q6k_fix/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1002_hip_unsafe_math_opt_in/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1003_quantized_cpy_thread_block_fix/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1004_rms_norm_mul_rope_fusion/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1005_prompt_cache_checkpoint_selection/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1100_hi70_direct_op_evidence/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1200_rd19_single_gpu_meta_bypass/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1201_rd20_attn_gate_tp_split/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1202_rd04_bf16_flash_attn_tile/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1207_rd17_moe_topk_down_fold/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1215_rd394041_amd_stream_moe_overlap/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1216_rd43_concurrent_join_fusion_guard/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1217_rd44_graph_opt_default_rdna35/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1221_rd50_gdn_chunked_recurrence/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1223_hi67_machine_readable_correctness_metrics/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1224_hi18_reduce_correctness_probe/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1230_hip_autotune_inspect/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1233_rd73_stable_graph_cache_key/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1235_rd09_q81_activation_cache_foundation/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1237_rd30_moe_mmq_compact_grid/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1204_rd08_q6k_mmvq_vdr2/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1205_rd12_paired_mmvq_dual_output/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "patches/1206_rd13_mul_mat_add_view_fusion/patch.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+    },
+    {
+      "path": "tmp/b1-breakdown.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-check.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-gate2-strict.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-gates.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-reject.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-spotcheck.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/b1-sweep.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/brutus-probe.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/dedupe-hi65.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/fix_test.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h35-s1b-equivalence.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-ab-stability.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-addon.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-brutus-pipeline.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-key-derivation.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-regret-analysis.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h36-whatif-misslog.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h65-runarm-test.bat",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h65-runarm.bat",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h65-telemetry.bat",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h65-typeperf-test.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h68-smoke-v2-analyze.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h68-smoke-v2.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h68-smoke-v3-analyze.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h68-smoke-v3.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/h68-smoke.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-analyze.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-analyze2.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-controls.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-gates-run.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-matrix-local.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-matrix.sh",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-noisefloor.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-select-controls.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/hi65-verdicts.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/pi-lens-shadow-probe.py",
+      "disposition": "DELETE",
+      "rationale": "Plan-specific or scratch probe; deletion requires caller/reference proof in TR05."
+    },
+    {
+      "path": "tmp/rd-bench-lane.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/rd04-pair-bench.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/rd04-pp-bench.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/re25_merge/A.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/re25_merge/base_fmt.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/re25_merge/base.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/re25_merge/merged.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/sliceA-configure.bat",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/t1.bat",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/tune-off-targeted.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/tune-off.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/tune-on.ps1",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
+    },
+    {
+      "path": "tmp/verify_slice_a.py",
+      "disposition": "DELETE",
+      "rationale": "Plan-specific or scratch probe; deletion requires caller/reference proof in TR05."
+    },
+    {
+      "path": "tools/bigcherry/__init__.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/__main__.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/ab_benchmark.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/analyze_gaps.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/artifacts.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/autotune_catalog.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/autotune_schema.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/bandit_simulator.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/builds.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_build.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_execution.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_graph.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_lane.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_plan.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_planner.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_resolution.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_source.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign_workers.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/campaign.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/candidate_binary_size.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/check.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/compare_tunes.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/comparisons.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/compile_check.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/config.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/context.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/correctness_evidence.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/csource.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/device_state_validate.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/doctor.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/e2e_smoke_campaign.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/e2e_smoke_report.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/experiment_bundle.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/experiment_contract.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/focal_source_plans.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/generalise.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/generated_tree.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/graph_lifecycle_evidence.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/hi16_forced_native_parity.py",
+      "disposition": "GRADUATE",
+      "rationale": "Generic native-versus-forced parity mechanics; extract behind a maintained correctness API without retaining HI16 naming."
+    },
+    {
+      "path": "tools/bigcherry/hi18_run_corpus.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "HI18-specific corpus runner; separate reusable reduction correctness from plan-specific corpus data before graduation."
+    },
+    {
+      "path": "tools/bigcherry/hi80_generate_correctness_evidence.py",
+      "disposition": "GRADUATE",
+      "rationale": "Generic correctness-evidence generation mechanics; extract behind the maintained evidence API before retiring historical entrypoint."
+    },
+    {
+      "path": "tools/bigcherry/identity_separation.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/impact.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/inventory.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/kernel_fraction.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/lifecycle.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/moe_hostile_routing_sweep.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/moe_routing_gen.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/multi_gpu_validate.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/parity_loaders.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical parity/cutover helper; retain until permanent invariant ownership and zero-caller proof."
+    },
+    {
+      "path": "tools/bigcherry/parity.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical parity/cutover helper; retain until permanent invariant ownership and zero-caller proof."
+    },
+    {
+      "path": "tools/bigcherry/patch_activation.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_catalog.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_lifecycle.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_registry.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_source_isolation.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_validation_campaign.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_validation_evidence.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patch_validation.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patcher.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/patchset.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/paths.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/pin_status.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/pin_transition.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/pipeline.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/pool_protocol.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/promotion_correctness_gate.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/promotion.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/provenance.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/rank_replay.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/ranking_policy.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/rd08_correctness_evidence.py",
+      "disposition": "PACKAGE-LOCAL",
+      "rationale": "Moved to `patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed."
+    },
+    {
+      "path": "tools/bigcherry/re14_real_run.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical acceptance harness; preserve campaign/artifact invariants before retirement."
+    },
+    {
+      "path": "tools/bigcherry/re15_acceptance_run.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical acceptance harness; preserve campaign/artifact invariants before retirement."
+    },
+    {
+      "path": "tools/bigcherry/re15_tamper_evidence.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical tamper/evidence harness; retain until integrity checks have a permanent owner."
+    },
+    {
+      "path": "tools/bigcherry/recipes.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/reduce_correctness.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/release_validate.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/releases.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/replay_build_audit.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/replay_cache.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/replay_inspect.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/report.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/resource_report.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/resources.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/rocprof.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/runtime_smoke.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/signature_correctness_mapping.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/source_audit.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/source_identity.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/sources.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/symbol_map.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/telemetry.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/toolchain.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/transform_loader.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/transform_records.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/tune_journal.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/tune_promotion.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/upstream.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/validate_rd_patches.py",
+      "disposition": "TRANSITIONAL",
+      "rationale": "Historical RD validator; generic validation remains authoritative."
+    },
+    {
+      "path": "tools/bigcherry/vk_autotune_types.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/workspace.py",
+      "disposition": "MOVE",
+      "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
+    },
+    {
+      "path": "tools/bigcherry/analysis/candidate_report.py",
+      "disposition": "KEEP",
+      "rationale": "Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`."
+    },
+    {
+      "path": "tools/pi-lens-shadow-probe.py",
+      "disposition": "DELETE",
+      "rationale": "Unreferenced scratch probe; zero current callers/references confirmed during TR05."
+    },
+    {
+      "path": "tools/residency_gates.py",
+      "disposition": "MOVE",
+      "rationale": "HI34 plan-specific gate moved to non-package `tools/lab/hi34-residency-gates/`; root wrapper retained for tests/legacy CLI."
+    },
+    {
+      "path": "tools/rocm-env.ps1",
+      "disposition": "MOVE",
+      "rationale": "Environment bootstrap; canonical destination tools/env/ in TR05."
+    },
+    {
+      "path": "tools/rocm-env.sh",
+      "disposition": "MOVE",
+      "rationale": "Environment bootstrap; canonical destination tools/env/ in TR05."
+    },
+    {
+      "path": "tools/tests/test_ab_benchmark.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_analyze_gaps.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_ancestry_check.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_artifacts_provenance.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_autotune_catalog_compile_input_stability.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_bandit_simulator.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_blake2b_cross_lang_vectors.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_blas_plan_contract.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_build_descriptor.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_build_flip.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_build_identity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_build_flip.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_build.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_cutover_audit.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_execution.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_graph.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_lane.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_plan.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_planner.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_resolution.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_source.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_campaign_workers_build.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_candidate_binary_size.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_candidate_coverage.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_catalog_resource_blacklist.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_catalog_snapshot.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_check.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_cli_audit_stage.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_cli_patches_catalog_filter.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_cli_portability.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_compare_tunes.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_comparisons_promotion.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_config_v2.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_config.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_context.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_correctness_evidence.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_coverage_patch_anchor.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_db_migration.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_device_state_validate.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_dispatch_safety.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_e2e_smoke_campaign_identity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_e2e_smoke_campaign_s3b.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_e2e_smoke_report_bench_validation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_experiment_bundle.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_experiment_contract_cli.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_experiment_contract.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_external_sources.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_focal_source_plans.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_generalise.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_generated_layout.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_generated_tree.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_graph_lifecycle_evidence.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi09_catalog_completeness.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi101_workload_cache.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi16_correctness_reference.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi16_forced_native_parity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi17_blas_runtime_seam.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi18_reduce_correctness_probe.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi18_run_corpus.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi24_canary_summary.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi24_double_native.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi24_hot_list_py.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi24_hot_list.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi25_readiness.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi26_offline_readiness.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi34_flush.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi37_workload_digest.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi37_workload_overlap.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi53_native_wrapper_parity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi65_pre_sample.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi67_correctness_evidence_schema.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi67_correctness_metrics_patch.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi67_deterministic_seed_patch.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi68_canary_decision.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi68_probe_contract.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi69_correctness_timing.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi73_reachability.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi80_generate_correctness_evidence.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi85_nccl_heterogeneous_arch_guard.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi92_dispatch_counters.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi93_hardware_identity_cache.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi97_runtime_flat.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_hi99_tuner_config_macro.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_identity_separation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_impact.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_inventory.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_kernel_fraction.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_moe_hostile_routing_sweep.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_moe_routing_gen.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_multi_gpu_validate.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_native_select_timing.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_overlay_sync_audit.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_parity_loaders.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_parity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_1233_rd73_graph_cache_key.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_1234_rd58_pin_state_buffer.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_1236_hi105_deterministic_mul_mat_id_ids.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_activation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_catalog.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_explain_graph.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_governance.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_lifecycle.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_migrations.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_registry.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_resolution.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_selection.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_source_isolation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_validation_campaign_trace_probes.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_validation_contract.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_validation_evidence.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_validation_plan_integration.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patch_validation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_patcher.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_pin_status.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_pipeline.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_pool_protocol.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_promotion_correctness_gate.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rank_replay.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_ranking_policy.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rd08_correctness_evidence.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rd09_q81_cache_foundation.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rd30_hostile_routing.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rd54_mmvq_narrow_moe_coverage.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re04_materialization_safety.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re07_build_identity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re07_smoke_bundle_consumption.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re08_provenance_import_boundary.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re09_schema_v4.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re10_lifecycle.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re12_comparisons.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re13_promotion_wiring.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re25_3_sticky_taint.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_re25_artifact_descriptors.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_recipes.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_reduce_correctness.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_release_validate.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_releases.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_replay_cache_promotion_gate.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_replay_cache_wire.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_replay_inspect.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_replay_v5.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_report.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_residency_gates.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_resource_report.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_rocprof.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_runtime_smoke.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_signature_correctness_mapping.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_source_audit.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_source_identity.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_source_plan_patch_contract_links.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_split_reduce_telemetry.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_telemetry.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_transform_loader.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_transform_records.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_tune_journal.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_tune_promotion.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_tuner_artifact_json.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_upstream.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_variant_params.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_verify_slice_a.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_vk_autotune_types.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_vulkan_audit.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/tests/test_workspace.py",
+      "disposition": "KEEP",
+      "rationale": "Permanent test coverage; domain reorganisation deferred to TR11."
+    },
+    {
+      "path": "tools/verify_slice_a.py",
+      "disposition": "MOVE",
+      "rationale": "HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI."
+    }
+  ]
+}
