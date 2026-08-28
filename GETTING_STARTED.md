@@ -5,6 +5,11 @@ Task-specific context (which plan item, which patch, which experiment) lives in
 things in this repo regardless of what task brought you here. See `README.md`
 for the architecture (src/patches overlay model, MMQ catalog design).
 
+For exploratory qualification before formal planning, follow
+[`docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md`](docs/reference/experiments/EXPERIMENTAL_WORKFLOW.md).
+It defines the local brief, isolated run-bundle layout, evidence and stop
+gates, and criteria for promoting a result into a plan item.
+
 ## Repo vs. real hardware
 
 - This checkout builds and runs on CPU-only dev machines too, but the AMD
