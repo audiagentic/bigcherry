@@ -611,6 +611,16 @@ patch-sets = ["framework"]
         with self.assertRaises(patch_registry.PatchRegistryError):
             self._materialize("1204_evil")
 
+    def test_all_packaged_implementations_pass_production_loader_isolation(self) -> None:
+        """Every tracked packaged patch must be executable through the same
+        import-restricted loader used by a real materialization run."""
+        root = Path(__file__).resolve().parents[3] / "patches"
+        registry = patch_registry.load_registry(root)
+        for descriptor in registry.descriptors:
+            if descriptor.representation == patch_registry.REPRESENTATION_PACKAGED:
+                loaded = patch_registry.load_implementation(descriptor, root=root)
+                self.assertTrue(loaded, descriptor.patch_id)
+
     # 10. Symlink escape out of the patches root is rejected by discovery.
     def test_rv80_symlink_escape_rejected(self) -> None:
         outside = self.base / "outside"

@@ -68,8 +68,7 @@ REQUIRES = ("1222_hi67_deterministic_test_backend_ops_seed",)
 
 import re as _re
 
-from bigcherry.core import csource as _csource
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, FilePatch, csource as _csource
 
 _NEW_BODY = '''static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats) {
     std::random_device rd;
