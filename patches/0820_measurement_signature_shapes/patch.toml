@@ -1,0 +1,17 @@
+schema = 1
+id = "0820_measurement_signature_shapes"
+order = 820
+group = "core"
+state = "validated"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = []
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []

@@ -20,5 +20,6 @@ metadata. Keep the package self-contained and deterministic.
 - Do not put thresholds, workloads, controls, or hypotheses in adapter config.
 - Do not fabricate hardware evidence or grandfather records.
 
-A deliberately simple patch may remain flat under `patches/`; packaging is not
-required merely to preserve first-class support for small patches.
+All production patches are package directories. The registry's flat-module
+reader exists only for compatibility fixtures and should not be used for new
+patches.

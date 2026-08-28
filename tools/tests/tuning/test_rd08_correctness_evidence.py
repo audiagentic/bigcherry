@@ -20,7 +20,6 @@ _repo_root = _tools_root.parent
 _rd08_path = (
     _repo_root
     / "patches"
-    / "rd"
     / "1204_rd08_q6k_mmvq_vdr2"
     / "validation"
     / "rd08_correctness.py"

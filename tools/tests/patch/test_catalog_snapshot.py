@@ -46,7 +46,7 @@ class CatalogSnapshotTests(unittest.TestCase):
             handle.write("""
 version = 1
 [[patch]]
-id = "0100_cmake_options"
+id = "9999_synthetic"
 kind = "framework"
 origin = "local"
 backend = "hip"

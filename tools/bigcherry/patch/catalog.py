@@ -1,11 +1,11 @@
 """Declarative patch-stream metadata (RE30 phase 1).
 
-``patches/catalog.toml`` is orthogonal metadata layered on top of each patch
-module's existing ``GROUP``/``STATE`` Python constants (see ``patchset.py``).
-It answers questions those two labels cannot: whether a patch is BigCherry's
-own instrumentation, a backport of specific upstream work, or a port from an
-external fork; which backend (hip/vulkan/agnostic) it targets; and, for
-backports, where the fix came from and when it should be retired.
+Packaged patches carry their descriptive metadata in ``patch.toml`` alongside
+their implementation. ``patches/catalog.toml`` remains a compatibility
+catalog for synthetic/legacy flat fixtures and is empty in the production
+package-only tree. The package metadata answers questions that ``GROUP``/
+``STATE`` alone cannot: patch kind/origin, backend, upstream provenance,
+retirement, plan linkage, and validation obligations.
 
 GROUP/STATE, recipes.toml membership, and patchset.py remain authoritative
 for patch COMPOSITION: this module never adds, removes, substitutes, or
@@ -143,7 +143,11 @@ def resolve_for_context(
     (RE30's own design requirement) -- callers that want backend filtering
     must filter BEFORE calling this, e.g. via ``patches_for_backend``.
     """
-    entries = load_catalog(catalog_path)
+    entries = (
+        build_snapshot().metadata
+        if catalog_path is None
+        else load_catalog(catalog_path)
+    )
     errors: list[str] = []
     for patch_id in patch_ids:
         entry = entries.get(patch_id)
@@ -174,7 +178,11 @@ def resolve_for_context(
 
 def patches_for_backend(backend: str, *, catalog_path: Path | None = None) -> tuple[str, ...]:
     """Every catalog patch ID whose backend is ``backend`` or 'agnostic'."""
-    entries = load_catalog(catalog_path)
+    entries = (
+        build_snapshot().metadata
+        if catalog_path is None
+        else load_catalog(catalog_path)
+    )
     return tuple(sorted(
         patch_id for patch_id, entry in entries.items()
         if entry.backend in (backend, "agnostic")
@@ -471,14 +479,14 @@ def catalog_entry_from_descriptor(descriptor) -> "CatalogEntry | None":
         origin=descriptor.origin,
         backend=descriptor.backend,
         state=descriptor.state,
-        upstream_ref=descriptor.upstream,
-        retirement=None,
+        upstream_ref=descriptor.upstream_ref or descriptor.upstream,
+        retirement=descriptor.retirement,
         external_source=descriptor.external_source,
-        plan_item=None,
+        plan_item=descriptor.plan_item,
         requires_options=descriptor.requires_options,
         forbids_options=descriptor.forbids_options,
         plan_ids=descriptor.plan_ids,
-        backends=(),
+        backends=descriptor.backends,
         subsystems=descriptor.subsystems,
         hardware=descriptor.hardware,
         validation_architectures=descriptor.validation_architectures,
@@ -494,8 +502,8 @@ def build_snapshot(
     phase covers. ``patches_dir``/``catalog_path`` default to the real
     project locations (``paths.PATCHES``/``paths.PATCH_CATALOG``).
 
-    RS03: metadata = catalog.toml (legacy authority) merged with each
-    packaged patch's patch.toml (packaged authority). A packaged patch that
+    RS03: metadata = catalog.toml (legacy compatibility authority) merged with
+    each packaged patch's patch.toml (production authority). A packaged patch that
     ALSO has a catalog.toml entry is an error -- two metadata authorities
     for one patch is exactly what the packaged representation removes.
     """

@@ -1,0 +1,17 @@
+schema = 1
+id = "0810_replay_hit_diagnostics"
+order = 810
+group = "core"
+state = "validated"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = []
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []

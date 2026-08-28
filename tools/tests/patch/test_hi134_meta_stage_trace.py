@@ -11,7 +11,7 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH_PATH = ROOT / "patches" / "1242_hi134_meta_stage_trace.py"
+PATCH_PATH = ROOT / "patches" / "1242_hi134_meta_stage_trace" / "patch.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
 TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
