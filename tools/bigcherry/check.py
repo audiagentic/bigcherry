@@ -173,9 +173,8 @@ def _disposition_rows(root: Path) -> dict[str, str]:
     path = (
         root
         / "docs"
-        / "planning"
-        / "active"
-        / "rationalisation"
+        / "reference"
+        / "tooling"
         / "TOOL_DISPOSITION.md"
     )
     if not path.is_file():

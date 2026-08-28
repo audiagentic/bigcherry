@@ -8,7 +8,7 @@ plan-specific, start in `tools/lab/<plan-topic>/`.
 
 | Phase | Truthful state |
 | --- | --- |
-| TR00 | Inventory and disposition map captured in [`TOOL_DISPOSITION.md`](../../planning/completed/rationalisation/TOOL_DISPOSITION.md). It is a baseline, not proof that every listed move or delete is complete. |
+| TR00 | Current 385-row disposition registry is [`TOOL_DISPOSITION.md`](TOOL_DISPOSITION.md); immutable 383-row implementation-start evidence is tracked under [`docs/evidence/tooling-rationalisation/TR00/`](../../evidence/tooling-rationalisation/TR00/). |
 | TR01–TR10 | The CLI split and canonical release, source, build, experiment, patch, campaign, tuning, core, and analysis domains are established. Root import paths still exist where compatibility or unresolved ownership requires them. |
 | TR11 / RA35–RA36 | All in-scope test modules are classified under domain packages (`build`, `patch`, `campaign`, `tuning`, `core`, `analysis`, `integration`, `hardware`, `fixtures`, `source`, and `release`); discovery remains the acceptance gate. |
 | TR12 / RA37 | Analysis implementations are under `tools/bigcherry/analysis/`; six obsolete facades plus the candidate-report root facade were removed, with three analysis consumers/facades retained or migrated as documented. RA37 remains in progress pending full check-tier closure. |
