@@ -88,7 +88,7 @@ window; bump one, record, then bump the other.
    The JSON report carries structured `reason_code`s and bounded
    reconciliation context (a diff of the failing file across the pin bump
    when the previous revision is known) instead of just an anchor-mismatch
-   count. `docs/reference/PIN_REBASE_REVIEW_B10502.md` remains the narrative
+   count. `docs/reference/archive/build/PIN_REBASE_REVIEW_B10502.md` remains the narrative
    template for writing up what you fixed and why, once the tool has told
    you what's actually broken.
 
@@ -178,7 +178,7 @@ be named, not silently reused.
 | inventory DBs (`*.sqlite` / `*.json`) | signatures reference revision-specific canonical shapes | regenerate from a fresh record at the new pin |
 | campaign build descriptors (`artifacts/<rev>/`) | content-addressed by `upstream_revision` | regenerate; old descriptors stay as historical evidence |
 | build directories (`~/bc-build-*`) | compiled from a specific tree | rebuild (ccache makes this cheap) |
-| committed evidence bundles (e.g. `docs/reference/h36-campaign-27b-r9700/`) | the README names the `source_revision`; every checksum is for that revision | the bundle is *of* that pin — never mutate it; new pin = new bundle |
+| committed evidence bundles (e.g. `docs/evidence/2026-08-21-hi35-hi36-27b-r9700/`) | the README names the `source_revision`; every checksum is for that revision | the bundle is *of* that pin — never mutate it; new pin = new bundle |
 | `releases/` records + index | monotonic per-revision evidence; the old record stays at its stage | new record for the new revision; old records are never edited |
 
 ## What `pin-status` does and does not do

@@ -143,7 +143,7 @@ b10502 — too large for git, checksums below).
 ## HI35 Part 2 — kernel-fraction ceiling bands, PUBLISHED (2026-08-21)
 
 Full family-level `bigcherry kernel-fraction` report over the validated traces
-(committed `kf/` copies; header-keyed parse, family attribution per standards
+(captured in the companion raw-artifact directory; header-keyed parse, family attribution per standards
 7.1). This is the adjudicated point-3 publication (ceiling_low = known matmul
 share × busy; ceiling_high = (known + unmapped) × busy; band >2pp would mean
 the method is not precise enough).
@@ -180,7 +180,6 @@ highest-value coverage gap on the machine.
 
 ```text
 42cf1ec4fd4f32f5c3ce4ceda316e550aae81615fe273dd48daf5159aa22c3cb  27b-inventory.json
-619d55a19f18e94e42a8c79969bfa9ab3d5a56a6969089fa9138847391c70efb  27b-inventory.sqlite
 b715cac6b41ef20bbf561050a97d738f2a91ea043e7967ba5d564de821cb0b84  record-27b.jsonl
 1e04d7d98035cf7e575dd81b0c84afedc40a99b6c6104b399b938303b1c7e549  tune-t1.jsonl.journal.jsonl
 a24682b956c6bd216f11ff8fbec37144cecfce46374fd3612711f7462435bfcf  tune-t1.jsonl.measurements.jsonl
@@ -192,15 +191,18 @@ b95d0eb797a308b0793968a874c68b60cab90c1fa6827e576098e45e179bf97e  tune-t2.jsonl.
 5469063a0b4046779a8a1c4a9e1e6167c80c817edeab8c08b270b50fce92b80a  cov-baseline.json
 d6fc6067fb7332b4f9d6281824c465aae9dd849e7555f328a3d5c83d57b19c5a  cov-misslog.json
 7ab84a0c7da246eedd26f56b98ae760881e1a1c63e40f44b736f90e3328e5382  miss-misslog.jsonl
-c3ecf9053f1598b3e02439cdc7f16b486a911948793a0ad412f4f25e0d12af46  pipeline.sh
+8968e8c4241404c5b14f319781026b54bf88828dd80acbb493b285c7677ef3c8  miss-s7b.jsonl
+cebe5d59298e1f6f5525f36169b94a36b77fe9481d1b3c27dd1c98cfc7330d82  cov-s7b.json
 ```
 
-Large traces (too large for git; on Brutus at `kf-decode/` (stale 22dc605) and
-`kf-decode-b10502/`, local copies in this folder's `kf/` which is
-`git/info/exclude`d):
+Large traces and the SQLite inventory (too large or machine-local for git) are
+in `artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/`; on Brutus they are also
+available at `kf-decode/` (stale 22dc605) and `kf-decode-b10502/`:
 
 ```text
-66dacf5ba899a2c644101ed2b1342753c2baedcd541d63c9cc55145e79c4bfd8  kf/b10502-decode.csv
-d18525c620518036b49c6864b65cbfac5bafc581546f2df6a0b02696c2b90978  kf/stale-decode.csv
-b9fd1dd353d93b292ac6c7e0a0790ee06bbcaa11af58a1aeec3983abccf30977  kf/stale-prefill.csv
+66dacf5ba899a2c644101ed2b1342753c2baedcd541d63c9cc55145e79c4bfd8  raw/kf/b10502-decode.csv
+d18525c620518036b49c6864b65cbfac5bafc581546f2df6a0b02696c2b90978  raw/kf/stale-decode.csv
+b9fd1dd353d93b292ac6c7e0a0790ee06bbcaa11af58a1aeec3983abccf30977  raw/kf/stale-prefill.csv
+619d55a19f18e94e42a8c79969bfa9ab3d5a56a6969089fa9138847391c70efb  raw/27b-inventory.sqlite
+0c6d55fbac6ffac88df3a4ad842d4d2d3207ee95d6fcece574d5d941a8456011  raw/pipeline.sh
 ```

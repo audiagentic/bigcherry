@@ -14,13 +14,13 @@ for a feature only the tuner uses. See [HI06](../archive/OVERVIEW.md) "Design re
 It is chosen at runtime inside `mul_mat_vec_q_switch_fusion`; one instance serves
 both. It belongs to the signature (standards 11.1). The compiler settled it —
 including fusion in the instance name produced duplicate symbols because generated
-names collided on identical geometry. See [PACK_REVIEW](../PACK_REVIEW.md) B1.
+names collided on identical geometry. See [PACK_REVIEW](../archive/PACK_REVIEW.md) B1.
 
 ### MMQ J space is the config table, not `range(8, 129, 8)`
 
 The tables are sparse and uneven — CDNA defines 154 rows to RDNA3's 260.
 Enumerating all sixteen J values would manufacture candidates that abort inside
-`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See [PACK_REVIEW](../PACK_REVIEW.md) A2.
+`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See [PACK_REVIEW](../archive/PACK_REVIEW.md) A2.
 
 ### The catalog derives everything from upstream
 

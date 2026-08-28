@@ -16,7 +16,7 @@ Production launch flags (see also memory `project-dual-xtx-baseline`):
 
 **IMPORTANT — build source**: always build from a clean git checkout
 (`~/bigcherry` on Brutus). Never `git`/`cmake` against
-`/mnt/vault/development/llmhosts/bigcherry` -- `docs/reference/BUILD.md`
+`/mnt/vault/development/llmhosts/bigcherry` -- `docs/reference/build/BUILD.md`
 documents that path as file-transfer-only (SMB share), and its
 vendor/llama.cpp is a mutable checkout with patches applied in place, not
 one of bigcherry's isolated per-identity worktrees. Use the canonical

@@ -1,7 +1,11 @@
 # HIP Autotune — Plan Overview
 
+> This page preserves an historical architecture/phase snapshot. Current
+> implementation status and completion state are authoritative only in the
+> corresponding plan items under `docs/planning/{active,completed}/`.
+
 Derived from `llama_hip_autotune_prework` design and source-audited
-implementation material. See [PACK_REVIEW.md](../PACK_REVIEW.md) for the delta
+implementation material. See [PACK_REVIEW.md](../archive/PACK_REVIEW.md) for the delta
 between that pack, these plans, and what building against a real checkout revealed.
 
 **Original audit target:** `ggml-org/llama.cpp` at `0ef6e55edb306fcbcf73e6f1f41923cccb9cf7f8`

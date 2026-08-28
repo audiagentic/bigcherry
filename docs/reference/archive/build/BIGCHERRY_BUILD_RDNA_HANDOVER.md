@@ -13,7 +13,7 @@ The work covered two related scopes:
 2. The planning-only RDNA enhancement audit from `BIGCHERRY_RDNA_BOOSTS_PREIMPLEMENTATION_RUN_SHEET.md`.
 
 Governing repository references:
-- `docs/reference/BUILD.md` + `docs/reference/TEST.md` — Brutus build/test procedures and GPU indices.
+- `docs/reference/build/BUILD.md` + `docs/reference/testing/TEST.md` — Brutus build/test procedures and GPU indices.
 - `docs/standards/HIP_AUTOTUNE_STANDARDS.md` — candidate, identity, precision, replay, and evidence rules.
 - `recipes.toml` — current strict v2 campaign configuration.
 - `docs/planning/active/reusable-build-campaign/RE03.md` through `RE15.md` — build campaign work items.

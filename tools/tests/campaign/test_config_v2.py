@@ -142,7 +142,7 @@ states = ["validated"]
         # Asserts the shape survives loading, not a specific pin value --
         # the real recipes.toml's `pinned` moves every time the project
         # rebases to a newer llama.cpp release (see
-        # docs/reference/build/PIN_REBASE_REVIEW_B10502.md), which this test
+        # docs/reference/archive/build/PIN_REBASE_REVIEW_B10502.md), which this test
         # must not need editing for.
         loaded = config.load(paths.RECIPES)
         self.assertTrue(loaded.pinned)
