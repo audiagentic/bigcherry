@@ -138,6 +138,15 @@ class StageReplayVerifyTests(unittest.TestCase):
         with self.assertRaises(workflow.TuneCampaignError):
             self._run_with_fake_coverage({"stale": False, "rerun_required": 3})
 
+    def test_raises_when_no_exact_cache_entry_was_exercised(self):
+        # HI136: a clean-looking coverage report with zero exact entries only
+        # proves that replay fell back without finding stale data.  It does
+        # not prove this campaign actually used a verified tuned winner.
+        with self.assertRaises(workflow.TuneCampaignError):
+            self._run_with_fake_coverage(
+                {"stale": False, "rerun_required": 0, "exact": 0}
+            )
+
     def test_returns_coverage_when_clean(self):
         coverage = {"stale": False, "rerun_required": 0, "exact": 64, "misses": 0}
         result = self._run_with_fake_coverage(coverage)

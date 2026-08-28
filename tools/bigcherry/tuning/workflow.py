@@ -439,14 +439,19 @@ def _stage_replay_verify(
     with runner:
         runner.run_completion("Explain how a compass works.", n_predict=96)
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
-    # gpt review (2026-08-27, req_ec659ded425c4335): a stale cache or any
-    # rerun_required entry means the export was bound to the wrong manifest
-    # (this exact HI130 defect) -- fail loudly instead of silently reporting
-    # a "successful" campaign that never actually used tuned dispatch.
-    if coverage.get("stale") or coverage.get("rerun_required", 0):
+    # A cache that is clean but has no exact hits is also not a successful
+    # replay: it proves only that nothing was stale, not that this campaign
+    # actually exercised a tuned dispatch decision.  Keep all three terms in
+    # the production gate so a missing ``exact`` field fails closed as well.
+    if (
+        coverage.get("stale")
+        or coverage.get("rerun_required", 0)
+        or coverage.get("exact", 0) <= 0
+    ):
         raise TuneCampaignError(
-            "replay verification found stale/rerun_required entries -- the "
-            f"exported cache does not match the replay binary's own manifest: {coverage!r}"
+            "replay verification requires exact cache hits with no stale or "
+            "rerun_required entries -- exported cache was not proven usable: "
+            f"{coverage!r}"
         )
     return coverage
 
