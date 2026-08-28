@@ -4,7 +4,7 @@ This is the normative map for maintained tooling. Search the existing command,
 API, and owning domain before adding a tool. If the work is exploratory or
 plan-specific, start in `tools/lab/<plan-topic>/`.
 
-## Current migration state (TR00–TR14)
+## Current migration state (TR00–TR15)
 
 | Phase | Truthful state |
 | --- | --- |
@@ -74,12 +74,10 @@ Hardware and benchmark results must be explicitly observed.
 
 ## Evidence and acceptance boundaries
 
-PA04 software implementation is complete, but acceptance remains open pending
-isolated campaign execution and synchronization of shared `overlay.vendor_sync`
-state; do not overwrite or stage those external files. PA05 remains in progress:
-RD19 is demoted from `validated` to `untested` pending future qualifying HI83
-evidence, but the plan/acceptance record is not closed. No hardware evidence
-may be inferred from either status.
+This guide defines ownership and evidence boundaries, not live plan status.
+Current acceptance, promotion, and hardware-validation state is authoritative
+in the corresponding plan items under `docs/planning/`; no hardware evidence
+may be inferred from this reference guide.
 
 ## Agent/process rules
 

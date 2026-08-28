@@ -207,7 +207,7 @@ use the opt-in `POST /shutdown` endpoint so buffered HIP records are flushed.
 ## Candidate reference
 
 ```bash
-python tools/candidate_report.py     # -> docs/reference/CANDIDATES.md
+PYTHONPATH=tools python -m bigcherry.analysis.candidate_report  # -> docs/reference/CANDIDATES.md
 ```
 
 Reads the newest manifest plus every log in `artifacts/tuning-logs/`.
