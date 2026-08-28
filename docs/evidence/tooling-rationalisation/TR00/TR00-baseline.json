@@ -160,244 +160,244 @@
       "rationale": "Repository script outside canonical tooling tree; retain pending ownership audit."
     },
     {
-      "path": "artifacts/2026-08-21-hi35-hi36-27b-r9700/raw/pipeline.sh",
+      "path": "docs/reference/h36-campaign-27b-r9700/pipeline.sh",
       "disposition": "TRANSITIONAL",
       "rationale": "Evidence/reference-local harness; retain until caller and ownership audit completes."
     },
     {
       "path": "patches/_template/patch.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0100_cmake_options/patch.py",
+      "path": "patches/0100_cmake_options.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0200_dispatch_hook/patch.py",
+      "path": "patches/0200_dispatch_hook.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0300_mmq_forced_j/patch.py",
+      "path": "patches/0300_mmq_forced_j.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0400_mmvf_forced_block/patch.py",
+      "path": "patches/0400_mmvf_forced_block.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0500_mmf_forced_nwarps/patch.py",
+      "path": "patches/0500_mmf_forced_nwarps.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0600_mmvq_geometry/patch.py",
+      "path": "patches/0600_mmvq_geometry.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0650_mmvq_native_variant/patch.py",
+      "path": "patches/0650_mmvq_native_variant.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0700_coverage_counters/patch.py",
+      "path": "patches/0700_coverage_counters.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0800_server_shutdown_endpoint/patch.py",
+      "path": "patches/0800_server_shutdown_endpoint.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0810_replay_hit_diagnostics/patch.py",
+      "path": "patches/0810_replay_hit_diagnostics.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0820_measurement_signature_shapes/patch.py",
+      "path": "patches/0820_measurement_signature_shapes.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0830_split_reduce_telemetry/patch.py",
+      "path": "patches/0830_split_reduce_telemetry.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/0900_pool_workspace_metrics/patch.py",
+      "path": "patches/0900_pool_workspace_metrics.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1000_rdna4_mmq_q2k_q6k_fix/patch.py",
+      "path": "patches/1000_rdna4_mmq_q2k_q6k_fix.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1002_hip_unsafe_math_opt_in/patch.py",
+      "path": "patches/1002_hip_unsafe_math_opt_in.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1003_quantized_cpy_thread_block_fix/patch.py",
+      "path": "patches/1003_quantized_cpy_thread_block_fix.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1004_rms_norm_mul_rope_fusion/patch.py",
+      "path": "patches/1004_rms_norm_mul_rope_fusion.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1005_prompt_cache_checkpoint_selection/patch.py",
+      "path": "patches/1005_prompt_cache_checkpoint_selection.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1100_hi70_direct_op_evidence/patch.py",
+      "path": "patches/1100_hi70_direct_op_evidence.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1200_rd19_single_gpu_meta_bypass/patch.py",
+      "path": "patches/1200_rd19_single_gpu_meta_bypass.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1201_rd20_attn_gate_tp_split/patch.py",
+      "path": "patches/1201_rd20_attn_gate_tp_split.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1202_rd04_bf16_flash_attn_tile/patch.py",
+      "path": "patches/1202_rd04_bf16_flash_attn_tile.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py",
+      "path": "patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1207_rd17_moe_topk_down_fold/patch.py",
+      "path": "patches/1207_rd17_moe_topk_down_fold.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.py",
+      "path": "patches/1208_rd21_gfx1151_mmvq_nwarps_table.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1209_rd22_integrated_gpu_host_buffer_backout/patch.py",
+      "path": "patches/1209_rd22_integrated_gpu_host_buffer_backout.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py",
+      "path": "patches/1210_rd26_bitidentical_decode_verify_standalone.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1215_rd394041_amd_stream_moe_overlap/patch.py",
+      "path": "patches/1215_rd394041_amd_stream_moe_overlap.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1216_rd43_concurrent_join_fusion_guard/patch.py",
+      "path": "patches/1216_rd43_concurrent_join_fusion_guard.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1217_rd44_graph_opt_default_rdna35/patch.py",
+      "path": "patches/1217_rd44_graph_opt_default_rdna35.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1221_rd50_gdn_chunked_recurrence/patch.py",
+      "path": "patches/1221_rd50_gdn_chunked_recurrence.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py",
+      "path": "patches/1222_hi67_deterministic_test_backend_ops_seed.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1223_hi67_machine_readable_correctness_metrics/patch.py",
+      "path": "patches/1223_hi67_machine_readable_correctness_metrics.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1224_hi18_reduce_correctness_probe/patch.py",
+      "path": "patches/1224_hi18_reduce_correctness_probe.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py",
+      "path": "patches/1225_hi85_nccl_heterogeneous_arch_guard.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1230_hip_autotune_inspect/patch.py",
+      "path": "patches/1230_hip_autotune_inspect.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py",
+      "path": "patches/1231_hi14_graph_capture_lifecycle_evidence.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile/patch.py",
+      "path": "patches/1232_hi81_windows_cxx_hipcc_flags_reach_compile.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1233_rd73_stable_graph_cache_key/patch.py",
+      "path": "patches/1233_rd73_stable_graph_cache_key.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1234_rd58_pin_state_buffer_multigpu_restore/patch.py",
+      "path": "patches/1234_rd58_pin_state_buffer_multigpu_restore.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1235_rd09_q81_activation_cache_foundation/patch.py",
+      "path": "patches/1235_rd09_q81_activation_cache_foundation.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1236_hi105_deterministic_mul_mat_id_ids/patch.py",
+      "path": "patches/1236_hi105_deterministic_mul_mat_id_ids.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1237_rd30_moe_mmq_compact_grid/patch.py",
+      "path": "patches/1237_rd30_moe_mmq_compact_grid.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1204_rd08_q6k_mmvq_vdr2/patch.py",
+      "path": "patches/rd/1204_rd08_q6k_mmvq_vdr2/patch.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1205_rd12_paired_mmvq_dual_output/patch.py",
+      "path": "patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
-      "path": "patches/1206_rd13_mul_mat_add_view_fusion/patch.py",
+      "path": "patches/rd/1206_rd13_mul_mat_add_view_fusion/patch.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Patch-owned implementation or validation; maintain package-only production layout and refine in TR06."
+      "rationale": "Patch-owned implementation or validation; preserve flat/package support and refine in TR06."
     },
     {
       "path": "tmp/b1-breakdown.sh",
@@ -1002,7 +1002,7 @@
     {
       "path": "tools/bigcherry/rd08_correctness_evidence.py",
       "disposition": "PACKAGE-LOCAL",
-      "rationale": "Moved to `patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed."
+      "rationale": "Moved to `patches/rd/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`; global implementation deleted after retaining semantic tests. Wiring remains deferred until source/build pairing is guaranteed."
     },
     {
       "path": "tools/bigcherry/re14_real_run.py",
@@ -1155,9 +1155,9 @@
       "rationale": "Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10."
     },
     {
-      "path": "tools/bigcherry/analysis/candidate_report.py",
-      "disposition": "KEEP",
-      "rationale": "Maintained analysis implementation; invoke with `PYTHONPATH=tools python -m bigcherry.analysis.candidate_report`."
+      "path": "tools/candidate_report.py",
+      "disposition": "MOVE",
+      "rationale": "Root tooling requires domain classification and canonical destination in TR05/TR12."
     },
     {
       "path": "tools/pi-lens-shadow-probe.py",
