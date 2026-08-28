@@ -1,4 +1,4 @@
-"""HI67 slice 2a: patches/1222_hi67_deterministic_test_backend_ops_seed.py applies
+"""HI67 slice 2a: patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py applies
 cleanly and idempotently to the real vendored test-backend-ops.cpp, and the
 patched source contains the contract the correctness-evidence generator
 (slice 2c, not yet written) will depend on."""
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 spec = importlib.util.spec_from_file_location(
     "hi67_deterministic_seed_patch",
-    ROOT / "patches" / "1222_hi67_deterministic_test_backend_ops_seed.py",
+    ROOT / "patches" / "1222_hi67_deterministic_test_backend_ops_seed" / "patch.py",
 )
 assert spec and spec.loader
 _module = importlib.util.module_from_spec(spec)

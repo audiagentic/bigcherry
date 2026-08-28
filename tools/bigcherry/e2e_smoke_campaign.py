@@ -617,7 +617,7 @@ class Campaign:
         env = dict(os.environ)
         env.update(env_overrides)
         # LLAMA_SERVER_ENABLE_SHUTDOWN gates the opt-in /shutdown route
-        # (patches/0800_server_shutdown_endpoint.py) -- without it a plain
+        # (patches/0800_server_shutdown_endpoint/patch.py) -- without it a plain
         # process kill on Windows skips backend teardown and silently
         # discards buffered HIP autotune measurements (found the hard way
         # this session: an earlier version of this campaign used a bare

@@ -20,7 +20,7 @@ TYPES = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-types.h").read_text(
     encoding="utf-8")
 REPLAY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-replay.cpp").read_text(
     encoding="utf-8")
-PATCH = (ROOT / "patches/0200_dispatch_hook.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "0200_dispatch_hook" / "patch.py").read_text(encoding="utf-8")
 
 
 def _between(text: str, start: str, end: str) -> str:
@@ -200,7 +200,7 @@ def test_already_applied_vendor_hooks_have_idempotent_migrations():
 
 def test_metadata_state_migrations_handle_old_malformed_and_repeat_shapes():
     spec = importlib.util.spec_from_file_location(
-        "bigcherry_hi17_patch", ROOT / "patches/0200_dispatch_hook.py")
+        "bigcherry_hi17_patch", ROOT / "patches" / "0200_dispatch_hook" / "patch.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

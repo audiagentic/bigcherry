@@ -45,6 +45,17 @@ at the top level.
 | [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Validation states and evidence requirements | Promoting a patch toward validated |
 | [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
 
+Patch-specific documentation, fixtures, validators, and validation evidence
+live with the owning package under `patches/<patch-id>/`. The shared
+`patches/_validation/` directory contains only cross-patch baseline data; it is
+not a reference-document store.
+
+Plan-item design, status, and decisions belong under the matching
+`docs/planning/<state>/<plan>/` directory. Campaign run bundles and generated
+measurement outputs belong under `artifacts/<campaign-id>/`; retain only a
+concise, broadly reusable decision or index in `docs/reference/experiments/`.
+Historical reviews and superseded snapshots belong under `archive/`.
+
 ## Experiments
 
 | Document | What it is | When to read it |

@@ -2,7 +2,7 @@
 must be mechanically valid, not a manual-review habit.
 
 Extends tools/tests/test_external_sources.py's existing cross_check_patches
-machinery (patches/*.py PROVENANCE <-> external-sources.toml, both
+machinery (packaged patch.py PROVENANCE <-> external-sources.toml, both
 directions for entries reachable via a patch's own PROVENANCE) rather than
 duplicating it. This file covers the checks that machinery does NOT do:
 reverse-direction dangling `patch =` references, REQUIRES/CONFLICTS

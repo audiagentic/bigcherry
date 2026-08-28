@@ -7,20 +7,20 @@ Architecture decisions worth not re-litigating, plus operational traps that bite
 ### Forced variants are explicit defaulted parameters, not hidden state
 
 An earlier version used thread-locals; production then paid a read on every launch
-for a feature only the tuner uses. See [HI06](archive/OVERVIEW.md) "Design revision".
+for a feature only the tuner uses. See [HI06](../archive/OVERVIEW.md) "Design revision".
 
 ### Fusion is not an MMVQ candidate dimension
 
 It is chosen at runtime inside `mul_mat_vec_q_switch_fusion`; one instance serves
 both. It belongs to the signature (standards 11.1). The compiler settled it —
 including fusion in the instance name produced duplicate symbols because generated
-names collided on identical geometry. See [PACK_REVIEW](archive/PACK_REVIEW.md) B1.
+names collided on identical geometry. See [PACK_REVIEW](../PACK_REVIEW.md) B1.
 
 ### MMQ J space is the config table, not `range(8, 129, 8)`
 
 The tables are sparse and uneven — CDNA defines 154 rows to RDNA3's 260.
 Enumerating all sixteen J values would manufacture candidates that abort inside
-`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See [PACK_REVIEW](archive/PACK_REVIEW.md) A2.
+`launch_mul_mat_q`. On CDNA that is two thirds of the `q8_0` space. See [PACK_REVIEW](../PACK_REVIEW.md) A2.
 
 ### The catalog derives everything from upstream
 
@@ -116,12 +116,14 @@ on compile time or on not shipping unmeasured code, not on binary size.
 
 ### Editing a patch's *text* is a no-op on an already-patched tree
 
-The idempotence guard sees its own output and skips. `git checkout` the target
-file first. This costs three silent no-ops before you notice.
+The idempotence guard sees its own output and skips. Do not reset the shared
+vendor tree to re-apply a changed patch; use the explicit
+`bigcherry.patch.validation_campaign` workflow to validate the changed
+representation in isolated source materializations.
 
 ```bash
-cd vendor/llama.cpp && git checkout ggml/src/ggml-cuda/mmq.cu
-cd tools && python3 -m bigcherry apply
+# inspect existing validation evidence
+PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
 ```
 
 ### Do not use bash heredocs to edit Python containing `\n`

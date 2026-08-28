@@ -1,10 +1,11 @@
 # BigCherry patch system
 
-The patch system supports both root-level flat patch modules and packaged
-patches. Flat patches remain first-class for small, self-contained changes.
-Packaged patches use `patch.toml` for identity and `validation.toml` for
-validator configuration; implementation and validation identity are digest
-bound.
+Every production patch is a package directory named after its patch ID.
+Packages contain `patch.toml` for identity/metadata and `patch.py` for the
+implementation. Optional `validation.toml` and `validation/` content own
+patch-specific validation; implementation and validation identity are digest
+bound. The registry still understands legacy flat modules for compatibility
+fixtures, but new production patches must not use them.
 
 Use `bigcherry patch-lint` for non-mutating metadata checks, `bigcherry check`
 for deterministic local CI, and `bigcherry patch-validate` to inspect existing
