@@ -225,10 +225,12 @@ class TestPatchContext(unittest.TestCase):
                  mock.patch("bigcherry.patch_admission.require_admission") as mocked:
                 patch_catalog.resolve_for_context(
                     ["any"], ctx, catalog_path=catalog_path,
+                    patches_dir=catalog_path.parent,
                     resolved_base_revision="deadbeef" * 5,
                 )
             mocked.assert_called_once()
             self.assertEqual(mocked.call_args.kwargs.get("resolved_base_revision"), "deadbeef" * 5)
+            self.assertEqual(mocked.call_args.kwargs.get("patches_dir"), catalog_path.parent)
 
     def test_patches_for_backend_on_the_real_catalog_is_empty_for_vulkan(self):
         """No Vulkan patches exist yet -- an empty result is the CORRECT
@@ -327,6 +329,23 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
             self.assertEqual(packaged.external_source, "stew675-rdna-boosts")
             self.assertEqual(packaged.plan_ids, ("RD12",))
             self.assertEqual(packaged.state, "untested")
+
+    def test_context_resolution_uses_packaged_metadata_not_legacy_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            context = patch_catalog.PatchContext(backend="hip")
+            self.assertEqual(
+                patch_catalog.resolve_for_context(
+                    ["1204_focal"], context,
+                    catalog_path=root / "catalog.toml", patches_dir=root,
+                ),
+                ("1204_focal",),
+            )
+            with self.assertRaisesRegex(ValueError, "backend mismatch"):
+                patch_catalog.resolve_for_context(
+                    ["1204_focal"], patch_catalog.PatchContext(backend="vulkan"),
+                    catalog_path=root / "catalog.toml", patches_dir=root,
+                )
 
     def test_build_snapshot_deterministic_for_mixed_catalog(self):
         with tempfile.TemporaryDirectory() as tmp:

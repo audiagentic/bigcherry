@@ -76,8 +76,7 @@ REQUIRES = (
 
 import re as _re
 
-from bigcherry.core import csource as _csource
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, FilePatch, csource as _csource
 
 _NEW_STRUCT = '''
 // bigcherry (HI119): real fused MUL_MAT_ID(gate) + MUL_MAT_ID(up) + GLU

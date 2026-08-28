@@ -135,6 +135,7 @@ def resolve_for_context(
     context: PatchContext,
     *,
     catalog_path: Path | None = None,
+    patches_dir: Path | None = None,
     resolved_base_revision: str | None = None,
 ) -> tuple[str, ...]:
     """Check an explicit patch selection against ``context``.
@@ -143,11 +144,17 @@ def resolve_for_context(
     (RE30's own design requirement) -- callers that want backend filtering
     must filter BEFORE calling this, e.g. via ``patches_for_backend``.
     """
-    entries = (
-        build_snapshot().metadata
-        if catalog_path is None
-        else load_catalog(catalog_path)
-    )
+    # ``catalog.toml`` is legacy compatibility metadata only.  Packaged
+    # patches own their metadata in patch.toml, so applicability must resolve
+    # through the merged snapshot even when a caller supplies a context-local
+    # catalog path (as campaign lanes do).
+    effective_patches_dir = patches_dir
+    if effective_patches_dir is None and catalog_path is not None:
+        effective_patches_dir = Path(catalog_path).parent
+    entries = build_snapshot(
+        patches_dir=effective_patches_dir,
+        catalog_path=catalog_path,
+    ).metadata
     errors: list[str] = []
     for patch_id in patch_ids:
         entry = entries.get(patch_id)
@@ -171,6 +178,7 @@ def resolve_for_context(
         from .. import patch_admission
         patch_admission.require_admission(
             patch_ids, mode="production", catalog_path=catalog_path,
+            patches_dir=effective_patches_dir,
             resolved_base_revision=resolved_base_revision,
         )
     return tuple(patch_ids)
