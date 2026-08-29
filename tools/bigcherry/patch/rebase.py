@@ -938,11 +938,13 @@ def _write_overlay_snapshot(
         # stale CRLF target to LF before the comparison, making it read as
         # "already matches" and skip the write forever -- leaving the CRLF
         # bytes on disk even though a real write would have normalized them.
-        # Read `target` with newline="" (no translation) so a lingering
-        # CRLF target is correctly seen as needing a rewrite. Found live
-        # during the b10502->b10680 bump: two overlay files stayed CRLF
-        # across repeated known-good applies for exactly this reason.
-        if target.is_file() and target.read_text(encoding="utf-8", newline="") == text:
+        # Decode raw bytes directly (no translation) so a lingering CRLF
+        # target is correctly seen as needing a rewrite. Found live during
+        # the b10502->b10680 bump: two overlay files stayed CRLF across
+        # repeated known-good applies for exactly this reason.
+        # (Path.read_text(newline=...) is Python 3.13+ only -- Brutus runs
+        # 3.12 -- so this reads bytes and decodes rather than using it.)
+        if target.is_file() and target.read_bytes().decode("utf-8") == text:
             continue
         if backup is not None and relative_str not in backup:
             backup[relative_str] = target.read_text(encoding="utf-8") if target.is_file() else None
