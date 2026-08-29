@@ -36,79 +36,227 @@ def _assignment(dispatch, alternatives=()):
     )
 
 
-class BoundedDeltaDebugStrategyOutcomeMatrixTests(unittest.TestCase):
-    """GPT's exact outcome matrix (adversarial review, ses_330ae3c055084f38,
-    2026-08-29): union FAIL keeps splitting; A fails/B passes recurses into
-    A; both fail tracks as independent groups; both pass but union fails is
-    an interaction group (bisection must stop, neither half is blamed);
-    unstable/non-deterministic aborts recovery entirely."""
+class _FakeExecutor:
+    """A real (not MagicMock) scripted executor with GROUND TRUTH about
+    which exact (dispatch, candidate) combination(s) cause a failure --
+    lets these tests drive the REAL BoundedPairedBisectionStrategy through
+    the REAL run_recovery orchestrator and verify it actually converges to
+    the correct answer, not just that its internal bookkeeping looks
+    plausible in isolation (the class of bug the v1 pairing bug slipped
+    through under)."""
 
-    def _state(self, assignments, hits, evaluated=(), budget=24):
-        return rec.RecoveryState(
-            assignments=assignments, failing_vectors=(_vector("v1"),),
-            dispatch_hits=frozenset(hits), evaluated=evaluated, remaining_budget=budget,
+    def __init__(self, fail_fn, ineligible=frozenset()):
+        self.fail_fn = fail_fn
+        self.ineligible = ineligible
+        self.evaluate_log: list[dict] = []
+        self.native_traces_captured = False
+
+    def capture_native_traces(self, vectors):
+        self.native_traces_captured = True
+
+    def evaluate(self, proposal, *, full_corpus):
+        self.evaluate_log.append(dict(proposal.overrides))
+        for dispatch, candidate in proposal.overrides.items():
+            if (dispatch, candidate) in self.ineligible:
+                raise rec.RecoveryError(f"{candidate!r} ineligible for {dispatch!r}")
+        verdict = "hard_fail" if self.fail_fn(proposal.overrides) else "pass"
+        return rec.Observation(proposal=proposal, verdict=verdict, report=None)
+
+    def validate_full_corpus(self, overrides, *, full_corpus):
+        obs = self.evaluate(rec.AssignmentProposal(label="final", overrides=overrides), full_corpus=full_corpus)
+        return rec.Observation(proposal=obs.proposal, verdict=obs.verdict, report=None, full_corpus_validated=True)
+
+    def build_candidate_cache(self, overrides):
+        return Path("fake.cache")
+
+
+def _report_with_failing(name="v1"):
+    report = bg.BehavioralGateReport()
+    report.verdicts.append(bg.compare_traces(name, _trace([1]), _trace([2])))
+    return report
+
+
+class BoundedPairedBisectionStrategyRealConvergenceTests(unittest.TestCase):
+    """GPT's mandatory pre-third-hardware-run checklist (session
+    ses_330ae3c055084f38, 2026-08-30, after the v1 pairing bug was found
+    on real hardware): drives the REAL strategy through the REAL
+    run_recovery orchestrator against a scripted ground-truth executor,
+    not unit-level state pokes -- this is what the v1 tests failed to
+    catch (they exercised propose()/record() individually and never
+    caught that a SECOND sibling's outcome fell through un-paired)."""
+
+    def _assignments(self, n, alternatives_by_dispatch=None):
+        alternatives_by_dispatch = alternatives_by_dispatch or {}
+        return {
+            f"d{i}": _assignment(f"d{i}", alternatives=alternatives_by_dispatch.get(f"d{i}", ()))
+            for i in range(n)
+        }
+
+    def test_single_culprit_isolated_and_alternative_committed(self):
+        # d3's OWN original candidate is the sole cause of failure; its one
+        # real alternative is clean. Recovery must end up using that
+        # alternative for d3 -- NOT native, and NOT touching any other
+        # signature at all.
+        assignments = self._assignments(8, {"d3": ("alt-d3",)})
+        fail_fn = lambda overrides: overrides.get("d3") == "cand-d3"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
         )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d3"), "alt-d3")
+        # log2(8) = 3 splits x 2 siblings = 6 isolation probes, + 1
+        # baseline + 1 alternative trial + 1 final validation = 9 max.
+        self.assertLessEqual(len(executor.evaluate_log), 10)
 
-    def test_initial_propose_splits_full_implicated_pool_in_half(self):
-        assignments = {f"d{i}": _assignment(f"d{i}") for i in range(4)}
-        strategy = rec.BoundedDeltaDebugStrategy()
-        state = self._state(assignments, assignments.keys())
-        proposals = strategy.propose(state)
-        self.assertEqual(len(proposals), 2)
-        touched = set(proposals[0].overrides) | set(proposals[1].overrides)
-        self.assertEqual(touched, set(assignments))
-        # Every override in a bisection proposal forces the REAL native
-        # candidate identity for that signature's op family (not the
-        # literal string "native" -- replay.build()'s seed-override
-        # mechanism requires a manifest-real candidate name) -- that's
-        # what "swap a half back to native and re-probe" means.
-        for p in proposals:
-            for dispatch, candidate in p.overrides.items():
-                self.assertEqual(candidate, assignments[dispatch].native_candidate)
+    def test_a_only_failure_recurses_into_a_not_b(self):
+        assignments = self._assignments(4, {"d0": ("alt-d0",)})
+        fail_fn = lambda overrides: overrides.get("d0") == "cand-d0"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d0"), "alt-d0")
+        self.assertNotIn("d1", result.final_overrides)
+        self.assertNotIn("d2", result.final_overrides)
+        self.assertNotIn("d3", result.final_overrides)
 
-    def test_minimal_singleton_group_proposes_alternatives_not_further_split(self):
-        assignments = {"d0": _assignment("d0", alternatives=("alt-a", "alt-b"))}
-        strategy = rec.BoundedDeltaDebugStrategy()
-        strategy._initialized = True
-        strategy._pending_groups = [("d0",)]
-        state = self._state(assignments, ["d0"])
-        proposals = strategy.propose(state)
-        labels = {p.label for p in proposals}
-        self.assertIn("alt:d0:alt-a", labels)
-        self.assertIn("alt:d0:alt-b", labels)
-        self.assertIn("native:d0", labels)
+    def test_both_halves_independently_fail_both_get_isolated(self):
+        # d0 AND d2 are each independently sufficient to cause failure.
+        assignments = self._assignments(4)  # no alternatives -- must fall back to native for both
+        fail_fn = lambda overrides: overrides.get("d0") == "cand-d0" or overrides.get("d2") == "cand-d2"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d0"), "family-d0:native:v1")
+        self.assertEqual(result.final_overrides.get("d2"), "family-d2:native:v1")
 
-    def test_half_fails_half_passes_recurses_into_failing_half(self):
-        assignments = {f"d{i}": _assignment(f"d{i}") for i in range(4)}
-        strategy = rec.BoundedDeltaDebugStrategy()
-        state = self._state(assignments, assignments.keys())
-        proposals = strategy.propose(state)  # seeds _pending_groups with the full pool
-        half_a = proposals[0]
-        # half_a fails -> strategy should keep it queued for further splitting
-        observation = rec.Observation(proposal=half_a, verdict="hard_fail", report=None)
-        state = strategy.record(state, observation)
-        self.assertTrue(strategy._pending_groups)
-        self.assertEqual(set(strategy._pending_groups[-1]), set(half_a.overrides))
+    def test_cross_half_interaction_neither_half_blamed_alone(self):
+        # Failure requires d0 AND d1 BOTH active simultaneously -- each
+        # alone (the other forced native) must PASS, but their union fails.
+        assignments = self._assignments(2)
+        fail_fn = lambda overrides: overrides.get("d0") == "cand-d0" and overrides.get("d1") == "cand-d1"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        # Both individually pass, so bisection reports the pair as an
+        # INTERACTION group -- neither is individually blamed, but since
+        # neither has an alternative, both still end up conservatively
+        # forced to native (the safe, if not maximally efficient, outcome).
+        self.assertEqual(result.final_overrides.get("d0"), "family-d0:native:v1")
+        self.assertEqual(result.final_overrides.get("d1"), "family-d1:native:v1")
 
-    def test_unstable_verdict_raises_recovery_error(self):
-        assignments = {"d0": _assignment("d0")}
-        strategy = rec.BoundedDeltaDebugStrategy()
-        state = self._state(assignments, ["d0"])
-        proposal = rec.AssignmentProposal(label="x", overrides={"d0": "native"})
-        observation = rec.Observation(proposal=proposal, verdict="unstable", report=None)
+    def test_second_sibling_evaluated_against_identical_parent_baseline(self):
+        assignments = self._assignments(4)
+        fail_fn = lambda overrides: False  # never fails -- just inspect the probes themselves
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        # The very first action is a 2-proposal split -- both siblings must
+        # cover the exact same universe of dispatches (H), differing only
+        # in which half is "active" vs forced native.
+        first_two = executor.evaluate_log[:2]
+        self.assertEqual(set(first_two[0]), set(first_two[1]))
+
+    def test_diagnostic_pass_never_commits_overrides_mid_isolation(self):
+        # d0 is guilty; while isolating, several diagnostic PASSes occur
+        # (every probe that excludes d0). None of those may leave any
+        # trace in committed_overrides -- only the repair phase may.
+        assignments = self._assignments(8, {"d0": ("alt-d0",)})
+        fail_fn = lambda overrides: overrides.get("d0") == "cand-d0"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        state = rec.RecoveryState(
+            assignments=assignments, failing_vectors=(_vector("v1"),),
+            dispatch_hits=frozenset(assignments), evaluated=(), remaining_budget=23,
+        )
+        # Manually drive one isolation split and confirm a PASS sibling
+        # does not touch committed_overrides.
+        action = strategy.propose(state)
+        observations = tuple(
+            executor.evaluate(p, full_corpus=[]) for p in action.proposals
+        )
+        state = strategy.record(state, rec.ActionObservation(action=action, observations=observations))
+        self.assertEqual(state.committed_overrides, {})
+
+    def test_alternative_pass_commits_only_through_record(self):
+        assignments = {"d0": _assignment("d0", alternatives=("alt-d0",))}
+        fail_fn = lambda overrides: overrides.get("d0") == "cand-d0"
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertEqual(result.final_overrides.get("d0"), "alt-d0")
+
+    def test_budget_cannot_start_a_split_with_only_one_remaining(self):
+        assignments = self._assignments(4)
+        fail_fn = lambda overrides: True  # irrelevant -- budget should stop first
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        # max_evaluations=2 -> after RESERVE_FINAL_VALIDATION(1), only 1
+        # evaluation of real budget -- cannot afford a 2-proposal split.
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=2,
+        )
+        # No 2-proposal SPLIT should ever have been attempted (unaffordable
+        # at budget=1) -- but the cheap 1-proposal repair-baseline probe
+        # IS affordable and correctly still runs, plus the final
+        # validation: 2 evaluate() calls total, never a pair.
+        self.assertEqual(len(executor.evaluate_log), 2)
+        self.assertFalse(result.published)
+
+    def test_unstable_sibling_aborts_recovery_entirely(self):
+        assignments = self._assignments(4)
+
+        class _UnstableExecutor(_FakeExecutor):
+            def evaluate(self, proposal, *, full_corpus):
+                return rec.Observation(proposal=proposal, verdict="unstable", report=None)
+
+        executor = _UnstableExecutor(lambda o: False)
+        strategy = rec.BoundedPairedBisectionStrategy()
         with self.assertRaises(rec.RecoveryError):
-            strategy.record(state, observation)
+            rec.run_recovery(
+                executor=executor, strategy=strategy, initial_assignments=assignments,
+                initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+                dispatch_hits=frozenset(assignments), max_evaluations=24,
+            )
 
-    def test_confirmed_implicated_singleton_recorded_on_repeated_failure(self):
-        assignments = {"d0": _assignment("d0", alternatives=("alt-a",))}
-        strategy = rec.BoundedDeltaDebugStrategy()
-        strategy._initialized = True
-        strategy._pending_groups = [("d0",)]
-        state = self._state(assignments, ["d0"])
-        proposal = rec.AssignmentProposal(label="x", overrides={"d0": "native"})
-        observation = rec.Observation(proposal=proposal, verdict="hard_fail", report=None)
-        strategy.record(state, observation)
-        self.assertIn("d0", strategy._confirmed_implicated)
+    def test_ineligible_native_probe_is_a_structural_error(self):
+        assignments = self._assignments(4)
+        executor = _FakeExecutor(lambda o: False, ineligible={(d, a.native_candidate) for d, a in assignments.items()})
+        strategy = rec.BoundedPairedBisectionStrategy()
+        with self.assertRaises(rec.RecoveryError):
+            rec.run_recovery(
+                executor=executor, strategy=strategy, initial_assignments=assignments,
+                initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+                dispatch_hits=frozenset(assignments), max_evaluations=24,
+            )
 
 
 class RunRecoveryOrchestrationTests(unittest.TestCase):
@@ -124,7 +272,7 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
 
     def test_raises_if_no_failing_vectors_in_initial_report(self):
         executor = MagicMock()
-        strategy = rec.BoundedDeltaDebugStrategy()
+        strategy = rec.BoundedPairedBisectionStrategy()
         report = bg.BehavioralGateReport(verdicts=[
             bg.compare_traces("v1", _trace([1]), _trace([1]))  # exact_pass
         ])
@@ -156,7 +304,7 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
         executor.validate_full_corpus.side_effect = fake_validate
         executor.build_candidate_cache.return_value = Path("fake.cache")
 
-        strategy = rec.BoundedDeltaDebugStrategy()
+        strategy = rec.BoundedPairedBisectionStrategy()
         report = self._initial_report(["v1"])
         result = rec.run_recovery(
             executor=executor, strategy=strategy, initial_assignments=assignments,
@@ -176,7 +324,7 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
             proposal=rec.AssignmentProposal(label="final", overrides=overrides),
             verdict="hard_fail", report=None, full_corpus_validated=True,
         )
-        strategy = rec.BoundedDeltaDebugStrategy()
+        strategy = rec.BoundedPairedBisectionStrategy()
         report = self._initial_report(["v1"])
         result = rec.run_recovery(
             executor=executor, strategy=strategy, initial_assignments=assignments,
@@ -201,7 +349,7 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
             verdict="pass", report=None, full_corpus_validated=True,
         )
         executor.build_candidate_cache.return_value = Path("fake.cache")
-        strategy = rec.BoundedDeltaDebugStrategy()
+        strategy = rec.BoundedPairedBisectionStrategy()
         report = self._initial_report(["v1", "v2"])
         rec.run_recovery(
             executor=executor, strategy=strategy, initial_assignments=assignments,

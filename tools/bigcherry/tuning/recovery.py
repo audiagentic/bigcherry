@@ -111,24 +111,36 @@ class SignatureAssignment:
 @dataclass(frozen=True)
 class RecoveryState:
     """Everything a RecoveryStrategy needs to propose the next move.
-    Strategies read this; only AssignmentExecutor.evaluate() produces the
-    next one via Observation."""
+    Strategies read this; only strategy.record() (never the orchestrator
+    directly -- see run_recovery) produces the next one.
+
+    ``committed_overrides`` (v2 design, 2026-08-30, fixing a real bug found
+    on the second real-hardware run -- see module docstring's "history"
+    note) is the ONLY assignment ever treated as a safe working baseline.
+    It starts empty (meaning: the campaign's original, all-winners
+    assignment) and is updated EXCLUSIVELY by a strategy's own record()
+    when it decides to accept something -- never by the orchestrator
+    reacting to an individual diagnostic probe's PASS, since a diagnostic
+    PASS during isolation is evidence about a SUBSET, not permission to
+    adopt that subset's exact override values as the new baseline."""
     assignments: dict[str, SignatureAssignment]  # keyed by dispatch digest
     failing_vectors: tuple[behavioral_gate_mod.BehavioralVector, ...]
     dispatch_hits: frozenset[str]  # dispatch digests the failing vectors actually exercised
     evaluated: tuple["Observation", ...]  # prior probes this run, for dedup and history
     remaining_budget: int
+    committed_overrides: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class AssignmentProposal:
     """A candidate next assignment to probe. ``overrides`` maps dispatch
-    digest -> candidate stable_name for every signature this proposal
-    changes relative to the current cache; unlisted signatures keep their
-    current candidate. ``probe_vectors`` lets a strategy ask for a cheap
-    partial probe (failing vectors only) vs. the mandatory full-corpus
-    check the executor always runs before treating a proposal as
-    publishable."""
+    digest -> candidate stable_name -- the COMPLETE, self-contained
+    assignment for every dispatch this probe cares about (v2 design: a
+    proposal is never "merged" with anything else by the orchestrator; it
+    is evaluated exactly as given). ``probe_vectors`` lets a strategy ask
+    for a cheap partial probe (failing vectors only) vs. the mandatory
+    full-corpus check the executor always runs before treating a proposal
+    as publishable."""
     label: str
     overrides: dict[str, str]
     probe_vectors: tuple[behavioral_gate_mod.BehavioralVector, ...] | None = None  # None = use state.failing_vectors
@@ -136,8 +148,7 @@ class AssignmentProposal:
 
 @dataclass(frozen=True)
 class Observation:
-    """What actually happened when a proposal was evaluated -- the only
-    thing a RecoveryStrategy is allowed to base its next proposal on."""
+    """What actually happened when ONE proposal was evaluated."""
     proposal: AssignmentProposal
     verdict: str  # "pass" (probe vectors clean) | "hard_fail" | "behavior_changed" |
                   # "ineligible" (proposal itself couldn't even be built/run -- e.g. a
@@ -149,176 +160,242 @@ class Observation:
     full_corpus_validated: bool = False
 
 
+@dataclass(frozen=True)
+class RecoveryAction:
+    """v2 design (2026-08-30, GPT session ses_330ae3c055084f38, fixing a
+    real pairing bug found on the second real-hardware validation run --
+    see module docstring). A strategy proposes an ACTION, not a bag of
+    independent proposals: one proposal for a single repair-phase trial,
+    or exactly two for a bisection split whose siblings must be evaluated
+    together, atomically, against the SAME parent baseline, before the
+    strategy is ever asked to interpret either outcome. This is what makes
+    the "both halves individually pass but their union fails -> genuine
+    interaction group" case actually detectable, instead of silently
+    falling through un-paired the way the v1 implementation did."""
+    action_id: str
+    proposals: tuple[AssignmentProposal, ...]
+
+
+@dataclass(frozen=True)
+class ActionObservation:
+    """Both (or the one) Observation(s) for one RecoveryAction, delivered
+    to strategy.record() together -- never one at a time."""
+    action: RecoveryAction
+    observations: tuple[Observation, ...]
+
+
 class RecoveryStrategy(Protocol):
     """Strategy proposes; only the executor/oracle decides. A strategy
-    must never be trusted to declare a proposal safe on its own."""
+    must never be trusted to declare a proposal safe on its own, and the
+    orchestrator (run_recovery) must never mutate the working baseline on
+    its own initiative either -- only strategy.record() may update
+    RecoveryState.committed_overrides."""
 
-    def propose(self, state: RecoveryState) -> list[AssignmentProposal]:
+    def propose(self, state: RecoveryState) -> RecoveryAction | None:
         ...
 
-    def record(self, state: RecoveryState, observation: Observation) -> RecoveryState:
-        """Fold one Observation into a new RecoveryState (updated
-        evaluated/remaining_budget; assignments only change if the
-        strategy accepts the observation's proposal as the new baseline)."""
+    def record(self, state: RecoveryState, result: ActionObservation) -> RecoveryState:
+        """Fold one ActionObservation (both sibling outcomes, for a split;
+        the one outcome, for a repair trial) into a new RecoveryState."""
         ...
 
 
-# --------------------------------------------------------- v1: delta debug
+# --------------------------------------------------- v1: paired bisection
 
 
 @dataclass
-class BoundedDeltaDebugStrategy:
-    """v1 RecoveryStrategy: bounded delta-debugging (ddmin-style) over the
-    set of non-native candidates actually dispatched by the failing
-    vectors (``state.dispatch_hits`` -- searching outside that set wastes
-    budget on signatures that provably cannot be responsible).
+class BoundedPairedBisectionStrategy:
+    """v1 RecoveryStrategy (renamed from BoundedDeltaDebugStrategy,
+    2026-08-30, per GPT's explicit naming correction -- this provides
+    logarithmic sparse-failure localization with explicit interaction
+    detection and bounded fallback, NOT a general/causally-complete ddmin;
+    overclaiming the latter is exactly what let the v1 pairing bug go
+    unnoticed until real hardware caught it).
 
-    Implements GPT's exact outcome matrix (adversarial review,
-    ses_330ae3c055084f38, 2026-08-29):
+    Two phases:
 
-        union FAILs                              -> keep splitting
-        half A fails, half B passes              -> recurse into A
-        both halves fail                         -> track as two
-                                                     independent failing
-                                                     groups, continue on
-                                                     each separately
-        both halves pass, but their union fails  -> genuine INTERACTION
-                                                     group -- STOP plain
-                                                     bisection on it; do
-                                                     not blame either half
-        same config non-deterministic on repeat  -> abort recovery for
-                                                     that vector
-                                                     (infrastructure/
-                                                     nondeterminism, not a
-                                                     candidate defect)
+    ISOLATE -- paired bisection over H = non-native dispatches actually hit
+    by the failing vectors (``state.dispatch_hits & assignments``). Each
+    split evaluates BOTH children atomically (as one RecoveryAction) against
+    the SAME parent baseline (everything outside the current group forced
+    native; within the group, only the child under test keeps its original
+    candidate) -- GPT's exact outcome matrix:
 
-    Once a minimal failing group (or interaction group) is isolated, this
-    strategy proposes substituting the highest-value (least predicted
-    performance loss) untried alternative for one signature in that group
-    at a time -- never blindly falling back to native first."""
+        A FAIL, B PASS         -> recurse into A
+        A PASS, B FAIL         -> recurse into B
+        A FAIL, B FAIL         -> queue BOTH as independent failing groups
+        A PASS, B PASS         -> parent group is an INTERACTION group;
+                                   stop splitting it, blame neither half
+        any unstable           -> abort recovery entirely
+        any native probe ineligible -> structural error, abort (native
+                                   should never lack correctness evidence)
 
-    # groups still under active bisection: each a tuple of dispatch digests
-    # currently forced to "native" in the probe being evaluated
+    REPAIR -- once isolation is done, build the conservative baseline
+    (every isolated/interaction-group dispatch forced native, probed as a
+    single action) and, if it passes, try the SINGLE best already-measured
+    alternative for each implicated signature, one at a time, against that
+    baseline -- accept on PASS, otherwise keep the prior baseline and move
+    on. Deliberately not full ddmin-style repeated retry across every
+    ranked alternative for v1 (GPT: "best alternative", singular) --
+    broader alternative exhaustion is a v2 concern once real usage data
+    exists."""
+
+    _initial_hits: tuple[str, ...] | None = None
     _pending_groups: list[tuple[str, ...]] = field(default_factory=list)
+    _isolated_groups: list[tuple[str, ...]] = field(default_factory=list)
     _interaction_groups: list[tuple[str, ...]] = field(default_factory=list)
-    _confirmed_implicated: set[str] = field(default_factory=set)
-    _repeat_check: dict[tuple[str, ...], str] = field(default_factory=dict)
-    _initialized: bool = False
+    _phase: str = "isolate"  # "isolate" | "repair"
+    _repair_queue: list[str] = field(default_factory=list)
+    _repair_current_dispatch: str | None = None
+    _repair_baseline_proposed: bool = False
 
-    def propose(self, state: RecoveryState) -> list[AssignmentProposal]:
-        implicated_pool = tuple(sorted(state.dispatch_hits & set(state.assignments)))
-        if not self._initialized:
-            self._pending_groups = [implicated_pool] if implicated_pool else []
-            self._initialized = True
+    def propose(self, state: RecoveryState) -> RecoveryAction | None:
+        if self._initial_hits is None:
+            self._initial_hits = tuple(sorted(state.dispatch_hits & set(state.assignments)))
+            self._pending_groups = [self._initial_hits] if self._initial_hits else []
 
-        if self._pending_groups:
-            group = self._pending_groups[-1]
-            if len(group) <= 1:
-                # Minimal (or already-singleton) group -- propose the next
-                # untried alternative for its one signature instead of
-                # continuing to bisect a group that can't split further.
-                return self._alternative_proposals(state, group)
-            mid = len(group) // 2
-            half_a, half_b = group[:mid], group[mid:]
-            return [
-                self._force_native_proposal(state, f"bisect-A", half_a),
-                self._force_native_proposal(state, f"bisect-B", half_b),
-            ]
+        if self._phase == "isolate":
+            while self._pending_groups and len(self._pending_groups[-1]) <= 1:
+                self._isolated_groups.append(self._pending_groups.pop())
+            if self._pending_groups:
+                if len(self._pending_groups) * 2 > state.remaining_budget:
+                    # Not enough budget left to even evaluate one more
+                    # split's pair -- stop isolating and move straight to
+                    # the conservative repair baseline with whatever is
+                    # already isolated/pending (pending groups are folded
+                    # into "isolated" wholesale, since we cannot afford to
+                    # keep splitting them).
+                    while self._pending_groups:
+                        self._isolated_groups.append(self._pending_groups.pop())
+                else:
+                    group = self._pending_groups[-1]
+                    mid = len(group) // 2
+                    a_group, b_group = group[:mid], group[mid:]
+                    return RecoveryAction(
+                        action_id=f"split:{group[0][:8]}",
+                        proposals=(
+                            self._probe_proposal(state, "A", a_group),
+                            self._probe_proposal(state, "B", b_group),
+                        ),
+                    )
 
-        if self._interaction_groups:
-            group = self._interaction_groups[-1]
-            return self._alternative_proposals(state, group)
+            # Isolation complete (or budget-forced early stop) -- move to repair.
+            self._phase = "repair"
+            implicated = tuple(
+                d for group in (self._isolated_groups + self._interaction_groups) for d in group
+            )
+            baseline = {d: state.assignments[d].native_candidate for d in implicated
+                        if d in state.assignments}
+            self._repair_queue = list(baseline)
+            self._repair_baseline_proposed = True
+            return RecoveryAction(
+                action_id="repair-baseline",
+                proposals=(AssignmentProposal(label="repair-baseline", overrides=baseline),),
+            )
 
-        return []
+        # repair phase: one already-timed alternative at a time.
+        while self._repair_current_dispatch is None and self._repair_queue:
+            candidate_dispatch = self._repair_queue.pop(0)
+            assignment = state.assignments.get(candidate_dispatch)
+            if assignment is not None and assignment.alternatives:
+                self._repair_current_dispatch = candidate_dispatch
+            # else: no real alternative exists for this signature -- stays
+            # native in committed_overrides, nothing more to try for it.
 
-    def _force_native_proposal(self, state: RecoveryState, label: str, group: tuple[str, ...]) -> AssignmentProposal:
-        overrides = {}
-        for d in group:
-            assignment = state.assignments.get(d)
-            if assignment is not None:
-                overrides[d] = assignment.native_candidate
-        return AssignmentProposal(
-            label=f"{label}:{','.join(d[:8] for d in group)}",
-            overrides=overrides,
+        if self._repair_current_dispatch is None:
+            return None  # nothing left to try -- run_recovery does final validation
+
+        assignment = state.assignments[self._repair_current_dispatch]
+        alt = assignment.alternatives[0]
+        trial = dict(state.committed_overrides)
+        trial[self._repair_current_dispatch] = alt
+        return RecoveryAction(
+            action_id=f"repair-try:{self._repair_current_dispatch[:8]}:{alt}",
+            proposals=(AssignmentProposal(label=f"repair-try:{alt}", overrides=trial),),
         )
 
-    def _alternative_proposals(self, state: RecoveryState, group: tuple[str, ...]) -> list[AssignmentProposal]:
-        proposals = []
-        for dispatch in group:
+    def _probe_proposal(self, state: RecoveryState, label: str, active_group: tuple[str, ...]) -> AssignmentProposal:
+        """A complete, self-contained assignment over ALL of H (not just
+        the current group): members of ``active_group`` keep their real
+        candidate; every OTHER dispatch in H is forced native -- GPT's
+        exact invariant ("only members of G retain original candidate;
+        every H-G member is forced native"). Both siblings of one split
+        therefore always share the identical parent baseline outside
+        their own group, fixing the v1 bug where a mutating
+        ``current_overrides`` meant sibling B was not necessarily tested
+        against the same baseline sibling A was."""
+        overrides = {}
+        for dispatch in self._initial_hits:
             assignment = state.assignments.get(dispatch)
             if assignment is None:
                 continue
-            for alt in assignment.alternatives:
-                proposals.append(AssignmentProposal(
-                    label=f"alt:{dispatch[:8]}:{alt}",
-                    overrides={dispatch: alt},
-                ))
-            proposals.append(AssignmentProposal(
-                label=f"native:{dispatch[:8]}",
-                overrides={dispatch: assignment.native_candidate},
-            ))
-        return proposals
-
-    def record(self, state: RecoveryState, observation: Observation) -> RecoveryState:
-        evaluated = state.evaluated + (observation,)
-        remaining = state.remaining_budget - 1
-        overrides = observation.proposal.overrides
-        group = tuple(sorted(overrides))
-
-        if observation.verdict == "unstable":
-            # Infrastructure/nondeterminism, not a candidate defect --
-            # per GPT, abort recovery for this vector rather than keep
-            # attributing it to a candidate.
-            raise RecoveryError(
-                f"non-deterministic result probing {observation.proposal.label!r} -- "
-                f"aborting recovery, this is not a candidate-attributable failure"
+            overrides[dispatch] = (
+                assignment.current_candidate if dispatch in active_group else assignment.native_candidate
             )
-        if observation.verdict == "ineligible":
-            # The proposal itself could not even be evaluated (e.g. an
-            # alternative candidate lacks correctness evidence for this
-            # exact build/hardware). This says NOTHING about whether the
-            # signature/group is actually implicated -- just skip it and
-            # keep the group queued/pending as-is so bisection or
-            # alternative-search continues with the budget it has left.
-            return RecoveryState(
-                assignments=state.assignments, failing_vectors=state.failing_vectors,
-                dispatch_hits=state.dispatch_hits,
-                evaluated=state.evaluated + (observation,),
-                remaining_budget=state.remaining_budget - 1,
-            )
+        return AssignmentProposal(
+            label=f"probe-{label}:{','.join(d[:8] for d in active_group)}", overrides=overrides,
+        )
 
-        if self._pending_groups and self._pending_groups[-1][:len(group)] == group:
-            # We were bisecting; interpret this half's result.
-            self._pending_groups.pop()
-            if observation.verdict == "hard_fail" or observation.verdict == "behavior_changed":
-                if len(group) > 1:
-                    self._pending_groups.append(group)  # keep splitting this half
-                else:
-                    self._confirmed_implicated.add(group[0])
-            # verdict == "pass": this half is clean under forced-native
-            # substitution -- nothing to add back to pending. Whether the
-            # OTHER half (already queued) still fails determines whether
-            # we've found an interaction group; that is only detectable
-            # once both halves of one split have been observed, tracked
-            # by the caller (run_recovery) via _pair completion, not here.
+    def record(self, state: RecoveryState, result: ActionObservation) -> RecoveryState:
+        evaluated = state.evaluated + result.observations
+        remaining = state.remaining_budget - len(result.observations)
+        for obs in result.observations:
+            if obs.verdict == "unstable":
+                raise RecoveryError(
+                    f"non-deterministic result probing {obs.proposal.label!r} -- "
+                    f"aborting recovery, this is not a candidate-attributable failure"
+                )
+
+        if len(result.action.proposals) == 2:
+            # An isolate-phase split -- both siblings' outcomes are known
+            # NOW, together, for the first time (fixes the v1 pairing bug).
+            obs_a, obs_b = result.observations
+            if obs_a.verdict == "ineligible" or obs_b.verdict == "ineligible":
+                raise RecoveryError(
+                    "a native-forcing isolation probe was ineligible -- structural "
+                    "error (native should never lack correctness evidence)"
+                )
+            group = self._pending_groups.pop()
+            mid = len(group) // 2
+            a_group, b_group = group[:mid], group[mid:]
+            a_fail = obs_a.verdict in ("hard_fail", "behavior_changed")
+            b_fail = obs_b.verdict in ("hard_fail", "behavior_changed")
+            if a_fail and not b_fail:
+                self._pending_groups.append(a_group)
+            elif b_fail and not a_fail:
+                self._pending_groups.append(b_group)
+            elif a_fail and b_fail:
+                self._pending_groups.append(a_group)
+                self._pending_groups.append(b_group)
+            else:  # both pass -- genuine interaction, stop splitting this group
+                self._interaction_groups.append(group)
             return RecoveryState(
                 assignments=state.assignments, failing_vectors=state.failing_vectors,
                 dispatch_hits=state.dispatch_hits, evaluated=evaluated, remaining_budget=remaining,
+                committed_overrides=state.committed_overrides,
             )
 
-        if self._interaction_groups and self._interaction_groups[-1] == group:
-            if observation.verdict != "pass":
-                # This alternative didn't clear it either -- stay on this
-                # interaction group, strategy will propose the next
-                # untried alternative next call (alternatives list is
-                # exhausted lazily by run_recovery tracking tried overrides).
-                pass
-            else:
-                self._interaction_groups.pop()
-
+        # A single-proposal repair-phase action.
+        observation = result.observations[0]
+        committed = state.committed_overrides
+        if result.action.action_id == "repair-baseline":
+            if observation.verdict == "pass":
+                committed = dict(result.action.proposals[0].overrides)
+            # else: baseline itself failed -- leave committed_overrides as
+            # it was (empty); run_recovery's own final circuit-breaker
+            # fallback (force EVERY implicated dispatch to native) covers
+            # this rare case.
+        else:
+            dispatch = self._repair_current_dispatch
+            self._repair_current_dispatch = None
+            if observation.verdict == "pass":
+                committed = dict(committed)
+                committed[dispatch] = result.action.proposals[0].overrides[dispatch]
+            # else: reject this alternative, keep the prior committed baseline.
         return RecoveryState(
             assignments=state.assignments, failing_vectors=state.failing_vectors,
             dispatch_hits=state.dispatch_hits, evaluated=evaluated, remaining_budget=remaining,
+            committed_overrides=committed,
         )
 
 
@@ -623,32 +700,41 @@ def run_recovery(
     state = RecoveryState(
         assignments=initial_assignments, failing_vectors=failing_vectors,
         dispatch_hits=dispatch_hits, evaluated=(), remaining_budget=budget,
+        committed_overrides={},
     )
-    current_overrides: dict[str, str] = {}
-    best_overrides: dict[str, str] | None = None
 
+    # v2 orchestrator (2026-08-30, fixing the real pairing bug the second
+    # real-hardware run found): evaluate an ENTIRE RecoveryAction (both
+    # siblings of a split, atomically, against the identical parent
+    # baseline) before the strategy is ever asked to interpret either
+    # outcome. The orchestrator NEVER mutates a working baseline itself on
+    # a diagnostic PASS -- only strategy.record() may update
+    # state.committed_overrides, and only when it decides an outcome
+    # actually warrants adopting it (the repair phase's accepted
+    # alternatives; the accepted conservative baseline).
     while state.remaining_budget > 0:
-        proposals = strategy.propose(state)
-        if not proposals:
+        action = strategy.propose(state)
+        if action is None:
             break
-        for proposal in proposals:
-            if state.remaining_budget <= 0:
-                break
-            merged = {**current_overrides, **proposal.overrides}
-            probe = AssignmentProposal(label=proposal.label, overrides=merged, probe_vectors=proposal.probe_vectors or failing_vectors)
+        if len(action.proposals) > state.remaining_budget:
+            break  # cannot even start this action within the remaining budget
+        observations = []
+        for proposal in action.proposals:
+            probe = AssignmentProposal(
+                label=proposal.label, overrides=proposal.overrides,
+                probe_vectors=proposal.probe_vectors or failing_vectors,
+            )
             try:
-                observation = executor.evaluate(probe, full_corpus=full_corpus)
+                observations.append(executor.evaluate(probe, full_corpus=full_corpus))
             except RecoveryError:
-                state = strategy.record(state, Observation(proposal=probe, verdict="ineligible", report=None))
-                continue
-            state = strategy.record(state, observation)
-            if observation.verdict == "pass":
-                current_overrides = merged
-                best_overrides = merged
+                observations.append(Observation(proposal=probe, verdict="ineligible", report=None))
+        state = strategy.record(state, ActionObservation(action=action, observations=tuple(observations)))
 
-    if best_overrides is None:
-        # Nothing recovered -- every implicated signature falls back to
-        # its own real native candidate identity, per GPT's circuit-
+    best_overrides = state.committed_overrides
+    if not best_overrides:
+        # Nothing recovered (or isolation never got a chance to run a
+        # repair phase at all) -- every implicated signature falls back
+        # to its own real native candidate identity, per GPT's circuit-
         # breaker behavior. This still preserves every unrelated
         # already-clean winner untouched.
         best_overrides = {
