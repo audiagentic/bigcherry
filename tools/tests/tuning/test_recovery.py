@@ -112,6 +112,33 @@ class BoundedPairedBisectionStrategyRealConvergenceTests(unittest.TestCase):
         # baseline + 1 alternative trial + 1 final validation = 9 max.
         self.assertLessEqual(len(executor.evaluate_log), 10)
 
+    def test_ineligible_alternative_during_repair_is_never_counted_as_exhausted(self):
+        # GPT deep-dive review, round 2 (2026-08-30): run_recovery's
+        # except RecoveryError -> "ineligible" fallback means a
+        # STRUCTURAL failure (a cardinality mismatch, a server crash) can
+        # raise the exact same exception type as a genuine correctness-
+        # ineligibility -- so an ineligible verdict must NEVER be silently
+        # counted as "behaviorally tried and rejected" in
+        # exhausted_candidates. This proves that invariant directly:
+        # the first alternative is ineligible, the second genuinely fails
+        # behaviorally, and only the second appears in tried_alternatives.
+        assignments = self._assignments(1, {"d0": ("ineligible-alt", "bad-alt")})
+        executor = _FakeExecutor(
+            lambda overrides: overrides.get("d0") in ("cand-d0", "bad-alt"),
+            ineligible={("d0", "ineligible-alt")},
+        )
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d0"), "family-d0:native:v1")
+        # The ineligible alternative must NEVER appear here -- it was never
+        # actually behaviorally tested.
+        self.assertEqual(strategy.tried_alternatives.get("d0"), ["bad-alt"])
+
     def test_first_alternative_rejected_second_accepted(self):
         # GPT deep-dive review (2026-08-30): the original code tried only
         # alternatives[0] and gave up -- this proves the fix actually
@@ -127,7 +154,10 @@ class BoundedPairedBisectionStrategyRealConvergenceTests(unittest.TestCase):
         )
         self.assertTrue(result.published)
         self.assertEqual(result.final_overrides.get("d0"), "good-alt-d0")
-        self.assertEqual(strategy.tried_alternatives.get("d0"), ["bad-alt-d0", "good-alt-d0"])
+        # tried_alternatives records REJECTED attempts only (what
+        # exhausted_candidates reports) -- the winning alternative isn't
+        # "exhausted", it's the accepted result.
+        self.assertEqual(strategy.tried_alternatives.get("d0"), ["bad-alt-d0"])
         self.assertEqual(len(result.retune_recommendations), 0)  # a working alternative was found
 
     def test_exhausted_candidates_reports_only_what_was_actually_tried(self):
