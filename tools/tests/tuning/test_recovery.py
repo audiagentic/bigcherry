@@ -112,6 +112,42 @@ class BoundedPairedBisectionStrategyRealConvergenceTests(unittest.TestCase):
         # baseline + 1 alternative trial + 1 final validation = 9 max.
         self.assertLessEqual(len(executor.evaluate_log), 10)
 
+    def test_first_alternative_rejected_second_accepted(self):
+        # GPT deep-dive review (2026-08-30): the original code tried only
+        # alternatives[0] and gave up -- this proves the fix actually
+        # walks to the SECOND alternative when the first is also bad.
+        assignments = self._assignments(1, {"d0": ("bad-alt-d0", "good-alt-d0")})
+        fail_fn = lambda overrides: overrides.get("d0") in ("cand-d0", "bad-alt-d0")
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d0"), "good-alt-d0")
+        self.assertEqual(strategy.tried_alternatives.get("d0"), ["bad-alt-d0", "good-alt-d0"])
+        self.assertEqual(len(result.retune_recommendations), 0)  # a working alternative was found
+
+    def test_exhausted_candidates_reports_only_what_was_actually_tried(self):
+        # GPT deep-dive review (2026-08-30): "exhausted=5" previously meant
+        # "5 alternatives existed", not "5 were tried" -- confirm the
+        # reported list matches real attempts, not the full catalog.
+        assignments = self._assignments(1, {"d0": ("bad1", "bad2")})
+        fail_fn = lambda overrides: overrides.get("d0") in ("cand-d0", "bad1", "bad2")
+        executor = _FakeExecutor(fail_fn)
+        strategy = rec.BoundedPairedBisectionStrategy()
+        result = rec.run_recovery(
+            executor=executor, strategy=strategy, initial_assignments=assignments,
+            initial_report=_report_with_failing(), full_corpus=[_vector("v1")],
+            dispatch_hits=frozenset(assignments), max_evaluations=24,
+        )
+        self.assertTrue(result.published)
+        self.assertEqual(result.final_overrides.get("d0"), "family-d0:native:v1")
+        self.assertEqual(len(result.retune_recommendations), 1)
+        self.assertEqual(set(result.retune_recommendations[0].exhausted_candidates), {"bad1", "bad2"})
+
     def test_a_only_failure_recurses_into_a_not_b(self):
         assignments = self._assignments(4, {"d0": ("alt-d0",)})
         fail_fn = lambda overrides: overrides.get("d0") == "cand-d0"

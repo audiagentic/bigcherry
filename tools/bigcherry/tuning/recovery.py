@@ -248,6 +248,16 @@ class BoundedPairedBisectionStrategy:
     _repair_queue: list[str] = field(default_factory=list)
     _repair_current_dispatch: str | None = None
     _repair_baseline_proposed: bool = False
+    # GPT deep-dive review (2026-08-30, session ses_330ae3c055084f38): the
+    # original repair phase tried ONLY alternatives[0] per signature, but
+    # RetuneRecommendation.exhausted_candidates reported the ENTIRE
+    # alternatives tuple as "exhausted" -- a real, misleading overclaim
+    # ("5 real alternatives genuinely tried" was false; only 1 was). Now
+    # walks alternatives in order (budget-bounded, same as before -- no
+    # new GPU/timing measurement, still v1-scoped) and tracks exactly
+    # which were actually tried per dispatch so reporting can be accurate.
+    _repair_alt_index: int = 0
+    tried_alternatives: dict[str, list[str]] = field(default_factory=dict)
 
     def propose(self, state: RecoveryState) -> RecoveryAction | None:
         if self._initial_hits is None:
@@ -306,7 +316,14 @@ class BoundedPairedBisectionStrategy:
             return None  # nothing left to try -- run_recovery does final validation
 
         assignment = state.assignments[self._repair_current_dispatch]
-        alt = assignment.alternatives[0]
+        if self._repair_alt_index >= len(assignment.alternatives):
+            # Every alternative for this dispatch has now genuinely been
+            # tried and rejected -- move to the next queued dispatch.
+            self._repair_current_dispatch = None
+            self._repair_alt_index = 0
+            return self.propose(state)
+        alt = assignment.alternatives[self._repair_alt_index]
+        self.tried_alternatives.setdefault(self._repair_current_dispatch, []).append(alt)
         trial = dict(state.committed_overrides)
         trial[self._repair_current_dispatch] = alt
         return RecoveryAction(
@@ -387,11 +404,16 @@ class BoundedPairedBisectionStrategy:
             # this rare case.
         else:
             dispatch = self._repair_current_dispatch
-            self._repair_current_dispatch = None
             if observation.verdict == "pass":
                 committed = dict(committed)
                 committed[dispatch] = result.action.proposals[0].overrides[dispatch]
-            # else: reject this alternative, keep the prior committed baseline.
+                self._repair_current_dispatch = None
+                self._repair_alt_index = 0
+            else:
+                # This alternative was rejected -- try the NEXT one for the
+                # SAME dispatch (if any remain) before giving up on it,
+                # rather than immediately moving on after just one attempt.
+                self._repair_alt_index += 1
         return RecoveryState(
             assignments=state.assignments, failing_vectors=state.failing_vectors,
             dispatch_hits=state.dispatch_hits, evaluated=evaluated, remaining_budget=remaining,
@@ -636,10 +658,16 @@ class AssignmentExecutor:
         except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
             raise RecoveryError(f"probe for {proposal.label!r} failed to execute: {exc}") from exc
 
-        if not report.verdicts:
+        # GPT deep-dive review (2026-08-30): nonzero is necessary but not
+        # sufficient -- enforce EXACT cardinality/order against what was
+        # actually requested, catching partial execution, duplicates, or
+        # ordering mistakes, not just total silence.
+        actual_names = tuple(v.vector_name for v in report.verdicts)
+        if actual_names != tuple(vector_names):
             raise RecoveryError(
-                f"proposal {proposal.label!r} produced zero behavioral verdicts -- "
-                f"refusing to treat an empty comparison as a pass"
+                f"proposal {proposal.label!r} produced verdicts for {actual_names!r} "
+                f"but {tuple(vector_names)!r} were requested -- refusing to treat "
+                f"partial/mismatched coverage as complete"
             )
         if report.hard_fail:
             verdict = "hard_fail"
@@ -780,29 +808,50 @@ def run_recovery(
     # material-native-fallback-loss) need data this function does not have
     # (a candidate registry delta, BehavioralFailureWitness history, and an
     # E2E loss estimate) -- deferred to HTR04, not fabricated here.
+    # GPT deep-dive review (2026-08-30): the original code reported the
+    # signature's ENTIRE alternatives tuple as "exhausted" regardless of
+    # how many were actually tried -- a real, misleading overclaim. Use
+    # the strategy's own tried_alternatives bookkeeping (defensive
+    # getattr: this is a real property of BoundedPairedBisectionStrategy,
+    # not part of the RecoveryStrategy Protocol, so a different strategy
+    # implementation without it degrades to an empty list rather than a
+    # crash) and only emit a recommendation when EVERY real alternative
+    # was genuinely tried and rejected -- not merely "some were available."
+    strategy_tried = getattr(strategy, "tried_alternatives", {})
     recommendations = tuple(
         RetuneRecommendation(
             signature_dispatch=dispatch, reason="alternatives_exhausted",
-            current_assignment="native", exhausted_candidates=initial_assignments[dispatch].alternatives,
+            current_assignment="native",
+            exhausted_candidates=tuple(strategy_tried.get(dispatch, [])),
         )
         for dispatch, candidate in best_overrides.items()
         if initial_assignments.get(dispatch) is not None
         and candidate == initial_assignments[dispatch].native_candidate
         and initial_assignments[dispatch].alternatives
+        and len(strategy_tried.get(dispatch, [])) >= len(initial_assignments[dispatch].alternatives)
     )
+
+    # GPT deep-dive review (2026-08-30): the old formula
+    # (max_evaluations - state.remaining_budget + 1) double-counted the
+    # final validation -- `budget` (max_evaluations - RESERVE_FINAL_
+    # VALIDATION) is the correct baseline to diff against, since that is
+    # what state.remaining_budget was actually initialized from; the "+1"
+    # then correctly represents exactly the one mandatory final-validation
+    # call below, which is never decremented from remaining_budget itself.
+    evaluations_used = (budget - state.remaining_budget) + 1
 
     final_observation = executor.validate_full_corpus(best_overrides, full_corpus=full_corpus)
     if final_observation.verdict != "pass":
         return RecoveryResult(
             published=False, final_overrides=best_overrides,
-            evaluations_used=max_evaluations - state.remaining_budget + 1,
+            evaluations_used=evaluations_used,
             stop_reason="final full-corpus validation failed -- refusing to publish",
             cache_path=None, retune_recommendations=recommendations,
         )
     cache_path = executor.build_candidate_cache(best_overrides)
     return RecoveryResult(
         published=True, final_overrides=best_overrides,
-        evaluations_used=max_evaluations - state.remaining_budget + 1,
+        evaluations_used=evaluations_used,
         stop_reason="full-corpus validation passed",
         cache_path=cache_path, retune_recommendations=recommendations,
     )
