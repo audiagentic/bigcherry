@@ -303,6 +303,40 @@ tune-context = 4096
 production-context = 64000
 min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
 
+[runtime-profile.hi135-tensor-split-pinned-xtx-6900xt]
+# HI135 attribution control: identical explicit -ts 1,1,1 across a 3-GPU
+# tensor-split group that includes the 6900XT (device 3), paired with
+# hi135-tensor-split-pinned-xtx-r9700 below (same ratio, device 2 instead of
+# device 3). Neither prior HI134 run ever pinned -ts -- every topology swap
+# changed device architecture AND automatic shard geometry simultaneously,
+# so this pair is the first evidence able to separate the two. Otherwise
+# identical to production-dual-xtx.
+server-args = [
+  "-sm", "tensor", "-ts", "1,1,1", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
+[runtime-profile.hi135-tensor-split-pinned-xtx-r9700]
+# HI135 attribution control: pair to hi135-tensor-split-pinned-xtx-6900xt --
+# same explicit -ts 1,1,1 ratio, device 2 (R9700, gfx1201) in the third slot
+# instead of device 3 (6900XT, gfx1030). Run with --devices 0,1,2.
+server-args = [
+  "-sm", "tensor", "-ts", "1,1,1", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
 [runtime-profile.production-safe-single]
 server-args = ["--flash-attn", "on"]
 tune-context = 4096
