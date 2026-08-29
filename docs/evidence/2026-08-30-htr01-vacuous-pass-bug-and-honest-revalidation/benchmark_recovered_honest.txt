@@ -1,0 +1,12 @@
+=== recovered cache (post-fix, honest run) ===
+  [recovered-honest] rep=1 predicted_per_second=100.63750292205349 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-honest] rep=2 predicted_per_second=101.99320420083505 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-honest] rep=3 predicted_per_second=102.29462139713512 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-honest] rep=4 predicted_per_second=102.3069821695847 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-honest] rep=5 predicted_per_second=102.5923553346813 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+recovered median tps: 102.29462139713512
+
+########## SUMMARY ##########
+native:    101.46 tok/s
+recovered: 102.29 tok/s
+delta:     +0.82%

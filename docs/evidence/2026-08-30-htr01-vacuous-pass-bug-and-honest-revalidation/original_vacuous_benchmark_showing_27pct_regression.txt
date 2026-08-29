@@ -1,0 +1,12 @@
+=== recovered cache (replay) ===
+  [recovered] rep=1 predicted_per_second=78.27118067453733 draft_n=144 draft_n_accepted=91 tokens_predicted=128
+  [recovered] rep=2 predicted_per_second=75.74876460922286 draft_n=145 draft_n_accepted=90 tokens_predicted=128
+  [recovered] rep=3 predicted_per_second=73.70244523821268 draft_n=149 draft_n_accepted=89 tokens_predicted=128
+  [recovered] rep=4 predicted_per_second=73.52085589854353 draft_n=149 draft_n_accepted=89 tokens_predicted=128
+  [recovered] rep=5 predicted_per_second=73.68679399203138 draft_n=149 draft_n_accepted=89 tokens_predicted=128
+recovered median tps: 73.70244523821268
+
+########## SUMMARY ##########
+native:    101.46 tok/s (already measured this run)
+recovered: 73.70 tok/s
+delta:     -27.36%
