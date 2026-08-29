@@ -61,9 +61,10 @@ CLASSIFICATIONS = frozenset(
 )
 
 # Text markers used to disambiguate LAUNCH_FAILURE / GPU_FAULT / UNSUPPORTED
-# / DEVICE_LOST / INIT_FAILURE from a bare nonzero exit code, checked against
-# combined stdout+stderr. Kept narrow and literal (no regex surprises) --
-# extend only from real observed RCCL/RCCL-Tests output, never speculatively.
+# / DEVICE_LOST / INIT_FAILURE / TIMEOUT from a bare nonzero exit code,
+# checked against combined stdout+stderr. Kept narrow and literal (no regex
+# surprises) -- extend only from real observed RCCL/RCCL-Tests output, never
+# speculatively.
 _DEVICE_LOST_MARKERS = ("GPU is lost", "amdgpu: GPU reset", "device lost")
 _GPU_FAULT_MARKERS = (
     "unhandled cuda error", "HIP failure", "an illegal memory access",
@@ -72,7 +73,18 @@ _GPU_FAULT_MARKERS = (
 _UNSUPPORTED_MARKERS = (
     "not supported", "unsupported", "Unsupported"
 )
-_INIT_FAILURE_MARKERS = ("ncclCommInitAll", "commInit", "initialization failed")
+# Real hardware evidence (RQ08, xtx_r9700 Tree/LL): "ncclCommInitAll" and
+# "commInit" as bare substrings are too loose -- they appear in routine
+# trace lines on every run, successful or not (e.g. "ncclCommInitAll_impl
+# comm ... Init COMPLETE"), and previously misclassified a real internal
+# test timeout as INIT_FAILURE. Require an explicit failure phrase instead.
+_INIT_FAILURE_MARKERS = (
+    "ncclCommInitAll failed", "commInit failed", "initialization failed",
+)
+# RCCL Tests' own internal "-T <seconds>" test-level timeout (distinct from
+# our outer harness's process-group-kill timeout -- this one exits the
+# child process on its own with a real, non-negative returncode).
+_RCCL_TEST_TIMEOUT_MARKERS = ("Test timeout",)
 
 
 @dataclass(frozen=True)
@@ -232,6 +244,9 @@ def _classify(
     nonzero-exit guess."""
     if timed_out:
         return TIMEOUT, None, "outer harness timeout expired"
+
+    if any(marker in combined_output for marker in _RCCL_TEST_TIMEOUT_MARKERS):
+        return TIMEOUT, None, "RCCL Tests' own internal -T test timeout expired"
 
     # DEVICE_LOST takes precedence over SIGNAL/GPU_FAULT -- it is what the
     # campaign-level safety rule keys off (recheck GPU health, possibly
