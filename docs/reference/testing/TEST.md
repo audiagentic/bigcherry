@@ -104,6 +104,12 @@ ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_ben
   must be idle, and a short single-repetition run is a liveness check, not a
   performance conclusion.
 
+## Heterogeneous RCCL source qualification
+
+For heterogeneous-architecture RCCL source diagnosis, repair qualification, crash-isolated candidate testing, topology identity, and eventual collective replay/tuning, use [RCCL_HETEROGENEOUS_RUNBOOK.md](RCCL_HETEROGENEOUS_RUNBOOK.md).
+
+Do not use ordinary tuning sweeps to rediscover HI85's established heterogeneous RCCL crash behavior. The runbook treats the existing crash evidence and patch-1225 guard as prerequisite truth: source-level viability must be established before heterogeneous RCCL performance tuning or replay is eligible.
+
 ## Real GPU profiling (rocprofv3)
 
 `tools/bigcherry/rocprof.py` wraps a real server/binary launch under
