@@ -61,3 +61,8 @@ This item exists to prevent two failure modes symmetrically: (a) reactively weak
 ## Change Log
 
 - 2026-08-29T13:56:39.699257+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260829_144231_closed-the-gap-found-in-real-h_7575
+- 2026-08-29T14:42:31.037673+00:00 (updated-by): Updated: section:ledger-events
