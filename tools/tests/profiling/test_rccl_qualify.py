@@ -181,6 +181,20 @@ def test_timeout_kills_process_group(tmp_path: Path):
     assert result.classification == rq.TIMEOUT
 
 
+def test_rccl_internal_test_timeout_classified_timeout_not_init_failure(tmp_path: Path):
+    # Regression: real hardware (RQ08) hit this exact case -- RCCL Tests'
+    # own "-T" internal timeout prints routine ncclCommInitAll trace lines
+    # (which appear on every run, successful or not) before "Test timeout",
+    # and a too-loose INIT_FAILURE marker previously misclassified this.
+    result = _run_fake(tmp_path, """
+        import sys
+        print("NCCL INFO ncclCommInitAll_impl comm rank 0 nranks 2 - Init COMPLETE")
+        print("brutus: Test timeout (20s) common.cu.cpp:558")
+        sys.exit(3)
+    """)
+    assert result.classification == rq.TIMEOUT
+
+
 def test_nonzero_exit_classified_launch_failure(tmp_path: Path):
     result = _run_fake(tmp_path, "import sys; sys.exit(7)")
     assert result.classification == rq.LAUNCH_FAILURE
