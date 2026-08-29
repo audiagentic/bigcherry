@@ -74,7 +74,7 @@ RESERVE_FINAL_VALIDATION = 1
 # off) -- under its OWN separate, small budget, distinct from the
 # behavioral-evaluation budget, so qualification work can never silently
 # consume the whole recovery budget.
-DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES = 12
+DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES = 16
 
 
 class RecoveryError(RuntimeError):
