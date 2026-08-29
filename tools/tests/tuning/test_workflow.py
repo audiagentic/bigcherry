@@ -111,7 +111,7 @@ class StageReplayVerifyTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             workdir = Path(directory)
-            (workdir / "coverage.json").write_text(json.dumps(coverage), encoding="utf-8")
+            coverage_path = workdir / "coverage.json"
 
             fake_lane_result = MagicMock()
             fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
@@ -120,8 +120,21 @@ class StageReplayVerifyTests(unittest.TestCase):
             fake_profile.server_args = ()
 
             with patch.object(workflow, "ServerRunner") as fake_runner_cls:
-                fake_runner = MagicMock()
-                fake_runner_cls.return_value.__enter__.return_value = fake_runner
+                fake_runner = fake_runner_cls.return_value
+                fake_runner.__enter__.return_value = fake_runner
+                # Write coverage.json as a side effect of the completion
+                # call, mirroring the real runner (which produces it during
+                # run_completion) -- _stage_replay_verify now unlinks any
+                # stale coverage.json BEFORE launching, so it must not
+                # exist until the (fake) run itself "writes" it. The real
+                # code calls run_completion on the ServerRunner instance
+                # itself (not the __enter__ return value), so the side
+                # effect must live on fake_runner here too.
+                fake_runner.run_completion.side_effect = (
+                    lambda *_a, **_k: coverage_path.write_text(
+                        json.dumps(coverage), encoding="utf-8"
+                    )
+                )
                 return workflow._stage_replay_verify(
                     lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
                     devices="0,1", runtime_profile=fake_profile,
@@ -158,6 +171,45 @@ class StageReplayVerifyTests(unittest.TestCase):
         coverage = {"stale": False, "rerun_required": 0, "exact": 64, "misses": 0}
         result = self._run_with_fake_coverage(coverage)
         self.assertEqual(result, coverage)
+
+    def test_stale_prior_run_coverage_file_is_not_reused_as_this_runs_result(self):
+        # GPT deep-review P2 (2026-08-29): workdir is created with
+        # exist_ok=True, so a reused workdir/run-id could leave a passing
+        # coverage.json from a PRIOR run in place. If this run's binary
+        # launch fails to rewrite it, that stale file must never be read as
+        # THIS run's result -- it must be unlinked up front, so a launch
+        # that doesn't recreate it fails closed instead of reporting a
+        # stale success.
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            # A passing-looking coverage.json left over from a prior run in
+            # the same workdir.
+            (workdir / "coverage.json").write_text(
+                json.dumps({"stale": False, "rerun_required": 0, "exact": 64}),
+                encoding="utf-8",
+            )
+
+            fake_lane_result = MagicMock()
+            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+            fake_profile = MagicMock()
+            fake_profile.production_context = 4096
+            fake_profile.server_args = ()
+
+            with patch.object(workflow, "ServerRunner") as fake_runner_cls:
+                fake_runner = MagicMock()
+                fake_runner_cls.return_value.__enter__.return_value = fake_runner
+                # The fake runner never recreates coverage.json -- simulates
+                # a launch that fails to produce fresh coverage data.
+                with self.assertRaises(workflow.TuneCampaignError):
+                    workflow._stage_replay_verify(
+                        lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
+                        devices="0,1", runtime_profile=fake_profile,
+                        dispatch_cache=workdir / "dispatch.cache", workdir=workdir,
+                    )
+            self.assertFalse((workdir / "coverage.json").exists())
 
 
 class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
@@ -246,6 +298,98 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
         self.assertEqual(export_kwargs["target_source_root"], Path("/replay/own-source-root"))
         # The tune manifest must NOT leak into the export call.
         self.assertNotEqual(export_kwargs["target_manifest_path"], Path("/tune/manifest.json"))
+
+
+class ReceiptCountsReflectFinalIngestTests(unittest.TestCase):
+    """GPT deep-review P2 (2026-08-29): when correctness-evidence generation
+    triggers a second _stage_load_and_promote pass, the receipt's
+    verified_winners/quarantined_unsupported_winners must reflect that
+    FINAL reingest of the dispatch_db that actually ships -- not the first
+    pass, whose counts can go stale once evidence generation changes which
+    winners resolve to a verified vs. quarantined state."""
+
+    def test_receipt_uses_second_pass_counts_when_correctness_evidence_reingests(self):
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        def fake_lane_result(run_id, manifest_path, source_root):
+            result = MagicMock()
+            result.run_id = run_id
+            result.source_slice_id = "slice1"
+            result.build_plan_id = "plan1"
+            result.manifest_ref.path = manifest_path
+            result.source_root = Path(source_root)
+            return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            (workdir / "promoted.jsonl").write_text("", encoding="utf-8")
+
+            tune_result = fake_lane_result("tune-run", "/tune/manifest.json", "/tune/source-root")
+            record_result = fake_lane_result("record-run", None, "/record/source-root")
+            record_result.manifest_ref = None
+
+            # First pass: stale/lower counts, and reports missing evidence so
+            # the correctness-evidence stage (and a second load-and-promote
+            # pass) actually runs.
+            first_pass = (
+                workdir / "tune.sqlite",
+                {"winner_verifications": 3, "quarantined_unsupported_winners": 5},
+                7,  # promoted_before
+                2,  # missing_evidence > 0
+            )
+            # Second pass: the real final counts that should end up on the
+            # receipt.
+            second_pass = (
+                workdir / "tune.sqlite",
+                {"winner_verifications": 9, "quarantined_unsupported_winners": 1},
+                7,  # promoted_after
+                0,
+            )
+            load_and_promote_calls = [first_pass, second_pass]
+
+            with (
+                patch.object(workflow, "_stage_record",
+                             return_value=(record_result, workdir / "record.jsonl")),
+                patch.object(workflow, "_stage_inventory_record",
+                             return_value=(workdir / "inventory.json", workdir / "inventory.sqlite")),
+                patch.object(workflow, "_stage_tune",
+                             return_value=(tune_result, workdir / "tune.measurements.jsonl")),
+                patch.object(workflow, "_stage_signature_verifier",
+                             return_value=(
+                                 fake_lane_result("verifier-run", "/verifier/manifest.json", "/verifier/source-root"),
+                                 lambda canonical: "0" * 32,
+                             )),
+                patch.object(workflow, "_stage_load_and_promote",
+                             side_effect=lambda **_kwargs: load_and_promote_calls.pop(0)),
+                patch.object(workflow, "_stage_correctness_evidence",
+                             return_value=fake_lane_result("correctness-run", None, "/correctness/source-root")),
+                patch.object(workflow, "_stage_replay_build",
+                             return_value=fake_lane_result("replay-run", "/replay/manifest.json", "/replay/source-root")),
+                patch.object(workflow, "_stage_replay_export",
+                             return_value=Path("/fake/dispatch.cache")),
+                patch.object(workflow, "_stage_replay_verify",
+                             return_value={"exact": 64, "stale": False, "rerun_required": 0}),
+                patch.object(workflow.gpu_mod, "preflight_context"),
+            ):
+                fake_profile = MagicMock()
+                fake_profile.tune_context = 4096
+                fake_profile.production_context = 64000
+                fake_profile.server_args = ()
+                fake_cfg = MagicMock()
+                fake_cfg.runtime_profiles = {"production-dual-xtx": fake_profile}
+                fake_context = MagicMock()
+                fake_context.work_root = workdir
+
+                receipt = workflow.run_tune_campaign(
+                    context=fake_context, cfg=fake_cfg, store=MagicMock(),
+                    model_path=Path("/fake/model.gguf"), platform_name="linux-multi",
+                    devices="0,1", runtime_profile_name="production-dual-xtx",
+                    run_id="test-run",
+                )
+
+            self.assertEqual(receipt.verified_winners, 9)
+            self.assertEqual(receipt.quarantined_unsupported_winners, 1)
 
 
 class StageIdentityTests(unittest.TestCase):

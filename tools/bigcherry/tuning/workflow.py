@@ -438,6 +438,13 @@ def _stage_replay_verify(
 ) -> dict:
     binary_path = lane_result.binary_ref.path
     coverage_path = workdir / "coverage.json"
+    # GPT deep-review P2 (2026-08-29): workdir is created with exist_ok=True,
+    # so a reused workdir/run-id could leave a stale coverage.json from a
+    # prior run in place; if this run's binary launch fails to rewrite it,
+    # the stale file would be read below and could pass the gate on old
+    # data. Unlink it up front so success here always reflects THIS run.
+    if coverage_path.exists():
+        coverage_path.unlink()
     runner = ServerRunner(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
@@ -552,6 +559,14 @@ def run_tune_campaign(
 
     correctness_result: CampaignLaneResult | None = None
     promoted_after = promoted_before
+    # GPT deep-review P2 (2026-08-29): the receipt's verified_winners/
+    # quarantined_unsupported_winners counts must reflect the FINAL ingest
+    # of the dispatch_db that actually ships, not necessarily the first
+    # pass -- when correctness evidence triggers a second
+    # _stage_load_and_promote, that reingest can change which winners are
+    # verified/quarantined, and _final_promote_result is updated below only
+    # when that second pass actually runs.
+    _final_promote_result = _first_promote_result
     if missing_evidence > 0:
         # gpt review (2026-08-27): triggering only on promoted_before == 0
         # missed the partial-evidence case -- a dispatch_db that already
@@ -579,6 +594,7 @@ def run_tune_campaign(
                 signature_digest_verifier=signature_digest_verifier,
             )
         )
+        _final_promote_result = _promote_result2
 
     replay_result: CampaignLaneResult | None = None
     replay_coverage: dict | None = None
@@ -631,9 +647,9 @@ def run_tune_campaign(
         ),
         promoted_before_evidence=promoted_before,
         promoted_after_evidence=promoted_after,
-        verified_winners=int(_first_promote_result.get("winner_verifications", 0)),
+        verified_winners=int(_final_promote_result.get("winner_verifications", 0)),
         quarantined_unsupported_winners=int(
-            _first_promote_result.get("quarantined_unsupported_winners", 0)
+            _final_promote_result.get("quarantined_unsupported_winners", 0)
         ),
         dispatch_cache_path=str(dispatch_cache_path) if dispatch_cache_path else None,
         replay_coverage=replay_coverage,
