@@ -229,6 +229,33 @@ def _selection_patch_ids(
     return ids
 
 
+def _partition_conflict_free(
+    ids: tuple[str, ...], modules: dict[str, "patchset.PatchModule"],
+) -> list[tuple[str, ...]]:
+    """Split ``ids`` into groups with no `conflicts` relationship inside any
+    one group. `--all` probing must never hand two mutually-exclusive
+    alternatives (e.g. two candidate patches for the same problem) to
+    ``resolve_exact``/``quarantine_fixed_point`` together -- that treats the
+    input as ONE proposed build composition (correct for a real recipe) and
+    ``quarantine_fixed_point`` applies every member to the SAME worktree, so
+    genuinely conflicting patches would clash on real anchors, not just fail
+    a policy check. Found live on pin-bump's first real bump: `--all`
+    crashed uncaught the moment the registry contained two intentional
+    alternative candidates (1205/1207) at once, which it always will."""
+    groups: list[list[str]] = []
+    for pid in ids:
+        conflicts = set(modules[pid].conflicts)
+        for group in groups:
+            if conflicts.isdisjoint(group) and not any(
+                pid in modules[member].conflicts for member in group
+            ):
+                group.append(pid)
+                break
+        else:
+            groups.append([pid])
+    return [tuple(group) for group in groups]
+
+
 def resolve_selection(
     *, recipe_name: str | None, all_patches: bool,
 ) -> patchset.ResolvedPatchSet:
@@ -645,28 +672,19 @@ def _bigcherry_revision() -> str:
     return _git(paths.REPO_ROOT, "rev-parse", "HEAD")
 
 
-def run_rebase_check(
-    root: Path,
-    *,
-    recipe_name: str | None = None,
-    all_patches: bool = False,
-    context_lines: int = 3,
-) -> dict[str, Any]:
-    """The full PA16 probe: an isolated detached worktree at the CURRENT
-    vendor revision, every selected patch probed against it, quarantined to
-    a stable known-good fixed point. Returns the JSON-serializable report;
-    never mutates ``root``."""
-    selection = resolve_selection(recipe_name=recipe_name, all_patches=all_patches)
-    repository = UpstreamRepository(root)
-    revision = _git(root, "rev-parse", "HEAD")
-    # Snapshot the overlay ONCE, up front: every probe round and the report's
-    # own overlay_digest are computed from these exact same in-memory bytes,
-    # rather than each re-reading src/ at its own moment -- a concurrent
-    # overlay edit on this shared, multi-agent working tree could otherwise
-    # make different rounds see different input and then publish a digest
-    # describing only whatever state disk happened to be in last.
-    overlay_snapshot = _overlay_texts()
-
+def _probe_group(
+    group_ids: tuple[str, ...], *, context_ids: frozenset[str],
+    repository: "UpstreamRepository", revision: str, context_lines: int,
+    overlay_snapshot: dict[str, str],
+) -> tuple[list["patchset.PatchModule"], dict[str, PatchProbe], tuple[str, ...]]:
+    """One isolated-worktree probe pass for one conflict-free group. Returns
+    (this group's modules in resolved order, its probes, its known_good ids)."""
+    try:
+        selection = patchset.resolve_exact(
+            group_ids, allow_rejected=False, context_ids=context_ids,
+        )
+    except ValueError as exc:
+        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
     with tempfile.TemporaryDirectory(prefix="bigcherry-rebase-check-") as tmp:
         worktree = Path(tmp) / "worktree"
         try:
@@ -685,8 +703,69 @@ def run_rebase_check(
                 repository.remove_worktree(worktree)
             except WorkspaceError:
                 pass
+    return list(selection.modules), probes, known_good
 
-    ordered = [probes[m.patch_id] for m in selection.modules if m.patch_id in probes]
+
+def run_rebase_check(
+    root: Path,
+    *,
+    recipe_name: str | None = None,
+    all_patches: bool = False,
+    context_lines: int = 3,
+) -> dict[str, Any]:
+    """The full PA16 probe: an isolated detached worktree at the CURRENT
+    vendor revision, every selected patch probed against it, quarantined to
+    a stable known-good fixed point. Returns the JSON-serializable report;
+    never mutates ``root``.
+
+    ``all_patches=True`` probes every non-rejected registry patch, but NOT
+    as one joint composition: mutually-exclusive alternative candidates
+    (declared via `conflicts`) are split into separate conflict-free groups,
+    each probed in its own isolated worktree, then merged. A patch's
+    `requires` on a patch in another group is satisfied via `context_ids`
+    (identity-only, never re-probed as part of the wrong group)."""
+    repository = UpstreamRepository(root)
+    revision = _git(root, "rev-parse", "HEAD")
+    # Snapshot the overlay ONCE, up front: every probe round and the report's
+    # own overlay_digest are computed from these exact same in-memory bytes,
+    # rather than each re-reading src/ at its own moment -- a concurrent
+    # overlay edit on this shared, multi-agent working tree could otherwise
+    # make different rounds see different input and then publish a digest
+    # describing only whatever state disk happened to be in last.
+    overlay_snapshot = _overlay_texts()
+
+    all_modules: list["patchset.PatchModule"] = []
+    probes: dict[str, PatchProbe] = {}
+    known_good: tuple[str, ...] = ()
+
+    if all_patches:
+        ids = _selection_patch_ids(recipe_name=None, all_patches=True)
+        modules_by_id = {m.patch_id: m for m in patchset.catalog()}
+        for group_ids in _partition_conflict_free(ids, modules_by_id):
+            context = frozenset(
+                requirement
+                for pid in group_ids
+                for requirement in modules_by_id[pid].requires
+                if requirement not in group_ids
+            )
+            group_modules, group_probes, group_known_good = _probe_group(
+                group_ids, context_ids=context, repository=repository,
+                revision=revision, context_lines=context_lines,
+                overlay_snapshot=overlay_snapshot,
+            )
+            all_modules.extend(group_modules)
+            probes.update(group_probes)
+            known_good += group_known_good
+    else:
+        selection = resolve_selection(recipe_name=recipe_name, all_patches=False)
+        all_modules, group_probes, known_good = _probe_group(
+            tuple(m.patch_id for m in selection.modules), context_ids=frozenset(),
+            repository=repository, revision=revision, context_lines=context_lines,
+            overlay_snapshot=overlay_snapshot,
+        )
+        probes.update(group_probes)
+
+    ordered = [probes[m.patch_id] for m in all_modules if m.patch_id in probes]
     summary = {
         "total": len(ordered),
         "clean": sum(1 for p in ordered if p.status in (STATUS_CLEAN, STATUS_CLEAN_NOOP)),
@@ -707,7 +786,7 @@ def run_rebase_check(
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
         "overlay_digest": _digest_from_texts(overlay_snapshot),
         "selection": {
-            "patch_ids": list(selection.modules and [m.patch_id for m in selection.modules] or []),
+            "patch_ids": [m.patch_id for m in all_modules],
             # Adversarial-review follow-up: binds the report to the SELECTOR
             # that produced patch_ids, not just the resulting id list --
             # otherwise a concurrent, uncommitted edit to config/recipes.toml
@@ -720,7 +799,7 @@ def run_rebase_check(
         },
         "known_good_patch_ids": list(known_good),
         "summary": summary,
-        "patches": [probes[m.patch_id].to_dict() for m in selection.modules if m.patch_id in probes],
+        "patches": [probes[m.patch_id].to_dict() for m in all_modules if m.patch_id in probes],
     }
 
 
