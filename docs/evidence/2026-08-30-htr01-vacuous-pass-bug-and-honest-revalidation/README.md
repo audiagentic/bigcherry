@@ -112,6 +112,36 @@ exhausted, tracking exactly which were attempted
   across all 5 reps, `102.11 tok/s` vs native's `101.46` (`+0.64%`,
   consistent with the earlier `+0.82%` run within measurement noise).
 
+## Third correction: closing the ineligible-vs-rejected ambiguity
+
+GPT's final close/do-not-close review found one more real gap before
+agreeing to close: `run_recovery`'s `except RecoveryError -> "ineligible"`
+fallback means a STRUCTURAL failure (the new cardinality guard itself, a
+server crash) raises the exact same exception type as a genuine
+correctness-ineligibility. The prior fix recorded an alternative as
+"tried" optimistically in `propose()`, before its real verdict was known
+-- so a structural failure during a repair trial could have been silently
+counted as a completed behavioral rejection, undermining the very
+`exhausted=5` claim above.
+
+Fixed (commit `65aebee`) via GPT's own explicitly-endorsed minimal path:
+`tried_alternatives` is now populated only in `record()`, only for a
+genuine completed behavioral verdict (`hard_fail`/`behavior_changed`) --
+never for `"ineligible"` or `"pass"`.
+
+- `validate_recovery_authoritative.txt` -- re-run under the fixed code.
+  Identical result to the prior run (`evaluations_used: 15`,
+  `exhausted=5`), which is now authoritative proof none of the 5 were
+  silently-ineligible: under the fixed counting, an ineligible alternative
+  could never have contributed to that count at all.
+
+GPT's verdict on this final evidence: numbers internally consistent, no
+remaining accounting red flags; multiple-alternative walking does not
+reintroduce HI141's non-monotonic-masking risk (each alternative is
+tested as a concrete full-cache assignment against native traces, and the
+exact final artifact still receives mandatory full-corpus validation
+regardless of how many alternatives were tried to reach it).
+
 ## What this does NOT cover yet
 
 Only the single pinned HI141 regression vector was exercised (HTR03's
