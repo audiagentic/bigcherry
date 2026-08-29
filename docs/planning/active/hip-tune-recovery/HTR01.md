@@ -111,6 +111,9 @@ KNOWN LIMITATIONS, not yet closed (documented in code, not hidden):
 
 ## Ledger-events
 
+
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.371872+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T13:47:39.236165+00:00 (updated-by): Updated: section:notes
+- chg_20260829_134919_the-tuning-system-can-now-reco_8101
+- 2026-08-29T13:49:19.485229+00:00 (updated-by): Updated: section:ledger-events
