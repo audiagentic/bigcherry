@@ -32,10 +32,10 @@ def _insert_build(conn: sqlite3.Connection, *, manifest_hash: str) -> int:
 
 
 class FreshSchemaTests(unittest.TestCase):
-    def test_schema_version_is_8(self):
+    def test_schema_version_is_9(self):
         conn = _fresh_connection()
         value = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
-        self.assertEqual(value, "8")
+        self.assertEqual(value, "9")
 
     def test_build_capability_table_exists_with_check_constraint(self):
         conn = _fresh_connection()

@@ -183,7 +183,7 @@ class VkSchemaTablesTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "8")
+        self.assertEqual(row[0], "9")
 
     def test_real_schema_4_database_migrates_to_current_in_place(self):
         # The scenario the migration exists for: a REAL pre-existing
@@ -275,7 +275,7 @@ class VkSchemaTablesTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "8")
+        self.assertEqual(row[0], "9")
 
     def test_hip_tables_and_constraints_unaffected(self):
         # A HIP candidate insert must still enforce the original HIP-only

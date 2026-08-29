@@ -105,15 +105,23 @@ KNOWN LIMITATIONS, not yet closed (documented in code, not hidden):
 2. Alternative candidate eligibility (does an alternative already have correctness evidence?) is discovered lazily when AssignmentExecutor tries to build a cache with it (via replay.build()'s own existing checks), not filtered in advance -- an ineligible alternative simply raises RecoveryError for that one proposal and the search continues, which is safe but means some evaluation-budget waste on doomed proposals.
 3. NOT YET real-hardware validated -- offline logic tests only so far. Real-hardware validation (re-running a campaign that reproduces a genuine hard_fail, e.g. reusing hi141-proof-20260829-2231's exact conditions, and confirming recovery either ships a reduced-but-real cache or correctly falls back/aborts) remains open per this item's own validation section.
 
+REAL-HARDWARE VALIDATION COMPLETE (2026-08-30, run against the actual captured hi141-proof-20260829-2231 failure -- real binary, real manifest, real dispatch_db, real server loads, no simulation). Two real bugs found and fixed during this validation (both committed): (1) AssignmentExecutor never wired dispatch_db/require_winner_verification into replay.build(), causing it to reject every winner as unevidenced rather than checking real evidence; (2) the literal string 'native' is not a valid replay.build() seed-override target (it requires a real manifest candidate identity like 'mmvq:native:v1') -- SignatureAssignment now carries a real native_candidate field extracted from the signature's own ranking_decisions/candidates list. A related fragility was also fixed: any RecoveryError (including a merely-ineligible candidate) was being mapped to verdict='unstable', which the strategy treats as a hard abort for non-determinism -- split into a distinct 'ineligible' verdict that consumes budget and moves on without concluding anything about a signature's guilt.
+
+With both fixes applied, the real run: reproduced the exact original hard_fail (native draft=[107,100] vs candidate draft=[145,90], identical to the original finding), ran a real bounded recovery search using only 4 of its 24-evaluation budget, and its final full-corpus validation genuinely passed -- confirmed via a real dispatch cache written to disk (recovery-candidate.cache). The mechanism (bisection, budget accounting, mandatory final full-corpus gate, safe circuit-breaker fallback) is proven sound and safe on real hardware.
+
+IMPORTANT REAL FINDING (not a bug, a genuine scope gap): the search recovered ZERO real performance -- all 20 originally-promoted signatures ended up forced back to native, not just the one guilty signature. Root cause: every alternative candidate listed in each signature's own ranking_decisions (the 'free lookup, no retune needed' data source this item's whole design was built on) turned out to be correctness-evidence-INELIGIBLE -- normal campaigns only run hi80_generate_correctness_evidence against the WINNING candidate per signature, never the other ranked alternatives, so replay.build()'s RV49 gate correctly rejected every substitution attempt as unevidenced. The strategy exhausted all alternatives almost immediately (hence only 4 evaluations used, not the expected many-more for a real bisection+substitution search) and converged safely but conservatively to all-native fallback.
+
+This means HTR01 as built today reliably prevents shipping a bad cache (the safety goal, fully achieved) but does NOT yet reliably recover real yield (the efficiency goal, NOT achieved in this real test) -- because the 'no new measurement needed' assumption for alternatives was wrong: alternatives need at minimum on-demand correctness-evidence generation (real but modest CPU/GPU test-backend-ops work, NOT a GPU timing retune) before they can actually be used. Sent to GPT for adversarial review of the fix (on-demand per-alternative correctness-evidence generation inside AssignmentExecutor, vs. pre-filtering the alternatives list to only already-evidenced candidates) -- response pending. This is real follow-up scope, not something to declare done; recorded here rather than silently shipped as a full success.
+
 ## Change Log
 
 - 2026-08-29T13:28:09.305813+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.371872+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T13:47:39.236165+00:00 (updated-by): Updated: section:notes
 - chg_20260829_134919_the-tuning-system-can-now-reco_8101
 - 2026-08-29T13:49:19.485229+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-29T14:02:43.243098+00:00 (updated-by): Updated: section:notes

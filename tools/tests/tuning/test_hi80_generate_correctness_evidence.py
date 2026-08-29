@@ -666,5 +666,126 @@ class GluGenerateForRowTests(unittest.TestCase):
         self.assertIn("0 distinct signature(s)", str(ctx.exception))
 
 
+def _fake_runner_with_digests_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+    def runner(argv, capture_output, text, env):
+        mode = env.get("GGML_HIP_DISPATCH_MODE")
+        tensor = "out"
+        stderr = (
+            f"BIGCHERRY_REF_DIGEST name=leaf_0 call_index=0 digest={digest} nels=16\n"
+            f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor={tensor} "
+            f"backend1=native backend2={'native' if mode == 'native' else 'candidate'} "
+            f"err={e_c if mode != 'native' else 1e-6} max_abs={max_abs_c if mode != 'native' else 0.0005} "
+            f"threshold={threshold} n=16 "
+            f"backend1_digest={'aa' * 8 if mode == 'native' else 'bb' * 8} "
+            f"backend2_digest={'cc' * 8}\n"
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr=stderr)
+    return runner
+
+
+class GenerateForCandidateTests(_Base):
+    """HTR01 (2026-08-30): generate_for_candidate() -- the primitive
+    recovery.py's lazy correctness-qualification path calls -- gets its
+    own explicit-candidate-name, origin-recording, and native-seed-reuse
+    behavior exercised directly, not just through generate_for_row's
+    thin wrapper."""
+
+    def setUp(self):
+        super().setUp()
+        self.conn.execute(
+            "INSERT INTO candidate (build_id, stable_name, family, source_class, "
+            "implementation_version, architectures, architecture_mask, graph_safe, "
+            "deterministic, config_json) VALUES (?, 'mmq:fb2', 'mmq', 'existing_alternative', "
+            "1, '[]', 0, 1, 1, '{}')",
+            (self.build_id,),
+        )
+        self.conn.commit()
+
+    def test_generates_evidence_for_an_explicit_candidate_not_provisional_winner(self):
+        result = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb2",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="recovery_alternative", recovery_run_id="r1"),
+            runner=_fake_runner_factory(),
+        )
+        self.assertEqual(result.status, "generated")
+        self.assertIsInstance(result.evidence_id, int)
+        origin_row = self.conn.execute(
+            "SELECT reason, recovery_run_id FROM correctness_evidence_origin "
+            "WHERE correctness_evidence_id = ?", (result.evidence_id,),
+        ).fetchone()
+        self.assertEqual(origin_row, ("recovery_alternative", "r1"))
+
+    def test_existing_evidence_short_circuits_with_zero_subprocess_runs(self):
+        first = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb2",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="recovery_alternative"),
+            runner=_fake_runner_factory(),
+        )
+        second = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb2",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="recovery_alternative"),
+            runner=_fake_runner_factory(),
+        )
+        self.assertEqual(second.status, "existing")
+        self.assertEqual(second.evidence_id, first.evidence_id)
+        self.assertEqual(second.subprocess_runs, 0)
+
+    def test_native_seed_cache_reuse_halves_subprocess_runs_for_a_second_candidate(self):
+        cache: dict[int, ce.NativeSeedEvidence] = {}
+        first = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb1",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="promotion_winner"),
+            native_seed_cache=cache, runner=_fake_runner_factory(),
+        )
+        # First candidate for this signature: 3 native + 3 candidate runs.
+        self.assertEqual(first.subprocess_runs, 6)
+        self.assertEqual(len(cache), 3)
+
+        second = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb2",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="recovery_alternative"),
+            native_seed_cache=cache, runner=_fake_runner_factory(),
+        )
+        # Second candidate, same signature, native already cached: 3
+        # candidate runs only -- HTR01's whole cost-amortization point.
+        self.assertEqual(second.subprocess_runs, 3)
+
+    def test_output_digests_are_persisted_on_the_seed_rows(self):
+        result = cli.generate_for_candidate(
+            self.conn, self.row, candidate_name="mmq:fb2",
+            binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            origin=ce.EvidenceOrigin(reason="recovery_alternative"),
+            runner=_fake_runner_with_digests_factory(),
+        )
+        seed_row = self.conn.execute(
+            "SELECT native_output_digest, candidate_output_digest, reference_output_digest, "
+            "output_nels FROM correctness_evidence_seed WHERE correctness_evidence_id = ? "
+            "AND seed = 1", (result.evidence_id,),
+        ).fetchone()
+        self.assertIsNotNone(seed_row)
+        native_digest, candidate_digest, reference_digest, nels = seed_row
+        self.assertIsNotNone(native_digest)
+        self.assertIsNotNone(candidate_digest)
+        self.assertIsNotNone(reference_digest)
+        self.assertEqual(nels, 16)
+
+
 if __name__ == "__main__":
     unittest.main()

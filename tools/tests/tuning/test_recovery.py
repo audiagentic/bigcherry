@@ -7,15 +7,18 @@ hardware. Matches test_behavioral_gate.py's own offline-first discipline.
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.tuning import behavioral_gate as bg  # noqa: E402
 from bigcherry.tuning import recovery as rec  # noqa: E402
+from bigcherry import hi80_generate_correctness_evidence as hi80  # noqa: E402
 
 
 def _trace(ids, draft_n=0, draft_n_accepted=0):
@@ -210,6 +213,86 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
         for probe in seen_probe_vectors:
             names = {v.name for v in probe}
             self.assertEqual(names, {"v1", "v2"})
+
+
+class EnsureCorrectnessEvidenceTests(unittest.TestCase):
+    """HTR01 (2026-08-30, locked design): AssignmentExecutor's lazy
+    correctness-qualification budget/skip logic, with generate_for_candidate
+    mocked (no real GPU/test-backend-ops needed to exercise the wiring)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        workdir = Path(self._tmp.name)
+        measurements_path = workdir / "promoted.jsonl"
+        row = {"dispatch": "d0", "signature": "sig0", "native": "family:native:v1",
+               "winner": "family:alt1:v1", "promotion_status": "promoted"}
+        measurements_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        dispatch_db = workdir / "tune.sqlite"
+        dispatch_db.write_bytes(b"")
+        self.executor = rec.AssignmentExecutor(
+            binary_path=Path("llama-server"), model_path=Path("model.gguf"), devices="0",
+            common_args=(), measurements_path=measurements_path,
+            manifest_path=workdir / "manifest.json", ggml_h_path=workdir / "ggml.h",
+            workdir=workdir, dispatch_db=dispatch_db,
+            correctness_binary_path=Path("test-backend-ops"), vendor_root=workdir,
+            max_new_correctness_candidates=2,
+        )
+        self.addCleanup(self._close_dispatch_db_conn)
+
+    def _close_dispatch_db_conn(self):
+        if self.executor._dispatch_db_conn is not None:
+            self.executor._dispatch_db_conn.close()
+
+    def test_native_candidate_never_calls_generate_for_candidate(self):
+        with (
+            patch.object(hi80, "generate_for_candidate") as mock_gen,
+            patch.object(self.executor, "build_candidate_cache", return_value=Path("fake.cache")),
+            patch("bigcherry.tuning.recovery.ServerRunner"),
+        ):
+            proposal = rec.AssignmentProposal(label="x", overrides={"d0": "family:native:v1"})
+            try:
+                self.executor.evaluate(proposal, full_corpus=[])
+            except Exception:
+                pass  # only the pre-cache correctness-qualification loop is under test here
+        mock_gen.assert_not_called()
+
+    def test_dispatchable_alternative_is_accepted_and_counts_against_budget(self):
+        result = hi80.EvidenceGenerationResult(
+            evidence_id=1, status="generated", dispatchable=True, subprocess_runs=6,
+        )
+        with patch.object(hi80, "generate_for_candidate", return_value=result):
+            self.executor.ensure_correctness_evidence("d0", "family:alt2:v1")
+        self.assertEqual(self.executor._correctness_candidates_used, 1)
+
+    def test_non_dispatchable_alternative_raises_recovery_error(self):
+        result = hi80.EvidenceGenerationResult(
+            evidence_id=1, status="generated", dispatchable=False, subprocess_runs=6,
+        )
+        with patch.object(hi80, "generate_for_candidate", return_value=result):
+            with self.assertRaises(rec.RecoveryError):
+                self.executor.ensure_correctness_evidence("d0", "family:alt2:v1")
+
+    def test_existing_evidence_does_not_consume_budget(self):
+        result = hi80.EvidenceGenerationResult(
+            evidence_id=1, status="existing", dispatchable=True, subprocess_runs=0,
+        )
+        with patch.object(hi80, "generate_for_candidate", return_value=result):
+            self.executor.ensure_correctness_evidence("d0", "family:alt2:v1")
+        self.assertEqual(self.executor._correctness_candidates_used, 0)
+
+    def test_budget_exhaustion_raises_without_calling_generate_for_candidate_again(self):
+        generated = hi80.EvidenceGenerationResult(
+            evidence_id=1, status="generated", dispatchable=True, subprocess_runs=6,
+        )
+        with patch.object(hi80, "generate_for_candidate", return_value=generated) as mock_gen:
+            self.executor.ensure_correctness_evidence("d0", "family:alt2:v1")
+            self.executor.ensure_correctness_evidence("d0", "family:alt3:v1")
+            self.assertEqual(mock_gen.call_count, 2)
+            with self.assertRaises(rec.RecoveryError):
+                self.executor.ensure_correctness_evidence("d0", "family:alt4:v1")
+            # Budget was exhausted BEFORE a third real generation call.
+            self.assertEqual(mock_gen.call_count, 2)
 
 
 if __name__ == "__main__":

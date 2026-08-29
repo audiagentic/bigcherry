@@ -46,7 +46,7 @@ class _ResolvedSignature:
     quarantined_unaudited: bool
 
 
-CURRENT_DB_SCHEMA_VERSION = "8"
+CURRENT_DB_SCHEMA_VERSION = "9"
 #: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
 #: hardware/signature/candidate/observation/measurement/winner), purely
 #: additive -- zero changes to any schema-4 table/column/index. Real

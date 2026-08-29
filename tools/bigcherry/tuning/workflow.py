@@ -15,7 +15,6 @@ request; there is no mock/simulation mode.
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -445,9 +444,6 @@ def _default_behavioral_corpus() -> list[behavioral_gate_mod.BehavioralVector]:
     return [behavioral_gate_mod.load_hi141_regression_vector()]
 
 
-_NATIVE_CANDIDATE_RE = re.compile(r"[a-z0-9_]+:native:v\d+")
-
-
 def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.SignatureAssignment]:
     """HTR01: build the recovery search's starting point directly from this
     campaign's OWN promoted.jsonl -- every non-native promoted signature's
@@ -457,10 +453,11 @@ def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.S
 
     KNOWN LIMITATION (not yet closed): alternatives are ordered purely by
     this campaign's own ranking_decisions effective_us; whether each
-    alternative already has correctness evidence (and is therefore
-    actually eligible to be spliced into a cache today) is discovered
-    lazily when AssignmentExecutor tries to build a cache with it, not
-    filtered out here in advance."""
+    alternative already has correctness evidence is checked lazily by
+    AssignmentExecutor.ensure_correctness_evidence() when a proposal
+    actually tries to use it (HTR01's real-hardware validation, 2026-08-30,
+    confirmed this is the common case, not an edge case -- see HTR01's
+    plan-item notes)."""
     assignments: dict[str, recovery_mod.SignatureAssignment] = {}
     with promoted_path.open(encoding="utf-8") as handle:
         for line in handle:
@@ -473,47 +470,27 @@ def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.S
             dispatch = row.get("dispatch")
             signature = row.get("signature")
             current = row.get("winner")
-            if not dispatch or not signature or not current:
+            # row["native"] is ALREADY the real native candidate stable_name
+            # (e.g. "mmvq:native:v1", confirmed via real campaign data,
+            # 2026-08-30) -- the same field promotion_gate.resolve_
+            # promotion_identity() itself resolves via native_name -- not
+            # the literal string "native". No derivation/regex-matching
+            # against ranking_decisions is needed (an earlier version of
+            # this function did that unnecessarily before this was found).
+            native_candidate = row.get("native")
+            if not dispatch or not signature or not current or not native_candidate:
                 continue
             ranking = row.get("ranking_decisions") or []
-            # A real, exact "<family>:native:v1" identity (e.g. "mmvq:native:v1")
-            # -- required as replay.build()'s seed-override target when forcing
-            # a signature back to native (a real bug caught during this item's
-            # own first real-hardware validation, 2026-08-29: the literal
-            # string "native" is not a manifest candidate and is rejected by
-            # replay.build()'s seed-override loader). Distinct from names like
-            # "blas:forced-native:operand-native:...:v1", which contain the
-            # substring "native" but are NOT the plain native candidate.
-            native_candidate: str | None = None
             names_by_us: list[tuple[float, str]] = []
             for decision in ranking:
                 for entry in decision.get("candidates", []):
                     name = entry.get("name")
-                    if not name:
-                        continue
-                    if _NATIVE_CANDIDATE_RE.fullmatch(name):
-                        native_candidate = name
-                        continue
-                    if name == current:
+                    if not name or name == current or name == native_candidate:
                         continue
                     effective_us = entry.get("effective_us")
                     if effective_us is None:
                         continue
                     names_by_us.append((float(effective_us), name))
-            if native_candidate is None:
-                for entry in row.get("candidates", []) or []:
-                    name = entry.get("name") if isinstance(entry, dict) else None
-                    if name and _NATIVE_CANDIDATE_RE.fullmatch(name):
-                        native_candidate = name
-                        break
-            if native_candidate is None:
-                # No real native identity found for this signature's op
-                # family -- cannot safely propose a native fallback for it,
-                # so exclude it from recovery's search space entirely rather
-                # than guess. It simply won't be a candidate for reselection;
-                # existing behavior (leave it untouched) is preserved by
-                # omission.
-                continue
             names_by_us.sort(key=lambda pair: pair[0])
             seen: set[str] = set()
             alternatives = []
@@ -535,7 +512,10 @@ def _stage_replay_validate(
     corpus: list[behavioral_gate_mod.BehavioralVector] | None = None,
     promoted_path: Path | None = None, manifest_path: Path | None = None,
     ggml_h_path: Path | None = None, dispatch_db: Path | None = None, allow_recovery: bool = True,
+    correctness_binary_path: Path | None = None, correctness_vendor_root: Path | None = None,
+    correctness_seeds: tuple[int, ...] = (1, 2, 3), campaign_run_id: str | None = None,
     max_recovery_evaluations: int = recovery_mod.DEFAULT_MAX_RECOVERY_EVALUATIONS,
+    max_new_correctness_candidates: int = recovery_mod.DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES,
 ) -> dict:
     """HI143: the real pre-promotion behavioral regression gate, wired into
     the actual campaign path (gpt-negotiated integration, 2026-08-29,
@@ -653,7 +633,8 @@ def _stage_replay_validate(
         # and shipped nothing at all.
         recovered = False
         if (allow_recovery and promoted_path is not None and manifest_path is not None
-                and ggml_h_path is not None and dispatch_db is not None):
+                and ggml_h_path is not None and dispatch_db is not None
+                and correctness_binary_path is not None and correctness_vendor_root is not None):
             try:
                 assignments = _load_signature_assignments(promoted_path)
                 executor = recovery_mod.AssignmentExecutor(
@@ -661,6 +642,11 @@ def _stage_replay_validate(
                     common_args=common_args, measurements_path=promoted_path,
                     manifest_path=manifest_path, ggml_h_path=ggml_h_path, workdir=workdir,
                     dispatch_db=dispatch_db,
+                    correctness_binary_path=correctness_binary_path,
+                    vendor_root=correctness_vendor_root, campaign_run_id=campaign_run_id,
+                    recovery_run_id=f"{campaign_run_id}-recovery" if campaign_run_id else None,
+                    correctness_seeds=correctness_seeds,
+                    max_new_correctness_candidates=max_new_correctness_candidates,
                 )
                 strategy = recovery_mod.BoundedDeltaDebugStrategy()
                 # KNOWN LIMITATION (not yet closed, tracked for follow-up):
@@ -882,6 +868,19 @@ def run_tune_campaign(
             manifest_path=Path(replay_result.manifest_ref.path),
             ggml_h_path=replay_result.source_root / "ggml" / "include" / "ggml.h",
             dispatch_db=dispatch_db,
+            # HTR01: only available for lazy correctness-qualification if
+            # THIS run actually built a test-backend-ops lane (it doesn't
+            # when missing_evidence == 0 -- all evidence already existed
+            # from a prior run). Recovery gracefully disables its lazy-
+            # qualification path (falls through to the original hard_fail)
+            # when these are None, rather than requiring a rebuild.
+            correctness_binary_path=(
+                correctness_result.binary_ref.path if correctness_result is not None else None
+            ),
+            correctness_vendor_root=(
+                correctness_result.source_root if correctness_result is not None else None
+            ),
+            correctness_seeds=correctness_seeds, campaign_run_id=campaign_run_id,
         )
         dispatch_cache_path = workdir / "dispatch.cache"
 
