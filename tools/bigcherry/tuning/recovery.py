@@ -62,6 +62,19 @@ from .server_runner import ServerError, ServerRunner
 
 DEFAULT_MAX_RECOVERY_EVALUATIONS = 24
 RESERVE_FINAL_VALIDATION = 1
+# HTR01 (2026-08-30, adversarially reviewed with GPT, session
+# ses_330ae3c055084f38): real-hardware validation found that every
+# already-measured alternative in ranking_decisions lacks correctness
+# evidence (normal campaigns only evidence the eventual winner), so
+# recovery's "no new work" premise was true for TIMING but false for
+# CORRECTNESS EVIDENCE. GPT's verdict: lazy, on-demand evidence generation
+# ONLY for an alternative recovery is actually about to probe -- never
+# eager pre-qualification of every ranked alternative on every campaign
+# (taxes every successful campaign for a benefit that mostly never pays
+# off) -- under its OWN separate, small budget, distinct from the
+# behavioral-evaluation budget, so qualification work can never silently
+# consume the whole recovery budget.
+DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES = 12
 
 
 class RecoveryError(RuntimeError):
@@ -343,7 +356,25 @@ class AssignmentExecutor:
     # fall back to demanding an explicit --dispatch-db and rejecting EVERY
     # winner, not just an actually-unevidenced one.
     dispatch_db: Path
+    # HTR01 (2026-08-30, locked design, GPT session ses_330ae3c055084f38):
+    # real-hardware validation found every already-measured alternative
+    # lacks correctness evidence (normal campaigns only evidence the
+    # eventual winner). correctness_binary_path is the PATCHED
+    # test-backend-ops binary (patches 1222+1223 applied) -- a separate
+    # artifact from binary_path (llama-server) -- needed to generate that
+    # evidence lazily, on-demand, for exactly the alternative a proposal
+    # is about to try.
+    correctness_binary_path: Path
+    vendor_root: Path
+    campaign_run_id: str | None = None
+    recovery_run_id: str | None = None
+    correctness_seeds: tuple[int, ...] = (1, 2, 3)
+    max_new_correctness_candidates: int = DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES
     native_trace_cache: dict[str, behavioral_gate_mod.BehavioralTrace] = field(default_factory=dict)
+    _correctness_candidates_used: int = field(default=0, init=False, repr=False)
+    _native_seed_caches: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
+    _rows_by_dispatch: dict | None = field(default=None, init=False, repr=False)
+    _dispatch_db_conn: object | None = field(default=None, init=False, repr=False)
 
     def capture_native_traces(self, vectors: list[behavioral_gate_mod.BehavioralVector]) -> None:
         """Run every corpus vector against forced-native ONCE and cache the
@@ -388,8 +419,86 @@ class AssignmentExecutor:
         cache_path.write_bytes(cache_bytes)
         return cache_path
 
+    def _load_rows_by_dispatch(self) -> dict:
+        if self._rows_by_dispatch is None:
+            rows: dict[str, dict] = {}
+            with self.measurements_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    row = json.loads(line)
+                    dispatch = row.get("dispatch")
+                    if dispatch:
+                        rows[dispatch] = row
+            self._rows_by_dispatch = rows
+        return self._rows_by_dispatch
+
+    def ensure_correctness_evidence(self, dispatch: str, candidate_name: str) -> None:
+        """HTR01: lazily qualify ONE alternative candidate for ONE signature
+        (dispatch digest) under its OWN separate, bounded budget --
+        max_new_correctness_candidates, distinct from run_recovery's
+        behavioral-evaluation budget, per GPT's explicit requirement that
+        correctness-qualification work can never silently consume the
+        whole recovery budget. Raises RecoveryError (never silently skips)
+        when: the row/signature can't be resolved, evidence generation
+        genuinely fails (the candidate really is numerically bad), or the
+        correctness budget is exhausted."""
+        import sqlite3
+
+        from .. import hi80_generate_correctness_evidence as hi80
+        from . import correctness_evidence as ce
+
+        if self._dispatch_db_conn is None:
+            self._dispatch_db_conn = sqlite3.connect(str(self.dispatch_db))
+        conn = self._dispatch_db_conn
+        rows = self._load_rows_by_dispatch()
+        row = rows.get(dispatch)
+        if row is None:
+            raise RecoveryError(f"no measurements row found for dispatch {dispatch!r}")
+
+        if self._correctness_candidates_used >= self.max_new_correctness_candidates:
+            raise RecoveryError(
+                f"correctness-qualification budget exhausted "
+                f"({self.max_new_correctness_candidates} candidates) -- cannot "
+                f"qualify {candidate_name!r} for dispatch {dispatch!r}"
+            )
+
+        native_cache = self._native_seed_caches.setdefault(dispatch, {})
+        try:
+            result = hi80.generate_for_candidate(
+                conn, row, candidate_name=candidate_name,
+                binary=self.correctness_binary_path, vendor_root=self.vendor_root,
+                seeds=self.correctness_seeds, headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+                contract_version=ce.CONTRACT_VERSION, tool_version="htr01-recovery",
+                origin=ce.EvidenceOrigin(
+                    reason="recovery_alternative", campaign_run_id=self.campaign_run_id,
+                    recovery_run_id=self.recovery_run_id,
+                ),
+                native_seed_cache=native_cache,
+            )
+        except Exception as exc:  # noqa: BLE001 -- any generation failure means "not eligible"
+            raise RecoveryError(
+                f"correctness-evidence generation failed for {candidate_name!r} "
+                f"(dispatch {dispatch!r}): {exc}"
+            ) from exc
+
+        if result.status == "generated":
+            self._correctness_candidates_used += 1
+        if not result.dispatchable:
+            raise RecoveryError(
+                f"{candidate_name!r} (dispatch {dispatch!r}) failed correctness "
+                f"evidence -- not eligible for behavioral probing"
+            )
+
     def evaluate(self, proposal: AssignmentProposal, *, full_corpus: list[behavioral_gate_mod.BehavioralVector]) -> Observation:
         probe_vectors = list(proposal.probe_vectors) if proposal.probe_vectors is not None else None
+        rows = self._load_rows_by_dispatch()
+        for dispatch, candidate_name in proposal.overrides.items():
+            row = rows.get(dispatch)
+            if row is not None and candidate_name == row.get("native"):
+                continue  # native is the reference -- never needs its own evidence
+            self.ensure_correctness_evidence(dispatch, candidate_name)
         try:
             cache_path = self.build_candidate_cache(proposal.overrides)
         except (KeyError, ValueError, SystemExit) as exc:

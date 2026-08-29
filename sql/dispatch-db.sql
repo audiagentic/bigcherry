@@ -67,8 +67,25 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- means the old attestation is destroyed along with the old row it
 -- attested, never left dangling against a replacement it never proved
 -- anything about. See sql/migrations/0008_winner_verification.sql.
+-- schema_version '9' (HTR01, adversarially designed with GPT, session
+-- ses_330ae3c055084f38, 2026-08-30): adds correctness_evidence_origin (why
+-- a given correctness_evidence row exists -- promotion_winner |
+-- recovery_alternative | manual_analysis -- so lazily-generated recovery
+-- evidence remains distinguishable from normal winner evidence without
+-- overloading tool_version, which identifies producer implementation, not
+-- sampling/selection reason) and four nullable columns on
+-- correctness_evidence_seed (native_output_digest/candidate_output_digest/
+-- reference_output_digest/output_nels) capturing the EXACT backend output
+-- byte digests the patched test-backend-ops producer already emits
+-- (BIGCHERRY_CORRECTNESS_METRIC's backend1_digest/backend2_digest, HI83)
+-- but which correctness_evidence.py's SeedEvidence previously discarded --
+-- enabling exact numerical-family clustering ("these candidates produce
+-- IDENTICAL bytes across seeds 1/2/3"), a strictly stronger signal than
+-- matching NMSE alone. See sql/migrations/0009_correctness_evidence_
+-- analytics.sql. Existing rows get NULL origin/output-digest values on
+-- migration -- NULL means historical/unavailable, never inferred.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '8'),
+    ('schema_version',    '9'),
     ('signature_schema',  '2'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -842,9 +859,37 @@ CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
     -- and any future drift gets the same one-off ALTER, not a permanent
     -- compatibility branch.
     threshold_t                REAL   NOT NULL,
+    -- schema 9 (HTR01, 2026-08-30): exact backend OUTPUT byte digests, not
+    -- just NMSE/max_abs -- the patched producer already computes these
+    -- (BIGCHERRY_CORRECTNESS_METRIC backend1_digest/backend2_digest, HI83)
+    -- but they were parsed and then discarded. NULL on any row generated
+    -- before this schema version (never inferred/backfilled).
+    native_output_digest        TEXT,
+    candidate_output_digest     TEXT,
+    reference_output_digest     TEXT,
+    output_nels                 INTEGER,
     UNIQUE (correctness_evidence_id, seed),
     CHECK (native_execution_status IN ('ok', 'failed', 'timeout')),
     CHECK (candidate_execution_status IN ('ok', 'failed', 'timeout'))
+);
+
+-- ------------------------------------------------- correctness_evidence_origin
+-- schema 9 (HTR01, 2026-08-30): WHY a correctness_evidence row exists --
+-- generated as part of normal winner promotion, generated on-demand by
+-- HTR01's recovery search trying an already-timed alternative, or a manual
+-- analysis run. One row per correctness_evidence row (1:1, not 1:many --
+-- a given evidence identity was generated for exactly one reason). Deliberately
+-- NOT merged into correctness_evidence itself: this is provenance/selection
+-- metadata about HOW the row came to exist, not part of the RV49 promotion
+-- contract correctness_evidence itself represents.
+CREATE TABLE IF NOT EXISTS correctness_evidence_origin (
+    correctness_evidence_id INTEGER PRIMARY KEY
+        REFERENCES correctness_evidence(correctness_evidence_id) ON DELETE CASCADE,
+    reason           TEXT NOT NULL,   -- promotion_winner | recovery_alternative | manual_analysis
+    campaign_run_id  TEXT,
+    recovery_run_id  TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (reason IN ('promotion_winner', 'recovery_alternative', 'manual_analysis'))
 );
 
 -- ------------------------------------------------------------- migration 4->5
