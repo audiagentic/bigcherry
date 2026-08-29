@@ -15,6 +15,7 @@ request; there is no mock/simulation mode.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -444,6 +445,9 @@ def _default_behavioral_corpus() -> list[behavioral_gate_mod.BehavioralVector]:
     return [behavioral_gate_mod.load_hi141_regression_vector()]
 
 
+_NATIVE_CANDIDATE_RE = re.compile(r"[a-z0-9_]+:native:v\d+")
+
+
 def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.SignatureAssignment]:
     """HTR01: build the recovery search's starting point directly from this
     campaign's OWN promoted.jsonl -- every non-native promoted signature's
@@ -472,16 +476,44 @@ def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.S
             if not dispatch or not signature or not current:
                 continue
             ranking = row.get("ranking_decisions") or []
+            # A real, exact "<family>:native:v1" identity (e.g. "mmvq:native:v1")
+            # -- required as replay.build()'s seed-override target when forcing
+            # a signature back to native (a real bug caught during this item's
+            # own first real-hardware validation, 2026-08-29: the literal
+            # string "native" is not a manifest candidate and is rejected by
+            # replay.build()'s seed-override loader). Distinct from names like
+            # "blas:forced-native:operand-native:...:v1", which contain the
+            # substring "native" but are NOT the plain native candidate.
+            native_candidate: str | None = None
             names_by_us: list[tuple[float, str]] = []
             for decision in ranking:
                 for entry in decision.get("candidates", []):
                     name = entry.get("name")
-                    if not name or name == current or name == "mmvq:native:v1" or "native" in name:
+                    if not name:
+                        continue
+                    if _NATIVE_CANDIDATE_RE.fullmatch(name):
+                        native_candidate = name
+                        continue
+                    if name == current:
                         continue
                     effective_us = entry.get("effective_us")
                     if effective_us is None:
                         continue
                     names_by_us.append((float(effective_us), name))
+            if native_candidate is None:
+                for entry in row.get("candidates", []) or []:
+                    name = entry.get("name") if isinstance(entry, dict) else None
+                    if name and _NATIVE_CANDIDATE_RE.fullmatch(name):
+                        native_candidate = name
+                        break
+            if native_candidate is None:
+                # No real native identity found for this signature's op
+                # family -- cannot safely propose a native fallback for it,
+                # so exclude it from recovery's search space entirely rather
+                # than guess. It simply won't be a candidate for reselection;
+                # existing behavior (leave it untouched) is preserved by
+                # omission.
+                continue
             names_by_us.sort(key=lambda pair: pair[0])
             seen: set[str] = set()
             alternatives = []
@@ -492,7 +524,7 @@ def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.S
                 alternatives.append(name)
             assignments[dispatch] = recovery_mod.SignatureAssignment(
                 dispatch=dispatch, signature=signature, current_candidate=current,
-                alternatives=tuple(alternatives),
+                native_candidate=native_candidate, alternatives=tuple(alternatives),
             )
     return assignments
 

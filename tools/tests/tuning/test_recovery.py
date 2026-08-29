@@ -29,7 +29,7 @@ def _vector(name):
 def _assignment(dispatch, alternatives=()):
     return rec.SignatureAssignment(
         dispatch=dispatch, signature=f"sig-{dispatch}", current_candidate=f"cand-{dispatch}",
-        alternatives=alternatives,
+        native_candidate=f"family-{dispatch}:native:v1", alternatives=alternatives,
     )
 
 
@@ -54,10 +54,14 @@ class BoundedDeltaDebugStrategyOutcomeMatrixTests(unittest.TestCase):
         self.assertEqual(len(proposals), 2)
         touched = set(proposals[0].overrides) | set(proposals[1].overrides)
         self.assertEqual(touched, set(assignments))
-        # Every override in a bisection proposal forces native -- that's
+        # Every override in a bisection proposal forces the REAL native
+        # candidate identity for that signature's op family (not the
+        # literal string "native" -- replay.build()'s seed-override
+        # mechanism requires a manifest-real candidate name) -- that's
         # what "swap a half back to native and re-probe" means.
         for p in proposals:
-            self.assertTrue(all(v == "native" for v in p.overrides.values()))
+            for dispatch, candidate in p.overrides.items():
+                self.assertEqual(candidate, assignments[dispatch].native_candidate)
 
     def test_minimal_singleton_group_proposes_alternatives_not_further_split(self):
         assignments = {"d0": _assignment("d0", alternatives=("alt-a", "alt-b"))}
@@ -135,9 +139,11 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
         def fake_evaluate(proposal, *, full_corpus):
             return rec.Observation(proposal=proposal, verdict="hard_fail", report=None)
 
+        native_name = assignments["d0"].native_candidate
+
         def fake_validate(overrides, *, full_corpus):
             # The final native-fallback assignment must be accepted.
-            verdict = "pass" if overrides == {"d0": "native"} else "hard_fail"
+            verdict = "pass" if overrides == {"d0": native_name} else "hard_fail"
             return rec.Observation(
                 proposal=rec.AssignmentProposal(label="final", overrides=overrides),
                 verdict=verdict, report=None, full_corpus_validated=True,
@@ -155,7 +161,7 @@ class RunRecoveryOrchestrationTests(unittest.TestCase):
             max_evaluations=6,
         )
         self.assertTrue(result.published)
-        self.assertEqual(result.final_overrides, {"d0": "native"})
+        self.assertEqual(result.final_overrides, {"d0": native_name})
 
     def test_final_validation_failure_means_not_published(self):
         assignments = {"d0": _assignment("d0")}
