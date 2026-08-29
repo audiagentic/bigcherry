@@ -187,11 +187,13 @@ def _copy_overlay(
         # newline read of `target` would translate a stale CRLF target to
         # LF first, read as "already matches", and skip the write forever
         # -- leaving CRLF bytes on disk that a real write would have
-        # normalized. Read `target` with newline="" so that's detected as
-        # needing a rewrite. See rebase.py's `_write_overlay_snapshot` for
-        # the same fix, applied there first (found live during the
-        # b10502->b10680 bump).
-        if target.is_file() and target.read_text(encoding="utf-8", newline="") == text:
+        # normalized. Decode raw bytes directly (no translation) so that's
+        # detected as needing a rewrite. See rebase.py's
+        # `_write_overlay_snapshot` for the same fix, applied there first
+        # (found live during the b10502->b10680 bump).
+        # (Path.read_text(newline=...) is Python 3.13+ only -- Brutus runs
+        # 3.12 -- so this reads bytes and decodes rather than using it.)
+        if target.is_file() and target.read_bytes().decode("utf-8") == text:
             continue
         relative_str = str(relative).replace("\\", "/")
         if backup is not None and relative_str not in backup:
