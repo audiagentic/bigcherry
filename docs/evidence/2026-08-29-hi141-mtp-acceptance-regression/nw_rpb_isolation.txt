@@ -1,0 +1,61 @@
+test-file line: 29 0 124160 4 1 1 0 2 8 5120 124160 1 1 0 0 0 0 0 5120 4 1 1 0 0 0 0 -
+target_tensor=out digest_tensor=leaf_0
+
+=== mmvq:q8_0:w4:nw1:rpb1:sk0:v1 ===
+  seed=1: e_n_nmse=6.462423e-14 e_c_nmse=6.462423e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=2: e_n_nmse=6.434038e-14 e_c_nmse=6.434038e-14 max_abs_native=3.862381e-05 max_abs_candidate=3.862381e-05 native_status=ok candidate_status=ok
+  seed=3: e_n_nmse=6.438863e-14 e_c_nmse=6.438863e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=4: e_n_nmse=6.422754e-14 e_c_nmse=6.422754e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=5: e_n_nmse=6.408200e-14 e_c_nmse=6.408200e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=6: e_n_nmse=6.504093e-14 e_c_nmse=6.504093e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=7: e_n_nmse=6.405723e-14 e_c_nmse=6.405723e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=8: e_n_nmse=6.429946e-14 e_c_nmse=6.429946e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=9: e_n_nmse=6.442743e-14 e_c_nmse=6.442743e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=10: e_n_nmse=6.402135e-14 e_c_nmse=6.402135e-14 max_abs_native=4.577637e-05 max_abs_candidate=4.577637e-05 native_status=ok candidate_status=ok
+  AGGREGATE: e_n_nmse=6.504093e-14 e_c_nmse=6.504093e-14 headroom_fraction=0.5
+
+=== mmvq:q8_0:w4:nw8:rpb1:sk0:v1 ===
+  seed=1: e_n_nmse=6.462423e-14 e_c_nmse=6.233315e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=2: e_n_nmse=6.434038e-14 e_c_nmse=6.201093e-14 max_abs_native=3.862381e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=3: e_n_nmse=6.438863e-14 e_c_nmse=6.229246e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=4: e_n_nmse=6.422754e-14 e_c_nmse=6.201888e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=5: e_n_nmse=6.408200e-14 e_c_nmse=6.201282e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=6: e_n_nmse=6.504093e-14 e_c_nmse=6.269357e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=7: e_n_nmse=6.405723e-14 e_c_nmse=6.208476e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=8: e_n_nmse=6.429946e-14 e_c_nmse=6.223939e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=9: e_n_nmse=6.442743e-14 e_c_nmse=6.238088e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=10: e_n_nmse=6.402135e-14 e_c_nmse=6.190442e-14 max_abs_native=4.577637e-05 max_abs_candidate=4.196167e-05 native_status=ok candidate_status=ok
+  AGGREGATE: e_n_nmse=6.504093e-14 e_c_nmse=6.269357e-14 headroom_fraction=0.5
+
+=== mmvq:q8_0:w4:nw1:rpb2:sk0:v1 ===
+  seed=1: e_n_nmse=6.462423e-14 e_c_nmse=6.462423e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=2: e_n_nmse=6.434038e-14 e_c_nmse=6.434038e-14 max_abs_native=3.862381e-05 max_abs_candidate=3.862381e-05 native_status=ok candidate_status=ok
+  seed=3: e_n_nmse=6.438863e-14 e_c_nmse=6.438863e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=4: e_n_nmse=6.422754e-14 e_c_nmse=6.422754e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=5: e_n_nmse=6.408200e-14 e_c_nmse=6.408200e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=6: e_n_nmse=6.504093e-14 e_c_nmse=6.504093e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=7: e_n_nmse=6.405723e-14 e_c_nmse=6.405723e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=8: e_n_nmse=6.429946e-14 e_c_nmse=6.429946e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=9: e_n_nmse=6.442743e-14 e_c_nmse=6.442743e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=10: e_n_nmse=6.402135e-14 e_c_nmse=6.402135e-14 max_abs_native=4.577637e-05 max_abs_candidate=4.577637e-05 native_status=ok candidate_status=ok
+  AGGREGATE: e_n_nmse=6.504093e-14 e_c_nmse=6.504093e-14 headroom_fraction=0.5
+
+=== mmvq:q8_0:w4:nw8:rpb2:sk0:v1 ===
+  seed=1: e_n_nmse=6.462423e-14 e_c_nmse=6.233315e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=2: e_n_nmse=6.434038e-14 e_c_nmse=6.201093e-14 max_abs_native=3.862381e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=3: e_n_nmse=6.438863e-14 e_c_nmse=6.229246e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=4: e_n_nmse=6.422754e-14 e_c_nmse=6.201888e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=5: e_n_nmse=6.408200e-14 e_c_nmse=6.201282e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=6: e_n_nmse=6.504093e-14 e_c_nmse=6.269357e-14 max_abs_native=3.433228e-05 max_abs_candidate=3.433228e-05 native_status=ok candidate_status=ok
+  seed=7: e_n_nmse=6.405723e-14 e_c_nmse=6.208476e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=8: e_n_nmse=6.429946e-14 e_c_nmse=6.223939e-14 max_abs_native=3.814697e-05 max_abs_candidate=3.814697e-05 native_status=ok candidate_status=ok
+  seed=9: e_n_nmse=6.442743e-14 e_c_nmse=6.238088e-14 max_abs_native=3.623962e-05 max_abs_candidate=3.623962e-05 native_status=ok candidate_status=ok
+  seed=10: e_n_nmse=6.402135e-14 e_c_nmse=6.190442e-14 max_abs_native=4.577637e-05 max_abs_candidate=4.196167e-05 native_status=ok candidate_status=ok
+  AGGREGATE: e_n_nmse=6.504093e-14 e_c_nmse=6.269357e-14 headroom_fraction=0.5
+
+
+########## SUMMARY ##########
+  mmvq:q8_0:w4:nw1:rpb1:sk0:v1: e_c_nmse=6.504093e-14
+  mmvq:q8_0:w4:nw8:rpb1:sk0:v1: e_c_nmse=6.269357e-14
+  mmvq:q8_0:w4:nw1:rpb2:sk0:v1: e_c_nmse=6.504093e-14
+  mmvq:q8_0:w4:nw8:rpb2:sk0:v1: e_c_nmse=6.269357e-14
