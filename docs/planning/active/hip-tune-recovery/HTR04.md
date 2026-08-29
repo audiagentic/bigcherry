@@ -63,3 +63,8 @@ This item stays 'pending, not yet actionable' until HTR01 has real production/ca
 ## Change Log
 
 - 2026-08-29T13:47:23.898965+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260829_134919_the-tuning-system-can-now-reco_8101
+- 2026-08-29T13:49:19.493979+00:00 (updated-by): Updated: section:ledger-events

@@ -81,3 +81,8 @@ Directly informed by walking through, in conversation, exactly how HI143's curre
 ## Change Log
 
 - 2026-08-29T13:44:01.556347+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260829_134919_the-tuning-system-can-now-reco_8101
+- 2026-08-29T13:49:19.490008+00:00 (updated-by): Updated: section:ledger-events
