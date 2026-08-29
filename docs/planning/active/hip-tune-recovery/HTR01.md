@@ -96,6 +96,15 @@ Offline unit tests for the RecoveryStrategy contract (ddmin split/recurse/intera
 
 See HTR02 for the durable BehavioralFailureWitness persistence layer this item's Observation records should feed (a separate, adjacent concern GPT was explicit should not be conflated with the recovery search itself). See HI143 for the existing gate this wires into and its still-open throughput-adjudication gap. See HI141 for the real regression and candidate-mix-masking evidence this whole design responds to.
 
+IMPLEMENTED (2026-08-29): tools/bigcherry/tuning/recovery.py written per the design above (RecoveryState/AssignmentProposal/Observation/RecoveryStrategy protocol/BoundedDeltaDebugStrategy/AssignmentExecutor/run_recovery), wired into workflow.py's _stage_replay_validate (on hard_fail or needs_throughput_adjudication, attempt bounded recovery before raising; only re-raises if recovery itself is unavailable or exhausts its budget without a publishable assignment). Cache splicing reuses the existing, HI22-validated seed-override mechanism in replay.build() (a manifest-bound {dispatch: stable_name} override file) rather than hand-rolling new measurements-row mutation logic. 9 offline unit tests added (tools/tests/tuning/test_recovery.py) covering the ddmin outcome matrix and run_recovery's budget/circuit-breaker/all-failing-vectors-collected-upfront behavior with a fully mocked executor -- all passing, plus the full existing workflow/behavioral_gate/server_runner suite (52 tests) still passing after the wiring change.
+
+HTR04 FOLLOW-UP LANDED ALONGSIDE (2026-08-29, per GPT's explicit instruction that this be exposed NOW, not deferred): run_recovery emits RetuneRecommendation records (reason='alternatives_exhausted' only, v1) whenever a signature ends up forced to native despite having had real measured alternatives -- pure structured evidence written to workdir/recovery-result.json, asserted in code comments to change nothing automatically. GPT's explicit, adopted principle: 'HTR01 failure != retune' -- see HTR04 for the full escalation design (three of its four reasons are explicitly NOT implemented yet, deferred pending real HTR01 usage history).
+
+KNOWN LIMITATIONS, not yet closed (documented in code, not hidden):
+1. Precise dispatch-hit scoping via GGML_HIP_DISPATCH_HIT_LOG cross-referencing is NOT wired -- recovery currently searches over every promoted non-native signature rather than only the ones the failing vector(s) actually exercised (workflow.py's _stage_replay_validate sets dispatch_hits=frozenset(assignments) as a placeholder). Correct but less efficient than the design's intent; a real follow-up, not a correctness bug.
+2. Alternative candidate eligibility (does an alternative already have correctness evidence?) is discovered lazily when AssignmentExecutor tries to build a cache with it (via replay.build()'s own existing checks), not filtered in advance -- an ineligible alternative simply raises RecoveryError for that one proposal and the search continues, which is safe but means some evaluation-budget waste on doomed proposals.
+3. NOT YET real-hardware validated -- offline logic tests only so far. Real-hardware validation (re-running a campaign that reproduces a genuine hard_fail, e.g. reusing hi141-proof-20260829-2231's exact conditions, and confirming recovery either ships a reduced-but-real cache or correctly falls back/aborts) remains open per this item's own validation section.
+
 ## Change Log
 
 - 2026-08-29T13:28:09.305813+00:00 (created-by): Created by agent
@@ -104,3 +113,4 @@ See HTR02 for the durable BehavioralFailureWitness persistence layer this item's
 
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.371872+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-29T13:47:39.236165+00:00 (updated-by): Updated: section:notes

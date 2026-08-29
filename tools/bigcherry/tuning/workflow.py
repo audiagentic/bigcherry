@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from . import behavioral_gate as behavioral_gate_mod
 from . import inventory as inv_mod
+from . import recovery as recovery_mod
 from . import replay as replay_mod
 from . import signature_digest_verification as sdv
 from . import tune_promotion
@@ -443,10 +444,66 @@ def _default_behavioral_corpus() -> list[behavioral_gate_mod.BehavioralVector]:
     return [behavioral_gate_mod.load_hi141_regression_vector()]
 
 
+def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.SignatureAssignment]:
+    """HTR01: build the recovery search's starting point directly from this
+    campaign's OWN promoted.jsonl -- every non-native promoted signature's
+    current winner, plus its already-measured alternatives (from its own
+    ranking_decisions, best-first by effective_us) so recovery never needs
+    a new GPU timing measurement to try a different candidate.
+
+    KNOWN LIMITATION (not yet closed): alternatives are ordered purely by
+    this campaign's own ranking_decisions effective_us; whether each
+    alternative already has correctness evidence (and is therefore
+    actually eligible to be spliced into a cache today) is discovered
+    lazily when AssignmentExecutor tries to build a cache with it, not
+    filtered out here in advance."""
+    assignments: dict[str, recovery_mod.SignatureAssignment] = {}
+    with promoted_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("promotion_status") != "promoted":
+                continue
+            dispatch = row.get("dispatch")
+            signature = row.get("signature")
+            current = row.get("winner")
+            if not dispatch or not signature or not current:
+                continue
+            ranking = row.get("ranking_decisions") or []
+            names_by_us: list[tuple[float, str]] = []
+            for decision in ranking:
+                for entry in decision.get("candidates", []):
+                    name = entry.get("name")
+                    if not name or name == current or name == "mmvq:native:v1" or "native" in name:
+                        continue
+                    effective_us = entry.get("effective_us")
+                    if effective_us is None:
+                        continue
+                    names_by_us.append((float(effective_us), name))
+            names_by_us.sort(key=lambda pair: pair[0])
+            seen: set[str] = set()
+            alternatives = []
+            for _, name in names_by_us:
+                if name in seen:
+                    continue
+                seen.add(name)
+                alternatives.append(name)
+            assignments[dispatch] = recovery_mod.SignatureAssignment(
+                dispatch=dispatch, signature=signature, current_candidate=current,
+                alternatives=tuple(alternatives),
+            )
+    return assignments
+
+
 def _stage_replay_validate(
     *, lane_result: CampaignLaneResult, model_path: Path, devices: str,
     runtime_profile: campaign_config.RuntimeProfile, provisional_cache: Path, workdir: Path,
     corpus: list[behavioral_gate_mod.BehavioralVector] | None = None,
+    promoted_path: Path | None = None, manifest_path: Path | None = None,
+    ggml_h_path: Path | None = None, allow_recovery: bool = True,
+    max_recovery_evaluations: int = recovery_mod.DEFAULT_MAX_RECOVERY_EVALUATIONS,
 ) -> dict:
     """HI143: the real pre-promotion behavioral regression gate, wired into
     the actual campaign path (gpt-negotiated integration, 2026-08-29,
@@ -554,23 +611,73 @@ def _stage_replay_validate(
     ])
     atomic_write_json(report_path, report.summary())
 
-    if report.hard_fail:
-        raise TuneCampaignError(
-            f"behavioral gate hard-fail: a promoted candidate's generated output "
-            f"diverged from native on a real regression vector -- refusing to ship "
-            f"this cache: {report.summary()!r}"
-        )
-    if report.needs_throughput_adjudication:
-        # HI143's converged design allows a same-output/different-accept-trace
-        # candidate to ship if it's proven throughput non-inferior -- that
-        # adjudication step is not implemented yet, so fail closed rather
-        # than silently treat "changed" as "fine" (gpt review, 2026-08-29).
-        raise TuneCampaignError(
-            f"behavioral gate requires throughput adjudication (not yet "
-            f"implemented): a promoted candidate produced identical output but "
-            f"a different MTP accept/generated trace than native -- refusing to "
-            f"ship until this is adjudicated: {report.summary()!r}"
-        )
+    if report.hard_fail or report.needs_throughput_adjudication:
+        # HTR01: rather than immediately discarding the ENTIRE campaign's
+        # yield (every other candidate's real, already-measured speed win)
+        # over one bad signature, attempt a bounded recovery search using
+        # ONLY data this campaign already collected -- no new GPU tuning.
+        # Real hardware proof this matters: run-id hi141-proof-20260829-2231
+        # (2026-08-29) hard-failed on exactly one of 41 promoted candidates
+        # and shipped nothing at all.
+        recovered = False
+        if allow_recovery and promoted_path is not None and manifest_path is not None and ggml_h_path is not None:
+            try:
+                assignments = _load_signature_assignments(promoted_path)
+                executor = recovery_mod.AssignmentExecutor(
+                    binary_path=binary_path, model_path=model_path, devices=devices,
+                    common_args=common_args, measurements_path=promoted_path,
+                    manifest_path=manifest_path, ggml_h_path=ggml_h_path, workdir=workdir,
+                )
+                strategy = recovery_mod.BoundedDeltaDebugStrategy()
+                # KNOWN LIMITATION (not yet closed, tracked for follow-up):
+                # precise dispatch-hit scoping via GGML_HIP_DISPATCH_HIT_LOG
+                # cross-referencing is not wired here -- recovery searches
+                # over every promoted non-native signature rather than only
+                # the ones the failing vector(s) actually exercised. Correct
+                # but less efficient than the design's intent.
+                dispatch_hits = frozenset(assignments)
+                result = recovery_mod.run_recovery(
+                    executor=executor, strategy=strategy, initial_assignments=assignments,
+                    initial_report=report, full_corpus=list(corpus), dispatch_hits=dispatch_hits,
+                    max_evaluations=max_recovery_evaluations,
+                )
+            except recovery_mod.RecoveryError as exc:
+                raise TuneCampaignError(
+                    f"behavioral gate failed and recovery search could not produce a "
+                    f"publishable assignment: {exc}. Original gate report: {report.summary()!r}"
+                ) from exc
+            recovery_report_path = workdir / "recovery-result.json"
+            atomic_write_json(recovery_report_path, {
+                "published": result.published, "final_overrides": result.final_overrides,
+                "evaluations_used": result.evaluations_used, "stop_reason": result.stop_reason,
+                # HTR04: structured evidence only -- no code path here or in
+                # recovery.py acts on these. An operator (or a future,
+                # explicit GPU-budget-governed policy that does not exist
+                # yet) reads this to decide whether a targeted retune is
+                # worth its real GPU cost.
+                "retune_recommendations": [
+                    {
+                        "signature_dispatch": r.signature_dispatch, "reason": r.reason,
+                        "current_assignment": r.current_assignment,
+                        "exhausted_candidates": list(r.exhausted_candidates),
+                    }
+                    for r in result.retune_recommendations
+                ],
+            })
+            if not result.published:
+                raise TuneCampaignError(
+                    f"behavioral gate failed and recovery search exhausted its budget "
+                    f"without a publishable assignment ({result.stop_reason}). Original "
+                    f"gate report: {report.summary()!r}"
+                )
+            provisional_cache = result.cache_path
+            recovered = True
+        if not recovered:
+            verb = "hard-fail" if report.hard_fail else "requires throughput adjudication (not yet implemented)"
+            raise TuneCampaignError(
+                f"behavioral gate {verb}: refusing to ship this cache and recovery "
+                f"was not attempted: {report.summary()!r}"
+            )
 
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
     replay_coverage = coverage.get("replay", coverage)
@@ -737,6 +844,9 @@ def run_tune_campaign(
         replay_coverage = _stage_replay_validate(
             lane_result=replay_result, model_path=model_path, devices=devices,
             runtime_profile=profile, provisional_cache=provisional_cache_path, workdir=workdir,
+            promoted_path=workdir / "promoted.jsonl",
+            manifest_path=Path(replay_result.manifest_ref.path),
+            ggml_h_path=replay_result.source_root / "ggml" / "include" / "ggml.h",
         )
         dispatch_cache_path = workdir / "dispatch.cache"
 
