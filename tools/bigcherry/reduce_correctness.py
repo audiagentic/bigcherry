@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,14 @@ def compute_topology_key(device_count: int, peer_access_matrix: list[list[bool]]
     Diagonal (i == j) is always treated as accessible, matching the real
     C++ derivation's `i == j ? 1 : ...`.
     """
+    if len(peer_access_matrix) != device_count or any(
+        len(row) != device_count for row in peer_access_matrix
+    ):
+        raise ValueError(
+            f"peer_access_matrix must be {device_count}x{device_count}, "
+            f"got {len(peer_access_matrix)} rows"
+        )
+
     bits: list[str] = []
     complete = True
     for i in range(device_count):
@@ -122,6 +131,11 @@ def write_case(
     corpus-freezing discipline.
     """
     device_count = len(rank_values)
+    if not (2 <= device_count <= 4):
+        raise ValueError(f"test-hip-reduce supports 2-4 devices, got {device_count}")
+    if element_type != "f32":
+        raise ValueError(f"only f32 is supported (probe hard-requires it), got {element_type!r}")
+
     element_count = len(rank_values[0])
     for r, values in enumerate(rank_values):
         if len(values) != element_count:
@@ -167,12 +181,15 @@ def read_rank_values(case_dir: Path, device_count: int) -> list[list[float]]:
 
 def independent_expected_sum(rank_values: list[list[float]]) -> list[float]:
     """CPU-double reference sum, independent of any GPU implementation.
-    Python floats are IEEE-754 doubles, so plain sum() here already gives
-    the F64 reference -- no numpy/GPU dependency needed for the oracle."""
+    Python floats are IEEE-754 doubles, so this already computes in F64 --
+    no numpy/GPU dependency needed for the oracle. Uses math.fsum() (an
+    exact/robust summation, not naive sequential sum()) so the reference
+    itself never accumulates rounding error across many terms -- gpt-
+    flagged real gap: ordinary sum() is not an exact oracle even in F64."""
     device_count = len(rank_values)
     element_count = len(rank_values[0])
     return [
-        sum(rank_values[r][i] for r in range(device_count))
+        math.fsum(rank_values[r][i] for r in range(device_count))
         for i in range(element_count)
     ]
 
@@ -201,9 +218,21 @@ _PROVENANCE_GATES = {
         and r.get("handoff") == "none"
         and r.get("fallback_depth") == 0
     ),
-    "meta": lambda r: r.get("requested_provider") == "meta",
-    # auto has no gate -- records whatever production actually chose.
-    "auto": lambda r: True,
+    # Strengthened per gpt review: requested_provider=="meta" alone was too
+    # weak -- an explicit-meta request that actually fell through some
+    # other handoff/fallback path would still have passed. Require the
+    # same full-provenance shape as rccl, just for the meta provider.
+    "meta": lambda r: (
+        r.get("requested_provider") == "meta"
+        and r.get("effective_provider") == "meta"
+        and r.get("handoff") == "none"
+        and r.get("fallback_depth") == 0
+    ),
+    # auto records whatever production actually chose, but must still
+    # prove the CALL was actually requested as auto -- otherwise evidence
+    # from a differently-requested plan could silently pass an auto
+    # evaluation (gpt-flagged real gap).
+    "auto": lambda r: r.get("requested_provider") == "auto",
 }
 
 
@@ -246,14 +275,37 @@ def evaluate_probe_result(
 
     device_count = result_json["device_count"]
     rank_values = read_rank_values(case_dir, device_count)
+
+    # Reject non-finite inputs before computing anything -- a NaN/Inf
+    # anywhere makes every downstream comparison meaningless (a NaN
+    # "exceeds bound" check is always False, so a corrupted input could
+    # otherwise silently pass). gpt-flagged real gap.
+    for r, values in enumerate(rank_values):
+        for i, v in enumerate(values):
+            if not math.isfinite(v):
+                return EvaluationResult(False, f"case input rank {r} element {i} is non-finite: {v!r}")
+
     expected = independent_expected_sum(rank_values)
     sum_abs = sum_abs_per_element(rank_values)
+    for i, v in enumerate(expected):
+        if not math.isfinite(v):
+            return EvaluationResult(False, f"independent expected sum at element {i} is non-finite: {v!r}")
 
     outputs = result_json.get("outputs", [])
     if len(outputs) != device_count:
         return EvaluationResult(False, f"expected {device_count} output entries, got {len(outputs)}")
 
-    per_rank_outputs: list[list[float]] = []
+    # Exact participant coverage: ranks 0..D-1, each present exactly once
+    # -- not merely "device_count entries" (gpt-flagged: a duplicate rank
+    # with a missing one would still pass a bare length check).
+    seen_devices = sorted(entry["device"] for entry in outputs)
+    if seen_devices != list(range(device_count)):
+        return EvaluationResult(
+            False, f"expected output devices exactly {list(range(device_count))}, got {seen_devices}",
+        )
+
+    element_count = len(expected)
+    per_rank_outputs: dict[int, list[float]] = {}
     for entry in outputs:
         rank_path = Path(entry["path"])
         raw = rank_path.read_bytes()
@@ -262,23 +314,24 @@ def evaluate_probe_result(
             return EvaluationResult(
                 False, f"output file {rank_path} digest mismatch (tampered or corrupted since probe wrote it)",
             )
-        per_rank_outputs.append(_unpack_f32(raw))
-
-    # Cross-device agreement: every rank of an AllReduce must report the
-    # same result. Proven redundant-by-triangle-inequality given the
-    # per-device error bound below (HI18's own earlier finding), but kept
-    # as an explicit, independently-statable requirement rather than
-    # silently relying on the per-device gate to imply it.
-    reference_rank = per_rank_outputs[0]
-    for r in range(1, device_count):
-        if len(per_rank_outputs[r]) != len(reference_rank):
-            return EvaluationResult(False, f"rank {r} output length differs from rank 0")
+        values = _unpack_f32(raw)
+        if len(values) != element_count:
+            return EvaluationResult(
+                False,
+                f"device {entry['device']} output has {len(values)} elements, expected {element_count}",
+            )
+        for i, v in enumerate(values):
+            if not math.isfinite(v):
+                return EvaluationResult(
+                    False, f"device {entry['device']} output element {i} is non-finite: {v!r}",
+                )
+        per_rank_outputs[entry["device"]] = values
 
     worst_abs_error = 0.0
     worst_index = -1
-    for r, output in enumerate(per_rank_outputs):
-        for i, (actual, exp, sabs) in enumerate(zip(output, expected, sum_abs)):
-            bound = f32_error_bound(device_count, sabs)
+    bounds = [f32_error_bound(device_count, sabs) for sabs in sum_abs]
+    for device, output in per_rank_outputs.items():
+        for i, (actual, exp, bound) in enumerate(zip(output, expected, bounds)):
             err = abs(actual - exp)
             if err > worst_abs_error:
                 worst_abs_error = err
@@ -286,10 +339,30 @@ def evaluate_probe_result(
             if err > bound:
                 return EvaluationResult(
                     False,
-                    f"rank {r} element {i}: |actual-expected|={err:.6e} exceeds "
+                    f"device {device} element {i}: |actual-expected|={err:.6e} exceeds "
                     f"analytical F32 bound {bound:.6e} (expected={exp!r}, actual={actual!r})",
                     max_abs_error=worst_abs_error,
                     worst_element_index=worst_index,
+                )
+
+    # Real pairwise cross-device agreement (not merely a length check).
+    # Per-rank bounds each give |r_i - ref| <= B, so by the triangle
+    # inequality |r_i - r_j| <= 2B follows -- NOT <= B. gpt correctly
+    # flagged the previous comment's "redundant" claim as too strong; this
+    # check uses the honestly-derived 2B bound rather than asserting
+    # redundancy that doesn't hold.
+    devices = sorted(per_rank_outputs)
+    reference_device = devices[0]
+    reference = per_rank_outputs[reference_device]
+    for device in devices[1:]:
+        output = per_rank_outputs[device]
+        for i, (a, b, bound) in enumerate(zip(reference, output, bounds)):
+            pair_err = abs(a - b)
+            if pair_err > 2.0 * bound:
+                return EvaluationResult(
+                    False,
+                    f"cross-device disagreement: device {reference_device} vs {device} at element {i}: "
+                    f"|{a!r}-{b!r}|={pair_err:.6e} exceeds 2x analytical bound {2.0 * bound:.6e}",
                 )
 
     return EvaluationResult(True, "clean: signature matched, provenance gate passed, all ranks within analytical F32 bound", max_abs_error=worst_abs_error, worst_element_index=worst_index)

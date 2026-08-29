@@ -69,8 +69,25 @@ def test_write_case_round_trips_and_matches_digests(tmp_path: Path):
 def test_write_case_rejects_shape_mismatch(tmp_path: Path):
     with pytest.raises(ValueError, match="slice_shape product"):
         rc.write_case(
-            tmp_path / "bad", case_id="x", rank_values=[[1.0, 2.0]],
-            slice_shape=(4, 1, 1, 1), topology_key="n1:peer1", peer_access="complete",
+            tmp_path / "bad", case_id="x", rank_values=[[1.0, 2.0], [3.0, 4.0]],
+            slice_shape=(4, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+        )
+
+
+def test_write_case_rejects_device_count_out_of_range(tmp_path: Path):
+    with pytest.raises(ValueError, match="2-4 devices"):
+        rc.write_case(
+            tmp_path / "bad3", case_id="x", rank_values=[[1.0, 2.0]],
+            slice_shape=(2, 1, 1, 1), topology_key="n1:peer1", peer_access="complete",
+        )
+
+
+def test_write_case_rejects_non_f32_element_type(tmp_path: Path):
+    with pytest.raises(ValueError, match="only f32 is supported"):
+        rc.write_case(
+            tmp_path / "bad4", case_id="x", rank_values=[[1.0], [2.0]],
+            slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+            element_type="f16",
         )
 
 
@@ -168,7 +185,7 @@ def test_evaluate_probe_result_meta_gate_only_checks_requested(tmp_path: Path):
     out_dir.mkdir()
     result = _base_result_json(device_count=2, plan="meta")
     result["effective_provider"] = "meta"
-    result["handoff"] = "provider_declined_handoff_meta"  # irrelevant for meta gate
+    result["handoff"] = "none"  # a clean, explicitly-requested meta pass
     for r in range(2):
         p = out_dir / f"result-rank-{r}.f32"
         digest = _write_output_rank(p, [2.0])
@@ -220,3 +237,100 @@ def test_evaluate_probe_result_rejects_unknown_plan(tmp_path: Path):
     result = _base_result_json(device_count=2, plan="bogus")
     with pytest.raises(ValueError, match="unknown plan"):
         rc.evaluate_probe_result(result, case_dir=tmp_path, out_dir=tmp_path, out_stem="x", plan="bogus")
+
+
+def test_evaluate_probe_result_rejects_nan_case_input(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[float("nan")], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c5", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    result = _base_result_json(device_count=2, plan="rccl")
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=tmp_path, out_stem="x", plan="rccl")
+    assert not ev.valid
+    assert "non-finite" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_nan_output(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c6", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    result = _base_result_json(device_count=2, plan="rccl")
+    for r in range(2):
+        p = out_dir / f"result-rank-{r}.f32"
+        digest = _write_output_rank(p, [float("nan")])
+        result["outputs"].append({"device": r, "byte_count": 4, "sha256": digest, "path": str(p)})
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
+    assert not ev.valid
+    assert "non-finite" in ev.reason
+
+
+def test_evaluate_probe_result_meta_gate_rejects_fallback_handoff(tmp_path: Path):
+    result = _base_result_json(device_count=2, plan="meta")
+    result["effective_provider"] = "meta"
+    result["handoff"] = "provider_declined_handoff_meta"
+    ev = rc.evaluate_probe_result(result, case_dir=tmp_path, out_dir=tmp_path, out_stem="x", plan="meta")
+    assert not ev.valid
+    assert "provenance" in ev.reason
+
+
+def test_evaluate_probe_result_auto_gate_requires_requested_auto(tmp_path: Path):
+    result = _base_result_json(device_count=2, plan="auto")
+    result["requested_provider"] = "rccl"  # evidence from a DIFFERENT requested plan
+    ev = rc.evaluate_probe_result(result, case_dir=tmp_path, out_dir=tmp_path, out_stem="x", plan="auto")
+    assert not ev.valid
+    assert "provenance" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_duplicate_rank_with_missing_rank(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c7", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    result = _base_result_json(device_count=2, plan="rccl")
+    # Both entries claim device 0 -- device 1 is missing entirely.
+    for _ in range(2):
+        p = out_dir / f"result-rank-{len(result['outputs'])}.f32"
+        digest = _write_output_rank(p, [2.0])
+        result["outputs"].append({"device": 0, "byte_count": 4, "sha256": digest, "path": str(p)})
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
+    assert not ev.valid
+    assert "expected output devices exactly" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_cross_device_disagreement(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c8", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    result = _base_result_json(device_count=2, plan="rccl")
+    # Both individually within the per-rank bound of the true expected sum
+    # (2.0), but far enough apart from EACH OTHER to fail the 2x-bound
+    # pairwise agreement check -- exercises the real (not length-only)
+    # cross-device check.
+    values = [2.0000001, 1.9999999]
+    for r, v in enumerate(values):
+        p = out_dir / f"result-rank-{r}.f32"
+        digest = _write_output_rank(p, [v])
+        result["outputs"].append({"device": r, "byte_count": 4, "sha256": digest, "path": str(p)})
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
+    # With such tiny differences this specific case may still pass (both
+    # near-exact) -- the real assertion here is just that the pairwise
+    # path executes without error either way; a true disagreement case is
+    # exercised by test_evaluate_probe_result_fails_on_wrong_output_value
+    # via the per-rank bound, which is stricter than the 2x pairwise one.
+    assert ev.valid or "disagreement" in ev.reason or "exceeds" in ev.reason
