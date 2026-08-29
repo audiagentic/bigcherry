@@ -372,7 +372,7 @@ title = "cuda : RDNA4 WMMA flash-attn and Q6_K mmq prefill performance work"
 plan-item = "RD05/RD06/RD07"
 status = "ported-untested"
 patch = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
-note = "mixed commit; split across RD05 (WMMA correctness barriers), RD06 (RDNA4 WMMA config) and RD07 (Q6_K MMQ fold/hoist). RD07 co-tenants BigCherry 0300/1000 and must be re-verified against HI71's dense-shape-aware eligibility, not merged textually. Ported 2026-08-18 (17 edits, 6 files); isolated bench pending"
+note = "mixed commit; split across RD05 (WMMA correctness barriers), RD06 (RDNA4 WMMA config) and RD07 (Q6_K MMQ fold/hoist). RD07 co-tenants BigCherry 0300/1000 and must be re-verified against HI71's dense-shape-aware eligibility, not merged textually. Ported 2026-08-18 (17 edits, 6 files); isolated bench pending. RE-COMMITTED as beaf69fb6a87ddeebb31c9977903a23638eee88d after the v2->current rebase (found by sources-check, 2026-08-30): verified all 5 correctness-relevant touched files (fattn-mma-f16.cuh config table + DKQ>576 + np==1 sync fix, fattn.cu logit_softcap gate, mmq-vec-dot.cuh sub-scale fold, mmq.cuh J_MAX override) byte-identical to our already-ported patches/1203 content; the 6th file (tests/test-backend-ops.cpp) differs only in already-documented, intentional BigCherry adaptations (see the patch docstring). No content update needed to 1203 itself -- pending only a full v3 snapshot refresh of this source (see HI154)."
 
 [[sources.tracked]]
 commit = "4591cc9806d24c5151a35007d24b69550df93e32"
