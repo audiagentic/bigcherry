@@ -85,7 +85,14 @@ class SignatureAssignment:
     dispatch: str  # dispatch digest -- the seed-override key replay.build() expects
     signature: str  # signature digest -- required alongside dispatch by the override format
     current_candidate: str
-    alternatives: tuple[str, ...]  # excludes current_candidate and "native"
+    native_candidate: str  # the REAL native stable_name for this op family (e.g.
+                            # "mmvq:native:v1") -- replay.build()'s seed-override
+                            # mechanism requires a manifest-real candidate identity,
+                            # not the literal string "native" (a real bug caught
+                            # during this item's own first real-hardware validation
+                            # run, 2026-08-29: "seed override 'native' for dispatch
+                            # ... is not in the manifest").
+    alternatives: tuple[str, ...]  # excludes current_candidate and native_candidate
 
 
 @dataclass(frozen=True)
@@ -119,7 +126,12 @@ class Observation:
     """What actually happened when a proposal was evaluated -- the only
     thing a RecoveryStrategy is allowed to base its next proposal on."""
     proposal: AssignmentProposal
-    verdict: str  # "pass" (probe vectors clean) | "hard_fail" | "behavior_changed" | "unstable"
+    verdict: str  # "pass" (probe vectors clean) | "hard_fail" | "behavior_changed" |
+                  # "ineligible" (proposal itself couldn't even be built/run -- e.g. a
+                  # candidate lacking correctness evidence; NOT evidence about the
+                  # signature's guilt either way, just wasted budget) | "unstable"
+                  # (a probe that genuinely produced inconsistent repeat results --
+                  # not yet detected by any code path here; reserved for future use)
     report: behavioral_gate_mod.BehavioralGateReport | None
     full_corpus_validated: bool = False
 
@@ -207,9 +219,14 @@ class BoundedDeltaDebugStrategy:
         return []
 
     def _force_native_proposal(self, state: RecoveryState, label: str, group: tuple[str, ...]) -> AssignmentProposal:
+        overrides = {}
+        for d in group:
+            assignment = state.assignments.get(d)
+            if assignment is not None:
+                overrides[d] = assignment.native_candidate
         return AssignmentProposal(
             label=f"{label}:{','.join(d[:8] for d in group)}",
-            overrides={d: "native" for d in group},
+            overrides=overrides,
         )
 
     def _alternative_proposals(self, state: RecoveryState, group: tuple[str, ...]) -> list[AssignmentProposal]:
@@ -225,7 +242,7 @@ class BoundedDeltaDebugStrategy:
                 ))
             proposals.append(AssignmentProposal(
                 label=f"native:{dispatch[:8]}",
-                overrides={dispatch: "native"},
+                overrides={dispatch: assignment.native_candidate},
             ))
         return proposals
 
@@ -242,6 +259,19 @@ class BoundedDeltaDebugStrategy:
             raise RecoveryError(
                 f"non-deterministic result probing {observation.proposal.label!r} -- "
                 f"aborting recovery, this is not a candidate-attributable failure"
+            )
+        if observation.verdict == "ineligible":
+            # The proposal itself could not even be evaluated (e.g. an
+            # alternative candidate lacks correctness evidence for this
+            # exact build/hardware). This says NOTHING about whether the
+            # signature/group is actually implicated -- just skip it and
+            # keep the group queued/pending as-is so bisection or
+            # alternative-search continues with the budget it has left.
+            return RecoveryState(
+                assignments=state.assignments, failing_vectors=state.failing_vectors,
+                dispatch_hits=state.dispatch_hits,
+                evaluated=state.evaluated + (observation,),
+                remaining_budget=state.remaining_budget - 1,
             )
 
         if self._pending_groups and self._pending_groups[-1][:len(group)] == group:
@@ -500,7 +530,7 @@ def run_recovery(
             try:
                 observation = executor.evaluate(probe, full_corpus=full_corpus)
             except RecoveryError:
-                state = strategy.record(state, Observation(proposal=probe, verdict="unstable", report=None))
+                state = strategy.record(state, Observation(proposal=probe, verdict="ineligible", report=None))
                 continue
             state = strategy.record(state, observation)
             if observation.verdict == "pass":
@@ -509,9 +539,13 @@ def run_recovery(
 
     if best_overrides is None:
         # Nothing recovered -- every implicated signature falls back to
-        # native, per GPT's circuit-breaker behavior. This still preserves
-        # every unrelated already-clean winner untouched.
-        best_overrides = {dispatch: "native" for dispatch in dispatch_hits & set(initial_assignments)}
+        # its own real native candidate identity, per GPT's circuit-
+        # breaker behavior. This still preserves every unrelated
+        # already-clean winner untouched.
+        best_overrides = {
+            dispatch: initial_assignments[dispatch].native_candidate
+            for dispatch in dispatch_hits & set(initial_assignments)
+        }
 
     # HTR04: a signature that ended up forced to native despite having had
     # real measured alternatives is exactly the "alternatives exhausted"
@@ -527,7 +561,9 @@ def run_recovery(
             current_assignment="native", exhausted_candidates=initial_assignments[dispatch].alternatives,
         )
         for dispatch, candidate in best_overrides.items()
-        if candidate == "native" and initial_assignments.get(dispatch, SignatureAssignment("", "", "", ())).alternatives
+        if initial_assignments.get(dispatch) is not None
+        and candidate == initial_assignments[dispatch].native_candidate
+        and initial_assignments[dispatch].alternatives
     )
 
     final_observation = executor.validate_full_corpus(best_overrides, full_corpus=full_corpus)
