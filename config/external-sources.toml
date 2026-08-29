@@ -28,7 +28,7 @@ version = 1
 [[sources]]
 id = "mrlordcat-rdna-lab"
 repo = "https://github.com/MrLordCat/llama.cpp-rdna-lab"
-locator = "master (renamed from llama.cpp-with-GUI; GitHub redirects the old name transparently)"
+locator = "master"
 upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """Personal RDNA-tuning fork cited by plan items RD69-RD76 (the FORK-*
 cluster in the backlog batch). Standalone project (fork:false relative to
@@ -96,7 +96,7 @@ note = "REAL, exact match for RD76's 'restore/benchmark rocWMMA FlashAttention o
 [[sources]]
 id = "amd-ecosystem-llama-cpp"
 repo = "https://github.com/AMD-Ecosystem/llama.cpp"
-locator = "master + gfx11 integration branch; individual optimization PRs tracked by exact commit"
+locator = "master"
 upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """AMD's own optimization fork, referenced across ggml-org/llama.cpp
 GitHub discussions #26349 (Set2), #26378 (Set4), #26379 (Set5), #26380 (Set6).
@@ -550,7 +550,7 @@ note = "PR #89 (record-only, 2026-08-23 handoff): AMD observed some shapes impro
 [[sources]]
 id = "davetha-llama-cpp"
 repo = "https://github.com/davetha/llama.cpp"
-locator = "branch rocm/pin-state-restore-multigpu; one-off PR contribution, not a curated tuning fork"
+locator = "rocm/pin-state-restore-multigpu"
 upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """Personal fork carrying a single upstream PR contribution
 (ggml-org/llama.cpp#27405), not an ongoing tuning branch like
@@ -582,7 +582,7 @@ note = "REAL match for RD58's 'pinned host buffer for multi-GPU prompt-cache/sta
 [[sources]]
 id = "joursbleu-llama-cpp"
 repo = "https://github.com/JoursBleu/llama.cpp"
-locator = "branch fix/mmvq-dynamic-nwarps-moe; one-off PR contribution, not an ongoing tuning fork"
+locator = "fix/mmvq-dynamic-nwarps-moe"
 upstream = "https://github.com/ggml-org/llama.cpp"
 notes = """Personal fork carrying a single open upstream PR
 (ggml-org/llama.cpp#20831, author JoursBleu), not an ongoing tuning
