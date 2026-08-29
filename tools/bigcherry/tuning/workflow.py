@@ -21,11 +21,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from . import behavioral_gate as behavioral_gate_mod
 from . import inventory as inv_mod
 from . import replay as replay_mod
 from . import signature_digest_verification as sdv
 from . import tune_promotion
-from .server_runner import ServerRunner
+from .server_runner import ServerError, ServerRunner
 from .. import hi80_generate_correctness_evidence as hi80
 from ..campaign import planner as campaign_planner
 from ..campaign.lane import CampaignLaneResult
@@ -413,7 +414,13 @@ def _stage_replay_export(
         promoted_path, target_manifest_path, ggml_h, dispatch_db=dispatch_db,
         require_winner_verification=True,
     )
-    cache_path = workdir / "dispatch.cache"
+    # HI143 (gpt review, 2026-08-29): write to a provisional path and only
+    # atomically rename to the real dispatch.cache once the behavioral
+    # gate + coverage check both pass (_stage_replay_validate). Writing
+    # straight to dispatch.cache here meant a campaign that later failed
+    # validation still left a plausible-looking, unvalidated cache file
+    # sitting in the workdir.
+    cache_path = workdir / "dispatch.cache.provisional"
     cache_path.write_bytes(cache_bytes)
     return cache_path
 
@@ -432,43 +439,143 @@ def _stage_replay_build(
     )
 
 
-def _stage_replay_verify(
+def _default_behavioral_corpus() -> list[behavioral_gate_mod.BehavioralVector]:
+    return [behavioral_gate_mod.load_hi141_regression_vector()]
+
+
+def _stage_replay_validate(
     *, lane_result: CampaignLaneResult, model_path: Path, devices: str,
-    runtime_profile: campaign_config.RuntimeProfile, dispatch_cache: Path, workdir: Path,
+    runtime_profile: campaign_config.RuntimeProfile, provisional_cache: Path, workdir: Path,
+    corpus: list[behavioral_gate_mod.BehavioralVector] | None = None,
 ) -> dict:
+    """HI143: the real pre-promotion behavioral regression gate, wired into
+    the actual campaign path (gpt-negotiated integration, 2026-08-29,
+    session ses_330ae3c055084f38) -- replaces the old _stage_replay_verify,
+    which only checked cache coverage (dispatched==executed, no stale/
+    rerun entries) and would have shipped HI141's real regression without
+    ever noticing it, since a stale/miss check says nothing about whether
+    the CONTENT of what a hit dispatches to is correct.
+
+    Runs the SAME replay-capable binary in native mode first (one real
+    server load), then in replay mode against the provisional cache (a
+    second real server load, which also carries the existing coverage
+    check) -- never two 27B servers concurrently. Every corpus vector is
+    compared native-vs-candidate via behavioral_gate.compare_traces; any
+    hard_fail (generated output diverged) or behavior_changed (same
+    output, different MTP accept trace -- requires a throughput
+    adjudication step this module does not yet implement) fails the whole
+    campaign closed. Only when every vector is exact_pass AND the existing
+    replay-coverage check passes does the provisional cache get atomically
+    renamed to the real dispatch.cache."""
+    corpus = tuple(corpus if corpus is not None else _default_behavioral_corpus())
+    if not corpus:
+        raise TuneCampaignError("behavioral gate corpus is empty -- refusing to export unvalidated")
     binary_path = lane_result.binary_ref.path
     coverage_path = workdir / "coverage.json"
-    # GPT deep-review P2 (2026-08-29): workdir is created with exist_ok=True,
-    # so a reused workdir/run-id could leave a stale coverage.json from a
-    # prior run in place; if this run's binary launch fails to rewrite it,
-    # the stale file would be read below and could pass the gate on old
-    # data. Unlink it up front so success here always reflects THIS run.
-    if coverage_path.exists():
-        coverage_path.unlink()
-    runner = ServerRunner(
-        binary=binary_path, model=model_path,
-        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
-        env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
-            "GGML_HIP_DISPATCH_MODE": "replay",
-            "GGML_HIP_DISPATCH_CACHE": str(dispatch_cache),
-            "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
-        },
-        log_path=workdir / "replay-server.log",
+    report_path = workdir / "behavioral-gate.json"
+    final_cache_path = workdir / "dispatch.cache"
+    # Same stale-artifact defense as the old _stage_replay_verify (GPT
+    # deep-review P2, 2026-08-29), extended to the FINALIZED cache itself
+    # (gpt review, 2026-08-29): a reused workdir/run-id must never let a
+    # prior run's coverage/report/dispatch.cache be read/seen as this
+    # run's result -- an old finalized cache surviving a failed rerun
+    # would otherwise remain visible even though THIS validation rejected
+    # its provisional replacement.
+    for stale in (coverage_path, report_path, final_cache_path):
+        if stale.exists():
+            stale.unlink()
+
+    common_args = (
+        "-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args,
     )
-    with runner:
-        runner.run_completion("Explain how a compass works.", n_predict=96)
+    # HI143 (gpt review, 2026-08-29): the default corpus (load_hi141_
+    # regression_vector) is MTP/Qwen-specific, and run_vector requires MTP
+    # telemetry by default -- a runtime profile that does NOT enable
+    # --spec-type would otherwise crash validation entirely rather than
+    # just skipping an inapplicable check. Make applicability explicit
+    # instead of accidentally treating this fixture as universal.
+    require_mtp = "--spec-type" in runtime_profile.server_args
+    # HI143 (gpt review, 2026-08-29): the launched process otherwise
+    # inherits the full ambient environment -- a leftover
+    # GGML_HIP_FORCE_CANDIDATE(_STRICT)/DISPATCH_DB/DISPATCH_CACHE/
+    # DISPATCH_COVERAGE from an unrelated earlier command could silently
+    # contaminate either leg. Strip them; each leg then sets only what it
+    # actually intends.
+    env_unset = (
+        "GGML_HIP_FORCE_CANDIDATE", "GGML_HIP_FORCE_CANDIDATE_STRICT",
+        "GGML_HIP_DISPATCH_DB", "GGML_HIP_DISPATCH_CACHE", "GGML_HIP_DISPATCH_COVERAGE",
+    )
+
+    def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
+        env = {"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
+        runner = ServerRunner(
+            binary=binary_path, model=model_path, extra_args=common_args,
+            env_overrides=env, env_unset=env_unset, log_path=workdir / log_name,
+        )
+        try:
+            with runner:
+                return [
+                    behavioral_gate_mod.run_vector(runner, vector, require_mtp=require_mtp)
+                    for vector in corpus
+                ]
+        except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
+            raise TuneCampaignError(f"behavioral gate: {exc}") from exc
+
+    native_traces = _run_leg(dispatch_mode="native", log_name="behavioral-native.log", extra_env={})
+
+    candidate_env = {
+        "GGML_HIP_DISPATCH_CACHE": str(provisional_cache),
+        "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
+    }
+    candidate_runner = ServerRunner(
+        binary=binary_path, model=model_path, extra_args=common_args,
+        env_overrides={"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
+        env_unset=env_unset, log_path=workdir / "behavioral-candidate.log",
+    )
+    try:
+        with candidate_runner:
+            candidate_traces = [
+                behavioral_gate_mod.run_vector(candidate_runner, vector, require_mtp=require_mtp)
+                for vector in corpus
+            ]
+            candidate_runner.run_completion("Explain how a compass works.", n_predict=96)
+    except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
+        raise TuneCampaignError(f"behavioral gate: {exc}") from exc
+
+    # strict=True (gpt review, 2026-08-29): corpus is a materialized tuple
+    # (not a one-shot iterator) so this can never silently truncate, but
+    # strict=True is kept as a hard guarantee against a future refactor
+    # reintroducing that class of bug -- a length mismatch here must be a
+    # loud error, not a quietly short zip producing zero verdicts for the
+    # missing vectors (which would let replay coverage pass unchallenged).
+    report = behavioral_gate_mod.BehavioralGateReport(verdicts=[
+        behavioral_gate_mod.compare_traces(vector.name, native, candidate)
+        for vector, native, candidate in zip(corpus, native_traces, candidate_traces, strict=True)
+    ])
+    atomic_write_json(report_path, report.summary())
+
+    if report.hard_fail:
+        raise TuneCampaignError(
+            f"behavioral gate hard-fail: a promoted candidate's generated output "
+            f"diverged from native on a real regression vector -- refusing to ship "
+            f"this cache: {report.summary()!r}"
+        )
+    if report.needs_throughput_adjudication:
+        # HI143's converged design allows a same-output/different-accept-trace
+        # candidate to ship if it's proven throughput non-inferior -- that
+        # adjudication step is not implemented yet, so fail closed rather
+        # than silently treat "changed" as "fine" (gpt review, 2026-08-29).
+        raise TuneCampaignError(
+            f"behavioral gate requires throughput adjudication (not yet "
+            f"implemented): a promoted candidate produced identical output but "
+            f"a different MTP accept/generated trace than native -- refusing to "
+            f"ship until this is adjudicated: {report.summary()!r}"
+        )
+
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
-    # The coverage writer nests replay counters under ``replay``.  Accept the
-    # flat shape used by older runners only for compatibility, but always gate
-    # on the actual replay counters when they are present.
     replay_coverage = coverage.get("replay", coverage)
     if not isinstance(replay_coverage, dict):
         replay_coverage = {}
-    # A cache that is clean but has no exact hits is also not a successful
-    # replay: it proves only that nothing was stale, not that this campaign
-    # actually exercised a tuned dispatch decision.  Keep all three terms in
-    # the production gate so a missing ``exact`` field fails closed as well.
     if (
         replay_coverage.get("stale")
         or replay_coverage.get("rerun_required", 0)
@@ -479,6 +586,8 @@ def _stage_replay_verify(
             "rerun_required entries -- exported cache was not proven usable: "
             f"{coverage!r}"
         )
+
+    provisional_cache.replace(final_cache_path)
     return coverage
 
 
@@ -614,16 +723,22 @@ def run_tune_campaign(
         )
         if replay_result.manifest_ref is None:
             raise TuneCampaignError("replay build produced no manifest_ref -- cannot export cache")
-        dispatch_cache_path = _stage_replay_export(
+        provisional_cache_path = _stage_replay_export(
             promoted_path=workdir / "promoted.jsonl",
             target_manifest_path=Path(replay_result.manifest_ref.path),
             target_source_root=replay_result.source_root,
             dispatch_db=dispatch_db, workdir=workdir,
         )
-        replay_coverage = _stage_replay_verify(
+        # HI143: _stage_replay_validate raises TuneCampaignError (never
+        # returns) unless every corpus vector's behavioral trace matches
+        # native AND the existing coverage check passes -- only then does
+        # the provisional cache get atomically renamed to dispatch.cache,
+        # which is the path this receipt records below.
+        replay_coverage = _stage_replay_validate(
             lane_result=replay_result, model_path=model_path, devices=devices,
-            runtime_profile=profile, dispatch_cache=dispatch_cache_path, workdir=workdir,
+            runtime_profile=profile, provisional_cache=provisional_cache_path, workdir=workdir,
         )
+        dispatch_cache_path = workdir / "dispatch.cache"
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(

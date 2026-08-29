@@ -102,44 +102,74 @@ class StageReplayExportTests(unittest.TestCase):
                 dispatch_db=dispatch_db, require_winner_verification=True,
             )
             self.assertEqual(result.read_bytes(), b"cache-bytes")
+            # HI143: writes to a PROVISIONAL path -- the real dispatch.cache
+            # is only created once _stage_replay_validate's behavioral gate
+            # and coverage check both pass and atomically rename it.
+            self.assertEqual(result.name, "dispatch.cache.provisional")
 
 
-class StageReplayVerifyTests(unittest.TestCase):
-    def _run_with_fake_coverage(self, coverage: dict):
+class StageReplayValidateTests(unittest.TestCase):
+    """HI143: _stage_replay_validate replaces the old _stage_replay_verify
+    with a combined behavioral-gate + coverage check. These tests patch
+    behavioral_gate_mod.run_vector directly so they never touch a real
+    HTTP server -- the FIRST call corresponds to the native leg, the
+    SECOND to the candidate leg (one vector in the fake corpus, one
+    run_vector call per leg)."""
+
+    def _fake_corpus(self):
+        return [workflow.behavioral_gate_mod.BehavioralVector(name="fake-vector", prompt="x", n_predict=1)]
+
+    def _run_with_fake_coverage(self, coverage: dict, *, matching_traces: bool = True):
         from unittest.mock import MagicMock, patch
+        import shutil
         import tempfile
 
-        with tempfile.TemporaryDirectory() as directory:
-            workdir = Path(directory)
-            coverage_path = workdir / "coverage.json"
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        workdir = Path(directory)
+        provisional_path = workdir / "dispatch.cache.provisional"
+        provisional_path.write_bytes(b"fake-cache-bytes")
+        coverage_path = workdir / "coverage.json"
 
-            fake_lane_result = MagicMock()
-            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
-            fake_profile = MagicMock()
-            fake_profile.production_context = 4096
-            fake_profile.server_args = ()
+        fake_lane_result = MagicMock()
+        fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+        fake_profile = MagicMock()
+        fake_profile.production_context = 4096
+        fake_profile.server_args = ()
 
-            with patch.object(workflow, "ServerRunner") as fake_runner_cls:
-                fake_runner = fake_runner_cls.return_value
-                fake_runner.__enter__.return_value = fake_runner
-                # Write coverage.json as a side effect of the completion
-                # call, mirroring the real runner (which produces it during
-                # run_completion) -- _stage_replay_verify now unlinks any
-                # stale coverage.json BEFORE launching, so it must not
-                # exist until the (fake) run itself "writes" it. The real
-                # code calls run_completion on the ServerRunner instance
-                # itself (not the __enter__ return value), so the side
-                # effect must live on fake_runner here too.
-                fake_runner.run_completion.side_effect = (
-                    lambda *_a, **_k: coverage_path.write_text(
-                        json.dumps(coverage), encoding="utf-8"
-                    )
+        native_trace = workflow.behavioral_gate_mod.BehavioralTrace(
+            generated_token_ids=(1, 2, 3), draft_n=10, draft_n_accepted=8,
+        )
+        candidate_trace = native_trace if matching_traces else workflow.behavioral_gate_mod.BehavioralTrace(
+            generated_token_ids=(1, 2, 9), draft_n=10, draft_n_accepted=8,
+        )
+
+        with (
+            patch.object(workflow, "ServerRunner") as fake_runner_cls,
+            patch.object(
+                workflow.behavioral_gate_mod, "run_vector",
+                side_effect=[native_trace, candidate_trace],
+            ),
+        ):
+            fake_runner = fake_runner_cls.return_value
+            fake_runner.__enter__.return_value = fake_runner
+            # Write coverage.json as a side effect of the completion
+            # call, mirroring the real runner (which produces it during
+            # run_completion) -- _stage_replay_validate unlinks any
+            # stale coverage.json BEFORE launching, so it must not
+            # exist until the (fake) run itself "writes" it.
+            fake_runner.run_completion.side_effect = (
+                lambda *_a, **_k: coverage_path.write_text(
+                    json.dumps(coverage), encoding="utf-8"
                 )
-                return workflow._stage_replay_verify(
-                    lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
-                    devices="0,1", runtime_profile=fake_profile,
-                    dispatch_cache=workdir / "dispatch.cache", workdir=workdir,
-                )
+            )
+            result = workflow._stage_replay_validate(
+                lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
+                devices="0,1", runtime_profile=fake_profile,
+                provisional_cache=provisional_path, workdir=workdir,
+                corpus=self._fake_corpus(),
+            )
+        return result, workdir
 
     def test_raises_on_stale_coverage(self):
         # This is exactly the HI130 defect this fix targets: a stale cache
@@ -148,7 +178,7 @@ class StageReplayVerifyTests(unittest.TestCase):
             self._run_with_fake_coverage({"stale": True, "rerun_required": 0})
 
     def test_accepts_nested_replay_coverage(self):
-        coverage = self._run_with_fake_coverage({
+        coverage, _workdir = self._run_with_fake_coverage({
             "families": {},
             "replay": {"exact": 23, "stale": False, "rerun_required": 0},
         })
@@ -169,8 +199,104 @@ class StageReplayVerifyTests(unittest.TestCase):
 
     def test_returns_coverage_when_clean(self):
         coverage = {"stale": False, "rerun_required": 0, "exact": 64, "misses": 0}
-        result = self._run_with_fake_coverage(coverage)
+        result, _workdir = self._run_with_fake_coverage(coverage)
         self.assertEqual(result, coverage)
+
+    def test_both_legs_launched_with_env_unset_for_contamination_prone_vars(self):
+        # gpt review (2026-08-29): the launched process otherwise inherits
+        # the FULL ambient environment -- a leftover GGML_HIP_FORCE_
+        # CANDIDATE(_STRICT)/DISPATCH_DB/DISPATCH_CACHE/DISPATCH_COVERAGE
+        # from an unrelated earlier command could silently contaminate
+        # either leg.
+        coverage = {"stale": False, "rerun_required": 0, "exact": 64}
+        from unittest.mock import MagicMock, patch
+        import shutil
+        import tempfile
+
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        workdir = Path(directory)
+        provisional_path = workdir / "dispatch.cache.provisional"
+        provisional_path.write_bytes(b"fake-cache-bytes")
+        coverage_path = workdir / "coverage.json"
+        fake_lane_result = MagicMock()
+        fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+        fake_profile = MagicMock()
+        fake_profile.production_context = 4096
+        fake_profile.server_args = ()
+        native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
+
+        with (
+            patch.object(workflow, "ServerRunner") as fake_runner_cls,
+            patch.object(workflow.behavioral_gate_mod, "run_vector",
+                         side_effect=[native_trace, native_trace]),
+        ):
+            fake_runner = fake_runner_cls.return_value
+            fake_runner.__enter__.return_value = fake_runner
+            fake_runner.run_completion.side_effect = (
+                lambda *_a, **_k: coverage_path.write_text(json.dumps(coverage), encoding="utf-8")
+            )
+            workflow._stage_replay_validate(
+                lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
+                devices="0,1", runtime_profile=fake_profile,
+                provisional_cache=provisional_path, workdir=workdir,
+                corpus=self._fake_corpus(),
+            )
+        self.assertEqual(fake_runner_cls.call_count, 2)
+        for call in fake_runner_cls.call_args_list:
+            env_unset = call.kwargs["env_unset"]
+            self.assertIn("GGML_HIP_FORCE_CANDIDATE", env_unset)
+            self.assertIn("GGML_HIP_DISPATCH_CACHE", env_unset)
+
+    def test_promotes_provisional_cache_to_final_path_on_success(self):
+        # HI143: the provisional->final atomic rename only happens once
+        # both the behavioral gate AND coverage check pass.
+        coverage = {"stale": False, "rerun_required": 0, "exact": 64}
+        _result, workdir = self._run_with_fake_coverage(coverage)
+        self.assertTrue((workdir / "dispatch.cache").is_file())
+        self.assertFalse((workdir / "dispatch.cache.provisional").exists())
+
+    def test_hard_fail_on_diverging_output_blocks_promotion_and_leaves_no_final_cache(self):
+        # HI143's actual reason for existing: a candidate whose real
+        # generated output diverges from native must never ship, even if
+        # coverage/latency look perfectly fine -- this is what would have
+        # caught HI141's real regression automatically.
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "behavioral gate hard-fail"):
+            self._run_with_fake_coverage(
+                {"stale": False, "rerun_required": 0, "exact": 64}, matching_traces=False,
+            )
+
+    def test_hard_fail_leaves_provisional_cache_in_place_not_renamed(self):
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            provisional_path = workdir / "dispatch.cache.provisional"
+            provisional_path.write_bytes(b"fake-cache-bytes")
+            fake_lane_result = MagicMock()
+            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+            fake_profile = MagicMock()
+            fake_profile.production_context = 4096
+            fake_profile.server_args = ()
+            native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
+            candidate_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 9), 10, 8)
+
+            with (
+                patch.object(workflow, "ServerRunner") as fake_runner_cls,
+                patch.object(workflow.behavioral_gate_mod, "run_vector",
+                             side_effect=[native_trace, candidate_trace]),
+            ):
+                fake_runner_cls.return_value.__enter__.return_value = fake_runner_cls.return_value
+                with self.assertRaises(workflow.TuneCampaignError):
+                    workflow._stage_replay_validate(
+                        lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
+                        devices="0,1", runtime_profile=fake_profile,
+                        provisional_cache=provisional_path, workdir=workdir,
+                        corpus=self._fake_corpus(),
+                    )
+            self.assertTrue(provisional_path.is_file())
+            self.assertFalse((workdir / "dispatch.cache").exists())
 
     def test_stale_prior_run_coverage_file_is_not_reused_as_this_runs_result(self):
         # GPT deep-review P2 (2026-08-29): workdir is created with
@@ -185,6 +311,8 @@ class StageReplayVerifyTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             workdir = Path(directory)
+            provisional_path = workdir / "dispatch.cache.provisional"
+            provisional_path.write_bytes(b"fake-cache-bytes")
             # A passing-looking coverage.json left over from a prior run in
             # the same workdir.
             (workdir / "coverage.json").write_text(
@@ -197,17 +325,23 @@ class StageReplayVerifyTests(unittest.TestCase):
             fake_profile = MagicMock()
             fake_profile.production_context = 4096
             fake_profile.server_args = ()
+            native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
 
-            with patch.object(workflow, "ServerRunner") as fake_runner_cls:
+            with (
+                patch.object(workflow, "ServerRunner") as fake_runner_cls,
+                patch.object(workflow.behavioral_gate_mod, "run_vector",
+                             side_effect=[native_trace, native_trace]),
+            ):
                 fake_runner = MagicMock()
                 fake_runner_cls.return_value.__enter__.return_value = fake_runner
                 # The fake runner never recreates coverage.json -- simulates
                 # a launch that fails to produce fresh coverage data.
                 with self.assertRaises(workflow.TuneCampaignError):
-                    workflow._stage_replay_verify(
+                    workflow._stage_replay_validate(
                         lane_result=fake_lane_result, model_path=Path("/fake/model.gguf"),
                         devices="0,1", runtime_profile=fake_profile,
-                        dispatch_cache=workdir / "dispatch.cache", workdir=workdir,
+                        provisional_cache=provisional_path, workdir=workdir,
+                        corpus=self._fake_corpus(),
                     )
             self.assertFalse((workdir / "coverage.json").exists())
 
@@ -271,7 +405,7 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                              return_value=(workdir / "tune.sqlite", {}, 19, 0)),
                 patch.object(workflow, "_stage_replay_build", side_effect=fake_stage_replay_build),
                 patch.object(workflow, "_stage_replay_export", side_effect=fake_stage_replay_export),
-                patch.object(workflow, "_stage_replay_verify", side_effect=fake_stage_replay_verify),
+                patch.object(workflow, "_stage_replay_validate", side_effect=fake_stage_replay_verify),
                 patch.object(workflow.gpu_mod, "preflight_context"),
             ):
                 fake_profile = MagicMock()
@@ -367,8 +501,8 @@ class ReceiptCountsReflectFinalIngestTests(unittest.TestCase):
                 patch.object(workflow, "_stage_replay_build",
                              return_value=fake_lane_result("replay-run", "/replay/manifest.json", "/replay/source-root")),
                 patch.object(workflow, "_stage_replay_export",
-                             return_value=Path("/fake/dispatch.cache")),
-                patch.object(workflow, "_stage_replay_verify",
+                             return_value=Path("/fake/dispatch.cache.provisional")),
+                patch.object(workflow, "_stage_replay_validate",
                              return_value={"exact": 64, "stale": False, "rerun_required": 0}),
                 patch.object(workflow.gpu_mod, "preflight_context"),
             ):

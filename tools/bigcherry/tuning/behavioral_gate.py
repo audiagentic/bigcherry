@@ -61,6 +61,31 @@ from typing import Any
 
 from .server_runner import ServerRunner
 
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+def load_hi141_regression_vector() -> BehavioralVector:
+    """The one pinned, repository-owned real-workload regression vector
+    for the HI141 defect (mmvq:q8_0:w4:nw8:rpb1:sk0:v1 collapsing MTP
+    draft acceptance 93.5%->62.1% after a 4096-token prefill).
+
+    gpt code/design review (2026-08-29, session ses_330ae3c055084f38) was
+    explicit that this fixture must be a repository-owned file, not a
+    runtime import of the Brutus bench harness's own generate_prompt() --
+    the harness is an external dependency the tuning pipeline should not
+    take on just to reproduce one known regression. The text below is the
+    exact, verbatim output of that harness's generate_prompt(4096) (fixed
+    seed 1_000_003 + 4096, per lib/command.py's own deterministic
+    construction), captured once and frozen here.
+
+    This is intentionally NOT general corpus coverage -- it demonstrably
+    catches the one known defect and establishes a real mandatory
+    behavioral gate today. Broader corpus curation (real production
+    traffic sampling, quartile stratification) is tracked as HI143
+    follow-up work, not blocked on by this vector's existence."""
+    prompt = (_FIXTURES_DIR / "hi141_qwen38_27b_mtp_4096_v1.txt").read_text(encoding="utf-8")
+    return BehavioralVector(name="hi141-qwen38-27b-mtp-4096-v1", prompt=prompt, n_predict=128)
+
 
 @dataclass(frozen=True)
 class BehavioralVector:
