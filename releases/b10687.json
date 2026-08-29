@@ -1,7 +1,17 @@
 {
   "artifact_version": 1,
-  "audit": {},
-  "bigcherry_revision": "24acc046324fea2e50fd65fae4ff763d03b2eff8",
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 34,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "8b919a514bb14f49ee6105dc5ad4637e8c92d90f",
   "first_seen": "2026-08-29T22:35:10.065678+00:00",
   "manifest_hash": "",
   "notes": "",
@@ -9,7 +19,7 @@
   "promotion": null,
   "release_tag": "b10687",
   "revision": "c841aeeb8bb2fe417038dadfa9b007cf1a9ef950",
-  "stage": "pulled",
+  "stage": "audited",
   "tree_state": "",
-  "updated_at": "2026-08-29T22:35:10.065678+00:00"
+  "updated_at": "2026-08-29T22:49:31.677662+00:00"
 }

@@ -421,6 +421,20 @@ def _run_phases(
                         evidence={"drifted": drifted},
                         recommended_actions=["inspect the drifted file(s) by hand", "rerun with --resume"],
                     )
+            # Persist the result into the ReleaseRecord exactly like
+            # `bigcherry audit` (cli/source.py's cmd_audit) does -- otherwise
+            # apply_known_good's own `record.audit.get("passed")` gate (a
+            # DIFFERENT, persisted-record check, not this in-memory report)
+            # never sees a pass and refuses every real run. Found live: this
+            # bump's first successful run through the coverage phase still
+            # failed at apply for exactly this reason.
+            from ..release import records as releases
+
+            record = legacy._record_for(vendor_root)
+            record.audit = releases.summarise_audit(report, strict=True)
+            if record.stage == "pulled":
+                record.advance_to("audited")
+            record.save()
             state.completed_phases.append("audit")
             state.next_phase = "patch-lint"
             state.save(report_dir)
