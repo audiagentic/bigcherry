@@ -348,6 +348,14 @@ def all_records() -> list[ReleaseRecord]:
         if path.name == "index.json":
             continue
         data = json.loads(path.read_text(encoding="utf-8"))
+        # releases/ is also where non-record artifacts land by documented
+        # convention (the pin-transition marker; `patch-rebase-check --json
+        # releases/patch-rebase.json` per PIN_BUMP.md). Those aren't
+        # ReleaseRecords and have no `revision` field -- skip them
+        # structurally rather than growing a filename allowlist that the
+        # next such artifact would just miss again.
+        if not isinstance(data, dict) or "revision" not in data:
+            continue
         known = {f for f in ReleaseRecord.__dataclass_fields__}
         record = ReleaseRecord(**{k: v for k, v in data.items() if k in known})
         record.validate()
