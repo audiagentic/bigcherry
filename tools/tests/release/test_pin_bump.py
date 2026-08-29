@@ -89,6 +89,31 @@ class OverlaySelfHealTests(unittest.TestCase):
         self.assertEqual(drifted, ["a.cpp", "b.cu"])
 
 
+class AcquireMaintenanceLockTests(unittest.TestCase):
+    """Found live on pin-bump's first real invocation: acquire_maintenance_lock()
+    used to call .acquire() itself AND get used as `with acquire_maintenance_lock(...)`,
+    whose __enter__ also calls .acquire() -- a double-acquire in one process
+    that tripped its own "already held" check before any real work happened."""
+
+    def test_returned_lock_is_not_pre_acquired(self):
+        from bigcherry.core.context import ProjectContext
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+            fake_context = ProjectContext(
+                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
+                upstream_repo=Path(work) / "upstream", overlay_root=Path(project) / "src",
+                patches_root=Path(project) / "patches",
+            )
+            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
+                lock = pin_bump.acquire_maintenance_lock(Path(project))
+                self.assertFalse(lock.path.is_dir())
+                with lock:  # must not raise -- __enter__ does the one real acquire
+                    self.assertTrue(lock.path.is_dir())
+                self.assertFalse(lock.path.is_dir())
+
+
 class RequireCleanControllerCheckoutTests(unittest.TestCase):
     def test_passes_on_a_clean_repo(self):
         with tempfile.TemporaryDirectory() as directory:
