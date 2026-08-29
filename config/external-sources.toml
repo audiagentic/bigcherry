@@ -178,6 +178,81 @@ status = "ported-untested"
 patch = "1237_rd30_moe_mmq_compact_grid"
 note = "PR #63. Relocated here from a misplaced row under stew675-rdna-boosts's '2026-08-23 AMD follow-up handoff' block (this commit belongs to AMD-Ecosystem/llama.cpp, not stew675/llama.cpp; the enclosing [[sources]] id there did not match the commit's real repo -- fixed as part of RD30 landing since this patch is the first to actually cross-check against the row). Compacts the MoE MMQ launch grid from expert_bounds (block_start prefix sum + block_expert map) instead of a rectangular worst-case grid. AMD reports +1.9..5.4% prefill across Qwen3/Qwen3.5/Qwen3.6/Gemma-4 MoE; decode unchanged. Ported 2026-08-25 (6 edits, 2 files, dev-gpt-agent draft verified against real b10502 source before writing): concept-only, not a verbatim diff -- PR #63's own launch/mmq_args shapes differ from our b10502 pin, and its RDNA3.5-default-on gate is intentionally narrowed here to gfx1100 only (cc == GGML_CUDA_CC_RDNA3 exactly) pending our own gfx1100 hardware evidence (no RDNA3.5 hardware on Brutus). Extensive informal real-hardware evidence gathered (build, correctness incl. EC13/RD94 hostile routing at real n_experts=256, three interleaved A/B rounds showing +0.73%..+0.90% pp512) but status stays ported-untested until the formal HI83 validation campaign (patch_validation_campaign.py) actually runs -- see the patch module and RD30.md for the full trail. Qualify via EC13/RD94 hostile routing; do not port the RDNA3.5 default-on policy wholesale."
 
+# ---------------------------------------------------------------- 2026-08-23
+# AMD follow-up handoff: exact-commit provenance for the PRs the handoff
+# scoped. Merged PRs are keyed by the fork's own merge commit (same
+# convention as the existing rows); open PRs by their exact head SHA.
+# Do not replace these with moving branch refs.
+# RELOCATED 2026-08-30 from a misplaced position under stew675-rdna-boosts
+# (same class of bug already fixed once for PR #63/fee8f9925 above -- these
+# rows are real AMD-Ecosystem/llama.cpp PRs, not stew675 branch commits, and
+# were never going to be found by a stew675-rdna-boosts sources-check clone).
+# ---------------------------------------------------------------- 2026-08-23
+# AMD follow-up handoff: exact-commit provenance for the PRs the handoff
+# scoped. Merged PRs are keyed by the fork's own merge commit (same
+# convention as the existing rows); open PRs by their exact head SHA.
+# Do not replace these with moving branch refs.
+
+[[sources.tracked]]
+commit = "fee8f9925caf391094af6e0d5d0c68e44eca9542"
+original = "db0af64dd1732c5b1fb1a1c00585b4d908ae51ae"
+title = "ggml-cuda: size MMQ tile to MoE tokens-per-expert"
+plan-item = "RD30"
+status = "planned"
+note = "RD30's ORIGINAL source (PR #39). Re-design of 2026-08-23 keeps it as the CONTROL candidate, not the default: the mechanical port is stale on the current table-driven MMQ implementation and PR #63 (f8864197a4e) is the preferred structural candidate for the same empty-work problem."
+
+[[sources.tracked]]
+commit = "812a47a89991897d7cd474625d1ceadefef1b8bb"
+original = "4ea5f294f8215218d4d102fc44d04863a589ad46"
+title = "HIP: fix MMQ tile-barrier race and tune tile width for RDNA3.5"
+plan-item = "RD97"
+status = "evidence-only"
+note = "PR #75 (P0 correctness audit, RD97). AUDIT RESULT at pin b10502 (d76bdc2): hazard NOT present in BigCherry's materialized source -- the fork's elidable mmq_hip_tile_barrier does not exist (no mmq_hip* symbols in vendor or patches) and upstream mul_mat_q_process_tile (mmq.cuh, single K loop) ends EVERY iteration with a full __syncthreads() after the last vec_dot and before the next load_tiles, so the shared-tile lifetime is already block-synchronized; no BigCherry patch edits that loop. AMD's in-fork evidence (115/1568 MMQ configs wrong pre-fix, nondeterministic) stands as evidence-only. The PR's RDNA3.5 tile-width tuning is PERFORMANCE evidence for the RD30/RD97 experiment path and must not be ported into any correctness change."
+
+[[sources.tracked]]
+commit = "d59eb5a1c5c38e6f8a0b04d75979c0318fe6aa2b"
+original = "5f1585f3374091ed48edc1c933c0906d0a4ff9cf"
+title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K decode"
+plan-item = "-"
+status = "excluded"
+note = "PR #61 (record-only, 2026-08-23 handoff): AMD reports ~+3.09% mean / +2.78% median decode uplift. NEW kernel family with a large code surface -- future candidate, not a near-term production patch; do not make it the first follow-up slice."
+
+[[sources.tracked]]
+commit = "b8fed9fae4b1af1479646f6af183628442441d2b"
+title = "tools: add mmq-tune, an MMQ tile-width autotuning harness"
+plan-item = "-"
+status = "evidence-only"
+note = "PR #76 (methodology, 2026-08-23 handoff): do NOT port the standalone tuner. Concepts to mine into BigCherry's existing qualification infrastructure: 99 real mul_mat_q shape corpus from 20 models, invocation-count weighting, token-count sweep dimension, distinct expert weights, Zipf routing skew, interleaved one-iteration-per-candidate timing, position-weighted output checksum, majority-vote candidate diagnostics. Import only; a second autotuner requires a proven feature gap first."
+
+[[sources.tracked]]
+commit = "42aff9e1f6e06238e0779a9a73e36a13d414b6ab"
+original = "0fe9a246c0816fc27dd379f71f0aaa7ecbe5a1d3"
+title = "[AIESW-40114] ggml-hip: drop unconditional -ffast-math"
+plan-item = "-"
+status = "excluded"
+note = "PR #83 (2026-08-23 handoff): confirms the SAME MTP determinism failure class BigCherry already handled in patches/1002_hip_unsafe_math_opt_in.py (unsafe math OFF by default, explicit GGML_HIP_UNSAFE_MATH opt-in, re-anchored after upstream removed the unconditional flag). Evidence/invariant verification only -- do NOT create a second unsafe-math patch."
+
+[[sources.tracked]]
+commit = "1b600a34d0f625ea69c971ad95f68524f6dc97d3"
+title = "q4_K mat-vec tuning for gfx1151"
+plan-item = "RD98"
+status = "planned"
+note = "PR #84 (2026-08-23 handoff, open PR tracked by head SHA): RADV-inspired Q4_K vec_dot, block_q8_1_x4 activation layout, 128-bit weight/activation loads, 4x K-loop unroll, sched_group_barrier, Q4_K-specific lower nwarps; AMD reports ~4.4% kernel-time reduction on a major Gemma-4 FFN decode shape. LOAD-BEARING correctness lesson: the x4 layout's second scale/sum field must match the Q4_K minimum-term semantic -- a wrong interpretation failed intermittently/data-dependently. One candidate family with PR #88 (0c92c50b57d), not two items."
+
+[[sources.tracked]]
+commit = "0c92c50b57dccbb09b34e7e3c53348effa993e08"
+title = "ggml-cuda: widen Q4_K MMVQ weight loads to global_load_b128"
+plan-item = "RD98"
+status = "planned"
+note = "PR #88 (2026-08-23 handoff, open PR tracked by head SHA): widen Q4_K MMVQ weight ownership so one thread owns a 32-byte Q4_K group via two global_load_b128-friendly loads; VDR=8 on the tested RDNA3.5 path; AMD reports typical ~1-2% decode gain with several models/shapes higher. Same RD98 candidate family as PR #84 (1b600a34d0f): interacting parameters, one experiment."
+
+[[sources.tracked]]
+commit = "88ef64264c243d06fadcaf8338f0e3a318854698"
+title = "cuda/hip: optional wave64 for the quantized mat-vec kernels"
+plan-item = "-"
+status = "excluded"
+note = "PR #89 (record-only, 2026-08-23 handoff): AMD observed some shapes improving but several regressing badly (double-digit), and the compile flag is per translation unit -- it affects the whole mmvq.cu TU, not one specialization. Do not port globally; revisit only if targeted instantiations are isolated into separate TUs or safe per-kernel wave-size control exists."
+
 [[sources]]
 id = "stew675-rdna-boosts"
 repo = "https://github.com/stew675/llama.cpp"
@@ -480,72 +555,6 @@ title = "spec : rework adaptive MTP draft depth"
 plan-item = "-"
 status = "excluded"
 note = "new in snapshot v2; same exclusion as 4c548dbe8"
-
-# ---------------------------------------------------------------- 2026-08-23
-# AMD follow-up handoff: exact-commit provenance for the PRs the handoff
-# scoped. Merged PRs are keyed by the fork's own merge commit (same
-# convention as the existing rows); open PRs by their exact head SHA.
-# Do not replace these with moving branch refs.
-
-[[sources.tracked]]
-commit = "fee8f9925caf391094af6e0d5d0c68e44eca9542"
-original = "db0af64dd1732c5b1fb1a1c00585b4d908ae51ae"
-title = "ggml-cuda: size MMQ tile to MoE tokens-per-expert"
-plan-item = "RD30"
-status = "planned"
-note = "RD30's ORIGINAL source (PR #39). Re-design of 2026-08-23 keeps it as the CONTROL candidate, not the default: the mechanical port is stale on the current table-driven MMQ implementation and PR #63 (f8864197a4e) is the preferred structural candidate for the same empty-work problem."
-
-[[sources.tracked]]
-commit = "812a47a89991897d7cd474625d1ceadefef1b8bb"
-original = "4ea5f294f8215218d4d102fc44d04863a589ad46"
-title = "HIP: fix MMQ tile-barrier race and tune tile width for RDNA3.5"
-plan-item = "RD97"
-status = "evidence-only"
-note = "PR #75 (P0 correctness audit, RD97). AUDIT RESULT at pin b10502 (d76bdc2): hazard NOT present in BigCherry's materialized source -- the fork's elidable mmq_hip_tile_barrier does not exist (no mmq_hip* symbols in vendor or patches) and upstream mul_mat_q_process_tile (mmq.cuh, single K loop) ends EVERY iteration with a full __syncthreads() after the last vec_dot and before the next load_tiles, so the shared-tile lifetime is already block-synchronized; no BigCherry patch edits that loop. AMD's in-fork evidence (115/1568 MMQ configs wrong pre-fix, nondeterministic) stands as evidence-only. The PR's RDNA3.5 tile-width tuning is PERFORMANCE evidence for the RD30/RD97 experiment path and must not be ported into any correctness change."
-
-[[sources.tracked]]
-commit = "d59eb5a1c5c38e6f8a0b04d75979c0318fe6aa2b"
-original = "5f1585f3374091ed48edc1c933c0906d0a4ff9cf"
-title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K decode"
-plan-item = "-"
-status = "excluded"
-note = "PR #61 (record-only, 2026-08-23 handoff): AMD reports ~+3.09% mean / +2.78% median decode uplift. NEW kernel family with a large code surface -- future candidate, not a near-term production patch; do not make it the first follow-up slice."
-
-[[sources.tracked]]
-commit = "b8fed9fae4b1af1479646f6af183628442441d2b"
-title = "tools: add mmq-tune, an MMQ tile-width autotuning harness"
-plan-item = "-"
-status = "evidence-only"
-note = "PR #76 (methodology, 2026-08-23 handoff): do NOT port the standalone tuner. Concepts to mine into BigCherry's existing qualification infrastructure: 99 real mul_mat_q shape corpus from 20 models, invocation-count weighting, token-count sweep dimension, distinct expert weights, Zipf routing skew, interleaved one-iteration-per-candidate timing, position-weighted output checksum, majority-vote candidate diagnostics. Import only; a second autotuner requires a proven feature gap first."
-
-[[sources.tracked]]
-commit = "42aff9e1f6e06238e0779a9a73e36a13d414b6ab"
-original = "0fe9a246c0816fc27dd379f71f0aaa7ecbe5a1d3"
-title = "[AIESW-40114] ggml-hip: drop unconditional -ffast-math"
-plan-item = "-"
-status = "excluded"
-note = "PR #83 (2026-08-23 handoff): confirms the SAME MTP determinism failure class BigCherry already handled in patches/1002_hip_unsafe_math_opt_in.py (unsafe math OFF by default, explicit GGML_HIP_UNSAFE_MATH opt-in, re-anchored after upstream removed the unconditional flag). Evidence/invariant verification only -- do NOT create a second unsafe-math patch."
-
-[[sources.tracked]]
-commit = "1b600a34d0f625ea69c971ad95f68524f6dc97d3"
-title = "q4_K mat-vec tuning for gfx1151"
-plan-item = "RD98"
-status = "planned"
-note = "PR #84 (2026-08-23 handoff, open PR tracked by head SHA): RADV-inspired Q4_K vec_dot, block_q8_1_x4 activation layout, 128-bit weight/activation loads, 4x K-loop unroll, sched_group_barrier, Q4_K-specific lower nwarps; AMD reports ~4.4% kernel-time reduction on a major Gemma-4 FFN decode shape. LOAD-BEARING correctness lesson: the x4 layout's second scale/sum field must match the Q4_K minimum-term semantic -- a wrong interpretation failed intermittently/data-dependently. One candidate family with PR #88 (0c92c50b57d), not two items."
-
-[[sources.tracked]]
-commit = "0c92c50b57dccbb09b34e7e3c53348effa993e08"
-title = "ggml-cuda: widen Q4_K MMVQ weight loads to global_load_b128"
-plan-item = "RD98"
-status = "planned"
-note = "PR #88 (2026-08-23 handoff, open PR tracked by head SHA): widen Q4_K MMVQ weight ownership so one thread owns a 32-byte Q4_K group via two global_load_b128-friendly loads; VDR=8 on the tested RDNA3.5 path; AMD reports typical ~1-2% decode gain with several models/shapes higher. Same RD98 candidate family as PR #84 (1b600a34d0f): interacting parameters, one experiment."
-
-[[sources.tracked]]
-commit = "88ef64264c243d06fadcaf8338f0e3a318854698"
-title = "cuda/hip: optional wave64 for the quantized mat-vec kernels"
-plan-item = "-"
-status = "excluded"
-note = "PR #89 (record-only, 2026-08-23 handoff): AMD observed some shapes improving but several regressing badly (double-digit), and the compile flag is per translation unit -- it affects the whole mmvq.cu TU, not one specialization. Do not port globally; revisit only if targeted instantiations are isolated into separate TUs or safe per-kernel wave-size control exists."
 
 [[sources]]
 id = "davetha-llama-cpp"
