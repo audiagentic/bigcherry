@@ -231,6 +231,8 @@ cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
+c-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang.exe"
+cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
 
 [platform.vulkan-linux]
 description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
