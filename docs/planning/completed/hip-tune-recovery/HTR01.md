@@ -2,7 +2,7 @@
 id: HTR01
 order: 0
 plan: hip-tune-recovery
-state: pending
+state: completed
 created-at: '2026-08-29T13:28:09.305813+00:00'
 breadth: ''
 skill: advanced
@@ -162,6 +162,19 @@ Fix applied and committed: normalize vectors_to_run to names once, up front; add
 
 STATUS: HTR01's real-hardware validation is VOID and must be REDONE from scratch with this fix in place. State reverted from completed back to pending. User's explicit closing requirements for this item (2026-08-30), to be satisfied before re-closing: (1) a full real perf test -- actual tg128/throughput benchmarking of the recovered cache, not just the pass/fail behavioral check; (2) full, complete validation of ALL recovered candidates (not just the single pinned regression vector) and analysis of the real results; (3) a full GPT deep-dive assessment of the actual logs and run data (not a design conversation -- GPT must be given the real artifacts to review); (4) all of the above (logs, cache, benchmark data, analysis) must be committed to the repo so GPT can actually see it. None of these are satisfied yet. Do not mark this item completed again until all four are genuinely done.
 
+CLOSED FOR REAL, WITH GENUINE GPT DEEP-DIVE SIGN-OFF (2026-08-30). Per the user's explicit closing requirements (full perf test + full candidate validation/analysis + a GPT deep-dive of actual logs/run data, all committed so GPT could see it), the full sequence was:
+
+1. Real tg128 benchmark of the 'complete' third run exposed a genuine 27% regression -> traced to a vacuous-pass bug (AssignmentExecutor.evaluate() compared BehavioralVector objects against a string-name assumption, so report.verdicts was EMPTY on every probe in all three prior 'successful' runs -- every prior real-hardware validation claim in this item's history is retracted). Fixed (commit ed3f5eb).
+2. GPT deep-dive review #1 of the real, honest post-fix run found the repair phase only tried alternatives[0] per signature while RetuneRecommendation.exhausted_candidates falsely reported the entire catalog as exhausted. Fixed: walk all real alternatives in order, track exactly what was tried (commit 791729a).
+3. GPT deep-dive review #2 (close verdict) found tried_alternatives was recorded optimistically in propose() before the real verdict was known, so a structural failure (the new cardinality guard itself, a server crash) could be silently miscounted as a genuine behavioral rejection via the shared RecoveryError type. Fixed: record only in record(), only for a genuine hard_fail/behavior_changed verdict (commit 65aebee).
+4. Authoritative real-hardware re-run under the final fixed code reproduced evaluations_used=15, exhausted_candidates=5 -- proof the earlier ambiguity is closed empirically, not just logically, since the fixed code structurally cannot count an ineligible/structural failure toward that number.
+
+GPT's final verdict (session ses_330ae3c055084f38): 'CLOSE... Because exhausted=5 can now arise only from five completed behavioral rejections, the previous ambiguity is closed empirically, not just theoretically. No remaining HTR01-specific blocker.'
+
+FINAL REAL RESULT: the actual guilty signature (cd3b5f5bd371...) was correctly isolated (8 real paired-bisection probes), all 5 of its real, already-measured alternatives were genuinely, individually behaviorally tested and genuinely rejected, and it correctly reverted to native. 19 of 20 originally-promoted signatures were correctly left untouched. The resulting cache measured bit-identical draft stats to native (107/100) and throughput at parity (+0.64% to +0.82% across two independent fresh benchmark runs, within measurement noise). Full evidence trail (every buggy AND fixed run's raw logs, the cache artifacts, the benchmark scripts) committed at docs/evidence/2026-08-30-htr01-vacuous-pass-bug-and-honest-revalidation/.
+
+This is a smaller, more modest, but now genuinely trustworthy result than the three earlier false claims -- 'correctly identify and safely quarantine the one bad signature while preserving the other 19's real tuned performance' -- and both HTR01's safety property and its mechanism's correctness are now real-hardware proven with an actual paper trail, not a narrated claim.
+
 ## Change Log
 
 - 2026-08-29T13:28:09.305813+00:00 (created-by): Created by agent
@@ -188,3 +201,7 @@ STATUS: HTR01's real-hardware validation is VOID and must be REDONE from scratch
 - 2026-08-29T22:52:36.227787+00:00 (state-transition): State: completed → pending
 - chg_20260829_225254_found-and-fixed-a-serious-bug_2334
 - 2026-08-29T22:52:54.507711+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-29T23:44:30.791974+00:00 (updated-by): Updated: section:notes
+- 2026-08-29T23:44:36.094025+00:00 (state-transition): State: pending → completed
+- chg_20260829_234447_after-three-rounds-of-a-second_2086
+- 2026-08-29T23:44:47.559636+00:00 (updated-by): Updated: section:ledger-events
