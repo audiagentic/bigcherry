@@ -1,0 +1,9 @@
+reconstructed 20 overrides from the actual cache file
+  54 winner(s) across generations [0], 15 distinct candidate(s), 392 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+RE-CHECK VERDICT: pass
+{
+  "hard_fail": false,
+  "needs_throughput_adjudication": false,
+  "vectors": []
+}
