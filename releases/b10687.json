@@ -1,0 +1,15 @@
+{
+  "artifact_version": 1,
+  "audit": {},
+  "bigcherry_revision": "24acc046324fea2e50fd65fae4ff763d03b2eff8",
+  "first_seen": "2026-08-29T22:35:10.065678+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {},
+  "promotion": null,
+  "release_tag": "b10687",
+  "revision": "c841aeeb8bb2fe417038dadfa9b007cf1a9ef950",
+  "stage": "pulled",
+  "tree_state": "",
+  "updated_at": "2026-08-29T22:35:10.065678+00:00"
+}
