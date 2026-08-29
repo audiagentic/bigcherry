@@ -303,6 +303,16 @@ class AssignmentExecutor:
     manifest_path: Path
     ggml_h_path: Path
     workdir: Path
+    # RV49 correctness-gate verification database (workdir/"tune.sqlite" in
+    # the normal campaign path) -- required so replay.build() can verify
+    # each winner (original or substituted alternative) actually has real
+    # correctness evidence bound to this exact build+hardware identity,
+    # matching _stage_replay_export's own require_winner_verification=True
+    # behavior. Omitting this (a real bug caught during this item's own
+    # first real-hardware validation run, 2026-08-29) makes replay.build()
+    # fall back to demanding an explicit --dispatch-db and rejecting EVERY
+    # winner, not just an actually-unevidenced one.
+    dispatch_db: Path
     native_trace_cache: dict[str, behavioral_gate_mod.BehavioralTrace] = field(default_factory=dict)
 
     def capture_native_traces(self, vectors: list[behavioral_gate_mod.BehavioralVector]) -> None:
@@ -341,7 +351,8 @@ class AssignmentExecutor:
         seed_path = self._write_seed_file(overrides, manifest)
         cache_bytes = replay_mod.build(
             self.measurements_path, self.manifest_path, self.ggml_h_path,
-            seed_file=seed_path,
+            dispatch_db=self.dispatch_db, seed_file=seed_path,
+            require_winner_verification=True,
         )
         cache_path = self.workdir / "recovery-candidate.cache"
         cache_path.write_bytes(cache_bytes)
