@@ -116,7 +116,7 @@ def _write_output_rank(path: Path, values: list[float]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _base_result_json(*, device_count: int, plan: str) -> dict:
+def _base_result_json(*, device_count: int, plan: str, expected_reduction_signature_key: str = "") -> dict:
     return {
         "schema_version": 1,
         "device_count": device_count,
@@ -126,6 +126,7 @@ def _base_result_json(*, device_count: int, plan: str) -> dict:
         "effective_provider": plan,
         "handoff": "none",
         "fallback_depth": 0,
+        "expected_reduction_signature_key": expected_reduction_signature_key,
         "outputs": [],
     }
 
@@ -140,7 +141,7 @@ def test_evaluate_probe_result_clean_pass(tmp_path: Path):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     expected = [4.0, 6.0]  # 1+3, 2+4
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:2:2,1,1,1:n2:peer1001")
     for r in range(2):
         p = out_dir / f"result-rank-{r}.f32"
         digest = _write_output_rank(p, expected)
@@ -183,7 +184,7 @@ def test_evaluate_probe_result_meta_gate_only_checks_requested(tmp_path: Path):
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="meta")
+    result = _base_result_json(device_count=2, plan="meta", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     result["effective_provider"] = "meta"
     result["handoff"] = "none"  # a clean, explicitly-requested meta pass
     for r in range(2):
@@ -203,7 +204,7 @@ def test_evaluate_probe_result_fails_on_wrong_output_value(tmp_path: Path):
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     for r in range(2):
         p = out_dir / f"result-rank-{r}.f32"
         # Wrong: should be 2.0 (1.0+1.0), write 999.0 instead.
@@ -223,7 +224,7 @@ def test_evaluate_probe_result_fails_on_output_digest_tamper(tmp_path: Path):
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     for r in range(2):
         p = out_dir / f"result-rank-{r}.f32"
         _write_output_rank(p, [2.0])
@@ -246,7 +247,7 @@ def test_evaluate_probe_result_rejects_nan_case_input(tmp_path: Path):
         case_dir, case_id="c5", rank_values=rank_values,
         slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
     )
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=tmp_path, out_stem="x", plan="rccl")
     assert not ev.valid
     assert "non-finite" in ev.reason
@@ -261,7 +262,7 @@ def test_evaluate_probe_result_rejects_nan_output(tmp_path: Path):
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     for r in range(2):
         p = out_dir / f"result-rank-{r}.f32"
         digest = _write_output_rank(p, [float("nan")])
@@ -297,7 +298,7 @@ def test_evaluate_probe_result_rejects_duplicate_rank_with_missing_rank(tmp_path
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     # Both entries claim device 0 -- device 1 is missing entirely.
     for _ in range(2):
         p = out_dir / f"result-rank-{len(result['outputs'])}.f32"
@@ -306,6 +307,70 @@ def test_evaluate_probe_result_rejects_duplicate_rank_with_missing_rank(tmp_path
     ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
     assert not ev.valid
     assert "expected output devices exactly" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_duplicate_output_path(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c9", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    result = _base_result_json(
+        device_count=2, plan="rccl",
+        expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001",
+    )
+    shared_path = out_dir / "result-rank-0.f32"
+    digest = _write_output_rank(shared_path, [2.0])
+    # Both entries claim distinct devices but point at the SAME file.
+    result["outputs"].append({"device": 0, "byte_count": 4, "sha256": digest, "path": str(shared_path)})
+    result["outputs"].append({"device": 1, "byte_count": 4, "sha256": digest, "path": str(shared_path)})
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
+    assert not ev.valid
+    assert "naming convention" in ev.reason or "duplicate output path" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_malformed_output_file(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c10", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    result = _base_result_json(
+        device_count=2, plan="rccl",
+        expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001",
+    )
+    for r in range(2):
+        p = out_dir / f"result-rank-{r}.f32"
+        raw = b"\x01\x02\x03"  # 3 bytes -- not a multiple of 4
+        p.write_bytes(raw)
+        import hashlib
+        digest = hashlib.sha256(raw).hexdigest()
+        result["outputs"].append({"device": r, "byte_count": 3, "sha256": digest, "path": str(p)})
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=out_dir, out_stem="result", plan="rccl")
+    assert not ev.valid
+    assert "malformed" in ev.reason
+
+
+def test_evaluate_probe_result_rejects_case_json_device_count_mismatch(tmp_path: Path):
+    case_dir = tmp_path / "case"
+    rank_values = [[1.0], [1.0]]
+    rc.write_case(
+        case_dir, case_id="c11", rank_values=rank_values,
+        slice_shape=(1, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+    )
+    result = _base_result_json(
+        device_count=3, plan="rccl",  # lies about device_count vs the real case.json
+        expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001",
+    )
+    ev = rc.evaluate_probe_result(result, case_dir=case_dir, out_dir=tmp_path, out_stem="x", plan="rccl")
+    assert not ev.valid
+    assert "does not match case.json" in ev.reason
 
 
 def test_evaluate_probe_result_rejects_cross_device_disagreement(tmp_path: Path):
@@ -317,7 +382,7 @@ def test_evaluate_probe_result_rejects_cross_device_disagreement(tmp_path: Path)
     )
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    result = _base_result_json(device_count=2, plan="rccl")
+    result = _base_result_json(device_count=2, plan="rccl", expected_reduction_signature_key="split_reduce:v1:f32:1:1,1,1,1:n2:peer1001")
     # Both individually within the per-rank bound of the true expected sum
     # (2.0), but far enough apart from EACH OTHER to fail the 2x-bound
     # pairwise agreement check -- exercises the real (not length-only)
