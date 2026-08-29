@@ -80,6 +80,38 @@ narrated in plan-item notes.
 - `recovery-candidate.cache` -- the actual binary dispatch cache the
   honest run produced (real artifact, not a description of one).
 
+## Second correction: GPT deep-dive found a real overclaim in the "honest" run
+
+The user's closing requirements for this item required a genuine GPT deep-dive
+of the actual committed logs (not a design conversation). That review
+(session `ses_330ae3c055084f38`) found the "honest" run above still
+overclaimed: `RetuneRecommendation.exhausted_candidates` reported the
+signature's entire 5-alternative catalog as "exhausted" even though the
+repair phase's v1 implementation only ever tried `alternatives[0]` -- one
+attempt, not five. It also found a real evaluations-count off-by-one and
+recommended a stronger cardinality guard (exact requested-vs-actual vector
+name/order match, not merely "nonzero verdicts").
+
+Fixed (commit `791729a`): the repair phase now walks every real,
+already-measured alternative in order (still v1-scoped -- no new GPU/timing
+measurement) until one passes full-corpus validation or all are genuinely
+exhausted, tracking exactly which were attempted
+(`BoundedPairedBisectionStrategy.tried_alternatives`).
+
+## Final, fully-accurate re-run
+
+- `validate_recovery_final_accurate.txt` -- with the fix applied, all 5
+  real alternatives for the guilty signature (`cd3b5f5bd371...`) were
+  genuinely tried and genuinely rejected (`evaluations_used: 15`, matching
+  8 isolation probes + 1 baseline + 5 real alternative trials + 1 final
+  validation). Correctly reverted to native; 19 of 20 signatures untouched;
+  `retune_recommendations` now accurately lists all 5 real attempts.
+- `recovery-candidate-final.cache` -- the resulting cache artifact.
+- `benchmark_recovered_final.txt` -- a fresh benchmark of this exact
+  artifact: `draft_n=107, draft_n_accepted=100` (bit-identical to native)
+  across all 5 reps, `102.11 tok/s` vs native's `101.46` (`+0.64%`,
+  consistent with the earlier `+0.82%` run within measurement noise).
+
 ## What this does NOT cover yet
 
 Only the single pinned HI141 regression vector was exercised (HTR03's
