@@ -600,7 +600,41 @@ def read_results(
     return header, results
 
 
-def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
+def _native_claim_is_authoritative(
+    native_name: str | None, by_name: dict[str, dict[str, Any]],
+) -> bool:
+    """Adversarial-review follow-up: a result row's own ``native`` field is
+    self-reported by whatever produced the measurements artifact -- nothing
+    upstream (inventory.py's ingest) independently proves the named
+    candidate is actually the native implementation. Both
+    _validate_promotion_gate and _validate_correctness_gate below used to
+    exempt any row where ``winner == native`` unconditionally, which let a
+    forged/crafted row claim ``winner=native=<any real challenger
+    candidate>`` and skip BOTH gates entirely -- the same trust-pattern bug
+    already fixed once for the "seeded" field (HI136 review round 1):
+    authority must never come from the artifact's own claim about itself.
+
+    Ground the claim in the supplied manifest's real ``source_class``
+    instead -- the one field catalog.py itself uses as the authoritative
+    native/generated distinction throughout the codebase. Absence from the
+    manifest, or a manifest that doesn't classify it as native_wrapper,
+    means the claim is NOT authoritative -- the row then falls through to
+    the same promotion_status/correctness-evidence requirements a genuine
+    non-native candidate would need, which is the correct fail-closed
+    behavior (never an outright reject: a legitimate legacy/seed-only
+    export may have no manifest candidate data at all for reasons unrelated
+    to forgery, and still deserves the normal non-native evidence path)."""
+    if not isinstance(native_name, str) or not native_name:
+        return False
+    candidate = by_name.get(native_name)
+    if not isinstance(candidate, dict):
+        return False
+    return candidate.get("source_class") == "native_wrapper"
+
+
+def _validate_promotion_gate(
+    entries: dict[str, dict[str, Any]], by_name: dict[str, dict[str, Any]],
+) -> None:
     """Fail closed (HI34/P0): a non-native winner ships only after fresh
     confirmation *and* experiment-wide BH correction -- see tune_promotion.py.
     A row whose winner differs from its recorded native and whose
@@ -631,8 +665,8 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
             continue
         winner = record.get("winner")
         native = record.get("native")
-        if winner == native:
-            continue  # native state; always safe
+        if winner == native and _native_claim_is_authoritative(native, by_name):
+            continue  # native state, and the manifest confirms it really is
         if record.get("promotion_status") != "promoted":
             violations.append((digest_hex, winner, record.get("promotion_status")))
     if violations:
@@ -653,6 +687,7 @@ def _validate_promotion_gate(entries: dict[str, dict[str, Any]]) -> None:
 
 def _validate_correctness_gate(
     entries: dict[str, dict[str, Any]], dispatch_db: Path | None,
+    by_name: dict[str, dict[str, Any]],
     source_build_id: int | None = None,
     source_provenance: dict[str, Any] | None = None,
 ) -> None:
@@ -685,8 +720,8 @@ def _validate_correctness_gate(
                 continue  # already rejected by _validate_promotion_gate
             winner = record.get("winner")
             native = record.get("native")
-            if winner == native:
-                continue  # native state; no correctness evidence required
+            if winner == native and _native_claim_is_authoritative(native, by_name):
+                continue  # native state, and the manifest confirms it really is
             if source_build_id is not None and not source_build_id_verified:
                 # Adversarial-review follow-up (HI126 composition gap): a
                 # projected artifact's hi121_source_provenance.source_build_id
@@ -979,13 +1014,14 @@ def build(
             digest_hex: record
             for digest_hex, record in entries.items()
             if digest_hex not in seed_overrides
-        }
+        },
+        by_name,
     )
 
     # Runs on every entry, including seed overrides applied just above --
     # unlike _validate_promotion_gate, which a seed override is explicitly
     # allowed to bypass (HI22), this gate is never bypassable (HI67).
-    _validate_correctness_gate(entries, dispatch_db, source_build_id, projected_provenance)
+    _validate_correctness_gate(entries, dispatch_db, by_name, source_build_id, projected_provenance)
 
     current_entries: list[dict[str, Any]] = []
     producer_revision = manifest.get("source_revision")
