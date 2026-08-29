@@ -54,6 +54,28 @@ PATCHES = [FilePatch(path='target.c', edits=(
 ))]
 """
 
+CONFLICT_A_PATCH = """\
+from bigcherry.patcher import Edit, FilePatch
+GROUP = 'alt'
+STATE = 'untested'
+CONFLICTS = ('0600_conflict_b',)
+PATCHES = [FilePatch(path='target.c', edits=(
+    Edit(id='conflict-a', anchor=r'^blocked_anchor$', text='\\nconflict_a_insert',
+         guard=r'^conflict_a_insert$', rationale='alternative candidate A'),
+))]
+"""
+
+CONFLICT_B_PATCH = """\
+from bigcherry.patcher import Edit, FilePatch
+GROUP = 'alt'
+STATE = 'untested'
+CONFLICTS = ('0500_conflict_a',)
+PATCHES = [FilePatch(path='target.c', edits=(
+    Edit(id='conflict-b', anchor=r'^blocked_anchor$', text='\\nconflict_b_insert',
+         guard=r'^conflict_b_insert$', rationale='alternative candidate B'),
+))]
+"""
+
 BLOCKED_PATCH = """\
 from bigcherry.patcher import Edit, FilePatch
 GROUP = 'core'
@@ -199,6 +221,65 @@ PATCHES = [FilePatch(path='target.c', edits=(
          guard=r'^consumer_insert$', rationale='intentionally undeclared dependency'),
 ))]
 """
+
+
+class ConflictPartitionedAllPatchesTests(unittest.TestCase):
+    """Found live on pin-bump's first real bump: `--all` used to hand every
+    non-rejected patch to resolve_exact/quarantine_fixed_point as ONE joint
+    composition, which crashes (uncaught ValueError) the instant the
+    registry contains two intentional alternative candidates -- a real,
+    permanent situation (this project's own registry has several)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-rebase-conflict-")
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.upstream = _init_upstream(self.base)
+
+        self.patches_root = self.base / "patches"
+        self.patches_root.mkdir()
+        (self.patches_root / "0100_clean.py").write_text(CLEAN_PATCH, encoding="utf-8")
+        (self.patches_root / "0500_conflict_a.py").write_text(CONFLICT_A_PATCH, encoding="utf-8")
+        (self.patches_root / "0600_conflict_b.py").write_text(CONFLICT_B_PATCH, encoding="utf-8")
+
+        self.overlay_root = self.base / "overlay"
+        self.overlay_root.mkdir()
+
+        self._old_patches = paths.PATCHES
+        self._old_overlay = paths.SRC_OVERLAY
+        paths.PATCHES = self.patches_root
+        paths.SRC_OVERLAY = self.overlay_root
+
+    def tearDown(self) -> None:
+        _git(self.upstream, "worktree", "prune")
+        paths.PATCHES = self._old_patches
+        paths.SRC_OVERLAY = self._old_overlay
+
+    def test_all_patches_does_not_crash_on_conflicting_alternatives(self):
+        report = rebase.run_rebase_check(self.upstream, all_patches=True)
+        statuses = {p["patch_id"]: p["status"] for p in report["patches"]}
+        self.assertEqual(statuses["0100_clean"], rebase.STATUS_CLEAN)
+        self.assertEqual(statuses["0500_conflict_a"], rebase.STATUS_CLEAN)
+        self.assertEqual(statuses["0600_conflict_b"], rebase.STATUS_CLEAN)
+        self.assertEqual(report["summary"]["total"], 3)
+        self.assertFalse(report["summary"]["reconciliation_required"])
+
+    def test_partition_never_puts_conflicting_ids_in_the_same_group(self):
+        modules = {m.patch_id: m for m in patchset_catalog()}
+        ids = tuple(sorted(modules))
+        groups = rebase._partition_conflict_free(ids, modules)
+        for group in groups:
+            for pid in group:
+                self.assertTrue(
+                    set(modules[pid].conflicts).isdisjoint(group),
+                    f"{pid}'s conflicts leaked into its own group {group}",
+                )
+
+
+def patchset_catalog():
+    from bigcherry.patch import patchset
+
+    return patchset.catalog()
 
 
 class QuarantineFixedPointTests(unittest.TestCase):
