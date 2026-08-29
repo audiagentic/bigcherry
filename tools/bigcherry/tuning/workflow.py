@@ -648,7 +648,7 @@ def _stage_replay_validate(
                     correctness_seeds=correctness_seeds,
                     max_new_correctness_candidates=max_new_correctness_candidates,
                 )
-                strategy = recovery_mod.BoundedDeltaDebugStrategy()
+                strategy = recovery_mod.BoundedPairedBisectionStrategy()
                 # KNOWN LIMITATION (not yet closed, tracked for follow-up):
                 # precise dispatch-hit scoping via GGML_HIP_DISPATCH_HIT_LOG
                 # cross-referencing is not wired here -- recovery searches
