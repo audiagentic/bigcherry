@@ -94,11 +94,12 @@ class _Fixture:
         )
         self.so_relative = so_relative
 
-    def worker(self):
+    def worker(self, environment=None):
         spec = RuntimeSmokeSpec(model_path=Path(tempfile.mkstemp()[1]))
         return campaign_workers.make_smoke_worker(
             run_id="run1",
             store=self.store,
+            environment=environment,
             source_slice_id="s1",
             build_plan_id="bp1",
             workload_id=None,
@@ -121,6 +122,29 @@ class SmokeConsumesVerifiedBundleTests(unittest.TestCase):
                 fake_run.return_value.stderr = ""
                 refs = worker((fx.binary_ref, fx.bundle_ref))
             self.assertEqual(refs[0].kind, "smoke-result")
+
+    def test_environment_override_merges_onto_the_real_environment(self):
+        # Found live on the first real Windows local-GPU smoke-test run:
+        # passing a small override dict straight as subprocess.run(env=...)
+        # REPLACES the whole environment rather than overlaying it, which
+        # on Windows produces a process missing SystemRoot/TEMP/etc and
+        # crashed llama-bench.exe (0xC0000005) right after HIP device
+        # enumeration on real hardware. Must merge onto os.environ instead.
+        with tempfile.TemporaryDirectory() as directory:
+            fx = _Fixture(Path(directory))
+            worker = fx.worker(environment={"HIP_VISIBLE_DEVICES": "0"})
+            with patch("bigcherry.campaign.workers.subprocess.run") as fake_run:
+                fake_run.return_value.returncode = 0
+                fake_run.return_value.stdout = _FAKE_SMOKE_STDOUT
+                fake_run.return_value.stderr = ""
+                worker((fx.binary_ref, fx.bundle_ref))
+            passed_env = fake_run.call_args.kwargs["env"]
+            self.assertEqual(passed_env["HIP_VISIBLE_DEVICES"], "0")
+            # The real environment's own keys (e.g. PATH -- always present
+            # in any real process) must survive the merge, not just the
+            # override's own keys.
+            self.assertIn("PATH", {k.upper() for k in passed_env})
+            self.assertGreater(len(passed_env), 1)
 
     def test_smoke_fails_closed_when_a_bundle_member_is_tampered(self):
         with tempfile.TemporaryDirectory() as directory:
