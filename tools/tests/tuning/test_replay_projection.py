@@ -768,9 +768,11 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
                 "manifest_hash": "aaaa",
                 "build_descriptor_hash": "desc-a",
             }
+            by_name = {"native": {"stable_name": "native", "source_class": "native_wrapper"}}
             with self.assertRaisesRegex(SystemExit, "not bound to the rest"):
                 replay_module._validate_correctness_gate(
-                    entries, dispatch_db, build_b, forged_provenance,
+                    entries, dispatch_db, by_name,
+                    source_build_id=build_b, source_provenance=forged_provenance,
                 )
 
     def test_source_build_id_matching_its_own_provenance_is_accepted(self):
@@ -792,8 +794,11 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
             # winner == native here, so the correctness gate never even
             # needs to resolve a binding -- this just proves a CORRECT
             # provenance tuple doesn't spuriously raise.
+            by_name = {"mmvq:native:v1": {"stable_name": "mmvq:native:v1",
+                                          "source_class": "native_wrapper"}}
             replay_module._validate_correctness_gate(
-                entries, dispatch_db, build_a, real_provenance,
+                entries, dispatch_db, by_name,
+                source_build_id=build_a, source_provenance=real_provenance,
             )
 
     def test_source_build_id_without_provenance_tuple_is_rejected(self):
@@ -807,9 +812,11 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
                     "signature": "c" * 32, "hardware": "e" * 32,
                 },
             }
+            by_name = {"native": {"stable_name": "native", "source_class": "native_wrapper"}}
             with self.assertRaisesRegex(SystemExit, "without its"):
                 replay_module._validate_correctness_gate(
-                    entries, dispatch_db, build_a, None,
+                    entries, dispatch_db, by_name,
+                    source_build_id=build_a, source_provenance=None,
                 )
 
 
