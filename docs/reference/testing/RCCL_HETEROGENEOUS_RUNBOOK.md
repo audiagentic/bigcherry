@@ -1031,12 +1031,20 @@ PCH root port lacks PCIe AtomicOps completion capability, a real hardware
 limitation not fixable via kernel parameters, BIOS settings, or `setpci`
 (forcing it has been reported elsewhere to hang the system). It does
 **not** establish that RCCL is broadly unusable across mismatched
-architectures. A CPU-direct heterogeneous pair (e.g. XTX+R9700, gfx1100 +
-gfx1201, devices excluding physical device 3) is predicted by this
-evidence to work and remains queued for live hardware confirmation. If
-confirmed, Phase 2 may proceed for that narrower RCCL-viable topology set;
-device 3 stays on META regardless. Patch 1225's fail-closed guard remains
-required for any topology including device 3.
+architectures. Patch 1225's fail-closed guard remains required for any
+topology including device 3.
+
+**CONFIRMED (2026-08-29, same day)**: live hardware test, XTX+R9700
+(devices 0,2 -- gfx1100 + gfx1201, both CPU-direct root ports), Ring/Simple
+512KiB: **PASS**, exit 0, zero correctness errors, correct algorithm/
+protocol reported. 20/20 fresh-process repetitions passed with zero
+failures (P1.12 gate satisfied). The mandatory homogeneous XTX/XTX control
+also re-confirmed passing with this build. RCCL is viable for any topology
+on this hardware excluding physical device 3: {0,1}, {0,2}, {1,2}, and
+{0,1,2}. Device 3 (6900XT) requires META for any group it participates in.
+**Phase 2 may now proceed for the RCCL-viable subset** -- see HI138's plan
+item for the recommended next scope (a fresh Phase 2 sub-item, not
+continued growth of this closed Phase 1 investigation).
 
 **Separate finding, not part of this closure**: patch 1225 was found to be
 `state=untested` and excluded from every default build's patch-set during
