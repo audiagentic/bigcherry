@@ -1,0 +1,19 @@
+{
+  "hard_fail": true,
+  "needs_throughput_adjudication": false,
+  "vectors": [
+    {
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "first_output_divergence": 1,
+      "name": "hi141-qwen38-27b-mtp-4096-v1",
+      "native_draft": [
+        107,
+        100
+      ],
+      "verdict": "hard_fail"
+    }
+  ]
+}

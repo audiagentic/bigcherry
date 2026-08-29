@@ -61,3 +61,38 @@ mandatory real-generation behavioral gate for MTP-relevant promotions
 promotion path) -- it has already been shown, on real hardware, to hard-fail
 the actual guilty candidate while passing its numerically-identical but
 behaviorally-clean sibling.
+
+## Independent end-to-end proof (run-id `hi141-proof-20260829-2231`)
+
+A completely fresh, unmanipulated tune-campaign was run afterward as a
+direct real-hardware proof that the wired gate actually protects
+production, not just that it can be made to pass a targeted falsification
+test. New build, new record, new tune measurements -- no cache or
+inventory reuse from any earlier run.
+
+- `hi143_proof_campaign.txt` -- the campaign's own stderr tail. The
+  campaign genuinely failed (exit 1) with:
+  `tune-campaign: behavioral gate hard-fail: a promoted candidate's
+  generated output diverged from native on a real regression vector --
+  refusing to ship this cache`.
+- `hi143_proof_behavioral_gate.json` -- the real gate verdict. Native MTP
+  draft trace `[107, 100]`; candidate draft trace `[145, 90]`;
+  `first_output_divergence: 1`; `verdict: hard_fail`.
+
+The historically-guilty candidate `mmvq:q8_0:w4:nw8:rpb1:sk0:v1` was
+re-selected in this fresh campaign as a provisional winner purely on its
+own measured speed (one of 41 provisional non-native winners this run,
+confirmed via the campaign's own `promoted.jsonl`) -- not forced, not
+hand-picked. It passed synthetic correctness evidence, as it always does.
+The behavioral gate caught the real divergence and the campaign correctly
+refused to promote: only `dispatch.cache.provisional` exists in the
+run's workdir; no final `dispatch.cache` was ever written.
+
+This is the direct inverse of the earlier "candidate-mix masking" run
+recorded in HI143's own notes, where the same guilty candidate, promoted
+in a *different* fresh campaign's candidate mix, produced `exact_pass`.
+Two independent real end-to-end campaigns, same guilty candidate, two
+different real outcomes -- exactly the behavior HI141's closure predicts
+for a candidate-mix-dependent defect, and exactly the job HI143 is
+designed to do: not claim a candidate is universally safe or unsafe, but
+catch a real regression in the specific cache about to ship.

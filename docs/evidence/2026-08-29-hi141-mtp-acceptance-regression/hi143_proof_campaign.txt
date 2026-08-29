@@ -1,0 +1,6 @@
+CMAKE_BUILD_TYPE=Release
+CMAKE_BUILD_TYPE=Release
+CMAKE_BUILD_TYPE=Release
+CMAKE_BUILD_TYPE=Release
+CMAKE_BUILD_TYPE=Release
+tune-campaign: behavioral gate hard-fail: a promoted candidate's generated output diverged from native on a real regression vector -- refusing to ship this cache: {'hard_fail': True, 'needs_throughput_adjudication': False, 'vectors': [{'name': 'hi141-qwen38-27b-mtp-4096-v1', 'verdict': 'hard_fail', 'native_draft': [107, 100], 'candidate_draft': [145, 90], 'first_output_divergence': 1}]}
