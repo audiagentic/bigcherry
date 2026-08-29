@@ -2,7 +2,7 @@
 id: HTR01
 order: 0
 plan: hip-tune-recovery
-state: completed
+state: pending
 created-at: '2026-08-29T13:28:09.305813+00:00'
 breadth: ''
 skill: advanced
@@ -152,6 +152,16 @@ This satisfies GPT's own stated acceptance criterion in full: the reproducer rea
 
 STATUS: HTR01 is now considered REAL-HARDWARE VALIDATED end-to-end -- both the safety property (never ships a regression -- proven across all runs) and the efficiency property (recovers real yield, not just safe-but-useless native fallback -- proven by this run) are demonstrated on real hardware against the real HI141 regression this whole chain of work (HI121/HI136/HI141/HI143/HTR01) was built to solve. Remaining open work is tracked separately in HTR02 (failure-witness persistence), HTR03 (corpus/applicability configurability), HTR04 (retune escalation, still deferred), and HTR05 (multiplicity-correction study, still deferred) -- none of which block considering HTR01 itself complete and proven.
 
+CRITICAL RETRACTION (2026-08-30): the 'THIRD REAL-HARDWARE RUN: FULL SUCCESS' entry above is WRONG and is retracted. A real tg128 benchmark run against the 'successfully recovered' cache (user's own explicit follow-up request: 'Did we do benchmarks with tunes to see how we went') measured a genuine 27% throughput regression and draft-acceptance collapse (89/149 accepted, ~60%) comparable in severity to the ORIGINAL HI141 defect this whole chain of work exists to catch -- despite the recovery run reporting 'full-corpus validation passed'.
+
+Root cause found by direct re-invocation of executor.validate_full_corpus() against the exact committed overrides (authoritatively reconstructed from the cache file on disk, ruling out a stale-file theory): the re-check returned verdict='pass' with report={'hard_fail': false, 'needs_throughput_adjudication': false, 'vectors': []} -- an EMPTY verdicts list. AssignmentExecutor.evaluate()'s vector-matching loop compared real BehavioralVector OBJECTS (what every actual caller supplies) against an implicit assumption of NAME STRINGS (`v.name == name`), which is never true when `name` is actually an object -- so `vector` was always None, every iteration silently `continue`d, and NO real behavioral comparison EVER ran, in ANY of the three prior 'successful' real-hardware validation runs. Every reported 'pass' throughout this entire investigation was vacuous (hard_fail/needs_throughput_adjudication are both `any()` over an empty list).
+
+This was NOT caught by any offline test because every test in the suite (including the 19 tests added specifically to validate the pairing-bug fix) exercised the RecoveryStrategy via a fake/mocked executor that bypassed AssignmentExecutor.evaluate() entirely -- a real, structural blind spot in the test suite's own design, now fixed (AssignmentExecutorEvaluateRealVectorMatchingTests, calling the REAL evaluate() with only ServerRunner/run_vector mocked).
+
+Fix applied and committed: normalize vectors_to_run to names once, up front; added two fail-closed guards (a requested vector missing from full_corpus now raises rather than silently skipping; zero verdicts from any probe now raises rather than vacuously passing) so an empty-comparison class of bug cannot silently recur.
+
+STATUS: HTR01's real-hardware validation is VOID and must be REDONE from scratch with this fix in place. State reverted from completed back to pending. User's explicit closing requirements for this item (2026-08-30), to be satisfied before re-closing: (1) a full real perf test -- actual tg128/throughput benchmarking of the recovered cache, not just the pass/fail behavioral check; (2) full, complete validation of ALL recovered candidates (not just the single pinned regression vector) and analysis of the real results; (3) a full GPT deep-dive assessment of the actual logs and run data (not a design conversation -- GPT must be given the real artifacts to review); (4) all of the above (logs, cache, benchmark data, analysis) must be committed to the repo so GPT can actually see it. None of these are satisfied yet. Do not mark this item completed again until all four are genuinely done.
+
 ## Change Log
 
 - 2026-08-29T13:28:09.305813+00:00 (created-by): Created by agent
@@ -174,3 +184,7 @@ STATUS: HTR01 is now considered REAL-HARDWARE VALIDATED end-to-end -- both the s
 - 2026-08-29T21:20:36.595649+00:00 (state-transition): State: pending → completed
 - chg_20260829_212045_proved-on-real-hardware-that-t_7840
 - 2026-08-29T21:20:45.936383+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-29T22:52:31.972214+00:00 (updated-by): Updated: section:notes
+- 2026-08-29T22:52:36.227787+00:00 (state-transition): State: completed → pending
+- chg_20260829_225254_found-and-fixed-a-serious-bug_2334
+- 2026-08-29T22:52:54.507711+00:00 (updated-by): Updated: section:ledger-events
