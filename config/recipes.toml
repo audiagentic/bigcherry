@@ -2,7 +2,7 @@
 # Legacy pull/audit/build commands use only the explicit compat.recipe aliases
 # below; campaign code consumes source/build/patch-set objects directly.
 version = 2
-pinned = "b10502"
+pinned = "b10680"
 
 [patch-set.framework]
 patches = [
