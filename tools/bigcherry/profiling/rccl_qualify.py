@@ -194,7 +194,14 @@ def build_command(
     size = str(case.byte_count)
     env = dict(os.environ)
     env["HIP_VISIBLE_DEVICES"] = ",".join(str(d) for d in visible_devices)
-    env["HIP_ENABLE_DEFERRED_LOADING"] = "0"
+    # Deliberately NOT setting HIP_ENABLE_DEFERRED_LOADING=0 here (RQ02's
+    # original draft included it, matching the runbook's rationale of
+    # exposing missing device code early). Real hardware evidence from this
+    # investigation proved that flag forces eager resolution of a dead
+    # fp8 reduction-kernel symbol that RDNA hardware never compiles and
+    # normal lazy loading never calls -- a false-positive crash unrelated
+    # to any real code-object gap, independent of RCCL build/config. See
+    # HI138/docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md.
     env["NCCL_DEBUG"] = "INFO"
     env["RCCL_OVERRIDE_ALGO"] = case.algorithm
     env["RCCL_OVERRIDE_PROTO"] = case.protocol
