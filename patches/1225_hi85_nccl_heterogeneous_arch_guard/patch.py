@@ -54,6 +54,30 @@ message names the exact device architectures involved and points at
 HI85 for the full explanation and remediation (force GGML_HIP_REDUCE_
 PLAN=meta explicitly, or drop to -sm layer, or use a same-architecture
 device subset).
+
+Wording correction (2026-08-29, HI138/HI142): this guard's predicate is
+raw architecture inequality, and its original message framed that as
+the causal condition ("heterogeneous-architecture tensor-split is
+unsupported"). HI138's real-hardware follow-up investigation proved
+that framing is over-conservative: the actual RCCL failure mechanism is
+a specific device's PCIe path lacking AtomicOps routing capability
+(confirmed via AMDGPU kernel boot-time self-test + lspci + external
+ROCm issue prior art), NOT architecture mismatch per se -- a real
+architecture-mismatched set, {2x RDNA3 XTX + RDNA4 R9700} (devices
+0,1,2 on this box), passed 20/20 live RCCL AllReduce repetitions
+cleanly once the PCIe-atomics-incapable device (3, RDNA2 6900XT,
+chipset-routed) was excluded. So architecture inequality is still used
+as the trigger (it remains a reasonable, cheap proxy in the absence of
+qualified per-topology evidence), but the abort message below is
+reworded from "unsupported" to "unqualified ... prohibited" so it no
+longer asserts a causal claim this investigation has since disproven.
+This is a message-only correction -- the guard's behavior (abort on any
+architecture mismatch) is intentionally unchanged: per HI142's design
+(gpt-reviewed), production admission of a specific verified-safe
+topology like {0,1,2} requires real P2 qualification evidence and an
+explicit admission mechanism, not a loosened blanket predicate here.
+See docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md and
+docs/planning/active/hip-autotune/HI142.md.
 """
 
 GROUP = "core"
@@ -87,23 +111,32 @@ _ANCHOR = (
 )
 
 _GUARD = '''
-    // bigcherry (HI85): NCCL/RCCL's collective kernel dispatch does not
-    // correctly handle a communicator whose ranks span different GPU
-    // architectures -- confirmed on real heterogeneous hardware (RDNA2/
-    // RDNA3/RDNA4 mix) via NCCL_DEBUG=INFO tracing against a genuinely
+    // bigcherry (HI85/HI138): NCCL/RCCL's collective kernel dispatch does
+    // not correctly handle a communicator whose ranks span different GPU
+    // architectures ON THIS BOX'S DEVICE-3 (RDNA2, chipset-routed PCIe
+    // path) -- confirmed via NCCL_DEBUG=INFO tracing against a genuinely
     // RCCL-enabled build: per-rank topology/tuning selection IS
     // architecture-aware (a distinct RCCL Tuning index per rank), but the
     // actual collective kernel launched inside ncclGroupEnd() aborts the
-    // process with a HIP "invalid device function" error on the
-    // non-matching rank, rather than returning a catchable NCCL error
-    // code. Detect a mixed-architecture participant set BEFORE calling
-    // ncclCommInitAll. This path is only ever reached via SPLIT_MODE_TENSOR
-    // (the META backend's comm_init hook), so reaching here always means
-    // the user explicitly asked for tensor-split -- silently substituting
-    // a different reduction path (internal/META) would change semantics
-    // behind the user's back. Fail closed with a clear, named abort instead
-    // of both the original uncatchable HIP SIGABRT and a silent fallback.
-    // See docs/planning/active/hip-autotune/HI85.md for the full
+    // process with a HIP "invalid device function"/hipErrorIllegalState
+    // error on the non-matching rank, rather than returning a catchable
+    // NCCL error code. HI138's follow-up investigation localized the real
+    // mechanism to a PCIe AtomicOps routing-capability gap on one specific
+    // device's PCIe path (confirmed via AMDGPU kernel boot-time
+    // self-test + lspci + external ROCm issue prior art), not architecture
+    // mismatch per se -- a real architecture-mismatched set (2x RDNA3 +
+    // RDNA4) passed 20/20 live repetitions once the PCIe-atomics-incapable
+    // device was excluded. Architecture inequality remains this guard's
+    // trigger (a cheap, still-useful proxy given no qualified per-topology
+    // admission mechanism exists yet -- see HI142), but detect it BEFORE
+    // calling ncclCommInitAll regardless. This path is only ever reached
+    // via SPLIT_MODE_TENSOR (the META backend's comm_init hook), so
+    // reaching here always means the user explicitly asked for
+    // tensor-split -- silently substituting a different reduction path
+    // (internal/META) would change semantics behind the user's back. Fail
+    // closed with a clear, named abort instead of both the original
+    // uncatchable HIP SIGABRT and a silent fallback. See
+    // docs/planning/active/hip-autotune/HI85.md and HI138.md for the full
     // investigation and real hardware evidence.
     bool heterogeneous_arch = false;
     for (size_t i = 1; i < ret->dev_ids.size(); ++i) {
@@ -113,15 +146,14 @@ _GUARD = '''
         }
     }
     if (heterogeneous_arch) {
-        GGML_LOG_ERROR("NCCL/RCCL cannot reduce across mixed GPU architectures "
-                       "(participating devices have different compute "
-                       "capabilities) -- this combination was requested via "
-                       "SPLIT_MODE_TENSOR and will not be silently downgraded to "
-                       "a different reduction path. See HI85. Remediation: force "
-                       "GGML_HIP_REDUCE_PLAN=meta explicitly, use -sm layer "
-                       "instead, or restrict tensor-split to a same-architecture "
-                       "device subset.\\n");
-        GGML_ABORT("heterogeneous-architecture tensor-split is unsupported (see HI85)");
+        GGML_LOG_ERROR("NCCL/RCCL heterogeneous-architecture tensor-split has no "
+                       "qualified admission for this device set -- this combination "
+                       "was requested via SPLIT_MODE_TENSOR and will not be silently "
+                       "downgraded to a different reduction path. See HI85/HI138/"
+                       "HI142. Remediation: force GGML_HIP_REDUCE_PLAN=meta "
+                       "explicitly, use -sm layer instead, or restrict tensor-split "
+                       "to a same-architecture device subset.\\n");
+        GGML_ABORT("unqualified heterogeneous-architecture tensor-split is prohibited (see HI85/HI138)");
     }
 '''
 
