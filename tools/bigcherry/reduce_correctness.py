@@ -112,7 +112,17 @@ def _pack_f32(values: list[float]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
+class MalformedOutputError(Exception):
+    """Raised by _unpack_f32 on a byte length that isn't a whole number of
+    F32 elements -- caught by evaluate_probe_result and converted to a
+    clean EvaluationResult(False, ...) rather than an uncaught exception
+    (gpt-flagged real gap: a fail-closed verdict owner must not let a
+    malformed file escape as a raised exception)."""
+
+
 def _unpack_f32(data: bytes) -> list[float]:
+    if len(data) % 4 != 0:
+        raise MalformedOutputError(f"byte length {len(data)} is not a multiple of 4 (not valid F32 data)")
     n = len(data) // 4
     return list(struct.unpack(f"<{n}f", data))
 
@@ -135,6 +145,8 @@ def write_case(
         raise ValueError(f"test-hip-reduce supports 2-4 devices, got {device_count}")
     if element_type != "f32":
         raise ValueError(f"only f32 is supported (probe hard-requires it), got {element_type!r}")
+    if not rank_values[0]:
+        raise ValueError("rank_values must be non-empty (element_count must be >= 1)")
 
     element_count = len(rank_values[0])
     for r, values in enumerate(rank_values):
@@ -273,7 +285,33 @@ def evaluate_probe_result(
             f"{result_json.get('fallback_depth')}",
         )
 
-    device_count = result_json["device_count"]
+    # Independently load and cross-validate against the real case.json --
+    # gpt-flagged real gap: previously every check below trusted
+    # result_json's own self-reported device_count/signature fields
+    # rather than the case manifest itself, so edited result metadata (or
+    # a case mutated after the probe ran) could not be caught.
+    try:
+        case_manifest = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return EvaluationResult(False, f"cannot read/parse case.json in {case_dir}: {exc}")
+
+    manifest_device_count = case_manifest.get("device_count")
+    if result_json.get("device_count") != manifest_device_count:
+        return EvaluationResult(
+            False,
+            f"result device_count={result_json.get('device_count')} does not match "
+            f"case.json's device_count={manifest_device_count}",
+        )
+    manifest_key = case_manifest.get("reduction_signature_key")
+    if result_json.get("expected_reduction_signature_key") != manifest_key:
+        return EvaluationResult(
+            False,
+            "result's expected_reduction_signature_key does not match case.json's "
+            f"own reduction_signature_key: {result_json.get('expected_reduction_signature_key')!r} "
+            f"vs {manifest_key!r}",
+        )
+
+    device_count = manifest_device_count
     rank_values = read_rank_values(case_dir, device_count)
 
     # Reject non-finite inputs before computing anything -- a NaN/Inf
@@ -304,6 +342,23 @@ def evaluate_probe_result(
             False, f"expected output devices exactly {list(range(device_count))}, got {seen_devices}",
         )
 
+    # Output identity must be bound to a real, unique per-rank file --
+    # gpt-flagged real gap: without this, multiple output entries could
+    # reference the SAME path (not actually independent per-rank
+    # evidence) and out_dir/out_stem were otherwise unused/unchecked.
+    seen_paths: set[str] = set()
+    for entry in outputs:
+        expected_prefix = str(out_dir / f"{out_stem}-rank-{entry['device']}")
+        if not str(entry["path"]).startswith(expected_prefix):
+            return EvaluationResult(
+                False,
+                f"device {entry['device']} output path {entry['path']!r} does not match the "
+                f"expected per-rank naming convention {expected_prefix!r}",
+            )
+        if entry["path"] in seen_paths:
+            return EvaluationResult(False, f"duplicate output path across ranks: {entry['path']!r}")
+        seen_paths.add(entry["path"])
+
     element_count = len(expected)
     per_rank_outputs: dict[int, list[float]] = {}
     for entry in outputs:
@@ -314,7 +369,10 @@ def evaluate_probe_result(
             return EvaluationResult(
                 False, f"output file {rank_path} digest mismatch (tampered or corrupted since probe wrote it)",
             )
-        values = _unpack_f32(raw)
+        try:
+            values = _unpack_f32(raw)
+        except MalformedOutputError as exc:
+            return EvaluationResult(False, f"device {entry['device']} output file malformed: {exc}")
         if len(values) != element_count:
             return EvaluationResult(
                 False,
