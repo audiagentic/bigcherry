@@ -191,12 +191,15 @@ def check_overlay_self_heal(audit_report: dict) -> tuple[bool, list[str]]:
 
 
 def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLock:
+    """Returns an UNACQUIRED lock -- the caller uses it as `with lock:`, whose
+    __enter__ does the single real acquire() call. (Found live on pin-bump's
+    first real invocation: this used to call .acquire() itself AND get used
+    as a context manager, double-acquiring the same lock in one process and
+    tripping its own "already held" check.)"""
     from ..core.context import ProjectContext
 
     context = ProjectContext.resolve(project_root=project_root)
-    lock = tree_activity.MaintenanceLock(context.work_root, context.project_root)
-    lock.acquire()
-    return lock
+    return tree_activity.MaintenanceLock(context.work_root, context.project_root)
 
 
 def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
