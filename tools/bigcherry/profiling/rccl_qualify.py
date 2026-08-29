@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -224,7 +225,7 @@ def build_command(
 
 def _classify(
     *, returncode: int | None, term_signal: int | None, timed_out: bool,
-    combined_output: str, rccl_json: dict | None,
+    combined_output: str, rccl_json: list | None,
 ) -> tuple[str, bool | None, str]:
     """Return (classification, correct, detail). Order matters: check the
     most specific/actionable signal before falling back to a bare
@@ -259,11 +260,49 @@ def _classify(
     if rccl_json is None:
         return HARNESS_FAILURE, None, "process exited 0 but produced no parseable RCCL JSON output"
 
-    correct = rccl_json.get("errors", None)
-    if correct is not None and correct != 0:
-        return WRONG_RESULT, False, f"RCCL reported {correct} correctness error(s)"
+    # Real -Z json output (verified on real hardware, RCCL Tests
+    # develop_deprecated:40b1b17) is a JSON ARRAY of per-pass records
+    # (typically in-place/out-of-place), each carrying a "wrong" field as a
+    # STRING count (e.g. "0"), not a top-level {"errors": N} object as the
+    # runsheet's illustrative example assumed. No algorithm/protocol/
+    # channels fields appear in the JSON at all (those are -M 1's
+    # human-readable stdout table only).
+    if not isinstance(rccl_json, list) or not rccl_json:
+        return HARNESS_FAILURE, None, "process exited 0 but RCCL JSON output was not a non-empty array"
+
+    total_wrong = 0
+    for record in rccl_json:
+        if not isinstance(record, dict) or "wrong" not in record:
+            return HARNESS_FAILURE, None, f"malformed RCCL JSON record: {record!r}"
+        try:
+            total_wrong += int(record["wrong"])
+        except (TypeError, ValueError):
+            return HARNESS_FAILURE, None, f"non-integer 'wrong' field: {record['wrong']!r}"
+
+    if total_wrong != 0:
+        return WRONG_RESULT, False, f"RCCL reported {total_wrong} correctness error(s) across {len(rccl_json)} record(s)"
 
     return PASS, True, "clean exit, correctness check passed"
+
+
+# -M 1's human-readable table ends each size row with "... algo proto
+# nchannels" (verified against real RCCL Tests stdout, e.g.
+# "    RING    SIMPLE           2"). Not present in -Z json output at all
+# -- this is the only place RCCL Tests reports what was ACTUALLY selected,
+# which per RQ02 must be checked against what was requested (RCCL_OVERRIDE_
+# ALGO/PROTO constrain selection, they don't guarantee it).
+_OBSERVED_PLAN_RE = re.compile(
+    r"^\s*(RING|TREE|COLLNET_DIRECT|COLLNET_CHAIN|NVLS|NVLS_TREE|PAT)\s+"
+    r"(LL|LL128|SIMPLE)\s+(\d+)\s*$", re.MULTILINE,
+)
+
+
+def _parse_observed_plan(combined_output: str) -> tuple[str | None, str | None, int | None]:
+    match = _OBSERVED_PLAN_RE.search(combined_output)
+    if match is None:
+        return None, None, None
+    algo, proto, channels = match.groups()
+    return algo, proto, int(channels)
 
 
 def run_case(
@@ -352,17 +391,13 @@ def run_case(
             pass
 
     rccl_json = None
-    observed_algorithm = observed_protocol = None
-    observed_channels: int | None = None
     if rccl_output_path.exists():
         try:
             rccl_json = json.loads(rccl_output_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             rccl_json = None
-        if isinstance(rccl_json, dict):
-            observed_algorithm = rccl_json.get("algorithm")
-            observed_protocol = rccl_json.get("protocol")
-            observed_channels = rccl_json.get("channels")
+
+    observed_algorithm, observed_protocol, observed_channels = _parse_observed_plan(combined_output)
 
     classification, correct, detail = _classify(
         returncode=returncode, term_signal=term_signal, timed_out=timed_out,
