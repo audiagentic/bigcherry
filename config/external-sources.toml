@@ -273,12 +273,20 @@ Mainline dedup (git cherry, 2026-08-18): 0 of the 33 commits merged into
 ggml-org/llama.cpp master at tip 6d0549831."""
 
 [[sources.snapshots]]
+label = "v3"
+head = "c8af5361d2e2f7f8c44c7467f9a6da8b626edd2e"
+base = "7584430716ee229751771ed0d6bbcb780d105eeb"
+reviewed-at = "2026-08-30"
+active = true
+note = "Rebase detected by `bigcherry sources check` (2026-08-30, real b10502->b10680 bump pass): v2 head 9e46e1fdc is NOT an ancestor of this head. head/base verified via `gh api repos/stew675/llama.cpp/compare/ggml-org:master...rdna-boosts` (merge_base_commit), NOT a fabricated guess. Branch is 37 commits ahead of that merge-base, 75 behind current ggml-org/llama.cpp master. Individual tracked rows below still carry their v2-era `commit` identities (not yet re-pointed to their v3 re-committed SHAs) except where a specific finding required it: RD20 (superseded by upstream PR #27574, moved to status=superseded) and RD05/06/07 (verified content-identical to re-committed beaf69fb6, noted inline, no `commit` field change). A full per-row re-point to v3 SHAs is NOT done -- see HI154."
+
+[[sources.snapshots]]
 label = "v2"
 head = "9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22"
 base = "4df29be4f4c3673f428170fda944a5b19f743bb8"
 reviewed-at = "2026-08-18"
-active = true
-note = "33 commits (23 re-committed v1 changes + 10 new). Rebase detected on review: v1 head ed89854 is NOT an ancestor of this head."
+active = false
+note = "Historical. Superseded by v3 after the upstream branch rebase (2026-08-30 finding, sources-check). 33 commits (23 re-committed v1 changes + 10 new). Rebase detected on review: v1 head ed89854 is NOT an ancestor of this head."
 
 [[sources.snapshots]]
 label = "v1"
