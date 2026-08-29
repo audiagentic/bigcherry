@@ -39,6 +39,7 @@ class ServerRunner:
     def __init__(
         self, *, binary: Path, model: Path, host: str = "127.0.0.1", port: int = 8080,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
+        env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
     ):
         self.binary = binary
@@ -47,6 +48,13 @@ class ServerRunner:
         self.port = port
         self.extra_args = extra_args
         self.env_overrides = dict(env_overrides or {})
+        # HI143 (gpt review, 2026-08-29): the launched process otherwise
+        # inherits the FULL ambient environment -- a caller's leftover
+        # GGML_HIP_FORCE_CANDIDATE(_STRICT)/DISPATCH_DB/CACHE/COVERAGE from
+        # an unrelated earlier command could silently contaminate a run
+        # that never meant to set them. Names listed here are removed from
+        # the inherited environment before env_overrides is applied.
+        self.env_unset = tuple(env_unset)
         self.log_path = log_path
         # PROF01: lets a profiler (e.g. rocprofv3) wrap the real server
         # launch without duplicating ServerRunner's own lifecycle/health/
@@ -65,6 +73,8 @@ class ServerRunner:
         if self._proc is not None:
             raise ServerError("server already launched")
         env = dict(os.environ)
+        for name in self.env_unset:
+            env.pop(name, None)
         env.update(self.env_overrides)
         env["LLAMA_SERVER_ENABLE_SHUTDOWN"] = "1"
         args = [
@@ -143,7 +153,16 @@ class ServerRunner:
 
     def __enter__(self) -> "ServerRunner":
         self.launch()
-        self.wait_healthy()
+        try:
+            self.wait_healthy()
+        except BaseException:
+            # HI143 (gpt review, 2026-08-29): without this, a health-check
+            # timeout/failure left the just-launched process (and its real
+            # GPU allocation) running forever -- __exit__ is never called
+            # when __enter__ itself raises, so this was the only place that
+            # could clean it up.
+            self.shutdown()
+            raise
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
