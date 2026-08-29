@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.core import paths  # noqa: E402
 from bigcherry.patch import rebase  # noqa: E402
+from bigcherry import __main__ as legacy  # noqa: E402
 
 CLEAN_PATCH = """\
 from bigcherry.patcher import Edit, FilePatch
@@ -350,6 +351,77 @@ class StaleReportTests(unittest.TestCase):
         rebase.write_report(report_path, stale)
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase.apply_known_good(self.upstream, report_path, force=True, dry_run=True)
+
+
+class WriteOverlaySnapshotTests(unittest.TestCase):
+    """Found live during the b10502->b10680 bump: a target left over from an
+    older apply, with the same logical content but CRLF line endings, never
+    got normalized to LF by a later apply -- the "already matches" check
+    compared universal-newline-translated reads of both sides, which made a
+    genuinely-CRLF target compare equal to the (always LF) incoming text."""
+
+    def test_rewrites_a_target_that_only_differs_by_line_ending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "overlay-file.cpp"
+            target.write_bytes(b"line1\r\nline2\r\n")
+
+            written = rebase._write_overlay_snapshot(
+                root, {"overlay-file.cpp": "line1\nline2\n"}, dry_run=False,
+            )
+
+            self.assertEqual(written, ["overlay-file.cpp"])
+            self.assertEqual(target.read_bytes(), b"line1\nline2\n")
+
+    def test_does_not_rewrite_a_target_already_byte_identical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "overlay-file.cpp"
+            target.write_bytes(b"line1\nline2\n")
+
+            written = rebase._write_overlay_snapshot(
+                root, {"overlay-file.cpp": "line1\nline2\n"}, dry_run=False,
+            )
+
+            self.assertEqual(written, [])
+
+
+class CopyOverlayTests(unittest.TestCase):
+    """Same real bug, same fix, as WriteOverlaySnapshotTests -- but for
+    ``legacy._copy_overlay()``, the plain-``apply`` overlay-copy path."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-copy-overlay-")
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name)
+        self.overlay_root = self.base / "overlay"
+        self.overlay_root.mkdir()
+        self.root = self.base / "root"
+        self.root.mkdir()
+        self._old_overlay = paths.SRC_OVERLAY
+        paths.SRC_OVERLAY = self.overlay_root
+
+    def tearDown(self) -> None:
+        paths.SRC_OVERLAY = self._old_overlay
+
+    def test_rewrites_a_target_that_only_differs_by_line_ending(self):
+        (self.overlay_root / "overlay-file.cpp").write_bytes(b"line1\nline2\n")
+        target = self.root / "overlay-file.cpp"
+        target.write_bytes(b"line1\r\nline2\r\n")
+
+        written = legacy._copy_overlay(self.root, dry_run=False)
+
+        self.assertEqual(written, ["overlay-file.cpp"])
+        self.assertEqual(target.read_bytes(), b"line1\nline2\n")
+
+    def test_does_not_rewrite_a_target_already_byte_identical(self):
+        (self.overlay_root / "overlay-file.cpp").write_bytes(b"line1\nline2\n")
+        target = self.root / "overlay-file.cpp"
+        target.write_bytes(b"line1\nline2\n")
+
+        written = legacy._copy_overlay(self.root, dry_run=False)
+
+        self.assertEqual(written, [])
 
 
 class ApplyKnownGoodTests(unittest.TestCase):

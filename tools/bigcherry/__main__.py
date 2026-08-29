@@ -182,7 +182,16 @@ def _copy_overlay(
         relative = source.relative_to(paths.SRC_OVERLAY)
         target = root / relative
         text = source.read_text(encoding="utf-8")
-        if target.is_file() and target.read_text(encoding="utf-8") == text:
+        # `text` is LF-only (universal-newline translation of src) and gets
+        # written verbatim (newline=""). Comparing against a universal-
+        # newline read of `target` would translate a stale CRLF target to
+        # LF first, read as "already matches", and skip the write forever
+        # -- leaving CRLF bytes on disk that a real write would have
+        # normalized. Read `target` with newline="" so that's detected as
+        # needing a rewrite. See rebase.py's `_write_overlay_snapshot` for
+        # the same fix, applied there first (found live during the
+        # b10502->b10680 bump).
+        if target.is_file() and target.read_text(encoding="utf-8", newline="") == text:
             continue
         relative_str = str(relative).replace("\\", "/")
         if backup is not None and relative_str not in backup:
