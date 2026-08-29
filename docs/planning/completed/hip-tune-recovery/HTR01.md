@@ -2,7 +2,7 @@
 id: HTR01
 order: 0
 plan: hip-tune-recovery
-state: pending
+state: completed
 created-at: '2026-08-29T13:28:09.305813+00:00'
 breadth: ''
 skill: advanced
@@ -140,11 +140,24 @@ PAIRING BUG FIXED, v2 REDESIGN LANDED (2026-08-30): implemented GPT's locked fix
 
 STATUS: ready for a THIRD real-hardware run against the same captured hi141-proof-20260829-2231 failure. Acceptance criterion (GPT's own words): the reproducer must reach at least one real alt:* proposal, invoke generate_for_candidate() for real, retain non-native winners if a safe repair exists, and publish only after full-corpus PASS. Do not consider HTR01 validated until that third run actually demonstrates this end-to-end on real hardware -- two real-hardware runs have already found two real, distinct bugs that only real hardware (not offline tests alone) exposed, so a third real run is the actual bar, not optional polish.
 
+THIRD REAL-HARDWARE RUN: FULL SUCCESS (2026-08-30). Two more small real bugs found and fixed en route (both from this same run's own failures, not new investigation): (1) my own validate_recovery.py script still referenced the renamed BoundedDeltaDebugStrategy class -- fixed, trivial; (2) DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES was still 12 in code despite HTR01's own notes already recording GPT's real-data-informed revision to 16 -- the revision was written down but never actually applied; a real run then genuinely exhausted the budget at 12, catching the miss. Fixed to 16.
+
+With all three real-hardware-found bugs fixed (native-name string bug, atomic-pairing bug, budget-not-applied bug), a clean run against the exact captured hi141-proof-20260829-2231 failure produced:
+
+published: True, stop_reason: full-corpus validation passed, evaluations_used: 25, real cache written to disk.
+
+17 of 20 originally-promoted signatures were reassigned to a REAL, different, working alternative candidate (not bulk native fallback). Critically, the ORIGINALLY-GUILTY signature (cd3b5f5bd371..., the exact dispatch this entire investigation started from) was correctly reassigned from the bad mmvq:q8_0:w4:nw8:rpb1:sk0:v1 to a genuinely different, safe candidate -- mmvq:q8_0:w4:nw6:rpb1:sk0:v1 (nw6, not nw8) -- which then passed the same real HI141 regression vector. Only 3 of 20 signatures exhausted their alternatives and correctly fell back to native, each with a structured RetuneRecommendation (alternatives_exhausted) attached, exactly as HTR04 designed -- purely informational, nothing acted on automatically.
+
+This satisfies GPT's own stated acceptance criterion in full: the reproducer reached real alt:* proposals, invoked generate_for_candidate() for real (confirmed via live test-backend-ops processes during the run), retained non-native winners (17/20, not 0/20 as in the two prior real runs), and published only after a genuine full-corpus PASS.
+
+STATUS: HTR01 is now considered REAL-HARDWARE VALIDATED end-to-end -- both the safety property (never ships a regression -- proven across all runs) and the efficiency property (recovers real yield, not just safe-but-useless native fallback -- proven by this run) are demonstrated on real hardware against the real HI141 regression this whole chain of work (HI121/HI136/HI141/HI143/HTR01) was built to solve. Remaining open work is tracked separately in HTR02 (failure-witness persistence), HTR03 (corpus/applicability configurability), HTR04 (retune escalation, still deferred), and HTR05 (multiplicity-correction study, still deferred) -- none of which block considering HTR01 itself complete and proven.
+
 ## Change Log
 
 - 2026-08-29T13:28:09.305813+00:00 (created-by): Created by agent
 
 ## Ledger-events
+
 
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.371872+00:00 (updated-by): Updated: section:ledger-events
@@ -157,3 +170,7 @@ STATUS: ready for a THIRD real-hardware run against the same captured hi141-proo
 - 2026-08-29T14:42:48.499020+00:00 (updated-by): Updated: section:notes
 - 2026-08-29T20:46:47.061609+00:00 (updated-by): Updated: section:notes
 - 2026-08-29T21:01:00.462677+00:00 (updated-by): Updated: section:notes
+- 2026-08-29T21:20:32.479110+00:00 (updated-by): Updated: section:notes
+- 2026-08-29T21:20:36.595649+00:00 (state-transition): State: pending → completed
+- chg_20260829_212045_proved-on-real-hardware-that-t_7840
+- 2026-08-29T21:20:45.936383+00:00 (updated-by): Updated: section:ledger-events
