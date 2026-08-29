@@ -71,7 +71,11 @@ class TestRegistryStructure(unittest.TestCase):
         superseded = {
             e["plan-item"] for e in rdna["tracked"] if e["status"] == "superseded"
         }
-        self.assertEqual(superseded, {"RD14", "RD16"})
+        # RD14/RD16 are superseded by RD24's SSM pre-scan chain (in-repo
+        # successor). RD20 is superseded independently -- by upstream
+        # ggml-org/llama.cpp PR #27574, not by another RD item -- found via
+        # the 2026-08-30 sources-check pass on the b10502->b10680 bump.
+        self.assertEqual(superseded, {"RD14", "RD16", "RD20"})
         # The excluded MTP feature commits are declared, not silently dropped.
         excluded = [e for e in rdna["tracked"] if e["status"] == "excluded"]
         self.assertGreaterEqual(len(excluded), 2)

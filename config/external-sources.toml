@@ -407,8 +407,8 @@ original = "ed89854b2aeb0e333dd61424f14af2aedaca126e"
 title = "llama : align attn_gate TP split granularity with attn_q"
 plan-item = "RD20"
 patch = "1201_rd20_attn_gate_tp_split"
-status = "ported-untested"
-note = "ported verbatim 2026-08-18; anchor byte-identical on pin 4801e3c. Correctness fix; needs 2+ GPU bench (Brutus 0/1 gfx1100)"
+status = "superseded"
+note = "superseded by upstream ggml-org/llama.cpp PR #27574 (commit d3371929b, merged 2026-08-23, within the b10502->b10680 window): introduces the identical pattern_attn_gate_weight granularity_head/granularity_q conditional at llama-model.cpp, more general (also covers attn_sinks, explicit MQA/GQA), with its own test-llama-archs multi-device coverage. Verified via gh api against the real upstream commit + PR body, 2026-08-30. patches/1201_rd20_attn_gate_tp_split never reached validated; do not port/validate further."
 
 # --- the 10 commits added in snapshot v2 ---------------------------------
 
