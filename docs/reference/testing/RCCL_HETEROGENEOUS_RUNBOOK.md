@@ -957,3 +957,68 @@ repair is infeasible/unacceptable for BigCherry's supported scope
 and the repository records the reason for retaining META-only heterogeneous execution.
 
 A failure to find a tuning override is not by itself Outcome B; HI88 already established that fact.
+
+---
+
+## CLOSED: Outcome B (2026-08-29, HI138)
+
+Phase 1 executed against RCCL rebuilt from source (ROCm/rccl commit
+`57e58688f44c77076ad536ef1f6b68741fc6e694`, reports as RCCL 2.28.3),
+explicit `--amdgpu_targets "gfx1100;gfx1201;gfx1030"`, code-object
+coverage verified for all three real architectures via
+`clang-offload-bundler --list` on the extracted `.hip_fatbin` section
+(`roc-obj-ls` is non-functional/deprecated and `llvm-objdump --offloading`
+crashes on this bundle format on this ROCm 7.2.4 install).
+
+**Root cause, localized via `AMD_LOG_LEVEL=4` verbose ROCclr tracing on the
+exact failing reproducer**: RCCL's generic device kernel
+(`ncclDevKernel_Generic_1`/`_2`/`_4` -- the arch-independent, unroll-factor
+-keyed fat-binary entry points `enqueue.cc`'s `ncclGetKernelIndex`/
+`ncclKerns[]` resolve to) declares a `hidden_hostcall_buffer` hidden kernel
+argument. Hostcall requires PCIe atomics support from the target device.
+This hardware has none anywhere (consistent with HI84's separate finding:
+no PCIe P2P bridge for ANY GPU pair on this box, homogeneous or
+heterogeneous). ROCclr's AQL dispatcher correctly refuses the kernel
+submission:
+
+```text
+ShaderName : ncclDevKernel_Generic_4(ncclDevKernelArgsStorage<4096ul>)
+Pcie atomics not enabled, hostcall not supported
+AQL dispatch failed!
+hipExtLaunchKernel: Returned hipErrorIllegalState
+```
+
+-- a real, working-as-designed runtime capability check, not a ROCclr bug.
+This is the same failure class HI85 originally observed, now localized to
+its exact mechanism.
+
+**Repair attempted**: rebuilt RCCL with `-DCOLLTRACE=OFF` +
+`CMAKE_BUILD_TYPE=Release` (NDEBUG reaching device compilation), on the
+hypothesis that dormant device-side `assert()`/COLLTRACE diagnostic code
+was forcing the hostcall metadata even though a plain Ring/Simple AllReduce
+never calls into it. **Result: negative.** Identical failure persists.
+Structurally verified (proper parse of the real `llvm-readobj --notes`
+AMDGPU_METADATA YAML, not a textual/offset heuristic) that all three
+generic kernel variants still declare `hidden_hostcall_buffer` on this
+exact rebuilt image.
+
+**Boundary**: removing the requirement would need either (a) RCCL
+kernel-generation/device-link changes making hostcall declaration
+conditional on actual runtime use, or (b) post-link code-object metadata
+surgery. Both are outside this runbook's P1.11 admissible-repair scope
+(no kernel-generation redesign, no metadata manipulation).
+
+**Disposition**: Phase 2 does not start. META remains the correct and only
+heterogeneous reduction path. Patch 1225's fail-closed guard against
+unqualified heterogeneous RCCL remains required and is reinforced, not
+changed, by this evidence.
+
+**Separate finding, not part of this closure**: patch 1225 was found to be
+`state=untested` and excluded from every default build's patch-set during
+this investigation -- the guard this closure depends on is not currently
+shipping in any tested binary. Tracked as its own follow-up, not folded
+into this Outcome B record.
+
+Full evidence artifacts: `artifacts/rccl-heterogeneous/rq04-01/` on Brutus
+(environment capture, both RCCL builds, rccl-tests builds, all case
+JSON/stdout logs, extracted/verified AMDGPU kernel metadata).
