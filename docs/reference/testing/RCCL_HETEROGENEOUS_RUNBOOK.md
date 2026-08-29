@@ -1008,10 +1008,35 @@ conditional on actual runtime use, or (b) post-link code-object metadata
 surgery. Both are outside this runbook's P1.11 admissible-repair scope
 (no kernel-generation redesign, no metadata manipulation).
 
-**Disposition**: Phase 2 does not start. META remains the correct and only
-heterogeneous reduction path. Patch 1225's fail-closed guard against
-unqualified heterogeneous RCCL remains required and is reinforced, not
-changed, by this evidence.
+**Scope correction (2026-08-29, same day, after further evidence)**: the
+above cause and repair-failure evidence are real, but the closure below was
+initially over-generalized to "heterogeneous RCCL rejected" broadly. Direct
+PCIe capability inspection (`lspci -vvv` AtomicOpsCap/Ctl) and the AMDGPU
+kernel driver's own boot-time self-test (`dmesg`/`journalctl -k`: `amdgpu
+0000:17:00.0: PCIE atomic ops is not supported`) show the missing PCIe
+AtomicOps completion capability is a property of **one specific device's
+PCIe path** -- physical device 3 (RX 6900XT), whose upstream root port is
+the chipset-routed slot (PCIe 3.0 x4 via the PCH) -- not a property of
+heterogeneous-architecture communicators in general. The other three GPUs
+(2x RX 7900 XTX + R9700, all on CPU-direct root ports) all pass the same
+boot-time test cleanly. External prior art (ROCm GitHub issues #2429,
+#6074, #6520) documents the identical failure signature on other boards
+with the same CPU-direct-vs-chipset-slot split, confirming this is a
+per-PCIe-path property, not an RDNA-generation or architecture-mixing
+limitation.
+
+**Disposition (revised)**: Outcome B applies specifically to any RCCL
+communicator that includes physical device 3 (RX 6900XT) -- its upstream
+PCH root port lacks PCIe AtomicOps completion capability, a real hardware
+limitation not fixable via kernel parameters, BIOS settings, or `setpci`
+(forcing it has been reported elsewhere to hang the system). It does
+**not** establish that RCCL is broadly unusable across mismatched
+architectures. A CPU-direct heterogeneous pair (e.g. XTX+R9700, gfx1100 +
+gfx1201, devices excluding physical device 3) is predicted by this
+evidence to work and remains queued for live hardware confirmation. If
+confirmed, Phase 2 may proceed for that narrower RCCL-viable topology set;
+device 3 stays on META regardless. Patch 1225's fail-closed guard remains
+required for any topology including device 3.
 
 **Separate finding, not part of this closure**: patch 1225 was found to be
 `state=untested` and excluded from every default build's patch-set during
