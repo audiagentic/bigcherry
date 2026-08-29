@@ -545,7 +545,7 @@ def _check(args: argparse.Namespace) -> int:
                     print("  FINDING mainline-unavailable: fetch failed")
                 else:
                     mainline_tip = _git(tmp, "rev-parse", "mainline/master", timeout=60).stdout.strip()
-                    cherry = _git(tmp, "cherry", "-v", "mainline/master", tip, timeout=300)
+                    cherry = _git(tmp, "cherry", "-v", "mainline/master", tip, timeout=timeout)
                     merged = {line.split()[1] for line in cherry.stdout.splitlines()
                               if line.startswith("- ")}
                     print(f"  mainline tip: {mainline_tip[:9]}")
