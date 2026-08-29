@@ -593,14 +593,39 @@ class AssignmentExecutor:
             binary=self.binary_path, model=self.model_path, extra_args=self.common_args,
             env_overrides=env, log_path=self.workdir / f"recovery-probe-{proposal.label.replace(':', '_')}.log",
         )
-        vectors_to_run = probe_vectors if probe_vectors is not None else list(self.native_trace_cache.keys())
+        # Real, severe bug found on real hardware (2026-08-30): this used
+        # to be `vectors_to_run = probe_vectors if ... else
+        # list(self.native_trace_cache.keys())` -- probe_vectors is a list
+        # of REAL BehavioralVector OBJECTS (every real call supplies one:
+        # run_recovery always passes proposal.probe_vectors or
+        # failing_vectors), but the else-branch produced a list of NAME
+        # STRINGS. The loop below assumed `name` was always a string
+        # (`v.name == name`), so whenever probe_vectors was given --
+        # i.e. EVERY real invocation -- that comparison was always False,
+        # `vector` was always None, every iteration silently `continue`d,
+        # and report.verdicts stayed EMPTY. hard_fail/needs_throughput_
+        # adjudication are both `any(...)` over that empty list, so EVERY
+        # probe throughout the ENTIRE recovery search vacuously "passed"
+        # without ever running a single real behavioral comparison. A real
+        # tg128 benchmark against a "successfully recovered" cache caught
+        # this: it measured a genuine 27% regression the vacuous "pass"
+        # never actually checked for. Normalize to names ONCE, up front,
+        # so this class of type confusion cannot recur.
+        vector_names = (
+            [v.name for v in probe_vectors] if probe_vectors is not None
+            else list(self.native_trace_cache.keys())
+        )
         report = behavioral_gate_mod.BehavioralGateReport()
         try:
             with runner:
-                for name in vectors_to_run:
+                for name in vector_names:
                     vector = next((v for v in full_corpus if v.name == name), None)
                     if vector is None:
-                        continue
+                        raise RecoveryError(
+                            f"proposal {proposal.label!r} requested vector {name!r} "
+                            f"which is not present in full_corpus -- refusing to "
+                            f"silently skip a requested comparison"
+                        )
                     native_trace = self.native_trace_cache.get(name)
                     if native_trace is None:
                         raise RecoveryError(f"no cached native trace for vector {name!r}")
@@ -611,6 +636,11 @@ class AssignmentExecutor:
         except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
             raise RecoveryError(f"probe for {proposal.label!r} failed to execute: {exc}") from exc
 
+        if not report.verdicts:
+            raise RecoveryError(
+                f"proposal {proposal.label!r} produced zero behavioral verdicts -- "
+                f"refusing to treat an empty comparison as a pass"
+            )
         if report.hard_fail:
             verdict = "hard_fail"
         elif report.needs_throughput_adjudication:
