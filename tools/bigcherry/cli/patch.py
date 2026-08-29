@@ -10,9 +10,12 @@ from pathlib import Path
 from ..core import paths
 from .. import recipes
 from ..patch import catalog as patch_catalog
+from ..patch import disposition as patch_disposition
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
 from ..patch import rebase as patch_rebase
+
+DISPOSITIONS_DIR = paths.ARTIFACTS / "pin-bump" / "dispositions"
 
 
 def cmd_apply(args: Namespace) -> int:
@@ -252,6 +255,47 @@ def cmd_patch_lint(args: Namespace) -> int:
         for problem in problems:
             print(problem, file=sys.stderr)
     return 0 if not problems else 1
+
+
+def cmd_patch_disposition(args: Namespace) -> int:
+    """HI152: record/list/clear a revision-bound known_broken disposition
+    for a non-recipe patch -- see patch/disposition.py's module docstring.
+    Never a standing waiver: it stops applying the instant target_revision
+    or patch_digest changes."""
+    action = args.disposition_action
+    if action == "set":
+        record = patch_disposition.Disposition(
+            patch_id=args.patch_id, target_revision=args.revision,
+            patch_digest=args.digest, disposition="known_broken",
+            failure_status=args.failure_status, reason=args.reason,
+            owner=args.owner, tracking_item=args.tracking_item,
+        )
+        try:
+            path = patch_disposition.save_disposition(DISPOSITIONS_DIR, record)
+        except patch_disposition.DispositionError as exc:
+            print(f"patch-disposition: {exc}", file=sys.stderr)
+            return 2
+        print(f"disposition recorded: {path}")
+        return 0
+    if action == "clear":
+        removed = patch_disposition.clear_disposition(DISPOSITIONS_DIR, args.patch_id)
+        print(f"disposition cleared: {args.patch_id}" if removed
+              else f"no disposition on file for {args.patch_id}")
+        return 0
+    # action == "list"
+    records = patch_disposition.list_dispositions(DISPOSITIONS_DIR)
+    if args.json:
+        print(json.dumps(
+            {pid: r.__dict__ for pid, r in sorted(records.items())}, indent=2, sort_keys=True,
+        ))
+        return 0
+    if not records:
+        print("no dispositions on file")
+        return 0
+    for pid, record in sorted(records.items()):
+        print(f"{pid}: revision={record.target_revision[:12]} digest={record.patch_digest[:12]} "
+              f"owner={record.owner} tracking_item={record.tracking_item} reason={record.reason!r}")
+    return 0
 
 
 def cmd_patch_verify_evidence(args: Namespace) -> int:

@@ -30,6 +30,7 @@ from .experiment import (
 )
 from .patch import (
     cmd_apply,
+    cmd_patch_disposition,
     cmd_patch_explain,
     cmd_patch_graph,
     cmd_patch_lint,
@@ -295,6 +296,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
+
+    patch_disposition_cmd = sub.add_parser(
+        "patch-disposition",
+        help="record/list/clear a revision-bound known_broken disposition (HI152)",
+    )
+    disposition_sub = patch_disposition_cmd.add_subparsers(
+        dest="disposition_action", required=True
+    )
+    disposition_set = disposition_sub.add_parser(
+        "set", help="record a known_broken disposition for one patch"
+    )
+    disposition_set.add_argument("--patch-id", required=True)
+    disposition_set.add_argument("--revision", required=True, help="target upstream revision (full SHA)")
+    disposition_set.add_argument("--digest", required=True, help="patch-rebase-check's implementation_digest for this patch")
+    disposition_set.add_argument("--failure-status", required=True,
+                                  help="e.g. FAILED_NEEDS_RECONCILIATION, QUARANTINED")
+    disposition_set.add_argument("--reason", required=True)
+    disposition_set.add_argument("--owner", required=True)
+    disposition_set.add_argument("--tracking-item", required=True)
+    disposition_sub.add_parser("list", help="list recorded dispositions").add_argument(
+        "--json", action="store_true"
+    )
+    disposition_clear = disposition_sub.add_parser("clear", help="remove a disposition")
+    disposition_clear.add_argument("--patch-id", required=True)
+    patch_disposition_cmd.set_defaults(func=cmd_patch_disposition)
 
     patch_validate_cmd = sub.add_parser(
         "patch-validate", help="verify existing patch evidence"
