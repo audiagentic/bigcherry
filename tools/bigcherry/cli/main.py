@@ -376,6 +376,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pin_status_cmd.set_defaults(func=cmd_pin_status)
 
+    pin_bump_cmd = sub.add_parser(
+        "pin-bump",
+        help="single-tree pin-bump orchestrator (HI153): repin -> pull -> "
+        "audit -> patch-lint -> coverage -> apply -> reaudit, stopping "
+        "with a structured JSON failure envelope on anything not "
+        "provably safe to auto-proceed past. Multi-tree sequencing is "
+        "still manual -- run `pin-status --complete --all-remotes` "
+        "afterward on each required tree.",
+    )
+    pin_bump_cmd.add_argument("target", help="upstream ref/tag to bump to (e.g. b10680)")
+    pin_bump_cmd.add_argument("--recipe", default="bigcherry")
+    pin_bump_cmd.add_argument("--resume", action="store_true")
+    pin_bump_cmd.add_argument("--report-dir", default=None)
+    pin_bump_cmd.set_defaults(func=cmd_pin_bump)
+
     replay_inspect_cmd = sub.add_parser(
         "replay-inspect",
         help=(
@@ -1336,6 +1351,49 @@ def cmd_repin(args: argparse.Namespace) -> int:
 
 def cmd_pin_status(args: argparse.Namespace) -> int:
     return _release_pin.cmd_pin_status(args)
+
+
+def cmd_pin_bump(args: argparse.Namespace) -> int:
+    import json as _json
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from ..core import paths as _paths
+    from ..core import tree_activity as _tree_activity
+    from ..release import pin_bump as _pin_bump
+
+    report_dir = (
+        _Path(args.report_dir) if args.report_dir
+        else _paths.ARTIFACTS / "pin-bump" / f"resume-{args.target}"
+    )
+    try:
+        result = _pin_bump.run(
+            target_ref=args.target, recipe_name=args.recipe,
+            resume=args.resume, report_dir=report_dir,
+        )
+    except _pin_bump.PinBumpStop as exc:
+        envelope = _pin_bump.failure_envelope(
+            exc.run_id or "unresolved", exc.target or {"from_ref": "?", "to_ref": args.target},
+            exc.transition_commit, exc.tree or {"name": "local", "path": str(_paths.llama_root())},
+            exc,
+        )
+        out = report_dir / "failure.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"pin-bump: STOPPED at phase {exc.phase!r} ({exc.code}): {exc.summary}", file=_sys.stderr)
+        print(f"  failure envelope: {out}", file=_sys.stderr)
+        for action in exc.recommended_actions:
+            print(f"  - {action}", file=_sys.stderr)
+        return 1
+    except _tree_activity.TreeActivityError as exc:
+        print(f"pin-bump: TREE_IN_USE: {exc}", file=_sys.stderr)
+        return 1
+
+    print(f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
+          f"({result.state.to_sha[:12]})")
+    print("next: run `bigcherry pin-status --complete --all-remotes` once every "
+          "required tree has been bumped the same way")
+    return 0
 
 
 def _legacy_main(argv: list[str] | None = None) -> int:
