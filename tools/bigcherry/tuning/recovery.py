@@ -232,13 +232,18 @@ class BoundedPairedBisectionStrategy:
 
     REPAIR -- once isolation is done, build the conservative baseline
     (every isolated/interaction-group dispatch forced native, probed as a
-    single action) and, if it passes, try the SINGLE best already-measured
-    alternative for each implicated signature, one at a time, against that
-    baseline -- accept on PASS, otherwise keep the prior baseline and move
-    on. Deliberately not full ddmin-style repeated retry across every
-    ranked alternative for v1 (GPT: "best alternative", singular) --
-    broader alternative exhaustion is a v2 concern once real usage data
-    exists."""
+    single action) and, if it passes, walk each implicated signature's
+    already-measured alternatives IN ORDER (best-first by effective_us),
+    one at a time, against that baseline -- accept on PASS; on a genuine
+    behavioral rejection (hard_fail/behavior_changed), try the next
+    alternative for the SAME signature before giving up on it (GPT deep-
+    dive review, round 2, 2026-08-30 -- corrected from an earlier version
+    that tried only the single best alternative and then reported the
+    entire remaining catalog as "exhausted", which was never actually
+    tested). An "ineligible" verdict (the candidate could not even be
+    behaviorally tested, e.g. failed correctness evidence) moves past that
+    alternative WITHOUT counting it as behaviorally exhausted -- only a
+    completed real comparison may ever be reported as tried-and-rejected."""
 
     _initial_hits: tuple[str, ...] | None = None
     _pending_groups: list[tuple[str, ...]] = field(default_factory=list)
@@ -323,7 +328,15 @@ class BoundedPairedBisectionStrategy:
             self._repair_alt_index = 0
             return self.propose(state)
         alt = assignment.alternatives[self._repair_alt_index]
-        self.tried_alternatives.setdefault(self._repair_current_dispatch, []).append(alt)
+        # GPT deep-dive review, round 2 (2026-08-30): do NOT record this as
+        # "tried" here, optimistically, before the real verdict is known --
+        # run_recovery's except RecoveryError -> "ineligible" fallback
+        # means a STRUCTURAL failure (e.g. the cardinality guard itself, or
+        # a server crash) raises the exact same exception type as a
+        # genuine correctness-ineligibility, so recording here would let a
+        # structural failure silently count as "behaviorally rejected" in
+        # exhausted_candidates. Only record() may add to tried_alternatives,
+        # and only for a completed real behavioral verdict.
         trial = dict(state.committed_overrides)
         trial[self._repair_current_dispatch] = alt
         return RecoveryAction(
@@ -404,15 +417,28 @@ class BoundedPairedBisectionStrategy:
             # this rare case.
         else:
             dispatch = self._repair_current_dispatch
+            tried_alt = result.action.proposals[0].overrides[dispatch]
             if observation.verdict == "pass":
                 committed = dict(committed)
-                committed[dispatch] = result.action.proposals[0].overrides[dispatch]
+                committed[dispatch] = tried_alt
                 self._repair_current_dispatch = None
                 self._repair_alt_index = 0
+            elif observation.verdict in ("hard_fail", "behavior_changed"):
+                # A REAL, completed behavioral rejection -- only this case
+                # may count toward exhausted_candidates (GPT deep-dive
+                # review, round 2: an "ineligible" verdict here would mean
+                # the candidate was never actually behaviorally tested at
+                # all, so it must never be reported as "tried and
+                # rejected"). Try the NEXT alternative for the SAME
+                # dispatch (if any remain) before giving up on it.
+                self.tried_alternatives.setdefault(dispatch, []).append(tried_alt)
+                self._repair_alt_index += 1
             else:
-                # This alternative was rejected -- try the NEXT one for the
-                # SAME dispatch (if any remain) before giving up on it,
-                # rather than immediately moving on after just one attempt.
+                # "ineligible" (or any other non-terminal verdict): this
+                # specific alternative could not be tested at all (e.g. it
+                # failed correctness evidence) -- move past it WITHOUT
+                # recording it as behaviorally exhausted, since it never
+                # actually ran a real comparison.
                 self._repair_alt_index += 1
         return RecoveryState(
             assignments=state.assignments, failing_vectors=state.failing_vectors,
