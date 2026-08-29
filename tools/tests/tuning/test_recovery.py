@@ -443,5 +443,95 @@ class EnsureCorrectnessEvidenceTests(unittest.TestCase):
             self.assertEqual(mock_gen.call_count, 2)
 
 
+class AssignmentExecutorEvaluateRealVectorMatchingTests(unittest.TestCase):
+    """HTR01 (2026-08-30): a real, severe bug -- vectors_to_run held real
+    BehavioralVector OBJECTS on every actual call, but the matching loop
+    compared them against NAME STRINGS (`v.name == name`), so `vector` was
+    always None, every iteration silently `continue`d, and report.verdicts
+    stayed empty -- vacuously "passing" every probe throughout an entire
+    real-hardware recovery search without ever running one real behavioral
+    comparison. Caught only by a real tg128 benchmark measuring an actual
+    27% regression the vacuous pass never checked for -- NOT by any
+    existing test, because every other test in this file exercises the
+    STRATEGY via a fake/mocked executor that bypasses evaluate() entirely.
+    These tests call the REAL AssignmentExecutor.evaluate(), mocking only
+    ServerRunner and behavioral_gate_mod.run_vector, specifically so this
+    exact class of bug cannot recur silently."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.workdir = Path(self._tmp.name)
+        measurements_path = self.workdir / "promoted.jsonl"
+        row = {"dispatch": "d0", "signature": "sig0", "native": "family:native:v1",
+               "winner": "family:native:v1", "promotion_status": "promoted"}
+        measurements_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        dispatch_db = self.workdir / "tune.sqlite"
+        dispatch_db.write_bytes(b"")
+        self.executor = rec.AssignmentExecutor(
+            binary_path=Path("llama-server"), model_path=Path("model.gguf"), devices="0",
+            common_args=(), measurements_path=measurements_path,
+            manifest_path=self.workdir / "manifest.json", ggml_h_path=self.workdir / "ggml.h",
+            workdir=self.workdir, dispatch_db=dispatch_db,
+            correctness_binary_path=Path("test-backend-ops"), vendor_root=self.workdir,
+        )
+        self.addCleanup(self._close_dispatch_db_conn)
+        (self.workdir / "manifest.json").write_text(
+            json.dumps({"source_revision": "deadbeef", "manifest_hash": "aa"}), encoding="utf-8",
+        )
+        self.vector = _vector("v1")
+        self.executor.native_trace_cache["v1"] = _trace([1, 2, 3], draft_n=10, draft_n_accepted=8)
+
+    def _close_dispatch_db_conn(self):
+        if self.executor._dispatch_db_conn is not None:
+            self.executor._dispatch_db_conn.close()
+
+    def test_matching_candidate_trace_produces_a_real_pass_verdict(self):
+        with (
+            patch.object(rec, "ServerRunner"),
+            patch.object(rec.replay_mod, "build", return_value=b""),
+            patch.object(
+                bg, "run_vector",
+                return_value=_trace([1, 2, 3], draft_n=10, draft_n_accepted=8),
+            ),
+        ):
+            proposal = rec.AssignmentProposal(
+                label="x", overrides={}, probe_vectors=(self.vector,),
+            )
+            observation = self.executor.evaluate(proposal, full_corpus=[self.vector])
+        # The real, decisive assertion this bug violated: a real comparison
+        # actually happened.
+        self.assertEqual(len(observation.report.verdicts), 1)
+        self.assertEqual(observation.verdict, "pass")
+
+    def test_diverging_candidate_trace_is_actually_caught_as_hard_fail(self):
+        with (
+            patch.object(rec, "ServerRunner"),
+            patch.object(rec.replay_mod, "build", return_value=b""),
+            patch.object(
+                bg, "run_vector",
+                return_value=_trace([1, 2, 9], draft_n=10, draft_n_accepted=8),  # differs from native
+            ),
+        ):
+            proposal = rec.AssignmentProposal(
+                label="x", overrides={}, probe_vectors=(self.vector,),
+            )
+            observation = self.executor.evaluate(proposal, full_corpus=[self.vector])
+        self.assertEqual(len(observation.report.verdicts), 1)
+        self.assertEqual(observation.verdict, "hard_fail")
+
+    def test_requested_vector_missing_from_full_corpus_raises_not_silently_skips(self):
+        other_vector = _vector("other")
+        with (
+            patch.object(rec, "ServerRunner"),
+            patch.object(rec.replay_mod, "build", return_value=b""),
+        ):
+            proposal = rec.AssignmentProposal(
+                label="x", overrides={}, probe_vectors=(other_vector,),
+            )
+            with self.assertRaises(rec.RecoveryError):
+                self.executor.evaluate(proposal, full_corpus=[self.vector])  # other_vector not in full_corpus
+
+
 if __name__ == "__main__":
     unittest.main()
