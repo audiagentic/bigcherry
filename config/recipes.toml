@@ -243,6 +243,34 @@ description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/I
 targets = ["vulkan-stub"]
 options = { LLAMA_BUILD_TESTS = "ON" }
 
+# Backend software-stack profiles are request identities, separate from
+# machine/platform identities. Paths are deployment-specific and may be
+# overridden by callers.
+[stack.rocm-system]
+backend = "hip"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-7-2]
+backend = "hip"
+sdk-root = "/opt/rocm-7.2"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-7-14]
+backend = "hip"
+sdk-root = "/opt/rocm-7.14"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-10]
+backend = "hip"
+sdk-root = "/opt/rocm-10"
+required-providers = ["hip", "rocblas"]
+
+[stack.vulkan-radv]
+backend = "vulkan"
+
+[stack.vulkan-amdvlk]
+backend = "vulkan"
+
 # RE14/RE19: the canonical replacement for legacy `build --all`, expressed
 # directly in v2 source/build/platform identities -- NOT derived from
 # compat.recipe.* below, which are legacy-only labels with their own
