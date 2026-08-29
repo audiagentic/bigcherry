@@ -143,25 +143,29 @@ def _run_fake(tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, nam
 
 
 def test_clean_pass_is_classified_pass(tmp_path: Path):
+    # Real -Z json output (verified on real hardware) is a JSON ARRAY of
+    # per-pass records with a "wrong" string field; algo/proto/channels
+    # only appear in -M 1's human-readable stdout table.
     result = _run_fake(tmp_path, """
         import sys, json
         out = sys.argv[sys.argv.index("-x") + 1]
         with open(out, "w") as f:
-            json.dump({"errors": 0, "algorithm": "Ring", "protocol": "Simple", "channels": 2}, f)
+            json.dump([{"wrong": "0"}, {"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
         sys.exit(0)
     """)
     assert result.classification == rq.PASS
     assert result.correct is True
-    assert result.observed_algorithm == "Ring"
+    assert result.observed_algorithm == "RING"
     assert result.observed_channels == 2
 
 
-def test_wrong_result_classified_from_rccl_errors_field(tmp_path: Path):
+def test_wrong_result_classified_from_rccl_wrong_field(tmp_path: Path):
     result = _run_fake(tmp_path, """
         import sys, json
         out = sys.argv[sys.argv.index("-x") + 1]
         with open(out, "w") as f:
-            json.dump({"errors": 3, "algorithm": "Ring", "protocol": "Simple"}, f)
+            json.dump([{"wrong": "3"}, {"wrong": "0"}], f)
         sys.exit(0)
     """)
     assert result.classification == rq.WRONG_RESULT
@@ -266,7 +270,7 @@ def test_topology_identity_unaffected_by_diagnostic_visible_devices(tmp_path: Pa
         import sys, json
         out = sys.argv[sys.argv.index("-x") + 1]
         with open(out, "w") as f:
-            json.dump({"errors": 0}, f)
+            json.dump([{"wrong": "0"}], f)
         sys.exit(0)
     """
     # Same case run twice with different diagnostic device bindings --
