@@ -502,7 +502,7 @@ def _stage_replay_validate(
     runtime_profile: campaign_config.RuntimeProfile, provisional_cache: Path, workdir: Path,
     corpus: list[behavioral_gate_mod.BehavioralVector] | None = None,
     promoted_path: Path | None = None, manifest_path: Path | None = None,
-    ggml_h_path: Path | None = None, allow_recovery: bool = True,
+    ggml_h_path: Path | None = None, dispatch_db: Path | None = None, allow_recovery: bool = True,
     max_recovery_evaluations: int = recovery_mod.DEFAULT_MAX_RECOVERY_EVALUATIONS,
 ) -> dict:
     """HI143: the real pre-promotion behavioral regression gate, wired into
@@ -620,13 +620,15 @@ def _stage_replay_validate(
         # (2026-08-29) hard-failed on exactly one of 41 promoted candidates
         # and shipped nothing at all.
         recovered = False
-        if allow_recovery and promoted_path is not None and manifest_path is not None and ggml_h_path is not None:
+        if (allow_recovery and promoted_path is not None and manifest_path is not None
+                and ggml_h_path is not None and dispatch_db is not None):
             try:
                 assignments = _load_signature_assignments(promoted_path)
                 executor = recovery_mod.AssignmentExecutor(
                     binary_path=binary_path, model_path=model_path, devices=devices,
                     common_args=common_args, measurements_path=promoted_path,
                     manifest_path=manifest_path, ggml_h_path=ggml_h_path, workdir=workdir,
+                    dispatch_db=dispatch_db,
                 )
                 strategy = recovery_mod.BoundedDeltaDebugStrategy()
                 # KNOWN LIMITATION (not yet closed, tracked for follow-up):
@@ -847,6 +849,7 @@ def run_tune_campaign(
             promoted_path=workdir / "promoted.jsonl",
             manifest_path=Path(replay_result.manifest_ref.path),
             ggml_h_path=replay_result.source_root / "ggml" / "include" / "ggml.h",
+            dispatch_db=dispatch_db,
         )
         dispatch_cache_path = workdir / "dispatch.cache"
 
