@@ -79,7 +79,7 @@ def test_guard_fails_closed_not_via_the_internal_fallback():
     # into ggml_backend_cuda_comm_init_internal(ret) the way the
     # pre-existing virtual-device guard above it still does.
     guard_pos = PATCH.index("heterogeneous_arch = false")
-    abort_pos = PATCH.index('GGML_ABORT("heterogeneous-architecture tensor-split', guard_pos)
+    abort_pos = PATCH.index('GGML_ABORT("unqualified heterogeneous-architecture tensor-split', guard_pos)
     assert abort_pos > guard_pos
     # only the pre-existing virtual-device guard declines to internal --
     # this guard must not add a second occurrence.
@@ -88,10 +88,10 @@ def test_guard_fails_closed_not_via_the_internal_fallback():
 
 def test_guard_logs_a_clear_error_before_aborting():
     # User requirement: this must be visible, not a silent behavior change.
-    err_pos = PATCH.index('GGML_LOG_ERROR("NCCL/RCCL cannot reduce across mixed GPU')
-    abort_pos = PATCH.index('GGML_ABORT("heterogeneous-architecture tensor-split', err_pos)
+    err_pos = PATCH.index('GGML_LOG_ERROR("NCCL/RCCL heterogeneous-architecture tensor-split has no')
+    abort_pos = PATCH.index('GGML_ABORT("unqualified heterogeneous-architecture tensor-split', err_pos)
     assert err_pos < abort_pos
-    assert "mixed GPU" in PATCH
+    assert "qualified admission" in PATCH
     assert "architectures" in PATCH
 
 
