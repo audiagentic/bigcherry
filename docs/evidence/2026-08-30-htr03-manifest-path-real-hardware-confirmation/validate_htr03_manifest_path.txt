@@ -1,0 +1,50 @@
+profile=production-dual-xtx behavioral_classes=('mtp-speculative',) behavioral_corpus_edition=qwen38-production-v1 digest=91ea2613278204ee
+resolved corpus edition=qwen38-production-v1 content_digest=4bca38c182e51acb vectors=['hi141-mtp-4096-v1']
+vector.requires_mtp=True n_predict=128 seed=42
+running native leg...
+  native draft_n=107 accepted=100
+running candidate leg (known-guilty cache)...
+  candidate draft_n=145 accepted=90
+
+VERDICT: hard_fail
+first_output_divergence: 1
+
+########## FULL PROVENANCE RECORD ##########
+{
+  "behavioral_gate_contract_version": "hi143-v1",
+  "corpus_edition_id": "qwen38-production-v1",
+  "corpus_schema_version": 1,
+  "corpus_content_digest": "4bca38c182e51acbee5ce12d50805daa92ccb024e47ab66df738c1f24fce52ca",
+  "runtime_profile_name": "production-dual-xtx",
+  "runtime_profile_digest": "91ea2613278204ee8fa2e9b472c1c2ed627ed15080b9d962e9c49bcf2337b059",
+  "selected_vectors": [
+    {
+      "id": "hi141-mtp-4096-v1",
+      "content_digest": "12e85e189e4dd8c905b7342a98b256b4a1a63a6a06d43ce927a5fa7d929191b4",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "n_predict": 128,
+      "seed": 42,
+      "applies_to": [
+        "mtp-speculative"
+      ],
+      "requirements": [
+        "mtp-telemetry"
+      ],
+      "verdict": "hard_fail",
+      "native_draft": [
+        107,
+        100
+      ],
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "first_output_divergence": 1,
+      "native_token_digest": "d027acd17c2966f17ff428519afddbba5bb521e69bf4e68a3f8b82d7dc513ad7",
+      "candidate_token_digest": "9c67966c7f850b872b9106f6e45d8ebcdda2824bf05b30cc73466c7939c2ebb3",
+      "token_count": 128
+    }
+  ]
+}
+
+CONFIRMATION: PASS -- reproduced the known hard_fail via the new manifest path
