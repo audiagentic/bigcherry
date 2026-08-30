@@ -52,6 +52,19 @@ class EvaluateSmokeResultTests(unittest.TestCase):
         with self.assertRaises(SmokeError):
             evaluate_smoke_result("not json")
 
+    def test_hip_diagnostic_preamble_on_stdout_is_stripped(self):
+        # Found live on the first real Windows local-GPU smoke test: HIP's
+        # own runtime prints "HIP Library Path: ..." to stdout ahead of
+        # llama-bench's -o json output on Windows, an upstream quirk this
+        # project has no patch for.
+        preamble = "HIP Library Path: C:\\WINDOWS\\SYSTEM32\\amdhip64_7.dll\n"
+        rows = evaluate_smoke_result(preamble + _REAL_SHAPE_OUTPUT)
+        self.assertEqual(len(rows), 2)
+
+    def test_still_fails_closed_with_no_bracket_at_all(self):
+        with self.assertRaises(SmokeError):
+            evaluate_smoke_result("HIP Library Path: nothing else here")
+
     def test_empty_list_rejected(self):
         with self.assertRaises(SmokeError):
             evaluate_smoke_result("[]")
