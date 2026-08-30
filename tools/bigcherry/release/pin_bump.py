@@ -202,6 +202,45 @@ def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLoc
     return tree_activity.MaintenanceLock(context.work_root, context.project_root)
 
 
+def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None:
+    """`bigcherry build`'s isolated-worktree materialization resolves the
+    pinned ref against a SEPARATE bare mirror (ProjectContext.upstream_repo,
+    e.g. work/upstream/llama.cpp.git) -- not vendor/llama.cpp, which this
+    phase just pulled. That mirror has its own independent fetch history
+    and does not learn about a new tag just because vendor/llama.cpp did;
+    without this, the very next `bigcherry build` after any real bump fails
+    immediately with an ambiguous-ref git error. Found live TWICE (the
+    b10680->b10687 and b10687->b10692 bumps) before being made automatic.
+
+    Deliberately best-effort and NEVER raises PinBumpStop: this is a build
+    convenience, not a bump-correctness requirement, and a mirror that
+    doesn't exist yet (a tree that's never run a campaign build) or a
+    network hiccup here must not block a real, already-verified pull."""
+    from ..core.context import ProjectContext
+
+    try:
+        context = ProjectContext.resolve()
+        mirror = context.upstream_repo
+        if not (mirror / "HEAD").is_file() and not (mirror / ".git").exists():
+            return  # no mirror yet -- nothing to sync
+        already = subprocess.run(
+            ["git", "-C", str(mirror), "rev-parse", "--verify", f"{target_ref}^{{commit}}"],
+            capture_output=True, text=True,
+        )
+        if already.returncode == 0:
+            return  # already resolvable, nothing to do
+        subprocess.run(
+            ["git", "-C", str(mirror), "fetch", "--depth=1", "origin", revision],
+            capture_output=True, text=True, timeout=120,
+        )
+        subprocess.run(
+            ["git", "-C", str(mirror), "tag", target_ref, "FETCH_HEAD"],
+            capture_output=True, text=True,
+        )
+    except Exception:  # noqa: BLE001 -- best-effort convenience, never fatal
+        pass
+
+
 def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
     """Returns (resolved_from_ref, resolved_to_sha). Requires a clean
     controller checkout and refuses an incompatible existing transition
@@ -398,6 +437,7 @@ def _run_phases(
                     evidence={"exit_code": rc},
                     recommended_actions=["inspect the vendor checkout directly", "rerun with --resume"],
                 )
+            _sync_campaign_mirror_best_effort(target_ref=target_ref, revision=state.to_sha)
             state.completed_phases.append("pull")
             state.next_phase = "audit"
             state.save(report_dir)
