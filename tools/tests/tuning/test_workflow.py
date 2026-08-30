@@ -134,6 +134,8 @@ class StageReplayValidateTests(unittest.TestCase):
         fake_lane_result = MagicMock()
         fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
         fake_profile = MagicMock()
+        fake_profile.name = "test-profile"
+        fake_profile.digest = "fakeprofiledigest"
         fake_profile.production_context = 4096
         fake_profile.server_args = ()
 
@@ -200,7 +202,14 @@ class StageReplayValidateTests(unittest.TestCase):
     def test_returns_coverage_when_clean(self):
         coverage = {"stale": False, "rerun_required": 0, "exact": 64, "misses": 0}
         result, _workdir = self._run_with_fake_coverage(coverage)
-        self.assertEqual(result, coverage)
+        # HTR03: the original coverage fields are preserved unchanged, plus
+        # real provenance fields binding this result to the exact cache
+        # artifact and gate report bytes actually produced.
+        for key, value in coverage.items():
+            self.assertEqual(result[key], value)
+        self.assertIn("validated_cache_digest", result)
+        self.assertIn("behavioral_gate_report_digest", result)
+        self.assertIn("runtime_profile_digest", result)
 
     def test_both_legs_launched_with_env_unset_for_contamination_prone_vars(self):
         # gpt review (2026-08-29): the launched process otherwise inherits
@@ -222,6 +231,8 @@ class StageReplayValidateTests(unittest.TestCase):
         fake_lane_result = MagicMock()
         fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
         fake_profile = MagicMock()
+        fake_profile.name = "test-profile"
+        fake_profile.digest = "fakeprofiledigest"
         fake_profile.production_context = 4096
         fake_profile.server_args = ()
         native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
@@ -277,6 +288,8 @@ class StageReplayValidateTests(unittest.TestCase):
             fake_lane_result = MagicMock()
             fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
             fake_profile = MagicMock()
+            fake_profile.name = "test-profile"
+            fake_profile.digest = "fakeprofiledigest"
             fake_profile.production_context = 4096
             fake_profile.server_args = ()
             native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
@@ -323,6 +336,8 @@ class StageReplayValidateTests(unittest.TestCase):
             fake_lane_result = MagicMock()
             fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
             fake_profile = MagicMock()
+            fake_profile.name = "test-profile"
+            fake_profile.digest = "fakeprofiledigest"
             fake_profile.production_context = 4096
             fake_profile.server_args = ()
             native_trace = workflow.behavioral_gate_mod.BehavioralTrace((1, 2, 3), 10, 8)
@@ -409,6 +424,8 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                 patch.object(workflow.gpu_mod, "preflight_context"),
             ):
                 fake_profile = MagicMock()
+                fake_profile.name = "test-profile"
+                fake_profile.digest = "fakeprofiledigest"
                 fake_profile.tune_context = 4096
                 fake_profile.production_context = 64000
                 fake_profile.server_args = ()
@@ -507,6 +524,8 @@ class ReceiptCountsReflectFinalIngestTests(unittest.TestCase):
                 patch.object(workflow.gpu_mod, "preflight_context"),
             ):
                 fake_profile = MagicMock()
+                fake_profile.name = "test-profile"
+                fake_profile.digest = "fakeprofiledigest"
                 fake_profile.tune_context = 4096
                 fake_profile.production_context = 64000
                 fake_profile.server_args = ()

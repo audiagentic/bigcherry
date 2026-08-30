@@ -78,6 +78,20 @@ Offline tests: manifest parsing/validation (schema errors, unknown class tags fa
 
 Directly informed by walking through, in conversation, exactly how HI143's current trigger fires and its real boundaries (single hardcoded vector, MTP-boolean-only, promotion-time-only) -- this item closes the corpus/applicability half of that gap. The 'promotion-time-only, no live monitoring' boundary is DELIBERATELY not addressed here per GPT's premature-abstraction verdict; if a real future need for periodic/live checking emerges, it should reuse the CorpusLoader/BehavioralGateEvaluator seam this item creates, as its own separate, later-scoped item -- not be designed speculatively now.
 
+PROVENANCE HARDENINGS ADDED (2026-08-30), per GPT review incorporating real HTR01 usage history (three real-hardware runs, two real bugs found only by later deep-diving actual committed logs -- these additions exist specifically so a FUTURE deep-dive can reconstruct exactly what was checked without needing to re-derive it from whatever code exists at review time):
+
+A. Bind validation to the exact cache artifact: record validated_cache_digest, behavioral_gate_report_path, behavioral_gate_report_digest in the receipt/report -- a path alone (today's WorkflowReceipt.dispatch_cache_path) is insufficient since the same path can be overwritten by a later run.
+
+B. Bind to exact runtime-profile CONTENTS, not just its name: record runtime_profile_name AND runtime_profile_digest (canonical hash over server_args, tune_context, production_context, min_free_vram_bytes_per_device, behavioral_classes) plus behavioral_classes itself. Today's receipt only records runtime_profile_name -- the named profile's contents can change later under the same name with no detectable trace.
+
+C. behavioral-gate.json becomes a full resolved execution snapshot, not just a name/verdict summary. Receipt stays compact (behavioral_gate_contract_version, corpus_schema_version, corpus_edition_id, corpus_content_digest, selected_vectors:[{id,digest}], validated_cache_digest, runtime_profile_digest, behavioral_gate_report_digest); behavioral-gate.json itself stores PER VECTOR: id, vector_digest, prompt_sha256, n_predict, seed, applies_to, scenario, provenance, verdict, native_token_digest, candidate_token_digest, token_count, native_draft, candidate_draft, first_output_divergence. Today's report only stores name/verdict/draft totals/divergence -- insufficient for a future reviewer to reconstruct exact vector parameters without re-deriving them from the manifest/parser as it exists AT REVIEW TIME (which may have changed).
+
+D. Applicability (behavioral_classes) and REQUIRED TELEMETRY are separate concepts -- do not conflate them. Add an explicit, separate, small closed vocabulary `requirements: [mtp-telemetry]` per vector in the manifest, replacing the current implicit assumption (run_vector(require_mtp=True) as if every vector needs MTP telemetry) which does not generalize once HTR03 allows non-MTP behavioral classes. A new behavioral class reusing EXISTING telemetry stays pure data (no code change); a genuinely new telemetry requirement needs new evaluator code, which is correct and expected.
+
+Explicitly reconfirmed as still out of scope for this item (GPT, unchanged from original design): raw-log archival, trigger framework, live/production monitoring, giant receipt snapshots -- structured digests + the resolved gate report are sufficient.
+
+SEE ALSO: HTR06 (new, 2026-08-30) -- a related but explicitly SEPARATE investigation into whether tune-time synthetic candidate RANKING (not correctness) predicts real E2E performance ranking, raised by the user and adversarially scoped with GPT as a bounded empirical study, not a mandate to change selection logic. HTR03's corpus vectors may later be reused as HTR06's real workload shapes, but the two investigations' results must never contaminate each other.
+
 ## Change Log
 
 - 2026-08-29T13:44:01.556347+00:00 (created-by): Created by agent
@@ -86,3 +100,4 @@ Directly informed by walking through, in conversation, exactly how HI143's curre
 
 - chg_20260829_134919_the-tuning-system-can-now-reco_8101
 - 2026-08-29T13:49:19.490008+00:00 (updated-by): Updated: section:ledger-events
+- 2026-08-29T23:58:18.136268+00:00 (updated-by): Updated: section:notes
