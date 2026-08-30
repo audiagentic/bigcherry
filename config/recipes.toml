@@ -317,6 +317,11 @@ min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
 # workflow.py's behavioral gate. See tools/bigcherry/tuning/behavioral_corpus.py
 # for the class registry this is validated against.
 behavioral-classes = ["mtp-speculative"]
+# GPT review round 2 (2026-08-30): an explicit config reference to WHICH
+# corpus edition this profile validates against -- publishing a new
+# edition (a new fixtures/corpus-<edition>.toml file) never requires a
+# code change, only bumping this string.
+behavioral-corpus-edition = "qwen38-production-v1"
 
 [runtime-profile.hi134-layer-split-control]
 # HI134 step 5: negative control for the __amd_rocclr_copyBufferRectAligned

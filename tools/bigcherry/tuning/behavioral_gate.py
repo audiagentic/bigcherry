@@ -63,6 +63,15 @@ from .server_runner import ServerRunner
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
+#: HTR03 (GPT review round 2, 2026-08-30): the comparison SEMANTICS
+#: identity -- the hard_fail/exact_pass/behavior_changed three-state
+#: contract itself -- kept deliberately separate from corpus_schema_
+#: version (the manifest FILE FORMAT) and a corpus edition's own content
+#: digest (the exact curated CONTENTS). Persisted into every gate report
+#: so a future reviewer knows exactly which comparison rules produced a
+#: given verdict, independent of which corpus/profile were involved.
+BEHAVIORAL_GATE_CONTRACT_VERSION = "hi143-v1"
+
 
 def load_hi141_regression_vector() -> BehavioralVector:
     """The one pinned, repository-owned real-workload regression vector
@@ -191,6 +200,14 @@ class VectorVerdict:
     first_output_divergence: int | None = None  # token index, only set for hard_fail
 
 
+def token_digest(token_ids: tuple[int, ...]) -> str:
+    """A stable content digest over a generated token-id sequence (HTR03
+    provenance point C: persist enough per-vector detail in the gate
+    report that a future reviewer never needs to re-derive it)."""
+    import hashlib
+    return hashlib.sha256(",".join(str(t) for t in token_ids).encode("utf-8")).hexdigest()
+
+
 def compare_traces(vector_name: str, native: BehavioralTrace, candidate: BehavioralTrace) -> VectorVerdict:
     """Pure comparison logic -- no I/O, fully offline-testable. This is the
     exact three-state contract described in this module's docstring."""
@@ -251,9 +268,15 @@ def run_gate(
     run against the cache's own candidate set; that is deliberately kept
     out of this function since it is a property of the cache/coverage
     setup, not of any single vector comparison."""
+    # HTR03 (GPT review round 2, 2026-08-30): this shared evaluator and
+    # workflow.py's own _stage_replay_validate had drifted -- workflow.py
+    # correctly used each vector's own requires_mtp, but this function
+    # still hardcoded True, silently defeating per-vector applicability
+    # for any future caller of this "shared" seam. Both must honor the
+    # SAME per-vector field.
     report = BehavioralGateReport()
     for vector in vectors:
-        native_trace = run_vector(native_runner, vector)
-        candidate_trace = run_vector(candidate_runner, vector)
+        native_trace = run_vector(native_runner, vector, require_mtp=vector.requires_mtp)
+        candidate_trace = run_vector(candidate_runner, vector, require_mtp=vector.requires_mtp)
         report.verdicts.append(compare_traces(vector.name, native_trace, candidate_trace))
     return report

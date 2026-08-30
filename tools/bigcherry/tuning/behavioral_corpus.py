@@ -17,10 +17,18 @@ conflated (GPT explicit correction):
         itself; see behavioral_gate.py's CONTRACT_VERSION-equivalent).
     corpus_schema_version -- the manifest FILE FORMAT.
     corpus edition + content_digest -- the exact curated CONTENTS (which
-        vectors, with what parameters). An edition is immutable once
-        published: any add/remove/content/parameter change requires a
-        NEW edition id + content digest, never an in-place mutation --
-        this is what keeps historical campaign results reproducible.
+        vectors, with what parameters). The (edition, content_digest)
+        PAIR is the actual immutable identity -- editing an edition's
+        vectors in place is a policy convention this module documents and
+        expects, NOT something load_corpus_edition() enforces or detects
+        (GPT review round 2, 2026-08-30, correcting an earlier overclaim):
+        nothing stops someone from changing this file's vectors while
+        keeping the same `edition` name, and the loader will accept it
+        with a newly-computed digest. What this DOES guarantee: a past
+        receipt's own recorded content_digest lets a reviewer detect after
+        the fact whether "edition X" meant the same thing then as it does
+        now, by comparing digests -- reproducibility is verifiable, not
+        structurally prevented from drifting.
 
 Applicability: a vector applies to a campaign iff its ``applies_to`` list
 intersects the runtime profile's ``behavioral_classes``
@@ -210,6 +218,24 @@ def load_corpus_edition(manifest_path: Path, fixtures_dir: Path) -> CorpusEditio
         schema_version=schema_version, edition=edition, classes=tuple(sorted(known_classes)),
         vectors=tuple(vectors), content_digest=edition_digest,
     )
+
+
+def resolve_manifest_path(edition: str, fixtures_dir: Path) -> Path:
+    """GPT review round 2 (2026-08-30): resolve an edition NAME (from
+    config, e.g. RuntimeProfile.behavioral_corpus_edition) to its manifest
+    file by a fixed naming convention -- ``corpus-<edition>.toml`` under
+    ``fixtures_dir``. This is the actual fix for HTR03's primary goal:
+    publishing a new edition means dropping a new file at this
+    conventional path and pointing config at its name, never editing
+    Python code (the previous version hardcoded one specific manifest
+    path as a module-level constant, which GPT correctly flagged as not
+    actually satisfying that goal)."""
+    path = fixtures_dir / f"corpus-{edition}.toml"
+    if not path.is_file():
+        raise BehavioralCorpusError(
+            f"corpus edition {edition!r} not found -- expected {path} to exist"
+        )
+    return path
 
 
 def to_behavioral_vector(spec: CorpusVectorSpec, fixtures_dir: Path):
