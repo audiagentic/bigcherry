@@ -32,7 +32,7 @@ class TestPatchSelection(unittest.TestCase):
         self.assertEqual(rdna4.state, "validated")
 
     def test_tune_does_not_define_record_capability(self):
-        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options.py"
+        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options" / "patch.py"
         text = source.read_text(encoding="utf-8")
         self.assertIn(
             "if (GGML_HIP_AUTOTUNE_RECORD)\n"
@@ -44,7 +44,7 @@ class TestPatchSelection(unittest.TestCase):
         )
 
     def test_transforms_fail_closed_without_recording_and_dispatch(self):
-        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options.py"
+        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options" / "patch.py"
         text = source.read_text(encoding="utf-8")
         self.assertIn(
             "if (GGML_HIP_ROUTING_TRANSFORM AND\n"
@@ -61,7 +61,7 @@ class TestPatchSelection(unittest.TestCase):
         )
 
     def test_replay_source_partition_excludes_tuner_record_and_sqlite(self):
-        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options.py"
+        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options" / "patch.py"
         audit = replay_build_audit.audit_replay_source_partition(
             source.read_text(encoding="utf-8")
         )
@@ -72,7 +72,7 @@ class TestPatchSelection(unittest.TestCase):
         self.assertNotIn("hip-autotune-smi.cpp", audit.replay_sources)
 
     def test_replay_partition_retains_strict_loader_and_coverage(self):
-        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options.py"
+        source = Path(__file__).resolve().parents[3] / "patches" / "0100_cmake_options" / "patch.py"
         audit = replay_build_audit.audit_replay_source_partition(
             source.read_text(encoding="utf-8")
         )
@@ -83,7 +83,7 @@ class TestPatchSelection(unittest.TestCase):
 
     def test_replay_build_option_is_exclusive_from_tuning(self):
         source = (Path(__file__).resolve().parents[3] / "patches" /
-                  "0100_cmake_options.py").read_text(encoding="utf-8")
+                  "0100_cmake_options" / "patch.py").read_text(encoding="utf-8")
         self.assertIn(
             "GGML_HIP_DISPATCH_REPLAY and GGML_HIP_AUTOTUNE are mutually",
             source,

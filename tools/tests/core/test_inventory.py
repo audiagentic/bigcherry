@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry import inventory  # noqa: E402
 from bigcherry.inventory import Record, RecordError  # noqa: E402
 from bigcherry.tuning import catalog  # noqa: E402
+from bigcherry.tuning import signature_capabilities as sc  # noqa: E402
 
 
 # ------------------------------------------------------------------ fixtures
@@ -1158,12 +1159,34 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_conflicting_canonical_for_same_digest_within_one_load_raises(self):
+        """HI125 (adversarial-review follow-up): the in-memory
+        signature_cache short-circuits a cache HIT before it ever reaches
+        the DB-row disagreement check -- two rows in the SAME
+        load_measurements() call sharing a digest but supplying different
+        canonicals would otherwise have the second row's canonical
+        silently ignored entirely, defeating this exact check for the
+        same-load case."""
+        signature_hex = "d1" + "0" * 30
+        canonical_a = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        canonical_b = {"op": "MUL_MAT_ID", "schema_version": 2, "flags": 8, "ne0": [5, 6, 7, 8], "ned": [5, 6, 7, 8]}
+        path = make_jsonl_file(
+            TUNING_HEADER,
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical_a),
+            self._result_with_signature(signature_hex=signature_hex, canonical=canonical_b),
+        )
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "different canonical content earlier in this same load"):
+                    inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
+        finally:
+            os.unlink(path)
+
     def test_conflicting_canonical_for_same_digest_raises(self):
-        # The in-memory signature_cache short-circuits repeat lookups WITHIN
-        # one load_measurements() call, so this needs two separate loads
-        # against the same DB -- the realistic scenario anyway: two
-        # different measurement runs/files loaded into one persistent DB,
-        # not two rows a single real producer emitted in one run.
+        # Cross-load (separate persistent-DB) disagreement -- the realistic
+        # scenario of two different measurement runs/files loaded into one
+        # persistent DB, distinct from the same-load case above.
         signature_hex = "b" * 32
         canonical_a = {"op": "MUL_MAT", "schema_version": 2, "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         canonical_b = {"op": "MUL_MAT_ID", "schema_version": 2, "flags": 8, "ne0": [5, 6, 7, 8], "ned": [5, 6, 7, 8]}
@@ -1257,6 +1280,27 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
                     )[0][0],
                     1,
                 )
+        finally:
+            os.unlink(path)
+
+    def test_verifier_requested_with_no_canonical_content_fails_closed(self):
+        """HI125 (adversarial-review follow-up): a caller that explicitly
+        supplies a verifier is asking for the production trust gate on
+        EVERY signature -- silently skipping rows with no canonical
+        content would let some signatures bypass verification entirely
+        while the caller believes the whole ingest was C++-verified."""
+        signature_hex = "1" * 32
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        result["signature"] = signature_hex
+        path = make_jsonl_file(TUNING_HEADER, result)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "no canonical content"):
+                    inventory.load_measurements(
+                        path, db.db_path, schema_path, manifest_path=None,
+                        signature_digest_verifier=lambda _value: "0" * 32,
+                    )
         finally:
             os.unlink(path)
 
@@ -1477,6 +1521,402 @@ class TestHipCapabilityPersistence(unittest.TestCase):
                 )
                 row = db.query("SELECT COUNT(*) FROM build_capability")
                 self.assertEqual(row[0][0], 1)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+
+class TestWinnerVerificationAttestation(unittest.TestCase):
+    """HI121 close-out step 6 (HI127): load_measurements() attests a winner
+    row in winner_verification only when BOTH the build capability proof
+    (HI122-124's descriptor/manifest chain) AND a real per-row signature
+    digest verifier (HI125) were actually supplied and passed -- neither
+    alone is "strengthened ingest"."""
+
+    def _manifest_and_header(self, *, producer_capabilities="0000000000000000000000000000001f"):
+        families = ("mmvq", "mmq", "mmvf", "mmf", "blas")
+        manifest = {
+            "artifact_version": 1,
+            "variant_set": "inventory",
+            "source_revision": "b" * 40,
+            "architectures": ["gfx1100"],
+            "signature_schema_version": 2,
+            "hardware_schema_version": 1,
+            "producer_capabilities": producer_capabilities,
+            "candidates": [
+                {
+                    "stable_name": f"{f}:native:v1", "family": f, "source_class": "native_wrapper",
+                    "implementation_version": 1, "architectures": ["gfx1100"], "architecture_mask": 1,
+                    "graph_safe": True, "deterministic": True, "config": {},
+                }
+                for f in families
+            ],
+            "summary": {
+                "total": len(families),
+                "by_family": dict.fromkeys(families, 1),
+                "by_source_class": {"native_wrapper": len(families)},
+            },
+        }
+        manifest["manifest_hash"] = catalog.manifest_hash(manifest)
+        manifest["build_descriptor"] = catalog.build_descriptor(manifest)
+        header = {
+            "kind": "header",
+            "artifact_version": 1,
+            "source_revision": manifest["source_revision"],
+            "manifest_hash": manifest["manifest_hash"],
+            "variant_set": "inventory",
+            "build_descriptor_hash": manifest["build_descriptor"]["descriptor_hash"],
+            "producer_capabilities": producer_capabilities,
+        }
+        return manifest, header
+
+    def _write_manifest(self, manifest: dict) -> Path:
+        path = Path(tempfile.mktemp(suffix=".json"))
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        return path
+
+    def _result(self, *, signature_hex: str, canonical: dict) -> dict:
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        result["signature"] = signature_hex
+        result["canonical"] = canonical
+        return result
+
+    def test_capability_and_verifier_both_present_attests_winner(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "9" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 1)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_quarantine_keeps_mixed_load_and_reports_per_winner_counts(self):
+        manifest, header = self._manifest_and_header()
+        audited_hex = "9" * 32
+        unaudited_hex = "8" * 32
+        audited = self._result(
+            signature_hex=audited_hex,
+            canonical={"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]},
+        )
+        unaudited = self._result(
+            signature_hex=unaudited_hex,
+            canonical={"op": "ADD", "flags": 0},
+        )
+        unaudited["dispatch"] = "d" * 32
+        meas_path = make_jsonl_file(header, audited, unaudited)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+
+        def verifier(canonical):
+            if canonical["op"] == "ADD":
+                raise sc.UnauditedSignatureDomain("ADD is not audited")
+            return audited_hex
+
+        try:
+            with TempDB() as db:
+                counts = inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=verifier,
+                    require_strengthened_ingest=True,
+                    unsupported_signature_policy="quarantine",
+                )
+                self.assertEqual(counts["winner_verifications"], 1)
+                self.assertEqual(counts["quarantined_unsupported_winners"], 1)
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 1)
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 2)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_default_error_policy_still_aborts_unaudited_winner(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        meas_path = make_jsonl_file(header, result)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.UnauditedSignatureDomain("ADD is not audited")
+                        ),
+                        require_strengthened_ingest=True,
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_invalid_signature_is_fatal_even_under_quarantine(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        meas_path = make_jsonl_file(header, result)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaises(RecordError):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.InvalidSignatureDomain("malformed signature")
+                        ),
+                        require_strengthened_ingest=True,
+                        unsupported_signature_policy="quarantine",
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_quarantined_repeat_sighting_still_rejects_canonical_disagreement(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        first = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
+        second = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 1})
+        second["dispatch"] = "d" * 32
+        meas_path = make_jsonl_file(header, first, second)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "different canonical content"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _canonical: (_ for _ in ()).throw(
+                            sc.UnauditedSignatureDomain("ADD is not audited")
+                        ),
+                        require_strengthened_ingest=True,
+                        unsupported_signature_policy="quarantine",
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_verifier_alone_without_capability_attestation_does_not_attest(self):
+        # No manifest supplied -> _verify_and_persist_hip_capabilities()
+        # returns False -> strengthened_ingest must be False even though a
+        # (fake) signature verifier passed every row.
+        _, header = self._manifest_and_header()
+        signature_hex = "8" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=None,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+
+    def test_capability_alone_without_verifier_does_not_attest(self):
+        manifest, header = self._manifest_and_header()
+        meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                )
+                row = db.query("SELECT COUNT(*) FROM winner_verification")
+                self.assertEqual(row[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_replacing_winner_row_gets_fresh_attestation_not_stale_cascade(self):
+        # A second load with the SAME (build_id, hardware_id, objective,
+        # dispatch_digest) as the first conflicts on winner's own UNIQUE
+        # constraint -- INSERT OR REPLACE deletes the old row and inserts a
+        # fresh one via delete-then-insert. SQLite does not guarantee an
+        # ordinary (non-AUTOINCREMENT) INTEGER PRIMARY KEY is numerically
+        # different after such a replace, so this test does NOT assert
+        # inequality -- only the real invariant: ON DELETE CASCADE already
+        # destroyed whatever attestation belonged to the row that no longer
+        # exists, and reattesting depends on nothing left over from it.
+        manifest, header = self._manifest_and_header()
+        manifest_path = self._write_manifest(manifest)
+        signature_hex = "7" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        first_result = self._result(signature_hex=signature_hex, canonical=canonical)
+        first_path = make_jsonl_file(header, first_result)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    first_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 1)
+
+                # Reload the SAME row content WITHOUT a verifier -- this
+                # still replaces the winner row (same UNIQUE key), so the
+                # CASCADE must drop the prior attestation and nothing should
+                # re-create it since this load is not strengthened.
+                second_path = make_jsonl_file(header, first_result)
+                try:
+                    inventory.load_measurements(
+                        second_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    )
+                finally:
+                    os.unlink(second_path)
+
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 0)
+
+                # A third, strengthened reload of the same key must attest
+                # exactly the CURRENT winner row -- never a stale one.
+                third_path = make_jsonl_file(header, first_result)
+                try:
+                    inventory.load_measurements(
+                        third_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                    )
+                finally:
+                    os.unlink(third_path)
+
+                rows = db.query("SELECT winner_id FROM winner_verification")
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(
+                    rows[0][0],
+                    db.query(
+                        "SELECT winner_id FROM winner WHERE stable_name = 'mmq:native:v1'"
+                    )[0][0],
+                )
+        finally:
+            os.unlink(first_path)
+            os.unlink(manifest_path)
+
+
+class TestRequireStrengthenedIngest(unittest.TestCase):
+    """HI125 close-out step 6 (adversarial-review follow-up): a caller that
+    explicitly requires strengthened ingest must get a RecordError instead
+    of a silently-unattested successful load, for every way build_attested
+    can end up False despite a verifier being supplied."""
+
+    def _manifest_and_header(self, *, producer_capabilities="0000000000000000000000000000001f"):
+        return TestWinnerVerificationAttestation._manifest_and_header(
+            self, producer_capabilities=producer_capabilities,
+        )
+
+    def _write_manifest(self, manifest: dict) -> Path:
+        return TestWinnerVerificationAttestation._write_manifest(self, manifest)
+
+    def _result(self, *, signature_hex: str, canonical: dict) -> dict:
+        return TestWinnerVerificationAttestation._result(self, signature_hex=signature_hex, canonical=canonical)
+
+    def test_nonexistent_manifest_path_raises_instead_of_silently_unattested(self):
+        _manifest, header = self._manifest_and_header()
+        signature_hex = "3" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        nonexistent_manifest_path = Path(tempfile.mktemp(suffix=".json"))
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "require_strengthened_ingest"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=nonexistent_manifest_path,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                        require_strengthened_ingest=True,
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+
+    def test_header_predating_producer_capabilities_raises(self):
+        manifest, header = self._manifest_and_header()
+        del header["producer_capabilities"]
+        signature_hex = "4" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "require_strengthened_ingest"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                        require_strengthened_ingest=True,
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_no_manifest_supplied_raises(self):
+        _manifest, header = self._manifest_and_header()
+        signature_hex = "5" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "require_strengthened_ingest"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=None,
+                        signature_digest_verifier=lambda _value: signature_hex,
+                        require_strengthened_ingest=True,
+                    )
+        finally:
+            os.unlink(meas_path)
+
+    def test_winner_with_no_signature_id_raises(self):
+        # A winner result row with no "signature" field at all -- nothing
+        # for HI125's per-row canonical/digest check to ever verify.
+        manifest, header = self._manifest_and_header()
+        result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
+        meas_path = make_jsonl_file(header, result)
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                with self.assertRaisesRegex(RecordError, "no signature_id"):
+                    inventory.load_measurements(
+                        meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                        signature_digest_verifier=lambda _value: "0" * 32,
+                        require_strengthened_ingest=True,
+                    )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner")[0][0], 0)
+        finally:
+            os.unlink(meas_path)
+            os.unlink(manifest_path)
+
+    def test_fully_strengthened_load_succeeds_with_require_flag(self):
+        manifest, header = self._manifest_and_header()
+        signature_hex = "6" * 32
+        canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
+        meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
+        manifest_path = self._write_manifest(manifest)
+        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        try:
+            with TempDB() as db:
+                inventory.load_measurements(
+                    meas_path, db.db_path, schema_path, manifest_path=manifest_path,
+                    signature_digest_verifier=lambda _value: signature_hex,
+                    require_strengthened_ingest=True,
+                )
+                self.assertEqual(db.query("SELECT COUNT(*) FROM winner_verification")[0][0], 1)
         finally:
             os.unlink(meas_path)
             os.unlink(manifest_path)

@@ -103,6 +103,7 @@ def cmd_project_replay(args: Namespace) -> int:
         "omitted_missing_producer_capability": summary.omitted_missing_producer_capability,
         "omitted_missing_target_capability": summary.omitted_missing_target_capability,
         "omitted_unsupported_domain": summary.omitted_unsupported_domain,
+        "omitted_unverified_source": summary.omitted_unverified_source,
     }
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -111,8 +112,72 @@ def cmd_project_replay(args: Namespace) -> int:
             f"examined {report['examined']}, retained {report['retained']} -- "
             f"omitted: {report['omitted_missing_producer_capability']} missing-producer-capability, "
             f"{report['omitted_missing_target_capability']} missing-target-capability, "
-            f"{report['omitted_unsupported_domain']} unsupported-domain"
+            f"{report['omitted_unsupported_domain']} unsupported-domain, "
+            f"{report['omitted_unverified_source']} unverified-source"
         )
+    return 0
+
+
+def cmd_reattest(args: Namespace) -> int:
+    """HI121 close-out step 7 (HI128): re-verify an existing schema-8
+    winner's ORIGINAL measurements/manifest against HI127's strengthened-
+    ingest profile and attest it if it genuinely passes. See
+    tuning.reattest for the full trust argument -- this never replays
+    load_measurements() (which would mutate the evidence under
+    examination) and always requires a real, compiled HI125 verifier
+    binary, even in --dry-run."""
+    from ..tuning import reattest as reattest_module
+    from ..tuning import signature_digest_verification as sdv
+
+    verifier = sdv.make_signature_digest_verifier(
+        binary=Path(args.signature_verifier_binary),
+        vendor_root=Path(args.signature_verifier_vendor_root),
+        seed=args.seed,
+    )
+    try:
+        report = reattest_module.reattest_winners(
+            Path(args.database),
+            source_build_id=args.source_build_id,
+            measurements_path=Path(args.measurements),
+            manifest_path=Path(args.manifest),
+            signature_digest_verifier=verifier,
+            signature_source_paths=[Path(p) for p in args.signature_source],
+            dry_run=args.dry_run,
+        )
+    except reattest_module.ReattestationError as exc:
+        print(f"reattest: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "examined": report.examined,
+                "attested": report.attested,
+                "already_attested": report.already_attested,
+                "backfilled_build_descriptor": report.backfilled_build_descriptor,
+                "backfilled_build_capability": report.backfilled_build_capability,
+                "outcomes": [
+                    {"dispatch": o.dispatch, "status": o.status, "detail": o.detail}
+                    for o in report.outcomes
+                ],
+            },
+            indent=2, sort_keys=True,
+        ))
+    else:
+        print(
+            f"examined {report.examined}, attested {report.attested} "
+            f"({report.already_attested} already attested)"
+            + (" [dry-run]" if args.dry_run else "")
+        )
+        if report.backfilled_build_descriptor:
+            print("  backfilled build_descriptor_hash")
+        if report.backfilled_build_capability:
+            print("  backfilled build_capability")
+        from collections import Counter
+        counts = Counter(o.status for o in report.outcomes)
+        for status, count in sorted(counts.items()):
+            if status not in ("attested", "already_attested", "would_attest"):
+                print(f"  {count} {status}")
     return 0
 
 
@@ -171,13 +236,55 @@ def cmd_inventory(args: Namespace, *, subcmd: str) -> int:
         )
         manifest_path = Path(args.manifest) if args.manifest else None
 
-        counts = inv_mod.load_measurements(
-            meas_path,
-            db_path,
-            paths.SQL / "dispatch-db.sql",
-            manifest_path=manifest_path,
-            signature_source_paths=[Path(p) for p in args.signature_source],
-        )
+        # HI125 close-out step 6: --signature-verifier-binary/-vendor-root
+        # are an all-or-none pair, and require --manifest too -- without a
+        # manifest, build_attested is always False (HI127's own gate) and
+        # this expensive real C++ verification would create zero
+        # winner_verification attestations, silently wasting an operator's
+        # GPU time on nothing.
+        verifier_binary = args.signature_verifier_binary
+        verifier_vendor_root = args.signature_verifier_vendor_root
+        if bool(verifier_binary) != bool(verifier_vendor_root):
+            print(
+                "inventory tuning: --signature-verifier-binary and "
+                "--signature-verifier-vendor-root must be supplied together",
+                file=sys.stderr,
+            )
+            return 2
+        signature_digest_verifier = None
+        if verifier_binary:
+            if manifest_path is None:
+                print(
+                    "inventory tuning: --manifest is required when a signature "
+                    "verifier is supplied -- otherwise no winner can be attested",
+                    file=sys.stderr,
+                )
+                return 2
+            from ..tuning import signature_digest_verification as sdv
+            signature_digest_verifier = sdv.make_signature_digest_verifier(
+                binary=Path(verifier_binary),
+                vendor_root=Path(verifier_vendor_root),
+                seed=args.signature_verifier_seed,
+            )
+
+        try:
+            counts = inv_mod.load_measurements(
+                meas_path,
+                db_path,
+                paths.SQL / "dispatch-db.sql",
+                manifest_path=manifest_path,
+                signature_source_paths=[Path(p) for p in args.signature_source],
+                signature_digest_verifier=signature_digest_verifier,
+                # adversarial-review follow-up (2026-08-27): an operator who
+                # asked for real C++ verification must never silently get
+                # an unattested load instead -- e.g. a --manifest path that
+                # does not actually exist would otherwise be treated as "no
+                # manifest supplied" and quietly commit zero attestations.
+                require_strengthened_ingest=signature_digest_verifier is not None,
+            )
+        except inv_mod.RecordError as exc:
+            print(f"inventory tuning: {exc}", file=sys.stderr)
+            return 1
 
         print(
             f"loaded {counts['results']} result(s) with "

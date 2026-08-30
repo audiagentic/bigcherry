@@ -117,7 +117,7 @@ def test_forced_geometry_aborts_for_moe_multitoken_not_silently_misattributed():
     signatures could get silently (and wrongly) credited to an ordinary MMVQ
     nwarps candidate -- which would invalidate the width-1-only methodology
     RD54's real-hardware comparison against PR #20831 relies on."""
-    patch_src = (ROOT / "patches" / "0650_mmvq_native_variant.py").read_text(encoding="utf-8")
+    patch_src = (ROOT / "patches" / "0650_mmvq_native_variant" / "patch.py").read_text(encoding="utf-8")
     assert "has_ids && ncols_dst > 1" in patch_src
     assert "GGML_ABORT" in patch_src
 

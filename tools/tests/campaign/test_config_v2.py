@@ -89,6 +89,57 @@ backend = "vulkan"
         loaded = config.load(path)
         self.assertEqual(loaded.sources["vulkan-stock"].backend, "vulkan")
 
+    def test_backend_stack_profiles_parse_and_stay_separate_from_platform(self):
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[stack.rocm-10]
+backend = "hip"
+sdk-root = "/opt/rocm-10"
+c-compiler = "/opt/clang/bin/clang"
+runtime-library-dirs = ["/opt/rocm-10/lib"]
+environment = { HIP_VISIBLE_DEVICES = "0,1" }
+required-providers = ["hip", "rocblas"]
+[platform.linux]
+targets = ["gfx1100"]
+options = { GGML_HIP = "ON" }
+"""
+        )
+        loaded = config.load(path)
+        stack = loaded.stacks["rocm-10"]
+        self.assertIsInstance(stack, config.BackendStack)
+        self.assertEqual(stack.backend, "hip")
+        self.assertEqual(stack.sdk_root, "/opt/rocm-10")
+        self.assertEqual(stack.environment, (("HIP_VISIBLE_DEVICES", "0,1"),))
+        self.assertEqual(stack.required_providers, ("hip", "rocblas"))
+        self.assertEqual(loaded.platforms["linux"].targets, ("gfx1100",))
+
+    def test_backend_stack_rejects_unknown_backend(self):
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[stack.bad]
+backend = "cuda"
+"""
+        )
+        with self.assertRaisesRegex(config.ConfigError, "stack.bad.backend"):
+            config.load(path)
+
+    def test_backend_stack_rejects_invalid_environment_values(self):
+        path = _write(
+            """
+version = 2
+pinned = "b10362"
+[stack.bad]
+backend = "hip"
+environment = { HIP_VISIBLE_DEVICES = true }
+"""
+        )
+        with self.assertRaisesRegex(config.ConfigError, "must use"):
+            config.load(path)
+
     def test_unknown_source_backend_rejected(self):
         path = _write(
             """
@@ -142,7 +193,7 @@ states = ["validated"]
         # Asserts the shape survives loading, not a specific pin value --
         # the real recipes.toml's `pinned` moves every time the project
         # rebases to a newer llama.cpp release (see
-        # docs/reference/PIN_REBASE_REVIEW_B10502.md), which this test
+        # docs/reference/archive/build/PIN_REBASE_REVIEW_B10502.md), which this test
         # must not need editing for.
         loaded = config.load(paths.RECIPES)
         self.assertTrue(loaded.pinned)

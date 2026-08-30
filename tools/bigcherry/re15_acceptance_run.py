@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         "--direct-op-corpus-filter",
         default="m=127,n=128,k=256|m=32,.*,k=256",
         help="RE26: test-backend-ops -p filter selecting HI70's direct-op "
-             "correctness corpus (patches/1100_hi70_direct_op_evidence.py) "
+             "correctness corpus (patches/1100_hi70_direct_op_evidence/patch.py) "
              "-- covers candidates (MMQ fb1, MMF narrow-batch) no real "
              "workload can reach. Pass '' to skip this stage entirely.",
     )

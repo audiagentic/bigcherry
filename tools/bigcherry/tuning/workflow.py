@@ -15,14 +15,20 @@ request; there is no mock/simulation mode.
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Callable
 
+from . import behavioral_corpus as behavioral_corpus_mod
+from . import behavioral_gate as behavioral_gate_mod
 from . import inventory as inv_mod
+from . import recovery as recovery_mod
 from . import replay as replay_mod
+from . import signature_digest_verification as sdv
 from . import tune_promotion
-from .server_runner import ServerRunner
+from .server_runner import ServerError, ServerRunner
 from .. import hi80_generate_correctness_evidence as hi80
 from ..campaign import planner as campaign_planner
 from ..campaign.lane import CampaignLaneResult
@@ -58,10 +64,17 @@ class WorkflowReceipt:
     effective_tune_context: int
     record: StageIdentity
     tune: StageIdentity
+    #: HI125 close-out step 6: the dedicated RECORD=ON + hi105-correctness
+    #: test-backend-ops lane that authorized strengthened winner_verification
+    #: attestation for this run's ingest -- kept auditable here rather than
+    #: discarded, since it is now a trust-bearing lane like the others.
+    signature_verifier: StageIdentity
     correctness: StageIdentity | None
     replay: StageIdentity | None
     promoted_before_evidence: int
     promoted_after_evidence: int
+    verified_winners: int
+    quarantined_unsupported_winners: int
     dispatch_cache_path: str | None
     replay_coverage: dict | None
     started_at: str
@@ -192,6 +205,78 @@ def _stage_tune(
     return lane_result, measurements_path
 
 
+def _gpu_scoped_test_backend_ops_runner(devices: str):
+    """A subprocess runner for signature_digest_verification's real
+    test-backend-ops calls, scoped to this campaign's own GPU selection --
+    correctness_evidence.run_test_backend_ops() passes an explicit ``env``
+    dict straight to subprocess.run(), which REPLACES the ambient
+    environment entirely rather than merging with it, so without this the
+    verifier subprocess would not inherit HIP_VISIBLE_DEVICES the way
+    ServerRunner's own env_overrides do for the record/tune stages."""
+
+    def _runner(argv, **kwargs):
+        env = dict(kwargs.get("env") or {})
+        # Assignment, not setdefault: the verifier's device scoping is a
+        # promise this runner exists to make, not a fallback -- a future
+        # caller supplying its own (wrong) HIP_VISIBLE_DEVICES in env=
+        # must not be able to silently defeat it.
+        env["HIP_VISIBLE_DEVICES"] = devices
+        kwargs["env"] = env
+        return subprocess.run(argv, **kwargs)
+
+    return _runner
+
+
+def _stage_signature_verifier(
+    *, context, cfg, store, run_id, platform_name, source_name, devices: str, seed: int = 1,
+) -> tuple[CampaignLaneResult, Callable[[dict[str, Any]], str]]:
+    """HI125 close-out step 6: a DEDICATED lane building a RECORD=ON
+    test-backend-ops under the hi105-correctness experiment (which carries
+    the additional patches signature_digest_verification's MUL_MAT_ID and
+    routed-GLU mappers need -- a plain record-lane test-backend-ops is
+    insufficient for HI121's full audited domain).
+
+    Deliberately NOT built by adding extra_cmake_targets to the real
+    record lane (build_name="record", binary_relative_path="bin/llama-
+    server"): campaign/lane.py's _execute_build_phase() folds every
+    requested cmake target -- including any extras -- into
+    BuildPlan.requested_targets, which is part of that lane's own declared
+    build identity, and the worker also includes extra binaries in the
+    runtime artifact/bundle hash. Adding test-backend-ops there would
+    change the REAL production record lane's build_plan_id/runtime bundle
+    identity for a reason that has nothing to do with what that lane
+    actually produces for the campaign. A separate lane keeps the trust-
+    bearing verifier binary's own identity auditable (see
+    WorkflowReceipt.signature_verifier) without perturbing production
+    record-lane provenance at all.
+
+    ``devices`` is the campaign's full device selection (e.g. "0,1"), but
+    the verifier is scoped to just its FIRST device (adversarial-review
+    follow-up, 2026-08-27): test-backend-ops loops over every visible
+    backend device and requires aggregate success across all of them, so
+    passing the whole multi-device string would run every unique canonical
+    on EVERY selected GPU (wasted duplicate work) and could abort
+    verification entirely on an unrelated failure on a second/heterogeneous
+    device -- HI125's verifier only needs to prove canonical->C++ digest
+    correspondence once, on any one real device, not hardware equivalence
+    across the whole campaign's device set.
+    """
+    verifier_device = str(_devices_tuple(devices)[0])
+    lane_result = _plan_and_run_one_lane(
+        context=context, cfg=cfg, store=store, source_name=source_name,
+        build_name="record", platform_name=platform_name, run_id=run_id,
+        binary_relative_path="bin/test-backend-ops",
+        experiment="hi105-correctness",
+    )
+    verifier = sdv.make_signature_digest_verifier(
+        binary=lane_result.binary_ref.path,
+        vendor_root=lane_result.source_root,
+        seed=seed,
+        runner=_gpu_scoped_test_backend_ops_runner(verifier_device),
+    )
+    return lane_result, verifier
+
+
 def _count_missing_correctness_evidence(promoted_path: Path) -> int:
     """How many rows are stuck on `rejected_no_correctness_evidence` --
     gpt review (2026-08-27): `promote()`'s own return dict has no such
@@ -215,18 +300,66 @@ def _count_missing_correctness_evidence(promoted_path: Path) -> int:
 
 
 def _stage_load_and_promote(
-    *, tune_measurements: Path, tune_manifest_path: Path | None, workdir: Path,
+    *, tune_measurements: Path, tune_manifest_path: Path, workdir: Path,
     q: float, threshold_pct: float, resamples: int,
+    signature_digest_verifier: Callable[[dict[str, Any]], str],
 ) -> tuple[Path, dict, int, int]:
+    """Ingest + promote for the real campaign path -- ``signature_digest_
+    verifier`` is a REQUIRED keyword (no default) so a future third call
+    site here cannot silently revert to unverified ingestion by omission;
+    inv_mod.load_measurements() itself still defaults it to None for the
+    offline/manual-CLI path, which stays unaffected."""
     dispatch_db = workdir / "tune.sqlite"
-    inv_mod.load_measurements(
-        tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
-        manifest_path=tune_manifest_path,
-    )
+    try:
+        ingest_counts = inv_mod.load_measurements(
+            tune_measurements, dispatch_db, paths.SQL / "dispatch-db.sql",
+            manifest_path=tune_manifest_path,
+            signature_digest_verifier=signature_digest_verifier,
+            unsupported_signature_policy="quarantine",
+            # adversarial-review follow-up (2026-08-27): without this, a
+            # missing/unreadable tune_manifest_path or an older header
+            # predating producer_capabilities would silently commit an
+            # UNATTESTED load even though a verifier was supplied --
+            # exactly the "believes it's strengthened but isn't" gap this
+            # whole wiring pass exists to close.
+            require_strengthened_ingest=True,
+        )
+        if "winner_verifications" not in ingest_counts:
+            raise TuneCampaignError(
+                "strengthened ingest did not report verified winner counts"
+            )
+        if int(ingest_counts["winner_verifications"]) <= 0:
+            raise TuneCampaignError(
+                "strengthened ingest produced zero verified winners"
+            )
+    except inv_mod.RecordError as exc:
+        # Fail closed, never silently retry unverified (HI125 close-out
+        # step 6's explicit policy) -- an UnsupportedSignatureDomain or a
+        # genuine verification failure aborts the whole campaign rather
+        # than degrading to un-attested ingestion an operator would not
+        # know to distrust.
+        raise TuneCampaignError(f"strengthened ingest failed: {exc}") from exc
     promoted_path = workdir / "promoted.jsonl"
     result = tune_promotion.promote(
         tune_measurements, promoted_path,
         dispatch_db=dispatch_db, q=q, threshold_pct=threshold_pct, resamples=resamples,
+    )
+    # Promotion finalizes the winner identity (including challenger -> native
+    # fallback). Re-ingest that finalized artifact through the strengthened
+    # path so the dispatch DB remains the authoritative source for export.
+    try:
+        final_ingest_counts = inv_mod.load_measurements(
+            promoted_path, dispatch_db, paths.SQL / "dispatch-db.sql",
+            manifest_path=tune_manifest_path,
+            signature_digest_verifier=signature_digest_verifier,
+            unsupported_signature_policy="quarantine",
+            require_strengthened_ingest=True,
+        )
+    except inv_mod.RecordError as exc:
+        raise TuneCampaignError(f"strengthened finalized ingest failed: {exc}") from exc
+    result["winner_verifications"] = int(final_ingest_counts.get("winner_verifications", 0))
+    result["quarantined_unsupported_winners"] = int(
+        final_ingest_counts.get("quarantined_unsupported_winners", 0)
     )
     missing_evidence = _count_missing_correctness_evidence(promoted_path)
     return dispatch_db, result, int(result.get("promoted", 0)), missing_evidence
@@ -268,24 +401,37 @@ def _stage_correctness_evidence(
 
 
 def _stage_replay_export(
-    *, promoted_path: Path, tune_manifest_path: Path, tune_source_root: Path,
+    *, promoted_path: Path, target_manifest_path: Path, target_source_root: Path,
     dispatch_db: Path, workdir: Path,
 ) -> Path:
-    ggml_h = tune_source_root / "ggml" / "include" / "ggml.h"
+    """Export the dispatch cache against the REPLAY build's own manifest (not
+    tune's) -- gpt review (2026-08-27, req_ec659ded425c4335): replay.build()
+    already rebinds every winner to whatever manifest it's given (tune and
+    replay legitimately have different manifest_hash by design, since
+    variant_set is baked into the hash), so the cache must be stamped with
+    the manifest of whichever binary will actually load it, or every entry
+    reads as stale/RERUN_REQUIRED against that binary's own compiled hash."""
+    ggml_h = target_source_root / "ggml" / "include" / "ggml.h"
     cache_bytes = replay_mod.build(
-        promoted_path, tune_manifest_path, ggml_h, dispatch_db=dispatch_db,
+        promoted_path, target_manifest_path, ggml_h, dispatch_db=dispatch_db,
+        require_winner_verification=True,
     )
-    cache_path = workdir / "dispatch.cache"
+    # HI143 (gpt review, 2026-08-29): write to a provisional path and only
+    # atomically rename to the real dispatch.cache once the behavioral
+    # gate + coverage check both pass (_stage_replay_validate). Writing
+    # straight to dispatch.cache here meant a campaign that later failed
+    # validation still left a plausible-looking, unvalidated cache file
+    # sitting in the workdir.
+    cache_path = workdir / "dispatch.cache.provisional"
     cache_path.write_bytes(cache_bytes)
     return cache_path
 
 
-def _stage_replay_build_and_verify(
+def _stage_replay_build(
     *, context, cfg, store, run_id, platform_name, source_name,
-    inventory_path: Path, winners_path: Path, model_path: Path, devices: str,
-    runtime_profile: campaign_config.RuntimeProfile, dispatch_cache: Path, workdir: Path,
-) -> tuple[CampaignLaneResult, dict]:
-    lane_result = _plan_and_run_one_lane(
+    inventory_path: Path, winners_path: Path,
+) -> CampaignLaneResult:
+    return _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
         build_name="replay", platform_name=platform_name, run_id=run_id,
         binary_relative_path="bin/llama-server",
@@ -293,23 +439,346 @@ def _stage_replay_build_and_verify(
             "replay": (("inventory", inventory_path), ("promoted-winners", winners_path)),
         },
     )
+
+
+#: HTR03: the repository's default corpus manifest -- one real edition,
+#: extend by publishing a NEW edition (never editing this one's vectors in
+#: place; see behavioral_corpus.py's immutability contract).
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+_DEFAULT_CORPUS_MANIFEST = _FIXTURES_DIR / "corpus-qwen38-production-v1.toml"
+
+
+def _resolve_default_corpus(
+    runtime_profile: campaign_config.RuntimeProfile,
+) -> tuple[list[behavioral_gate_mod.BehavioralVector], behavioral_corpus_mod.CorpusEdition, tuple[behavioral_corpus_mod.CorpusVectorSpec, ...]]:
+    """HTR03: resolve the applicable corpus for this runtime profile via
+    the versioned manifest + explicit behavioral_classes, replacing the
+    old hardcoded _default_behavioral_corpus() + implicit '--spec-type'
+    string-matching. A profile declaring NO behavioral_classes legitimately
+    has nothing decision-sensitive to check (the same real-world case the
+    old require_mtp=False path covered) -- resolve_applicable_vectors()
+    itself only fails loud when classes ARE declared but match nothing."""
+    edition = behavioral_corpus_mod.load_corpus_edition(_DEFAULT_CORPUS_MANIFEST, _FIXTURES_DIR)
+    specs = behavioral_corpus_mod.resolve_applicable_vectors(edition, runtime_profile.behavioral_classes)
+    vectors = [behavioral_corpus_mod.to_behavioral_vector(spec, _FIXTURES_DIR) for spec in specs]
+    return vectors, edition, specs
+
+
+def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.SignatureAssignment]:
+    """HTR01: build the recovery search's starting point directly from this
+    campaign's OWN promoted.jsonl -- every non-native promoted signature's
+    current winner, plus its already-measured alternatives (from its own
+    ranking_decisions, best-first by effective_us) so recovery never needs
+    a new GPU timing measurement to try a different candidate.
+
+    KNOWN LIMITATION (not yet closed): alternatives are ordered purely by
+    this campaign's own ranking_decisions effective_us; whether each
+    alternative already has correctness evidence is checked lazily by
+    AssignmentExecutor.ensure_correctness_evidence() when a proposal
+    actually tries to use it (HTR01's real-hardware validation, 2026-08-30,
+    confirmed this is the common case, not an edge case -- see HTR01's
+    plan-item notes)."""
+    assignments: dict[str, recovery_mod.SignatureAssignment] = {}
+    with promoted_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            if row.get("promotion_status") != "promoted":
+                continue
+            dispatch = row.get("dispatch")
+            signature = row.get("signature")
+            current = row.get("winner")
+            # row["native"] is ALREADY the real native candidate stable_name
+            # (e.g. "mmvq:native:v1", confirmed via real campaign data,
+            # 2026-08-30) -- the same field promotion_gate.resolve_
+            # promotion_identity() itself resolves via native_name -- not
+            # the literal string "native". No derivation/regex-matching
+            # against ranking_decisions is needed (an earlier version of
+            # this function did that unnecessarily before this was found).
+            native_candidate = row.get("native")
+            if not dispatch or not signature or not current or not native_candidate:
+                continue
+            ranking = row.get("ranking_decisions") or []
+            names_by_us: list[tuple[float, str]] = []
+            for decision in ranking:
+                for entry in decision.get("candidates", []):
+                    name = entry.get("name")
+                    if not name or name == current or name == native_candidate:
+                        continue
+                    effective_us = entry.get("effective_us")
+                    if effective_us is None:
+                        continue
+                    names_by_us.append((float(effective_us), name))
+            names_by_us.sort(key=lambda pair: pair[0])
+            seen: set[str] = set()
+            alternatives = []
+            for _, name in names_by_us:
+                if name in seen:
+                    continue
+                seen.add(name)
+                alternatives.append(name)
+            assignments[dispatch] = recovery_mod.SignatureAssignment(
+                dispatch=dispatch, signature=signature, current_candidate=current,
+                native_candidate=native_candidate, alternatives=tuple(alternatives),
+            )
+    return assignments
+
+
+def _stage_replay_validate(
+    *, lane_result: CampaignLaneResult, model_path: Path, devices: str,
+    runtime_profile: campaign_config.RuntimeProfile, provisional_cache: Path, workdir: Path,
+    corpus: list[behavioral_gate_mod.BehavioralVector] | None = None,
+    promoted_path: Path | None = None, manifest_path: Path | None = None,
+    ggml_h_path: Path | None = None, dispatch_db: Path | None = None, allow_recovery: bool = True,
+    correctness_binary_path: Path | None = None, correctness_vendor_root: Path | None = None,
+    correctness_seeds: tuple[int, ...] = (1, 2, 3), campaign_run_id: str | None = None,
+    max_recovery_evaluations: int = recovery_mod.DEFAULT_MAX_RECOVERY_EVALUATIONS,
+    max_new_correctness_candidates: int = recovery_mod.DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES,
+) -> dict:
+    """HI143: the real pre-promotion behavioral regression gate, wired into
+    the actual campaign path (gpt-negotiated integration, 2026-08-29,
+    session ses_330ae3c055084f38) -- replaces the old _stage_replay_verify,
+    which only checked cache coverage (dispatched==executed, no stale/
+    rerun entries) and would have shipped HI141's real regression without
+    ever noticing it, since a stale/miss check says nothing about whether
+    the CONTENT of what a hit dispatches to is correct.
+
+    Runs the SAME replay-capable binary in native mode first (one real
+    server load), then in replay mode against the provisional cache (a
+    second real server load, which also carries the existing coverage
+    check) -- never two 27B servers concurrently. Every corpus vector is
+    compared native-vs-candidate via behavioral_gate.compare_traces; any
+    hard_fail (generated output diverged) or behavior_changed (same
+    output, different MTP accept trace -- requires a throughput
+    adjudication step this module does not yet implement) fails the whole
+    campaign closed. Only when every vector is exact_pass AND the existing
+    replay-coverage check passes does the provisional cache get atomically
+    renamed to the real dispatch.cache."""
+    corpus_edition: behavioral_corpus_mod.CorpusEdition | None = None
+    corpus_vector_specs: tuple[behavioral_corpus_mod.CorpusVectorSpec, ...] = ()
+    if corpus is None:
+        corpus_list, corpus_edition, corpus_vector_specs = _resolve_default_corpus(runtime_profile)
+        corpus = tuple(corpus_list)
+        # A runtime profile declaring NO behavioral_classes has nothing
+        # decision-sensitive to check (the direct generalization of the
+        # old require_mtp=False path) -- this is a legitimate, silent-by-
+        # design skip, NOT the "corpus is empty" failure below, which
+        # exists for an EXPLICITLY-supplied empty corpus (a caller bug).
+        if not corpus and not runtime_profile.behavioral_classes:
+            corpus = ()
+        elif not corpus:
+            raise TuneCampaignError(
+                "behavioral gate corpus resolved to zero vectors for a runtime "
+                "profile that DOES declare behavioral_classes -- this should "
+                "already have failed loud inside resolve_applicable_vectors()"
+            )
+    else:
+        corpus = tuple(corpus)
+        if not corpus:
+            raise TuneCampaignError("behavioral gate corpus is empty -- refusing to export unvalidated")
     binary_path = lane_result.binary_ref.path
     coverage_path = workdir / "coverage.json"
-    runner = ServerRunner(
-        binary=binary_path, model=model_path,
-        extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
-        env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
-            "GGML_HIP_DISPATCH_MODE": "replay",
-            "GGML_HIP_DISPATCH_CACHE": str(dispatch_cache),
-            "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
-        },
-        log_path=workdir / "replay-server.log",
+    report_path = workdir / "behavioral-gate.json"
+    final_cache_path = workdir / "dispatch.cache"
+    # Same stale-artifact defense as the old _stage_replay_verify (GPT
+    # deep-review P2, 2026-08-29), extended to the FINALIZED cache itself
+    # (gpt review, 2026-08-29): a reused workdir/run-id must never let a
+    # prior run's coverage/report/dispatch.cache be read/seen as this
+    # run's result -- an old finalized cache surviving a failed rerun
+    # would otherwise remain visible even though THIS validation rejected
+    # its provisional replacement.
+    for stale in (coverage_path, report_path, final_cache_path):
+        if stale.exists():
+            stale.unlink()
+
+    common_args = (
+        "-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args,
     )
-    with runner:
-        runner.run_completion("Explain how a compass works.", n_predict=96)
+    # HI143 (gpt review, 2026-08-29): the launched process otherwise
+    # inherits the full ambient environment -- a leftover
+    # GGML_HIP_FORCE_CANDIDATE(_STRICT)/DISPATCH_DB/DISPATCH_CACHE/
+    # DISPATCH_COVERAGE from an unrelated earlier command could silently
+    # contaminate either leg. Strip them; each leg then sets only what it
+    # actually intends.
+    env_unset = (
+        "GGML_HIP_FORCE_CANDIDATE", "GGML_HIP_FORCE_CANDIDATE_STRICT",
+        "GGML_HIP_DISPATCH_DB", "GGML_HIP_DISPATCH_CACHE", "GGML_HIP_DISPATCH_COVERAGE",
+    )
+
+    def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
+        env = {"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
+        runner = ServerRunner(
+            binary=binary_path, model=model_path, extra_args=common_args,
+            env_overrides=env, env_unset=env_unset, log_path=workdir / log_name,
+        )
+        try:
+            with runner:
+                return [
+                    behavioral_gate_mod.run_vector(runner, vector, require_mtp=vector.requires_mtp)
+                    for vector in corpus
+                ]
+        except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
+            raise TuneCampaignError(f"behavioral gate: {exc}") from exc
+
+    native_traces = _run_leg(dispatch_mode="native", log_name="behavioral-native.log", extra_env={})
+
+    candidate_env = {
+        "GGML_HIP_DISPATCH_CACHE": str(provisional_cache),
+        "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
+    }
+    candidate_runner = ServerRunner(
+        binary=binary_path, model=model_path, extra_args=common_args,
+        env_overrides={"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
+        env_unset=env_unset, log_path=workdir / "behavioral-candidate.log",
+    )
+    try:
+        with candidate_runner:
+            candidate_traces = [
+                behavioral_gate_mod.run_vector(candidate_runner, vector, require_mtp=vector.requires_mtp)
+                for vector in corpus
+            ]
+            candidate_runner.run_completion("Explain how a compass works.", n_predict=96)
+    except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
+        raise TuneCampaignError(f"behavioral gate: {exc}") from exc
+
+    # strict=True (gpt review, 2026-08-29): corpus is a materialized tuple
+    # (not a one-shot iterator) so this can never silently truncate, but
+    # strict=True is kept as a hard guarantee against a future refactor
+    # reintroducing that class of bug -- a length mismatch here must be a
+    # loud error, not a quietly short zip producing zero verdicts for the
+    # missing vectors (which would let replay coverage pass unchallenged).
+    report = behavioral_gate_mod.BehavioralGateReport(verdicts=[
+        behavioral_gate_mod.compare_traces(vector.name, native, candidate)
+        for vector, native, candidate in zip(corpus, native_traces, candidate_traces, strict=True)
+    ])
+    report_document = report.summary()
+    # HTR03: persist exactly which corpus edition/vectors were checked --
+    # so a FUTURE deep-dive reviewer (per real HTR01 experience: this is
+    # not hypothetical, it's exactly what caught three real bugs) can
+    # reconstruct precisely what this run validated without re-deriving it
+    # from whatever the manifest/parser looks like AT REVIEW TIME.
+    if corpus_edition is not None:
+        report_document["corpus_edition_id"] = corpus_edition.edition
+        report_document["corpus_schema_version"] = corpus_edition.schema_version
+        report_document["corpus_content_digest"] = corpus_edition.content_digest
+        report_document["selected_vectors"] = [
+            {
+                "id": spec.id, "content_digest": spec.content_digest,
+                "applies_to": list(spec.applies_to), "requirements": list(spec.requirements),
+                "scenario": spec.scenario, "provenance": spec.provenance,
+            }
+            for spec in corpus_vector_specs
+        ]
+    report_document["runtime_profile_name"] = runtime_profile.name
+    report_document["runtime_profile_digest"] = runtime_profile.digest
+    atomic_write_json(report_path, report_document)
+
+    if report.hard_fail or report.needs_throughput_adjudication:
+        # HTR01: rather than immediately discarding the ENTIRE campaign's
+        # yield (every other candidate's real, already-measured speed win)
+        # over one bad signature, attempt a bounded recovery search using
+        # ONLY data this campaign already collected -- no new GPU tuning.
+        # Real hardware proof this matters: run-id hi141-proof-20260829-2231
+        # (2026-08-29) hard-failed on exactly one of 41 promoted candidates
+        # and shipped nothing at all.
+        recovered = False
+        if (allow_recovery and promoted_path is not None and manifest_path is not None
+                and ggml_h_path is not None and dispatch_db is not None
+                and correctness_binary_path is not None and correctness_vendor_root is not None):
+            try:
+                assignments = _load_signature_assignments(promoted_path)
+                executor = recovery_mod.AssignmentExecutor(
+                    binary_path=binary_path, model_path=model_path, devices=devices,
+                    common_args=common_args, measurements_path=promoted_path,
+                    manifest_path=manifest_path, ggml_h_path=ggml_h_path, workdir=workdir,
+                    dispatch_db=dispatch_db,
+                    correctness_binary_path=correctness_binary_path,
+                    vendor_root=correctness_vendor_root, campaign_run_id=campaign_run_id,
+                    recovery_run_id=f"{campaign_run_id}-recovery" if campaign_run_id else None,
+                    correctness_seeds=correctness_seeds,
+                    max_new_correctness_candidates=max_new_correctness_candidates,
+                )
+                strategy = recovery_mod.BoundedPairedBisectionStrategy()
+                # KNOWN LIMITATION (not yet closed, tracked for follow-up):
+                # precise dispatch-hit scoping via GGML_HIP_DISPATCH_HIT_LOG
+                # cross-referencing is not wired here -- recovery searches
+                # over every promoted non-native signature rather than only
+                # the ones the failing vector(s) actually exercised. Correct
+                # but less efficient than the design's intent.
+                dispatch_hits = frozenset(assignments)
+                result = recovery_mod.run_recovery(
+                    executor=executor, strategy=strategy, initial_assignments=assignments,
+                    initial_report=report, full_corpus=list(corpus), dispatch_hits=dispatch_hits,
+                    max_evaluations=max_recovery_evaluations,
+                )
+            except recovery_mod.RecoveryError as exc:
+                raise TuneCampaignError(
+                    f"behavioral gate failed and recovery search could not produce a "
+                    f"publishable assignment: {exc}. Original gate report: {report.summary()!r}"
+                ) from exc
+            recovery_report_path = workdir / "recovery-result.json"
+            atomic_write_json(recovery_report_path, {
+                "published": result.published, "final_overrides": result.final_overrides,
+                "evaluations_used": result.evaluations_used, "stop_reason": result.stop_reason,
+                # HTR04: structured evidence only -- no code path here or in
+                # recovery.py acts on these. An operator (or a future,
+                # explicit GPU-budget-governed policy that does not exist
+                # yet) reads this to decide whether a targeted retune is
+                # worth its real GPU cost.
+                "retune_recommendations": [
+                    {
+                        "signature_dispatch": r.signature_dispatch, "reason": r.reason,
+                        "current_assignment": r.current_assignment,
+                        "exhausted_candidates": list(r.exhausted_candidates),
+                    }
+                    for r in result.retune_recommendations
+                ],
+            })
+            if not result.published:
+                raise TuneCampaignError(
+                    f"behavioral gate failed and recovery search exhausted its budget "
+                    f"without a publishable assignment ({result.stop_reason}). Original "
+                    f"gate report: {report.summary()!r}"
+                )
+            provisional_cache = result.cache_path
+            recovered = True
+        if not recovered:
+            verb = "hard-fail" if report.hard_fail else "requires throughput adjudication (not yet implemented)"
+            raise TuneCampaignError(
+                f"behavioral gate {verb}: refusing to ship this cache and recovery "
+                f"was not attempted: {report.summary()!r}"
+            )
+
     coverage = json.loads(coverage_path.read_text(encoding="utf-8")) if coverage_path.is_file() else {}
-    return lane_result, coverage
+    replay_coverage = coverage.get("replay", coverage)
+    if not isinstance(replay_coverage, dict):
+        replay_coverage = {}
+    if (
+        replay_coverage.get("stale")
+        or replay_coverage.get("rerun_required", 0)
+        or replay_coverage.get("exact", 0) <= 0
+    ):
+        raise TuneCampaignError(
+            "replay verification requires exact cache hits with no stale or "
+            "rerun_required entries -- exported cache was not proven usable: "
+            f"{coverage!r}"
+        )
+
+    provisional_cache.replace(final_cache_path)
+    # HTR03 provenance (GPT point A): bind this validation to the EXACT
+    # cache artifact and report bytes, not just a path -- a path alone can
+    # be silently overwritten by a later run reusing the same workdir.
+    import hashlib
+    coverage["validated_cache_digest"] = hashlib.sha256(final_cache_path.read_bytes()).hexdigest()
+    coverage["behavioral_gate_report_path"] = str(report_path)
+    coverage["behavioral_gate_report_digest"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    coverage["runtime_profile_digest"] = runtime_profile.digest
+    if corpus_edition is not None:
+        coverage["corpus_edition_id"] = corpus_edition.edition
+        coverage["corpus_content_digest"] = corpus_edition.content_digest
+    return coverage
 
 
 def run_tune_campaign(
@@ -362,19 +831,41 @@ def run_tune_campaign(
         runtime_profile=profile, screen_samples=tune_screen_samples,
         final_samples=tune_final_samples, workdir=workdir,
     )
-    tune_manifest_path = (
-        Path(tune_result.manifest_ref.path) if tune_result.manifest_ref else None
+    if tune_result.manifest_ref is None:
+        # HI125 close-out step 6: strengthened ingest needs a real manifest
+        # to establish inventory.verify_hip_build_artifacts()'s capability
+        # proof -- without one, build_attested is always False and
+        # winner_verification is never written, silently defeating the
+        # whole point of wiring a verifier in at all.
+        raise TuneCampaignError(
+            "tune build produced no manifest_ref -- strengthened ingest is impossible"
+        )
+    tune_manifest_path = Path(tune_result.manifest_ref.path)
+
+    signature_verifier_result, signature_digest_verifier = _stage_signature_verifier(
+        context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-signature-verifier",
+        platform_name=platform_name, source_name=source_name, devices=devices,
     )
+
     dispatch_db, _first_promote_result, promoted_before, missing_evidence = (
         _stage_load_and_promote(
             tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
             workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
             resamples=promotion_resamples,
+            signature_digest_verifier=signature_digest_verifier,
         )
     )
 
     correctness_result: CampaignLaneResult | None = None
     promoted_after = promoted_before
+    # GPT deep-review P2 (2026-08-29): the receipt's verified_winners/
+    # quarantined_unsupported_winners counts must reflect the FINAL ingest
+    # of the dispatch_db that actually ships, not necessarily the first
+    # pass -- when correctness evidence triggers a second
+    # _stage_load_and_promote, that reingest can change which winners are
+    # verified/quarantined, and _final_promote_result is updated below only
+    # when that second pass actually runs.
+    _final_promote_result = _first_promote_result
     if missing_evidence > 0:
         # gpt review (2026-08-27): triggering only on promoted_before == 0
         # missed the partial-evidence case -- a dispatch_db that already
@@ -395,30 +886,70 @@ def run_tune_campaign(
                 tune_measurements=tune_measurements, tune_manifest_path=tune_manifest_path,
                 workdir=workdir, q=promotion_q, threshold_pct=promotion_threshold_pct,
                 resamples=promotion_resamples,
+                # Same memoized verifier instance reused across both loads --
+                # correctness-evidence generation changes promotion evidence/
+                # state, not canonical->digest identity, so the first pass's
+                # already-verified canonicals hit the memo cache for free.
+                signature_digest_verifier=signature_digest_verifier,
             )
         )
+        _final_promote_result = _promote_result2
 
     replay_result: CampaignLaneResult | None = None
     replay_coverage: dict | None = None
     dispatch_cache_path: Path | None = None
     if promoted_after > 0:
-        if tune_manifest_path is None:
-            raise TuneCampaignError("tune build produced no manifest_ref -- cannot export replay")
-        dispatch_cache_path = _stage_replay_export(
-            promoted_path=workdir / "promoted.jsonl", tune_manifest_path=tune_manifest_path,
-            tune_source_root=tune_result.source_root, dispatch_db=dispatch_db, workdir=workdir,
-        )
-        replay_result, replay_coverage = _stage_replay_build_and_verify(
+        # Build the replay binary FIRST, then export the cache against ITS
+        # OWN manifest_ref -- not tune's. tune (workload-max) and replay
+        # (replay-full) legitimately have different manifest_hash by design
+        # (see _stage_replay_export docstring); exporting against tune's
+        # manifest stamps every cache entry with a hash the replay binary
+        # never has, so it always reads as stale. gpt review confirmed this
+        # ordering bug is the actual HI130 root cause (req_ec659ded425c4335).
+        replay_result = _stage_replay_build(
             context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-replay",
             platform_name=platform_name, source_name=source_name,
             inventory_path=inventory_path, winners_path=workdir / "promoted.jsonl",
-            model_path=model_path, devices=devices, runtime_profile=profile,
-            dispatch_cache=dispatch_cache_path, workdir=workdir,
         )
+        if replay_result.manifest_ref is None:
+            raise TuneCampaignError("replay build produced no manifest_ref -- cannot export cache")
+        provisional_cache_path = _stage_replay_export(
+            promoted_path=workdir / "promoted.jsonl",
+            target_manifest_path=Path(replay_result.manifest_ref.path),
+            target_source_root=replay_result.source_root,
+            dispatch_db=dispatch_db, workdir=workdir,
+        )
+        # HI143: _stage_replay_validate raises TuneCampaignError (never
+        # returns) unless every corpus vector's behavioral trace matches
+        # native AND the existing coverage check passes -- only then does
+        # the provisional cache get atomically renamed to dispatch.cache,
+        # which is the path this receipt records below.
+        replay_coverage = _stage_replay_validate(
+            lane_result=replay_result, model_path=model_path, devices=devices,
+            runtime_profile=profile, provisional_cache=provisional_cache_path, workdir=workdir,
+            promoted_path=workdir / "promoted.jsonl",
+            manifest_path=Path(replay_result.manifest_ref.path),
+            ggml_h_path=replay_result.source_root / "ggml" / "include" / "ggml.h",
+            dispatch_db=dispatch_db,
+            # HTR01: only available for lazy correctness-qualification if
+            # THIS run actually built a test-backend-ops lane (it doesn't
+            # when missing_evidence == 0 -- all evidence already existed
+            # from a prior run). Recovery gracefully disables its lazy-
+            # qualification path (falls through to the original hard_fail)
+            # when these are None, rather than requiring a rebuild.
+            correctness_binary_path=(
+                correctness_result.binary_ref.path if correctness_result is not None else None
+            ),
+            correctness_vendor_root=(
+                correctness_result.source_root if correctness_result is not None else None
+            ),
+            correctness_seeds=correctness_seeds, campaign_run_id=campaign_run_id,
+        )
+        dispatch_cache_path = workdir / "dispatch.cache"
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(
-        schema_version=1,
+        schema_version=3,
         campaign_run_id=campaign_run_id,
         model_path=str(model_path),
         platform_name=platform_name,
@@ -427,6 +958,7 @@ def run_tune_campaign(
         effective_tune_context=profile.tune_context,
         record=_stage_identity(record_result),
         tune=_stage_identity(tune_result),
+        signature_verifier=_stage_identity(signature_verifier_result),
         correctness=(
             _stage_identity(correctness_result)
             if correctness_result is not None else None
@@ -437,6 +969,10 @@ def run_tune_campaign(
         ),
         promoted_before_evidence=promoted_before,
         promoted_after_evidence=promoted_after,
+        verified_winners=int(_final_promote_result.get("winner_verifications", 0)),
+        quarantined_unsupported_winners=int(
+            _final_promote_result.get("quarantined_unsupported_winners", 0)
+        ),
         dispatch_cache_path=str(dispatch_cache_path) if dispatch_cache_path else None,
         replay_coverage=replay_coverage,
         started_at=started_at,

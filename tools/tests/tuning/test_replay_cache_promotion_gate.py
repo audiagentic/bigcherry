@@ -31,6 +31,11 @@ def entry(dispatch: str, winner: str, native: str = "native", **extra) -> dict:
     return row
 
 
+# A real manifest's candidate-name -> descriptor mapping, the authoritative
+# source of native/non-native identity per _native_claim_is_authoritative().
+BY_NAME = {"native": {"stable_name": "native", "source_class": "native_wrapper"}}
+
+
 def _passing_dispatch_db(
     tmp_path: Path, *, dispatch_hex: str, signature_hex: str, hardware_hex: str,
     native_name: str, candidate_name: str,
@@ -122,30 +127,30 @@ class PromotionGateTests(unittest.TestCase):
 
     def test_native_winner_always_exports(self):
         entries = {"a" * 32: entry("a" * 32, "native", "native")}
-        replay_cache._validate_promotion_gate(entries)  # must not raise
+        replay_cache._validate_promotion_gate(entries, BY_NAME)  # must not raise
 
     def test_failed_native_measurement_cannot_export(self):
         entries = {"a" * 32: entry("a" * 32, "native", "native",
                                    measurement_failure=True)}
         with self.assertRaisesRegex(SystemExit, "measurement_failure"):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
 
     def test_promoted_non_native_exports(self):
         entries = {"a" * 32: entry("a" * 32, "candidate", "native",
                                    promotion_status="promoted")}
-        replay_cache._validate_promotion_gate(entries)  # must not raise
+        replay_cache._validate_promotion_gate(entries, BY_NAME)  # must not raise
 
     def test_raw_pending_bh_cannot_export(self):
         entries = {"a" * 32: entry("a" * 32, "candidate", "native",
                                    promotion_status="pending_bh")}
         with self.assertRaisesRegex(SystemExit, "promotion_status"):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
 
     def test_rejected_bh_cannot_export(self):
         entries = {"a" * 32: entry("a" * 32, "candidate", "native",
                                    promotion_status="rejected_bh")}
         with self.assertRaises(SystemExit):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
 
     def test_missing_promotion_metadata_cannot_export(self):
         # A non-native winner with no promotion_status at all -- e.g. a
@@ -153,13 +158,13 @@ class PromotionGateTests(unittest.TestCase):
         # a silent pass-through.
         entries = {"a" * 32: entry("a" * 32, "candidate", "native")}
         with self.assertRaises(SystemExit):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
 
     def test_missing_native_field_treated_as_non_native(self):
         entries = {"a" * 32: {"kind": "result", "dispatch": "a" * 32,
                               "winner": "candidate"}}
         with self.assertRaises(SystemExit):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
 
     def test_mixed_batch_reports_every_violation(self):
         entries = {
@@ -172,7 +177,27 @@ class PromotionGateTests(unittest.TestCase):
                             promotion_status="rejected_bh"),
         }
         with self.assertRaisesRegex(SystemExit, "2 unsafe measurement result"):
-            replay_cache._validate_promotion_gate(entries)
+            replay_cache._validate_promotion_gate(entries, BY_NAME)
+
+    def test_forged_native_claim_by_a_real_challenger_cannot_bypass_gates(self):
+        # GPT deep-review finding (2026-08-29): a challenger self-declaring
+        # winner==native=="candidate" in the artifact must NOT be exempted
+        # from promotion evidence unless the manifest's own source_class
+        # independently confirms it is genuinely native_wrapper -- otherwise
+        # a forged/faulty finalized row could ship unverified. Same
+        # trust-pattern class as the already-fixed forged 'seeded': true bug.
+        entries = {"a" * 32: entry("a" * 32, "candidate", "candidate")}
+        by_name = {"candidate": {"stable_name": "candidate",
+                                  "source_class": "existing_alternative"}}
+        with self.assertRaises(SystemExit):
+            replay_cache._validate_promotion_gate(entries, by_name)
+
+    def test_native_claim_for_name_absent_from_manifest_cannot_bypass_gates(self):
+        # The forged-name case: "native" isn't even a real manifest
+        # candidate. Must fail closed, not be treated as trivially native.
+        entries = {"a" * 32: entry("a" * 32, "ghost", "ghost")}
+        with self.assertRaises(SystemExit):
+            replay_cache._validate_promotion_gate(entries, {})
 
 
 class MultiBuildIdentityTests(unittest.TestCase):

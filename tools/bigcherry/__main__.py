@@ -182,7 +182,18 @@ def _copy_overlay(
         relative = source.relative_to(paths.SRC_OVERLAY)
         target = root / relative
         text = source.read_text(encoding="utf-8")
-        if target.is_file() and target.read_text(encoding="utf-8") == text:
+        # `text` is LF-only (universal-newline translation of src) and gets
+        # written verbatim (newline=""). Comparing against a universal-
+        # newline read of `target` would translate a stale CRLF target to
+        # LF first, read as "already matches", and skip the write forever
+        # -- leaving CRLF bytes on disk that a real write would have
+        # normalized. Decode raw bytes directly (no translation) so that's
+        # detected as needing a rewrite. See rebase.py's
+        # `_write_overlay_snapshot` for the same fix, applied there first
+        # (found live during the b10502->b10680 bump).
+        # (Path.read_text(newline=...) is Python 3.13+ only -- Brutus runs
+        # 3.12 -- so this reads bytes and decodes rather than using it.)
+        if target.is_file() and target.read_bytes().decode("utf-8") == text:
             continue
         relative_str = str(relative).replace("\\", "/")
         if backup is not None and relative_str not in backup:
@@ -319,7 +330,7 @@ def _legacy_cmd_repin(args: argparse.Namespace) -> int:
     RE48/RV78: repin now writes the pin-transition marker (releases/
     pin-transition.json) atomically with the recipes.toml rewrite. Commit
     both together -- the committed marker is what makes the in-flight state
-    'mid-rebase' instead of 'drift' (see docs/reference/PIN_BUMP.md)."""
+    'mid-rebase' instead of 'drift' (see docs/reference/build/PIN_BUMP.md)."""
     try:
         target = args.ref or upstream.latest_release()
     except upstream.UpstreamError as exc:

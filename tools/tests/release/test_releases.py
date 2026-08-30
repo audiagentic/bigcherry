@@ -105,6 +105,45 @@ class ReleasePublicationTests(unittest.TestCase):
                 self.assertEqual(write.call_count, 2)
                 self.assertNotEqual(path.read_bytes(), first_bytes)
 
+    def test_all_records_ignores_pin_transition_marker(self):
+        # Found during a real b10502->b10680 bump: releases/pin-transition.json
+        # lives in the same directory as the per-revision *.json records but
+        # has no `revision` field, so all_records() (called from save() via
+        # _rebuild_index()) crashed with a TypeError on every save while a
+        # transition marker was present.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pin-transition.json").write_text(
+                json.dumps({
+                    "schema_version": 1, "from_sha": "a" * 40, "to_sha": "b" * 40,
+                    "tag": "b10680", "declaring_commit": "c" * 40,
+                    "set_at": "2026-08-29T00:00:00+00:00",
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch.object(releases, "RELEASES_DIR", root), \
+                    mock.patch.object(releases, "INDEX_PATH", root / "index.json"):
+                record = releases.ReleaseRecord(revision="abc123", release_tag="b10362")
+                record.save()  # must not raise
+                self.assertEqual(len(releases.all_records()), 1)
+
+    def test_all_records_ignores_patch_rebase_report(self):
+        # Same real bump: PIN_BUMP.md's own documented command
+        # (`patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json`)
+        # writes a non-ReleaseRecord report straight into releases/, which
+        # also has no `revision` field -- must not crash all_records() either.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "patch-rebase.json").write_text(
+                json.dumps({"upstream_revision": "d" * 40, "patches": []}),
+                encoding="utf-8",
+            )
+            with mock.patch.object(releases, "RELEASES_DIR", root), \
+                    mock.patch.object(releases, "INDEX_PATH", root / "index.json"):
+                record = releases.ReleaseRecord(revision="abc123", release_tag="b10362")
+                record.save()  # must not raise
+                self.assertEqual(len(releases.all_records()), 1)
+
 
 class PromotionWiringTests(unittest.TestCase):
     """RE13: `validated` can only be reached through a real, campaign-backed

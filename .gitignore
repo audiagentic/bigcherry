@@ -1,5 +1,5 @@
 # -- Build artifacts --
-build/
+/build/
 !tools/bigcherry/build/
 !tools/tests/build/
 cmake-build-*/

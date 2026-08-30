@@ -75,7 +75,7 @@ class CorrectnessEvidenceSchemaTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "7")
+        self.assertEqual(row[0], "9")
 
     def test_real_schema_5_database_migrates_to_6_in_place(self):
         # The scenario the migration exists for: a real pre-existing
@@ -136,7 +136,7 @@ class CorrectnessEvidenceSchemaTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         ).fetchone()
-        self.assertEqual(row[0], "7")
+        self.assertEqual(row[0], "9")
 
     def test_insert_with_three_seeds_succeeds(self):
         build_id, hardware_id, signature_id, native_id, candidate_id = (

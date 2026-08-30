@@ -33,7 +33,7 @@ def _python_executable() -> str:
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REFERENCE_V5_CACHE = (
-    REPO_ROOT / "docs" / "reference" / "h36-campaign-27b-r9700" / "dispatch-27b-v5.cache"
+    REPO_ROOT / "tools" / "tests" / "fixtures" / "replay" / "dispatch-v5-h36-27b.cache"
 )
 
 SIG_A = "a" * 32

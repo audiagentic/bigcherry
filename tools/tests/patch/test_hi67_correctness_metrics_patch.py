@@ -1,4 +1,4 @@
-"""HI67 slice 2b: patches/1223_hi67_machine_readable_correctness_metrics.py
+"""HI67 slice 2b: patches/1223_hi67_machine_readable_correctness_metrics/patch.py
 applies cleanly (stacked on top of 1222, its REQUIRES dependency) and
 idempotently to the real vendored test-backend-ops.cpp."""
 
@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "patches" / filename)
+    spec = importlib.util.spec_from_file_location(name, ROOT / "patches" / Path(filename).stem / "patch.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

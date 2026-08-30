@@ -1,7 +1,7 @@
 // Standalone real-hardware test of RD30's mmq_build_moe_block_map kernel
 // against hostile MoE routing distributions (RD94/EC13 concern), at real
 // production scale (n_experts=256). Verbatim copy of the kernel from
-// patches/1237_rd30_moe_mmq_compact_grid.py -- if this file and the patch
+// patches/1237_rd30_moe_mmq_compact_grid/patch.py -- if this file and the patch
 // ever diverge, the patch is authoritative and this file is stale.
 #include <hip/hip_runtime.h>
 #include <cstdio>

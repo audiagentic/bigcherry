@@ -24,11 +24,13 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from ..core import paths
 from . import catalog
 from . import dispatch_abi
+from . import signature_capabilities as sc
+from . import verification_state
 from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..identity_separation import IdentitySeparationError, validate_measurement_identity
 
@@ -37,7 +39,14 @@ class RecordError(RuntimeError):
     pass
 
 
-CURRENT_DB_SCHEMA_VERSION = "7"
+@dataclass(frozen=True)
+class _ResolvedSignature:
+    signature_id: int | None
+    verifier_passed: bool
+    quarantined_unaudited: bool
+
+
+CURRENT_DB_SCHEMA_VERSION = "9"
 #: Schema 5 (RE30, 2026-08-20): added six parallel vk_* tables (Vulkan
 #: hardware/signature/candidate/observation/measurement/winner), purely
 #: additive -- zero changes to any schema-4 table/column/index. Real
@@ -715,30 +724,45 @@ def build_database(
         connection.close()
 
 
-def _verify_and_persist_hip_capabilities(
-    connection: sqlite3.Connection, *,
-    header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
-) -> None:
-    """HI121 M2: verify the compiled producer's own self-reported capability
-    mask (measurements header's ``producer_capabilities``) against the
-    manifest that claims to describe that same build, and persist it to
-    ``build_capability`` ONLY once every provenance check passes.
+@dataclass(frozen=True)
+class HipBuildProof:
+    """The result of verifying a measurements header against its manifest
+    at the pure ARTIFACT level -- no database access, no build_id.
 
-    Absence of a verified manifest binding (no manifest_path given, or an
-    older manifest/header predating this field) means NO build_capability
-    row is written -- capability-unknown, never inferred from
-    signature_schema, commit date, or any other proxy. This is the one hard
-    requirement HI121's design calls out for this function: Python must not
-    be able to arbitrarily self-declare or backfill a capability claim.
+    HI128's reattest.py needs exactly this: a historical build may have NO
+    existing build_capability row and a NULL build_descriptor_hash (that is
+    precisely the pre-HI127 UNKNOWN state it exists to remediate), so the
+    proof this needs cannot depend on a DB read the way a PROJECTABILITY
+    check (replay_projection.py's _load_source_manifest(), which requires
+    build_capability to already exist) does.
+    """
+
+    source_revision: str
+    manifest_hash: str
+    build_descriptor_hash: str
+    producer_capabilities: CapabilityMask128
+
+
+def verify_hip_build_artifacts(
+    *, header: dict[str, Any], manifest: dict[str, Any] | None,
+) -> HipBuildProof | None:
+    """Verify header<->manifest agreement (source_revision, manifest_hash,
+    build_descriptor, producer_capabilities) from the ARTIFACTS ALONE --
+    the pure, DB-independent half of HI121 M2's capability proof.
+
+    Returns None (not an error) when there is genuinely nothing to verify:
+    no manifest supplied, or an older measurements/manifest pair predating
+    the producer_capabilities field. Raises RecordError for any concrete
+    disagreement between the header and the manifest.
     """
     if manifest is None:
-        return
+        return None
     header_caps_hex = header.get("producer_capabilities")
     manifest_caps_hex = manifest.get("producer_capabilities")
     if not isinstance(header_caps_hex, str) or not isinstance(manifest_caps_hex, str):
         # Older measurements/manifest predate this field -- nothing to
         # verify or persist yet, not an error.
-        return
+        return None
 
     if header.get("source_revision") != manifest.get("source_revision"):
         raise RecordError(
@@ -797,22 +821,59 @@ def _verify_and_persist_hip_capabilities(
     except CapabilityMaskError as exc:
         raise RecordError(f"load_measurements: malformed producer_capabilities hex: {exc}") from exc
 
+    return HipBuildProof(
+        source_revision=header.get("source_revision"),
+        manifest_hash=header.get("manifest_hash"),
+        build_descriptor_hash=manifest_descriptor_hash,
+        producer_capabilities=mask,
+    )
+
+
+def _verify_and_persist_hip_capabilities(
+    connection: sqlite3.Connection, *,
+    header: dict[str, Any], manifest: dict[str, Any] | None, build_id: int,
+) -> bool:
+    """HI121 M2: verify the compiled producer's own self-reported capability
+    mask (measurements header's ``producer_capabilities``) against the
+    manifest that claims to describe that same build, and persist it to
+    ``build_capability`` ONLY once every provenance check passes.
+
+    Absence of a verified manifest binding (no manifest_path given, or an
+    older manifest/header predating this field) means NO build_capability
+    row is written -- capability-unknown, never inferred from
+    signature_schema, commit date, or any other proxy. This is the one hard
+    requirement HI121's design calls out for this function: Python must not
+    be able to arbitrarily self-declare or backfill a capability claim.
+
+    HI127: the return value additionally feeds ``winner_verification`` --
+    True means every check in this function ran and passed for THIS load
+    (including when an identical build_capability row already existed);
+    False means this load could not establish the current build/header/
+    manifest capability/descriptor proof at all (missing manifest, or a
+    measurements/manifest predating the capability field), which is a
+    normal, non-error outcome, not a failure of this function.
+    """
+    proof = verify_hip_build_artifacts(header=header, manifest=manifest)
+    if proof is None:
+        return False
+
     existing = connection.execute(
         "SELECT producer_capabilities FROM build_capability WHERE build_id = ? AND backend = 'hip'",
         (build_id,),
     ).fetchone()
     if existing is not None:
-        if existing[0] != mask.to_bytes():
+        if existing[0] != proof.producer_capabilities.to_bytes():
             raise RecordError(
                 "load_measurements: build_id already has a DIFFERENT hip producer_capabilities "
                 "row on file -- capability claims are immutable once persisted, never silently "
                 "overwritten"
             )
-        return
+        return True
     connection.execute(
         "INSERT INTO build_capability (build_id, backend, producer_capabilities) VALUES (?, 'hip', ?)",
-        (build_id, mask.to_bytes()),
+        (build_id, proof.producer_capabilities.to_bytes()),
     )
+    return True
 
 
 def load_measurements(
@@ -824,6 +885,8 @@ def load_measurements(
     signature_source_paths: list[Path] | None = None,
     identity: CampaignDatabaseIdentity | None = None,
     signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None,
+    require_strengthened_ingest: bool = False,
+    unsupported_signature_policy: Literal["error", "quarantine"] = "error",
 ) -> dict[str, int]:
     """Load tuning measurements JSONL into SQLite.
 
@@ -866,7 +929,24 @@ def load_measurements(
     the existing offline behavior: the first (digest, canonical) pairing is
     accepted on faith. Missing canonical data is not verifiable through this
     hook.
+
+    ``require_strengthened_ingest`` (HI125 close-out step 6, adversarial-
+    review follow-up): when True, this load must actually achieve HI127's
+    strengthened-ingest attestation or it raises ``RecordError`` instead of
+    silently committing an unattested load -- closing a real gap where a
+    caller could supply ``signature_digest_verifier`` believing every
+    winner would be attested, while a missing/unreadable manifest_path (a
+    plain ``.is_file()`` check silently treats a typo'd or nonexistent path
+    as "no manifest supplied"), an older header/manifest pair predating
+    ``producer_capabilities``, or a winner with no ``signature_id`` linkage
+    at all quietly produced zero ``winner_verification`` rows with no
+    error and no visible signal in this function's return value.
     """
+    if unsupported_signature_policy not in ("error", "quarantine"):
+        raise RecordError(
+            "load_measurements: unsupported_signature_policy must be 'error' or 'quarantine'"
+        )
+
     # Read measurements JSONL
     results: list[dict[str, Any]] = []
     header: dict[str, Any] | None = None
@@ -1148,9 +1228,40 @@ def load_measurements(
             )
             build_id = cursor.lastrowid
 
-        _verify_and_persist_hip_capabilities(
+        build_attested = _verify_and_persist_hip_capabilities(
             connection, header=header, manifest=manifest, build_id=build_id
         )
+        # HI127: a winner ingested under this load only qualifies for the
+        # strengthened-ingest attestation when BOTH halves of HI121's trust
+        # chain held for this exact load -- the build's own capability/
+        # descriptor proof (build_attested) AND a real C++ digest verifier
+        # being supplied at all. Per-row canonical/digest verification
+        # itself already happened (and raised on failure) inside
+        # _resolve_signature() via HI125's hardening -- reaching the winner
+        # write below with signature_digest_verifier is not None means this
+        # row's specific canonical already passed.
+        strengthened_ingest = build_attested and signature_digest_verifier is not None
+        if require_strengthened_ingest and not strengthened_ingest:
+            # HI125 close-out step 6 (adversarial-review follow-up): a
+            # caller that explicitly requires strengthened ingest (the real
+            # production tune-campaign path, or an operator who supplied
+            # --signature-verifier-binary on the manual CLI) must never
+            # silently get an unattested load instead -- build_attested can
+            # be False for reasons that are each individually "not an
+            # error" in the DEFAULT (non-required) path (no manifest
+            # supplied, manifest_path pointing at a file that does not
+            # exist -- see the plain `manifest_path.is_file()` check above,
+            # which silently treats a typo'd/missing path as "no manifest"
+            # -- or an older header/manifest pair predating the capability
+            # field) but are each a real, nameable failure when the caller
+            # asked for the strengthened guarantee specifically.
+            raise RecordError(
+                "load_measurements: require_strengthened_ingest=True but this load could not "
+                "establish HI127's strengthened-ingest proof (manifest missing/unreadable, "
+                "header/manifest predates producer_capabilities, or no signature_digest_verifier "
+                "was supplied) -- refusing to silently commit an unattested load when the caller "
+                "explicitly required attestation"
+            )
 
         signatures = sorted(
             {
@@ -1282,24 +1393,53 @@ def load_measurements(
         # Resolve candidate and signature names → IDs (cache lookups)
         candidate_cache: dict[str, int] = {}
         signature_cache: dict[str, int | None] = {}
+        # HI125 (adversarial-review follow-up): the repeat-sighting
+        # disagreement check below only runs on a cache MISS -- two rows
+        # in the SAME load_measurements() call sharing a digest but
+        # supplying different canonical content would otherwise have the
+        # second row's canonical silently ignored by the cache short-
+        # circuit, defeating the very check that exists to catch exactly
+        # this. Track the last non-empty canonical seen per digest across
+        # cache hits too, independent of whether a DB row lookup happens.
+        signature_seen_canonical: dict[str, dict[str, Any]] = {}
 
-        def _resolve_signature(result: dict[str, Any]) -> int | None:
+        def _resolve_signature(result: dict[str, Any]) -> _ResolvedSignature:
             signature_hex = result.get("signature", "")
             if len(signature_hex) != 32:
-                return None
+                return _ResolvedSignature(None, False, False)
             canonical = result.get("canonical") or signature_shapes.get(
                 signature_hex, {}
             )
             if not isinstance(canonical, dict):
                 canonical = {}
+            if signature_digest_verifier is not None and not canonical:
+                # HI125 (adversarial-review follow-up): silently skipping
+                # verification for missing canonical data would let a
+                # caller who explicitly requested the production trust gate
+                # believe every signature was C++-verified when rows with
+                # no canonical content simply bypassed it entirely.
+                raise RecordError(
+                    f"signature {signature_hex!r} has no canonical content; "
+                    f"C++ digest verification was requested and cannot be "
+                    f"skipped"
+                )
+            verifier_passed = False
+            quarantined_unaudited = False
             if signature_digest_verifier is not None and canonical:
                 try:
                     verified_hex = signature_digest_verifier(canonical)
+                except sc.UnauditedSignatureDomain as exc:
+                    if unsupported_signature_policy == "error":
+                        raise RecordError(
+                            f"signature {signature_hex!r} is outside the audited "
+                            "signature domain"
+                        ) from exc
+                    quarantined_unaudited = True
                 except Exception as exc:
                     raise RecordError(
                         f"signature {signature_hex!r} digest verifier failed"
                     ) from exc
-                if (
+                if not quarantined_unaudited and (
                     not isinstance(verified_hex, str)
                     or len(verified_hex) != 32
                     or any(c not in "0123456789abcdefABCDEF" for c in verified_hex)
@@ -1308,14 +1448,28 @@ def load_measurements(
                         f"signature {signature_hex!r} digest verifier returned "
                         f"invalid digest {verified_hex!r}"
                     )
-                if verified_hex.lower() != signature_hex.lower():
+                if not quarantined_unaudited and verified_hex.lower() != signature_hex.lower():
                     raise RecordError(
                         f"signature {signature_hex!r} does not match the digest "
                         f"independently computed by the supplied verifier "
                         f"({verified_hex!r})"
                     )
+                verifier_passed = not quarantined_unaudited
             if signature_hex in signature_cache:
-                return signature_cache[signature_hex]
+                if (
+                    canonical
+                    and signature_hex in signature_seen_canonical
+                    and canonical != signature_seen_canonical[signature_hex]
+                ):
+                    raise RecordError(
+                        f"signature {signature_hex!r} was supplied with different "
+                        f"canonical content earlier in this same load -- a digest "
+                        f"must correspond to exactly one canonical shape; refusing "
+                        f"to trust either as authoritative"
+                    )
+                return _ResolvedSignature(
+                    signature_cache[signature_hex], verifier_passed, quarantined_unaudited,
+                )
             ned = canonical.get("ned", [0, 0, 0, 0])
             ne0 = canonical.get("ne0", [0, 0, 0, 0])
             has_ids = bool(int(canonical.get("flags", 0)) & (1 << 3))
@@ -1374,8 +1528,10 @@ def load_measurements(
                     ),
                 )
                 signature_id = cursor.lastrowid
+            if canonical:
+                signature_seen_canonical[signature_hex] = canonical
             signature_cache[signature_hex] = signature_id
-            return signature_id
+            return _ResolvedSignature(signature_id, verifier_passed, quarantined_unaudited)
 
         def _resolve_candidate(name: str) -> int:
             if name in candidate_cache:
@@ -1431,6 +1587,8 @@ def load_measurements(
         # Process each tuning result
         results_inserted = 0
         measurements_inserted = 0
+        winner_verifications = 0
+        quarantined_unsupported_winners = 0
 
         for result in results:
             hardware_id = _resolve_hardware(result)
@@ -1469,7 +1627,8 @@ def load_measurements(
                 "noisy": "GGML_HIP_REJECT_NOISY",
             }
 
-            signature_id = _resolve_signature(result)
+            resolved_signature = _resolve_signature(result)
+            signature_id = resolved_signature.signature_id
 
             # Insert measurement rows for each candidate.
             #
@@ -1569,6 +1728,20 @@ def load_measurements(
                 )
                 is_native = 1 if winner_name == native_name else 0
 
+                if require_strengthened_ingest and signature_id is None:
+                    # This winner has no signature linkage at all -- HI125's
+                    # per-row canonical/digest verification can never run
+                    # for it (there is nothing to verify), so it can never
+                    # be attested. A caller that required the strengthened
+                    # guarantee for this whole load must not silently
+                    # commit a winner that structurally cannot ever satisfy
+                    # it.
+                    raise RecordError(
+                        f"load_measurements: require_strengthened_ingest=True but winner "
+                        f"{winner_name!r} (dispatch={dispatch_hex!r}) has no signature_id -- "
+                        f"this row cannot be C++-verified and cannot be attested"
+                    )
+
                 # Find winner's measurement for median/p95
                 winner_median = None
                 winner_p95 = None
@@ -1584,7 +1757,7 @@ def load_measurements(
 
                 dispatch_bytes = bytes.fromhex(dispatch_hex)
 
-                connection.execute(
+                winner_cursor = connection.execute(
                     "INSERT OR REPLACE INTO winner (build_id, hardware_id, signature_id, run_id, objective, "
                     "dispatch_digest, candidate_id, stable_name, "
                     "native_stable_name, is_native, improvement_pct, "
@@ -1620,6 +1793,20 @@ def load_measurements(
                     ),
                 )
                 results_inserted += 1
+                # HI127: INSERT OR REPLACE gives a genuinely NEW winner rowid
+                # on a conflict (winner_id is not in the column list above),
+                # so this lastrowid always identifies exactly the row THIS
+                # load just wrote -- never a stale rowid from a prior,
+                # possibly-unverified insert that a naive (build,signature)
+                # key would have conflated with this one.
+                if strengthened_ingest and signature_id is not None:
+                    if resolved_signature.verifier_passed:
+                        verification_state.record_winner_verification(
+                            connection, winner_id=winner_cursor.lastrowid,
+                        )
+                        winner_verifications += 1
+                    elif resolved_signature.quarantined_unaudited:
+                        quarantined_unsupported_winners += 1
 
         connection.commit()
         return {
@@ -1627,6 +1814,8 @@ def load_measurements(
             "results": results_inserted,
             "measurements": measurements_inserted,
             "candidates": len(candidate_cache),
+            "winner_verifications": winner_verifications,
+            "quarantined_unsupported_winners": quarantined_unsupported_winners,
         }
     finally:
         connection.close()

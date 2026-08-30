@@ -1,6 +1,6 @@
 # BigCherry tools
 
-Normative map: [`docs/reference/TOOLING.md`](../docs/reference/TOOLING.md).
+Normative map: [`docs/reference/tooling/TOOLING.md`](../docs/reference/tooling/TOOLING.md).
 
 Canonical maintained domains are under `tools/bigcherry/`: `release`, `source`,
 `build`, `experiment`, `patch`, `campaign`, `tuning`, `core`, and `analysis`.

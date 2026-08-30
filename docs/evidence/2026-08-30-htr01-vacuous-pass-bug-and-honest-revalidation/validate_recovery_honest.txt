@@ -1,0 +1,69 @@
+loaded 20 promoted non-native signature assignments
+  7ab8d05d0904... current=mmvq:q8_0:w5:nw6:rpb2:sk0:v1 alternatives=8
+  538f80a582af... current=mmvq:q8_0:w5:nw8:rpb2:sk0:v1 alternatives=12
+  51fc13f058f6... current=mmvq:q8_0:w5:nw8:rpb1:sk0:v1 alternatives=3
+  915d0567ec01... current=mmvq:q8_0:w1:nw1:rpb2:sk0:v1 alternatives=10
+  f64fad776edb... current=mmvq:q8_0:w5:nw4:rpb4:sk1:v1 alternatives=7
+
+capturing native traces + initial candidate-cache gate result (reproducing the original hard_fail)...
+  54 winner(s) across generations [0], 21 distinct candidate(s), 565 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+initial verdict (should reproduce hard_fail): hard_fail
+{
+  "hard_fail": true,
+  "needs_throughput_adjudication": false,
+  "vectors": [
+    {
+      "name": "hi141-qwen38-27b-mtp-4096-v1",
+      "verdict": "hard_fail",
+      "native_draft": [
+        107,
+        100
+      ],
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "first_output_divergence": 1
+    }
+  ]
+}
+
+running bounded recovery search (budget=24)...
+  54 winner(s) across generations [0], 13 distinct candidate(s), 335 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 12 distinct candidate(s), 304 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 8 distinct candidate(s), 188 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 8 distinct candidate(s), 190 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 5 distinct candidate(s), 103 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 6 distinct candidate(s), 132 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 4 distinct candidate(s), 74 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 4 distinct candidate(s), 74 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 20 distinct candidate(s), 536 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 21 distinct candidate(s), 565 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 20 distinct candidate(s), 536 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+  54 winner(s) across generations [0], 20 distinct candidate(s), 536 string byte(s)
+  manifest 61085ef07ca296a05d30aeba2952745d
+
+########## RECOVERY RESULT ##########
+published: True
+stop_reason: full-corpus validation passed
+evaluations_used: 12
+cache_path: /mnt/vault/experiments/hi141-recovery-validation/recovery-candidate.cache
+final signatures reassigned to an alternative candidate: 1
+    cd3b5f5bd371... -> mmvq:native:v1
+final signatures forced to native: 0
+retune_recommendations: 1
+    cd3b5f5bd371... reason=alternatives_exhausted exhausted=5
+
+SUMMARY: of 20 originally-promoted non-native signatures, 19 were never touched (already clean), 1 were reassigned to a real alternative candidate, 0 fell back to native.

@@ -9,10 +9,11 @@ still hand-edit a patch module's STATE with no machine check that matching
 evidence exists, or that it still matches the CURRENT patch implementation.
 
 This module is the tracked evidence contract itself: a JSON record per
-patch, one file per patch under docs/reference/patch-validation-evidence/
-(tracked in git -- the authority must be resolvable from the repository
-alone, not from artifacts/, which is gitignored, or the external ledger,
-which offline pytest/CI/a fresh checkout cannot resolve).
+patch, stored with packaged patches under their ``evidence/`` directory and
+with the legacy baseline under ``patches/_validation/``. The authority must
+be resolvable from the repository alone, not from ``artifacts/``, which is
+gitignored, or the external ledger, which offline pytest/CI/a fresh checkout
+cannot resolve.
 
 Design: GPT (gpt-auto-agent, req_487497b28d444d50), applied per plan item
 HI83. Deliberately does NOT wire hard enforcement into any real build/apply
@@ -195,7 +196,21 @@ def _validate_build_identity(role: str, value: object) -> dict[str, object]:
 
 
 def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
-    return Path(root or paths.DOCS / "reference" / "patch-validation-evidence") / f"{patch_id}.json"
+    if root is not None:
+        return Path(root) / f"{patch_id}.json"
+    # Package-local evidence follows the patch's own identity. Legacy flat
+    # callers use the central quarantine directory until their package is
+    # migrated; the production tree is package-only after PA18.
+    try:
+        from . import registry as patch_registry
+        descriptor = patch_registry.load_registry(paths.PATCHES).get(patch_id)
+    except (OSError, ValueError, KeyError):
+        descriptor = None
+    if descriptor is not None and descriptor.package_root is not None:
+        return (
+            paths.PATCHES / descriptor.package_root / "evidence" / "validation.json"
+        )
+    return paths.PATCHES / "_validation" / f"{patch_id}.json"
 
 
 def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
@@ -519,7 +534,7 @@ def _record_qualifies(
 
 
 def _legacy_hashes(root: Path | None) -> dict[str, str]:
-    path = Path(root or paths.DOCS / "reference" / "patch-validation-evidence") / "legacy-baseline.json"
+    path = Path(root or paths.PATCHES / "_validation") / "legacy-baseline.json"
     if not path.is_file():
         return {}
     try:
@@ -632,6 +647,6 @@ def generate_legacy_baseline(*, root: Path | None = None) -> Path:
             for module in modules if module.state == "validated"
         },
     }
-    output = Path(root or paths.DOCS / "reference" / "patch-validation-evidence") / "legacy-baseline.json"
+    output = Path(root or paths.PATCHES / "_validation") / "legacy-baseline.json"
     _atomic_json(output, payload)
     return output

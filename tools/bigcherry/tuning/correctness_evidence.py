@@ -32,8 +32,8 @@ GPT's suggestion of `GGML_HIP_FORCE_CANDIDATE=native` does not work):
 So: N = GGML_HIP_DISPATCH_MODE=native (no force var, and none is needed).
     C = GGML_HIP_DISPATCH_MODE=replay + GGML_HIP_FORCE_CANDIDATE=<name>.
 
-Requires patches/1222_hi67_deterministic_test_backend_ops_seed.py and
-patches/1223_hi67_machine_readable_correctness_metrics.py to be applied to
+Requires patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py and
+patches/1223_hi67_machine_readable_correctness_metrics/patch.py to be applied to
 the binary under test -- BIGCHERRY_TEST_DETERMINISTIC_SEED, BIGCHERRY_REF_
 DIGEST and BIGCHERRY_CORRECTNESS_METRIC do not exist without them.
 """
@@ -155,7 +155,7 @@ def run_test_backend_ops(
         raise EvidenceError(
             "seed must be nonzero -- 0 leaves BIGCHERRY_TEST_DETERMINISTIC_SEED "
             "unset in the patched test-backend-ops, disabling deterministic mode "
-            "entirely (see patches/1222_hi67_deterministic_test_backend_ops_seed.py)"
+            "entirely (see patches/1222_hi67_deterministic_test_backend_ops_seed/patch.py)"
         )
     run_env = dict(env or {})
     run_env["BIGCHERRY_TEST_DETERMINISTIC_SEED"] = str(seed)
@@ -193,6 +193,27 @@ def find_metric_for_tensor(stderr_text: str, tensor_name: str) -> CorrectnessMet
 
 
 @dataclass(frozen=True)
+class NativeSeedEvidence:
+    """HTR01 (2026-08-30, adversarially designed with GPT, session
+    ses_330ae3c055084f38): the forced-native half of one seed's evidence,
+    isolated so it can be REUSED across multiple candidates for the same
+    (binary, signature, seed) -- recovery.py's whole cost-amortization
+    story ("first alternative for a signature pays for native + candidate;
+    every later alternative for the SAME signature pays candidate only")
+    depends on this being a real, separate, cacheable unit rather than
+    baked into one seed-evidence-per-candidate call."""
+    seed: int
+    reference_digest: str
+    e_n_nmse: float
+    max_abs_native: float
+    threshold_t: float
+    native_execution_status: str
+    native_output_digest: str | None
+    reference_output_digest: str | None
+    output_nels: int | None
+
+
+@dataclass(frozen=True)
 class SeedEvidence:
     seed: int
     reference_digest: str
@@ -210,52 +231,81 @@ class SeedEvidence:
     # with no independent check that the value matched what the binary under
     # test actually used.
     threshold_t: float
+    # schema 9 / HTR01 (2026-08-30): exact backend OUTPUT byte digests
+    # (HI83's backend1_digest/backend2_digest, already emitted by the
+    # patched producer but previously discarded here) -- enables exact
+    # numerical-family clustering ("these candidates produce IDENTICAL
+    # bytes"), strictly stronger than matching NMSE alone. None when the
+    # producer predates the HI83 digest extension.
+    native_output_digest: str | None = None
+    candidate_output_digest: str | None = None
+    reference_output_digest: str | None = None
+    output_nels: int | None = None
 
 
-def collect_seed_evidence(
+def collect_native_seed_evidence(
     binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
     moe_glu_file: Path | None = None,
-    target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
+    target_tensor: str, digest_tensor: str | None = None,
     seed: int, env: dict[str, str] | None = None, runner=subprocess.run,
-) -> SeedEvidence:
-    """Run test-backend-ops twice for one seed (forced-native, forced-
-    candidate) and reduce both runs to one SeedEvidence row.
-
-    ``target_tensor`` is the tensor BIGCHERRY_CORRECTNESS_METRIC is read
-    from -- the actual output being compared. ``digest_tensor`` (defaults to
-    ``target_tensor`` if not given, matching the original -p/op_filter
-    behavior) is the tensor BIGCHERRY_REF_DIGEST is read from, to prove both
-    runs saw the SAME reference input -- these are the same tensor for a
-    registered test-backend-ops case (which happens to also pre-fill its
-    named destination tensor with random data, incidentally giving it a
-    digest too), but NOT for a --test-file/test_generic_op case (HI80,
-    2026-08-23 real-hardware finding): its destination tensor is never
-    pre-filled, so it never gets a BIGCHERRY_REF_DIGEST line at all, even
-    though its BIGCHERRY_CORRECTNESS_METRIC line fires correctly. Passing
-    a real leaf tensor name (e.g. "leaf_0") as digest_tensor there is the
-    fix -- it is a genuine random-input tensor and always gets digested.
-
-    Fails closed: a missing digest/metric line, or a digest mismatch between
-    the two runs, raises EvidenceError rather than silently producing a
-    partial or unproven row (RV77 Q1's hard gate -- a forced-native and a
-    forced-candidate invocation are only a valid joint measurement if both
-    actually compared against the same CPU-reference input). A nonzero exit
-    code alone does not raise -- it is recorded as execution_status='failed'
-    so the caller (aggregate_seed_evidence) can fail closed on ANY failed
-    seed rather than only ones that also happened to omit a digest line."""
+) -> NativeSeedEvidence:
+    """The forced-native half of collect_seed_evidence's original two-run
+    logic, isolated for reuse. See collect_seed_evidence's docstring for
+    the digest_tensor/target_tensor distinction, unchanged here."""
     digest_tensor = digest_tensor if digest_tensor is not None else target_tensor
     native_run = run_test_backend_ops(
         binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
         seed=seed, dispatch_mode="native",
         forced_candidate=None, env=env, runner=runner,
     )
+    native_status = "ok" if native_run.returncode == 0 else "failed"
+    native_digest = find_digest_for_tensor(native_run.stderr, digest_tensor)
+    if native_digest is None:
+        raise EvidenceError(
+            f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
+            f"(native run) -- is the binary built with patches/1222_hi67_"
+            f"deterministic_test_backend_ops_seed/patch.py and patches/1223_hi67_"
+            f"machine_readable_correctness_metrics/patch.py applied?"
+        )
+    native_metric = find_metric_for_tensor(native_run.stderr, target_tensor)
+    if native_status == "ok" and native_metric is None:
+        raise EvidenceError(
+            f"seed {seed}: native run exited 0 but produced no "
+            f"BIGCHERRY_CORRECTNESS_METRIC for tensor {target_tensor!r}"
+        )
+    return NativeSeedEvidence(
+        seed=seed,
+        reference_digest=native_digest.digest,
+        e_n_nmse=native_metric.err if native_metric else float("nan"),
+        max_abs_native=native_metric.max_abs if native_metric else float("nan"),
+        threshold_t=native_metric.threshold if native_metric else float("nan"),
+        native_execution_status=native_status,
+        native_output_digest=native_metric.backend1_digest if native_metric else None,
+        reference_output_digest=native_metric.backend2_digest if native_metric else None,
+        output_nels=native_metric.n if native_metric else None,
+    )
+
+
+def collect_candidate_seed_evidence(
+    binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    moe_glu_file: Path | None = None,
+    target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
+    seed: int, native: NativeSeedEvidence, env: dict[str, str] | None = None,
+    runner=subprocess.run,
+) -> SeedEvidence:
+    """The forced-candidate half of collect_seed_evidence's original logic,
+    reusing an ALREADY-COLLECTED ``native`` (HTR01: this is what lets
+    recovery.py qualify a second, third, ... alternative for the SAME
+    signature without re-running the native leg every time). Fails closed
+    exactly as collect_seed_evidence always did: a missing digest/metric,
+    a digest mismatch against the given native, or a threshold mismatch
+    raises EvidenceError rather than silently producing a partial row."""
+    digest_tensor = digest_tensor if digest_tensor is not None else target_tensor
     candidate_run = run_test_backend_ops(
         binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
         seed=seed, dispatch_mode="replay",
         forced_candidate=candidate_stable_name, env=env, runner=runner,
     )
-
-    native_status = "ok" if native_run.returncode == 0 else "failed"
     candidate_status = "ok" if candidate_run.returncode == 0 else "failed"
 
     # HI106: GGML_HIP_FORCE_CANDIDATE_STRICT aborts (SIGABRT) when the named
@@ -276,58 +326,86 @@ def collect_seed_evidence(
             f"measurements being evidenced (this is not a correctness failure)."
         )
 
-    native_digest = find_digest_for_tensor(native_run.stderr, digest_tensor)
     candidate_digest = find_digest_for_tensor(candidate_run.stderr, digest_tensor)
-    if native_digest is None or candidate_digest is None:
+    if candidate_digest is None:
         raise EvidenceError(
             f"seed {seed}: missing BIGCHERRY_REF_DIGEST for tensor {digest_tensor!r} "
-            f"(native found={native_digest is not None}, "
-            f"candidate found={candidate_digest is not None}) -- is the binary "
-            f"built with patches/1222_hi67_deterministic_test_backend_ops_seed.py "
-            f"and patches/1223_hi67_machine_readable_correctness_metrics.py applied?"
+            f"(candidate run) -- is the binary built with patches/1222_hi67_"
+            f"deterministic_test_backend_ops_seed/patch.py and patches/1223_hi67_"
+            f"machine_readable_correctness_metrics/patch.py applied?"
         )
-    if native_digest.digest != candidate_digest.digest:
+    if native.reference_digest != candidate_digest.digest:
         raise EvidenceError(
             f"seed {seed}: native and candidate runs saw DIFFERENT CPU-reference "
             f"input for tensor {digest_tensor!r} (native digest="
-            f"{native_digest.digest}, candidate digest={candidate_digest.digest}) "
+            f"{native.reference_digest}, candidate digest={candidate_digest.digest}) "
             f"-- the comparison is invalid, not just imprecise. Check that both "
             f"runs exercise the identical op filter in the identical operand "
             f"order (RV77 Q1's hard gate)."
         )
 
-    native_metric = find_metric_for_tensor(native_run.stderr, target_tensor)
     candidate_metric = find_metric_for_tensor(candidate_run.stderr, target_tensor)
-    if native_status == "ok" and native_metric is None:
-        raise EvidenceError(
-            f"seed {seed}: native run exited 0 but produced no "
-            f"BIGCHERRY_CORRECTNESS_METRIC for tensor {target_tensor!r}"
-        )
     if candidate_status == "ok" and candidate_metric is None:
         raise EvidenceError(
             f"seed {seed}: candidate run exited 0 but produced no "
             f"BIGCHERRY_CORRECTNESS_METRIC for tensor {target_tensor!r}"
         )
-    if native_metric is not None and candidate_metric is not None \
-            and native_metric.threshold != candidate_metric.threshold:
+    if candidate_metric is not None and native.threshold_t != candidate_metric.threshold:
         raise EvidenceError(
             f"seed {seed}: native and candidate runs report DIFFERENT upstream "
             f"correctness thresholds for tensor {target_tensor!r} (native="
-            f"{native_metric.threshold!r}, candidate={candidate_metric.threshold!r}) "
+            f"{native.threshold_t!r}, candidate={candidate_metric.threshold!r}) "
             f"-- they must be comparing the same operation under the same "
             f"upstream test-backend-ops tolerance table."
         )
 
     return SeedEvidence(
         seed=seed,
-        reference_digest=native_digest.digest,
-        e_n_nmse=native_metric.err if native_metric else float("nan"),
+        reference_digest=native.reference_digest,
+        e_n_nmse=native.e_n_nmse,
         e_c_nmse=candidate_metric.err if candidate_metric else float("nan"),
-        max_abs_native=native_metric.max_abs if native_metric else float("nan"),
+        max_abs_native=native.max_abs_native,
         max_abs_candidate=candidate_metric.max_abs if candidate_metric else float("nan"),
-        native_execution_status=native_status,
+        native_execution_status=native.native_execution_status,
         candidate_execution_status=candidate_status,
-        threshold_t=native_metric.threshold if native_metric else float("nan"),
+        threshold_t=native.threshold_t,
+        native_output_digest=native.native_output_digest,
+        candidate_output_digest=candidate_metric.backend1_digest if candidate_metric else None,
+        reference_output_digest=native.reference_output_digest,
+        output_nels=native.output_nels,
+    )
+
+
+def collect_seed_evidence(
+    binary: Path, *, op_filter: str | None = None, test_file: Path | None = None,
+    moe_glu_file: Path | None = None,
+    target_tensor: str, digest_tensor: str | None = None, candidate_stable_name: str,
+    seed: int, env: dict[str, str] | None = None, runner=subprocess.run,
+    native: NativeSeedEvidence | None = None,
+) -> SeedEvidence:
+    """Run test-backend-ops for one seed (forced-native unless ``native`` is
+    already given, plus forced-candidate) and reduce to one SeedEvidence
+    row. Thin wrapper over collect_native_seed_evidence +
+    collect_candidate_seed_evidence preserving this function's original
+    two-run-every-call behavior for existing callers; pass ``native``
+    explicitly (HTR01's recovery.py does) to skip re-running the native
+    leg when it was already collected for this exact (binary, signature,
+    seed).
+
+    See collect_native_seed_evidence/collect_candidate_seed_evidence for
+    the ``digest_tensor``/fail-closed contract details, unchanged from
+    this function's original single-pass implementation."""
+    if native is None:
+        native = collect_native_seed_evidence(
+            binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
+            target_tensor=target_tensor, digest_tensor=digest_tensor,
+            seed=seed, env=env, runner=runner,
+        )
+    return collect_candidate_seed_evidence(
+        binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
+        target_tensor=target_tensor, digest_tensor=digest_tensor,
+        candidate_stable_name=candidate_stable_name, seed=seed, native=native,
+        env=env, runner=runner,
     )
 
 
@@ -426,6 +504,7 @@ def generate_correctness_evidence(
     headroom_fraction: float = DEFAULT_HEADROOM_FRACTION,
     contract_version: str = CONTRACT_VERSION,
     env: dict[str, str] | None = None, runner=subprocess.run,
+    native_seeds: dict[int, NativeSeedEvidence] | None = None,
 ) -> EvidenceAggregate:
     """End-to-end: collect per-seed evidence for every seed, then aggregate.
     ``seeds`` should come from a versioned seed-set policy the caller keeps
@@ -435,15 +514,26 @@ def generate_correctness_evidence(
     (build_id, hardware_id, signature_id, candidate_id, contract_version)
     additionally forecloses at the storage layer.
 
+    ``native_seeds`` (HTR01, 2026-08-30): an optional ``{seed:
+    NativeSeedEvidence}`` map of ALREADY-COLLECTED native baselines for this
+    exact (binary, signature) -- a caller evidencing a SECOND, THIRD, ...
+    alternative candidate for the same signature (recovery.py's lazy
+    qualification path) passes the map it built while evidencing the
+    first, so this call only re-runs the candidate leg per seed, not
+    native+candidate. A seed missing from the map still gets its native
+    leg collected fresh.
+
     No threshold_t parameter (HI67 threshold-authority fix): T is derived
     entirely from test-backend-ops' own emitted threshold, via
     aggregate_seed_evidence()."""
+    native_seeds = native_seeds or {}
     seed_rows = [
         collect_seed_evidence(
             binary, op_filter=op_filter, test_file=test_file, moe_glu_file=moe_glu_file,
             target_tensor=target_tensor,
             digest_tensor=digest_tensor,
             candidate_stable_name=candidate_stable_name, seed=seed, env=env, runner=runner,
+            native=native_seeds.get(seed),
         )
         for seed in seeds
     ]
@@ -452,15 +542,30 @@ def generate_correctness_evidence(
     )
 
 
+@dataclass(frozen=True)
+class EvidenceOrigin:
+    """HTR01 / schema 9 (2026-08-30): WHY a correctness_evidence row exists
+    -- see correctness_evidence_origin's own schema comment. ``reason`` must
+    be one of the CHECK constraint's known values; an unrecognized reason
+    fails at INSERT time (sqlite3.IntegrityError), not silently."""
+    reason: str  # "promotion_winner" | "recovery_alternative" | "manual_analysis"
+    campaign_run_id: str | None = None
+    recovery_run_id: str | None = None
+
+
 def write_correctness_evidence(
     connection: sqlite3.Connection, *, build_id: int, hardware_id: int, signature_id: int,
     candidate_id: int, native_candidate_id: int, aggregate: EvidenceAggregate,
-    tool_version: str,
+    tool_version: str, origin: EvidenceOrigin | None = None,
 ) -> int:
     """Insert one correctness_evidence row plus its correctness_evidence_seed
-    children. Raises sqlite3.IntegrityError (uncaught -- a caller bug, not
-    something to silently overwrite) if this exact identity+contract_version
-    already has evidence, per the schema's UNIQUE constraint."""
+    children (and, if ``origin`` is given, one correctness_evidence_origin
+    row -- schema 9/HTR01; omitted entirely, not NULL-reasoned, when the
+    caller doesn't supply one, matching the migration's "no row means
+    predates origin tracking" contract). Raises sqlite3.IntegrityError
+    (uncaught -- a caller bug, not something to silently overwrite) if this
+    exact identity+contract_version already has evidence, per the schema's
+    UNIQUE constraint."""
     cursor = connection.execute(
         "INSERT INTO correctness_evidence "
         "(build_id, hardware_id, signature_id, candidate_id, native_candidate_id, "
@@ -480,12 +585,22 @@ def write_correctness_evidence(
             "INSERT INTO correctness_evidence_seed "
             "(correctness_evidence_id, seed, reference_digest, e_n_nmse, e_c_nmse, "
             "max_abs_native, max_abs_candidate, native_execution_status, "
-            "candidate_execution_status, threshold_t) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "candidate_execution_status, threshold_t, native_output_digest, "
+            "candidate_output_digest, reference_output_digest, output_nels) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 evidence_id, row.seed, row.reference_digest, row.e_n_nmse, row.e_c_nmse,
                 row.max_abs_native, row.max_abs_candidate, row.native_execution_status,
-                row.candidate_execution_status, row.threshold_t,
+                row.candidate_execution_status, row.threshold_t, row.native_output_digest,
+                row.candidate_output_digest, row.reference_output_digest, row.output_nels,
             ),
+        )
+    if origin is not None:
+        connection.execute(
+            "INSERT INTO correctness_evidence_origin "
+            "(correctness_evidence_id, reason, campaign_run_id, recovery_run_id) "
+            "VALUES (?, ?, ?, ?)",
+            (evidence_id, origin.reason, origin.campaign_run_id, origin.recovery_run_id),
         )
     connection.commit()
     return evidence_id

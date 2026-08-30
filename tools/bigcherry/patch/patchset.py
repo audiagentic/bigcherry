@@ -264,6 +264,7 @@ def resolve_exact(
     directory: Path | None = None,
     required_state: str | None = None,
     allow_rejected: bool = False,
+    context_ids: frozenset[str] = frozenset(),
 ) -> ResolvedPatchSet:
     """Resolve a complete explicit module set without adding dependencies.
 
@@ -271,6 +272,18 @@ def resolve_exact(
     invalid/rejected states, duplicate IDs, missing explicit requires, and
     internal conflicts ALL fail closed. The returned module order is a true
     topological order (``topological_order``), not a numeric re-sort.
+
+    ``context_ids`` (HI134): patch IDs considered already-selected for the
+    purpose of the REQUIRES/conflicts check ONLY -- e.g. an experiment
+    overlay's own patch whose REQUIRES is already satisfied by the base
+    patch set it builds on top of. They are never added to the returned
+    module set or its ordering; a caller that also wants them present must
+    still name them in ``patch_ids`` (or merge the two sets itself), exactly
+    as before. This exists because the base set and an experiment overlay
+    are resolved as two separate exact selections (campaign/resolution.py),
+    so an experiment patch's REQUIRES on a base-set module previously had no
+    way to be satisfied without also re-adding that module to the overlay
+    itself -- which then collided with the overlay/base disjointness check.
     """
     modules = {module.patch_id: module for module in catalog(directory)}
     ids = tuple(patch_ids)
@@ -290,7 +303,7 @@ def resolve_exact(
                 f"{module.patch_id}: state {module.state!r} does not satisfy "
                 f"required state {required_state!r}"
             )
-    selected_ids = {module.patch_id for module in selected}
+    selected_ids = {module.patch_id for module in selected} | context_ids
     for module in selected:
         missing = sorted(set(module.requires) - selected_ids)
         if missing:

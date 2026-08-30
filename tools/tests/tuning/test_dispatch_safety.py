@@ -13,8 +13,8 @@ RECORD = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.cpp"
 RECORD_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-record.h"
 TUNER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cu"
 TUNER_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-tuner.cuh"
-DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook.py"
-MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j.py"
+DISPATCH_PATCH = ROOT / "patches" / "0200_dispatch_hook" / "patch.py"
+MMQ_PATCH = ROOT / "patches" / "0300_mmq_forced_j" / "patch.py"
 SMI = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.cpp"
 SMI_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-smi.h"
 SIGNATURE = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-signature.cpp"
@@ -23,7 +23,7 @@ TYPES_HEADER = ROOT / "src" / "ggml" / "src" / "ggml-cuda" / "hip-autotune-types
 
 class TestDispatchSafetyContracts(unittest.TestCase):
     def test_workspace_accounting_uses_requested_size_and_preserves_pool_size(self):
-        patch = (ROOT / "patches" / "0900_pool_workspace_metrics.py").read_text(
+        patch = (ROOT / "patches" / "0900_pool_workspace_metrics" / "patch.py").read_text(
             encoding="utf-8"
         )
 
@@ -279,7 +279,7 @@ class TestDispatchSafetyContracts(unittest.TestCase):
     def test_blas_effective_call_api_covers_native_branches_without_dispatch_changes(
         self,
     ):
-        patch = (ROOT / "patches" / "0200_dispatch_hook.py").read_text(encoding="utf-8")
+        patch = (ROOT / "patches" / "0200_dispatch_hook" / "patch.py").read_text(encoding="utf-8")
         record = RECORD.read_text(encoding="utf-8")
 
         for api in (
@@ -1348,7 +1348,7 @@ class TestHi118FusionFieldPresenceFlags(unittest.TestCase):
     needed, not new ne/type fields, and no schema-version bump. dst_gate is
     deliberately NOT tracked: real Brutus build confirmed it only exists on
     ggml_cuda_mm_fusion_args_host under the experimental, non-default RD12
-    patch (patches/rd/1205_rd12_paired_mmvq_dual_output -- corrected
+    patch (patches/1205_rd12_paired_mmvq_dual_output -- corrected
     2026-08-25, initially misattributed to 1207) -- referencing it
     unconditionally broke a real hardware build without that patch applied."""
 

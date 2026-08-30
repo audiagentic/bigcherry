@@ -5,18 +5,63 @@ from __future__ import annotations
 import json
 import sys
 from argparse import Namespace
+from pathlib import Path
 
 from ..core import paths
 from .. import recipes
 from ..patch import catalog as patch_catalog
+from ..patch import disposition as patch_disposition
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
+from ..patch import rebase as patch_rebase
+
+DISPOSITIONS_DIR = paths.ARTIFACTS / "pin-bump" / "dispositions"
 
 
 def cmd_apply(args: Namespace) -> int:
     from .. import __main__ as legacy
 
     root = paths.llama_root(args.llama_root)
+    report_path = getattr(args, "rebase_report", None)
+    known_good = bool(getattr(args, "known_good", False))
+
+    if bool(report_path) != known_good:
+        print(
+            "apply: --rebase-report PATH and --known-good must be supplied together",
+            file=sys.stderr,
+        )
+        return 2
+
+    if report_path:
+        if (
+            getattr(args, "recipe", None)
+            or getattr(args, "groups", None) is not None
+            or getattr(args, "states", None) is not None
+        ):
+            print(
+                "apply: --rebase-report owns the exact logical selection; "
+                "do not combine it with --recipe/--groups/--states",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            result = patch_rebase.apply_known_good(
+                root, Path(report_path),
+                force=args.force,
+                dry_run=args.dry_run,
+            )
+        except (patch_rebase.RebaseCheckError, OSError, ValueError) as exc:
+            print(f"apply: {exc}", file=sys.stderr)
+            return 2
+
+        selected = len(result.selected_patch_ids)
+        applied = len(result.known_good_patch_ids)
+        print(f"selection: rebase-report={report_path} known-good={applied}/{selected}")
+        if result.partial:
+            print("  NOTE: partial reconciliation apply; release stage not advanced")
+        print("  RESULT: " + ("PASS" if result.ok else "FAIL"))
+        return 0 if result.ok else 1
+
     try:
         groups, states, label = legacy._resolve_selection(args)
     except recipes.RecipeError as exc:
@@ -28,6 +73,31 @@ def cmd_apply(args: Namespace) -> int:
     print(f"selection: {label}")
     print("  RESULT: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
+
+
+def cmd_patch_rebase_check(args: Namespace) -> int:
+    """PA16: revision-specific patch compatibility report. Observational --
+    never advances release stage, never mutates the vendor checkout."""
+    root = paths.llama_root(args.llama_root)
+    try:
+        report = patch_rebase.run_rebase_check(
+            root,
+            recipe_name=getattr(args, "recipe", None),
+            all_patches=bool(getattr(args, "all_patches", False)),
+            context_lines=args.context_lines,
+        )
+    except patch_rebase.RebaseCheckError as exc:
+        print(f"patch-rebase-check: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        patch_rebase.write_report(Path(args.json), report)
+
+    print(patch_rebase.render_report(report))
+    if args.json:
+        print(f"report: {args.json}")
+
+    return 1 if report["summary"]["reconciliation_required"] else 0
 
 
 def cmd_patches(args: Namespace) -> int:
@@ -185,6 +255,47 @@ def cmd_patch_lint(args: Namespace) -> int:
         for problem in problems:
             print(problem, file=sys.stderr)
     return 0 if not problems else 1
+
+
+def cmd_patch_disposition(args: Namespace) -> int:
+    """HI152: record/list/clear a revision-bound known_broken disposition
+    for a non-recipe patch -- see patch/disposition.py's module docstring.
+    Never a standing waiver: it stops applying the instant target_revision
+    or patch_digest changes."""
+    action = args.disposition_action
+    if action == "set":
+        record = patch_disposition.Disposition(
+            patch_id=args.patch_id, target_revision=args.revision,
+            patch_digest=args.digest, disposition="known_broken",
+            failure_status=args.failure_status, reason=args.reason,
+            owner=args.owner, tracking_item=args.tracking_item,
+        )
+        try:
+            path = patch_disposition.save_disposition(DISPOSITIONS_DIR, record)
+        except patch_disposition.DispositionError as exc:
+            print(f"patch-disposition: {exc}", file=sys.stderr)
+            return 2
+        print(f"disposition recorded: {path}")
+        return 0
+    if action == "clear":
+        removed = patch_disposition.clear_disposition(DISPOSITIONS_DIR, args.patch_id)
+        print(f"disposition cleared: {args.patch_id}" if removed
+              else f"no disposition on file for {args.patch_id}")
+        return 0
+    # action == "list"
+    records = patch_disposition.list_dispositions(DISPOSITIONS_DIR)
+    if args.json:
+        print(json.dumps(
+            {pid: r.__dict__ for pid, r in sorted(records.items())}, indent=2, sort_keys=True,
+        ))
+        return 0
+    if not records:
+        print("no dispositions on file")
+        return 0
+    for pid, record in sorted(records.items()):
+        print(f"{pid}: revision={record.target_revision[:12]} digest={record.patch_digest[:12]} "
+              f"owner={record.owner} tracking_item={record.tracking_item} reason={record.reason!r}")
+    return 0
 
 
 def cmd_patch_verify_evidence(args: Namespace) -> int:

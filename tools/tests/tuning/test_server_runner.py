@@ -131,6 +131,26 @@ class ServerRunnerFailureTests(unittest.TestCase):
             with self.assertRaises(ServerError):
                 runner.wait_healthy(timeout_s=2)
 
+    def test_context_manager_shuts_down_process_when_wait_healthy_raises(self):
+        # HI143 (gpt review, 2026-08-29): __enter__ used to call launch()
+        # then wait_healthy() with no cleanup -- a health-check failure
+        # left the just-launched process (and its real GPU allocation)
+        # running forever, since __exit__ is never invoked when __enter__
+        # itself raises. wait_healthy() is patched to fail immediately
+        # (rather than relying on its real default 180s timeout) so this
+        # test stays fast.
+        runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=1)
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        with (
+            patch("bigcherry.tuning.server_runner.subprocess.Popen", return_value=mock_proc),
+            patch.object(runner, "wait_healthy", side_effect=ServerError("never became healthy")),
+        ):
+            with self.assertRaises(ServerError):
+                with runner:
+                    pass  # never reached -- wait_healthy() raises first
+        mock_proc.wait.assert_called()
+
     def test_launch_twice_raises(self):
         runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=2)
         mock_proc = MagicMock()

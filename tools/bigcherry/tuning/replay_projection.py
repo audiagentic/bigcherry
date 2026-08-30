@@ -11,11 +11,20 @@ as they are today. The projected file is an ordinary measurements JSONL
 that `replay.build()` consumes completely unchanged.
 
 Filtering rule per result row, all of which must hold to retain a row:
-  * the row's own signature digest resolves to a real dispatch_db signature
-    row with parseable canonical content (an unresolvable signature is a
-    data problem, not a capability problem -- fails the whole projection,
-    not just that row, since it means this measurements/dispatch_db pairing
-    itself is suspect);
+  * (HI127, checked FIRST) the row resolves to the authoritative winner row
+    recorded against source_build_id (a forged/mismatched row is a hard
+    ProjectionError, unaffected by verification state) AND that exact
+    winner_id carries a current-profile winner_verification attestation --
+    an unattested but genuine row is instead an ordinary counted omission
+    (omitted_unverified_source) and never reaches any of the checks below,
+    so a genuine pre-HI127 row with unresolvable or malformed canonical
+    content is quarantined as unverified-source, not as a whole-projection
+    failure;
+  * for an attested row, its signature digest resolves to a real dispatch_db
+    signature row with parseable canonical content (an unresolvable
+    signature on an ATTESTED row is a data problem, not a capability
+    problem -- fails the whole projection, not just that row, since it
+    means this measurements/dispatch_db pairing itself is suspect);
   * hip_required_capabilities() does not raise UnsupportedSignatureDomain
     for that signature's canonical content;
   * the SOURCE build's verified, DB-attested producer_capabilities mask
@@ -46,6 +55,7 @@ from . import hip_capabilities as hc
 from . import inventory
 from . import replay as replay_module
 from . import signature_capabilities as sc
+from . import verification_state
 from .capabilities import CapabilityMask128, CapabilityMaskError
 from ..source.audit import git_revision
 
@@ -62,6 +72,7 @@ class ProjectionSummary:
     omitted_missing_target_capability: int
     omitted_unsupported_domain: int
     omitted_candidate_mismatch: int
+    omitted_unverified_source: int
 
 
 def _load_source_capabilities(
@@ -272,65 +283,14 @@ def _load_source_manifest(
 
 def _require_row_belongs_to_build(
     conn: sqlite3.Connection, *, source_build_id: int, row: dict[str, Any], signature_hex: str,
-) -> None:
-    """Prove that the artifact row is the exact DB-recorded winner identity.
-
-    A verified build-level capability attestation is not proof that any GIVEN
-    result row in the CURRENT artifact actually belongs to that build -- rows
-    could be edited, mixed in from another artifact, or otherwise not be the
-    ones the attestation covers.  Bind every identity-bearing field available
-    in the artifact to the authoritative winner row, including the winner's
-    candidate and native names.  The candidate join also makes sure the
-    winner's foreign key resolves to the candidate with that stable name in
-    this same build; a dispatch/signature membership check alone cannot prove
-    any of those claims.
-    """
-    dispatch_hex = row.get("dispatch")
-    if not isinstance(dispatch_hex, str):
-        raise ProjectionError(f"result row missing a valid dispatch digest: {row!r}")
-    hardware_hex = row.get("hardware")
-    if not isinstance(hardware_hex, str):
-        raise ProjectionError(f"result row missing a valid hardware digest: {row!r}")
-    winner_name = row.get("winner")
-    if not isinstance(winner_name, str):
-        raise ProjectionError(f"result row missing a valid winner: {row!r}")
-    native_name = row.get("native")
-    if not isinstance(native_name, str):
-        raise ProjectionError(f"result row missing a valid native candidate: {row!r}")
+) -> int:
     try:
-        dispatch_bytes = bytes.fromhex(dispatch_hex)
-        hardware_bytes = bytes.fromhex(hardware_hex)
-        signature_bytes = bytes.fromhex(signature_hex)
-    except ValueError as exc:
-        raise ProjectionError(f"result row contains a malformed identity digest: {row!r}") from exc
-    match = conn.execute(
-        "SELECT 1 "
-        "FROM measurement m "
-        "JOIN winner w ON w.build_id = m.build_id "
-        " AND w.hardware_id = m.hardware_id "
-        " AND w.signature_id = m.signature_id "
-        " AND w.dispatch_digest = m.dispatch_digest "
-        "JOIN hardware h ON h.hardware_id = w.hardware_id "
-        " AND h.hardware_digest = ? "
-        "JOIN signature s ON s.signature_id = w.signature_id "
-        " AND s.signature_digest = ? "
-        "JOIN candidate c ON c.candidate_id = w.candidate_id "
-        " AND c.build_id = w.build_id "
-        " AND c.stable_name = w.stable_name "
-        "WHERE w.build_id = ? "
-        " AND w.dispatch_digest = ? "
-        " AND w.stable_name = ? "
-        " AND w.native_stable_name = ?",
-        (hardware_bytes, signature_bytes, source_build_id, dispatch_bytes, winner_name, native_name),
-    ).fetchone()
-    if match is None:
-        raise ProjectionError(
-            f"result row identity (dispatch={dispatch_hex!r}, signature={signature_hex!r}, "
-            f"hardware={hardware_hex!r}, winner={winner_name!r}, native={native_name!r}) "
-            f"does not resolve to the authoritative winner recorded against "
-            f"build_id={source_build_id} -- this row cannot be proven to belong to the "
-            f"build whose capabilities were verified"
+        return verification_state.require_winner_row(
+            conn, row=row, signature_hex=signature_hex,
+            source_build_id=source_build_id,
         )
+    except verification_state.WinnerRowIdentityError as exc:
+        raise ProjectionError(str(exc)) from exc
 
 
 def _candidate_implementation_is_equivalent(
@@ -583,21 +543,37 @@ def project_measurements(
         omitted_missing_target = 0
         omitted_unsupported = 0
         omitted_candidate = 0
+        omitted_unverified = 0
 
         for row in results:
             examined += 1
             signature_hex = row.get("signature")
             if not isinstance(signature_hex, str):
                 raise ProjectionError(f"result row missing a valid signature digest: {row!r}")
-            _require_row_belongs_to_build(
+            winner_id = _require_row_belongs_to_build(
                 conn, source_build_id=source_build_id, row=row, signature_hex=signature_hex,
             )
+            # HI127: row-binding proved this row IS the authoritative winner
+            # recorded against source_build_id; now ask the separate question
+            # of whether that exact winner row was ever ingested through the
+            # HI125-strengthened path. A genuine pre-HI127 (unattested) row
+            # is an ordinary, expected omission -- never a ProjectionError,
+            # since raising here would treat "not yet re-attested" the same
+            # as "cannot be proven to belong to this build", which are not
+            # the same failure at all.
+            if not verification_state.is_winner_verified(conn, winner_id=winner_id):
+                omitted_unverified += 1
+                continue
             canonical = _load_canonical_signature(conn, signature_hex)
             try:
                 required = sc.hip_required_capabilities(canonical, vendor_root=vendor_root)
-            except sc.UnsupportedSignatureDomain:
+            except sc.UnauditedSignatureDomain:
                 omitted_unsupported += 1
                 continue
+            except sc.InvalidSignatureDomain as exc:
+                raise ProjectionError(
+                    f"source signature {signature_hex!r} is structurally invalid"
+                ) from exc
             if not source_caps.contains(required):
                 omitted_missing_producer += 1
                 continue
@@ -648,4 +624,5 @@ def project_measurements(
         omitted_missing_target_capability=omitted_missing_target,
         omitted_unsupported_domain=omitted_unsupported,
         omitted_candidate_mismatch=omitted_candidate,
+        omitted_unverified_source=omitted_unverified,
     )

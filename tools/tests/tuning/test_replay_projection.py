@@ -17,6 +17,7 @@ from bigcherry.tuning import catalog  # noqa: E402
 from bigcherry.tuning import dispatch_abi  # noqa: E402
 from bigcherry.tuning import replay as replay_module  # noqa: E402
 from bigcherry.tuning import replay_projection as rp  # noqa: E402
+from bigcherry.tuning import verification_state  # noqa: E402
 from bigcherry.source.audit import git_revision  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -210,7 +211,7 @@ class ProjectMeasurementsTests(unittest.TestCase):
                     candidate_id,
                 ),
             )
-            self.conn.execute(
+            winner_cursor = self.conn.execute(
                 "INSERT INTO winner (build_id, hardware_id, signature_id, objective, dispatch_digest, "
                 "candidate_id, stable_name, native_stable_name, is_native, improvement_pct, "
                 "median_us, p95_us) VALUES (?, ?, ?, 'latency', ?, ?, ?, ?, 1, 0.0, 1.0, 1.0)",
@@ -219,6 +220,13 @@ class ProjectMeasurementsTests(unittest.TestCase):
                     bytes.fromhex(replay_module.portable_tuning_key(hardware_hex, signature_hex)),
                     candidate_id, "mmvq:native:v1", "mmvq:native:v1",
                 ),
+            )
+            # HI127: this fixture's winner rows are the DEFAULT "already
+            # strengthened-ingest attested" case, since these tests exercise
+            # capability/candidate projection semantics, not HI127 itself --
+            # see WinnerVerificationGateTests below for the unattested case.
+            verification_state.record_winner_verification(
+                self.conn, winner_id=winner_cursor.lastrowid,
             )
         self.conn.commit()
 
@@ -760,9 +768,11 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
                 "manifest_hash": "aaaa",
                 "build_descriptor_hash": "desc-a",
             }
+            by_name = {"native": {"stable_name": "native", "source_class": "native_wrapper"}}
             with self.assertRaisesRegex(SystemExit, "not bound to the rest"):
                 replay_module._validate_correctness_gate(
-                    entries, dispatch_db, build_b, forged_provenance,
+                    entries, dispatch_db, by_name,
+                    source_build_id=build_b, source_provenance=forged_provenance,
                 )
 
     def test_source_build_id_matching_its_own_provenance_is_accepted(self):
@@ -784,8 +794,11 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
             # winner == native here, so the correctness gate never even
             # needs to resolve a binding -- this just proves a CORRECT
             # provenance tuple doesn't spuriously raise.
+            by_name = {"mmvq:native:v1": {"stable_name": "mmvq:native:v1",
+                                          "source_class": "native_wrapper"}}
             replay_module._validate_correctness_gate(
-                entries, dispatch_db, build_a, real_provenance,
+                entries, dispatch_db, by_name,
+                source_build_id=build_a, source_provenance=real_provenance,
             )
 
     def test_source_build_id_without_provenance_tuple_is_rejected(self):
@@ -799,10 +812,186 @@ class SourceBuildIdProvenanceBindingTests(unittest.TestCase):
                     "signature": "c" * 32, "hardware": "e" * 32,
                 },
             }
+            by_name = {"native": {"stable_name": "native", "source_class": "native_wrapper"}}
             with self.assertRaisesRegex(SystemExit, "without its"):
                 replay_module._validate_correctness_gate(
-                    entries, dispatch_db, build_a, None,
+                    entries, dispatch_db, by_name,
+                    source_build_id=build_a, source_provenance=None,
                 )
+
+
+class WinnerVerificationGateTests(unittest.TestCase):
+    """HI127: an unattested winner row is omitted, not raised, and a forged
+    row remains a hard ProjectionError regardless of attestation state.
+
+    Reuses ProjectMeasurementsTests' own setUp (not subclassed, to avoid
+    re-running its whole inherited test suite here) then strips the default
+    attestation it applies, since these tests specifically exercise the
+    UNattested case."""
+
+    def setUp(self):
+        ProjectMeasurementsTests.setUp(self)
+        self.conn.execute("DELETE FROM winner_verification")
+        self.conn.commit()
+
+    def tearDown(self):
+        ProjectMeasurementsTests.tearDown(self)
+
+    def _rewrite_result(self, signature_hex: str, **updates: str) -> None:
+        ProjectMeasurementsTests._rewrite_result(self, signature_hex, **updates)
+
+    def _set_source_capabilities(self, mask_hex: str) -> None:
+        ProjectMeasurementsTests._set_source_capabilities(self, mask_hex)
+
+    def test_unattested_winner_is_omitted_not_raised(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        output = self.tmp_path / "out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+            target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+        )
+        self.assertEqual(summary.examined, 2)
+        self.assertEqual(summary.retained, 0)
+        self.assertEqual(summary.omitted_unverified_source, 2)
+
+    def test_reattested_winner_id_is_retained(self):
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        s1_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s1_hex),),
+        ).fetchone()[0]
+        winner_row = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, s1_signature_id),
+        ).fetchone()
+        verification_state.record_winner_verification(self.conn, winner_id=winner_row[0])
+        self.conn.commit()
+        output = self.tmp_path / "out.jsonl"
+        summary = rp.project_measurements(
+            self.measurements_path, output,
+            dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+            target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+        )
+        self.assertEqual(summary.retained, 1)
+        self.assertEqual(summary.omitted_unverified_source, 1)
+        results = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()
+                   if json.loads(line).get("kind") == "result"]
+        self.assertEqual(results[0]["signature"], self.s1_hex)
+
+    def test_forged_row_still_raises_regardless_of_verification_state(self):
+        # A row that fails identity-binding must remain a hard error even
+        # though this test class has zero winner_verification rows -- the
+        # two checks are independent; row-forgery is never "just unverified."
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        self._rewrite_result(self.s1_hex, winner="not-a-real-candidate")
+        with self.assertRaises(rp.ProjectionError):
+            rp.project_measurements(
+                self.measurements_path, self.tmp_path / "out.jsonl",
+                dispatch_db=self.dispatch_db, source_build_id=self.build_id, source_manifest_path=self.manifest_path,
+                target_manifest_path=self.manifest_path, vendor_root=self.vendor,
+            )
+
+    def test_same_generation_require_winner_verification_excludes_unattested(self):
+        # HI136: same-generation replay must apply the same per-winner gate as
+        # projection. One genuine re-attested winner is retained; the exact
+        # genuine but unattested winner is omitted.
+        self._set_source_capabilities(ALL_FIVE_HEX)
+        signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s1_hex),),
+        ).fetchone()[0]
+        winner_id = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, signature_id),
+        ).fetchone()[0]
+        verification_state.record_winner_verification(self.conn, winner_id=winner_id)
+        self.conn.commit()
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["signature"], self.s1_hex)
+
+    def test_same_generation_default_keeps_unattested_rows_unchanged(self):
+        # The new parameter is opt-in; legacy/manual callers retain the
+        # previous export behavior when it is omitted.
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(self.measurements_path, self.manifest_path, ggml_h)
+        _header, entries = replay_module.read_cache(blob)
+        self.assertEqual(len(entries), 2)
+
+    def test_same_generation_forged_row_hard_fails_before_attestation(self):
+        self._rewrite_result(self.s1_hex, winner="not-a-real-candidate")
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            replay_module.build(
+                self.measurements_path, self.manifest_path, ggml_h,
+                dispatch_db=self.dispatch_db, require_winner_verification=True,
+            )
+
+    def test_spoofed_seeded_field_does_not_bypass_attestation(self):
+        # adversarial-review follow-up: read_results() preserves arbitrary
+        # JSON fields from the measurements artifact verbatim, so a forged
+        # row could set "seeded": true itself hoping to be treated as an
+        # operator seed override. Authority must come ONLY from membership
+        # in the real, independently-loaded seed_overrides dict (no
+        # --seed-file supplied here at all) -- the row must still be
+        # excluded, exactly like any other unattested genuine measurement.
+        # Attest the OTHER row (s2) so the export doesn't fail simply
+        # because nothing survives at all -- this isolates the assertion to
+        # "the spoofed row specifically was excluded," not "everything was."
+        s2_signature_id = self.conn.execute(
+            "SELECT signature_id FROM signature WHERE signature_digest = ?",
+            (bytes.fromhex(self.s2_hex),),
+        ).fetchone()[0]
+        s2_winner_id = self.conn.execute(
+            "SELECT winner_id FROM winner WHERE build_id = ? AND signature_id = ?",
+            (self.build_id, s2_signature_id),
+        ).fetchone()[0]
+        verification_state.record_winner_verification(self.conn, winner_id=s2_winner_id)
+        self.conn.commit()
+
+        self._rewrite_result(self.s1_hex, seeded=True)
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        signatures = {entry["signature"] for entry in entries}
+        self.assertNotIn(self.s1_hex, signatures)
+        self.assertIn(self.s2_hex, signatures)
+
+    def test_genuine_seed_file_override_still_exempt_from_attestation(self):
+        # A REAL --seed-file entry (independent operator authority, HI22)
+        # must remain exempt even though the underlying measurement was
+        # never strengthened-attested -- this is the positive control for
+        # the fix above: it isn't that seed overrides stopped working, only
+        # that the artifact's own claim of being seeded is no longer trusted.
+        seed_dispatch = replay_module.portable_tuning_key("bb" * 16, self.s1_hex)
+        seed_file = self.tmp_path / "seed.json"
+        seed_file.write_text(
+            json.dumps({seed_dispatch: "mmvq:native:v1"}), encoding="utf-8",
+        )
+        ggml_h = self.tmp_path / "ggml.h"
+        ggml_h.write_text("enum ggml_type { GGML_TYPE_F32 = 0 };\n", encoding="utf-8")
+        blob = replay_module.build(
+            self.measurements_path, self.manifest_path, ggml_h,
+            dispatch_db=self.dispatch_db, require_winner_verification=True,
+            seed_file=seed_file,
+        )
+        _header, entries = replay_module.read_cache(blob)
+        digests = {entry["dispatch"] for entry in entries}
+        self.assertIn(seed_dispatch, digests)
 
 
 if __name__ == "__main__":

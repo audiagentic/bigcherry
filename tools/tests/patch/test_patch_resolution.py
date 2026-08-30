@@ -38,6 +38,25 @@ class PatchResolutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required state"):
             patchset.resolve_exact(["1002_hip_unsafe_math_opt_in"], required_state="validated")
 
+    def test_context_ids_satisfies_requires_without_joining_the_selection(self):
+        # HI134: an experiment overlay patch (1242) REQUIRES a base-set
+        # module (0830) it does not itself add. Real bug found via a Brutus
+        # build failure: without context_ids, the overlay's own exact
+        # resolution has no way to know 0830 is already selected elsewhere,
+        # and re-adding 0830 to the overlay collides with the base/overlay
+        # disjointness check in campaign/resolution.py.
+        with self.assertRaisesRegex(ValueError, "requires explicitly selected"):
+            patchset.resolve_exact(["1242_hi134_meta_stage_trace"])
+        resolved = patchset.resolve_exact(
+            ["1242_hi134_meta_stage_trace"],
+            context_ids=frozenset({"0830_split_reduce_telemetry"}),
+        )
+        # context_ids satisfies the check but is never added to the result.
+        self.assertEqual(
+            [item.patch_id for item in resolved.modules],
+            ["1242_hi134_meta_stage_trace"],
+        )
+
     def test_catalog_ignores_private_modules(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

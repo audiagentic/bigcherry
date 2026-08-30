@@ -1,0 +1,23 @@
+{
+  "case_id": "hi84-d3:mixed_magnitude:seed3",
+  "device_count": 3,
+  "element_count": 8192,
+  "generator_version": "hi18-f32-v1",
+  "input_digests": [
+    "4836ad7b5ee6ee899710931e403b2a5ed39e4a3836edc4080e661a31aa205685",
+    "5fa551522c901c4e3da17401de7d305e8b09fd0e4a31db42d9a39ee9ed94ee6c",
+    "a08f6977f5ae789fe0b52b1216369597ee14257a4a6f5b7dd95bd9968f6c6e7b"
+  ],
+  "pattern": "mixed_magnitude",
+  "peer_access": "partial",
+  "reduction_signature_key": "split_reduce:v1:f32:8192:4096,2,1,1:n3:peer100010001",
+  "schema_version": 2,
+  "seed": 3,
+  "slice_shape": [
+    4096,
+    2,
+    1,
+    1
+  ],
+  "topology_key": "n3:peer100010001"
+}

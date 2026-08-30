@@ -1,0 +1,23 @@
+{
+  "case_id": "hi84-d3:alternating_signs:seed3",
+  "device_count": 3,
+  "element_count": 8192,
+  "generator_version": "hi18-f32-v1",
+  "input_digests": [
+    "add286ff2257b26c6cb5643c13ec8a3eba46adfff4ff82b9a0f336fefcc7da3d",
+    "d3fb5cf31f992a95372337739e4b7edc2760cfe42a97cec8dac8c09458ce61ed",
+    "07d0cb24ca899537e39e3be9b4cab3b233835d28f005fca2344f92e53cce8188"
+  ],
+  "pattern": "alternating_signs",
+  "peer_access": "partial",
+  "reduction_signature_key": "split_reduce:v1:f32:8192:4096,2,1,1:n3:peer100010001",
+  "schema_version": 2,
+  "seed": 3,
+  "slice_shape": [
+    4096,
+    2,
+    1,
+    1
+  ],
+  "topology_key": "n3:peer100010001"
+}

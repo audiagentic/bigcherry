@@ -322,7 +322,7 @@ ggml_hip_dispatch_signature_v1 ggml_hip_make_signature(
         // the struct's sixth fusion field (dst_gate) is deliberately NOT
         // read here -- see hip-autotune-types.h's GGML_HIP_SIG_FUSION_X_
         // SCALE/GATE_SCALE comment: it only exists on this struct under the
-        // experimental, non-default patch RD12 (patches/rd/1205_rd12_paired_
+        // experimental, non-default patch RD12 (patches/1205_rd12_paired_
         // mmvq_dual_output), and a build without that patch (confirmed on
         // real Brutus hardware) fails to compile against it at all.
     }

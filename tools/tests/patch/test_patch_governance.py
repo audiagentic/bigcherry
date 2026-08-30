@@ -17,7 +17,7 @@ from bigcherry.patch import catalog as patch_catalog, patchset # noqa: E402
 # real scan (2026-08-20) that this is the only current implicit-GROUP
 # module. No new entry may be added here; new patches must set GROUP
 # explicitly.
-GRANDFATHERED_IMPLICIT_GROUP = frozenset({"0900_pool_workspace_metrics"})
+GRANDFATHERED_IMPLICIT_GROUP = frozenset()
 
 
 class RequiresConflictsBackfillTests(unittest.TestCase):
@@ -99,8 +99,8 @@ class NoPatchToPatchImportsTests(unittest.TestCase):
 
 class ImplicitGroupGrandfatherTests(unittest.TestCase):
     """RE40 P1: the implicit GROUP="core" default (patchset.DEFAULT_GROUP)
-    may stay for grandfathered existing modules, but no new patch may rely
-    on it silently."""
+    may stay for grandfathered compatibility fixtures, but production package
+    metadata must declare its group explicitly."""
 
     def test_only_grandfathered_patches_use_the_implicit_default(self):
         implicit = {m.patch_id for m in patchset.catalog() if not m.group_explicit}
@@ -117,9 +117,9 @@ class CatalogMetadataExtensionTests(unittest.TestCase):
 
     def test_new_fields_default_to_empty_when_absent(self):
         entries = patch_catalog.load_catalog()
-        # No current catalog.toml entry sets these yet -- confirm the
-        # absent-field default is an empty tuple, not None or an error.
-        entry = entries["0100_cmake_options"]
+        # Packaged patch metadata carries these fields in patch.toml; confirm
+        # the absent-field default is an empty tuple, not None or an error.
+        entry = patch_catalog.build_snapshot().metadata["0100_cmake_options"]
         self.assertEqual(entry.plan_ids, ())
         self.assertEqual(entry.backends, ())
         self.assertEqual(entry.subsystems, ())

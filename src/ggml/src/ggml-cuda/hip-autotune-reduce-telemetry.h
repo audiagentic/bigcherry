@@ -12,6 +12,34 @@
 
 struct ggml_tensor;
 
+// Generic META reduction stage labels.  The META backend passes these values
+// through the optional proc-address callback; HIP telemetry owns their
+// observation and serialization.
+enum meta_stage_phase_v1 : uint16_t {
+    META_STAGE_PHASE_FOLD       = 1,
+    META_STAGE_PHASE_BUTTERFLY  = 2,
+    META_STAGE_PHASE_COPY_BACK  = 3,
+};
+
+struct meta_stage_v1 {
+    uint16_t phase;
+    uint16_t step;
+    int16_t  src_rank;
+    int16_t  dst_rank;
+    uint64_t submit_offset_ns;
+    uint64_t bytes;
+    int64_t  ne[4];
+    size_t   nb[4];
+};
+
+struct meta_trace_v1 {
+    uint64_t      reduce_id;
+    bool          active;
+    uint16_t      count;
+    uint16_t      dropped;
+    meta_stage_v1 stages[32];
+};
+
 // Observation-only reduction identity.  This is deliberately separate from
 // the matmul signature and is not part of the replay ABI.  Device ordinals are
 // retained as raw evidence, while topology_key is derived from peer
@@ -64,6 +92,16 @@ void ggml_hip_reduce_telemetry_fallback_context(
         ggml_tensor ** tensors,
         const char * handoff,
         size_t fallback_depth);
+
+// Hot-path, attribution-only sink.  This only appends to a bounded
+// thread-local trace; it never allocates, logs, performs I/O or calls HIP.
+void ggml_hip_reduce_telemetry_meta_stage(
+        uint16_t phase,
+        uint16_t step,
+        int16_t src_rank,
+        int16_t dst_rank,
+        uint64_t bytes,
+        const ggml_tensor * source);
 
 // HI18: test-only per-device output capture for the standalone correctness
 // probe (test-hip-reduce). A real high-level ggml_backend_tensor_get() on a

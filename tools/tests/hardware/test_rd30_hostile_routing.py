@@ -1,5 +1,5 @@
 """RD30/RD94: compile and run the hostile-routing unit test for
-mmq_build_moe_block_map (patches/1237_rd30_moe_mmq_compact_grid.py).
+mmq_build_moe_block_map (patches/1237_rd30_moe_mmq_compact_grid/patch.py).
 
 test-backend-ops's own MUL_MAT_ID fixture builds its `ids` tensor from a
 `std::shuffle` of a `0..n_mats-1` permutation per row (see

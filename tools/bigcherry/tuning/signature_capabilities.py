@@ -73,8 +73,10 @@ _KNOWN_FLAGS_MASK = (
 )
 
 _FUSION_KIND_NONE = 0  # GGML_HIP_FUSION_NONE
+_FUSION_KIND_BIAS = 1  # GGML_HIP_FUSION_BIAS
 _FUSION_KIND_GATE = 2  # GGML_HIP_FUSION_GATE
 _FUSION_KIND_GATE_BIAS = 3  # GGML_HIP_FUSION_GATE_BIAS
+_KNOWN_FUSION_KINDS = {_FUSION_KIND_NONE, _FUSION_KIND_BIAS, _FUSION_KIND_GATE, _FUSION_KIND_GATE_BIAS}
 _FUSABLE_GLU_OPS = {1, 2, 3}  # GEGLU, SWIGLU, SWIGLU_OAI (ggml.h's real enum order)
 
 
@@ -83,10 +85,18 @@ class UnsupportedSignatureDomain(ValueError):
     capability-applicability rule -- fails closed rather than guessing."""
 
 
+class UnauditedSignatureDomain(UnsupportedSignatureDomain):
+    """A well-formed, reachable signature with no audited rule yet."""
+
+
+class InvalidSignatureDomain(UnsupportedSignatureDomain):
+    """Malformed, contradictory, impossible, or stale signature evidence."""
+
+
 def _require_int(signature: Mapping[str, Any], key: str) -> int:
     value = signature.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise UnsupportedSignatureDomain(f"signature field {key!r} must be an int, got {value!r}")
+        raise InvalidSignatureDomain(f"signature field {key!r} must be an int, got {value!r}")
     return value
 
 
@@ -103,7 +113,7 @@ def hip_required_capabilities(
     """
     schema_version = _require_int(signature, "schema_version")
     if schema_version != dispatch_abi.SIGNATURE_IDENTITY_EPOCH:
-        raise UnsupportedSignatureDomain(
+        raise InvalidSignatureDomain(
             f"signature schema_version={schema_version!r} is not the current identity epoch "
             f"({dispatch_abi.SIGNATURE_IDENTITY_EPOCH!r}) -- cannot be trusted under today's "
             f"capability applicability rules"
@@ -113,13 +123,13 @@ def hip_required_capabilities(
     op_names = signature_mapping.load_ggml_op_names(vendor_root)
     op_name = op_names.get(op_id)
     if op_name is None:
-        raise UnsupportedSignatureDomain(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
+        raise InvalidSignatureDomain(f"unknown ggml_op id {op_id!r} -- not present in the parsed enum/name tables")
 
     flags = _require_int(signature, "flags")
     fusion = _require_int(signature, "fusion")
     glu_op = _require_int(signature, "glu_op")
     if flags < 0 or (flags & ~_KNOWN_FLAGS_MASK) != 0:
-        raise UnsupportedSignatureDomain(
+        raise InvalidSignatureDomain(
             f"signature flags={flags!r} sets bit(s) outside the known flags mask "
             f"({_KNOWN_FLAGS_MASK:#x}) -- this signature may carry a semantic distinction "
             f"this rule set has never been audited against; refusing to guess"
@@ -127,31 +137,67 @@ def hip_required_capabilities(
     has_ids = bool(flags & _SIG_HAS_IDS)
     has_aux = bool(flags & _HI118_AUX_FLAGS)
 
+    # adversarial-review follow-up: producer-wide structural invariants,
+    # validated BEFORE any op-specific classification -- without this, a
+    # structurally impossible (fusion, glu_op) combination that no op-
+    # specific branch happens to reject explicitly falls through to the
+    # generic "op has no audited rule" fallback and gets classified as
+    # merely UNAUDITED (eligible for HI136 quarantine) rather than INVALID
+    # (always a hard failure). ggml_hip_fusion_kind() (hip-autotune-
+    # signature.cpp, verified against real source) can only ever emit one
+    # of these four values, and only sets glu_op when fusion->gate is
+    # non-null (i.e. GATE/GATE_BIAS) -- a signature claiming any other
+    # combination cannot have come from a real dispatch.
+    if fusion not in _KNOWN_FUSION_KINDS:
+        raise InvalidSignatureDomain(
+            f"signature fusion={fusion!r} is not one of the ggml_hip_fusion_kind real enum "
+            f"values ({sorted(_KNOWN_FUSION_KINDS)}) -- refusing to guess"
+        )
+    if fusion in (_FUSION_KIND_NONE, _FUSION_KIND_BIAS) and glu_op != 0:
+        raise InvalidSignatureDomain(
+            f"signature fusion={fusion!r} (NONE/BIAS) cannot carry a nonzero glu_op={glu_op!r} -- "
+            f"the real producer only sets glu_op when fusion->gate is non-null (GATE/GATE_BIAS)"
+        )
+
     if op_name in ("MUL_MAT", "MUL_MAT_ID"):
         # Defensive per round 8: this combination is not currently reachable
         # (ggml_hip_fusion_kind() cannot return NONE while glu_op is set --
         # verified against real source), but a future refactor could
         # decouple them, so require it explicitly rather than assume it.
         if fusion != _FUSION_KIND_NONE or glu_op != 0:
-            raise UnsupportedSignatureDomain(
+            raise InvalidSignatureDomain(
                 f"{op_name} signature has fusion={fusion!r}/glu_op={glu_op!r} -- "
                 f"a plain (unfused) {op_name} must have neither set"
             )
         if has_aux:
-            raise UnsupportedSignatureDomain(
+            raise InvalidSignatureDomain(
                 f"{op_name} signature has HI118 bias/scale flag bits set ({flags:#x}) -- "
                 f"not a plain unfused dispatch, no applicability rule for this combination"
             )
         expected_has_ids = op_name == "MUL_MAT_ID"
         if has_ids != expected_has_ids:
-            raise UnsupportedSignatureDomain(
+            raise InvalidSignatureDomain(
                 f"{op_name} signature has HAS_IDS={has_ids!r}, expected {expected_has_ids!r}"
             )
         return hc.hip_capability_mask([hc.HipCapability.CORE_SIGNATURE_V1])
 
     if op_name == "GLU":
+        if glu_op not in _FUSABLE_GLU_OPS:
+            raise InvalidSignatureDomain(
+                f"GLU signature glu_op={glu_op!r} is not one of GEGLU/SWIGLU/SWIGLU_OAI "
+                f"({sorted(_FUSABLE_GLU_OPS)}) -- ggml-cuda's own fusion detector never "
+                f"fuses this glu_op, so no real fused dispatch could have produced this signature"
+            )
+        # fusion is already validated as one of _KNOWN_FUSION_KINDS above.
+        # A GLU signature with fusion=NONE/BIAS (no gate tensor) is only
+        # reachable here with glu_op==0 (nonzero glu_op on NONE/BIAS was
+        # already rejected as InvalidSignatureDomain above), and glu_op==0
+        # is unconditionally rejected by the _FUSABLE_GLU_OPS check just
+        # above as InvalidSignatureDomain too -- so no real dispatch can
+        # reach this point with fusion in (NONE, BIAS); nothing further to
+        # check here.
         if not has_ids:
-            raise UnsupportedSignatureDomain(
+            raise UnauditedSignatureDomain(
                 "GLU signature does not have GGML_HIP_SIG_HAS_IDS set -- only the MoE-routed "
                 "(MUL_MAT_ID-based) fused GLU case has an audited rule; a non-routed/dense GLU "
                 "fusion needs its own sibling rule, not yet written"
@@ -168,10 +214,8 @@ def hip_required_capabilities(
         # since a GATE signature's biases are unknown-not-necessarily-absent
         # exactly the same way a GATE_BIAS signature's scales are.
         if fusion not in (_FUSION_KIND_GATE, _FUSION_KIND_GATE_BIAS):
-            raise UnsupportedSignatureDomain(
-                f"GLU signature fusion={fusion!r} is neither GGML_HIP_FUSION_GATE "
-                f"({_FUSION_KIND_GATE}) nor GGML_HIP_FUSION_GATE_BIAS ({_FUSION_KIND_GATE_BIAS}) -- "
-                f"no audited rule for this fusion kind"
+            raise UnauditedSignatureDomain(
+                f"GLU signature fusion={fusion!r} is a valid but unaudited fusion kind"
             )
         # HI121 review follow-up: ggml_hip_fusion_kind() classifies GATE_BIAS
         # (verified against real source) precisely when at least one of
@@ -184,22 +228,16 @@ def hip_required_capabilities(
         # impossible state instead of fixing the first one.
         has_any_bias_flag = bool(flags & (_SIG_FUSION_X_BIAS | _SIG_FUSION_GATE_BIAS))
         if fusion == _FUSION_KIND_GATE_BIAS and not has_any_bias_flag:
-            raise UnsupportedSignatureDomain(
+            raise InvalidSignatureDomain(
                 "GLU signature has fusion=GATE_BIAS but neither X_BIAS nor GATE_BIAS content "
                 "flag is set -- ggml_hip_fusion_kind() cannot classify GATE_BIAS without a "
                 "real bias tensor present; this combination cannot come from a real dispatch"
             )
         if fusion == _FUSION_KIND_GATE and has_any_bias_flag:
-            raise UnsupportedSignatureDomain(
+            raise InvalidSignatureDomain(
                 "GLU signature has fusion=GATE but a bias content flag is set -- "
                 "ggml_hip_fusion_kind() would have classified a real bias-bearing dispatch as "
                 "GATE_BIAS, not GATE; this combination cannot come from a real dispatch"
-            )
-        if glu_op not in _FUSABLE_GLU_OPS:
-            raise UnsupportedSignatureDomain(
-                f"GLU signature glu_op={glu_op!r} is not one of GEGLU/SWIGLU/SWIGLU_OAI "
-                f"({sorted(_FUSABLE_GLU_OPS)}) -- ggml-cuda's own fusion detector never "
-                f"fuses this glu_op, so no real fused dispatch could have produced this signature"
             )
         # HI120 gate: RD17's x_scale_channel_dst mode and RD12's dst_gate
         # domain are not yet fully represented in signature content -- until
@@ -211,7 +249,7 @@ def hip_required_capabilities(
         # production dispatches never exercise, so this costs no real
         # coverage today.
         if flags & (_SIG_FUSION_X_SCALE | _SIG_FUSION_GATE_SCALE):
-            raise UnsupportedSignatureDomain(
+            raise UnauditedSignatureDomain(
                 "GLU signature has an x_scale/gate_scale content flag set -- RD17's "
                 "x_scale_channel_dst mode is not yet fully represented in signature content "
                 "(HI120, not yet landed); refusing to certify compatibility for this domain"
@@ -229,6 +267,6 @@ def hip_required_capabilities(
             hc.HipCapability.FUSION_GATE_SCALE_PRESENCE_V1,
         ])
 
-    raise UnsupportedSignatureDomain(
+    raise UnauditedSignatureDomain(
         f"op={op_name!r} has no audited capability-applicability rule -- refusing to guess"
     )
