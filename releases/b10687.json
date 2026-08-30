@@ -14,7 +14,7 @@
   "bigcherry_revision": "c46b19469b71994304963614892e763bea9b6324",
   "first_seen": "2026-08-29T22:35:10.065678+00:00",
   "manifest_hash": "",
-  "notes": "",
+  "notes": "BUMP COMPLETE 2026-08-30 (b10502 -> b10687). Real build+runtime-smoke test also run on local Windows GPU (RX 7900 GRE, gfx1100): pp512 4253.6 t/s, tg128 162.4 t/s. Verbatim `bigcherry pin-status --complete --all-remotes`:\n\npin-status: local\n  pin           b10687 -> c841aeeb8bb2\n  vendor HEAD   c841aeeb8bb2 (tag b10687)  [15 modified, 33 untracked]\n  releases      0adcc3bb5710 broken, 22dc605c4ead patched, 6ea215d171fd patched, abc123 validated, c841aeeb8bb2 patched, d7bd3bfcad3e patched\n  descriptors   0adcc3bb5710, 4801e3c567d5, c841aeeb8bb2, d59d455fd8ea, d7bd3bfcad3e\n  bigcherry     13e81d023501\n  marker        d7bd3bfcad3e -> c841aeeb8bb2 (b10687) [committed-clean]\n  VERDICT       consistent\n\npin-status: brutus (remote)\n  vendor HEAD   c841aeeb8bb2\n  pin           b10687 -> c841aeeb8bb2\n  bigcherry     13e81d023501\n  VERDICT       consistent\n\nAGGREGATE  converged\n\nCOMPLETION  PASS",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
