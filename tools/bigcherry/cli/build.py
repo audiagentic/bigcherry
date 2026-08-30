@@ -94,7 +94,7 @@ def cmd_build_new(args: Namespace) -> int:
             print(f"build: pin preflight FAIL: {reason}", file=sys.stderr)
         print(
             "build: run `bigcherry pin-status` for the full report and see "
-            "docs/reference/PIN_BUMP.md (fail closed)",
+            "docs/reference/build/PIN_BUMP.md (fail closed)",
             file=sys.stderr,
         )
         return 1
@@ -142,9 +142,15 @@ def cmd_build_new(args: Namespace) -> int:
         print(f"build: {exc}", file=sys.stderr)
         return 2
 
-    results = run_campaign(
-        lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
-    )
+    from ..core import tree_activity
+
+    with tree_activity.Lease(
+        context.work_root, context.project_root, command="build",
+        run_id=args.run_id or "unspecified",
+    ):
+        results = run_campaign(
+            lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
+        )
 
     failed = 0
     for lid in sorted(results):

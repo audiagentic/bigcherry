@@ -671,6 +671,7 @@ def _execute_build_phase(
                     options=tuple(sorted(merged_options)),
                 ),
                 catalog_path=lane_catalog_path,
+                patches_dir=context.patches_root,
                 # HI102 (adversarial-review follow-up): the only place this
                 # call chain actually knows the LIVE resolved base revision
                 # -- resolve_for_context() itself has no source-root access,

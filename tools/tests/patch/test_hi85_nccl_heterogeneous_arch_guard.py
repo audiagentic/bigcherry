@@ -17,11 +17,11 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi85_nccl_heterogeneous_arch_guard_patch",
-    ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard.py",
+    ROOT / "patches" / "1225_hi85_nccl_heterogeneous_arch_guard" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)
@@ -71,22 +71,27 @@ def test_guard_runs_before_ncclcomminitall_not_after(tmp_path):
     )
 
 
-def test_guard_declines_via_the_existing_internal_fallback_not_a_new_path():
-    # Reuses ggml_backend_cuda_comm_init_internal(ret) -- the same function
-    # the existing virtual-device guard falls back to -- rather than
-    # inventing a second, differently-behaved decline path.
+def test_guard_fails_closed_not_via_the_internal_fallback():
+    # This path is only ever reached via explicit SPLIT_MODE_TENSOR (the
+    # META backend's comm_init hook) -- silently substituting a different
+    # reduction path here would change semantics behind the user's back
+    # (2026-08-28 explicit user direction). Must hard-abort, not decline
+    # into ggml_backend_cuda_comm_init_internal(ret) the way the
+    # pre-existing virtual-device guard above it still does.
     guard_pos = PATCH.index("heterogeneous_arch = false")
-    decline_pos = PATCH.index("ggml_backend_cuda_comm_init_internal(ret);", guard_pos)
-    return_pos = PATCH.index("return;", decline_pos)
-    assert decline_pos < return_pos
+    abort_pos = PATCH.index('GGML_ABORT("unqualified heterogeneous-architecture tensor-split', guard_pos)
+    assert abort_pos > guard_pos
+    # only the pre-existing virtual-device guard declines to internal --
+    # this guard must not add a second occurrence.
+    assert PATCH.count("ggml_backend_cuda_comm_init_internal(ret)") == 1
 
 
-def test_guard_logs_a_clear_warning_before_declining():
+def test_guard_logs_a_clear_error_before_aborting():
     # User requirement: this must be visible, not a silent behavior change.
-    warn_pos = PATCH.index('GGML_LOG_WARN("NCCL disabled: participating devices')
-    decline_pos = PATCH.index("ggml_backend_cuda_comm_init_internal(ret);", warn_pos)
-    assert warn_pos < decline_pos
-    assert "different GPU" in PATCH
+    err_pos = PATCH.index('GGML_LOG_ERROR("NCCL/RCCL heterogeneous-architecture tensor-split has no')
+    abort_pos = PATCH.index('GGML_ABORT("unqualified heterogeneous-architecture tensor-split', err_pos)
+    assert err_pos < abort_pos
+    assert "qualified admission" in PATCH
     assert "architectures" in PATCH
 
 
@@ -102,4 +107,4 @@ def test_placed_right_after_the_existing_virtual_device_guard():
     # the existing virtual-device decline block, so this edit attaches
     # directly after it rather than somewhere else in the function.
     assert "info.device_count > info.physical_device_count" in PATCH
-    assert PATCH.count("ggml_backend_cuda_comm_init_internal(ret)") >= 2
+    assert PATCH.count("ggml_backend_cuda_comm_init_internal(ret)") == 1

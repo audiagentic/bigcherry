@@ -853,11 +853,22 @@ def make_smoke_worker(
                 )
 
         argv = runtime_smoke.smoke_argv(binary_ref.path, spec)
+        # `env=environment` (a small, deliberately minimal override dict,
+        # e.g. just HIP_VISIBLE_DEVICES + PATH from
+        # smoke_environment_for_hip_devices) REPLACES the entire subprocess
+        # environment when passed directly, not just overlays those keys.
+        # On Linux that's mostly survivable; on Windows it produces a
+        # process missing SystemRoot/TEMP/TMP/USERPROFILE/etc, which made a
+        # real llama-bench.exe crash (0xC0000005, access violation) right
+        # after HIP device enumeration on real hardware -- reproduced and
+        # confirmed live during the first real Windows local-GPU
+        # build+smoke-test run. Merge onto the real environment instead.
+        merged_env = {**os.environ, **environment} if environment is not None else None
         completed = subprocess.run(
             argv,
             capture_output=True,
             text=True,
-            env=environment,
+            env=merged_env,
         )
         if completed.returncode != 0:
             raise runtime_smoke.SmokeError(

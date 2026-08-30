@@ -2,7 +2,7 @@
 # Legacy pull/audit/build commands use only the explicit compat.recipe aliases
 # below; campaign code consumes source/build/patch-set objects directly.
 version = 2
-pinned = "b10502"
+pinned = "b10687"
 
 [patch-set.framework]
 patches = [
@@ -103,6 +103,17 @@ patches = ["1235_rd09_q81_activation_cache_foundation"]
 [experiment.rd30-only]
 patches = ["1237_rd30_moe_mmq_compact_grid"]
 
+[experiment.rd33-only]
+patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
+
+[experiment.hi18-reduce-probe]
+patches = ["1224_hi18_reduce_correctness_probe"]
+
+[experiment.hi134-meta-stage-trace]
+# 0830 (validated, always in the default control build) satisfies 1242's
+# REQUIRES via resolve_exact's context_ids param -- see patchset.py.
+patches = ["1242_hi134_meta_stage_trace"]
+
 # HI105: the CPU-reference correctness-evidence patch chain (deterministic
 # test-backend-ops init + machine-readable metrics + MUL_MAT_ID's own
 # deterministic/full-range ids fix). Not itself a performance patch --
@@ -189,7 +200,7 @@ needs = ["inventory", "promoted-winners"]
 # {"dispatch":...,"signature":...,"candidate":...,"calls":N} -- literally
 # which candidate served every dispatch digest, and how many times. Kept
 # as a SEPARATE build from [build.replay] deliberately: production replay
-# builds stay free of hit-tracking overhead (see docs/reference/TEST.md's
+# builds stay free of hit-tracking overhead (see docs/reference/testing/TEST.md's
 # "Replay diagnostics" section) -- this is a validation-only build, never
 # what ships.
 [build.replay-diagnostic]
@@ -220,6 +231,8 @@ cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
+c-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang.exe"
+cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
 
 [platform.vulkan-linux]
 description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
@@ -231,6 +244,34 @@ description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/I
 # device/ICD identity in a later RE30 phase.
 targets = ["vulkan-stub"]
 options = { LLAMA_BUILD_TESTS = "ON" }
+
+# Backend software-stack profiles are request identities, separate from
+# machine/platform identities. Paths are deployment-specific and may be
+# overridden by callers.
+[stack.rocm-system]
+backend = "hip"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-7-2]
+backend = "hip"
+sdk-root = "/opt/rocm-7.2"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-7-14]
+backend = "hip"
+sdk-root = "/opt/rocm-7.14"
+required-providers = ["hip", "rocblas"]
+
+[stack.rocm-10]
+backend = "hip"
+sdk-root = "/opt/rocm-10"
+required-providers = ["hip", "rocblas"]
+
+[stack.vulkan-radv]
+backend = "vulkan"
+
+[stack.vulkan-amdvlk]
+backend = "vulkan"
 
 # RE14/RE19: the canonical replacement for legacy `build --all`, expressed
 # directly in v2 source/build/platform identities -- NOT derived from
@@ -263,6 +304,65 @@ lanes = [
 [runtime-profile.production-dual-xtx]
 server-args = [
   "-sm", "tensor", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+# HTR03 (2026-08-30): explicit workload-class declaration, replacing the
+# previous implicit "'--spec-type' in server_args" inference in
+# workflow.py's behavioral gate. See tools/bigcherry/tuning/behavioral_corpus.py
+# for the class registry this is validated against.
+behavioral-classes = ["mtp-speculative"]
+
+[runtime-profile.hi134-layer-split-control]
+# HI134 step 5: negative control for the __amd_rocclr_copyBufferRectAligned
+# investigation (present whenever device 3 / RDNA2 6900XT participates in a
+# -sm tensor run, independent of device count -- see HI134.md). -sm layer
+# never constructs comm_ctx/META at all, so if Rect still appears here it is
+# not reduction-specific and BigCherry-side tuning of META is not the fix.
+# Otherwise identical to production-dual-xtx's non-tensor-split settings
+# (flash-attn/ubatch/batch/threads/spec/cache-type) so the comparison isolates
+# split-mode, not other config differences.
+server-args = [
+  "-sm", "layer", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
+[runtime-profile.hi135-tensor-split-pinned-xtx-6900xt]
+# HI135 attribution control: identical explicit -ts 1,1,1 across a 3-GPU
+# tensor-split group that includes the 6900XT (device 3), paired with
+# hi135-tensor-split-pinned-xtx-r9700 below (same ratio, device 2 instead of
+# device 3). Neither prior HI134 run ever pinned -ts -- every topology swap
+# changed device architecture AND automatic shard geometry simultaneously,
+# so this pair is the first evidence able to separate the two. Otherwise
+# identical to production-dual-xtx.
+server-args = [
+  "-sm", "tensor", "-ts", "1,1,1", "--flash-attn", "on",
+  "--ubatch-size", "512", "--batch-size", "2048",
+  "--threads", "8", "--parallel", "1",
+  "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+  "-ctkd", "q8_0", "-ctvd", "q8_0",
+]
+tune-context = 4096
+production-context = 64000
+min-free-vram-bytes-per-device = 2147483648  # 2GiB headroom
+
+[runtime-profile.hi135-tensor-split-pinned-xtx-r9700]
+# HI135 attribution control: pair to hi135-tensor-split-pinned-xtx-6900xt --
+# same explicit -ts 1,1,1 ratio, device 2 (R9700, gfx1201) in the third slot
+# instead of device 3 (6900XT, gfx1030). Run with --devices 0,1,2.
+server-args = [
+  "-sm", "tensor", "-ts", "1,1,1", "--flash-attn", "on",
   "--ubatch-size", "512", "--batch-size", "2048",
   "--threads", "8", "--parallel", "1",
   "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",

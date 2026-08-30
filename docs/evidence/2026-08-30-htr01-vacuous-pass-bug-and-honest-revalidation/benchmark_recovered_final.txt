@@ -1,0 +1,8 @@
+  [recovered-final] rep=1 predicted_per_second=100.68689072538959 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-final] rep=2 predicted_per_second=101.79014398897141 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-final] rep=3 predicted_per_second=102.17389030707679 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-final] rep=4 predicted_per_second=102.10784357078366 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+  [recovered-final] rep=5 predicted_per_second=102.14660692296619 draft_n=107 draft_n_accepted=100 tokens_predicted=128
+final recovered median tps: 102.10784357078366
+native: 101.4586883388816
+delta pct: 0.6398222197923723

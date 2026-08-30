@@ -43,7 +43,7 @@ class CheckTests(TestCase):
                 encoding="utf-8",
             )
             (topic / "probe.py").write_text("print('probe')\n", encoding="utf-8")
-            disposition = root / "docs" / "planning" / "active" / "rationalisation"
+            disposition = root / "docs" / "reference" / "tooling"
             disposition.mkdir(parents=True)
             (disposition / "TOOL_DISPOSITION.md").write_text(
                 "| `tmp/old_probe.py` | **DELETE** | obsolete |\n",

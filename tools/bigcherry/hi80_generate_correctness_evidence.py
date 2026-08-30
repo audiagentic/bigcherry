@@ -43,12 +43,14 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .tuning import correctness_evidence as ce
 from .core import paths
 from .tuning import promotion_gate as gate
+from .tuning import signature_digest_verification as sdv
 from .tuning import signature_mapping as scm
 from .tuning import tune_promotion
 
@@ -113,69 +115,77 @@ def _observed_signature_hex(
     correctness for a candidate that was never actually exercised as
     fused.
 
-    Runs the SAME --moe-glu-file line once under GGML_HIP_DISPATCH_MODE=
-    record and reads back the REAL signature hex test-backend-ops' own
-    dispatch-recording code computed for the resulting dispatch (the same
-    hashing code that wrote the original production dispatch_db's own
-    `signature` column) -- no digest is recomputed in Python; two hex
-    strings from the same real C++ code are compared directly."""
-    with tempfile.TemporaryDirectory() as tmp:
-        record_db = Path(tmp) / "observed.jsonl"
-        run_env = {"GGML_HIP_DISPATCH_DB": str(record_db)}
-        result = ce.run_test_backend_ops(
-            binary, moe_glu_file=moe_glu_file, seed=seed, dispatch_mode="record",
-            forced_candidate=None, env=run_env, runner=runner,
-        )
-        if result.returncode != 0 or not record_db.is_file():
-            raise CliError(
-                f"observed-signature record-mode run failed (exit {result.returncode}) "
-                f"or produced no dispatch_db -- cannot verify the fused dispatch was "
-                f"actually executed:\n{result.stdout}\n{result.stderr}"
-            )
-        # HI119 review follow-up (dev-gpt-agent, 2026-08-25): record mode is
-        # keyed by (signature, hardware), so a single run can legitimately
-        # emit more than one observation row (e.g. multiple graph nodes or
-        # repeat calls within the same process) -- taking the FIRST row
-        # unconditionally was not a stable semantic contract. Collect every
-        # DISTINCT observed signature instead: exactly one is the only
-        # trustworthy outcome (zero means nothing was observed; more than
-        # one distinct value means this run cannot unambiguously identify
-        # which observation corresponds to the requested dispatch).
-        observed_signatures = {
-            row["signature"]
-            for line in record_db.read_text(encoding="utf-8").splitlines()
-            for row in [json.loads(line)]
-            if row.get("kind") == "observation" and isinstance(row.get("signature"), str)
-        }
-        if len(observed_signatures) == 1:
-            return next(iter(observed_signatures))
-        if len(observed_signatures) > 1:
-            raise CliError(
-                f"observed-signature record-mode run produced {len(observed_signatures)} "
-                f"DISTINCT observed signatures ({sorted(observed_signatures)!r}) -- cannot "
-                f"unambiguously determine which one corresponds to this run; refusing to "
-                f"certify correctness rather than guessing"
-            )
-    raise CliError(
-        "observed-signature record-mode run produced no observation row -- "
-        "cannot verify the fused dispatch was actually executed"
+    HI121/HI125 (2026-08-27): thin delegation to
+    signature_digest_verification.observed_test_backend_ops_signature_hex(),
+    the same record-mode-run/exactly-one-distinct-signature primitive
+    generalized for the C++-authoritative canonical-digest verifier -- one
+    authoritative implementation of this real-hardware proof instead of
+    two copies drifting apart. This caller only needs the hex (it compares
+    against the row's own claimed signature_hex itself); the canonical
+    half of that primitive's return is for signature_digest_verification's
+    own poisoned-canonical check, not used here."""
+    observed_hex, _observed_canonical = sdv.observed_test_backend_ops_signature_hex(
+        binary, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
+    )
+    return observed_hex
+
+
+@dataclass(frozen=True)
+class EvidenceGenerationResult:
+    """HTR01 (2026-08-30, locked design, GPT session ses_330ae3c055084f38)."""
+    evidence_id: int
+    status: str  # "existing" | "generated"
+    dispatchable: bool
+    subprocess_runs: int
+
+
+def _native_from_seed_evidence(row: "ce.SeedEvidence") -> "ce.NativeSeedEvidence":
+    """Rebuild a reusable NativeSeedEvidence from a just-generated
+    SeedEvidence row -- SeedEvidence already carries every field needed
+    (HTR01's schema-9 output-digest fields included), so a caller building
+    up a native_seed_cache across multiple generate_for_candidate() calls
+    for the SAME signature never needs to re-run the native leg once any
+    one call has collected it."""
+    return ce.NativeSeedEvidence(
+        seed=row.seed, reference_digest=row.reference_digest, e_n_nmse=row.e_n_nmse,
+        max_abs_native=row.max_abs_native, threshold_t=row.threshold_t,
+        native_execution_status=row.native_execution_status,
+        native_output_digest=row.native_output_digest,
+        reference_output_digest=row.reference_output_digest,
+        output_nels=row.output_nels,
     )
 
 
-def generate_for_row(
+def generate_for_candidate(
     conn: sqlite3.Connection, row: dict[str, Any], *,
-    binary: Path, vendor_root: Path, seeds: tuple[int, ...],
+    candidate_name: str, binary: Path, vendor_root: Path, seeds: tuple[int, ...],
     headroom_fraction: float, contract_version: str, tool_version: str,
+    origin: "ce.EvidenceOrigin", native_seed_cache: dict[int, "ce.NativeSeedEvidence"] | None = None,
     runner=subprocess.run,
-) -> str:
-    """Returns a short human-readable outcome string. Raises CliError,
-    scm.SignatureMappingError or ce.EvidenceError on failure -- the caller
-    decides whether that is fatal to the whole run."""
+) -> EvidenceGenerationResult:
+    """The single authoritative evidence-generation primitive -- HI80's own
+    signature mapping / identity resolution / fused-GLU handling /
+    generation / persistence, generalized to take an EXPLICIT candidate
+    name and EvidenceOrigin rather than always reading
+    ``row["provisional_winner"]`` and always writing no origin at all.
+
+    ``native_seed_cache``, when given, is consulted for already-collected
+    native baselines (HTR01's real cost-amortization mechanism: the FIRST
+    alternative evidenced for a signature pays native+candidate per seed,
+    every LATER alternative for the SAME signature pays candidate only)
+    and updated in place with any newly-collected native seeds, so a
+    caller reusing the same dict across multiple calls for one signature
+    gets that reuse automatically.
+
+    ``generate_for_row`` (below) is a thin wrapper over this function using
+    ``row["provisional_winner"]`` and ``reason="promotion_winner"`` --
+    preserving this module's single-implementation property (HI80's own
+    docstring concern: two copies of signature mapping/evidence generation
+    drifting apart)."""
     dispatch_hex = row.get("dispatch")
     signature_hex = row.get("signature")
     hardware_hex = row.get("hardware")
     native_name = row.get("native")
-    candidate_name = row["provisional_winner"]
     if not all(isinstance(v, str) and v for v in
                (dispatch_hex, signature_hex, hardware_hex, native_name)):
         raise CliError(
@@ -190,7 +200,20 @@ def generate_for_row(
 
     existing = _existing_evidence_id(conn, identity, contract_version=contract_version)
     if existing is not None:
-        return f"skip (already has evidence_id={existing})"
+        row_data = conn.execute(
+            "SELECT e_c_nmse, threshold_t, headroom_fraction, e_n_nmse, max_abs_native, "
+            "max_abs_candidate FROM correctness_evidence WHERE correctness_evidence_id = ?",
+            (existing,),
+        ).fetchone()
+        dispatchable = False
+        if row_data is not None:
+            e_c, threshold_t, hf, e_n, max_abs_n, max_abs_c = row_data
+            dispatchable = (
+                e_n <= threshold_t and e_c <= e_n + hf * (threshold_t - e_n) and max_abs_c <= max_abs_n
+            )
+        return EvidenceGenerationResult(
+            evidence_id=existing, status="existing", dispatchable=dispatchable, subprocess_runs=0,
+        )
 
     signature_dict = _load_signature_dict(conn, identity.signature_id)
     # HI80 (2026-08-23 real-hardware finding): signature_to_op_filter()'s
@@ -247,10 +270,11 @@ def generate_for_row(
                 digest_tensor=digest_tensor,
                 candidate_stable_name=candidate_name, seeds=seeds,
                 headroom_fraction=headroom_fraction, contract_version=contract_version,
-                runner=runner,
+                runner=runner, native_seeds=native_seed_cache,
             )
         finally:
             moe_glu_path.unlink(missing_ok=True)
+        subprocess_runs = 1  # the observed-signature-hex preflight probe
     else:
         test_file_line, target_tensor, digest_tensor = scm.signature_to_any_test_file_line(
             signature_dict, vendor_root=vendor_root
@@ -266,18 +290,60 @@ def generate_for_row(
                 digest_tensor=digest_tensor,
                 candidate_stable_name=candidate_name, seeds=seeds,
                 headroom_fraction=headroom_fraction, contract_version=contract_version,
-                runner=runner,
+                runner=runner, native_seeds=native_seed_cache,
             )
         finally:
             test_file_path.unlink(missing_ok=True)
+        subprocess_runs = 0
+
+    # Every seed's candidate leg always ran; the native leg only ran for
+    # seeds NOT already present in native_seed_cache -- count both, and
+    # update the cache with every seed's native half (already-cached seeds
+    # unchanged, newly-collected ones added) so a caller reusing this same
+    # dict for the NEXT alternative on this signature gets the benefit.
+    subprocess_runs += len(seeds)  # candidate leg, once per seed, always
+    cache = native_seed_cache if native_seed_cache is not None else {}
+    newly_cached = 0
+    for seed_row in aggregate.seed_rows:
+        if seed_row.seed not in cache:
+            cache[seed_row.seed] = _native_from_seed_evidence(seed_row)
+            newly_cached += 1
+    subprocess_runs += newly_cached  # native leg, only for seeds that weren't cached
+
     evidence_id = ce.write_correctness_evidence(
         conn, build_id=identity.build_id, hardware_id=identity.hardware_id,
         signature_id=identity.signature_id, candidate_id=identity.candidate_id,
         native_candidate_id=identity.native_candidate_id, aggregate=aggregate,
-        tool_version=tool_version,
+        tool_version=tool_version, origin=origin,
     )
-    verdict = "dispatchable" if aggregate.dispatchable else "NOT dispatchable"
-    return f"wrote evidence_id={evidence_id} ({verdict}, e_c={aggregate.e_c_nmse:.6g})"
+    return EvidenceGenerationResult(
+        evidence_id=evidence_id, status="generated", dispatchable=aggregate.dispatchable,
+        subprocess_runs=subprocess_runs,
+    )
+
+
+def generate_for_row(
+    conn: sqlite3.Connection, row: dict[str, Any], *,
+    binary: Path, vendor_root: Path, seeds: tuple[int, ...],
+    headroom_fraction: float, contract_version: str, tool_version: str,
+    runner=subprocess.run,
+) -> str:
+    """Thin wrapper over generate_for_candidate() using this row's own
+    ``provisional_winner`` and ``reason="promotion_winner"`` -- the CLI's
+    original, only behavior, preserved exactly. Returns a short human-
+    readable outcome string (this function's original return contract);
+    raises CliError, scm.SignatureMappingError or ce.EvidenceError on
+    failure -- the caller decides whether that is fatal to the whole run."""
+    result = generate_for_candidate(
+        conn, row, candidate_name=row["provisional_winner"], binary=binary,
+        vendor_root=vendor_root, seeds=seeds, headroom_fraction=headroom_fraction,
+        contract_version=contract_version, tool_version=tool_version,
+        origin=ce.EvidenceOrigin(reason="promotion_winner"), runner=runner,
+    )
+    if result.status == "existing":
+        return f"skip (already has evidence_id={result.evidence_id})"
+    verdict = "dispatchable" if result.dispatchable else "NOT dispatchable"
+    return f"wrote evidence_id={result.evidence_id} ({verdict})"
 
 
 def main(argv: list[str] | None = None) -> int:

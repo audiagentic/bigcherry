@@ -61,8 +61,19 @@ def evaluate_smoke_result(stdout: str, *, expected_rows: int = 2) -> list[dict[s
     count; this function does not guess the harness's own row semantics,
     it validates whatever came out against what the caller asked for.
     """
+    # Found live on the first real Windows local-GPU smoke test: the HIP
+    # runtime itself prints a "HIP Library Path: ..." diagnostic line to
+    # STDOUT (not stderr) ahead of llama-bench's own `-o json` output on
+    # Windows -- an upstream/HIP-runtime quirk this project has no patch
+    # for, not something BigCherry's own binary controls. Rather than
+    # require byte-0 JSON, find the top-level array's own opening bracket
+    # and parse from there; a genuinely malformed body (no `[` at all, or
+    # invalid JSON even after stripping a plausible preamble) still fails
+    # closed exactly as before.
+    json_start = stdout.find("[")
+    payload = stdout[json_start:] if json_start != -1 else stdout
     try:
-        rows = json.loads(stdout)
+        rows = json.loads(payload)
     except json.JSONDecodeError as exc:
         raise SmokeError(f"smoke output is not valid JSON: {exc}") from exc
     if not isinstance(rows, list) or not rows:

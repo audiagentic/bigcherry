@@ -347,6 +347,7 @@ class CachedWorktreeTamperFailsClosedTests(unittest.TestCase):
             metadata_path = _source_metadata_path(destination)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             metadata["source_slice_id"] = "forged-slice-id-not-actually-derived"
+            metadata_path.chmod(0o644)
             metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
             with self.assertRaises(CampaignBuildError):
@@ -370,6 +371,7 @@ class CachedWorktreeTamperFailsClosedTests(unittest.TestCase):
             metadata_path = _source_metadata_path(destination)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             metadata["source_plan_id"] = "forged-plan-id"
+            metadata_path.chmod(0o644)
             metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
             with self.assertRaises(CampaignBuildError):

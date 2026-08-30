@@ -5,7 +5,7 @@ items plus a growing Experiment Contract registry, plan count gets
 misread as implementation progress unless something makes the
 plan-to-proof gap visible at a glance. This module computes a real
 status per RD-prefixed plan item from signals ALREADY on disk --
-external-sources.toml, patches/*.py, config/experiment-contracts.toml,
+external-sources.toml, packaged patches, config/experiment-contracts.toml,
 config/recipes.toml -- rather than a human/agent hand-maintaining a
 status field that drifts from reality.
 
@@ -18,9 +18,9 @@ separately) -- those are reported as "unknown", honestly, rather than
 fabricated. What IS real and computed here:
 
   source-pinned  -- a [[sources.tracked]] entry names this plan-item
-  materialized   -- a real patches/*.py module's PROVENANCE names this
+  materialized   -- a real package's patch.py PROVENANCE names this
                     plan-item (or the tracked entry's own `patch` field
-                    points at a module that actually exists)
+                    points at a package module that actually exists)
   build-applies  -- the materialized patch's own STATE constant is
                     "validated" or "untested" (both mean the TRANSFORM
                     applies cleanly against the pinned tree; "untested"

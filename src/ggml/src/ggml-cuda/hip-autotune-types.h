@@ -192,7 +192,7 @@ enum ggml_hip_signature_flag {
     // upstream-GLU-fusion case, filed separately for whoever hardens 1207's
     // own signature coverage. dst_gate is deliberately NOT tracked here: it
     // exists on ggml_cuda_mm_fusion_args_host only under patch
-    // patches/rd/1205_rd12_paired_mmvq_dual_output/patch.py (RD12; an
+    // patches/1205_rd12_paired_mmvq_dual_output/patch.py (RD12; an
     // experimental, non-default patch -- 1207 only comments on sharing RD12's
     // struct slot, it does not add the field itself, corrected 2026-08-25
     // after initially misattributing this to 1207), not in the

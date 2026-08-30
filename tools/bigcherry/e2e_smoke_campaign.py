@@ -15,7 +15,7 @@ cheaper alternative to a full production campaign for catching integration
 bugs between the C++ emitter and the Python promotion/replay tooling.
 
 Requires two pre-built llama-server binaries (this script does not build
-them -- see docs/reference/BUILD.md for cmake invocations):
+them -- see docs/reference/build/BUILD.md for cmake invocations):
   --tune-server    built with GGML_HIP_AUTOTUNE=ON, GGML_HIP_AUTOTUNE_RECORD=ON
   --replay-server  built with GGML_HIP_DISPATCH_REPLAY=ON (GGML_HIP_AUTOTUNE off
                     -- these two options are cmake-mutually-exclusive, so this
@@ -617,7 +617,7 @@ class Campaign:
         env = dict(os.environ)
         env.update(env_overrides)
         # LLAMA_SERVER_ENABLE_SHUTDOWN gates the opt-in /shutdown route
-        # (patches/0800_server_shutdown_endpoint.py) -- without it a plain
+        # (patches/0800_server_shutdown_endpoint/patch.py) -- without it a plain
         # process kill on Windows skips backend teardown and silently
         # discards buffered HIP autotune measurements (found the hard way
         # this session: an earlier version of this campaign used a bare

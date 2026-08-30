@@ -11,10 +11,10 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "0830_split_reduce_telemetry.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py").read_text(encoding="utf-8")
 TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
-CMAME = (ROOT / "patches/0100_cmake_options.py").read_text(encoding="utf-8")
+CMAME = (ROOT / "patches" / "0100_cmake_options" / "patch.py").read_text(encoding="utf-8")
 
 
 def test_provider_boundary_observes_result_without_reselecting():
@@ -102,7 +102,7 @@ def test_pristine_apply_replaces_existing_control_flow_without_duplication(tmp_p
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(vendor / relative, target)
 
-    spec = importlib.util.spec_from_file_location("hi58_patch", ROOT / "patches/0830_split_reduce_telemetry.py")
+    spec = importlib.util.spec_from_file_location("hi58_patch", ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

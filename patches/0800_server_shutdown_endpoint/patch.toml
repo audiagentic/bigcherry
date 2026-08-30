@@ -1,0 +1,17 @@
+schema = 1
+id = "0800_server_shutdown_endpoint"
+order = 800
+group = "core"
+state = "validated"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = []
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []

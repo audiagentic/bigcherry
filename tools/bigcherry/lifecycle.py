@@ -378,7 +378,7 @@ def execute_tune_stage(
     # candidate gets replayed against a later call sized for a DIFFERENT
     # candidate at the same shape, which segfaulted (illegal memory
     # access) at small ubatch sizes. Confirmed required by
-    # docs/reference/TEST.md's own tuning instructions. Tune-only: the
+    # docs/reference/testing/TEST.md's own tuning instructions. Tune-only: the
     # replay/production path never sets this, so shipped inference keeps
     # graph-launch performance.
     env["GGML_CUDA_DISABLE_GRAPHS"] = "1"
@@ -446,7 +446,7 @@ def execute_direct_op_evidence_stage(
     project_revision: str = "",
     local_provenance_class: provenance.ProvenanceClass = "production",
 ) -> TuneStageResult:
-    """RE26: HI70's direct-op correctness corpus (patches/1100_hi70_direct_op_evidence.py),
+    """RE26: HI70's direct-op correctness corpus (patches/1100_hi70_direct_op_evidence/patch.py),
     run as part of the SAME continuous acceptance run that already ran
     ``execute_tune_stage`` against a real workload, instead of a separate,
     manually-merged diagnostic pass outside the harness.

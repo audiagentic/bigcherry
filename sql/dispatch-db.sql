@@ -55,8 +55,37 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- schema_version '7' (HI121): adds build_capability and fixes
 -- winner_dispatch_idx/vk_winner_dispatch_idx being wrongly global-unique.
 -- See sql/migrations/0007_producer_capabilities.sql.
+-- schema_version '8' (HI121 close-out step 6, HI127): adds
+-- winner_verification, a per-WINNER (not per-signature, not per-build)
+-- attestation that this exact winner row was ingested through the HI125-
+-- strengthened path (build capability/descriptor proof passed AND this
+-- row's canonical/digest passed C++ verification). Per-winner, not
+-- per-(build,signature), because inventory.py's own INSERT OR REPLACE INTO
+-- winner does not preserve winner_id across a replace -- a later
+-- unverified re-ingest of the same (build, hardware, signature) key gets a
+-- genuinely NEW winner_id, and winner_verification's ON DELETE CASCADE FK
+-- means the old attestation is destroyed along with the old row it
+-- attested, never left dangling against a replacement it never proved
+-- anything about. See sql/migrations/0008_winner_verification.sql.
+-- schema_version '9' (HTR01, adversarially designed with GPT, session
+-- ses_330ae3c055084f38, 2026-08-30): adds correctness_evidence_origin (why
+-- a given correctness_evidence row exists -- promotion_winner |
+-- recovery_alternative | manual_analysis -- so lazily-generated recovery
+-- evidence remains distinguishable from normal winner evidence without
+-- overloading tool_version, which identifies producer implementation, not
+-- sampling/selection reason) and four nullable columns on
+-- correctness_evidence_seed (native_output_digest/candidate_output_digest/
+-- reference_output_digest/output_nels) capturing the EXACT backend output
+-- byte digests the patched test-backend-ops producer already emits
+-- (BIGCHERRY_CORRECTNESS_METRIC's backend1_digest/backend2_digest, HI83)
+-- but which correctness_evidence.py's SeedEvidence previously discarded --
+-- enabling exact numerical-family clustering ("these candidates produce
+-- IDENTICAL bytes across seeds 1/2/3"), a strictly stronger signal than
+-- matching NMSE alone. See sql/migrations/0009_correctness_evidence_
+-- analytics.sql. Existing rows get NULL origin/output-digest values on
+-- migration -- NULL means historical/unavailable, never inferred.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES
-    ('schema_version',    '7'),
+    ('schema_version',    '9'),
     ('signature_schema',  '2'),
     ('hardware_schema',   '1'),
     ('transform_schema',  '1');
@@ -332,6 +361,25 @@ CREATE INDEX IF NOT EXISTS winner_improvement_idx
 -- is weakened, since the real uniqueness still lives on the table itself.
 CREATE INDEX IF NOT EXISTS winner_dispatch_idx
     ON winner(dispatch_digest, objective);
+
+-- ------------------------------------------------------- winner_verification
+-- HI121 close-out step 6 (HI127): per-winner attestation that THIS row was
+-- ingested through the HI125-strengthened path. Absence means UNKNOWN/
+-- not-strengthened, never an implicit pass -- same "absence means unknown"
+-- policy build_capability already established, not a new convention.
+-- ON DELETE CASCADE is load-bearing: inventory.py's INSERT OR REPLACE INTO
+-- winner does not preserve winner_id across a conflict, so a later
+-- unverified re-ingest of the same (build,hardware,objective,dispatch)
+-- key deletes the old winner row (and, via this cascade, its stale
+-- attestation) and creates a brand-new, correctly unattested winner_id --
+-- no separate bookkeeping needed to detect "this winner was replaced".
+CREATE TABLE IF NOT EXISTS winner_verification (
+    winner_id             INTEGER PRIMARY KEY
+                           REFERENCES winner(winner_id) ON DELETE CASCADE,
+    verification_profile  TEXT    NOT NULL,
+    verified_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    CHECK (verification_profile = 'hi121-strengthened-ingest-v1')
+);
 
 -- --------------------------------------------------------------- replay_miss
 -- Bounded miss log written by replay builds via GGML_HIP_DISPATCH_MISS.
@@ -811,9 +859,37 @@ CREATE TABLE IF NOT EXISTS correctness_evidence_seed (
     -- and any future drift gets the same one-off ALTER, not a permanent
     -- compatibility branch.
     threshold_t                REAL   NOT NULL,
+    -- schema 9 (HTR01, 2026-08-30): exact backend OUTPUT byte digests, not
+    -- just NMSE/max_abs -- the patched producer already computes these
+    -- (BIGCHERRY_CORRECTNESS_METRIC backend1_digest/backend2_digest, HI83)
+    -- but they were parsed and then discarded. NULL on any row generated
+    -- before this schema version (never inferred/backfilled).
+    native_output_digest        TEXT,
+    candidate_output_digest     TEXT,
+    reference_output_digest     TEXT,
+    output_nels                 INTEGER,
     UNIQUE (correctness_evidence_id, seed),
     CHECK (native_execution_status IN ('ok', 'failed', 'timeout')),
     CHECK (candidate_execution_status IN ('ok', 'failed', 'timeout'))
+);
+
+-- ------------------------------------------------- correctness_evidence_origin
+-- schema 9 (HTR01, 2026-08-30): WHY a correctness_evidence row exists --
+-- generated as part of normal winner promotion, generated on-demand by
+-- HTR01's recovery search trying an already-timed alternative, or a manual
+-- analysis run. One row per correctness_evidence row (1:1, not 1:many --
+-- a given evidence identity was generated for exactly one reason). Deliberately
+-- NOT merged into correctness_evidence itself: this is provenance/selection
+-- metadata about HOW the row came to exist, not part of the RV49 promotion
+-- contract correctness_evidence itself represents.
+CREATE TABLE IF NOT EXISTS correctness_evidence_origin (
+    correctness_evidence_id INTEGER PRIMARY KEY
+        REFERENCES correctness_evidence(correctness_evidence_id) ON DELETE CASCADE,
+    reason           TEXT NOT NULL,   -- promotion_winner | recovery_alternative | manual_analysis
+    campaign_run_id  TEXT,
+    recovery_run_id  TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (reason IN ('promotion_winner', 'recovery_alternative', 'manual_analysis'))
 );
 
 -- ------------------------------------------------------------- migration 4->5

@@ -1,6 +1,6 @@
 """HI14: parse real graph capture-lifecycle activation markers.
 
-patches/1231_hi14_graph_capture_lifecycle_evidence.py instruments the four
+patches/1231_hi14_graph_capture_lifecycle_evidence/patch.py instruments the four
 real HIP graph API call sites (cudaStreamBeginCapture, cudaStreamEndCapture,
 cudaGraphInstantiate, cudaGraphLaunch) with a once-per-process
 BIGCHERRY_GRAPH_LIFECYCLE stage=<name> marker on success, gated behind

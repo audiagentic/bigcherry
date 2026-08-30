@@ -24,7 +24,7 @@ from bigcherry import replay_cache  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAMPAIGN_V4 = (
-    REPO_ROOT / "docs" / "reference" / "h36-campaign-27b-r9700" / "dispatch-27b.cache"
+    REPO_ROOT / "tools" / "tests" / "fixtures" / "replay" / "dispatch-v4-h36-27b.cache"
 )
 
 
@@ -115,8 +115,10 @@ class V4LegacyReaderTests(unittest.TestCase):
         cls.root = Path(tempfile.mkdtemp())
 
     def test_real_campaign_v4_artifact_parses_via_legacy_reader(self):
-        if not CAMPAIGN_V4.is_file():
-            self.skipTest("historical campaign artifact not present")
+        self.assertTrue(
+            CAMPAIGN_V4.is_file(),
+            f"committed replay fixture missing: {CAMPAIGN_V4}",
+        )
         blob = CAMPAIGN_V4.read_bytes()
         # Real historical campaign artifact, captured under signature schema
         # 1 (predates HI118/HI119's schema-2 bump) -- enforce_schema=False
@@ -134,8 +136,10 @@ class V4LegacyReaderTests(unittest.TestCase):
             self.assertEqual(entry["portable_key"], entry["dispatch"])
 
     def test_real_campaign_v4_artifact_rejected_by_default_schema_enforcement(self):
-        if not CAMPAIGN_V4.is_file():
-            self.skipTest("historical campaign artifact not present")
+        self.assertTrue(
+            CAMPAIGN_V4.is_file(),
+            f"committed replay fixture missing: {CAMPAIGN_V4}",
+        )
         blob = CAMPAIGN_V4.read_bytes()
         with self.assertRaises(SystemExit):
             replay_cache.read_cache_legacy_v4(blob)

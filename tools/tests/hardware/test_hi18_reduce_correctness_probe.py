@@ -14,14 +14,14 @@ from bigcherry.patcher import apply_all
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe.py").read_text(encoding="utf-8")
+PATCH = (ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py").read_text(encoding="utf-8")
 PROBE = (ROOT / "src/tests/test-hip-reduce.cpp").read_text(encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
 TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
 
 _spec = importlib.util.spec_from_file_location(
     "hi18_reduce_correctness_probe_patch",
-    ROOT / "patches" / "1224_hi18_reduce_correctness_probe.py",
+    ROOT / "patches" / "1224_hi18_reduce_correctness_probe" / "patch.py",
 )
 assert _spec and _spec.loader
 _module = importlib.util.module_from_spec(_spec)
@@ -149,11 +149,11 @@ def test_probe_fails_closed_on_missing_participant_output():
     assert "snap.device_count != D" in PROBE
 
 
-def test_probe_d2_only_guard_present_but_mechanics_are_generic():
-    assert "HI18 currently qualifies D=2 only" in PROBE
-    assert "see HI84 for the planned N>2 extension" in PROBE
-    # generic-D construction, not hard-coded to 2 -- so relaxing the guard
-    # above is the only change HI84 needs to this file's mechanics
+def test_probe_d2_to_d4_guard_present_and_mechanics_are_generic():
+    # HI84: relaxed from the original HI18 D=2-only guard to 2..4, matching
+    # real Brutus hardware (4 physical GPUs) -- mechanics below were already
+    # device-count-generic, so the guard was the only change needed.
+    assert "this probe qualifies D=2..4" in PROBE
     assert "for (size_t rank = 0; rank < cfg->device_count; ++rank)" in PROBE
     assert "static_cast<int64_t>(D)" in PROBE
 

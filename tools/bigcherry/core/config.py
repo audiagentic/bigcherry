@@ -106,6 +106,20 @@ class Platform:
 
 
 @dataclass(frozen=True)
+class BackendStack:
+    """Requested software stack profile, distinct from machine platform."""
+
+    name: str
+    backend: str
+    sdk_root: str | None
+    c_compiler: str | None
+    cxx_compiler: str | None
+    runtime_library_dirs: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
+    required_providers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Experiment:
     name: str
     patches: tuple[str, ...]
@@ -155,6 +169,37 @@ class RuntimeProfile:
     tune_context: int
     production_context: int
     min_free_vram_bytes_per_device: int
+    # HTR03 (2026-08-30): explicit workload-class metadata, replacing the
+    # previous implicit "'--spec-type' in server_args" string-matching
+    # inference (GPT explicit: "RuntimeProfile currently only stores argv/
+    # context/VRAM metadata; semantic workload class should become
+    # explicit configuration"). Validated against a declared class
+    # registry at config-load time (see behavioral_corpus.py), not a
+    # Python enum (a new class must not require a code deployment) and
+    # not unconstrained free-form tags (a typo must not silently drop
+    # required coverage).
+    behavioral_classes: tuple[str, ...] = ()
+
+    @property
+    def digest(self) -> str:
+        """A canonical hash over the fields whose CONTENTS matter for
+        behavioral-gate applicability/comparison (HTR03: bind provenance to
+        exact profile CONTENTS, not just its name -- a receipt recording
+        only ``runtime_profile_name`` cannot detect the same-named profile
+        being edited later)."""
+        import hashlib
+        import json
+        canonical = json.dumps(
+            {
+                "server_args": list(self.server_args),
+                "tune_context": self.tune_context,
+                "production_context": self.production_context,
+                "min_free_vram_bytes_per_device": self.min_free_vram_bytes_per_device,
+                "behavioral_classes": sorted(self.behavioral_classes),
+            },
+            sort_keys=True, separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -191,10 +236,13 @@ class Config:
     # HI130: default {} keeps every pre-HI130 `Config(...)` constructor
     # (which never knew `runtime_profiles`) source-compatible.
     runtime_profiles: dict[str, RuntimeProfile] = None  # type: ignore[assignment]
+    stacks: dict[str, BackendStack] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.runtime_profiles is None:
             object.__setattr__(self, "runtime_profiles", {})
+        if self.stacks is None:
+            object.__setattr__(self, "stacks", {})
 
 
 def load(path: str | Path) -> Config:
@@ -225,6 +273,7 @@ def load(path: str | Path) -> Config:
             "campaign",
             "trees",
             "runtime-profile",
+            "stack",
         }
     )
     if unknown_top_level:
@@ -303,6 +352,39 @@ def load(path: str | Path) -> Config:
             options=_options(data.get("options"), f"platform.{name}.options"),
             c_compiler=c_compiler,
             cxx_compiler=cxx_compiler,
+        )
+
+    stacks: dict[str, BackendStack] = {}
+    for name, body in _table(raw.get("stack"), "stack").items():
+        data = _table(body, f"stack.{name}")
+        backend = data.get("backend")
+        if not isinstance(backend, str) or backend not in BACKENDS:
+            raise ConfigError(
+                f"stack.{name}.backend={backend!r} must be one of "
+                f"{', '.join(BACKENDS)}"
+            )
+        sdk_root = data.get("sdk-root")
+        if sdk_root is not None and (not isinstance(sdk_root, str) or not sdk_root):
+            raise ConfigError(f"stack.{name}.sdk-root must be a non-empty string")
+        c_compiler = data.get("c-compiler")
+        if c_compiler is not None and (not isinstance(c_compiler, str) or not c_compiler):
+            raise ConfigError(f"stack.{name}.c-compiler must be a non-empty string")
+        cxx_compiler = data.get("cxx-compiler")
+        if cxx_compiler is not None and (not isinstance(cxx_compiler, str) or not cxx_compiler):
+            raise ConfigError(f"stack.{name}.cxx-compiler must be a non-empty string")
+        stacks[name] = BackendStack(
+            name=name,
+            backend=backend,
+            sdk_root=sdk_root,
+            c_compiler=c_compiler,
+            cxx_compiler=cxx_compiler,
+            runtime_library_dirs=_strings(
+                data.get("runtime-library-dirs"), f"stack.{name}.runtime-library-dirs"
+            ),
+            environment=_options(data.get("environment"), f"stack.{name}.environment"),
+            required_providers=_strings(
+                data.get("required-providers"), f"stack.{name}.required-providers"
+            ),
         )
 
     experiments: dict[str, Experiment] = {}
@@ -440,6 +522,9 @@ def load(path: str | Path) -> Config:
             tune_context=tune_context,
             production_context=production_context,
             min_free_vram_bytes_per_device=min_free_vram,
+            behavioral_classes=_strings(
+                data.get("behavioral-classes"), f"runtime-profile.{name}.behavioral-classes"
+            ),
         )
 
     return Config(
@@ -453,4 +538,5 @@ def load(path: str | Path) -> Config:
         path,
         tuple(trees),
         runtime_profiles,
+        stacks,
     )

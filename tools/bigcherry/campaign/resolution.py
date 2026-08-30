@@ -221,6 +221,7 @@ def resolve_lane(
         extra = cfg.experiments[experiment].patches
         extra_selection = patchset.resolve_exact(
             extra, directory=resolved_catalog_directory, required_state=None,
+            context_ids=frozenset(resolved.module_ids),
         )
         if set(resolved.module_ids) & {module.patch_id for module in extra_selection.modules}:
             raise ResolutionError("experiment repeats a base patch module")

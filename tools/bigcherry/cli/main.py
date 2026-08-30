@@ -30,19 +30,23 @@ from .experiment import (
 )
 from .patch import (
     cmd_apply,
+    cmd_patch_disposition,
     cmd_patch_explain,
     cmd_patch_graph,
     cmd_patch_lint,
+    cmd_patch_rebase_check,
     cmd_patch_status,
     cmd_patch_validate,
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .profiling import cmd_profile_campaign
 from .source import cmd_audit, cmd_pull
 from .tuning import (
     cmd_generate,
     cmd_inventory,
     cmd_project_replay,
+    cmd_reattest,
     cmd_replay_inspect,
     cmd_tune_campaign,
 )
@@ -142,8 +146,62 @@ def build_parser() -> argparse.ArgumentParser:
     apply_cmd.add_argument(
         "--force", action="store_true", help="patch even without a passing audit"
     )
+    apply_cmd.add_argument(
+        "--rebase-report",
+        metavar="PATH",
+        default=None,
+        help=(
+            "PA16 patch-rebase-check report authorizing an exact known-good "
+            "subset; requires --known-good, and must not be combined with "
+            "--recipe/--groups/--states"
+        ),
+    )
+    apply_cmd.add_argument(
+        "--known-good",
+        action="store_true",
+        help=(
+            "apply only the dependency-closed known-good subset proven by "
+            "--rebase-report; a stale report (any bound identity mismatch) "
+            "fails closed"
+        ),
+    )
     _add_selection_args(apply_cmd)
     apply_cmd.set_defaults(func=cmd_apply)
+
+    patch_rebase_check_cmd = sub.add_parser(
+        "patch-rebase-check",
+        help=(
+            "PA16: probe patch applicability against the current upstream "
+            "revision in an isolated detached worktree; observational, "
+            "never advances release stage"
+        ),
+    )
+    rebase_selection = patch_rebase_check_cmd.add_mutually_exclusive_group(required=True)
+    rebase_selection.add_argument(
+        "--recipe",
+        default=None,
+        choices=recipes.names() or None,
+        help="probe the exact logical patch selection for this compatibility recipe",
+    )
+    rebase_selection.add_argument(
+        "--all",
+        dest="all_patches",
+        action="store_true",
+        help="probe every non-rejected logical patch in the registry",
+    )
+    patch_rebase_check_cmd.add_argument(
+        "--json",
+        metavar="PATH",
+        default=None,
+        help="atomically write the structured patch-rebase report here",
+    )
+    patch_rebase_check_cmd.add_argument(
+        "--context-lines",
+        type=int,
+        default=3,
+        help="bounded reconciliation context lines around a failed anchor (default: 3)",
+    )
+    patch_rebase_check_cmd.set_defaults(func=cmd_patch_rebase_check)
 
     patches_cmd = sub.add_parser(
         "patches",
@@ -239,6 +297,31 @@ def build_parser() -> argparse.ArgumentParser:
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
 
+    patch_disposition_cmd = sub.add_parser(
+        "patch-disposition",
+        help="record/list/clear a revision-bound known_broken disposition (HI152)",
+    )
+    disposition_sub = patch_disposition_cmd.add_subparsers(
+        dest="disposition_action", required=True
+    )
+    disposition_set = disposition_sub.add_parser(
+        "set", help="record a known_broken disposition for one patch"
+    )
+    disposition_set.add_argument("--patch-id", required=True)
+    disposition_set.add_argument("--revision", required=True, help="target upstream revision (full SHA)")
+    disposition_set.add_argument("--digest", required=True, help="patch-rebase-check's implementation_digest for this patch")
+    disposition_set.add_argument("--failure-status", required=True,
+                                  help="e.g. FAILED_NEEDS_RECONCILIATION, QUARANTINED")
+    disposition_set.add_argument("--reason", required=True)
+    disposition_set.add_argument("--owner", required=True)
+    disposition_set.add_argument("--tracking-item", required=True)
+    disposition_sub.add_parser("list", help="list recorded dispositions").add_argument(
+        "--json", action="store_true"
+    )
+    disposition_clear = disposition_sub.add_parser("clear", help="remove a disposition")
+    disposition_clear.add_argument("--patch-id", required=True)
+    patch_disposition_cmd.set_defaults(func=cmd_patch_disposition)
+
     patch_validate_cmd = sub.add_parser(
         "patch-validate", help="verify existing patch evidence"
     )
@@ -292,6 +375,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-remotes", action="store_true", help="probe every configured tree"
     )
     pin_status_cmd.set_defaults(func=cmd_pin_status)
+
+    pin_bump_cmd = sub.add_parser(
+        "pin-bump",
+        help="single-tree pin-bump orchestrator (HI153): repin -> pull -> "
+        "audit -> patch-lint -> coverage -> apply -> reaudit, stopping "
+        "with a structured JSON failure envelope on anything not "
+        "provably safe to auto-proceed past. Multi-tree sequencing is "
+        "still manual -- run `pin-status --complete --all-remotes` "
+        "afterward on each required tree.",
+    )
+    pin_bump_cmd.add_argument("target", help="upstream ref/tag to bump to (e.g. b10680)")
+    pin_bump_cmd.add_argument("--recipe", default="bigcherry")
+    pin_bump_cmd.add_argument("--resume", action="store_true")
+    pin_bump_cmd.add_argument("--report-dir", default=None)
+    pin_bump_cmd.set_defaults(func=cmd_pin_bump)
 
     replay_inspect_cmd = sub.add_parser(
         "replay-inspect",
@@ -490,6 +588,56 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print the WorkflowReceipt as JSON to stdout"
     )
     tune_campaign_cmd.set_defaults(func=cmd_tune_campaign)
+
+    # PROF01/HI132: repeatable rocprofv3-based GPU/runtime deep-profiling
+    # campaign -- see profiling/workflow.py for the actual orchestration.
+    # CPU call-graph profiling (perf) is reserved for HI133.
+    profile_campaign_cmd = sub.add_parser(
+        "profile-campaign",
+        help="run a repeatable rocprofv3-based deep-profiling campaign "
+        "(GPU/runtime; CPU call-graph via perf is a separate future item)",
+    )
+    profile_campaign_cmd.add_argument("--llama-root", default=None)
+    profile_campaign_cmd.add_argument("--source", default="bigcherry-native")
+    profile_campaign_cmd.add_argument(
+        "--build", default="control", dest="build",
+        help="build name from the selected source (default 'control')",
+    )
+    profile_campaign_cmd.add_argument("--platform", required=True, help="e.g. linux-multi")
+    profile_campaign_cmd.add_argument("--model", required=True, help="gguf model path")
+    profile_campaign_cmd.add_argument(
+        "--devices", required=True, help="HIP_VISIBLE_DEVICES value, e.g. '0,1'"
+    )
+    profile_campaign_cmd.add_argument(
+        "--runtime-profile", required=True,
+        help="named profile from config/recipes.toml's [runtime-profile.<name>]",
+    )
+    profile_campaign_cmd.add_argument(
+        "--workload", default="default", help="free-text label for the report/receipt"
+    )
+    profile_campaign_cmd.add_argument(
+        "--experiment", default=None,
+        help="named [experiment.<name>] patch set from config/recipes.toml "
+        "(e.g. 'rd33-only') to build with, in addition to the lane's own patches",
+    )
+    profile_campaign_cmd.add_argument(
+        "--workdir", default=None, help="defaults to work_root/profile-campaigns/<run_id>"
+    )
+    profile_campaign_cmd.add_argument("--run-id", default=None)
+    profile_campaign_cmd.add_argument(
+        "--control-reps", type=int, default=10,
+        help="unprofiled reps per control block (default 10, matching this "
+        "project's own measured noise floor -- see HI132)",
+    )
+    profile_campaign_cmd.add_argument(
+        "--profile-passes", type=int, default=2,
+        help="number of rocprofv3 GPU passes (default 2, checks pass-to-pass "
+        "reproducibility rather than statistical power)",
+    )
+    profile_campaign_cmd.add_argument(
+        "--json", action="store_true", help="print the ProfileReport as JSON to stdout"
+    )
+    profile_campaign_cmd.set_defaults(func=cmd_profile_campaign)
 
     from ..tuning import schema as _schema
 
@@ -1024,6 +1172,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="JSONL record/replay diagnostics file containing canonical shapes; may be repeated",
     )
+    # HI125 close-out step 6: opt-in C++-authoritative digest verification
+    # for the manual inventory-tuning path -- omitted, this preserves
+    # today's exact unverified-ingest behavior. Supplying it creates
+    # HI127 winner_verification attestations, same as the campaign path.
+    inv_tuning.add_argument(
+        "--signature-verifier-binary",
+        default=None,
+        help="compiled test-backend-ops binary built with GGML_HIP_AUTOTUNE_RECORD=ON "
+        "-- enables real C++ digest verification (requires --signature-verifier-vendor-root "
+        "and --manifest too)",
+    )
+    inv_tuning.add_argument(
+        "--signature-verifier-vendor-root",
+        default=None,
+        help="source root the signature-verifier-binary was built from",
+    )
+    inv_tuning.add_argument(
+        "--signature-verifier-seed", type=int, default=1, help="test-backend-ops --seed",
+    )
     inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
 
     # Hot list: rank observed signatures by estimated time contribution
@@ -1070,6 +1237,40 @@ def build_parser() -> argparse.ArgumentParser:
     inv_workload.set_defaults(
         func=lambda args: cmd_inventory(args, subcmd="workload-check")
     )
+
+    # HI128: positive re-attestation of an existing winner against its
+    # original measurements/manifest -- never replays load_measurements().
+    inv_reattest = inv_sub.add_parser(
+        "reattest",
+        help="Re-verify an existing schema-8 winner against its original "
+        "measurements/manifest and attest it if it genuinely passes",
+    )
+    inv_reattest.add_argument("--database", required=True, help="schema-8 dispatch SQLite database")
+    inv_reattest.add_argument("--source-build-id", type=int, required=True, help="build_id these measurements belong to")
+    inv_reattest.add_argument("--measurements", required=True, help="the ORIGINAL measurements JSONL (not a projection)")
+    inv_reattest.add_argument("--manifest", required=True, help="the ORIGINAL manifest for source-build-id")
+    inv_reattest.add_argument(
+        "--signature-verifier-binary", required=True,
+        help="compiled test-backend-ops binary built with GGML_HIP_AUTOTUNE_RECORD=ON",
+    )
+    inv_reattest.add_argument(
+        "--signature-verifier-vendor-root", required=True,
+        help="source root the signature-verifier-binary was built from",
+    )
+    inv_reattest.add_argument(
+        "--signature-source",
+        action="append",
+        default=[],
+        help="JSONL record/replay diagnostics file to recover canonical shapes "
+        "for rows lacking inline canonical; may be repeated",
+    )
+    inv_reattest.add_argument("--seed", type=int, default=1, help="test-backend-ops --seed")
+    inv_reattest.add_argument(
+        "--dry-run", action="store_true",
+        help="run every check (including the real hardware verifier) but write nothing",
+    )
+    inv_reattest.add_argument("--json", action="store_true", help="machine-readable summary")
+    inv_reattest.set_defaults(func=cmd_reattest)
 
     return parser
 
@@ -1150,6 +1351,49 @@ def cmd_repin(args: argparse.Namespace) -> int:
 
 def cmd_pin_status(args: argparse.Namespace) -> int:
     return _release_pin.cmd_pin_status(args)
+
+
+def cmd_pin_bump(args: argparse.Namespace) -> int:
+    import json as _json
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from ..core import paths as _paths
+    from ..core import tree_activity as _tree_activity
+    from ..release import pin_bump as _pin_bump
+
+    report_dir = (
+        _Path(args.report_dir) if args.report_dir
+        else _paths.ARTIFACTS / "pin-bump" / f"resume-{args.target}"
+    )
+    try:
+        result = _pin_bump.run(
+            target_ref=args.target, recipe_name=args.recipe,
+            resume=args.resume, report_dir=report_dir,
+        )
+    except _pin_bump.PinBumpStop as exc:
+        envelope = _pin_bump.failure_envelope(
+            exc.run_id or "unresolved", exc.target or {"from_ref": "?", "to_ref": args.target},
+            exc.transition_commit, exc.tree or {"name": "local", "path": str(_paths.llama_root())},
+            exc,
+        )
+        out = report_dir / "failure.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"pin-bump: STOPPED at phase {exc.phase!r} ({exc.code}): {exc.summary}", file=_sys.stderr)
+        print(f"  failure envelope: {out}", file=_sys.stderr)
+        for action in exc.recommended_actions:
+            print(f"  - {action}", file=_sys.stderr)
+        return 1
+    except _tree_activity.TreeActivityError as exc:
+        print(f"pin-bump: TREE_IN_USE: {exc}", file=_sys.stderr)
+        return 1
+
+    print(f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
+          f"({result.state.to_sha[:12]})")
+    print("next: run `bigcherry pin-status --complete --all-remotes` once every "
+          "required tree has been bumped the same way")
+    return 0
 
 
 def _legacy_main(argv: list[str] | None = None) -> int:

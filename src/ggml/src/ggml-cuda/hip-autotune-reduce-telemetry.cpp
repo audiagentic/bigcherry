@@ -29,6 +29,8 @@ thread_local void * g_last_comm_ctx = nullptr;
 thread_local std::string g_last_requested_provider;
 thread_local std::chrono::steady_clock::time_point g_reduce_start;
 thread_local bool g_reduce_timer_active = false;
+thread_local uint64_t g_reduce_id = 0;
+thread_local meta_trace_v1 g_meta_trace;
 
 // HI18 test-capture state. thread_local because the standalone probe is
 // single-threaded and this must never become a second, accidental
@@ -304,7 +306,32 @@ void write_event(const int * devices,
     for (size_t i = 0; i < normalized_device_count; ++i) {
         std::fprintf(file, "%s%d", i == 0 ? "" : ",", devices != nullptr ? devices[i] : -1);
     }
-    std::fprintf(file, "]}\n");
+    std::fprintf(file, "],\"meta_trace\":{\"version\":1,\"reduce_id\":%llu,"
+        "\"active\":%s,\"count\":%u,\"dropped\":%u,\"stages\":[",
+        static_cast<unsigned long long>(g_meta_trace.reduce_id),
+        g_meta_trace.active ? "true" : "false",
+        static_cast<unsigned int>(g_meta_trace.count),
+        static_cast<unsigned int>(g_meta_trace.dropped));
+    for (uint16_t i = 0; i < g_meta_trace.count; ++i) {
+        const meta_stage_v1 & stage = g_meta_trace.stages[i];
+        std::fprintf(file,
+            "%s{\"phase\":%u,\"step\":%u,\"src_rank\":%d,\"dst_rank\":%d,"
+            "\"submit_offset_ns\":%llu,\"bytes\":%llu,\"ne\":[%lld,%lld,%lld,%lld],"
+            "\"nb\":[%zu,%zu,%zu,%zu]}",
+            i == 0 ? "" : ",",
+            static_cast<unsigned int>(stage.phase),
+            static_cast<unsigned int>(stage.step),
+            static_cast<int>(stage.src_rank),
+            static_cast<int>(stage.dst_rank),
+            static_cast<unsigned long long>(stage.submit_offset_ns),
+            static_cast<unsigned long long>(stage.bytes),
+            static_cast<long long>(stage.ne[0]),
+            static_cast<long long>(stage.ne[1]),
+            static_cast<long long>(stage.ne[2]),
+            static_cast<long long>(stage.ne[3]),
+            stage.nb[0], stage.nb[1], stage.nb[2], stage.nb[3]);
+    }
+    std::fprintf(file, "]}}\n");
     std::fflush(file);
     std::fclose(file);
 }
@@ -325,6 +352,7 @@ void ggml_hip_reduce_telemetry_provider(
                 provider_succeeded ? "none" : "provider_declined_handoff_meta",
                 provider_succeeded ? 0 : 1, timing);
     if (provider_succeeded) {
+        g_meta_trace.active = false;
         capture_reduce_test_snapshot(
             devices, device_count, tensors, requested_provider, effective_provider,
             "none", 0, true);
@@ -339,6 +367,9 @@ void ggml_hip_reduce_telemetry_set_requested_provider(
         ? requested_provider : "auto";
     g_reduce_start = std::chrono::steady_clock::now();
     g_reduce_timer_active = true;
+    g_meta_trace = meta_trace_v1{};
+    g_meta_trace.reduce_id = ++g_reduce_id;
+    g_meta_trace.active = true;
 }
 
 const char * ggml_hip_reduce_telemetry_requested_provider(
@@ -362,6 +393,7 @@ void ggml_hip_reduce_telemetry_fallback(
     const reduce_timing timing = reduce_elapsed_us(devices, device_count, true);
     write_event(devices, device_count, tensors, requested_provider, "meta", handoff,
                 fallback_depth, timing);
+    g_meta_trace.active = false;
     capture_reduce_test_snapshot(
         devices, device_count, tensors, requested_provider, "meta",
         handoff, fallback_depth, false);
@@ -386,6 +418,37 @@ void ggml_hip_reduce_telemetry_fallback_context(
             explicitly_requested_meta ? "none" : handoff,
             explicitly_requested_meta ? 0 : fallback_depth);
     g_reduce_timer_active = false;
+}
+
+void ggml_hip_reduce_telemetry_meta_stage(
+        uint16_t phase,
+        uint16_t step,
+        int16_t src_rank,
+        int16_t dst_rank,
+        uint64_t bytes,
+        const ggml_tensor * source) {
+    if (!g_meta_trace.active) {
+        return;
+    }
+    if (g_meta_trace.count >= 32) {
+        if (g_meta_trace.dropped != static_cast<uint16_t>(~uint16_t(0))) {
+            ++g_meta_trace.dropped;
+        }
+        return;
+    }
+
+    meta_stage_v1 & stage = g_meta_trace.stages[g_meta_trace.count++];
+    stage.phase = phase;
+    stage.step = step;
+    stage.src_rank = src_rank;
+    stage.dst_rank = dst_rank;
+    stage.submit_offset_ns = static_cast<uint64_t>(std::chrono::duration_cast<
+        std::chrono::nanoseconds>(std::chrono::steady_clock::now() - g_reduce_start).count());
+    stage.bytes = bytes;
+    for (size_t i = 0; i < 4; ++i) {
+        stage.ne[i] = source != nullptr ? source->ne[i] : 0;
+        stage.nb[i] = source != nullptr ? source->nb[i] : 0;
+    }
 }
 
 void ggml_hip_reduce_test_capture_reset() {

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _load_patch_module(patch_id: str):
     spec = importlib.util.spec_from_file_location(
-        patch_id, ROOT / "patches" / f"{patch_id}.py"
+        patch_id, ROOT / "patches" / patch_id / "patch.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

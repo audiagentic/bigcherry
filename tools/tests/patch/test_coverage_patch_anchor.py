@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def _coverage_module():
-    path = Path(__file__).parents[3] / "patches" / "0700_coverage_counters.py"
+    path = Path(__file__).parents[3] / "patches" / "0700_coverage_counters" / "patch.py"
     spec = importlib.util.spec_from_file_location("coverage_counters", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
