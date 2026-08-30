@@ -545,5 +545,45 @@ def _run_phases(
             state.completed_phases.append("reaudit")
             state.next_phase = "complete"
             state.save(report_dir)
+            _write_release_doc_best_effort(
+                repo_root=repo_root, vendor_root=vendor_root,
+                recipe_name=recipe_name, target_ref=target_ref,
+            )
 
     return PinBumpResult(ok=True, state=state, coverage=coverage)
+
+
+def _write_release_doc_best_effort(
+    *, repo_root: Path, vendor_root: Path, recipe_name: str, target_ref: str,
+) -> None:
+    """Merge the applied recipe's per-patch SUMMARY.md into a release doc.
+
+    Best-effort like _sync_campaign_mirror_best_effort: a release doc is a
+    documentation convenience, not a bump-correctness requirement, so a
+    failure here must never turn a successful bump into a PinBumpStop.
+    """
+    try:
+        from ..patch import docs as patch_docs
+        from ..patch import patchset
+        from ..patch import rebase as patch_rebase
+        from . import records as release_records
+
+        patch_ids = patch_rebase._selection_patch_ids(
+            recipe_name=recipe_name, all_patches=False,
+        )
+        modules_by_id = {m.patch_id: m for m in patchset.catalog()}
+        modules = [modules_by_id[pid] for pid in patch_ids if pid in modules_by_id]
+        pin_info = {
+            "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
+            "bigcherry revision": patch_rebase._git(repo_root, "rev-parse", "HEAD"),
+            "recipe": recipe_name,
+            "target": target_ref,
+        }
+        doc = patch_docs.render_release_doc(
+            modules=modules, pin_info=pin_info,
+            selection_label=f"--recipe {recipe_name}",
+        )
+        release_records.RELEASES_DIR.mkdir(parents=True, exist_ok=True)
+        (release_records.RELEASES_DIR / f"{target_ref}-patches.md").write_text(doc, encoding="utf-8")
+    except Exception:
+        pass

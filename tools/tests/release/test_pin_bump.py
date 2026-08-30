@@ -129,6 +129,20 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
                 pin_bump._sync_campaign_mirror_best_effort(target_ref="b99999", revision="a" * 40)
 
 
+class WriteReleaseDocBestEffortTests(unittest.TestCase):
+    """The release doc is a documentation convenience (real patch-doc
+    template), not a bump-correctness requirement -- must never raise even
+    when the recipe/vendor tree can't be resolved."""
+
+    def test_never_raises_on_a_bogus_recipe(self):
+        pin_bump._write_release_doc_best_effort(
+            repo_root=Path("H:/development/projects/bigcherry"),
+            vendor_root=Path("does-not-exist"),
+            recipe_name="not-a-real-recipe-name",
+            target_ref="b99999",
+        )  # must not raise -- that is the entire test
+
+
 class AcquireMaintenanceLockTests(unittest.TestCase):
     """Found live on pin-bump's first real invocation: acquire_maintenance_lock()
     used to call .acquire() itself AND get used as `with acquire_maintenance_lock(...)`,
