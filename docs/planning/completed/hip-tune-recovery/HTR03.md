@@ -2,7 +2,7 @@
 id: HTR03
 order: 0
 plan: hip-tune-recovery
-state: pending
+state: completed
 created-at: '2026-08-29T13:44:01.556347+00:00'
 breadth: ''
 skill: advanced
@@ -98,6 +98,11 @@ SEE ALSO: HTR06 (new, 2026-08-30) -- a related but explicitly SEPARATE investiga
 
 ## Ledger-events
 
+
 - chg_20260829_134919_the-tuning-system-can-now-reco_8101
 - 2026-08-29T13:49:19.490008+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T23:58:18.136268+00:00 (updated-by): Updated: section:notes
+- 2026-08-30T07:14:23.343110+00:00 (updated-by): Updated (no visible changes)
+- 2026-08-30T07:14:25.687254+00:00 (state-transition): State: pending → completed
+- chg_20260830_071434_made-the-hi141-behavioral-safe_8223
+- 2026-08-30T07:14:34.818406+00:00 (updated-by): Updated: section:ledger-events
