@@ -14,6 +14,7 @@ from ..patch import disposition as patch_disposition
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
 from ..patch import rebase as patch_rebase
+from ..patch import docs as patch_docs
 
 DISPOSITIONS_DIR = paths.DISPOSITIONS
 
@@ -340,6 +341,47 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
 def cmd_patch_validate(args: Namespace) -> int:
     """Verify existing evidence; hardware campaigns remain explicit."""
     return cmd_patch_verify_evidence(args)
+
+
+def cmd_patch_doc(args: Namespace) -> int:
+    """Merge the selected patches' SUMMARY.md into one release doc.
+
+    Reuses patch-rebase-check's exact selection logic (--recipe NAME or
+    --all) so "what's in this doc" always matches "what's in this build" --
+    no separate selection language to drift out of sync.
+    """
+    root = paths.llama_root(args.llama_root)
+    recipe_name = getattr(args, "recipe", None)
+    all_patches = bool(getattr(args, "all_patches", False))
+    try:
+        patch_ids = patch_rebase._selection_patch_ids(
+            recipe_name=recipe_name, all_patches=all_patches,
+        )
+    except patch_rebase.RebaseCheckError as exc:
+        print(f"patch-doc: {exc}", file=sys.stderr)
+        return 2
+
+    modules_by_id = {m.patch_id: m for m in patchset.catalog()}
+    modules = [modules_by_id[pid] for pid in patch_ids]
+
+    upstream_revision = patch_rebase._git(root, "rev-parse", "HEAD")
+    bigcherry_revision = patch_rebase._git(paths.REPO_ROOT, "rev-parse", "HEAD")
+    pin_info = {
+        "llama.cpp revision": upstream_revision,
+        "bigcherry revision": bigcherry_revision,
+    }
+    selection_label = f"--recipe {recipe_name}" if recipe_name else "--all"
+
+    doc = patch_docs.render_release_doc(
+        modules=modules, pin_info=pin_info, selection_label=selection_label,
+    )
+
+    if args.out:
+        Path(args.out).write_text(doc, encoding="utf-8")
+        print(f"release doc: {args.out} ({len(modules)} patch(es))")
+    else:
+        print(doc)
+    return 0
 
 
 def cmd_patches(args: Namespace) -> int:

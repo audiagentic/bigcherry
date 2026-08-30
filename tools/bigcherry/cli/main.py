@@ -31,6 +31,7 @@ from .experiment import (
 from .patch import (
     cmd_apply,
     cmd_patch_disposition,
+    cmd_patch_doc,
     cmd_patch_explain,
     cmd_patch_graph,
     cmd_patch_lint,
@@ -202,6 +203,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="bounded reconciliation context lines around a failed anchor (default: 3)",
     )
     patch_rebase_check_cmd.set_defaults(func=cmd_patch_rebase_check)
+
+    patch_doc_cmd = sub.add_parser(
+        "patch-doc",
+        help=(
+            "merge the selected patches' SUMMARY.md into one release doc, "
+            "alongside the llama.cpp/bigcherry revisions it was built against"
+        ),
+    )
+    patch_doc_selection = patch_doc_cmd.add_mutually_exclusive_group(required=True)
+    patch_doc_selection.add_argument(
+        "--recipe",
+        default=None,
+        choices=recipes.names() or None,
+        help="document the exact logical patch selection for this compatibility recipe",
+    )
+    patch_doc_selection.add_argument(
+        "--all",
+        dest="all_patches",
+        action="store_true",
+        help="document every non-rejected/superseded logical patch in the registry",
+    )
+    patch_doc_cmd.add_argument(
+        "--out",
+        metavar="PATH",
+        default=None,
+        help="write the merged release doc here (default: print to stdout)",
+    )
+    patch_doc_cmd.set_defaults(func=cmd_patch_doc)
 
     patches_cmd = sub.add_parser(
         "patches",
