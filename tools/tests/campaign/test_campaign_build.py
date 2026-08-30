@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -433,6 +434,59 @@ class PublishBuildOutputsTests(unittest.TestCase):
             for relative, digest in published.items():
                 self.assertTrue(store.verify(relative, digest))
 
+    def test_patches_doc_is_published_and_verified_when_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            published = publish_build_outputs(
+                store, source_slice_id="s1", build_plan_id="b1",
+                patches_doc="# Release patch set\n\nreal content\n")
+            [relative] = published
+            self.assertTrue(relative.endswith("patches.md"))
+            self.assertTrue(store.verify(relative, published[relative]))
+
+    def test_no_patches_doc_published_when_none(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory))
+            published = publish_build_outputs(
+                store, source_slice_id="s1", build_plan_id="b1")
+            self.assertEqual(published, {})
+
+
+class RenderBuildPatchDocBestEffortTests(unittest.TestCase):
+    def test_never_raises_on_a_broken_context_and_drops_unknown_ids(self):
+        from bigcherry.campaign.build import _render_build_patch_doc_best_effort
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            context = _context(root, root / "does-not-exist")
+            result = _render_build_patch_doc_best_effort(
+                context, ("not-a-real-patch-id",), {"upstream_revision": "deadbeef"},
+            )
+            # must not raise -- an unresolvable patches_root just yields an
+            # empty catalog, so the unknown id silently drops out
+            self.assertIsNotNone(result)
+            self.assertIn("0 patch(es) included", result)
+
+    def test_returns_none_when_render_itself_fails(self):
+        from bigcherry.campaign.build import _render_build_patch_doc_best_effort
+
+        broken_context = SimpleNamespace()  # no .patches_root attribute at all
+        result = _render_build_patch_doc_best_effort(
+            broken_context, ("0100_cmake_options",), {"upstream_revision": "deadbeef"},
+        )
+        self.assertIsNone(result)  # must not raise
+
+    def test_renders_real_content_for_real_patch_ids(self):
+        from bigcherry.campaign.build import _render_build_patch_doc_best_effort
+        from bigcherry.core import paths as core_paths
+
+        context = SimpleNamespace(patches_root=core_paths.REPO_ROOT / "patches")
+        result = _render_build_patch_doc_best_effort(
+            context, ("0100_cmake_options",), {"upstream_revision": "deadbeef"},
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("0100_cmake_options", result)
+
 
 class ExecuteBuildStageTests(unittest.TestCase):
     def test_end_to_end_with_fake_compiler(self):
@@ -483,6 +537,7 @@ class ExecuteBuildStageTests(unittest.TestCase):
                 manifest={"m": 1}, allow_dirty_bigcherry=True)
             self.assertTrue(any(name.endswith("llama-server") for name in published))
             self.assertTrue(any(name.endswith("manifest.json") for name in published))
+            self.assertTrue(any(name.endswith("patches.md") for name in published))
 
             expected_dir = build_directory(context, metadata["source_slice_id"], build_plan)
             self.assertTrue((expected_dir / "llama-server").is_file())

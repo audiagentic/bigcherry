@@ -616,6 +616,7 @@ def publish_build_outputs(
     manifest: dict[str, Any] | None = None,
     descriptor: dict[str, Any] | None = None,
     binary: Path | None = None,
+    patches_doc: str | None = None,
 ) -> dict[str, str]:
     """Publish this build's identity artifacts, verifying every one.
 
@@ -643,6 +644,14 @@ def publish_build_outputs(
         _publish_json("manifest.json", manifest)
     if descriptor is not None:
         _publish_json("descriptor.json", descriptor)
+    if patches_doc is not None:
+        relative = f"{prefix}/patches.md"
+        digest = store.publish_bytes(relative, patches_doc.encode("utf-8"))
+        if not store.verify(relative, digest):
+            raise CampaignBuildError(
+                f"published artifact {relative} failed immediate verification"
+            )
+        published[relative] = digest
     if binary is not None:
         relative = f"{prefix}/{binary.name}"
         digest = store.publish_file(relative, binary)
@@ -737,4 +746,37 @@ def execute_build_stage(
         manifest=manifest,
         descriptor=descriptor,
         binary=binary,
+        patches_doc=_render_build_patch_doc_best_effort(
+            context, source_plan.patch_ids, source_metadata,
+        ),
     )
+
+
+def _render_build_patch_doc_best_effort(
+    context: ProjectContext, patch_ids: tuple[str, ...], source_metadata: dict[str, Any],
+) -> str | None:
+    """Merge this build's ACTUAL resolved patch_ids' SUMMARY.md into one doc.
+
+    Uses source_plan.patch_ids (the exact content-identified selection this
+    build materialised) rather than re-deriving a recipe name -- a campaign
+    lane's patch set need not correspond to any named recipe at all. Every
+    real build gets its own doc this way, not just pin-bump's target
+    revision. Best-effort like the pin-bump equivalent: a doc failure must
+    never fail a real build.
+    """
+    try:
+        from ..patch import docs as patch_docs
+        from ..patch import patchset
+
+        modules_by_id = {m.patch_id: m for m in patchset.catalog(context.patches_root)}
+        modules = [modules_by_id[pid] for pid in patch_ids if pid in modules_by_id]
+        pin_info = {
+            "llama.cpp revision": str(source_metadata.get("upstream_revision", "unknown")),
+            "source_slice_id": str(source_metadata.get("source_slice_id", "unknown")),
+        }
+        return patch_docs.render_release_doc(
+            modules=modules, pin_info=pin_info,
+            selection_label=f"campaign build ({len(patch_ids)} patch(es) resolved)",
+        )
+    except Exception:
+        return None
