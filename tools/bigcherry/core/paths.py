@@ -18,6 +18,12 @@ PATCH_CATALOG = PATCHES / "catalog.toml"
 SQL = REPO_ROOT / "sql"
 DOCS = REPO_ROOT / "docs"
 ARTIFACTS = REPO_ROOT / "artifacts"
+# NOT under ARTIFACTS: `artifacts/` is entirely gitignored, and a
+# disposition (HI152) is a real, reviewed decision meant to be shared and
+# persist across bumps/sessions/machines -- not a disposable working
+# artifact. Found live: dispositions recorded under artifacts/pin-bump/
+# were silently never committed, defeating the whole point.
+DISPOSITIONS = REPO_ROOT / "dispositions"
 CONFIG = REPO_ROOT / "config"
 RECIPES = CONFIG / "recipes.toml"
 EXTERNAL_SOURCES = CONFIG / "external-sources.toml"

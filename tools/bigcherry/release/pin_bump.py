@@ -326,7 +326,7 @@ def run(
 
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else paths.llama_root()
-    dispositions_dir = dispositions_dir or (paths.ARTIFACTS / "pin-bump" / "dispositions")
+    dispositions_dir = dispositions_dir or paths.DISPOSITIONS
     report_dir = report_dir or (paths.ARTIFACTS / "pin-bump" / f"resume-{target_ref}")
 
     if resume and (report_dir / "state.json").is_file():
