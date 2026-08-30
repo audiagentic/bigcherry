@@ -89,6 +89,46 @@ class OverlaySelfHealTests(unittest.TestCase):
         self.assertEqual(drifted, ["a.cpp", "b.cu"])
 
 
+class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
+    """Found live TWICE (b10680->b10687 and b10687->b10692): the separate
+    campaign-build mirror repo doesn't learn about a new tag just because
+    vendor/llama.cpp did, breaking the very next `bigcherry build`. This
+    helper must be best-effort -- never raise -- since it's a build
+    convenience, not a bump-correctness requirement."""
+
+    def test_never_raises_when_no_mirror_exists(self):
+        from unittest import mock
+        from bigcherry.core.context import ProjectContext
+
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+            fake_context = ProjectContext(
+                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
+                upstream_repo=Path(work) / "upstream" / "llama.cpp.git",  # never created
+                overlay_root=Path(project) / "src", patches_root=Path(project) / "patches",
+            )
+            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
+                pin_bump._sync_campaign_mirror_best_effort(target_ref="b99999", revision="a" * 40)
+                # must not raise -- that is the entire test
+
+    def test_never_raises_on_a_broken_mirror(self):
+        from unittest import mock
+        from bigcherry.core.context import ProjectContext
+
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+            mirror = Path(work) / "upstream" / "llama.cpp.git"
+            mirror.mkdir(parents=True)
+            (mirror / "HEAD").write_text("not a real git dir\n", encoding="utf-8")
+            fake_context = ProjectContext(
+                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
+                upstream_repo=mirror, overlay_root=Path(project) / "src",
+                patches_root=Path(project) / "patches",
+            )
+            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
+                pin_bump._sync_campaign_mirror_best_effort(target_ref="b99999", revision="a" * 40)
+
+
 class AcquireMaintenanceLockTests(unittest.TestCase):
     """Found live on pin-bump's first real invocation: acquire_maintenance_lock()
     used to call .acquire() itself AND get used as `with acquire_maintenance_lock(...)`,
