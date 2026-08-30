@@ -83,7 +83,17 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "superseded"
+# Superseded 2026-08-30 by upstream PR #27574 (merged 2026-08-23, inside
+# the b10502->b10687 bump window): introduces the identical
+# pattern_attn_gate_weight granularity_head/granularity_q conditional at
+# llama-model.cpp, more general (also covers attn_sinks, explicit
+# MQA/GQA), with its own test-llama-archs multi-device coverage. See
+# RD20's plan item and external-sources.toml's tracked row for the full
+# trail. `superseded` (not `rejected`) -- this patch was never wrong, it
+# just became unnecessary once upstream shipped the same fix. Both
+# states drop out of patch-rebase-check --all's discovery permanently, so
+# needing a fresh disposition every bump is gone either way.
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",

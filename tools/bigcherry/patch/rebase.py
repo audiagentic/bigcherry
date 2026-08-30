@@ -213,7 +213,7 @@ def _selection_patch_ids(
         )
     modules = patchset.catalog()
     if all_patches:
-        return tuple(m.patch_id for m in modules if m.state != "rejected")
+        return tuple(m.patch_id for m in modules if m.state not in patchset.RETIRED_STATES)
     from .. import recipes as recipes_module  # noqa: PLC0415 (leaf import, avoids a cycle)
 
     try:
@@ -224,7 +224,7 @@ def _selection_patch_ids(
         m.patch_id for m in modules
         if (recipe.groups is None or m.group in recipe.groups)
         and (recipe.states is None or m.state in recipe.states)
-        and m.state != "rejected"
+        and m.state not in patchset.RETIRED_STATES
     )
     return ids
 

@@ -25,7 +25,11 @@ fabricated. What IS real and computed here:
                     "validated" or "untested" (both mean the TRANSFORM
                     applies cleanly against the pinned tree; "untested"
                     is about the *hypothesis*, not the patch mechanics)
-  rejected       -- the materialized patch's STATE is "rejected"
+  rejected       -- the materialized patch's STATE is "rejected" (failed
+                    our own validation as a candidate)
+  superseded     -- the materialized patch's STATE is "superseded"
+                    (upstream independently implemented the same fix;
+                    the patch itself was never wrong)
   contracted     -- an Experiment Contract's `source.atomic_part` names
                     this patch, or the contract id's own RDxx prefix
                     matches this plan-item
@@ -57,7 +61,7 @@ class LifecycleStatus:
     source_pinned: bool
     materialized: bool
     patch_ids: tuple[str, ...]
-    build_state: str | None  # "validated" | "untested" | "rejected" | None
+    build_state: str | None  # "validated" | "untested" | "rejected" | "superseded" | None
     contracted: bool
     contract_ids: tuple[str, ...]
     tracked_status: str | None  # the [[sources.tracked]] entry's own `status` field, if any
@@ -138,11 +142,14 @@ def compute_all(
         states = {patch_states[pid] for pid in patch_ids if pid in patch_states}
         # A plan item's materialization can span more than one patch (e.g. a
         # composition-gated cluster) -- report the WORST state present:
-        # rejected beats untested beats validated, since a lifecycle summary
-        # should surface the thing most likely to need attention.
+        # rejected beats superseded beats untested beats validated, since a
+        # lifecycle summary should surface the thing most likely to need
+        # attention (a real rejection over a benign supersession).
         build_state: str | None = None
         if "rejected" in states:
             build_state = "rejected"
+        elif "superseded" in states:
+            build_state = "superseded"
         elif "untested" in states:
             build_state = "untested"
         elif "validated" in states:

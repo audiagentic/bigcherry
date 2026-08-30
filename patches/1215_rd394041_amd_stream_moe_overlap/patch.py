@@ -139,27 +139,23 @@ _SCRATCH_FIELD_NEW = """    ggml_cuda_stream_context concurrent_stream_context;
     ~ggml_backend_cuda_context();
 """
 
-# --- hunk 3: cublas_handle(int device) uses the current stream slot
-_HANDLE_METHOD_OLD = """    cublasHandle_t cublas_handle(int device) {
-        if (cublas_handles[device] == nullptr) {
-            ggml_cuda_set_device(device);
-            CUBLAS_CHECK(cublasCreate(&cublas_handles[device]));
-            CUBLAS_CHECK(cublasSetMathMode(cublas_handles[device], CUBLAS_TF32_TENSOR_OP_MATH));
-        }
-        return cublas_handles[device];
-    }
-"""
-
-_HANDLE_METHOD_NEW = """    cublasHandle_t cublas_handle(int device) {
-        cublasHandle_t & handle = cublas_handles[device][curr_stream_no];
-        if (handle == nullptr) {
-            ggml_cuda_set_device(device);
-            CUBLAS_CHECK(cublasCreate(&handle));
-            CUBLAS_CHECK(cublasSetMathMode(handle, CUBLAS_TF32_TENSOR_OP_MATH));
-        }
-        return handle;
-    }
-"""
+# --- hunk 3: RECONCILED 2026-08-31 (b10687->b10692 bump) -- REMOVED, not
+# just re-anchored. Upstream PR #26574 ("ggml-cuda: provide static
+# workspace for cuBLAS handles", merged 2026-08-20, one day after our
+# b10502 base) independently landed per-(device,stream) cuBLAS handles as
+# part of "account for concurrent streams when using GGML_CUDA_GRAPH_OPT" --
+# the exact problem RD39/RD40 targeted -- and upstream's version is MORE
+# complete than ours (it also isolates the cuBLAS workspace per stream,
+# via cublasSetStream/cublasSetWorkspace, which this patch never
+# attempted). Verified live: cublas_handle() in the current pinned
+# ggml-cuda/common.cuh already indexes cublas_handles[device][curr_stream_no]
+# with its own workspace management; re-applying our narrower version
+# would be a regression, not a fix. The struct-field array-widening hunk
+# (immediately above) reports "already-applied" against upstream's own
+# 2D array for the same reason and is deliberately left in place
+# (harmless no-op, documents original intent); this hunk is removed
+# outright since keeping a stale anchor here would just re-break on the
+# next drift. See RD39/RD40 plan items and HI154 for the full trail.
 
 
 # =========================================================================
@@ -178,29 +174,33 @@ _INCLUDE_NEW = """#include <cstdlib>
 #include <vector>
 """
 
-# --- hunk 5: destroy every (device,stream) handle + free the scratch buffer
-_DTOR_OLD = """    for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
-        for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
-            if (streams[i][j] != nullptr) {
-                CUDA_CHECK(cudaStreamDestroy(streams[i][j]));
+# --- hunk 5: free the concurrent-branch scratch buffer in the destructor.
+# Upstream PR #26574 (static per-stream cuBLAS workspace, merged
+# 2026-08-20, landed inside the b10687->b10692 bump window) independently
+# rewrote this destructor to already destroy per-(device,stream) handles
+# AND free cublas_workspaces[i][j] itself -- the cublas_handle-widening
+# half of this patch (RD39/RD40) is superseded by that PR (see the
+# _HANDLE_METHOD_OLD/NEW removal above). What upstream's destructor does
+# NOT know about is concurrent_scratch, which is ours alone (RD41/RD42's
+# dedicated scratch buffer for the MoE shared-expert overlap) -- so this
+# hunk now only layers that one free onto upstream's real current body,
+# anchored on its tail to survive the handle/workspace rewrite.
+_DTOR_OLD = """            if (cublas_handles[i][j] != nullptr) {
+                CUBLAS_CHECK(cublasDestroy(cublas_handles[i][j]));
             }
-        }
-        if (cublas_handles[i] != nullptr) {
-            CUBLAS_CHECK(cublasDestroy(cublas_handles[i]));
+            if (cublas_workspaces[i][j] != nullptr) {
+                CUDA_CHECK(cudaFree(cublas_workspaces[i][j]));
+            }
         }
     }
 }
 """
 
-_DTOR_NEW = """    for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
-        for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
-            if (streams[i][j] != nullptr) {
-                CUDA_CHECK(cudaStreamDestroy(streams[i][j]));
-            }
-        }
-        for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
-            if (cublas_handles[i][j] != nullptr) {
+_DTOR_NEW = """            if (cublas_handles[i][j] != nullptr) {
                 CUBLAS_CHECK(cublasDestroy(cublas_handles[i][j]));
+            }
+            if (cublas_workspaces[i][j] != nullptr) {
+                CUDA_CHECK(cudaFree(cublas_workspaces[i][j]));
             }
         }
     }
@@ -564,15 +564,9 @@ PATCH_COMMON_CUH = FilePatch(
             text=_SCRATCH_FIELD_NEW,
             guard=r"ggml_backend_buffer_t concurrent_scratch\s*= nullptr;",
         ),
-        Edit(
-            id="rd3942-cublas-handle-method",
-            anchor=re.escape(_HANDLE_METHOD_OLD),
-            rationale="cublas_handle(int device): index by the current "
-                      "stream slot, not just device",
-            mode="replace",
-            text=_HANDLE_METHOD_NEW,
-            guard=r"cublasHandle_t & handle = cublas_handles\[device\]\[curr_stream_no\];",
-        ),
+        # rd3942-cublas-handle-method removed: upstream PR #26574 already
+        # widened cublas_handle(int device) to index by (device, stream) --
+        # see the _HANDLE_METHOD_OLD/NEW removal note above.
     ),
 )
 

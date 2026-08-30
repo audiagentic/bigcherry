@@ -26,7 +26,7 @@ def _run(argv: list[str]) -> tuple[int, str, str]:
 
 class PatchesCatalogFilterTests(unittest.TestCase):
     def test_no_filter_shows_every_patch_unchanged(self):
-        code, out, _ = _run(["patches", "--states", "validated,untested,rejected"])
+        code, out, _ = _run(["patches", "--states", "validated,untested,rejected,superseded"])
         self.assertEqual(code, 0)
         self.assertNotIn("catalog:", out)
         self.assertIn("51 of 51 shown selected", out)
@@ -72,7 +72,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
                 "--backend",
                 "hip",
                 "--states",
-                "validated,untested,rejected",
+                "validated,untested,rejected,superseded",
             ]
         )
         self.assertEqual(code, 0)

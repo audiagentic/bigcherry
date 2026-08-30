@@ -53,7 +53,14 @@ from .apply import FilePatch
 # imports and re-exports it.
 VALIDATION_FRAMEWORK_VERSION = "1"
 
-STATES: tuple[str, ...] = ("validated", "rejected", "untested")
+STATES: tuple[str, ...] = ("validated", "rejected", "untested", "superseded")
+# Both are terminal/excluded from discovery (patch-rebase-check --all,
+# disposition coverage, composition prerequisites): "rejected" means the
+# patch failed our own validation as a candidate; "superseded" means it
+# was never wrong, upstream just implemented the same fix independently.
+# Kept distinct so a lifecycle/registry reader can tell "we rejected this"
+# from "this became unnecessary" instead of collapsing both into one code.
+RETIRED_STATES: tuple[str, ...] = ("rejected", "superseded")
 PATCH_KINDS: tuple[str, ...] = ("framework", "upstream-backport", "enhancement")
 PATCH_ORIGINS: tuple[str, ...] = ("local", "upstream-commit", "upstream-pr", "external-fork")
 PATCH_BACKENDS: tuple[str, ...] = ("hip", "vulkan", "agnostic")
