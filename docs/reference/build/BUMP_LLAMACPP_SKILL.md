@@ -206,6 +206,40 @@ measurements, replay caches, inventory DBs, campaign build descriptors,
 evidence bundles, release records -- every one keyed to the old revision is
 stale now, not wrong, just *for another pin*).
 
+## 4b. MANDATORY: build and run a real smoke test on real hardware
+
+**A bump is not done until this has actually run and passed.** Patch-rebase
+and audit passing only proves the SOURCE reconciles; it proves nothing about
+whether the result actually builds or runs. This step is what caught 5 real
+bugs live during the first bump this skill was authored from -- do not skip
+it because the rest of the bump looked clean.
+
+```
+python -m bigcherry build --lane <source>:<build>:<platform> \
+  --model <path-to-a-real-gguf> --hip-visible-devices 0
+```
+
+- Pick the lane matching the tree you just bumped (e.g.
+  `bigcherry-native:control:windows-gfx1100` for a local Windows GPU,
+  `bigcherry:control:linux-multi` for Brutus).
+- `--model` triggers the built-in runtime-smoke validation automatically --
+  don't treat a plain compile-only `build` (no `--model`) as sufficient.
+- Confirm the GPU is actually idle first (step 0's liveness check applies
+  here too -- a build+smoke run is real hardware use).
+- If it fails, get the REAL underlying error before assuming it's a stale
+  environment issue -- run the built binary directly (bypassing the
+  campaign harness) with matching flags to isolate whether the failure is
+  in the binary itself or in the harness's own subprocess/environment
+  handling. Real bugs found this way so far: a stale/shallow build-mirror
+  clone never tracking new tags; a platform config missing compiler paths
+  entirely; a missing PATH entry for the toolchain's runtime libraries; the
+  smoke worker's environment override replacing (not merging with) the
+  real process environment, crashing on Windows; and result-parsing that
+  assumed stdout was pure JSON from byte 0 when the toolchain itself prints
+  a diagnostic line first on some platforms.
+- A real pass looks like a JSON result with plausible non-zero throughput
+  numbers for every expected row, not just a nonzero exit code.
+
 ## 5. Completion gate
 
 ```
