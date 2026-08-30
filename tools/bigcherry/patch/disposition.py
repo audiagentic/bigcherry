@@ -135,8 +135,8 @@ def compute_coverage(
       no disposition can excuse it, ever;
     - a NON-selected patch may be clean OR carry a disposition that
       `applies_to` this exact (target_revision, patch_digest);
-    - a rejected patch (state == 'rejected') never appears in `all_report`
-      at all -- it is reported as `excluded`, not uncovered;
+    - a retired patch (state == 'rejected' or 'superseded') never appears in
+      `all_report` at all -- it is reported as `excluded`, not uncovered;
     - anything else (bad status, no matching disposition) is uncovered ->
       `complete` is False.
     """
@@ -146,7 +146,7 @@ def compute_coverage(
     excluded = tuple(
         {"patch_id": patch_id, "reason": f"state={state}"}
         for patch_id, state in sorted(catalog_states.items())
-        if state == "rejected"
+        if state in ("rejected", "superseded")
     )
     excluded_ids = {entry["patch_id"] for entry in excluded}
 

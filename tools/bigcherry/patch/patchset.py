@@ -34,7 +34,8 @@ from . import registry as patch_registry
 from ..core import paths
 from .apply import FilePatch
 
-STATES: tuple[str, ...] = ("validated", "rejected", "untested")
+STATES: tuple[str, ...] = patch_registry.STATES
+RETIRED_STATES: tuple[str, ...] = patch_registry.RETIRED_STATES
 DEFAULT_STATE = "untested"
 DEFAULT_GROUP = "core"
 
@@ -296,8 +297,8 @@ def resolve_exact(
     for module in selected:
         if module.state not in STATES:
             raise ValueError(f"{module.patch_id}: invalid STATE={module.state!r}")
-        if module.state == "rejected" and not allow_rejected:
-            raise ValueError(f"{module.patch_id}: rejected patch requires --allow-rejected")
+        if module.state in RETIRED_STATES and not allow_rejected:
+            raise ValueError(f"{module.patch_id}: {module.state} patch requires --allow-rejected")
         if required_state is not None and module.state != required_state:
             raise ValueError(
                 f"{module.patch_id}: state {module.state!r} does not satisfy "

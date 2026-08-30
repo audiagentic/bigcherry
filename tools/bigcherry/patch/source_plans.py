@@ -128,12 +128,12 @@ def build_focal_comparison(
 
     rejected = sorted(
         patch_id for patch_id in prerequisites
-        if registry.by_id[patch_id].state == "rejected"
+        if registry.by_id[patch_id].state in ("rejected", "superseded")
     )
     if rejected:
         return blocked(
-            "prerequisite(s) in rejected state cannot form a controlled "
-            f"composition: {', '.join(rejected)}"
+            "prerequisite(s) in rejected/superseded state cannot form a "
+            f"controlled composition: {', '.join(rejected)}"
         )
 
     conflicts = sorted(set(focal_descriptor.conflicts) & (baseline_ids | prerequisites))

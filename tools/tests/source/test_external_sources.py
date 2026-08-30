@@ -115,21 +115,32 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # exists.
     PROMOTED_RDNA_PATCHES = frozenset()
 
+    # Patches retired from the first-sweep pool because upstream shipped the
+    # same fix independently (STATE = "superseded", not "rejected" -- the
+    # patch itself was never wrong). See each patch module's own STATE
+    # comment for the supersession trail.
+    RETIRED_RDNA_PATCHES = frozenset({"1201_rd20_attn_gate_tp_split"})
+
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
         """The first-sweep isolation contract: rdna-boosts patches must NOT be
         pullable by the production groups, so a native build cannot pick them
-        up accidentally -- except for patches that have since been promoted."""
+        up accidentally -- except for patches that have since been promoted
+        or retired (superseded/rejected)."""
         for info in patchset.describe():
-            if (
-                info.group == "rdna-boosts"
-                and info.name not in self.PROMOTED_RDNA_PATCHES
-            ):
-                self.assertEqual(
-                    info.state, "untested", f"{info.name}: expected untested"
+            if info.group != "rdna-boosts":
+                continue
+            if info.name in self.RETIRED_RDNA_PATCHES:
+                self.assertIn(
+                    info.state, ("rejected", "superseded"),
+                    f"{info.name}: expected a retired state",
                 )
             elif info.name in self.PROMOTED_RDNA_PATCHES:
                 self.assertEqual(
                     info.state, "validated", f"{info.name}: expected validated"
+                )
+            else:
+                self.assertEqual(
+                    info.state, "untested", f"{info.name}: expected untested"
                 )
 
     def test_rdna_patches_not_in_production_patch_sets(self):
