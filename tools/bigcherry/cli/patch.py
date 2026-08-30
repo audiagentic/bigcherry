@@ -15,7 +15,7 @@ from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
 from ..patch import rebase as patch_rebase
 
-DISPOSITIONS_DIR = paths.ARTIFACTS / "pin-bump" / "dispositions"
+DISPOSITIONS_DIR = paths.DISPOSITIONS
 
 
 def cmd_apply(args: Namespace) -> int:

@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "BLOCKED_BY_DEPENDENCY",
+  "owner": "rdna-boost-experiments",
+  "patch_digest": "fdaa877fbcb7a8d49e7c04df63a3ec9c14ba5dd76f4843190459dfe0e2d7a99b",
+  "patch_id": "1216_rd43_concurrent_join_fusion_guard",
+  "reason": "blocked solely by 1215_rd394041_amd_stream_moe_overlap's anchor failure; not independently broken",
+  "target_revision": "370cb12e8bb7d7e6a93372706b24a7356f5e6991",
+  "tracking_item": "RD43"
+}

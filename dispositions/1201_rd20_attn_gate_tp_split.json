@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "rdna-boost-experiments",
+  "patch_digest": "9225994af6fdc1dbc7e4baf356b0c538f152c96b5a6355934258954916665f68",
+  "patch_id": "1201_rd20_attn_gate_tp_split",
+  "reason": "confirmed superseded by upstream PR #27574 (see RD20 plan item, superseded 2026-08-30); never validated, never will be",
+  "target_revision": "370cb12e8bb7d7e6a93372706b24a7356f5e6991",
+  "tracking_item": "RD20"
+}
