@@ -1,0 +1,23 @@
+# HTR03: the first real corpus edition, containing the one pinned HI141
+# regression vector this repository has owned since HI143 (2026-08-29).
+#
+# An edition is immutable once published: any add/remove/content/parameter
+# change to a vector requires a NEW edition (a new `edition` name below),
+# never an in-place mutation of this file's existing vectors -- this is
+# what keeps a past campaign's recorded corpus_edition_id +
+# corpus_content_digest resolvable to the exact same vectors it saw at
+# the time, permanently.
+schema_version = 1
+edition = "qwen38-production-v1"
+classes = ["mtp-speculative"]
+
+[[vectors]]
+id = "hi141-mtp-4096-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 128
+seed = 42
+applies_to = ["mtp-speculative"]
+requirements = ["mtp-telemetry"]
+scenario = "long-prefill-mtp"
+provenance = "HI141"

@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from . import behavioral_corpus as behavioral_corpus_mod
 from . import behavioral_gate as behavioral_gate_mod
 from . import inventory as inv_mod
 from . import recovery as recovery_mod
@@ -440,8 +441,27 @@ def _stage_replay_build(
     )
 
 
-def _default_behavioral_corpus() -> list[behavioral_gate_mod.BehavioralVector]:
-    return [behavioral_gate_mod.load_hi141_regression_vector()]
+#: HTR03: the repository's default corpus manifest -- one real edition,
+#: extend by publishing a NEW edition (never editing this one's vectors in
+#: place; see behavioral_corpus.py's immutability contract).
+_FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+_DEFAULT_CORPUS_MANIFEST = _FIXTURES_DIR / "corpus-qwen38-production-v1.toml"
+
+
+def _resolve_default_corpus(
+    runtime_profile: campaign_config.RuntimeProfile,
+) -> tuple[list[behavioral_gate_mod.BehavioralVector], behavioral_corpus_mod.CorpusEdition, tuple[behavioral_corpus_mod.CorpusVectorSpec, ...]]:
+    """HTR03: resolve the applicable corpus for this runtime profile via
+    the versioned manifest + explicit behavioral_classes, replacing the
+    old hardcoded _default_behavioral_corpus() + implicit '--spec-type'
+    string-matching. A profile declaring NO behavioral_classes legitimately
+    has nothing decision-sensitive to check (the same real-world case the
+    old require_mtp=False path covered) -- resolve_applicable_vectors()
+    itself only fails loud when classes ARE declared but match nothing."""
+    edition = behavioral_corpus_mod.load_corpus_edition(_DEFAULT_CORPUS_MANIFEST, _FIXTURES_DIR)
+    specs = behavioral_corpus_mod.resolve_applicable_vectors(edition, runtime_profile.behavioral_classes)
+    vectors = [behavioral_corpus_mod.to_behavioral_vector(spec, _FIXTURES_DIR) for spec in specs]
+    return vectors, edition, specs
 
 
 def _load_signature_assignments(promoted_path: Path) -> dict[str, recovery_mod.SignatureAssignment]:
@@ -536,9 +556,28 @@ def _stage_replay_validate(
     campaign closed. Only when every vector is exact_pass AND the existing
     replay-coverage check passes does the provisional cache get atomically
     renamed to the real dispatch.cache."""
-    corpus = tuple(corpus if corpus is not None else _default_behavioral_corpus())
-    if not corpus:
-        raise TuneCampaignError("behavioral gate corpus is empty -- refusing to export unvalidated")
+    corpus_edition: behavioral_corpus_mod.CorpusEdition | None = None
+    corpus_vector_specs: tuple[behavioral_corpus_mod.CorpusVectorSpec, ...] = ()
+    if corpus is None:
+        corpus_list, corpus_edition, corpus_vector_specs = _resolve_default_corpus(runtime_profile)
+        corpus = tuple(corpus_list)
+        # A runtime profile declaring NO behavioral_classes has nothing
+        # decision-sensitive to check (the direct generalization of the
+        # old require_mtp=False path) -- this is a legitimate, silent-by-
+        # design skip, NOT the "corpus is empty" failure below, which
+        # exists for an EXPLICITLY-supplied empty corpus (a caller bug).
+        if not corpus and not runtime_profile.behavioral_classes:
+            corpus = ()
+        elif not corpus:
+            raise TuneCampaignError(
+                "behavioral gate corpus resolved to zero vectors for a runtime "
+                "profile that DOES declare behavioral_classes -- this should "
+                "already have failed loud inside resolve_applicable_vectors()"
+            )
+    else:
+        corpus = tuple(corpus)
+        if not corpus:
+            raise TuneCampaignError("behavioral gate corpus is empty -- refusing to export unvalidated")
     binary_path = lane_result.binary_ref.path
     coverage_path = workdir / "coverage.json"
     report_path = workdir / "behavioral-gate.json"
@@ -557,13 +596,6 @@ def _stage_replay_validate(
     common_args = (
         "-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args,
     )
-    # HI143 (gpt review, 2026-08-29): the default corpus (load_hi141_
-    # regression_vector) is MTP/Qwen-specific, and run_vector requires MTP
-    # telemetry by default -- a runtime profile that does NOT enable
-    # --spec-type would otherwise crash validation entirely rather than
-    # just skipping an inapplicable check. Make applicability explicit
-    # instead of accidentally treating this fixture as universal.
-    require_mtp = "--spec-type" in runtime_profile.server_args
     # HI143 (gpt review, 2026-08-29): the launched process otherwise
     # inherits the full ambient environment -- a leftover
     # GGML_HIP_FORCE_CANDIDATE(_STRICT)/DISPATCH_DB/DISPATCH_CACHE/
@@ -584,7 +616,7 @@ def _stage_replay_validate(
         try:
             with runner:
                 return [
-                    behavioral_gate_mod.run_vector(runner, vector, require_mtp=require_mtp)
+                    behavioral_gate_mod.run_vector(runner, vector, require_mtp=vector.requires_mtp)
                     for vector in corpus
                 ]
         except (behavioral_gate_mod.BehavioralGateError, ServerError) as exc:
@@ -604,7 +636,7 @@ def _stage_replay_validate(
     try:
         with candidate_runner:
             candidate_traces = [
-                behavioral_gate_mod.run_vector(candidate_runner, vector, require_mtp=require_mtp)
+                behavioral_gate_mod.run_vector(candidate_runner, vector, require_mtp=vector.requires_mtp)
                 for vector in corpus
             ]
             candidate_runner.run_completion("Explain how a compass works.", n_predict=96)
@@ -621,7 +653,27 @@ def _stage_replay_validate(
         behavioral_gate_mod.compare_traces(vector.name, native, candidate)
         for vector, native, candidate in zip(corpus, native_traces, candidate_traces, strict=True)
     ])
-    atomic_write_json(report_path, report.summary())
+    report_document = report.summary()
+    # HTR03: persist exactly which corpus edition/vectors were checked --
+    # so a FUTURE deep-dive reviewer (per real HTR01 experience: this is
+    # not hypothetical, it's exactly what caught three real bugs) can
+    # reconstruct precisely what this run validated without re-deriving it
+    # from whatever the manifest/parser looks like AT REVIEW TIME.
+    if corpus_edition is not None:
+        report_document["corpus_edition_id"] = corpus_edition.edition
+        report_document["corpus_schema_version"] = corpus_edition.schema_version
+        report_document["corpus_content_digest"] = corpus_edition.content_digest
+        report_document["selected_vectors"] = [
+            {
+                "id": spec.id, "content_digest": spec.content_digest,
+                "applies_to": list(spec.applies_to), "requirements": list(spec.requirements),
+                "scenario": spec.scenario, "provenance": spec.provenance,
+            }
+            for spec in corpus_vector_specs
+        ]
+    report_document["runtime_profile_name"] = runtime_profile.name
+    report_document["runtime_profile_digest"] = runtime_profile.digest
+    atomic_write_json(report_path, report_document)
 
     if report.hard_fail or report.needs_throughput_adjudication:
         # HTR01: rather than immediately discarding the ENTIRE campaign's
@@ -715,6 +767,17 @@ def _stage_replay_validate(
         )
 
     provisional_cache.replace(final_cache_path)
+    # HTR03 provenance (GPT point A): bind this validation to the EXACT
+    # cache artifact and report bytes, not just a path -- a path alone can
+    # be silently overwritten by a later run reusing the same workdir.
+    import hashlib
+    coverage["validated_cache_digest"] = hashlib.sha256(final_cache_path.read_bytes()).hexdigest()
+    coverage["behavioral_gate_report_path"] = str(report_path)
+    coverage["behavioral_gate_report_digest"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    coverage["runtime_profile_digest"] = runtime_profile.digest
+    if corpus_edition is not None:
+        coverage["corpus_edition_id"] = corpus_edition.edition
+        coverage["corpus_content_digest"] = corpus_edition.content_digest
     return coverage
 
 

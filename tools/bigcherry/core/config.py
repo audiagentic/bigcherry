@@ -169,6 +169,37 @@ class RuntimeProfile:
     tune_context: int
     production_context: int
     min_free_vram_bytes_per_device: int
+    # HTR03 (2026-08-30): explicit workload-class metadata, replacing the
+    # previous implicit "'--spec-type' in server_args" string-matching
+    # inference (GPT explicit: "RuntimeProfile currently only stores argv/
+    # context/VRAM metadata; semantic workload class should become
+    # explicit configuration"). Validated against a declared class
+    # registry at config-load time (see behavioral_corpus.py), not a
+    # Python enum (a new class must not require a code deployment) and
+    # not unconstrained free-form tags (a typo must not silently drop
+    # required coverage).
+    behavioral_classes: tuple[str, ...] = ()
+
+    @property
+    def digest(self) -> str:
+        """A canonical hash over the fields whose CONTENTS matter for
+        behavioral-gate applicability/comparison (HTR03: bind provenance to
+        exact profile CONTENTS, not just its name -- a receipt recording
+        only ``runtime_profile_name`` cannot detect the same-named profile
+        being edited later)."""
+        import hashlib
+        import json
+        canonical = json.dumps(
+            {
+                "server_args": list(self.server_args),
+                "tune_context": self.tune_context,
+                "production_context": self.production_context,
+                "min_free_vram_bytes_per_device": self.min_free_vram_bytes_per_device,
+                "behavioral_classes": sorted(self.behavioral_classes),
+            },
+            sort_keys=True, separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -491,6 +522,9 @@ def load(path: str | Path) -> Config:
             tune_context=tune_context,
             production_context=production_context,
             min_free_vram_bytes_per_device=min_free_vram,
+            behavioral_classes=_strings(
+                data.get("behavioral-classes"), f"runtime-profile.{name}.behavioral-classes"
+            ),
         )
 
     return Config(

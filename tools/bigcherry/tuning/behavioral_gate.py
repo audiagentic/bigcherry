@@ -97,6 +97,12 @@ class BehavioralVector:
     prompt: str
     n_predict: int
     seed: int = 42
+    # HTR03 (2026-08-30): per-vector, replacing the previous single
+    # runtime-profile-wide boolean (require_mtp inferred by string-
+    # matching '--spec-type' in server_args). Defaults True to preserve
+    # every existing caller's behavior (including load_hi141_regression_
+    # vector() below) that never set this explicitly.
+    requires_mtp: bool = True
 
 
 @dataclass(frozen=True)
