@@ -371,9 +371,16 @@ def _default_probe(alias: str, path: str) -> tuple[str | None, str | None, str |
         f"cd {shlex.quote(path)} && "
         f"printf 'VENDOR %s\\n' \"$(git -C vendor/llama.cpp rev-parse HEAD "
         f'2>/dev/null || printf none)" && '
-        f"printf 'PIN %s\\n' \"$(sed -n "
+        # `tr -d '\r'` first: config/recipes.toml is committed CRLF (this
+        # project's established convention for that file) -- the `$`-anchored
+        # sed pattern below never matches a line whose real last character
+        # before the newline is \r, not the closing quote, so the remote
+        # probe silently returned an empty pin on any tree checked out with
+        # CRLF preserved (e.g. a fresh git checkout on the remote host).
+        # Found live during the b10680->b10687 bump's Brutus convergence.
+        f"printf 'PIN %s\\n' \"$(tr -d '\\r' < config/recipes.toml 2>/dev/null | sed -n "
         f"'s/^pinned[[:space:]]*=[[:space:]]*\\\"\\(.*\\)\\\"$/\\1/p' "
-        f'config/recipes.toml 2>/dev/null | sed -n 1p)" && '
+        f'| sed -n 1p)" && '
         f"printf 'HEAD %s\\n' \"$(git rev-parse HEAD 2>/dev/null "
         f'|| printf none)"'
     )
