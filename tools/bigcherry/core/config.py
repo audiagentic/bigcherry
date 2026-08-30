@@ -174,11 +174,23 @@ class RuntimeProfile:
     # inference (GPT explicit: "RuntimeProfile currently only stores argv/
     # context/VRAM metadata; semantic workload class should become
     # explicit configuration"). Validated against a declared class
-    # registry at config-load time (see behavioral_corpus.py), not a
-    # Python enum (a new class must not require a code deployment) and
-    # not unconstrained free-form tags (a typo must not silently drop
-    # required coverage).
+    # registry -- NOT at this config's own parse time (correcting an
+    # earlier, inaccurate comment, GPT review 2026-08-30): the registry
+    # lives in a corpus manifest (behavioral_corpus.py), which this module
+    # has no dependency on, so validation happens where the two are first
+    # brought together (behavioral_corpus.resolve_applicable_vectors()),
+    # fail-closed before any behavioral comparison runs. Not a Python enum
+    # (a new class must not require a code deployment) and not
+    # unconstrained free-form tags (a typo must not silently drop required
+    # coverage).
     behavioral_classes: tuple[str, ...] = ()
+    # HTR03 (GPT review round 2, 2026-08-30): which corpus EDITION this
+    # profile validates against -- an explicit config reference, not a
+    # hardcoded Python constant, so publishing a new edition never
+    # requires a code change (only a new manifest file + this one config
+    # line). None means "no corpus configured" (equivalent to behavioral_
+    # classes=() -- nothing to check for this profile).
+    behavioral_corpus_edition: str | None = None
 
     @property
     def digest(self) -> str:
@@ -196,6 +208,7 @@ class RuntimeProfile:
                 "production_context": self.production_context,
                 "min_free_vram_bytes_per_device": self.min_free_vram_bytes_per_device,
                 "behavioral_classes": sorted(self.behavioral_classes),
+                "behavioral_corpus_edition": self.behavioral_corpus_edition,
             },
             sort_keys=True, separators=(",", ":"),
         )
@@ -491,6 +504,17 @@ def load(path: str | Path) -> Config:
             )
         campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
 
+    def _behavioral_corpus_edition(data: dict, profile_name: str) -> str | None:
+        raw_edition = data.get("behavioral-corpus-edition")
+        if raw_edition is None:
+            return None
+        if not isinstance(raw_edition, str) or not raw_edition:
+            raise ConfigError(
+                f"runtime-profile.{profile_name}.behavioral-corpus-edition must be "
+                f"a non-empty string when present"
+            )
+        return raw_edition
+
     runtime_profiles: dict[str, RuntimeProfile] = {}
     for name, body in _table(raw.get("runtime-profile"), "runtime-profile").items():
         data = _table(body, f"runtime-profile.{name}")
@@ -525,6 +549,7 @@ def load(path: str | Path) -> Config:
             behavioral_classes=_strings(
                 data.get("behavioral-classes"), f"runtime-profile.{name}.behavioral-classes"
             ),
+            behavioral_corpus_edition=_behavioral_corpus_edition(data, name),
         )
 
     return Config(

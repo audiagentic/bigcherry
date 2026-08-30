@@ -441,24 +441,38 @@ def _stage_replay_build(
     )
 
 
-#: HTR03: the repository's default corpus manifest -- one real edition,
-#: extend by publishing a NEW edition (never editing this one's vectors in
-#: place; see behavioral_corpus.py's immutability contract).
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-_DEFAULT_CORPUS_MANIFEST = _FIXTURES_DIR / "corpus-qwen38-production-v1.toml"
 
 
 def _resolve_default_corpus(
     runtime_profile: campaign_config.RuntimeProfile,
-) -> tuple[list[behavioral_gate_mod.BehavioralVector], behavioral_corpus_mod.CorpusEdition, tuple[behavioral_corpus_mod.CorpusVectorSpec, ...]]:
+) -> tuple[list[behavioral_gate_mod.BehavioralVector], behavioral_corpus_mod.CorpusEdition | None, tuple[behavioral_corpus_mod.CorpusVectorSpec, ...]]:
     """HTR03: resolve the applicable corpus for this runtime profile via
-    the versioned manifest + explicit behavioral_classes, replacing the
-    old hardcoded _default_behavioral_corpus() + implicit '--spec-type'
-    string-matching. A profile declaring NO behavioral_classes legitimately
-    has nothing decision-sensitive to check (the same real-world case the
-    old require_mtp=False path covered) -- resolve_applicable_vectors()
-    itself only fails loud when classes ARE declared but match nothing."""
-    edition = behavioral_corpus_mod.load_corpus_edition(_DEFAULT_CORPUS_MANIFEST, _FIXTURES_DIR)
+    its own configured edition reference (RuntimeProfile.
+    behavioral_corpus_edition) + explicit behavioral_classes -- replacing
+    the old hardcoded _default_behavioral_corpus() + implicit '--spec-type'
+    string-matching, AND (GPT review round 2, 2026-08-30) replacing a
+    hardcoded module-level manifest-path constant that would have required
+    a code change to publish a new edition, defeating HTR03's actual goal.
+
+    A profile with no behavioral_corpus_edition AND no behavioral_classes
+    legitimately has nothing decision-sensitive to check (generalizes the
+    old require_mtp=False case). A profile declaring behavioral_classes
+    WITHOUT a corpus edition is a real config error -- fail closed rather
+    than silently checking nothing against a class the operator explicitly
+    asked for."""
+    if runtime_profile.behavioral_corpus_edition is None:
+        if runtime_profile.behavioral_classes:
+            raise TuneCampaignError(
+                f"runtime profile {runtime_profile.name!r} declares "
+                f"behavioral_classes {list(runtime_profile.behavioral_classes)!r} "
+                f"but no behavioral_corpus_edition -- nothing to resolve them against"
+            )
+        return [], None, ()
+    manifest_path = behavioral_corpus_mod.resolve_manifest_path(
+        runtime_profile.behavioral_corpus_edition, _FIXTURES_DIR
+    )
+    edition = behavioral_corpus_mod.load_corpus_edition(manifest_path, _FIXTURES_DIR)
     specs = behavioral_corpus_mod.resolve_applicable_vectors(edition, runtime_profile.behavioral_classes)
     vectors = [behavioral_corpus_mod.to_behavioral_vector(spec, _FIXTURES_DIR) for spec in specs]
     return vectors, edition, specs
@@ -663,14 +677,39 @@ def _stage_replay_validate(
         report_document["corpus_edition_id"] = corpus_edition.edition
         report_document["corpus_schema_version"] = corpus_edition.schema_version
         report_document["corpus_content_digest"] = corpus_edition.content_digest
-        report_document["selected_vectors"] = [
-            {
+        # GPT review round 2 (2026-08-30): the promised per-vector snapshot
+        # also includes the ACTUAL comparison result (verdict, draft
+        # traces, first_output_divergence, exact token digests) -- not
+        # just the manifest's own static parameters -- so a future
+        # reviewer never needs to re-derive "what happened" from the
+        # manifest/parser as it exists at review time. verdicts_by_name is
+        # keyed by vector name (== spec.id) rather than assuming zip order,
+        # since corpus_vector_specs and report.verdicts are populated via
+        # independent code paths that happen to share ordering today but
+        # need not forever.
+        verdicts_by_name = {v.vector_name: v for v in report.verdicts}
+        selected_vectors = []
+        for spec in corpus_vector_specs:
+            entry = {
                 "id": spec.id, "content_digest": spec.content_digest,
+                "prompt_sha256": spec.prompt_sha256, "n_predict": spec.n_predict, "seed": spec.seed,
                 "applies_to": list(spec.applies_to), "requirements": list(spec.requirements),
                 "scenario": spec.scenario, "provenance": spec.provenance,
             }
-            for spec in corpus_vector_specs
-        ]
+            verdict = verdicts_by_name.get(spec.id)
+            if verdict is not None:
+                entry.update({
+                    "verdict": verdict.verdict,
+                    "native_draft": [verdict.native.draft_n, verdict.native.draft_n_accepted],
+                    "candidate_draft": [verdict.candidate.draft_n, verdict.candidate.draft_n_accepted],
+                    "first_output_divergence": verdict.first_output_divergence,
+                    "native_token_digest": behavioral_gate_mod.token_digest(verdict.native.generated_token_ids),
+                    "candidate_token_digest": behavioral_gate_mod.token_digest(verdict.candidate.generated_token_ids),
+                    "token_count": len(verdict.native.generated_token_ids),
+                })
+            selected_vectors.append(entry)
+        report_document["selected_vectors"] = selected_vectors
+    report_document["behavioral_gate_contract_version"] = behavioral_gate_mod.BEHAVIORAL_GATE_CONTRACT_VERSION
     report_document["runtime_profile_name"] = runtime_profile.name
     report_document["runtime_profile_digest"] = runtime_profile.digest
     atomic_write_json(report_path, report_document)
@@ -775,6 +814,7 @@ def _stage_replay_validate(
     coverage["behavioral_gate_report_path"] = str(report_path)
     coverage["behavioral_gate_report_digest"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
     coverage["runtime_profile_digest"] = runtime_profile.digest
+    coverage["behavioral_gate_contract_version"] = behavioral_gate_mod.BEHAVIORAL_GATE_CONTRACT_VERSION
     if corpus_edition is not None:
         coverage["corpus_edition_id"] = corpus_edition.edition
         coverage["corpus_content_digest"] = corpus_edition.content_digest
