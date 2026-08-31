@@ -1,0 +1,130 @@
+"""VA14-B tests: validation-subject build parity assertion and RD08's real
+positive/control lane execution wiring (tools/bigcherry/patch/
+validation_campaign.py), hardware-free via a fake experiment-execution
+runner -- consistent with VA14's established pattern
+(test_experiment_execution_va14.py).
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+import unittest
+from dataclasses import dataclass
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bigcherry.experiment import execution as ex  # noqa: E402
+from bigcherry.patch import validation_campaign as vc  # noqa: E402
+
+
+@dataclass
+class _FakeBuildEvidence:
+    effective_configure: dict[str, str]
+    effective_build_id: str
+
+
+class AssertValidationSubjectParityTests(unittest.TestCase):
+    def test_matching_configure_and_build_id_passes(self) -> None:
+        control = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Release"}, "abc123")
+        subject = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Release"}, "abc123")
+        vc.assert_validation_subject_parity(control, subject, patch_id="p")  # no raise
+
+    def test_mismatched_configure_raises(self) -> None:
+        control = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Release"}, "abc123")
+        subject = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Debug"}, "def456")
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.assert_validation_subject_parity(control, subject, patch_id="p")
+
+    def test_matching_configure_but_mismatched_build_id_raises(self) -> None:
+        # Same requested options, but effective_build_id differs (e.g. a
+        # nondeterministic environment fingerprint) -- must still fail
+        # closed rather than trust configure equality alone.
+        control = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Release"}, "abc123")
+        subject = _FakeBuildEvidence({"CMAKE_BUILD_TYPE": "Release"}, "zzz999")
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.assert_validation_subject_parity(control, subject, patch_id="p")
+
+
+class Rd08ValidationLaneCommandsTests(unittest.TestCase):
+    def test_decode_workload_uses_tg128_shape_flags(self) -> None:
+        control_cmd, subject_cmd = vc.rd08_validation_lane_commands(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), workload="decode",
+        )
+        self.assertIn("-p", control_cmd)
+        self.assertEqual(control_cmd[control_cmd.index("-p") + 1], "0")
+        self.assertEqual(control_cmd[control_cmd.index("-n") + 1], "128")
+        self.assertEqual(control_cmd[0], "control_bin")
+        self.assertEqual(subject_cmd[0], "subject_bin")
+
+    def test_prefill_workload_uses_pp512_shape_flags(self) -> None:
+        control_cmd, _ = vc.rd08_validation_lane_commands(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), workload="prefill",
+        )
+        self.assertEqual(control_cmd[control_cmd.index("-p") + 1], "512")
+        self.assertEqual(control_cmd[control_cmd.index("-n") + 1], "0")
+
+    def test_control_and_subject_commands_differ_only_by_binary(self) -> None:
+        control_cmd, subject_cmd = vc.rd08_validation_lane_commands(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), workload="decode",
+        )
+        self.assertEqual(control_cmd[1:], subject_cmd[1:])
+
+    def test_unmapped_workload_raises(self) -> None:
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.rd08_validation_lane_commands(
+                control_binary=Path("c"), subject_binary=Path("s"),
+                model=Path("m"), workload="mtp_verify",
+            )
+
+
+class RunRd08ValidationLanesTests(unittest.TestCase):
+    def test_persists_evidence_and_returns_real_lane_effects(self) -> None:
+        values = {
+            "control_bin": {"tg128": 100.0, "pp512": 1000.0},
+            "subject_bin": {"tg128": 100.5, "pp512": 999.0},
+        }
+
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            binary = command[0]
+            metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
+            value = values[binary][metric]
+
+            class _Result:
+                returncode = 0
+                stdout = f"{metric} | {value} t/s\n"
+                stderr = ""
+
+            return _Result()
+
+        real_subprocess_run = vc.subprocess.run
+        vc.subprocess.run = fake_run
+        try:
+            result = vc.run_rd08_validation_lanes(
+                contract=type("C", (), {"contract_id": "RD08-Q6K-MMVQ-VDR2"})(),
+                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+                model=Path("m.gguf"), hip_path=Path("H:/hip"),
+                run_dir=Path(self._tmp_dir()), pairs=2,
+            )
+        finally:
+            vc.subprocess.run = real_subprocess_run
+
+        self.assertEqual(len(result["effects"]), 2)
+        roles = {effect.role for effect in result["effects"]}
+        self.assertEqual(roles, {"positive", "control"})
+        artifact_path = Path(self._tmp_dir()) / result["artifact"]["path"]
+        self.assertTrue(artifact_path.exists())
+
+    def _tmp_dir(self) -> str:
+        if not hasattr(self, "_tmp"):
+            import tempfile
+            self._tmp = tempfile.mkdtemp()
+        return self._tmp
+
+
+if __name__ == "__main__":
+    unittest.main()
