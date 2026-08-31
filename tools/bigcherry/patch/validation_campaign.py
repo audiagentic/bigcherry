@@ -488,25 +488,17 @@ def run(args: argparse.Namespace) -> int:
     registry = patch_registry.load_registry(bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
 
-    # VA02 execution-side anti-grandfather guard: a patch whose tracked
-    # status requires a validation package (ported-benched/ported-validated/
-    # deferred-hardware) must have the real README + validation.toml +
-    # resolved Experiment Contract before a NEW validation run may start,
-    # regardless of any lint-side structural-grandfather exemption --
-    # otherwise build_plan_for_patch() legitimately returning None for a
-    # patch with neither a contract nor an adapter would let this command
-    # continue straight into source materialization/build without ever
-    # producing real evidence tied to a check. This guard is skipped only
-    # for patches whose tracked status does not require a package at all.
-    tracked = set(patch_validation_policy.tracked_statuses_for_patch(descriptor.patch_id))
-    if tracked & patch_validation_policy.PACKAGE_STATUSES:
-        validation_plan = patch_validation_policy.require_execution_package(
-            descriptor, root=bc_paths.PATCHES,
-        )
-    else:
-        validation_plan = patch_validation.build_plan_for_patch(
-            descriptor, root=bc_paths.PATCHES,
-        )
+    # VA02 execution-side anti-grandfather guard (unconditional, per GPT
+    # round-5 code review req_86cfd3a0bff04716: this command IS "start a
+    # real validation run" -- there is no tracked-status branch here,
+    # because otherwise build_plan_for_patch() legitimately returning None
+    # for a patch with neither a contract nor an adapter would let this
+    # command continue straight into source materialization/build without
+    # ever producing real evidence tied to a check, regardless of any
+    # lint-side structural-grandfather exemption).
+    validation_plan = patch_validation_policy.require_execution_package(
+        descriptor, root=bc_paths.PATCHES,
+    )
     if validation_plan is not None:
         _print(f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}")
 

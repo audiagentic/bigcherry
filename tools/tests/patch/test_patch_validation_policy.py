@@ -242,5 +242,66 @@ class RequireExecutionPackageTests(unittest.TestCase):
                 vp.require_execution_package(descriptor, root=root)
 
 
+class RegressionTests(unittest.TestCase):
+    """Regressions for two real bugs found during round-5 review
+    (req_86cfd3a0bff04716): a state='validated' framework patch incorrectly
+    swept into the RD-only package requirement, and a custom-validator spec
+    that was never actually checked (parse_validation_toml leaves
+    validator-specific config opaque, so a malformed/missing 'callable' key
+    previously lint-clean as long as producer coverage succeeded)."""
+
+    def test_framework_kind_patch_is_never_required_even_when_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            package_dir = root / "9998_framework_example"
+            package_dir.mkdir(parents=True)
+            (package_dir / "patch.py").write_text("STATE = 'validated'\n", encoding="utf-8")
+            (package_dir / "patch.toml").write_text(
+                'schema = 1\nid = "9998_framework_example"\norder = 9998\n'
+                'group = "test"\nstate = "validated"\nkind = "framework"\n'
+                'origin = "local"\nbackend = "hip"\n',
+                encoding="utf-8",
+            )
+            src_path = root / "external-sources.toml"
+            src_path.write_text(
+                'version = 1\n\n[[sources]]\nid = "example"\nrepo = "example/example"\n'
+                'locator = "example"\n\n[[sources.snapshots]]\nlabel = "head"\n'
+                f'head = "{SHA}"\nbase = "{SHA}"\nactive = true\n',
+                encoding="utf-8",
+            )
+            baseline_path = root / "baseline.json"
+            baseline_path.write_text(
+                json.dumps({"schema_version": 1, "policy_version": vp.VALIDATION_PACKAGE_POLICY_VERSION, "patches": {}}),
+                encoding="utf-8",
+            )
+            report = vp.check_validation_packages(
+                root=root, external_sources_path=src_path, baseline_path=baseline_path
+            )
+            statuses = {s.patch_id: s.status for s in report.statuses}
+            self.assertEqual(statuses.get("9998_framework_example"), "not-required")
+            self.assertEqual(report.problems, ())
+
+    def test_custom_validator_spec_static_check_rejects_missing_callable(self) -> None:
+        """validate_custom_callable_spec() -- now actually wired into
+        check_validation_packages()'s per-check scan -- rejects a spec
+        that doesn't resolve to a real, correctly-signatured function,
+        without ever importing/executing the target module."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "validation").mkdir()
+            (root / "validation" / "checks.py").write_text(
+                "def check(ctx):\n    return None\n", encoding="utf-8"
+            )
+            vp.validate_custom_callable_spec("validation/checks.py:check", package_root=root)
+            with self.assertRaises(vp.PolicyError):
+                vp.validate_custom_callable_spec(
+                    "validation/checks.py:does_not_exist", package_root=root
+                )
+            with self.assertRaises(vp.PolicyError):
+                vp.validate_custom_callable_spec(
+                    "validation/missing_file.py:check", package_root=root
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
