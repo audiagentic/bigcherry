@@ -48,6 +48,152 @@ class PinBumpStateTests(unittest.TestCase):
             self.assertEqual(loaded, state)
 
 
+class SchemaTwoRoundTripTests(unittest.TestCase):
+    def test_selector_fields_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/some/path",
+                completed_phases=["preflight", "declare"], next_phase="pull",
+                selector_kind="recipe", selector_name="bigcherry",
+                selector_patch_ids=("0100_x", "0200_y"),
+                coverage_report_sha256="deadbeef",
+            )
+            state.save(state_dir)
+            loaded = pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(loaded, state)
+
+    def test_schema_one_state_loads_with_empty_selector_not_a_crash(self):
+        # A real schema-1 state.json on disk (written before this plan)
+        # has no "selector" key at all -- load() must not KeyError.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=1, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/some/path",
+                completed_phases=["preflight"], next_phase="declare",
+            )
+            state.save(state_dir)
+            loaded = pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(loaded.selector_kind, "")
+            self.assertEqual(loaded.selector_patch_ids, ())
+
+
+class ValidateResumeTests(unittest.TestCase):
+    """compat.recipe removal plan (gpt-dev-agent reviewed, session
+    ses_5307d9c58ec645cb): resume-time identity checks that did not exist
+    before this plan -- a --resume with a different target/tree, or an
+    in-flight run whose state predates selector binding, must fail
+    closed, not silently continue."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path=str(Path("/some/path")),
+            completed_phases=["preflight"], next_phase="declare",
+            selector_kind="recipe", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_schema_one_resume_fails_closed(self):
+        state = self._state(schema_version=1)
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b10680", vendor_root=Path("/some/path"),
+            )
+        self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_target_mismatch_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b99999", vendor_root=Path("/some/path"),
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
+
+    def test_tree_mismatch_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b10680", vendor_root=Path("/different/path"),
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_TREE_MISMATCH")
+
+    def test_matching_target_and_tree_passes(self):
+        state = self._state()
+        pin_bump._validate_resume(
+            state, target_ref="b10680", vendor_root=Path("/some/path"),
+        )  # no raise
+
+
+class ResumeSelectorTests(unittest.TestCase):
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/some/path",
+            completed_phases=["preflight"], next_phase="declare",
+            selector_kind="recipe", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_no_cli_selector_reuses_persisted_selector(self):
+        state = self._state()
+        kind, name = pin_bump._resume_selector(state, recipe_name=None)
+        self.assertEqual((kind, name), ("recipe", "bigcherry"))
+
+    def test_matching_cli_recipe_is_accepted(self):
+        state = self._state()
+        kind, name = pin_bump._resume_selector(state, recipe_name="bigcherry")
+        self.assertEqual((kind, name), ("recipe", "bigcherry"))
+
+    def test_mismatched_cli_recipe_name_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._resume_selector(state, recipe_name="release")
+        self.assertEqual(ctx.exception.code, "RESUME_SELECTOR_MISMATCH")
+
+
+class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
+    def test_unchanged_membership_passes(self):
+        state = pin_bump.PinBumpState(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
+            selector_kind="recipe", selector_name="bigcherry-native",
+            selector_patch_ids=tuple(sorted(
+                pin_bump.patch_rebase._selection_patch_ids(
+                    recipe_name="bigcherry-native", all_patches=False,
+                )
+            )),
+        )
+        pin_bump._require_selector_membership_unchanged(
+            state, recipe_name="bigcherry-native",
+        )  # no raise -- real catalog, unchanged since state was built above
+
+    def test_drifted_membership_fails_closed(self):
+        state = pin_bump.PinBumpState(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
+            selector_kind="recipe", selector_name="bigcherry-native",
+            selector_patch_ids=("this_patch_id_does_not_exist_anymore",),
+        )
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._require_selector_membership_unchanged(
+                state, recipe_name="bigcherry-native",
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
+
+
 class FailureEnvelopeTests(unittest.TestCase):
     def test_envelope_has_the_documented_shape(self):
         exc = pin_bump.PinBumpStop(

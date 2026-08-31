@@ -21,6 +21,7 @@ touch it beyond reporting its result.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -89,9 +90,27 @@ class PinBumpState:
     tree_path: str
     completed_phases: list[str] = field(default_factory=list)
     next_phase: str = PHASES[0]
+    #: compat.recipe removal plan (gpt-dev-agent-reviewed, session
+    #: ses_5307d9c58ec645cb), schema 2+ only. Binds WHICH selector this run
+    #: was started with -- "recipe" (legacy) or "source" (v2) -- so
+    #: --resume reconstructs the identical selector rather than silently
+    #: reinterpreting whatever the resuming invocation happens to pass.
+    #: Deliberately NOT the source's patch_set_id: patch IMPLEMENTATION
+    #: hashes legitimately change during reconciliation, so binding on
+    #: content identity would make ordinary --resume impossible.
+    #: selector_patch_ids freezes MEMBERSHIP (which patch IDs) while still
+    #: allowing their contents to be repaired between phases.
+    selector_kind: str = ""
+    selector_name: str = ""
+    selector_patch_ids: tuple[str, ...] = ()
+    #: sha256 of the exact rebase-recipe.json the coverage phase wrote --
+    #: re-checked before apply so a report modified/replaced on disk
+    #: between phases (by hand, or a bug) is caught, on top of
+    #: apply_known_good()'s own live source/ref/patch-set staleness checks.
+    coverage_report_sha256: str = ""
 
     def as_dict(self) -> dict:
-        return {
+        d = {
             "schema_version": self.schema_version, "run_id": self.run_id,
             "target": {
                 "from_ref": self.from_ref, "from_sha": self.from_sha,
@@ -104,6 +123,14 @@ class PinBumpState:
                 "next_phase": self.next_phase,
             },
         }
+        if self.schema_version >= 2:
+            d["selector"] = {
+                "kind": self.selector_kind,
+                "name": self.selector_name,
+                "patch_ids": list(self.selector_patch_ids),
+            }
+            d["coverage_report_sha256"] = self.coverage_report_sha256
+        return d
 
     def save(self, state_dir: Path) -> Path:
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +141,7 @@ class PinBumpState:
     @classmethod
     def load(cls, state_dir: Path) -> "PinBumpState":
         data = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
+        selector = data.get("selector") or {}
         return cls(
             schema_version=data["schema_version"], run_id=data["run_id"],
             from_ref=data["target"]["from_ref"], from_sha=data["target"]["from_sha"],
@@ -122,6 +150,10 @@ class PinBumpState:
             tree_name=data["tree"]["name"], tree_path=data["tree"]["path"],
             completed_phases=list(data["resume"]["completed_phases"]),
             next_phase=data["resume"]["next_phase"],
+            selector_kind=selector.get("kind", ""),
+            selector_name=selector.get("name", ""),
+            selector_patch_ids=tuple(selector.get("patch_ids", ())),
+            coverage_report_sha256=data.get("coverage_report_sha256", ""),
         )
 
 
@@ -364,14 +396,22 @@ class PinBumpResult:
 
 
 def run(
-    *, target_ref: str, recipe_name: str = "bigcherry", root: Path | None = None,
+    *, target_ref: str, recipe_name: str | None = None, root: Path | None = None,
     dispositions_dir: Path | None = None, resume: bool = False,
     report_dir: Path | None = None,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
     bare exception) on anything not provably safe to auto-proceed past;
     the caller is expected to catch it, write ``failure_envelope(...)``
-    under ``report_dir``, and exit non-zero."""
+    under ``report_dir``, and exit non-zero.
+
+    ``recipe_name=None`` means "no selector explicitly supplied": a fresh
+    run defaults to ``"bigcherry"`` (today's real behavior, unchanged by
+    the compat.recipe removal plan's schema-2 binding work -- see
+    ``_run_phases``' state-creation branch); a ``--resume`` with no
+    selector reuses whatever the original invocation was started with
+    (``_resume_selector``), rather than re-defaulting.
+    """
     from .. import __main__ as legacy
     from ..source import audit as source_audit
     from ..patch import catalog as patch_catalog
@@ -383,12 +423,15 @@ def run(
 
     if resume and (report_dir / "state.json").is_file():
         state = PinBumpState.load(report_dir)
+        _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
+        _, resolved_recipe_name = _resume_selector(state, recipe_name=recipe_name)
     else:
         state = None
+        resolved_recipe_name = recipe_name if recipe_name is not None else "bigcherry"
 
     try:
         return _run_phases(
-            state=state, target_ref=target_ref, recipe_name=recipe_name,
+            state=state, target_ref=target_ref, recipe_name=resolved_recipe_name,
             repo_root=repo_root, vendor_root=vendor_root,
             dispositions_dir=dispositions_dir, report_dir=report_dir,
         )
@@ -411,6 +454,112 @@ def run(
         raise
 
 
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _validate_resume(
+    state: "PinBumpState", *, target_ref: str, vendor_root: Path,
+) -> None:
+    """compat.recipe removal plan (gpt-dev-agent-reviewed, session
+    ses_5307d9c58ec645cb): resume identity gaps that existed even before
+    this plan -- state stored target/tree, but the phases never actually
+    checked the RESUMING invocation's target_ref/vendor_root against them.
+    A --resume with a different target or tree must fail closed, not
+    silently continue against the wrong state."""
+    if state.schema_version < 2:
+        raise PinBumpStop(
+            "resume", "LEGACY_STATE_SELECTOR_UNBOUND",
+            "this in-flight run's state predates selector binding (schema "
+            f"{state.schema_version} < 2) -- it cannot prove which selector "
+            "(--recipe/--source NAME) it was started with, so resuming it "
+            "could silently apply a different composition than the "
+            "original invocation intended",
+            recommended_actions=[
+                "start a fresh run instead of resuming this one",
+                "if this state must be rescued, inspect its coverage report "
+                "(if the coverage phase already ran) to recover its real "
+                "selector by hand before resuming",
+            ],
+        )
+    if target_ref != state.to_ref:
+        raise PinBumpStop(
+            "resume", "RESUME_TARGET_MISMATCH",
+            f"--resume target {target_ref!r} does not match this run's "
+            f"recorded target {state.to_ref!r}",
+            evidence={"resumed_target": target_ref, "state_target": state.to_ref},
+            recommended_actions=[
+                f"pass --resume with target {state.to_ref!r}, or start a fresh run",
+            ],
+        )
+    resolved_tree = str(vendor_root)
+    if resolved_tree != state.tree_path:
+        raise PinBumpStop(
+            "resume", "RESUME_TREE_MISMATCH",
+            f"--resume is running against {resolved_tree!r}, but this run's "
+            f"recorded tree is {state.tree_path!r}",
+            evidence={"resumed_tree": resolved_tree, "state_tree": state.tree_path},
+            recommended_actions=[
+                "resume from the same vendor checkout the run was started against",
+            ],
+        )
+
+
+def _resume_selector(
+    state: "PinBumpState", *, recipe_name: str | None,
+) -> tuple[str, str]:
+    """Reconciles the RESUMING invocation's selector against the state's
+    recorded one. Caller supplies none -> use the persisted selector;
+    caller supplies one -> it must exactly equal the persisted kind+name.
+    Never silently reinterprets -- a real, deliberate change requires a
+    fresh run, not a --resume."""
+    if recipe_name is None:
+        return state.selector_kind, state.selector_name
+    if (state.selector_kind, state.selector_name) != ("recipe", recipe_name):
+        raise PinBumpStop(
+            "resume", "RESUME_SELECTOR_MISMATCH",
+            f"--resume was given --recipe {recipe_name!r}, but this run's "
+            f"recorded selector is {state.selector_kind}:{state.selector_name!r}",
+            evidence={
+                "resumed_selector": f"recipe:{recipe_name}",
+                "state_selector": f"{state.selector_kind}:{state.selector_name}",
+            },
+            recommended_actions=[
+                "omit --recipe on --resume to use the run's original selector, "
+                "or start a fresh run with the new one",
+            ],
+        )
+    return state.selector_kind, state.selector_name
+
+
+def _require_selector_membership_unchanged(
+    state: "PinBumpState", *, recipe_name: str,
+) -> None:
+    """Before coverage runs (fresh or resumed), re-derive the selector's
+    real patch-id membership and require it still matches what the state
+    recorded -- catches a concurrent config/recipes.toml or patch-registry
+    edit on this shared, multi-agent repo, whether or not this is a
+    --resume. Membership drift requires a deliberate restart, not a
+    silent scope change to a production release run."""
+    current_ids = tuple(sorted(
+        patch_rebase._selection_patch_ids(recipe_name=recipe_name, all_patches=False)
+    ))
+    recorded_ids = tuple(sorted(state.selector_patch_ids))
+    if current_ids != recorded_ids:
+        raise PinBumpStop(
+            "coverage", "RESUME_SELECTION_CHANGED",
+            f"selector {state.selector_kind}:{state.selector_name!r}'s real "
+            "patch membership changed since this run's state recorded it",
+            evidence={
+                "only_in_state": sorted(set(recorded_ids) - set(current_ids)),
+                "only_live": sorted(set(current_ids) - set(recorded_ids)),
+            },
+            recommended_actions=[
+                "start a fresh run to pick up the current composition deliberately",
+            ],
+        )
+
+
 def _run_phases(
     *, state: "PinBumpState | None", target_ref: str, recipe_name: str,
     repo_root: Path, vendor_root: Path, dispositions_dir: Path, report_dir: Path,
@@ -422,11 +571,16 @@ def _run_phases(
     with acquire_maintenance_lock(repo_root):
         if state is None:
             from_ref, to_sha = run_phase_preflight(repo_root=repo_root, target_ref=target_ref)
+            selector_patch_ids = tuple(sorted(
+                patch_rebase._selection_patch_ids(recipe_name=recipe_name, all_patches=False)
+            ))
             state = PinBumpState(
-                schema_version=1, run_id=uuid.uuid4().hex, from_ref=from_ref, from_sha="",
+                schema_version=2, run_id=uuid.uuid4().hex, from_ref=from_ref, from_sha="",
                 to_ref=target_ref, to_sha=to_sha, transition_commit="",
                 tree_name="local", tree_path=str(vendor_root),
                 completed_phases=["preflight"], next_phase="declare",
+                selector_kind="recipe", selector_name=recipe_name,
+                selector_patch_ids=selector_patch_ids,
             )
             state.save(report_dir)
 
@@ -505,6 +659,7 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "coverage":
+            _require_selector_membership_unchanged(state, recipe_name=recipe_name)
             all_report = patch_rebase.run_rebase_check(vendor_root, all_patches=True)
             recipe_report = patch_rebase.run_rebase_check(vendor_root, recipe_name=recipe_name)
             for entry in recipe_report.get("patches", ()):
@@ -526,6 +681,7 @@ def _run_phases(
             (report_dir / "coverage.json").write_text(
                 json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
+            state.coverage_report_sha256 = _sha256_file(recipe_report_path)
             state.completed_phases.append("coverage")
             state.next_phase = "apply"
             state.save(report_dir)
@@ -533,6 +689,23 @@ def _run_phases(
             recipe_report_path = report_dir / "rebase-recipe.json"
             coverage = json.loads((report_dir / "coverage.json").read_text(encoding="utf-8")) \
                 if (report_dir / "coverage.json").is_file() else {}
+            if state.coverage_report_sha256 and recipe_report_path.is_file():
+                live_digest = _sha256_file(recipe_report_path)
+                if live_digest != state.coverage_report_sha256:
+                    raise PinBumpStop(
+                        "apply", "COVERAGE_REPORT_MODIFIED",
+                        "rebase-recipe.json's contents no longer match what "
+                        "the coverage phase wrote (modified or replaced on "
+                        "disk) -- refusing to apply an unproven report",
+                        evidence={
+                            "recorded_sha256": state.coverage_report_sha256,
+                            "live_sha256": live_digest,
+                        },
+                        recommended_actions=[
+                            "restore the original rebase-recipe.json, or "
+                            "re-run coverage from a fresh run",
+                        ],
+                    )
 
         if state.next_phase == "apply":
             result = patch_rebase.apply_known_good(vendor_root, recipe_report_path, force=False, dry_run=False)
@@ -563,6 +736,7 @@ def _run_phases(
             _write_release_doc_best_effort(
                 repo_root=repo_root, vendor_root=vendor_root,
                 recipe_name=recipe_name, target_ref=target_ref,
+                report_dir=report_dir,
             )
             _commit_release_records(repo_root=repo_root, target_ref=target_ref)
             state.completed_phases.append("complete")
@@ -643,6 +817,7 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
 
 def _write_release_doc_best_effort(
     *, repo_root: Path, vendor_root: Path, recipe_name: str, target_ref: str,
+    report_dir: Path | None = None,
 ) -> None:
     """Merge the applied recipe's per-patch SUMMARY.md into a release doc.
 
@@ -655,15 +830,33 @@ def _write_release_doc_best_effort(
     original bare `except Exception: pass` here and in
     _sync_campaign_mirror_best_effort discarded the only evidence of a
     real failure).
+
+    compat.recipe removal plan (gpt-dev-agent review, session
+    ses_5307d9c58ec645cb): reads patch_ids from the SAME
+    rebase-recipe.json report that authorized `apply` (when available),
+    rather than re-resolving the selector fresh at completion time -- a
+    real TOCTOU otherwise, since config/recipes.toml or the patch
+    registry could have changed between the coverage/apply phases and
+    this one on this shared, multi-agent repo. Falls back to a fresh
+    resolution only if no report is available (e.g. a direct call site
+    that never ran coverage), so this function's existing callers/tests
+    keep working.
     """
     try:
         from ..patch import docs as patch_docs
         from ..patch import rebase as patch_rebase
         from . import records as release_records
 
-        patch_ids = patch_rebase._selection_patch_ids(
-            recipe_name=recipe_name, all_patches=False,
-        )
+        report_path = (report_dir / "rebase-recipe.json") if report_dir else None
+        if report_path is not None and report_path.is_file():
+            patch_ids = tuple(
+                json.loads(report_path.read_text(encoding="utf-8"))
+                ["selection"]["patch_ids"]
+            )
+        else:
+            patch_ids = patch_rebase._selection_patch_ids(
+                recipe_name=recipe_name, all_patches=False,
+            )
         pin_info = {
             "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
             "bigcherry revision": patch_rebase._git(repo_root, "rev-parse", "HEAD"),
