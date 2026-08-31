@@ -143,6 +143,97 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         )  # must not raise -- that is the entire test
 
 
+class CommitReleaseRecordsTests(unittest.TestCase):
+    """gpt-dev-agent review, 2026-08-31: a successful bump used to leave its
+    own releases/<tag>.json etc uncommitted, blocking the very next
+    mandatory step (build+smoke, which refuses a dirty controller tree).
+    _commit_release_records() closes that gap -- narrowly, by exact
+    pathspec, never touching pin-transition.json or anything else."""
+
+    def test_noop_when_nothing_owned_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _init_repo(root)
+            head_before = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")  # must not raise
+            head_after = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+            self.assertEqual(head_before, head_after)  # no commit made
+
+    def test_commits_only_owned_paths_not_an_unrelated_dirty_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _init_repo(root)
+            (root / "releases").mkdir()
+            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
+            (root / "releases" / "b99999-patches.md").write_text("# doc\n", encoding="utf-8")
+            # Simulate a concurrent, unrelated uncommitted change on this
+            # shared working tree -- must survive untouched and unstaged.
+            (root / "unrelated.txt").write_text("someone else's work\n", encoding="utf-8")
+
+            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
+
+            status = subprocess.run(
+                ["git", "-C", str(root), "status", "--porcelain"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            self.assertIn("?? unrelated.txt", status)
+            self.assertNotIn("releases", status)  # the owned paths are now committed, not staged
+
+            log = subprocess.run(
+                ["git", "-C", str(root), "show", "--stat", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            self.assertIn("b99999.json", log)
+            self.assertIn("index.json", log)
+            self.assertIn("b99999-patches.md", log)
+            self.assertNotIn("unrelated.txt", log)
+
+    def test_idempotent_on_a_second_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _init_repo(root)
+            (root / "releases").mkdir()
+            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
+
+            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
+            head_after_first = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+
+            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")  # must not raise
+            head_after_second = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+            self.assertEqual(head_after_first, head_after_second)  # no empty second commit
+
+    def test_never_touches_pin_transition_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _init_repo(root)
+            (root / "releases").mkdir()
+            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
+            (root / "releases" / "pin-transition.json").write_text('{"tag": "b99999"}\n', encoding="utf-8")
+
+            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
+
+            status = subprocess.run(
+                ["git", "-C", str(root), "status", "--porcelain"],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            self.assertIn("pin-transition.json", status)  # still uncommitted -- untouched
+
+
 class AcquireMaintenanceLockTests(unittest.TestCase):
     """Found live on pin-bump's first real invocation: acquire_maintenance_lock()
     used to call .acquire() itself AND get used as `with acquire_maintenance_lock(...)`,

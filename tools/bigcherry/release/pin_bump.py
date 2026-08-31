@@ -558,12 +558,87 @@ def _run_phases(
             state.completed_phases.append("reaudit")
             state.next_phase = "complete"
             state.save(report_dir)
+
+        if state.next_phase == "complete" and "complete" not in state.completed_phases:
             _write_release_doc_best_effort(
                 repo_root=repo_root, vendor_root=vendor_root,
                 recipe_name=recipe_name, target_ref=target_ref,
             )
+            _commit_release_records(repo_root=repo_root, target_ref=target_ref)
+            state.completed_phases.append("complete")
+            state.save(report_dir)
 
     return PinBumpResult(ok=True, state=state, coverage=coverage)
+
+
+def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
+    """Commit exactly pin-bump's own release-record output (releases/<tag>.json,
+    releases/index.json, releases/<tag>-patches.md if generated) -- the
+    symmetric close to run_phase_declare()'s controlled commit at the start
+    of the bump.
+
+    gpt-dev-agent review, 2026-08-31 (converged design, see the b10705 bump's
+    real incident): without this, a successful bump leaves
+    require_clean_bigcherry() refusing the very next MANDATORY step (the real
+    build+smoke test, bump skill section 4b) until a human notices the dirty
+    tree and commits these files by hand. require_clean_bigcherry() itself
+    stays strict -- gpt's recommendation was explicitly against adding a
+    dirty-tree allowlist there, since that would weaken the production
+    provenance boundary and can't distinguish this orchestrator's own output
+    from an unrelated concurrent edit to the same paths.
+
+    Deliberately narrow: exact pathspecs only (never `git add -A`), and
+    `git commit --only --` so even a concurrently staged unrelated change on
+    this shared, multi-agent working tree (CLAUDE.md: never assume exclusive
+    access) cannot be swept into this commit. NEVER touches
+    releases/pin-transition.json -- that marker stays uncommitted-until-
+    cleared until build+smoke has actually passed (bump skill step 5); this
+    function has no visibility into whether that happened and must not
+    guess.
+
+    Idempotent: a --resume re-run (or a race where another process already
+    committed these exact bytes) is a silent no-op, not an error.
+    """
+    owned = [f"releases/{target_ref}.json", "releases/index.json"]
+    if (repo_root / "releases" / f"{target_ref}-patches.md").is_file():
+        owned.append(f"releases/{target_ref}-patches.md")
+
+    existing = [p for p in owned if (repo_root / p).exists()]
+    if not existing:
+        return  # nothing this orchestrator owns exists yet -- idempotent no-op
+
+    status = subprocess.run(
+        ["git", "-C", str(repo_root), "status", "--porcelain", "--", *existing],
+        capture_output=True, text=True,
+    )
+    if status.returncode == 0 and not status.stdout.strip():
+        return  # already committed -- idempotent, matches a --resume re-run
+
+    add_result = subprocess.run(
+        ["git", "-C", str(repo_root), "add", "--", *existing],
+        capture_output=True, text=True,
+    )
+    if add_result.returncode != 0:
+        raise PinBumpStop(
+            "complete", "RELEASE_RECORD_COMMIT_FAILED",
+            f"git add failed for release records: {add_result.stderr.strip()}",
+            evidence={"paths": existing, "stderr": add_result.stderr.strip()},
+            recommended_actions=["inspect the repo state directly", "rerun with --resume"],
+        )
+    commit_result = subprocess.run(
+        [
+            "git", "-C", str(repo_root), "commit", "--only", "-m",
+            f"pin-bump: record release {target_ref}", "--", *existing,
+        ],
+        capture_output=True, text=True,
+    )
+    if commit_result.returncode != 0:
+        raise PinBumpStop(
+            "complete", "RELEASE_RECORD_COMMIT_FAILED",
+            f"git commit --only failed for release records: {commit_result.stderr.strip()}",
+            evidence={"paths": existing, "stderr": commit_result.stderr.strip()},
+            recommended_actions=["inspect the repo state directly", "rerun with --resume"],
+        )
 
 
 def _write_release_doc_best_effort(
