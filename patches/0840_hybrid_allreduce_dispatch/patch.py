@@ -45,6 +45,20 @@ This patch adds a fourth ``GGML_CUDA_ALLREDUCE=hybrid`` provider:
   so per-call attribution (``effective_provider``: "internal" or "rccl")
   falls out of the existing telemetry pipeline for free, no separate
   labeling edit needed.
+* Init forces the internal pipeline to exact F32 (a new
+  ``ggml_cuda_ar_pipeline_force_exact_f32`` setter, called once right after
+  ``ggml_cuda_ar_pipeline_init`` succeeds) rather than trusting whatever
+  ``GGML_CUDA_AR_BF16_THRESHOLD`` happens to be set to. That env var
+  defaults to 1 (BF16 wire round-trip for every nonzero-size reduction);
+  hybrid mode must never inherit that silently -- 1001's own validated
+  performance result requires exact F32, and real hardware evidence in
+  1001's SUMMARY.md shows BF16 wire compression is a net loss on this
+  workload, not a neutral tradeoff. This was caught by HI155-4's own
+  correctness gate: the first run (no override) failed the analytical F32
+  bound on both sides of the threshold -- exactly the BF16-approximation
+  signature, not a real defect -- confirming gpt-dev-agent's warning that
+  hybrid must not depend on an external env combination the operator has
+  to remember.
 
 Deliberately NOT done in this slice (per gpt-dev-agent's explicit guidance,
 dev-gpt-agent gateway session ses_5307d9c58ec645cb): raising the threshold
@@ -86,8 +100,19 @@ ALLREDUCE_CUH = FilePatch(
                 "// own GGML_CUDA_AR_COPY_THRESHOLD.\n"
                 "size_t ggml_cuda_ar_pipeline_copy_threshold(\n"
                 "    const ggml_cuda_ar_pipeline * pipeline);\n\n"
+                "// HI155: hybrid mode must never silently inherit whatever\n"
+                "// GGML_CUDA_AR_BF16_THRESHOLD happens to be set to (default: 1, i.e. BF16\n"
+                "// wire round-trip for every nonzero-size reduction) -- 1001's own validated\n"
+                "// result requires exact F32, and real hardware evidence in\n"
+                "// patches/1001_hip_internal_allreduce/SUMMARY.md shows BF16 wire\n"
+                "// compression is a net loss on this workload, not a neutral tradeoff. This\n"
+                "// forces an already-constructed pipeline to exact F32 regardless of the env\n"
+                "// var, so hybrid's policy does not depend on an external env combination\n"
+                "// the operator has to remember.\n"
+                "void ggml_cuda_ar_pipeline_force_exact_f32(\n"
+                "    ggml_cuda_ar_pipeline * pipeline);\n\n"
             ),
-            guard=r"ggml_cuda_ar_pipeline_copy_threshold\(\n    const ggml_cuda_ar_pipeline \* pipeline\);",
+            guard=r"ggml_cuda_ar_pipeline_force_exact_f32\(\n    ggml_cuda_ar_pipeline \* pipeline\);",
         ),
     ),
 )
@@ -110,6 +135,12 @@ ALLREDUCE_CU = FilePatch(
                 "        const ggml_cuda_ar_pipeline * pipeline) {\n"
                 "    return pipeline == nullptr ? 0 : pipeline->copy_threshold;\n"
                 "}\n\n"
+                "void ggml_cuda_ar_pipeline_force_exact_f32(\n"
+                "        ggml_cuda_ar_pipeline * pipeline) {\n"
+                "    if (pipeline != nullptr) {\n"
+                "        pipeline->bf16_threshold = 0;\n"
+                "    }\n"
+                "}\n\n"
                 "#else"
             ),
             guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(\n        const ggml_cuda_ar_pipeline \* pipeline\) \{",
@@ -118,15 +149,17 @@ ALLREDUCE_CU = FilePatch(
             id="implement-copy-threshold-accessor-musa-stub",
             anchor=r"^bool ggml_cuda_ar_allreduce\(ggml_cuda_ar_pipeline \*, ggml_backend_t \*, ggml_tensor \*\*\) \{\n    return false;\n\}$",
             rationale="MUSA never builds a real pipeline (pipeline_init "
-                      "always returns nullptr there), so the accessor's "
-                      "stub always reports threshold=0",
+                      "always returns nullptr there), so both accessor "
+                      "stubs are no-ops/zero",
             mode="insert_after",
             text=(
                 "\nsize_t ggml_cuda_ar_pipeline_copy_threshold(const ggml_cuda_ar_pipeline *) {\n"
                 "    return 0;\n"
+                "}\n"
+                "void ggml_cuda_ar_pipeline_force_exact_f32(ggml_cuda_ar_pipeline *) {\n"
                 "}"
             ),
-            guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(const ggml_cuda_ar_pipeline \*\) \{\n    return 0;\n\}",
+            guard=r"void ggml_cuda_ar_pipeline_force_exact_f32\(ggml_cuda_ar_pipeline \*\) \{\n\}",
         ),
     ),
 )
@@ -219,6 +252,12 @@ CUDA = FilePatch(
                 "#endif // GGML_USE_NCCL\n"
                 "    ret->ar_pipeline = ggml_cuda_ar_pipeline_init(ret->dev_ids.data(), ret->dev_ids.size());\n"
                 "    const bool have_internal = ret->ar_pipeline != nullptr;\n"
+                "    if (have_internal) {\n"
+                "        // Never inherit GGML_CUDA_AR_BF16_THRESHOLD's default (1, BF16 for\n"
+                "        // every nonzero reduction) -- hybrid's internal side must stay exact\n"
+                "        // F32, matching 1001's own validated result.\n"
+                "        ggml_cuda_ar_pipeline_force_exact_f32(ret->ar_pipeline);\n"
+                "    }\n"
                 "    if (!have_internal) {\n"
                 "        (void) cudaGetLastError();\n"
                 "        GGML_LOG_WARN(\"hybrid: internal AllReduce init failed (n_devices != 2?); \"\n"
