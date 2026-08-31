@@ -33,35 +33,40 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
 
     def test_campaign_run_is_guarded_by_run_rd08_contract_check(self) -> None:
         # The exact invariant: `campaign.run()` must be reachable ONLY when
-        # args.run_rd08_contract is falsy -- never unconditionally.
+        # neither args.run_rd08_contract nor args.run_rd04_benchmark is set
+        # -- never unconditionally.
         match = re.search(
-            r"if not args\.run_rd08_contract:\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
+            r"if not \(args\.run_rd08_contract or args\.run_rd04_benchmark\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
             self.source,
         )
         self.assertIsNotNone(
             match,
-            "campaign.run() must be guarded by `if not args.run_rd08_contract:` -- "
+            "campaign.run() must be guarded by "
+            "`if not (args.run_rd08_contract or args.run_rd04_benchmark):` -- "
             "the generic tune/promote/export pipeline must never be a hard "
-            "prerequisite of RD08's own contract evidence",
+            "prerequisite of RD08's or RD04's own contract evidence",
         )
 
     def test_report_md_read_is_also_guarded(self) -> None:
-        # --run-rd08-contract must not require report.md to exist (it's
-        # only ever written by the generic campaign's own S7 stage).
-        guarded_block = self.source[self.source.index("if not args.run_rd08_contract:"):]
+        # --run-rd08-contract/--run-rd04-benchmark must not require
+        # report.md to exist (it's only ever written by the generic
+        # campaign's own S7 stage).
+        guard_text = "if not (args.run_rd08_contract or args.run_rd04_benchmark):"
+        guarded_block = self.source[self.source.index(guard_text):]
         guarded_block = guarded_block[:guarded_block.index("\n\n", guarded_block.index("report.md"))]
         self.assertIn("report.md", guarded_block)
 
     def test_generic_trace_probe_is_skipped_for_run_rd08_contract(self) -> None:
         match = re.search(
-            r"trace_result = None if args\.run_rd08_contract else run_trace_activation_probes\(",
+            r"trace_result = None if \(args\.run_rd08_contract or args\.run_rd04_benchmark\) "
+            r"else run_trace_activation_probes\(",
             self.source,
         )
         self.assertIsNotNone(
             match,
             "the generic tune-binary/fusion-disabled probe must be skipped for "
-            "--run-rd08-contract -- it is redundant with and gets overwritten by "
-            "RD08's own authoritative trigger probe",
+            "--run-rd08-contract/--run-rd04-benchmark -- it is redundant with (RD08) "
+            "or invalid for (RD04) the real evidence those modes produce",
         )
 
     def test_contract_correctness_gate_uses_a_real_experiment_contract_not_a_binding(self) -> None:
@@ -96,7 +101,7 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         # RD08 evidence still legitimately binds campaign.campaign_identity_digest
         # -- only campaign.run() (S1-S7) must be skipped, not identity binding.
         ensure_index = self.source.index("campaign.ensure_campaign_identity()")
-        guard_index = self.source.index("if not args.run_rd08_contract:")
+        guard_index = self.source.index("if not (args.run_rd08_contract or args.run_rd04_benchmark):")
         self.assertLess(
             ensure_index, guard_index,
             "campaign.ensure_campaign_identity() must run before, and unconditionally "

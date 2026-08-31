@@ -1355,7 +1355,12 @@ def run(args: argparse.Namespace) -> int:
     # negative control, GGML_CUDA_DISABLE_FUSION=1, is not). Skipping it
     # here also avoids wasted GPU time on a probe whose result gets
     # overwritten anyway.
-    trace_result = None if args.run_rd08_contract else run_trace_activation_probes(
+    # VA04: --run-rd04-benchmark also skips the generic probe -- RD04 has
+    # no real activation marker yet (see README.md's Known limitations),
+    # and the generic negative control (GGML_CUDA_DISABLE_FUSION) is not
+    # valid for a flash-attention patch. Activation stays explicitly
+    # BLOCKED for this slice rather than fabricated.
+    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -1414,7 +1419,7 @@ def run(args: argparse.Namespace) -> int:
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
     # for RD08's evidence below.
-    if not args.run_rd08_contract:
+    if not (args.run_rd08_contract or args.run_rd04_benchmark):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -1682,6 +1687,37 @@ def run(args: argparse.Namespace) -> int:
         )
         _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
 
+    # VA04: --run-rd04-benchmark, RD04-only, mutually exclusive with the
+    # RD08 execution modes above (each patch's own real evidence producer
+    # is used only for its own contract). Binds only performance_evidence
+    # -- contract_promotions stays empty for RD04 in this slice, so
+    # eligible_for_validated_state remains False even on a full PASS: this
+    # command produces truthful ported-benched-level evidence, never a
+    # pretend contract-promotion PASS.
+    if args.run_rd04_benchmark:
+        if args.run_rd08_lanes or args.run_rd08_contract:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd04-benchmark is mutually exclusive with the "
+                "RD08 execution modes"
+            )
+        if descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd04-benchmark is RD04-only today"
+            )
+        rd04_result = run_rd04_benchmark_evidence(
+            control_binary=control_bin / f"llama-bench{exe}",
+            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
+            hip_path=args.hip_path, run_dir=campaign_run_dir,
+            campaign_id=campaign.campaign_identity_digest, amdgpu_targets=args.amdgpu_targets,
+            control_build_identity=control_build_evidence.campaign_identity(),
+            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
+        )
+        performance_evidence = {"artifact": rd04_result["artifact"]}
+        _print(
+            f"rd04 benchmark evidence: {rd04_result['artifact']['path']} "
+            f"({'executed' if rd04_result['passed'] else 'did not execute cleanly'})"
+        )
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -1854,6 +1890,15 @@ def main(argv: list[str] | None = None) -> int:
              "evaluate_promotion_gate(). The only path that can make an RD08-bound patch "
              "eligible_for_validated_state. RD08-only; an error for any other patch. "
              "Mutually exclusive with --run-rd08-lanes and --correctness-evidence.",
+    )
+    parser.add_argument(
+        "--run-rd04-benchmark", action="store_true", default=False,
+        help="VA04: execute RD04's real paired decode/prefill benchmark lanes against the "
+             "parity-verified control/validation-subject builds and bind the result into "
+             "ctx.performance_evidence. Diagnostic-only for eligibility -- does not attempt "
+             "correctness/activation proof or contract promotion, so "
+             "eligible_for_validated_state stays False. RD04-only; an error for any other "
+             "patch. Mutually exclusive with the RD08 execution modes.",
     )
     args = parser.parse_args(argv)
     return run(args)
