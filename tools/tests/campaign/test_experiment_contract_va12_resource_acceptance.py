@@ -113,6 +113,53 @@ class ResourceLimitParsingTests(unittest.TestCase):
             ["a_metric", "z_metric"],
         )
 
+    def test_both_bounds_together_are_allowed(self):
+        doc = _with_resource_limits(
+            {"metric": "x", "unit": "count", "max_value": 32, "max_increase_pct": 5.0}
+        )
+        contract = ec.parse_contract(doc, contract_id="X")
+        limit = contract.acceptance.resource_limits[0]
+        self.assertEqual(limit.max_value, 32)
+        self.assertEqual(limit.max_increase_pct, 5.0)
+
+
+class ResourceResultValidationTests(unittest.TestCase):
+    def test_nan_subject_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=float("nan"))
+
+    def test_positive_infinity_subject_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=float("inf"))
+
+    def test_negative_subject_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=-1)
+
+    def test_bool_subject_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=True)
+
+    def test_nan_control_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=1, control_value=float("nan"))
+
+    def test_negative_control_value_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="count", subject_value=1, control_value=-1)
+
+    def test_invalid_unit_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="x", unit="kilobytes", subject_value=1)
+
+    def test_empty_metric_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.ResourceResult(metric="", unit="count", subject_value=1)
+
+    def test_valid_result_constructs_cleanly(self):
+        result = ec.ResourceResult(metric="x", unit="count", subject_value=1, control_value=0)
+        self.assertEqual(result.subject_value, 1)
+
 
 class ContractHashCompatibilityTests(unittest.TestCase):
     def test_empty_resource_limits_does_not_change_the_hash(self):
@@ -152,6 +199,18 @@ class EvaluateResourceGateTests(unittest.TestCase):
         result = ec.ResourceResult(metric="graph_cache_entries", unit="count", subject_value=15)
         gate = ec.evaluate_resource_gate(contract, {"graph_cache_entries": result})
         self.assertTrue(gate["passed"])
+
+    def test_dict_key_metric_mismatch_fails(self):
+        """A ResourceResult stored under the wrong dict key (its own
+        .metric field doesn't match the key it was filed under) must not
+        silently satisfy the limit -- the lookup key alone is not proof of
+        which metric was actually measured."""
+        contract = self._contract()
+        wrong = ec.ResourceResult(metric="a_totally_different_metric", unit="count", subject_value=1)
+        gate = ec.evaluate_resource_gate(contract, {"graph_cache_entries": wrong})
+        self.assertFalse(gate["passed"])
+        self.assertEqual(gate["failed_metrics"], ["graph_cache_entries"])
+        self.assertIn("metric mismatch", gate["detail"]["graph_cache_entries"])
 
     def test_exceeding_max_value_fails(self):
         contract = self._contract()

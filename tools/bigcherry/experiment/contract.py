@@ -487,10 +487,12 @@ class SourceEvidence:
 @dataclass(frozen=True)
 class ResourceLimit:
     """One declared resource-cost budget (VA12) -- e.g. RD73's graph-cache
-    entry count/memory. Exactly one of max_value (an absolute ceiling on
+    entry count/memory. At least one of max_value (an absolute ceiling on
     the subject's measured value) or max_increase_pct (a bound on growth
-    over the paired control) must be declared; a limit that checks
-    neither is not a limit."""
+    over the paired control) must be declared -- a limit that checks
+    neither is not a limit -- but both MAY be declared together (an
+    absolute ceiling and a relative-growth bound are independent checks,
+    not alternatives)."""
     metric: str
     unit: str
     max_value: float | None = None
@@ -1315,6 +1317,23 @@ class ResourceResult:
     subject_value: float
     control_value: float | None = None
 
+    def __post_init__(self) -> None:
+        if not self.metric:
+            raise ExperimentContractError("ResourceResult.metric must be a non-empty string")
+        if self.unit not in RESOURCE_UNITS:
+            raise ExperimentContractError(
+                f"ResourceResult.unit={self.unit!r} is not one of {', '.join(RESOURCE_UNITS)}"
+            )
+        for field_name, value in (("subject_value", self.subject_value), ("control_value", self.control_value)):
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ExperimentContractError(f"ResourceResult.{field_name} must be a number")
+            if not math.isfinite(value) or value < 0:
+                raise ExperimentContractError(
+                    f"ResourceResult.{field_name} must be finite and non-negative, got {value!r}"
+                )
+
 
 def evaluate_resource_gate(
     contract: ExperimentContract, results: dict[str, ResourceResult],
@@ -1335,6 +1354,13 @@ def evaluate_resource_gate(
         result = results.get(limit.metric)
         if result is None:
             missing.append(limit.metric)
+            continue
+        if result.metric != limit.metric:
+            failed.append(limit.metric)
+            detail[limit.metric] = (
+                f"metric mismatch: dict key {limit.metric!r} maps to a ResourceResult "
+                f"whose own metric field is {result.metric!r}"
+            )
             continue
         if result.unit != limit.unit:
             failed.append(limit.metric)

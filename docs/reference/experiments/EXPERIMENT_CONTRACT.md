@@ -80,6 +80,50 @@ reproduce in the first place. Pair it with the `state_restore` workload tag
 (distinct from the generic `multi_gpu_copy` transfer-workload tag -- a
 save/restore cycle is not simply a copy).
 
+### Resource-cost acceptance (VA12)
+
+Some patches trade a timing win for a resource-cost risk -- e.g. RD73's
+stable graph-cache key retains more shape-specific cache entries, which can
+win on timing while quietly growing memory/entry-count unboundedly.
+`acceptance.resource_limits` declares that budget as an array of tables,
+additive to the three existing scalar acceptance fields:
+
+```toml
+[[contract.EXAMPLE.acceptance.resource_limits]]
+metric = "graph_cache_entries"
+unit = "count"
+max_value = 32
+
+[[contract.EXAMPLE.acceptance.resource_limits]]
+metric = "graph_cache_resident_bytes"
+unit = "bytes"
+max_increase_pct = 5.0
+```
+
+`metric` is an open, non-empty identifier (like `source-evidence.metric` --
+resource kinds genuinely vary and a fixed vocabulary would either lose
+precision or invite a wrong-but-close mapping). `unit` is closed to
+`bytes`/`count` -- a dimensional mismatch is a real, dangerous class of
+error. At least one of `max_value` (an absolute ceiling on the subject's
+measured value) or `max_increase_pct` (a bound on growth over the paired
+control) must be declared; both may be declared together as independent
+checks. Duplicate metrics within one contract are rejected.
+
+Evidence is supplied as a `ResourceResult` (metric, unit, subject_value,
+optional control_value) and checked by `evaluate_resource_gate()`, which is
+fail-closed the same way `evaluate_correctness_gate()` is: missing evidence
+for a declared limit is a FAIL, not "not applicable"; a `max_increase_pct`
+limit with no `control_value` evidence is a FAIL (the bound cannot be
+evaluated); a `control_value` of 0 paired with any positive `subject_value`
+is explicit unbounded relative growth and FAILS rather than dividing by
+zero or silently passing. A contract that declares `resource_limits` at all
+blocks promotion (`evaluate_promotion_gate()`) unless a passing
+`resource_gate` is supplied -- exactly like a missing/failed correctness
+check. A contract with no `resource_limits` is unaffected.
+
+`resource_limits` participates in `contract_hash` only when non-empty, so
+every contract written before VA12 keeps its exact original hash.
+
 ## Identity and evidence rules
 
 Keep these identities separate:
