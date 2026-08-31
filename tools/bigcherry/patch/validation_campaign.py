@@ -794,10 +794,26 @@ def run_rd08_contract_trigger(
     control_te = experiment_execution.trigger_evidence_from_marker_probe(
         lane_id="rd08-decode-control", role="control", positive_hit=control_hit,
     )
+    subject_log_path = "logs/activation-rd08-trigger-subject.log"
+    control_log_path = "logs/activation-rd08-trigger-control.log"
+    subject_log_ref = {
+        "path": subject_log_path,
+        "sha256": hashlib.sha256((run_dir / subject_log_path).read_bytes()).hexdigest(),
+    }
+    control_log_ref = {
+        "path": control_log_path,
+        "sha256": hashlib.sha256((run_dir / control_log_path).read_bytes()).hexdigest(),
+    }
     trigger_doc = {
         "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
-        "positive": {"lane_id": subject_te.lane_id, "candidate_launches": subject_te.candidate_launches},
-        "control": {"lane_id": control_te.lane_id, "candidate_launches": control_te.candidate_launches},
+        "positive": {
+            "lane_id": subject_te.lane_id, "candidate_launches": subject_te.candidate_launches,
+            "artifact": subject_log_ref,
+        },
+        "control": {
+            "lane_id": control_te.lane_id, "candidate_launches": control_te.candidate_launches,
+            "artifact": control_log_ref,
+        },
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd08-trigger.json", trigger_doc)
     return {
@@ -810,8 +826,8 @@ def run_rd08_contract_trigger(
         # trace-marker check AND the record's top-level activation field),
         # instead of the generic tune-binary/fusion-disabled probe, which is
         # not a valid negative control for RD08's MMVQ marker.
-        "subject_log_path": "logs/activation-rd08-trigger-subject.log",
-        "control_log_path": "logs/activation-rd08-trigger-control.log",
+        "subject_log_path": subject_log_path, "control_log_path": control_log_path,
+        "subject_log_artifact": subject_log_ref, "control_log_artifact": control_log_ref,
     }
 
 
@@ -1494,6 +1510,23 @@ def run(args: argparse.Namespace) -> int:
             mechanism="rd08-trigger-marker", detail=f"marker={trace_marker_regex!r}",
         )
         activation_verdict = verdict(activation_evidence, correctness_passed=None)
+        # GPT round 5 (req_12dd706a42e341bd): the RD08 override above only
+        # changed the in-memory activation_evidence/activation_verdict --
+        # campaign/activation.json on disk still held the earlier generic
+        # tune/fusion-disabled probe's result while the record qualifies
+        # using RD08-authoritative evidence. Rewrite it with the real
+        # RD08 result so the on-disk artifact and the record agree.
+        write_activation_json(
+            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+            extra={
+                "campaign_identity_digest": campaign.campaign_identity_digest,
+                "rd08_trigger": {
+                    "subject_hit": rd08_qualification["trigger"]["subject_hit"],
+                    "control_hit": rd08_qualification["trigger"]["control_hit"],
+                    "artifact": rd08_qualification["trigger"]["artifact"],
+                },
+            },
+        )
     elif args.run_rd08_lanes:
         from bigcherry.patch import validation as _pv
 

@@ -72,6 +72,20 @@ def _fake_capture(build_dir, *, source_root, architecture, binary, requested_cma
     return _FakeBuildEvidence(str(binary).replace("/", "_"))
 
 
+def _make_fake_probe(content_for_name):
+    """content_for_name(name) -> str. Also writes the log file to disk --
+    run_rd08_contract_trigger() now hashes the real file the same way
+    _run_one_trace_probe() does, so a fake that only returns a string
+    (without writing it) leaves nothing to hash."""
+    def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
+        content = content_for_name(name)
+        log_path = Path(workdir) / "logs" / f"activation-{name}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(content, encoding="utf-8")
+        return content
+    return fake_probe
+
+
 def _fake_git_run(command, *args, **kwargs):
     class _Result:
         returncode = 0
@@ -120,11 +134,8 @@ class RunRd08ContractTriggerTests(unittest.TestCase):
     def test_subject_hit_control_miss_produces_valid_trigger_proof(self) -> None:
         logs = {"rd08-trigger-subject": "BIGCHERRY_PATCH_HIT patch=x\n", "rd08-trigger-control": "nothing\n"}
 
-        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
-            return logs[name]
-
         real_probe = vc._run_one_trace_probe
-        vc._run_one_trace_probe = fake_probe
+        vc._run_one_trace_probe = _make_fake_probe(lambda name: logs[name])
         try:
             run_dir = Path(tempfile.mkdtemp())
             result = vc.run_rd08_contract_trigger(
@@ -137,17 +148,19 @@ class RunRd08ContractTriggerTests(unittest.TestCase):
 
         self.assertTrue(result["subject_hit"])
         self.assertFalse(result["control_hit"])
+        actual_bytes = (run_dir / result["subject_log_path"]).read_bytes()
+        self.assertEqual(
+            result["subject_log_artifact"]["sha256"],
+            __import__("hashlib").sha256(actual_bytes).hexdigest(),
+        )
         from bigcherry.experiment import contract as ec
 
         proof = ec.evaluate_trigger_proof(result["evidence"])
         self.assertTrue(proof["passed"])
 
     def test_subject_no_hit_fails_trigger_proof(self) -> None:
-        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
-            return "nothing\n"
-
         real_probe = vc._run_one_trace_probe
-        vc._run_one_trace_probe = fake_probe
+        vc._run_one_trace_probe = _make_fake_probe(lambda name: "nothing\n")
         try:
             run_dir = Path(tempfile.mkdtemp())
             result = vc.run_rd08_contract_trigger(
@@ -178,10 +191,9 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
         vc.capture_completed_build_evidence = _fake_capture
         vc._load_rd08_correctness_module = lambda: _FakeRd08CorrectnessModule()
 
-        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
-            return "BIGCHERRY_PATCH_HIT patch=x\n" if "subject" in name else "nothing\n"
-
-        vc._run_one_trace_probe = fake_probe
+        vc._run_one_trace_probe = _make_fake_probe(
+            lambda name: "BIGCHERRY_PATCH_HIT patch=x\n" if "subject" in name else "nothing\n"
+        )
 
         def fake_run(command, *args, **kwargs):
             class _Result:
@@ -213,10 +225,9 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
         # ALSO shows the marker means the negative control itself is
         # invalid, and this must be enforced explicitly, not left to
         # evaluate_trigger_proof()'s positive-only scope.
-        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
-            return "BIGCHERRY_PATCH_HIT patch=x\n"  # both subject AND control hit
-
-        vc._run_one_trace_probe = fake_probe
+        vc._run_one_trace_probe = _make_fake_probe(
+            lambda name: "BIGCHERRY_PATCH_HIT patch=x\n"  # both subject AND control hit
+        )
         run_dir = Path(tempfile.mkdtemp())
         result = vc.run_rd08_contract_qualification(
             contract=RD08, descriptor=SimpleNamespace(), base_revision="a" * 40,
@@ -251,10 +262,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
         self.assertTrue((run_dir / "artifacts" / "contract-qualification.json").exists())
 
     def test_failing_trigger_makes_promotion_invalid_not_silently_failed(self) -> None:
-        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
-            return "nothing\n"  # neither subject nor control ever hits
-
-        vc._run_one_trace_probe = fake_probe
+        vc._run_one_trace_probe = _make_fake_probe(lambda name: "nothing\n")  # neither ever hits
         run_dir = Path(tempfile.mkdtemp())
         result = vc.run_rd08_contract_qualification(
             contract=RD08, descriptor=SimpleNamespace(), base_revision="a" * 40,
@@ -387,6 +395,53 @@ class EndToEndEligibilityCompositionTests(unittest.TestCase):
         self.assertFalse(
             vc.compute_persisted_validation_eligible(descriptor, adapter_verdict, {})
         )
+
+
+class ArtifactBindingTests(unittest.TestCase):
+    """GPT round 5 (req_12dd706a42e341bd): performance.json and the two
+    real RD08 trigger logs must be tracked by _artifact_refs() (used by
+    evidence.py::make_record() to populate campaign_artifacts) -- writing
+    them alone is not sufficient if the tracker never looks for them."""
+
+    def test_performance_json_and_trigger_logs_are_bound_into_artifact_refs(self) -> None:
+        import hashlib
+        from bigcherry.patch import evidence as patch_evidence
+
+        run_dir = Path(tempfile.mkdtemp())
+        perf_path = run_dir / "performance.json"
+        perf_path.write_text('{"campaign_id": "x", "passed": true}', encoding="utf-8")
+        (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+        (run_dir / "logs" / "activation-rd08-trigger-subject.log").write_text("hit\n", encoding="utf-8")
+        (run_dir / "logs" / "activation-rd08-trigger-control.log").write_text("miss\n", encoding="utf-8")
+
+        refs = {r["path"]: r["sha256"] for r in patch_evidence._artifact_refs(run_dir)}
+        self.assertIn("performance.json", refs)
+        self.assertEqual(refs["performance.json"], hashlib.sha256(perf_path.read_bytes()).hexdigest())
+        self.assertIn("logs/activation-rd08-trigger-subject.log", refs)
+        self.assertIn("logs/activation-rd08-trigger-control.log", refs)
+
+    def test_rd08_trigger_json_carries_real_hash_refs_to_both_logs(self) -> None:
+        real_probe = vc._run_one_trace_probe
+        vc._run_one_trace_probe = _make_fake_probe(
+            lambda name: "BIGCHERRY_PATCH_HIT patch=x\n" if "subject" in name else "nothing\n"
+        )
+        run_dir = Path(tempfile.mkdtemp())
+        try:
+            result = vc.run_rd08_contract_trigger(
+                marker_regex="BIGCHERRY_PATCH_HIT", control_binary=Path("control_bin"),
+                subject_binary=Path("subject_bin"), model=Path("m.gguf"), hip_path=Path("H:/hip"),
+                workdir=run_dir, run_dir=run_dir,
+            )
+        finally:
+            vc._run_one_trace_probe = real_probe
+
+        import json
+
+        doc = json.loads((run_dir / "artifacts" / "rd08-trigger.json").read_text(encoding="utf-8"))
+        self.assertIn("artifact", doc["positive"])
+        self.assertIn("artifact", doc["control"])
+        self.assertEqual(doc["positive"]["artifact"], result["subject_log_artifact"])
+        self.assertEqual(doc["control"]["artifact"], result["control_log_artifact"])
 
 
 if __name__ == "__main__":
