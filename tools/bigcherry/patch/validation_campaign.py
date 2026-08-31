@@ -1019,6 +1019,142 @@ def run_rd04_benchmark_evidence(
     return {"performance_doc": performance_doc, "artifact": artifact_ref, "passed": passed}
 
 
+def run_rd58_state_restore_evidence(
+    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
+    run_dir: Path, campaign_id: str,
+    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    repetitions: int = 3,
+) -> dict[str, object]:
+    """VA05: an RD58-scoped validation-domain state-restore evidence
+    producer -- unlike RD04/RD08 (paired benchmark lanes), RD58 is a
+    correctness/reliability contract with NO performance claim. Runs the
+    real ``test-save-load-state`` binary (a real llama.cpp upstream test,
+    not a new correctness engine) against parity control/validation-
+    subject builds, under the SAME GGML_CUDA_REGISTER_HOST=1 env and
+    ``-sm tensor`` topology (the ambient dual-GPU visibility is preserved
+    -- RD58's contract requires 2+ real GPUs, this producer never
+    restricts to one device the way RD04/RD08's single-GPU producers do).
+
+    Three real, independent claims, all from the SAME repeated runs:
+    - correctness: the subject binary's test-save-load-state exit code
+      (0 iff every one of its 5 internal tests, including "Test 4: seq
+      copy (host)", actually passed -- that internal baseline-vs-
+      restored-continuation comparison IS the real correctness proof;
+      this function does not re-implement or second-guess it).
+    - activation: subject-hit/control-miss on the real
+      "pinned state buffer (... bytes) for restore" registration-success
+      marker RD58's own diagnostic emits -- NOT the generic tune-binary/
+      fusion-disabled negative control, which is meaningless here.
+    - controls: a real repeated control/subject execution record proving
+      no crash/regression across ``repetitions`` real restore cycles --
+      no invented latency threshold (this contract carries none)."""
+    from bigcherry.campaign.benchmark import sanitize_environment
+
+    marker_pattern = re.compile(r"pinned state buffer \(\d+ bytes\) for restore")
+
+    # GPT direction (session ses_5bbee8ce5c9a4265): preserve ambient
+    # dual-GPU visibility -- unlike RD04/RD08's single-GPU producers,
+    # this must NOT restrict HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES
+    # (sanitize_environment() never touches those; it only strips stale
+    # GGML_HIP_DISPATCH_*/FORCE_*/TUNE_* overrides, same as RD04/RD08).
+    env = sanitize_environment(_hip_env(hip_path), mode="stock")
+    for key in list(env):
+        if key.startswith("BIGCHERRY_"):
+            env.pop(key, None)
+    env["GGML_CUDA_REGISTER_HOST"] = "1"
+
+    def _command(binary: Path) -> list[str]:
+        return [str(binary), "-m", str(model), "-sm", "tensor", "-ngl", "99"]
+
+    def _run(binary: Path, role: str, index: int) -> dict[str, object]:
+        command = _command(binary)
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+        combined = completed.stdout + "\n" + completed.stderr
+        return {
+            "role": role, "index": index, "command": command,
+            "returncode": completed.returncode,
+            "marker_hit": marker_pattern.search(combined) is not None,
+            "stdout": completed.stdout, "stderr": completed.stderr,
+        }
+
+    subject_runs = [_run(subject_binary, "subject", i) for i in range(repetitions)]
+    control_runs = [_run(control_binary, "control", i) for i in range(repetitions)]
+
+    correctness_passed = all(r["returncode"] == 0 for r in subject_runs)
+    subject_hit = any(r["marker_hit"] for r in subject_runs)
+    control_hit = any(r["marker_hit"] for r in control_runs)
+    controls_passed = all(r["returncode"] == 0 for r in control_runs)
+
+    def _strip_output(runs: list[dict[str, object]]) -> list[dict[str, object]]:
+        # Persist returncode/marker_hit/command in full; truncate raw
+        # stdout/stderr to a bounded tail per run so the artifact stays
+        # a reasonable size across `repetitions` real process launches.
+        return [
+            {**r, "stdout": r["stdout"][-2000:], "stderr": r["stderr"][-2000:]}
+            for r in runs
+        ]
+
+    correctness_doc = {
+        "ops": ["STATE_RESTORE_SEQ_CP_HOST"], "passed": correctness_passed,
+        "campaign_id": campaign_id,
+        "validation_build_identities": {
+            "control": control_build_identity, "subject": subject_build_identity,
+        },
+        "subject_runs": _strip_output(subject_runs),
+    }
+    correctness_path = run_dir / "rd58-correctness.json"
+    _atomic_write_json(correctness_path, correctness_doc)
+    correctness_artifact = {
+        "path": "rd58-correctness.json",
+        "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+    }
+
+    trigger_doc = {
+        "marker_regex": marker_pattern.pattern, "subject_hit": subject_hit, "control_hit": control_hit,
+        "subject_runs": _strip_output(subject_runs), "control_runs": _strip_output(control_runs),
+    }
+    subject_log_path = run_dir / "rd58-trigger-subject.log"
+    control_log_path = run_dir / "rd58-trigger-control.log"
+    subject_log_path.write_text(
+        "\n---\n".join(f"{r['role']}-{r['index']}:\n{r['stdout']}\n{r['stderr']}" for r in subject_runs),
+        encoding="utf-8",
+    )
+    control_log_path.write_text(
+        "\n---\n".join(f"{r['role']}-{r['index']}:\n{r['stdout']}\n{r['stderr']}" for r in control_runs),
+        encoding="utf-8",
+    )
+    trigger_path = run_dir / "rd58-trigger.json"
+    _atomic_write_json(trigger_path, trigger_doc)
+    trigger_artifact = {
+        "path": "rd58-trigger.json",
+        "sha256": hashlib.sha256(trigger_path.read_bytes()).hexdigest(),
+    }
+
+    controls_doc = {
+        "campaign_id": campaign_id, "passed": controls_passed, "repetitions": repetitions,
+        "metrics": {
+            "control_pass_count": sum(1 for r in control_runs if r["returncode"] == 0),
+            "subject_pass_count": sum(1 for r in subject_runs if r["returncode"] == 0),
+        },
+        "validation_build_identities": {
+            "control": control_build_identity, "subject": subject_build_identity,
+        },
+    }
+    controls_path = run_dir / "performance.json"
+    _atomic_write_json(controls_path, controls_doc)
+    controls_artifact = {
+        "path": "performance.json",
+        "sha256": hashlib.sha256(controls_path.read_bytes()).hexdigest(),
+    }
+
+    return {
+        "correctness_passed": correctness_passed, "correctness_artifact": correctness_artifact,
+        "subject_hit": subject_hit, "control_hit": control_hit, "trigger_artifact": trigger_artifact,
+        "subject_log_path": "rd58-trigger-subject.log", "control_log_path": "rd58-trigger-control.log",
+        "controls_passed": controls_passed, "controls_artifact": controls_artifact,
+    }
+
+
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
     contract_promotions: "dict[str, dict[str, object]] | None" = None,
@@ -1373,7 +1509,7 @@ def run(args: argparse.Namespace) -> int:
     # and the generic negative control (GGML_CUDA_DISABLE_FUSION) is not
     # valid for a flash-attention patch. Activation stays explicitly
     # BLOCKED for this slice rather than fabricated.
-    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark) else run_trace_activation_probes(
+    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -1432,7 +1568,7 @@ def run(args: argparse.Namespace) -> int:
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
     # for RD08's evidence below.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark):
+    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -1732,6 +1868,108 @@ def run(args: argparse.Namespace) -> int:
             f"({'executed' if rd04_result['passed'] else 'did not execute cleanly'})"
         )
 
+    # VA05: --run-rd58-state-restore, RD58-only, mutually exclusive with
+    # the RD04/RD08 execution modes. Builds its own parity control/
+    # validation-subject test-save-load-state binaries (not
+    # llama-server/llama-bench -- a different real llama.cpp test
+    # target) and binds correctness_evidence/trace_evidence/
+    # performance_evidence from real, repeated, dual-GPU execution.
+    # contract_promotions stays empty -- eligible_for_validated_state
+    # remains False even on a full PASS.
+    if args.run_rd58_state_restore:
+        if args.run_rd04_benchmark or args.run_rd08_lanes or args.run_rd08_contract:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd58-state-restore is mutually exclusive with the "
+                "RD04/RD08 execution modes"
+            )
+        if descriptor.experiment_contract != "RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd58-state-restore is RD58-only today"
+            )
+        rd58_build_root = build_root / "rd58-state-restore"
+        rd58_control_bin = build_tree(
+            name="rd58-control", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+            workdir=rd58_build_root, targets=["test-save-load-state"], source=control_src,
+            extra_cmake_args=[],
+        )
+        rd58_subject_bin = build_tree(
+            name="rd58-subject", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+            workdir=rd58_build_root, targets=["test-save-load-state"], source=patched_src,
+            extra_cmake_args=[],
+        )
+        rd58_result = run_rd58_state_restore_evidence(
+            control_binary=rd58_control_bin / f"test-save-load-state{exe}",
+            subject_binary=rd58_subject_bin / f"test-save-load-state{exe}", model=args.model,
+            hip_path=args.hip_path, run_dir=campaign_run_dir,
+            campaign_id=campaign.campaign_identity_digest,
+            control_build_identity=control_build_evidence.campaign_identity(),
+            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
+        )
+        correctness_evidence = {"artifact": rd58_result["correctness_artifact"]}
+        performance_evidence = {"artifact": rd58_result["controls_artifact"]}
+
+        def _bind_rd58_log(relative_log_path: str) -> dict[str, str]:
+            target = (campaign_run_dir / relative_log_path).resolve()
+            return {
+                "path": relative_log_path,
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            }
+
+        trace_evidence = {
+            "positive": {
+                "marker_regex": trace_marker_regex,
+                "artifact": _bind_rd58_log(rd58_result["subject_log_path"]),
+            },
+            "negative": {
+                "marker_regex": trace_marker_regex,
+                "artifact": _bind_rd58_log(rd58_result["control_log_path"]),
+            },
+        }
+        activation_evidence = ActivationEvidence(
+            status=(
+                "executed" if rd58_result["subject_hit"] and not rd58_result["control_hit"]
+                else "not_executed"
+            ),
+            mechanism="rd58-trigger-marker", detail=f"marker={trace_marker_regex!r}",
+        )
+        activation_verdict = verdict(activation_evidence, correctness_passed=None)
+        write_activation_json(
+            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+            extra={
+                "campaign_identity_digest": campaign.campaign_identity_digest,
+                "rd58_trigger": {
+                    "subject_hit": rd58_result["subject_hit"],
+                    "control_hit": rd58_result["control_hit"],
+                    "artifact": rd58_result["trigger_artifact"],
+                },
+            },
+        )
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": "passed" if rd58_result["correctness_passed"] else "failed",
+            "mechanism": "rd58-test-save-load-state-real-execution",
+            "detail": (
+                "subject test-save-load-state (all 5 internal tests, including "
+                "Test 4: seq copy (host)) "
+                + ("passed" if rd58_result["correctness_passed"] else "failed")
+            ),
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+        _print(
+            f"rd58 state-restore evidence: correctness="
+            f"{'pass' if rd58_result['correctness_passed'] else 'fail'} "
+            f"activation={'executed' if activation_evidence.status == 'executed' else 'not_executed'} "
+            f"controls={'pass' if rd58_result['controls_passed'] else 'fail'}"
+        )
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -1913,6 +2151,16 @@ def main(argv: list[str] | None = None) -> int:
              "correctness/activation proof or contract promotion, so "
              "eligible_for_validated_state stays False. RD04-only; an error for any other "
              "patch. Mutually exclusive with the RD08 execution modes.",
+    )
+    parser.add_argument(
+        "--run-rd58-state-restore", action="store_true", default=False,
+        help="VA05: build parity control/validation-subject test-save-load-state binaries "
+             "and run RD58's real state-restore correctness/activation/controls evidence "
+             "(GGML_CUDA_REGISTER_HOST=1, -sm tensor -- requires 2+ real GPUs, ambient "
+             "device visibility is preserved, never restricted to one device). "
+             "Diagnostic-only for eligibility -- does not attempt contract promotion, so "
+             "eligible_for_validated_state stays False. RD58-only; an error for any other "
+             "patch. Mutually exclusive with the RD04/RD08 execution modes.",
     )
     args = parser.parse_args(argv)
     return run(args)

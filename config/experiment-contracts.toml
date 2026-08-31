@@ -603,3 +603,39 @@ ppl_equality = "required"
 [contract.RD50-GDN-CHUNKED-RECURRENCE.acceptance]
 target_kernel_gain_pct = 20
 max_control_regression_pct = 1
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE]
+title = "RD58: pin the host state buffer during multi-GPU state restore"
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.source]
+source_id = "davetha-llama-cpp"
+commits = ["58025e01afd44ee06ea6fb23c7ccbdf38e0c34d5"]
+atomic_part = "1234_rd58_pin_state_buffer_multigpu_restore"
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.target]
+kind = "hardware_correctness"
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.hypothesis]
+expected_effect = "correctness"
+rationale = "ROCm's on-the-fly pageable-memory mapping for an async H2D copy can be torn down mid-transfer with 2+ devices in one process, faulting the SDMA engine inside the copy's source range (rocm/rocm-systems#4817, open, names RX 7900 XTX -- BigCherry's own production GPU). Registers the state-restore buffer as portable pinned host memory for the restore's duration. Fork's own measured data (2x MI210): unpinned faults after 2 restores; pinned survives 140 restores/12 rounds/0 faults, temp-0 output unchanged. Real-hardware confirmation on Brutus (-sm tensor, 2026-08-24): activation fired on all 150 repeated real host-path restore cycles, zero faults, all 5 of llama.cpp's own upstream save/load-state tests pass; pinning measured ~17% FASTER than unpinned (no material latency regression). The original ROCm SDMA fault itself was never reproduced on Brutus (0 faults in 530+ combined cycles) -- this contract proves activation + state-restore integrity + no regression, not that Brutus independently reproduced-then-eliminated the causal fault."
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.scope.gpu_count]
+minimum = 2
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["state_restore"]
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["state_restore"]
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.correctness]
+state_restore_integrity = "required"
+
+[contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.acceptance]
+max_control_regression_pct = 5

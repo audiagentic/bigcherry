@@ -1,0 +1,46 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Real state_restore_integrity proof: the subject (patched) binary's
+# "Test 4: seq copy (host)" result, part of test-save-load-state's own
+# real baseline-vs-restored-continuation comparison -- not a second,
+# separate correctness engine (guide section 2).
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "backend-ops"
+required = true
+ops = ["STATE_RESTORE_SEQ_CP_HOST"]
+
+# Real subject-hit/control-miss activation: the "pinned state buffer
+# (... bytes) for restore" marker RD58's own registration-success
+# diagnostic emits, observed only on the subject (patched) binary under
+# -sm tensor -- NOT the generic fusion-disabled negative control, which
+# is meaningless for this patch.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "pinned state buffer \\(\\d+ bytes\\) for restore"
+
+# Real repeated control/subject state-restore execution -- proves no
+# crash/regression across repeated real restore cycles. No invented
+# latency threshold; this is a real-execution-count claim, not a timing
+# claim (RD58's contract carries no target_kernel_gain_pct).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
