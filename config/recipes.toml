@@ -106,6 +106,9 @@ patches = ["1237_rd30_moe_mmq_compact_grid"]
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
+[experiment.hip-internal-allreduce-only]
+patches = ["1001_hip_internal_allreduce"]
+
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
