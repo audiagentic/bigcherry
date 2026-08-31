@@ -1,0 +1,51 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
+
+# GPT direction (session ses_5bbee8ce5c9a4265, req_41664660f78a4e3f):
+# no real per-check correctness producer exists yet for RD04's
+# backend_reference/ppl_equality obligations -- declared honestly
+# against a real validator shape (backend-ops), never faked via
+# autotune-campaign as a placeholder. Stays BLOCKED (no ctx.correctness_evidence
+# bound) until a real producer exists. See README.md's "Known limitations".
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "backend-ops"
+required = true
+ops = ["FLASH_ATTN_EXT"]
+
+# No real subject-hit/control-miss RD04 marker probe exists yet (RD04's
+# patch source carries no BIGCHERRY_PATCH_TRACE-gated marker, unlike
+# RD08). Declared honestly, stays BLOCKED until a real marker + probe
+# exist -- the generic tune-binary/GGML_CUDA_DISABLE_FUSION negative
+# control is NOT valid for this patch (RD04 is flash-attention, not a
+# fusion path) and must never be substituted here.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1202_rd04 path=bf16_flash_attn_tile"

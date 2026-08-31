@@ -166,6 +166,53 @@ class BenchmarkArtifactBindingTests(unittest.TestCase):
         self.assertEqual(performance_result.status, pv.PASS, performance_result.summary)
         self.assertEqual(controls_result.status, pv.PASS, controls_result.summary)
 
+    def test_missing_benchmark_evidence_is_blocked_not_fabricated(self) -> None:
+        from bigcherry.patch import validation as pv
+
+        ctx = pv.ValidationContext(
+            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+            run_dir=Path(tempfile.mkdtemp()), performance_evidence={},
+        )
+        spec = pv.CheckSpec("performance", "performance", "benchmark", True, {})
+        result = pv.evaluate_check(spec, ctx)
+        self.assertNotEqual(result.status, pv.PASS)
+
+
+class Rd04CliWiringTests(unittest.TestCase):
+    """run() is a large real-hardware integration entry point (source
+    materialization, 7 real cmake builds) -- consistent with VA14/VA15's
+    established scope boundary, these prove the real committed wiring via
+    source inspection rather than mocking the entire pipeline."""
+
+    def setUp(self) -> None:
+        import inspect
+        self.source = inspect.getsource(vc.run)
+
+    def test_run_rd04_benchmark_flag_exists_and_defaults_false(self) -> None:
+        import argparse
+        parser = argparse.ArgumentParser()
+        # main()'s own parser construction is easiest to check indirectly:
+        # confirm the CLI wiring string is present in main()'s source.
+        import inspect
+        main_source = inspect.getsource(vc.main)
+        self.assertIn('"--run-rd04-benchmark"', main_source)
+        self.assertIn('action="store_true", default=False', main_source.replace("'", '"'))
+
+    def test_mutually_exclusive_with_rd08_modes(self) -> None:
+        self.assertIn("--run-rd04-benchmark is mutually exclusive with the", self.source)
+        self.assertIn("if args.run_rd08_lanes or args.run_rd08_contract:", self.source)
+
+    def test_rd04_only_gating(self) -> None:
+        self.assertIn('descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE"', self.source)
+
+    def test_binds_only_performance_evidence_never_contract_promotions(self) -> None:
+        # RD04 mode must never write into contract_promotions -- eligibility
+        # must stay false regardless of a PASS.
+        rd04_block_start = self.source.index("if args.run_rd04_benchmark:")
+        rd04_block = self.source[rd04_block_start:self.source.index("validation_check_results: dict")]
+        self.assertIn("performance_evidence = {\"artifact\": rd04_result[\"artifact\"]}", rd04_block)
+        self.assertNotIn("contract_promotions[", rd04_block)
+
 
 if __name__ == "__main__":
     unittest.main()
