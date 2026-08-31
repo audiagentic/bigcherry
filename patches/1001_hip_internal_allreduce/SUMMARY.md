@@ -1,6 +1,6 @@
 # 1001_hip_internal_allreduce: Upstream backport: enable the internal (non-RCCL) AllReduce on HIP
 
-**Status:** untested
+**Status:** validated
 **Group:** upstream-fixes
 **Plan item:** none
 
@@ -21,8 +21,59 @@ RCCL consuming 9.9% of decode wall time (union-of-spans), with only 3.3%
 overlapping matmul compute -- ~9.6% of decode wall is pure inter-GPU
 communication with zero concurrent compute, at a call rate (~5186
 collectives/sec) that matches exactly the small-collective-latency case
-this internal path targets. Upstream's own numbers (2x AMD PCIe) show
-+2.24% TG over RCCL. Not yet A/B validated on this project's hardware.
+this internal path targets.
+
+## Validation evidence (dual RX 7900 XTX / gfx1100, 2026-08-31)
+
+**Correctness** (BigCherry's HI18 SPLIT_REDUCE probe, `test-hip-reduce`,
+6 pattern/seed combinations): `internal` with
+`GGML_CUDA_AR_BF16_THRESHOLD=0` matches RCCL and the FP64 reference
+within the F32 rounding floor (nmse=7.7e-16, max_abs=5.96e-08,
+bit-identical output digests) -- PASS.
+
+**Performance** (fresh single-session, back-to-back 3-arm paired
+completion-bench, 24 prompts, same binary, only env vars varied):
+- A, `GGML_CUDA_ALLREDUCE=nccl` (control): 59.19 TPS
+- B, `GGML_CUDA_ALLREDUCE=internal` + `GGML_CUDA_AR_BF16_THRESHOLD=0`
+  (exact FP32 wire): 69.31 TPS -- **B vs A = +17.33%, 95% CI
+  [+13.41%, +21.25%]**
+- C, `GGML_CUDA_ALLREDUCE=internal` with BF16 wire at its upstream
+  default (`GGML_CUDA_AR_BF16_THRESHOLD=1`): 63.78 TPS -- C vs A =
+  +8.52%, 95% CI [+4.37%, +12.66%]; **C vs B = -7.27%, 95% CI
+  [-10.56%, -3.99%]**
+
+The internal mechanism's win over RCCL is real and validated at exact
+precision, independent of the BF16 wire-compression tradeoff. `draft_acceptance`
+and `mean_accepted_length` were materially unchanged across all three
+arms (0.4946-0.5019, 2.965-2.993) -- no speculative-decoding behavior
+shift.
+
+**BF16 wire compression is a separate, negative finding on this
+topology**: `GGML_CUDA_AR_BF16_THRESHOLD=1` (upstream's default, applies
+BF16 round-trip to every nonzero F32 reduction) is 7.27% *slower* than
+exact precision here, not merely an accuracy/throughput tradeoff --
+likely because this decode workload's collectives are small and
+latency-bound (~5186 calls/sec), so the conversion kernel's own overhead
+exceeds any PCIe bytes saved. Not yet profiled to confirm the mechanism.
+RCCL itself already reserves BF16 for large/bandwidth-bound reductions
+and uses FP32 for small ones, which supports size-dependent precision
+being the right design generally -- this project's internal-path default
+(BF16 for every reduction regardless of size) just doesn't match that
+here.
+
+## Production recommendation
+
+For validated dual-RX7900-XTX/gfx1100 tensor-split configurations:
+
+```
+GGML_CUDA_ALLREDUCE=internal
+GGML_CUDA_AR_BF16_THRESHOLD=0
+```
+
+`GGML_CUDA_AR_BF16_THRESHOLD` must be set explicitly to `0` -- the
+upstream internal AllReduce otherwise defaults to `1` (BF16 wire for
+every reduction), which this project's own evidence shows is worse
+here, not just lower-precision.
 
 ## Upstream / provenance
 
