@@ -361,9 +361,6 @@ def cmd_patch_doc(args: Namespace) -> int:
         print(f"patch-doc: {exc}", file=sys.stderr)
         return 2
 
-    modules_by_id = {m.patch_id: m for m in patchset.catalog()}
-    modules = [modules_by_id[pid] for pid in patch_ids]
-
     upstream_revision = patch_rebase._git(root, "rev-parse", "HEAD")
     bigcherry_revision = patch_rebase._git(paths.REPO_ROOT, "rev-parse", "HEAD")
     pin_info = {
@@ -372,13 +369,17 @@ def cmd_patch_doc(args: Namespace) -> int:
     }
     selection_label = f"--recipe {recipe_name}" if recipe_name else "--all"
 
-    doc = patch_docs.render_release_doc(
-        modules=modules, pin_info=pin_info, selection_label=selection_label,
-    )
+    try:
+        doc = patch_docs.render_patch_selection_doc(
+            patch_ids=patch_ids, pin_info=pin_info, selection_label=selection_label,
+        )
+    except patch_docs.PatchDocError as exc:
+        print(f"patch-doc: {exc}", file=sys.stderr)
+        return 2
 
     if args.out:
         Path(args.out).write_text(doc, encoding="utf-8")
-        print(f"release doc: {args.out} ({len(modules)} patch(es))")
+        print(f"release doc: {args.out} ({len(patch_ids)} patch(es))")
     else:
         print(doc)
     return 0

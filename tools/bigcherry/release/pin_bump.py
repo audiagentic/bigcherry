@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,11 +234,23 @@ def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None
             ["git", "-C", str(mirror), "fetch", "--depth=1", "origin", revision],
             capture_output=True, text=True, timeout=120,
         )
-        subprocess.run(
+        tag_result = subprocess.run(
             ["git", "-C", str(mirror), "tag", target_ref, "FETCH_HEAD"],
             capture_output=True, text=True,
         )
-    except Exception:  # noqa: BLE001 -- best-effort convenience, never fatal
+        if tag_result.returncode != 0:
+            print(
+                f"pin-bump: campaign mirror sync for {target_ref!r} did not tag "
+                f"cleanly (git tag exit {tag_result.returncode}): "
+                f"{tag_result.stderr.strip()}",
+                file=sys.stderr,
+            )
+    except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
+        print(
+            f"pin-bump: campaign mirror sync for {target_ref!r} failed: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
         pass
 
 
@@ -560,30 +573,37 @@ def _write_release_doc_best_effort(
 
     Best-effort like _sync_campaign_mirror_best_effort: a release doc is a
     documentation convenience, not a bump-correctness requirement, so a
-    failure here must never turn a successful bump into a PinBumpStop.
+    failure here must never turn a successful bump into a PinBumpStop. The
+    broad catch is deliberate (any renderer bug must not become a bump
+    correctness dependency); it prints WHAT failed to stderr rather than
+    silently swallowing it (gpt-dev-agent review, 2026-08-31 -- the
+    original bare `except Exception: pass` here and in
+    _sync_campaign_mirror_best_effort discarded the only evidence of a
+    real failure).
     """
     try:
         from ..patch import docs as patch_docs
-        from ..patch import patchset
         from ..patch import rebase as patch_rebase
         from . import records as release_records
 
         patch_ids = patch_rebase._selection_patch_ids(
             recipe_name=recipe_name, all_patches=False,
         )
-        modules_by_id = {m.patch_id: m for m in patchset.catalog()}
-        modules = [modules_by_id[pid] for pid in patch_ids if pid in modules_by_id]
         pin_info = {
             "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
             "bigcherry revision": patch_rebase._git(repo_root, "rev-parse", "HEAD"),
             "recipe": recipe_name,
             "target": target_ref,
         }
-        doc = patch_docs.render_release_doc(
-            modules=modules, pin_info=pin_info,
+        doc = patch_docs.render_patch_selection_doc(
+            patch_ids=patch_ids, pin_info=pin_info,
             selection_label=f"--recipe {recipe_name}",
         )
         release_records.RELEASES_DIR.mkdir(parents=True, exist_ok=True)
         (release_records.RELEASES_DIR / f"{target_ref}-patches.md").write_text(doc, encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
+        print(
+            f"pin-bump: release doc for {target_ref!r} (recipe {recipe_name!r}) "
+            f"was not written: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
