@@ -187,6 +187,33 @@ class PortedBenchedTests(unittest.TestCase):
         self.assertEqual(result.status, "missing-or-stale")
         self.assertFalse(result.ok)
 
+    def test_forged_artifact_path_not_in_artifact_hashes_fails(self) -> None:
+        # GPT round 4 (req_73faeb08760c42fd): a non-empty artifacts list is
+        # not proof by itself -- it must be cross-checked against the
+        # record's OWN authoritative artifact_hashes map (real files
+        # _artifact_refs() actually found on disk at write time).
+        check_results = self._real_check_results()
+        check_results["performance"]["artifacts"] = [
+            {"name": "performance", "path": "not-a-real-tracked-file.json", "sha256": "d" * 64}
+        ]
+        record = self._real_v3_record(check_results=check_results)
+        pve.write_record(record, root=self.root)
+        result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
+        self.assertEqual(result.status, "missing-or-stale")
+        self.assertFalse(result.ok)
+
+    def test_artifact_sha_mismatch_against_artifact_hashes_fails(self) -> None:
+        check_results = self._real_check_results()
+        real_path = check_results["performance"]["artifacts"][0]["path"]
+        check_results["performance"]["artifacts"] = [
+            {"name": "performance", "path": real_path, "sha256": "e" * 64}  # wrong hash
+        ]
+        record = self._real_v3_record(check_results=check_results)
+        pve.write_record(record, root=self.root)
+        result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
+        self.assertEqual(result.status, "missing-or-stale")
+        self.assertFalse(result.ok)
+
     def test_no_evidence_at_all_fails(self) -> None:
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
