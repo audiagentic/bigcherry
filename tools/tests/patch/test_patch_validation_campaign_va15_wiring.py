@@ -64,6 +64,34 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
             "RD08's own authoritative trigger probe",
         )
 
+    def test_contract_correctness_gate_uses_a_real_experiment_contract_not_a_binding(self) -> None:
+        # VA15 real-hardware finding (req_bc329f6ae30c4e4c follow-up):
+        # validation_plan.contract is a patch_validation.ContractBinding --
+        # a lightweight projection that deliberately does NOT carry
+        # .correctness/.acceptance -- passing it directly to
+        # compute_contract_correctness_gate() crashed on real hardware
+        # with AttributeError: 'ContractBinding' object has no attribute
+        # 'correctness'. The real committed code must resolve a real
+        # ExperimentContract (rd08_contract for --run-rd08-contract, or
+        # patch_validation.load_contract_for_descriptor() otherwise)
+        # before calling compute_contract_correctness_gate().
+        self.assertNotIn(
+            "compute_contract_correctness_gate(\n            validation_plan.contract,",
+            self.source,
+        )
+        match = re.search(
+            r"full_contract = \(\s*\n\s*rd08_contract if rd08_qualification is not None\s*\n"
+            r"\s*else patch_validation\.load_contract_for_descriptor\(descriptor\)",
+            self.source,
+        )
+        self.assertIsNotNone(
+            match,
+            "compute_contract_correctness_gate() must be called with a real "
+            "ExperimentContract, resolved via rd08_contract or "
+            "load_contract_for_descriptor() -- never validation_plan.contract "
+            "(a ContractBinding projection with no .correctness field)",
+        )
+
     def test_campaign_ensure_identity_still_runs_unconditionally(self) -> None:
         # RD08 evidence still legitimately binds campaign.campaign_identity_digest
         # -- only campaign.run() (S1-S7) must be skipped, not identity binding.
