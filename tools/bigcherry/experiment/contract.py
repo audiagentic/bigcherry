@@ -71,7 +71,20 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
 
 ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
+    "resource_limits",
 )
+
+# VA12: RD73-class patches (a stable graph-cache key) trade a timing claim
+# against a resource-cost claim -- retaining more shape-specific cache
+# entries can win on timing while quietly growing memory/entry-count
+# unboundedly. `metric` is deliberately NOT a closed enum (like
+# SourceEvidence.metric above): resource kinds genuinely vary
+# (graph_cache_entries, graph_cache_resident_bytes, ...) and a fixed
+# vocabulary would either lose precision or invite a wrong-but-close
+# mapping. `unit` IS closed -- a dimensional mismatch (bytes read as a
+# count or vice versa) is a real, dangerous class of error.
+RESOURCE_UNITS: tuple[str, ...] = ("bytes", "count")
+RESOURCE_LIMIT_FIELDS: tuple[str, ...] = ("metric", "unit", "max_value", "max_increase_pct")
 
 # EC16: orthogonal experiment-target classification, separate from
 # hypothesis.family. FAMILIES stays exactly the 5 runtime kernel-dispatch
@@ -472,6 +485,19 @@ class SourceEvidence:
 
 
 @dataclass(frozen=True)
+class ResourceLimit:
+    """One declared resource-cost budget (VA12) -- e.g. RD73's graph-cache
+    entry count/memory. Exactly one of max_value (an absolute ceiling on
+    the subject's measured value) or max_increase_pct (a bound on growth
+    over the paired control) must be declared; a limit that checks
+    neither is not a limit."""
+    metric: str
+    unit: str
+    max_value: float | None = None
+    max_increase_pct: float | None = None
+
+
+@dataclass(frozen=True)
 class Acceptance:
     """BigCherry's OWN required thresholds -- a contract's promotion gate is
     evaluated against these, never against SourceEvidence directly. These
@@ -482,6 +508,7 @@ class Acceptance:
     target_kernel_gain_pct: float | None
     end_to_end_gain_pct: float | None
     max_control_regression_pct: float | None
+    resource_limits: tuple[ResourceLimit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -561,6 +588,25 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             "target_kernel_gain_pct": contract.acceptance.target_kernel_gain_pct,
             "end_to_end_gain_pct": contract.acceptance.end_to_end_gain_pct,
             "max_control_regression_pct": contract.acceptance.max_control_regression_pct,
+            # VA12: omitted entirely (not an empty list) when no resource
+            # limits are declared, so a contract predating this field keeps
+            # its exact original contract_hash -- only a contract that
+            # actually adds a resource limit gets a new hash, matching the
+            # "an edit changes the hash" rule without a blanket digest-
+            # domain bump for every existing contract.
+            **(
+                {
+                    "resource_limits": [
+                        {
+                            "metric": limit.metric, "unit": limit.unit,
+                            "max_value": limit.max_value,
+                            "max_increase_pct": limit.max_increase_pct,
+                        }
+                        for limit in contract.acceptance.resource_limits
+                    ]
+                }
+                if contract.acceptance.resource_limits else {}
+            ),
         },
         "source_evidence": (
             {
@@ -741,6 +787,42 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         raise ExperimentContractError(
             f"{where}.acceptance names unknown field(s): {', '.join(unknown_acceptance)}"
         )
+    resource_limits_raw = acceptance_data.get("resource_limits")
+    resource_limits: list[ResourceLimit] = []
+    if resource_limits_raw is not None:
+        rl_where = f"{where}.acceptance.resource_limits"
+        if not isinstance(resource_limits_raw, list):
+            raise ExperimentContractError(f"{rl_where} must be a list of tables")
+        seen_metrics: set[str] = set()
+        for index, entry in enumerate(resource_limits_raw):
+            entry_where = f"{rl_where}[{index}]"
+            entry_data = _table(entry, entry_where)
+            unknown_fields = sorted(set(entry_data) - set(RESOURCE_LIMIT_FIELDS))
+            if unknown_fields:
+                raise ExperimentContractError(
+                    f"{entry_where} names unknown field(s): {', '.join(unknown_fields)}"
+                )
+            metric = _required_string(entry_data.get("metric"), f"{entry_where}.metric")
+            if metric in seen_metrics:
+                raise ExperimentContractError(f"{rl_where} declares duplicate metric {metric!r}")
+            seen_metrics.add(metric)
+            unit = _required_string(
+                entry_data.get("unit"), f"{entry_where}.unit", choices=RESOURCE_UNITS
+            )
+            max_value = _percent(entry_data.get("max_value"), f"{entry_where}.max_value")
+            max_increase_pct = _percent(
+                entry_data.get("max_increase_pct"), f"{entry_where}.max_increase_pct"
+            )
+            if max_value is None and max_increase_pct is None:
+                raise ExperimentContractError(
+                    f"{entry_where} must declare max_value or max_increase_pct "
+                    "(a limit that checks neither is not a limit)"
+                )
+            resource_limits.append(ResourceLimit(
+                metric=metric, unit=unit, max_value=max_value, max_increase_pct=max_increase_pct,
+            ))
+    resource_limits.sort(key=lambda limit: limit.metric)
+
     acceptance = Acceptance(
         target_kernel_gain_pct=_percent(
             acceptance_data.get("target_kernel_gain_pct"), f"{where}.acceptance.target_kernel_gain_pct"),
@@ -749,6 +831,7 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         max_control_regression_pct=_percent(
             acceptance_data.get("max_control_regression_pct"),
             f"{where}.acceptance.max_control_regression_pct"),
+        resource_limits=tuple(resource_limits),
     )
     if acceptance.max_control_regression_pct is None:
         raise ExperimentContractError(
@@ -1218,6 +1301,79 @@ def evaluate_correctness_gate(
     }
 
 
+# ------------------------------------------------------------ resource cost (VA12)
+
+
+@dataclass(frozen=True)
+class ResourceResult:
+    """One resource limit's measured evidence -- e.g. RD73's real
+    graph-cache entry count after a validation run. control_value is only
+    required when the limit checks max_increase_pct; a pure max_value
+    limit needs only the subject's own measurement."""
+    metric: str
+    unit: str
+    subject_value: float
+    control_value: float | None = None
+
+
+def evaluate_resource_gate(
+    contract: ExperimentContract, results: dict[str, ResourceResult],
+) -> dict[str, object]:
+    """VA12: every limit in contract.acceptance.resource_limits must have a
+    ResourceResult in ``results`` with matching metric AND unit, and must
+    satisfy whichever bound(s) the limit declares. Missing evidence is a
+    FAIL, never "not applicable" -- a declared resource budget with no
+    measurement proves nothing. A max_increase_pct limit with no
+    control_value evidence is also a FAIL (the bound cannot be evaluated).
+    A control_value of 0 paired with any positive subject_value is
+    unbounded relative growth and FAILS max_increase_pct rather than
+    dividing by zero or silently passing."""
+    missing: list[str] = []
+    failed: list[str] = []
+    detail: dict[str, object] = {}
+    for limit in contract.acceptance.resource_limits:
+        result = results.get(limit.metric)
+        if result is None:
+            missing.append(limit.metric)
+            continue
+        if result.unit != limit.unit:
+            failed.append(limit.metric)
+            detail[limit.metric] = f"unit mismatch: limit={limit.unit!r} result={result.unit!r}"
+            continue
+        reasons: list[str] = []
+        if limit.max_value is not None and result.subject_value > limit.max_value:
+            reasons.append(f"subject_value {result.subject_value} exceeds max_value {limit.max_value}")
+        if limit.max_increase_pct is not None:
+            if result.control_value is None:
+                reasons.append("max_increase_pct declared but no control_value evidence supplied")
+            elif result.control_value == 0:
+                if result.subject_value > 0:
+                    reasons.append(
+                        f"control_value is 0 but subject_value is {result.subject_value} "
+                        "-- unbounded relative growth"
+                    )
+            else:
+                increase_pct = (
+                    (result.subject_value - result.control_value) / result.control_value
+                ) * 100.0
+                if increase_pct > limit.max_increase_pct:
+                    reasons.append(
+                        f"measured increase {increase_pct:.2f}% exceeds max_increase_pct "
+                        f"{limit.max_increase_pct}"
+                    )
+        if reasons:
+            failed.append(limit.metric)
+            detail[limit.metric] = "; ".join(reasons)
+    passed = not missing and not failed
+    return {
+        "passed": passed,
+        "required_limits": [limit.metric for limit in contract.acceptance.resource_limits],
+        "missing_metrics": missing,
+        "failed_metrics": failed,
+        "detail": detail,
+    }
+
+
 # ------------------------------------------------------------ generalisation (EC08)
 
 
@@ -1368,6 +1524,7 @@ def evaluate_promotion_gate(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
     trigger_proof: dict[str, object] | None = None,
+    resource_gate: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """EC09: the final pass/fail/invalid verdict, combining EC18's trigger
     proof, EC07's correctness gate, EC06's aggregated effects against
@@ -1444,6 +1601,23 @@ def evaluate_promotion_gate(
     if generalisation_result is not None and not generalisation_result.get("passed"):
         reasons.append("generalisation proof did not pass")
 
+    # VA12: a contract that declares resource limits at all must have them
+    # checked -- missing or failing resource evidence blocks promotion,
+    # exactly like a missing/failed correctness check. A contract that
+    # declares NO resource limits is unaffected regardless of whether a
+    # resource_gate happens to be supplied.
+    if contract.acceptance.resource_limits:
+        if resource_gate is None:
+            reasons.append(
+                "contract declares resource_limits but no resource_gate evidence was supplied"
+            )
+        elif not resource_gate.get("passed"):
+            missing_r = resource_gate.get("missing_metrics") or []
+            failed_r = resource_gate.get("failed_metrics") or []
+            reasons.append(
+                f"resource gate failed (missing={list(missing_r)}, failed={list(failed_r)})"
+            )
+
     return {
         "status": "pass" if not reasons else "fail",
         "passed": not reasons,
@@ -1460,6 +1634,7 @@ def render_report(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], promotion_gate: dict[str, object],
     generalisation_result: dict[str, object] | None = None,
+    resource_gate: dict[str, object] | None = None,
 ) -> str:
     """EC10: one human-readable report per contract, covering both wins AND
     rejections as first-class results (guide section 12 step 12: "Report
@@ -1559,6 +1734,27 @@ def render_report(
     if failed:
         lines.append(f"- failed: {', '.join(failed)}")
     lines.append("")
+
+    if contract.acceptance.resource_limits:
+        lines.append("## Resources")
+        for limit in contract.acceptance.resource_limits:
+            bound = []
+            if limit.max_value is not None:
+                bound.append(f"max_value={limit.max_value} {limit.unit}")
+            if limit.max_increase_pct is not None:
+                bound.append(f"max_increase_pct={limit.max_increase_pct}%")
+            lines.append(f"- {limit.metric} ({', '.join(bound)})")
+        if resource_gate is not None:
+            lines.append(f"- gate passed: {resource_gate.get('passed')}")
+            missing_r = resource_gate.get("missing_metrics") or []
+            failed_r = resource_gate.get("failed_metrics") or []
+            if missing_r:
+                lines.append(f"- missing: {', '.join(missing_r)}")
+            if failed_r:
+                lines.append(f"- failed: {', '.join(failed_r)}")
+        else:
+            lines.append("- (no resource gate evidence supplied)")
+        lines.append("")
 
     lines.append("## Generalised rule")
     if generalisation_result is None:
