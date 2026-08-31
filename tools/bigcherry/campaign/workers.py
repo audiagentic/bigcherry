@@ -71,6 +71,7 @@ from ..tuning import catalog as autotune_catalog
 from . import build as campaign_build
 from ..build import generated_tree
 from ..core import provenance
+from ..core.process import describe_returncode
 from . import smoke as runtime_smoke
 from ..core.artifacts import ArtifactStore
 from ..build.builds import (
@@ -872,7 +873,8 @@ def make_smoke_worker(
         )
         if completed.returncode != 0:
             raise runtime_smoke.SmokeError(
-                f"runtime smoke exited {completed.returncode}: {completed.stderr[-2000:]}"
+                f"runtime smoke exited {describe_returncode(completed.returncode)}: "
+                f"{completed.stderr[-2000:]}"
             )
         rows = runtime_smoke.evaluate_smoke_result(completed.stdout)
 
