@@ -322,6 +322,7 @@ def cmd_patch_disposition(args: Namespace) -> int:
 def cmd_patch_verify_evidence(args: Namespace) -> int:
     """Report current validation evidence for selected patches."""
     from ..core import config as campaign_config
+    from ..source.workspace import UpstreamRepository, WorkspaceError
 
     cfg = campaign_config.load(paths.RECIPES)
     modules = patchset.catalog()
@@ -330,9 +331,22 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         if not modules:
             print(f"unknown patch {args.patch_id!r}", file=sys.stderr)
             return 1
+    # VA08 resolved-pin-SHA slice (GPT session ses_330ae3c055084f38,
+    # req_1c131ba025834afe): a record's base_revision must match the pin's
+    # actual RESOLVED commit, not just a string with the same ref name --
+    # otherwise stale evidence from before the pin moved could still
+    # "match" cfg.pinned by name alone. resolve_ref() is local-only (no
+    # fetch); if the configured pin cannot resolve locally, fail closed
+    # with a real CLI error rather than silently skipping the check.
+    try:
+        resolved_base_revision = UpstreamRepository(paths.llama_root()).resolve_ref(cfg.pinned)
+    except WorkspaceError as exc:
+        print(f"patch-verify-evidence: cannot resolve pin {cfg.pinned!r} locally: {exc}", file=sys.stderr)
+        return 2
     statuses = patch_catalog.validation_evidence_statuses(
         [module.patch_id for module in modules],
         pinned_ref=cfg.pinned,
+        resolved_base_revision=resolved_base_revision,
         allow_legacy_grandfather=not args.no_legacy_grandfather,
     )
     if args.json:
