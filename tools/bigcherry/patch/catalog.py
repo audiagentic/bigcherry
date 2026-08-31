@@ -47,6 +47,7 @@ from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
 from ..core import paths
 from . import patchset
+from . import validation_policy
 
 KINDS = ("framework", "upstream-backport", "enhancement")
 ORIGINS = ("local", "upstream-commit", "upstream-pr", "external-fork")
@@ -322,12 +323,36 @@ def validation_evidence_statuses(
         )
         if not required_archs:
             required_archs = default_validation_architectures
-        result[patch_id] = patch_validation_evidence.verify_validated_patch(
-            module, pinned_ref=pinned_ref,
-            required_architectures=required_archs,
-            root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
-            resolved_base_revision=resolved_base_revision,
-        )
+        # VA08: verify_validated_patch() itself is a no-op ("not-required")
+        # for any module.state != "validated" -- registry.STATES is a
+        # closed vocabulary that does not include "ported-benched"/
+        # "deferred-hardware" at all (those are tracked-status values from
+        # config/external-sources.toml, a separate axis). Dispatch to the
+        # matching status-obligation verifier so those two tracked
+        # statuses are actually checked for current-pin qualification
+        # instead of silently reporting not-required.
+        if module.state == "validated":
+            result[patch_id] = patch_validation_evidence.verify_validated_patch(
+                module, pinned_ref=pinned_ref,
+                required_architectures=required_archs,
+                root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
+                resolved_base_revision=resolved_base_revision,
+            )
+            continue
+
+        tracked_statuses = validation_policy.tracked_statuses_for_patch(patch_id)
+        if "deferred-hardware" in tracked_statuses:
+            result[patch_id] = patch_validation_evidence.verify_deferred_hardware_patch(
+                module, pinned_ref=pinned_ref, root=evidence_root,
+                resolved_base_revision=resolved_base_revision,
+            )
+        elif "ported-benched" in tracked_statuses:
+            result[patch_id] = patch_validation_evidence.verify_ported_benched_patch(
+                module, pinned_ref=pinned_ref, root=evidence_root,
+                resolved_base_revision=resolved_base_revision,
+            )
+        else:
+            result[patch_id] = patch_validation_evidence.EvidenceCheck("not-required")
     return result
 
 
