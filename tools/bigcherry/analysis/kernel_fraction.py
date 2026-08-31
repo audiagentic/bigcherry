@@ -164,6 +164,7 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                     f"found headers {header}"
                 )
             # Record which columns won, once, per file group.
+            first_file = "kernel" not in columns
             columns.setdefault("kernel", name_col)
             columns.setdefault("duration", dur_col)
             columns.setdefault("start", start_col)
@@ -172,6 +173,23 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
             if name_col != columns.get("kernel"):
                 raise KernelFractionError(
                     f"{path}: kernel-name column differs across inputs"
+                )
+            if not first_file and (start_col is not None and end_col is not None) != (
+                columns.get("start") is not None and columns.get("end") is not None
+            ):
+                # gpt-dev-agent review round 3, 2026-08-31: parse_kernel_trace
+                # only enforced a matching kernel-name column across files --
+                # a batch of one duration-only CSV and one timestamped CSV
+                # would silently produce a matmul_wall_pct computed only
+                # from whichever file(s) happened to have timestamps, with
+                # the duration-only file's matmul rows contributing to
+                # kernel_total/wall_ns fallback but excluded from the union,
+                # a real risk of understating the union without any error.
+                raise KernelFractionError(
+                    f"{path}: Start/End timestamp availability differs across "
+                    f"input files -- either every file must have real "
+                    f"timestamps or none may, so matmul_wall_pct's meaning "
+                    f"stays consistent across the whole batch"
                 )
 
             for row_number, line in enumerate(reader, start=2):  # header is row 1
@@ -189,23 +207,36 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                 kernel = demangle((record.get(name_col) or "").strip())
                 if not kernel:
                     continue
-                if dur_col is not None:
+                start_ns: int | None = None
+                if start_col is not None and end_col is not None:
+                    start_ns = int(_required_timing_value(record, start_col, path, row_number))
+                    end_ns = int(_required_timing_value(record, end_col, path, row_number))
+                    dur = end_ns - start_ns
+                    if dur_col is not None:
+                        # gpt-dev-agent review round 3, 2026-08-31: when both
+                        # Duration and Start/End exist, the span (used for
+                        # the union/wall calculations) was built from
+                        # Start+dur using the DURATION column's value, not
+                        # End -- if a trace's Duration ever disagreed with
+                        # End-Start, the span silently used the wrong end
+                        # point instead of failing. End-Start is now what
+                        # the span uses; Duration is only cross-checked.
+                        dur_col_value = int(_required_timing_value(record, dur_col, path, row_number))
+                        if dur_col_value != dur:
+                            raise KernelFractionError(
+                                f"{path}: row {row_number} Duration ({dur_col_value}) "
+                                f"!= End-Start ({dur}) for {kernel!r} -- inconsistent "
+                                "timing columns"
+                            )
+                elif dur_col is not None:
                     dur = int(_required_timing_value(record, dur_col, path, row_number))
                 else:
-                    assert (
-                        start_col is not None and end_col is not None
-                    )  # checked above
-                    dur = int(
-                        _required_timing_value(record, end_col, path, row_number)
-                        - _required_timing_value(record, start_col, path, row_number)
-                    )
+                    raise AssertionError("unreachable: checked at header validation")
                 if dur < 0:
                     raise KernelFractionError(
                         f"{path}: negative kernel duration for {kernel!r}"
                     )
-                start_ns: int | None = None
-                if start_col is not None and end_col is not None:
-                    start_ns = int(_required_timing_value(record, start_col, path, row_number))
+                if start_ns is not None:
                     spans.append((start_ns, start_ns + dur))
                 agent = record.get(agent_col) if agent_col else None
                 rows.append(
@@ -333,8 +364,10 @@ def render_report(trace: dict[str, Any], summary: dict[str, Any], phase: str) ->
     else:
         lines.append(
             f"  => matmul is {summary['matmul_wall_pct']:.1f}% of wall time; "
-            "a 10% matmul saving is "
-            f"{summary['matmul_wall_pct'] / 10.0:.1f}% end to end"
+            "a 10% matmul saving is AT MOST "
+            f"{summary['matmul_wall_pct'] / 10.0:.1f}% end to end "
+            "(this is a ceiling from activity time, not a guarantee -- "
+            "concurrent non-matmul critical-path work can hide some or all of it)"
         )
     lines.append("")
     lines.append(

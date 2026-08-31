@@ -168,5 +168,63 @@ class TimingFailClosedTests(unittest.TestCase):
         self.assertEqual(trace["rows"][0]["dur_ns"], 0)
 
 
+class MixedFileAndDurationConsistencyTests(unittest.TestCase):
+    """gpt-dev-agent review round 3, 2026-08-31: mixed timing schemas
+    across multiple input files could produce a false matmul_wall_pct
+    (silently omitting the duration-only file's matmul rows from the
+    union), and Duration disagreeing with End-Start silently used the
+    wrong span endpoint instead of failing."""
+
+    def test_mixing_a_timestamped_and_duration_only_file_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            timestamped = Path(tmp) / "a.csv"
+            timestamped.write_text(
+                '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp"\n'
+                '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,1000\n',
+                encoding="utf-8",
+            )
+            duration_only = Path(tmp) / "b.csv"
+            duration_only.write_text(
+                '"Kind","Kernel_Name","Duration"\n'
+                '"KERNEL_DISPATCH","mul_mat_vec_q_b",500\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(kernel_fraction.KernelFractionError):
+                kernel_fraction.parse_kernel_trace([timestamped, duration_only])
+
+    def test_two_timestamped_files_are_fine(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = _write(Path(tmp) / "a.csv", "Agent 1")
+            b = _write(Path(tmp) / "b.csv", "Agent 2")
+            trace = kernel_fraction.parse_kernel_trace([a, b])  # must not raise
+        self.assertEqual(len(trace["rows"]), 4)
+
+    def test_duration_disagreeing_with_end_minus_start_raises(self):
+        header = '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp","Duration"'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join(
+                    [header, '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,1000,999']  # 999 != 1000-0
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(kernel_fraction.KernelFractionError):
+                kernel_fraction.parse_kernel_trace([path])
+
+    def test_duration_agreeing_with_end_minus_start_is_fine(self):
+        header = '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp","Duration"'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join([header, '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,1000,1000'])
+                + "\n",
+                encoding="utf-8",
+            )
+            trace = kernel_fraction.parse_kernel_trace([path])  # must not raise
+        self.assertEqual(trace["rows"][0]["dur_ns"], 1000)
+
+
 if __name__ == "__main__":
     unittest.main()
