@@ -243,5 +243,72 @@ class PluralContractRegistryTests(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class GeneratedToolingResidueExcludedFromDigestTests(unittest.TestCase):
+    """Real bug found during VA16's RD08 before/after digest investigation:
+    _validation_identity() hashed every file under validation/**, so
+    __pycache__/.ruff_cache/*.pyc tooling residue made validation identity
+    depend on unrelated local tooling state rather than real content."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-registry-va16-residue-")
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "patches"
+        self.root.mkdir()
+        self.contracts = write(Path(self._tmp.name), "experiment-contracts.toml", CONTRACTS_TOML)
+        self.package = self.root / "rd" / "1300_residue"
+        self.package.mkdir(parents=True)
+        (self.package / "patch.toml").write_text(
+            PACKAGE_TOML.format(
+                patch_id="1300_residue", order=1300,
+                extra='experiment-contract = "TEST-CONTRACT-A"',
+            ),
+            encoding="utf-8",
+        )
+        (self.package / "patch.py").write_text(NO_CONTRACT_PY, encoding="utf-8")
+        (self.package / "validation.toml").write_text(
+            'schema = 1\n\n[[check]]\nid = "apply"\ncapability = "apply"\n'
+            'validator = "apply"\nrequired = true\n', encoding="utf-8",
+        )
+        (self.package / "validation").mkdir()
+        (self.package / "validation" / "checks.py").write_text(
+            "def check(ctx):\n    return None\n", encoding="utf-8",
+        )
+
+    def _digest(self) -> str:
+        return patch_registry.load_registry(
+            self.root, contracts_path=self.contracts
+        ).get("1300_residue").validation_digest
+
+    def test_pycache_directory_does_not_affect_digest(self) -> None:
+        before = self._digest()
+        cache_dir = self.package / "validation" / "__pycache__"
+        cache_dir.mkdir()
+        (cache_dir / "checks.cpython-313.pyc").write_bytes(b"not real bytecode")
+        after = self._digest()
+        self.assertEqual(before, after)
+
+    def test_ruff_cache_directory_does_not_affect_digest(self) -> None:
+        before = self._digest()
+        cache_dir = self.package / "validation" / ".ruff_cache"
+        cache_dir.mkdir()
+        (cache_dir / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n", encoding="utf-8")
+        after = self._digest()
+        self.assertEqual(before, after)
+
+    def test_stray_pyc_file_does_not_affect_digest(self) -> None:
+        before = self._digest()
+        (self.package / "validation" / "checks.pyc").write_bytes(b"not real bytecode")
+        after = self._digest()
+        self.assertEqual(before, after)
+
+    def test_real_validation_file_change_still_changes_digest(self) -> None:
+        before = self._digest()
+        (self.package / "validation" / "checks.py").write_text(
+            "def check(ctx):\n    return 'changed'\n", encoding="utf-8",
+        )
+        after = self._digest()
+        self.assertNotEqual(before, after)
+
+
 if __name__ == "__main__":
     unittest.main()
