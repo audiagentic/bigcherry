@@ -1064,7 +1064,18 @@ def build_parser() -> argparse.ArgumentParser:
     validate_release_cmd.add_argument("--run-id", required=True)
     validate_release_cmd.add_argument("--staging-root", default=None)
     validate_release_cmd.add_argument("--ref", default="master")
-    validate_release_cmd.add_argument("--recipe", default="bigcherry")
+    validate_release_cmd.add_argument(
+        "--source", required=True,
+        help="canonical v2 [source.*] name (e.g. 'bigcherry')",
+    )
+    validate_release_cmd.add_argument(
+        "--platform", required=True,
+        help="canonical v2 [platform.*] name (e.g. 'linux-multi')",
+    )
+    validate_release_cmd.add_argument(
+        "--build", action="append", required=True, dest="builds",
+        help="canonical v2 [build.*] name to run -- repeat for multiple",
+    )
     validate_release_cmd.add_argument("--inventory", default=None)
     validate_release_cmd.set_defaults(
         func=lambda args: _validate_release_main(
@@ -1073,8 +1084,11 @@ def build_parser() -> argparse.ArgumentParser:
                 args.run_id,
                 "--ref",
                 args.ref,
-                "--recipe",
-                args.recipe,
+                "--source",
+                args.source,
+                "--platform",
+                args.platform,
+                *sum((["--build", b] for b in args.builds), []),
                 *(["--inventory", args.inventory] if args.inventory else []),
                 *(["--staging-root", args.staging_root] if args.staging_root else []),
             ]
@@ -1088,7 +1102,18 @@ def build_parser() -> argparse.ArgumentParser:
     validate_ref_cmd.add_argument("--run-id", required=True)
     validate_ref_cmd.add_argument("--staging-root", default=None)
     validate_ref_cmd.add_argument("--ref", default="master")
-    validate_ref_cmd.add_argument("--recipe", default="bigcherry")
+    validate_ref_cmd.add_argument(
+        "--source", required=True,
+        help="canonical v2 [source.*] name (e.g. 'bigcherry')",
+    )
+    validate_ref_cmd.add_argument(
+        "--platform", required=True,
+        help="canonical v2 [platform.*] name (e.g. 'linux-multi')",
+    )
+    validate_ref_cmd.add_argument(
+        "--build", action="append", required=True, dest="builds",
+        help="canonical v2 [build.*] name to run -- repeat for multiple",
+    )
     validate_ref_cmd.add_argument("--inventory", default=None)
     validate_ref_cmd.add_argument("--promoted-winners", default=None)
     validate_ref_cmd.set_defaults(
@@ -1098,8 +1123,11 @@ def build_parser() -> argparse.ArgumentParser:
                 args.run_id,
                 "--ref",
                 args.ref,
-                "--recipe",
-                args.recipe,
+                "--source",
+                args.source,
+                "--platform",
+                args.platform,
+                *sum((["--build", b] for b in args.builds), []),
                 *(["--inventory", args.inventory] if args.inventory else []),
                 *(
                     ["--promoted-winners", args.promoted_winners]
