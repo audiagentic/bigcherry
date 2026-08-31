@@ -675,6 +675,12 @@ def _load_rd08_correctness_module() -> object:
     if spec is None or spec.loader is None:
         raise PatchCampaignError(f"cannot load rd08 correctness producer at {module_path}")
     module = importlib.util.module_from_spec(spec)
+    # VA15 real-hardware finding: module_from_spec() does not register the
+    # module in sys.modules -- @dataclass (Rd08Shape, ShapeSeedComparison)
+    # resolves its owning module via sys.modules[cls.__module__] during
+    # decoration, so without this the decorator crashes with
+    # AttributeError: 'NoneType' object has no attribute '__dict__'.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 

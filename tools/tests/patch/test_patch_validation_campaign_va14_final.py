@@ -95,6 +95,22 @@ def _fake_git_run(command, *args, **kwargs):
     return _Result()
 
 
+class LoadRd08CorrectnessModuleTests(unittest.TestCase):
+    def test_loads_the_real_module_without_crashing_on_dataclass_decoration(self) -> None:
+        # VA15 real-hardware finding (req_bc329f6ae30c4e4c follow-up):
+        # importlib.util.module_from_spec() does not register the module in
+        # sys.modules -- @dataclass (Rd08Shape, ShapeSeedComparison inside
+        # rd08_correctness.py) resolves its owning module via
+        # sys.modules[cls.__module__] during decoration and crashed with
+        # AttributeError: 'NoneType' object has no attribute '__dict__'
+        # before sys.modules[spec.name] = module was added.
+        module = vc._load_rd08_correctness_module()
+        self.assertTrue(hasattr(module, "RD08_SHAPES"))
+        self.assertEqual(len(module.RD08_SHAPES), 5)
+        self.assertTrue(hasattr(module, "materialize_rd08_variants"))
+        self.assertTrue(hasattr(module, "require_rd08_correctness_evidence"))
+
+
 class RunRd08ContractCorrectnessTests(unittest.TestCase):
     def setUp(self) -> None:
         self._real_build_tree = vc.build_tree
