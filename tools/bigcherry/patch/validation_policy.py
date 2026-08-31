@@ -99,19 +99,27 @@ def _grandfather_identity(
     }
 
 
+_EMPTY_BASELINE = {"schema_version": 1, "policy_version": VALIDATION_PACKAGE_POLICY_VERSION, "patches": {}}
+
+
 def load_grandfather_baseline(path: str | Path | None = None) -> dict:
-    """Load the one-time reviewed baseline. Malformed or missing -> empty
-    (fail closed: no entry means no exemption, never an error that's
-    silently treated as a pass)."""
+    """Load the one-time reviewed baseline. Malformed, missing, or
+    shape-invalid -> empty (fail closed: no entry means no exemption,
+    never an error that's silently treated as a pass)."""
     baseline_path = Path(path) if path is not None else paths.VALIDATION_PACKAGE_GRANDFATHER
     if not baseline_path.is_file():
-        return {"schema_version": 1, "policy_version": VALIDATION_PACKAGE_POLICY_VERSION, "patches": {}}
+        return dict(_EMPTY_BASELINE)
     try:
         data = json.loads(baseline_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {"schema_version": 1, "policy_version": VALIDATION_PACKAGE_POLICY_VERSION, "patches": {}}
+        return dict(_EMPTY_BASELINE)
     if not isinstance(data, dict) or data.get("schema_version") != 1:
-        return {"schema_version": 1, "policy_version": VALIDATION_PACKAGE_POLICY_VERSION, "patches": {}}
+        return dict(_EMPTY_BASELINE)
+    if not isinstance(data.get("policy_version"), str):
+        return dict(_EMPTY_BASELINE)
+    patches = data.get("patches")
+    if not isinstance(patches, dict) or not all(isinstance(v, dict) for v in patches.values()):
+        return dict(_EMPTY_BASELINE)
     return data
 
 
@@ -214,7 +222,26 @@ def check_validation_packages(
                 descriptor.patch_id, external_sources_path=external_sources_path
             )
         )
-        if not (tracked & PACKAGE_STATUSES):
+        # GPT round-5 (req_86cfd3a0bff04716) directed: a descriptor.state=
+        # "validated" patch must be covered even if its tracked-status
+        # metadata is absent or doesn't itself include a PACKAGE_STATUSES
+        # value. CORRECTED to scope this to kind="enhancement" (RD/
+        # experimental) patches only -- applying it unscoped swept in every
+        # core kind="framework" patch (0100-1100 series: dispatch_hook,
+        # mmq_forced_j, ...), which are state="validated" by construction
+        # and were never in the standard's stated scope ("RD/experimental
+        # patch validation packages", docs/reference/testing/
+        # PATCH_VALIDATION.md; see also [[feedback_framework_vs_enhancement]]
+        # -- framework vs RD-enhancement is a load-bearing distinction in
+        # this project, not a detail).
+        is_rd_patch = descriptor.kind == "enhancement"
+        requires_package = bool(tracked & PACKAGE_STATUSES) or (
+            is_rd_patch and descriptor.state == "validated"
+        )
+        requires_architectures = ("ported-validated" in tracked) or (
+            is_rd_patch and descriptor.state == "validated"
+        )
+        if not requires_package:
             statuses.append(PackagePolicyStatus(descriptor.patch_id, "not-required"))
             continue
 
@@ -238,7 +265,31 @@ def check_validation_packages(
             except patch_validation.ValidationError as exc:
                 patch_problems.append(f"{descriptor.patch_id}: {exc}")
 
-        if plan is not None and "ported-validated" in tracked:
+        if plan is not None:
+            # Custom-validator specs are checked structurally (AST, never
+            # imported/executed) -- parse_validation_toml() leaves
+            # validator-specific config opaque, so this was previously
+            # dead code: a malformed/missing/escaping custom callable
+            # would lint clean as long as producer coverage succeeded.
+            for spec in plan.checks:
+                if spec.validator == "custom":
+                    callable_spec = spec.config.get("callable")
+                    if not isinstance(callable_spec, str) or not callable_spec:
+                        patch_problems.append(
+                            f"{descriptor.patch_id}: check {spec.check_id!r} has validator=custom "
+                            "but no 'callable' string in its config"
+                        )
+                        continue
+                    try:
+                        validate_custom_callable_spec(callable_spec, package_root=package_root)
+                    except (PolicyError, SyntaxError, OSError) as exc:
+                        patch_problems.append(f"{descriptor.patch_id}: check {spec.check_id!r}: {exc}")
+                elif spec.validator not in patch_validation.BUILTIN_VALIDATORS:
+                    patch_problems.append(
+                        f"{descriptor.patch_id}: check {spec.check_id!r} uses unknown validator {spec.validator!r}"
+                    )
+
+        if plan is not None and requires_architectures:
             if not descriptor.validation_architectures:
                 patch_problems.append(
                     f"{descriptor.patch_id}: ported-validated requires non-empty validation-architectures"
