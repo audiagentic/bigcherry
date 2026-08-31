@@ -136,6 +136,8 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
         self.assertEqual(
             payload["validation_build_identities"]["control"]["effective_build_id"], "c1",
         )
+        self.assertEqual(payload["lanes"]["positive"]["metric"], "tg128")
+        self.assertEqual(payload["lanes"]["control"]["metric"], "pp512")
 
     def test_lane_env_is_sanitized_of_inherited_dispatch_overrides(self) -> None:
         contracts = ex_contract.load_contracts(
@@ -178,6 +180,20 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
             self.assertNotIn("GGML_HIP_FORCE_KERNEL", env)
             self.assertNotIn("BIGCHERRY_DEBUG", env)
             self.assertNotIn("GGML_CUDA_DISABLE_FUSION", env)
+
+    def test_validation_lanes_artifact_is_bound_into_artifact_refs(self) -> None:
+        import hashlib
+        import tempfile
+        from bigcherry.patch import evidence as patch_evidence
+
+        run_dir = Path(tempfile.mkdtemp())
+        artifact_ref = vc._write_bound_artifact(run_dir, "validation-lanes.json", {"k": "v"})
+        refs = patch_evidence._artifact_refs(run_dir)
+        matching = [r for r in refs if r["path"] == "artifacts/validation-lanes.json"]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["sha256"], artifact_ref["sha256"])
+        expected_hash = hashlib.sha256((run_dir / "artifacts" / "validation-lanes.json").read_bytes()).hexdigest()
+        self.assertEqual(matching[0]["sha256"], expected_hash)
 
     def _tmp_dir(self) -> str:
         if not hasattr(self, "_tmp"):

@@ -640,12 +640,12 @@ def run_rd08_validation_lanes(
         "raw_logs": raw_logs,
         "lanes": {
             "positive": {
-                "contract_evidence": positive_ref.document(),
+                "metric": "tg128", "contract_evidence": positive_ref.document(),
                 "control_command": decode_control_cmd, "subject_command": decode_subject_cmd,
                 "runs": list(decode_run.runs), "stats": decode_run.stats,
             },
             "control": {
-                "contract_evidence": control_ref.document(),
+                "metric": "pp512", "contract_evidence": control_ref.document(),
                 "control_command": prefill_control_cmd, "subject_command": prefill_subject_cmd,
                 "runs": list(prefill_run.runs), "stats": prefill_run.stats,
             },
