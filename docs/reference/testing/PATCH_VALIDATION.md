@@ -77,9 +77,25 @@ break that.
 | `excluded` | no (evidence/reason retained if the exclusion was itself empirical) | no | no | no |
 | `evidence-only` | no, unless a real patch exists and is being tested | no | no | no |
 
-A patch may only claim `ported-benched` or `ported-validated` if its
-package and current-pin evidence both exist. Claiming either status
-without them is not a paperwork gap — the claim is false.
+A patch's historical tracked-status may legitimately remain
+`ported-benched` or `ported-validated` from past work even after a pin
+bump — that string is a lifecycle record, not a live claim. What requires
+package + current-pin evidence is *current qualification* of that status:
+`patch-verify-evidence` answers whether the status is qualified for the
+active pin right now, not whether the historical work happened at all.
+Reporting a stale-but-real `ported-benched` is honest; reporting it as
+currently qualified without fresh evidence is not.
+
+Spelled out exactly, current qualification requires:
+
+- **`ported-benched`**: a real control/subject benchmark actually ran,
+  with build and hardware identities recorded. A failing required
+  correctness result **forbids** current qualification at this level —
+  performance alone never overrides a correctness failure.
+- **`ported-validated`**: every required named check (not just the generic
+  capability) passes, AND `validation-architectures` is non-empty and
+  meaningful (an empty list means the verifier has no architecture
+  obligation at all, which is never sufficient for this status).
 
 ## Experiment Contract binding
 
@@ -94,8 +110,11 @@ The contract determines every non-universal obligation:
   regardless of contract content.
 - Correctness, performance, activation, and control obligations are
   derived from the bound contract's own declared checks/thresholds/scope.
-  A `validation.toml` cannot invent additional obligations the contract
-  doesn't declare, and cannot silently drop ones it does.
+  A `validation.toml` MAY add supplementary checks/producers beyond what
+  the contract requires (`compute_verdict()` treats any adapter-declared
+  `required = true` check as required); it may NOT alter, remove, or
+  replace an Experiment Contract's scientific obligations or acceptance
+  thresholds.
 - A contract's required correctness checks are each individually
   authoritative. **One generic `correctness` capability PASS does not
   satisfy multiple distinct named checks** (e.g. a contract requiring both
@@ -200,13 +219,20 @@ required = true
   required — `validation.toml` wires *how* a required capability gets
   checked, it does not get to decide a required capability isn't needed.
 - Unknown or unimplemented validators fail closed (an error, not a skip).
-- Custom validators are resolved by dotted path and are confined to the
-  patch's own `package_root` — a custom check cannot reach outside its own
-  patch directory.
+- Custom validators use `validator = "custom"` with
+  `callable = "validation/checks.py:function_name"` (a file path relative
+  to the patch's own `package_root`, colon, function name — not a dotted
+  Python import path). The function's signature is locked to `check(ctx)`:
+  exactly one positional parameter named `ctx`, no `*args`/`**kwargs`, no
+  extra parameters, not async. The resolved file must exist inside
+  `package_root` — a custom check cannot reach outside its own patch
+  directory.
 
-The built-in validators as of this writing are: `apply`, `build`,
-`compile-option`, `runtime-smoke`, `architecture`, `benchmark`,
-`autotune-campaign`, `backend-ops`, `trace-marker`. Treat
+The built-in validators registered as of this writing are: `apply`,
+`build`, `compile-option`, `runtime-smoke`, `architecture`, `benchmark`,
+`autotune-campaign`, `backend-ops`, `trace-marker`. `custom` is a
+supported special validator path (see above), not a registered built-in
+implementation. Treat
 `tools/bigcherry/patch/validation.py` as the normative implementation —
 this document explains the *policy*, not every internal mechanic; when the
 two disagree, the code is authoritative and this doc is stale and should be
@@ -241,8 +267,10 @@ executor a correctness check must run — but a PASS on that generic
 capability is **not by itself** sufficient proof if the bound contract
 names more than one required check. Every named required check must have
 its own recorded PASS; a missing required named result is a fail/block,
-not an omission to overlook. See the existing EC-series contracts (e.g.
-EC07) for the pattern of enumerating checks this way.
+not an omission to overlook. See `experiment_contract.evaluate_correctness_gate()`
+— the correctness-gate implementation that independently requires every
+named contract check to pass, rather than accepting one generic PASS as a
+stand-in for all of them.
 
 ## Activation and performance qualification
 
@@ -266,8 +294,14 @@ provides.
   false, and re-verification must check against the resolved SHA, not just
   the tag string.
 - Patch implementation identity (hash of `patch.py`) and validation
-  identity (hash of `validation.toml` + `validation/**`).
-- Bound Experiment Contract id and hash.
+  identity — this is NOT merely a hash of `validation.toml` + `validation/**`;
+  it canonically also includes `VALIDATION_FRAMEWORK_VERSION` and the bound
+  Experiment Contract's id/hash (`plan_digest()`'s actual composition).
+  Changing contract semantics or framework semantics invalidates
+  validation evidence even when the adapter files themselves are
+  byte-identical.
+- Bound Experiment Contract id and hash (also folded into validation
+  identity above, and recorded separately for direct lookup).
 - Source compositions and control/subject (and campaign tune/replay/stock,
   where applicable) build identities.
 - Hardware identity/architectures actually exercised.
@@ -326,6 +360,15 @@ proof the underlying issue is fixed, especially where the fault was itself
 hard to reproduce in the first place.
 
 ## Validation workflow
+
+**Current implementation note:** until VA11 (wiring the real
+`ValidationPlan`/Experiment-Contract executor) lands, `patch-validation-campaign`
+must not be treated as final contract qualification for any plan requiring
+trace, performance, custom, or named Experiment-Contract checks. Today it
+can produce campaign evidence, but final qualification remains blocked
+wherever the required evidence isn't yet actually wired through — do not
+read a clean campaign run alone as proof of a `ported-validated` claim
+until VA11 is done.
 
 1. Bind (or, if none exists yet, first author) the patch's Experiment
    Contract.
@@ -390,7 +433,10 @@ a literal template without checking it against the current schema and
 
 - `patch-lint` — static package/policy gate.
 - `patch-verify-evidence` — dynamic, current-pin evidence/freshness gate.
-- `bigcherry.patch.validation_campaign` / `patch-validate` — the real
-  validation execution path.
+  `patch-validate` delegates to evidence verification (it inspects
+  existing evidence — it does not itself execute a validation run).
+- `bigcherry.patch.validation_campaign` — the real validation execution
+  path (materializes isolated subject/control trees and runs the real
+  campaign).
 - [TEST.md](TEST.md) — concrete Brutus benchmark/dispatch-mode commands.
 - `config/experiment-contracts.toml` — the Experiment Contract registry.
