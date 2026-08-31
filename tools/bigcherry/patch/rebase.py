@@ -204,6 +204,27 @@ def _load_module_patches(module: "patchset.PatchModule") -> list["patcher.FilePa
     )
 
 
+def _resolve_v2_source(source_name: str) -> "campaign_resolution.CanonicalSelection":
+    """The full canonical selection for ``--source NAME`` -- not just
+    ``patch_ids``, so callers that need to bind freshness on
+    ``source_ref``/``patch_set_id`` (not merely the resulting id list) can.
+    Two logically distinct v2 patch-set compositions can resolve to the
+    identical module-id set; ``patch_set_id`` is the identity that actually
+    distinguishes them (gpt-dev-agent review, compat.recipe removal plan,
+    session ses_5307d9c58ec645cb)."""
+    from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
+    from ..core import config as campaign_config  # noqa: PLC0415
+    from ..core import paths as core_paths  # noqa: PLC0415
+
+    try:
+        cfg = campaign_config.load(core_paths.RECIPES)
+        return campaign_resolution.resolve_canonical_selection(
+            source_name, cfg, patchset.catalog(),
+        )
+    except (campaign_resolution.ResolutionError, campaign_config.ConfigError) as exc:
+        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
+
+
 def _selection_patch_ids(
     *, recipe_name: str | None = None, source_name: str | None = None,
     all_patches: bool,
@@ -224,18 +245,7 @@ def _selection_patch_ids(
     if all_patches:
         return tuple(m.patch_id for m in modules if m.state not in patchset.RETIRED_STATES)
     if source_name:
-        from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
-        from ..core import config as campaign_config  # noqa: PLC0415
-        from ..core import paths as core_paths  # noqa: PLC0415
-
-        try:
-            cfg = campaign_config.load(core_paths.RECIPES)
-            selection = campaign_resolution.resolve_canonical_selection(
-                source_name, cfg, modules,
-            )
-        except campaign_resolution.ResolutionError as exc:
-            raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
-        return selection.patch_ids
+        return _resolve_v2_source(source_name).patch_ids
 
     from .. import recipes as recipes_module  # noqa: PLC0415 (leaf import, avoids a cycle)
 
@@ -794,6 +804,12 @@ def run_rebase_check(
         )
         probes.update(group_probes)
 
+    source_ref = source_patch_set_id = None
+    if source_name:
+        source_selection = _resolve_v2_source(source_name)
+        source_ref = source_selection.source_ref
+        source_patch_set_id = source_selection.patch_set_id
+
     ordered = [probes[m.patch_id] for m in all_modules if m.patch_id in probes]
     summary = {
         "total": len(ordered),
@@ -825,6 +841,13 @@ def run_rebase_check(
             # [A,B] would still pass every other freshness check.
             "recipe": recipe_name,
             "source": source_name,
+            # Only meaningful when "source" is set -- the exact v2
+            # composition identity, distinct from the resulting patch_ids:
+            # two logically different patch-set compositions (e.g. two
+            # experiments) can resolve to the identical module-id set, and
+            # patch_set_id is what actually distinguishes them.
+            "source_ref": source_ref,
+            "source_patch_set_id": source_patch_set_id,
             "all_patches": bool(all_patches),
         },
         "known_good_patch_ids": list(known_good),
@@ -952,12 +975,35 @@ def _require_fresh(
     # widens the recipe this report was generated for) -- no patch bytes,
     # overlay, or revision moved, so re-deriving the id set from the same
     # selector and requiring it to match exactly closes that gap.
+    source_name = selection_input.get("source")
     try:
-        current_ids = set(_selection_patch_ids(
-            recipe_name=selection_input.get("recipe"),
-            source_name=selection_input.get("source"),
-            all_patches=bool(selection_input.get("all_patches", False)),
-        ))
+        if source_name:
+            # A source selection binds on source_ref + patch_set_id, not
+            # merely the resulting id list: two logically distinct v2
+            # patch-set compositions can resolve to the identical module-id
+            # set, and patch_set_id is the identity that actually
+            # distinguishes them (gpt-dev-agent review, compat.recipe
+            # removal plan, session ses_5307d9c58ec645cb).
+            current_selection = _resolve_v2_source(source_name)
+            current_ids = set(current_selection.patch_ids)
+            if current_selection.source_ref != selection_input.get("source_ref"):
+                raise StaleRebaseReportError(
+                    f"report source_ref {selection_input.get('source_ref')!r} != "
+                    f"live {current_selection.source_ref!r} for source {source_name!r} "
+                    "-- re-run patch-rebase-check"
+                )
+            if current_selection.patch_set_id != selection_input.get("source_patch_set_id"):
+                raise StaleRebaseReportError(
+                    f"report source_patch_set_id "
+                    f"{selection_input.get('source_patch_set_id')!r} != live "
+                    f"{current_selection.patch_set_id!r} for source {source_name!r} "
+                    "-- re-run patch-rebase-check"
+                )
+        else:
+            current_ids = set(_selection_patch_ids(
+                recipe_name=selection_input.get("recipe"),
+                all_patches=bool(selection_input.get("all_patches", False)),
+            ))
     except RebaseCheckError as exc:
         raise StaleRebaseReportError(
             f"report's selector no longer resolves: {exc}"
