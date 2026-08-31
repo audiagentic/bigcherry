@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from dataclasses import asdict
@@ -502,6 +503,120 @@ def compute_contract_correctness_gate(
     }
 
 
+def assert_validation_subject_parity(
+    control_build_evidence: object, validation_subject_build_evidence: object, *, patch_id: str,
+) -> None:
+    """VA14-B (GPT session ses_5bbee8ce5c9a4265, req_cb50258c7f4c40f1): the
+    validation-subject build must be a real build-parity match to control --
+    same requested cmake args, same effective configure, same effective
+    build id -- so a measured RD08 lane effect can be attributed to the
+    patch alone, never to an accidental build-option drift between the two
+    binaries. Deliberately does NOT compare runtime_bundle_hash,
+    compile_verification_id, or full campaign_identity(): those are
+    correctly source-content-sensitive, and control/subject sources
+    legitimately differ (that is the whole point of the comparison)."""
+    control_configure = control_build_evidence.effective_configure
+    subject_configure = validation_subject_build_evidence.effective_configure
+    if control_configure != subject_configure:
+        raise PatchCampaignError(
+            f"{patch_id}: validation-subject build is not configure-parity with control -- "
+            f"control={control_configure!r} subject={subject_configure!r}"
+        )
+    control_id = control_build_evidence.effective_build_id
+    subject_id = validation_subject_build_evidence.effective_build_id
+    if control_id != subject_id:
+        raise PatchCampaignError(
+            f"{patch_id}: validation-subject build_id {subject_id!r} does not match "
+            f"control build_id {control_id!r} despite matching effective_configure -- "
+            "refusing to run parity-dependent RD08 lanes against a non-parity build"
+        )
+
+
+def rd08_validation_lane_commands(
+    *, control_binary: Path, subject_binary: Path, model: Path, workload: str,
+) -> tuple[list[str], list[str]]:
+    """VA14-B: the real, minimal llama-bench command pair for one RD08 lane
+    -- control_command, subject_command -- differing only by binary path,
+    consistent with metric_for_workload()'s decode->tg128/prefill->pp512
+    mapping (decode: -p 0 -n 128; prefill: -p 512 -n 0)."""
+    if workload == "decode":
+        workload_flags = ["-p", "0", "-n", "128"]
+    elif workload == "prefill":
+        workload_flags = ["-p", "512", "-n", "0"]
+    else:
+        raise PatchCampaignError(f"rd08 lane: no llama-bench flag mapping for workload {workload!r}")
+    control_command = [str(control_binary), "-m", str(model), *workload_flags]
+    subject_command = [str(subject_binary), "-m", str(model), *workload_flags]
+    return control_command, subject_command
+
+
+def run_rd08_validation_lanes(
+    *, contract: object, control_binary: Path, subject_binary: Path, model: Path,
+    hip_path: Path, run_dir: Path, pairs: int = 3,
+) -> dict[str, object]:
+    """VA14-B: execute RD08's real positive (decode) and control (prefill)
+    lanes via experiment/execution.py's paired runner, persist raw
+    stdout/stderr + paired measurements + bootstrap stats alongside the
+    computed LaneEffects, and return a bound artifact reference plus the
+    LaneEffect list -- so a caller can both persist real evidence and feed
+    aggregate_contract_effects() without re-running anything.
+
+    Deliberately does NOT touch correctness/promotion/eligibility: this is
+    execution + evidence persistence only, per GPT's explicit VA14-B scope
+    (bit_identical producer integration, trigger/promotion composition,
+    evaluate_promotion_gate(), and the eligibility cutover are deferred)."""
+    from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.experiment import execution as experiment_execution
+
+    positive_pattern = re.compile(r"tg128\s*\|\s*([0-9.]+)")
+    control_pattern = re.compile(r"pp512\s*\|\s*([0-9.]+)")
+
+    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+        env = _hip_env(hip_path)
+        completed = subprocess.run(
+            command, capture_output=True, text=True, check=False, env=env,
+        )
+        return experiment_execution.RunnerOutput(
+            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+        )
+
+    decode_control_cmd, decode_subject_cmd = rd08_validation_lane_commands(
+        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
+    )
+    decode_run = experiment_execution.run_paired_lane(
+        metric="tg128", control_command=decode_control_cmd, subject_command=decode_subject_cmd,
+        pattern=positive_pattern, pairs=pairs, runner=_runner,
+    )
+    prefill_control_cmd, prefill_subject_cmd = rd08_validation_lane_commands(
+        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="prefill",
+    )
+    prefill_run = experiment_execution.run_paired_lane(
+        metric="pp512", control_command=prefill_control_cmd, subject_command=prefill_subject_cmd,
+        pattern=control_pattern, pairs=pairs, runner=_runner,
+    )
+    effects = [
+        experiment_execution.lane_effect_from_run("positive", "tg128", decode_run),
+        experiment_execution.lane_effect_from_run("control", "pp512", prefill_run),
+    ]
+    lane_evidence = {
+        "contract_id": getattr(contract, "contract_id", None),
+        "lanes": {
+            "positive": {
+                "role": "positive", "workload": "decode", "metric": "tg128",
+                "control_command": decode_control_cmd, "subject_command": decode_subject_cmd,
+                "runs": list(decode_run.runs), "stats": decode_run.stats,
+            },
+            "control": {
+                "role": "control", "workload": "prefill", "metric": "pp512",
+                "control_command": prefill_control_cmd, "subject_command": prefill_subject_cmd,
+                "runs": list(prefill_run.runs), "stats": prefill_run.stats,
+            },
+        },
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "validation-lanes.json", lane_evidence)
+    return {"artifact": artifact_ref, "effects": effects}
+
+
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
 ) -> bool | None:
@@ -727,6 +842,32 @@ def run(args: argparse.Namespace) -> int:
         f"{control_build_evidence.compile_verification_id[:12]}"
     )
 
+    # VA14-B: the validation-domain subject is a real, independently-built
+    # parity binary from patched_src -- NOT the tune-mode binary (that build
+    # carries GGML_HIP_AUTOTUNE/AUTOTUNE_RECORD/ROUTING_TRANSFORM
+    # instrumentation the control build never had, which would confound a
+    # measured RD08 lane effect with instrumentation overhead, not just the
+    # patch). Built with exactly control's extra_cmake_args=[].
+    validation_subject_bin = build_tree(
+        name="validation-subject", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+        workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        extra_cmake_args=[],
+    )
+    validation_subject_build_evidence = capture_completed_build_evidence(
+        build_root / "validation-subject", source_root=patched_src,
+        architecture=args.amdgpu_targets, binary=validation_subject_bin / f"llama-server{exe}",
+        extra_binaries=(validation_subject_bin / f"llama-bench{exe}",),
+        requested_cmake_args=stock_cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, validation_subject_build_evidence, patch_id=args.patch,
+    )
+    _print(
+        f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
+        f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{validation_subject_build_evidence.compile_verification_id[:12]}"
+    )
+
     from bigcherry.e2e_smoke_campaign import (  # noqa: E402
         Campaign, CampaignError, CampaignIdentityContext,
     )
@@ -915,17 +1056,17 @@ def run(args: argparse.Namespace) -> int:
             ),
         },
         "subject": {
-            "build_id": tune_build_evidence.effective_build_id,
+            "build_id": validation_subject_build_evidence.effective_build_id,
             "source_tree": patched_source_tree,
             "architecture": args.amdgpu_targets,
-            "options": tune_build_evidence.effective_configure,
+            "options": validation_subject_build_evidence.effective_configure,
             "compile_commands": _write_bound_artifact(
                 campaign_run_dir, "build/subject-compile-commands.json",
-                tune_build_evidence.verification.to_dict(),
+                validation_subject_build_evidence.verification.to_dict(),
             ),
             "runtime_bundle": _write_bound_artifact(
                 campaign_run_dir, "build/subject-runtime-bundle.json",
-                tune_build_evidence.runtime_artifacts,
+                validation_subject_build_evidence.runtime_artifacts,
             ),
         },
     }
@@ -946,6 +1087,27 @@ def run(args: argparse.Namespace) -> int:
         },
     }
 
+    # VA14-B: RD08's real positive/control lane execution, opt-in and scoped
+    # to RD08 only (per GPT's explicit slice scope). Deliberately does NOT
+    # feed correctness/promotion/eligibility -- purely execution + raw
+    # evidence persistence, so a later slice can compose it with
+    # evaluate_promotion_gate() without re-running hardware.
+    rd08_lane_evidence: dict[str, object] | None = None
+    if args.run_rd08_lanes and descriptor.experiment_contract == "RD08-Q6K-MMVQ-VDR2":
+        from bigcherry.patch import validation as _pv
+
+        rd08_contract = _pv.load_contract_for_descriptor(descriptor)
+        if rd08_contract is None:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd08-lanes requires a resolvable RD08 contract"
+            )
+        rd08_lane_evidence = run_rd08_validation_lanes(
+            contract=rd08_contract, control_binary=control_bin / f"llama-bench{exe}",
+            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
+            hip_path=args.hip_path, run_dir=campaign_run_dir,
+        )
+        _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -963,7 +1125,7 @@ def run(args: argparse.Namespace) -> int:
             control_tree=control_source_tree, subject_tree=patched_source_tree,
             build_identities={
                 "control": control_build_evidence.effective_build_id,
-                "subject": tune_build_evidence.effective_build_id,
+                "subject": validation_subject_build_evidence.effective_build_id,
             },
             build_evidence=build_evidence, apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets, model=str(args.model),
@@ -1010,7 +1172,7 @@ def run(args: argparse.Namespace) -> int:
         # explicitly rather than assuming that equality.
         validation_build_identities={
             "control": control_build_evidence.campaign_identity(),
-            "subject": tune_build_evidence.campaign_identity(),
+            "subject": validation_subject_build_evidence.campaign_identity(),
         },
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
@@ -1082,6 +1244,13 @@ def main(argv: list[str] | None = None) -> int:
              "this patch/source/campaign identity; without it the campaign still "
              "runs and records evidence, but the record is not eligible for "
              "STATE='validated'",
+    )
+    parser.add_argument(
+        "--run-rd08-lanes", action="store_true", default=False,
+        help="VA14-B: execute RD08's real positive(decode)/control(prefill) lane pairs "
+             "against the parity-verified control/validation-subject builds and persist "
+             "the raw evidence. Only meaningful for a patch bound to "
+             "RD08-Q6K-MMVQ-VDR2; a no-op otherwise. Does not affect eligibility.",
     )
     args = parser.parse_args(argv)
     return run(args)
