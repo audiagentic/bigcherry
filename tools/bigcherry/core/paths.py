@@ -15,6 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_OVERLAY = REPO_ROOT / "src"
 PATCHES = REPO_ROOT / "patches"
 PATCH_CATALOG = PATCHES / "catalog.toml"
+# VA02: a reviewed, one-time structural-grandfather baseline for the
+# RD-patch validation-package standard (docs/reference/testing/
+# PATCH_VALIDATION.md) -- never auto-regenerated, see
+# tools/bigcherry/patch/validation_policy.py.
+VALIDATION_PACKAGE_GRANDFATHER = PATCHES / "_validation" / "validation-package-grandfather.json"
 SQL = REPO_ROOT / "sql"
 DOCS = REPO_ROOT / "docs"
 ARTIFACTS = REPO_ROOT / "artifacts"

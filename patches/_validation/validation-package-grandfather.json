@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "policy_version": "rd-validation-package-v1",
+  "_comment": "One-time reviewed baseline (VA02, 2026-08-31). Lists every RD patch whose tracked-status intersected {ported-benched, ported-validated, deferred-hardware} at the time this standard was adopted, and which lacked a full validation package (README.md + validation.toml + experiment-contract binding). This file is never auto-regenerated -- see tools/bigcherry/patch/validation_policy.py's module docstring. Any change to a listed patch's patch.py, patch.toml, or tracked-status set invalidates its exemption immediately.",
+  "patches": {
+    "1202_rd04_bf16_flash_attn_tile": {
+      "implementation_digest": "b6aa5023ceeac32f0236aab49613283788c5fcefaefd22f4f097b30e39489f02",
+      "patch_toml_digest": "f13b02b3325dde85b26fbba216f041279752037ea774efbd447383ac433b1603",
+      "tracked_statuses": [
+        "ported-benched"
+      ]
+    },
+    "1200_rd19_single_gpu_meta_bypass": {
+      "implementation_digest": "7dcc260926ef2de85fbbe625d1184f9cd41bcf3068b2b2533d9645b2378ab5dd",
+      "patch_toml_digest": "2b045aef3a6cf6db7bbb7ebf9b95efa99aa125e18d414ee59c4f5fdb60ab894a",
+      "tracked_statuses": [
+        "ported-validated"
+      ]
+    },
+    "1208_rd21_gfx1151_mmvq_nwarps_table": {
+      "implementation_digest": "fc36e87601e8e22613556302a540f5cf569f8805e1a6818372cdd00f3ca7f642",
+      "patch_toml_digest": "b4e18be062334b88a11bab15745dfdfe8fe2cc2ff594951ff7cb2be047aa8aea",
+      "tracked_statuses": [
+        "deferred-hardware"
+      ]
+    },
+    "1209_rd22_integrated_gpu_host_buffer_backout": {
+      "implementation_digest": "1d992c03c13fb410633383e4579bea15c1a5659bd9ea8ef58f32275e23ba187b",
+      "patch_toml_digest": "77b74330ea1fa05de1e8c8d2c1a533781371505071c9cf09dc1117a55db902f5",
+      "tracked_statuses": [
+        "deferred-hardware"
+      ]
+    },
+    "1217_rd44_graph_opt_default_rdna35": {
+      "implementation_digest": "abcc49f1691e2d5ae8d59437fa893968e9d6a1c4921cbc8f8f47fe8229eec653",
+      "patch_toml_digest": "937f3bb4fbf77185d4cd7c14719df495867add0c2461cce7657ec28d2ce4cd52",
+      "tracked_statuses": [
+        "deferred-hardware"
+      ]
+    },
+    "1234_rd58_pin_state_buffer_multigpu_restore": {
+      "implementation_digest": "94a13a5c6e466be0a80e492410fcf4397c0226f8774209895524caaa12802d10",
+      "patch_toml_digest": "39047c42384eaa3b5daba5791820910e7253e22ae008d6b42d68c2fbfec7a1dd",
+      "tracked_statuses": [
+        "ported-benched"
+      ]
+    },
+    "1233_rd73_stable_graph_cache_key": {
+      "implementation_digest": "6dee74caea05f4274fbf6b45a4ce94730c6fabb7f7971a966dd14b3143cc13f4",
+      "patch_toml_digest": "7c8bff812b5c5145291ae7b118e0f6a372710346643e7970afaba1bf47327515",
+      "tracked_statuses": [
+        "ported-benched"
+      ]
+    }
+  }
+}

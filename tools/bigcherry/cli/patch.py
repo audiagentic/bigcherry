@@ -15,6 +15,7 @@ from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
 from ..patch import rebase as patch_rebase
 from ..patch import docs as patch_docs
+from ..patch import validation_policy as patch_validation_policy
 
 DISPOSITIONS_DIR = paths.DISPOSITIONS
 
@@ -244,17 +245,36 @@ def cmd_patch_graph(args: Namespace) -> int:
 
 
 def cmd_patch_lint(args: Namespace) -> int:
-    """Run the non-mutating catalog/package lint gate."""
-    problems = patch_catalog.cross_check(allow_legacy_grandfather=True)
+    """Run the non-mutating catalog/package lint gate. Purely static (VA02,
+    docs/reference/testing/PATCH_VALIDATION.md): never verifies validation
+    *evidence* content/freshness (that's patch-verify-evidence's job, VA08)
+    -- cross_check() is called with verify_validation_evidence=False so the
+    HI83 dynamic branch (which silently skips packaged RD patches, since it
+    only checks catalog.toml entries) never runs here."""
+    problems = list(
+        patch_catalog.cross_check(
+            verify_validation_evidence=False, allow_legacy_grandfather=True
+        )
+    )
+    package_report = patch_validation_policy.check_validation_packages()
+    problems.extend(package_report.problems)
     if args.json:
         print(
             json.dumps(
-                {"passed": not problems, "problems": problems}, indent=2, sort_keys=True
+                {
+                    "passed": not problems,
+                    "problems": problems,
+                    "grandfathered": list(package_report.grandfathered),
+                },
+                indent=2,
+                sort_keys=True,
             )
         )
     else:
         for problem in problems:
             print(problem, file=sys.stderr)
+        for patch_id in package_report.grandfathered:
+            print(f"{patch_id}: structurally grandfathered (non-current, not failing)", file=sys.stderr)
     return 0 if not problems else 1
 
 
