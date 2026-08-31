@@ -61,9 +61,11 @@ being the right design generally -- this project's internal-path default
 (BF16 for every reduction regardless of size) just doesn't match that
 here.
 
-## Production recommendation
+## Production recommendation -- decode-only workloads
 
-For validated dual-RX7900-XTX/gfx1100 tensor-split configurations:
+For validated dual-RX7900-XTX/gfx1100 tensor-split configurations where
+the workload is decode-dominated (interactive serving, long generations
+relative to prompt length):
 
 ```
 GGML_CUDA_ALLREDUCE=internal
@@ -74,6 +76,29 @@ GGML_CUDA_AR_BF16_THRESHOLD=0
 upstream internal AllReduce otherwise defaults to `1` (BF16 wire for
 every reduction), which this project's own evidence shows is worse
 here, not just lower-precision.
+
+## WARNING: internal AllReduce is a severe regression for prefill
+
+Real llama-bench sweep (dual RX 7900 XTX, same tensor-split config, 3
+repetitions each, `-b 2048 -ub 512`) across prompt-processing (large
+reduction) and text-generation (small reduction) sizes:
+
+| test    | A (nccl) t/s | B (internal, BF16=0) t/s | diff     |
+|---------|-------------:|--------------------------:|---------:|
+| pp512   |      1504.67 |                     998.21 |  -33.66% |
+| pp2048  |      1447.58 |                     980.64 |  -32.26% |
+| pp4096  |      1431.77 |                     972.08 |  -32.11% |
+| tg128   |        33.69 |                      36.01 |   +6.88% |
+
+**Do not set `GGML_CUDA_ALLREDUCE=internal` globally or for any
+prompt-processing/prefill-heavy workload** -- it is ~32-34% slower than
+RCCL there, a severe regression, not a minor tradeoff. The internal
+path's win is real but decode-only; RCCL remains clearly better for
+large/bandwidth-bound reductions, consistent with upstream's own
+BF16-for-large/FP32-for-small design intent for its wire encoding.
+Real crossover confirmed -- see HI155 (size-adaptive `internal`/`rccl`
+provider dispatch), the correct fix for shipping this safely across
+both prefill and decode.
 
 ## Upstream / provenance
 
