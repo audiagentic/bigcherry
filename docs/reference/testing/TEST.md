@@ -32,6 +32,11 @@ To exercise changed patch text, use the explicit
 content-addressed subject and control trees; it requires a model, HIP toolchain,
 manifest, architecture, and dedicated work directory.
 
+For the methodology behind a patch's validation package (README.md +
+validation.toml + evidence/validation.json, Experiment Contract binding,
+tracked-status semantics), see
+[PATCH_VALIDATION.md](PATCH_VALIDATION.md).
+
 ## Correctness
 
 ```bash
