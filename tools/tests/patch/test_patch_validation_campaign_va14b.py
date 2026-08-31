@@ -7,6 +7,7 @@ runner -- consistent with VA14's established pattern
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import unittest
@@ -15,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.experiment import contract as ex_contract  # noqa: E402
 from bigcherry.experiment import execution as ex  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
@@ -84,6 +86,11 @@ class Rd08ValidationLaneCommandsTests(unittest.TestCase):
 
 class RunRd08ValidationLanesTests(unittest.TestCase):
     def test_persists_evidence_and_returns_real_lane_effects(self) -> None:
+        contracts = ex_contract.load_contracts(
+            Path(__file__).resolve().parents[3] / "config" / "experiment-contracts.toml"
+        )
+        contract = contracts.contracts["RD08-Q6K-MMVQ-VDR2"]
+
         values = {
             "control_bin": {"tg128": 100.0, "pp512": 1000.0},
             "subject_bin": {"tg128": 100.5, "pp512": 999.0},
@@ -105,10 +112,13 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
         vc.subprocess.run = fake_run
         try:
             result = vc.run_rd08_validation_lanes(
-                contract=type("C", (), {"contract_id": "RD08-Q6K-MMVQ-VDR2"})(),
+                contract=contract,
                 control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-                model=Path("m.gguf"), hip_path=Path("H:/hip"),
-                run_dir=Path(self._tmp_dir()), pairs=2,
+                model=Path("m.gguf"), model_ref=contract.positive.models[0],
+                hip_path=Path("H:/hip"), run_dir=Path(self._tmp_dir()),
+                control_build_identity={"effective_build_id": "c1"},
+                subject_build_identity={"effective_build_id": "s1"},
+                pairs=2,
             )
         finally:
             vc.subprocess.run = real_subprocess_run
@@ -118,6 +128,56 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
         self.assertEqual(roles, {"positive", "control"})
         artifact_path = Path(self._tmp_dir()) / result["artifact"]["path"]
         self.assertTrue(artifact_path.exists())
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["contract_id"], "RD08-Q6K-MMVQ-VDR2")
+        self.assertEqual(payload["model_ref"], contract.positive.models[0])
+        self.assertGreater(len(payload["raw_logs"]), 0)
+        self.assertIn("stdout", payload["raw_logs"][0])
+        self.assertEqual(
+            payload["validation_build_identities"]["control"]["effective_build_id"], "c1",
+        )
+
+    def test_lane_env_is_sanitized_of_inherited_dispatch_overrides(self) -> None:
+        contracts = ex_contract.load_contracts(
+            Path(__file__).resolve().parents[3] / "config" / "experiment-contracts.toml"
+        )
+        contract = contracts.contracts["RD08-Q6K-MMVQ-VDR2"]
+        seen_envs: list[dict[str, str]] = []
+
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            seen_envs.append(env)
+
+            class _Result:
+                returncode = 0
+                stdout = "tg128 | 100.0 t/s\npp512 | 100.0 t/s\n"
+                stderr = ""
+
+            return _Result()
+
+        real_subprocess_run = vc.subprocess.run
+        real_hip_env = vc._hip_env
+        vc.subprocess.run = fake_run
+        vc._hip_env = lambda hip_path: {
+            "PATH": "x", "GGML_HIP_DISPATCH_MODE": "replay", "GGML_HIP_FORCE_KERNEL": "1",
+            "BIGCHERRY_DEBUG": "1", "GGML_CUDA_DISABLE_FUSION": "1",
+        }
+        try:
+            vc.run_rd08_validation_lanes(
+                contract=contract, control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+                model=Path("m.gguf"), model_ref=contract.positive.models[0],
+                hip_path=Path("H:/hip"), run_dir=Path(self._tmp_dir()),
+                control_build_identity={}, subject_build_identity={}, pairs=1,
+            )
+        finally:
+            vc.subprocess.run = real_subprocess_run
+            vc._hip_env = real_hip_env
+
+        self.assertGreater(len(seen_envs), 0)
+        for env in seen_envs:
+            self.assertNotIn("GGML_HIP_DISPATCH_MODE", env)
+            self.assertNotIn("GGML_HIP_FORCE_KERNEL", env)
+            self.assertNotIn("BIGCHERRY_DEBUG", env)
+            self.assertNotIn("GGML_CUDA_DISABLE_FUSION", env)
 
     def _tmp_dir(self) -> str:
         if not hasattr(self, "_tmp"):
