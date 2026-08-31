@@ -197,5 +197,48 @@ class PolicyDecisionStrictTypingTests(unittest.TestCase):
             rp.parse_ranking_decisions(result)
 
 
+class RankedCandidateStrictTypingTests(unittest.TestCase):
+    """gpt-dev-agent review round 2, 2026-08-31: PolicyDecision.from_json
+    validated its own fields strictly but handed candidate list elements
+    straight to RankedCandidate.from_json with no type check -- a
+    malformed element raised AttributeError/TypeError instead of the
+    clean RankingPolicyError the rest of the contract promises."""
+
+    def test_non_dict_candidate_element_raises_ranking_policy_error(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(candidates=["not-a-dict"]))
+
+    def test_none_candidate_element_raises_ranking_policy_error(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(candidates=[None]))
+
+    def test_missing_name_raises(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.RankedCandidate.from_json({"verdict": "winner"})
+
+    def test_non_string_name_raises(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.RankedCandidate.from_json({"name": 123, "verdict": "winner"})
+
+    def test_boolean_effective_us_raises(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.RankedCandidate.from_json({"name": "a", "effective_us": True})
+
+    def test_non_string_verdict_raises(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.RankedCandidate.from_json({"name": "a", "verdict": 1})
+
+    def test_valid_candidate_round_trips(self):
+        candidate = rp.RankedCandidate.from_json(
+            {"name": "a", "effective_us": 10.5, "verdict": "winner", "rejection_reason": ""}
+        )
+        self.assertEqual(candidate.name, "a")
+        self.assertEqual(candidate.effective_us, 10.5)
+
+    def test_null_effective_us_is_valid(self):
+        candidate = rp.RankedCandidate.from_json({"name": "a", "verdict": "rejected"})
+        self.assertIsNone(candidate.effective_us)
+
+
 if __name__ == "__main__":
     unittest.main()

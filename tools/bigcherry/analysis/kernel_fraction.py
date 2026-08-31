@@ -203,9 +203,10 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                     raise KernelFractionError(
                         f"{path}: negative kernel duration for {kernel!r}"
                     )
+                start_ns: int | None = None
                 if start_col is not None and end_col is not None:
-                    start = int(_required_timing_value(record, start_col, path, row_number))
-                    spans.append((start, start + dur))
+                    start_ns = int(_required_timing_value(record, start_col, path, row_number))
+                    spans.append((start_ns, start_ns + dur))
                 agent = record.get(agent_col) if agent_col else None
                 rows.append(
                     {
@@ -213,6 +214,11 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                         "family": classify(kernel),
                         "dur_ns": dur,
                         "agent": _parse_agent(agent),
+                        # start_ns is None for a duration-only CSV (no real
+                        # timestamps) -- kept per-row (not just in the flat
+                        # `spans` list) so family_summary can union just the
+                        # matmul-family spans, not all spans indiscriminately.
+                        "start_ns": start_ns,
                     }
                 )
 
@@ -242,6 +248,32 @@ def family_summary(trace: dict[str, Any]) -> dict[str, Any]:
     wall_ns = trace["wall_ns"]
     matmul_kernel_pct = 100.0 * matmul_ns / kernel_total if kernel_total else 0.0
     gpu_busy_pct = 100.0 * busy_ns / wall_ns if wall_ns else 0.0
+
+    # gpt-dev-agent review, 2026-08-31 (round 2): matmul_kernel_pct *
+    # gpu_busy_pct is NOT a valid wall-time fraction under overlap. With one
+    # matmul kernel and one non-matmul kernel each spanning the ENTIRE wall
+    # concurrently, that product reports 50% (their duration SUM is 2x wall,
+    # so matmul_kernel_pct=50%, and busy_pct=100% since the union is the
+    # whole wall) even though matmul is genuinely active for 100% of wall.
+    # The only mathematically correct ceiling is the UNION of just the
+    # matmul-family spans, not a product of two independent ratios. When no
+    # real timestamps exist (a duration-only CSV, spans not tracked per
+    # row), that union is not computable -- report it as unavailable
+    # (None) rather than fabricate a number from summed durations, which
+    # cannot distinguish "sequential" from "concurrent" kernels at all.
+    matmul_spans = [
+        (row["start_ns"], row["start_ns"] + row["dur_ns"])
+        for row in trace["rows"]
+        if row["family"] in MATMUL_FAMILIES and row["start_ns"] is not None
+    ]
+    if trace["spans"] and matmul_spans:
+        matmul_wall_ns = gpu_busy_ns(matmul_spans)
+        matmul_wall_pct = 100.0 * matmul_wall_ns / wall_ns if wall_ns else 0.0
+    elif trace["spans"] and matmul_ns == 0:
+        matmul_wall_pct = 0.0
+    else:
+        matmul_wall_pct = None
+
     return {
         "by_family": by_family,
         "kernel_total_ns": kernel_total,
@@ -254,13 +286,7 @@ def family_summary(trace: dict[str, Any]) -> dict[str, Any]:
         "busy_ns": busy_ns,
         "gpu_busy_pct": gpu_busy_pct,
         "wall_ns": wall_ns,
-        # The wall-clock ceiling is the product of the two measured ratios,
-        # NOT matmul_ns / wall_ns: overlapping kernels (separate agents or
-        # queues) make family kernel time a sum that can exceed the wall
-        # window, and the raw quotient would then report >100% of wall.
-        # matmul_share_of_kernel_time x kernel_time_share_of_wall is bounded
-        # by each factor: 45.2% x 61.3% -> 27.7% in the spec's example.
-        "matmul_wall_pct": (matmul_kernel_pct * gpu_busy_pct) / 100.0,
+        "matmul_wall_pct": matmul_wall_pct,
     }
 
 
@@ -293,11 +319,23 @@ def render_report(trace: dict[str, Any], summary: dict[str, Any], phase: str) ->
     )
     lines.append("")
     lines.append(f"GPU busy {summary['gpu_busy_pct']:.1f}% of traced wall time")
-    lines.append(
-        f"  => matmul is {summary['matmul_wall_pct']:.1f}% of wall time; "
-        "a 10% matmul saving is "
-        f"{summary['matmul_wall_pct'] / 10.0:.1f}% end to end"
-    )
+    if summary["matmul_wall_pct"] is None:
+        # gpt-dev-agent review, 2026-08-31 (round 2): with no real
+        # timestamps (duration-only CSV) the union-of-matmul-spans ceiling
+        # is not computable -- report that honestly instead of fabricating
+        # a number that cannot distinguish sequential from concurrent
+        # kernels.
+        lines.append(
+            "  => matmul share of WALL TIME is unavailable (no Start/End "
+            "timestamp columns in this trace -- duration alone cannot "
+            "distinguish sequential from concurrent kernels)"
+        )
+    else:
+        lines.append(
+            f"  => matmul is {summary['matmul_wall_pct']:.1f}% of wall time; "
+            "a 10% matmul saving is "
+            f"{summary['matmul_wall_pct'] / 10.0:.1f}% end to end"
+        )
     lines.append("")
     lines.append(
         f"unmapped {summary['unmapped_pct']:.1f}% of kernel time"

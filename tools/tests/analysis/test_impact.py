@@ -321,6 +321,42 @@ class ImpactTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["signature"], "a")
 
+    def test_load_results_interior_corruption_raises(self):
+        """gpt-dev-agent review round 2, 2026-08-31: load_results's ORIGINAL
+        `except: break` discarded not just the corrupt line but EVERY
+        record after it too -- valid A, corrupt B, valid C used to silently
+        report just A with no indication B or C were ever there."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "m.jsonl"
+            with path.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"kind": "header"}) + "\n")
+                handle.write(json.dumps({"kind": "result", "signature": "a"}) + "\n")
+                handle.write('{"kind":"result","signature":"corrupt-interior\n')
+                handle.write(json.dumps({"kind": "result", "signature": "c"}) + "\n")
+            with self.assertRaises(impact.ImpactError):
+                impact.load_results(path)
+
+    def test_load_observations_interior_corruption_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "r.jsonl"
+            with path.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"kind": "header"}) + "\n")
+                handle.write(json.dumps({"kind": "observation", "signature": "a", "calls": 1}) + "\n")
+                handle.write('{"kind":"observation","signature":"corrupt-interior\n')
+                handle.write(json.dumps({"kind": "observation", "signature": "c", "calls": 1}) + "\n")
+            with self.assertRaises(impact.ImpactError):
+                impact.load_observations(path)
+
+    def test_load_observations_requires_a_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "r.jsonl"
+            path.write_text(
+                json.dumps({"kind": "observation", "signature": "a", "calls": 1}) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(impact.ImpactError):
+                impact.load_observations(path)
+
     def test_cli_reports_and_fails_on_slower(self):
         observations = [{"signature": "a", "calls": 10, "native": "mmq:native:v1"}]
         results = [
@@ -410,7 +446,7 @@ class ImpactTests(unittest.TestCase):
             report, "MTP 27B Q8_0", interval=(19.0, 21.0), interval_coverage=coverage,
         )
         self.assertIn("interval covers", text)
-        self.assertIn("NOT necessarily the same population", text)
+        self.assertIn("point-estimate calls", text)
 
 
 class SampleBackedCoverageTests(unittest.TestCase):
@@ -434,10 +470,62 @@ class SampleBackedCoverageTests(unittest.TestCase):
             ]},
         ]
         coverage = impact.sample_backed_coverage(observations, results)
-        self.assertEqual(coverage["total_calls"], 1_000_010)
+        # Both "a" and "b" resolve real candidates, so BOTH are inside
+        # predicted_saving()'s point estimate here -- point_estimate_calls
+        # is 1,000,010, not just the sample-backed subset's 10.
+        self.assertEqual(coverage["point_estimate_calls"], 1_000_010)
         self.assertEqual(coverage["sample_backed_calls"], 10)
         self.assertAlmostEqual(coverage["sample_backed_fraction"], 10 / 1_000_010)
         self.assertEqual(coverage["sample_backed_signature_count"], 1)
+
+    def test_denominator_is_point_estimate_calls_not_all_recorded_calls(self):
+        """gpt-dev-agent review round 2, 2026-08-31: the exact failure case
+        gpt demonstrated -- a huge record-only signature (never in results
+        at all, so NOT in the point estimate) used to dilute the reported
+        coverage fraction toward ~0%, even when the point estimate itself
+        was 100% sample-backed."""
+        observations = [
+            {"signature": "a", "calls": 10, "native": "n"},
+            # "ghost" has an observation but NO matching result row at
+            # all -- record-only, excluded from predicted_saving()'s point
+            # estimate entirely.
+            {"signature": "ghost", "calls": 1_000_000, "native": "n"},
+        ]
+        results = [
+            {"signature": "a", "native": "n", "winner": "w", "candidates": [
+                {"name": "n", "status": "ok", "median_us": 10.0,
+                 "samples_us": [10.0] * 8},
+                {"name": "w", "status": "ok", "median_us": 9.0,
+                 "samples_us": [9.0] * 8},
+            ]},
+        ]
+        coverage = impact.sample_backed_coverage(observations, results)
+        self.assertEqual(coverage["point_estimate_calls"], 10)
+        self.assertEqual(coverage["sample_backed_calls"], 10)
+        self.assertEqual(coverage["sample_backed_fraction"], 1.0)  # fully backed, not ~0.001%
+
+    def test_usable_pairs_honors_the_observation_native_fallback(self):
+        """gpt-dev-agent review round 2, 2026-08-31: _usable_pairs() used
+        to omit the native-name fallback predicted_saving() relies on, so
+        a result row without its own "native" field could be counted in
+        the point estimate but silently excluded from sample-backing."""
+        observations = [{"signature": "a", "calls": 10, "native": "n"}]
+        results = [
+            {
+                # No "native" key on the result row at all -- must fall
+                # back to the observation's declared native, same as
+                # predicted_saving() does.
+                "signature": "a", "winner": "w",
+                "candidates": [
+                    {"name": "n", "status": "ok", "median_us": 10.0,
+                     "samples_us": [10.0] * 8},
+                    {"name": "w", "status": "ok", "median_us": 9.0,
+                     "samples_us": [9.0] * 8},
+                ],
+            }
+        ]
+        coverage = impact.sample_backed_coverage(observations, results)
+        self.assertEqual(coverage["sample_backed_calls"], 10)
 
 
 class KernelFractionTests(unittest.TestCase):
@@ -504,17 +592,47 @@ class KernelFractionTests(unittest.TestCase):
             # Wall window is 0..1500; GPU busy is the union: [0,1500] = 1500.
             self.assertEqual(summary["wall_ns"], 1500)
             self.assertAlmostEqual(summary["gpu_busy_pct"], 100.0)
-            # Wall ceiling is the product of the two measured ratios (spec:
-            # 45.2% kernel share x 61.3% busy -> 27.7% of wall), never the raw
-            # matmul_ns/wall_ns quotient, which exceeds 100% under overlap.
-            self.assertAlmostEqual(
-                summary["matmul_wall_pct"],
-                (2000 / 3000) * 100.0 * (1500 / 1500),
-                places=6,
+            # Wall ceiling is the UNION of just the matmul-family spans
+            # ([0,1000] and [500,1500] -> [0,1500]), not a product of two
+            # independent ratios (gpt-dev-agent review round 2, 2026-08-31:
+            # the product formula reports 50% when a matmul and a
+            # non-matmul kernel each span the ENTIRE wall concurrently,
+            # even though matmul is genuinely active 100% of wall -- only
+            # the real union is mathematically valid).
+            self.assertAlmostEqual(summary["matmul_wall_pct"], 100.0, places=6)
+
+    def test_matmul_wall_pct_full_overlap_is_100_not_50(self):
+        """gpt-dev-agent review round 2, 2026-08-31: the exact failure case
+        gpt demonstrated -- one matmul kernel and one non-matmul kernel
+        each spanning the ENTIRE wall concurrently. matmul is active
+        100% of wall; the old product-of-ratios formula reported 50%."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_trace(
+                tmp,
+                [
+                    ["mul_mat_q_1", "0", "1000", "1000"],
+                    ["rms_norm_f32", "0", "1000", "1000"],  # fully overlapping, non-matmul
+                ],
             )
+            trace = kernel_fraction.parse_kernel_trace([path])
+            summary = kernel_fraction.family_summary(trace)
+            self.assertAlmostEqual(summary["matmul_wall_pct"], 100.0, places=6)
+
+    def test_matmul_wall_pct_unavailable_without_timestamps(self):
+        """A duration-only CSV cannot distinguish sequential from
+        concurrent kernels -- matmul_wall_pct must be None, not a
+        fabricated number from summed durations."""
+        header = ("Kernel_Name", "Duration")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_trace(
+                tmp, [["mul_mat_q_1", "1000"], ["rms_norm_f32", "500"]], header=header,
+            )
+            trace = kernel_fraction.parse_kernel_trace([path])
+            summary = kernel_fraction.family_summary(trace)
+            self.assertIsNone(summary["matmul_wall_pct"])
             report = kernel_fraction.render_report(trace, summary, "decode")
             self.assertIn("unmapped", report)
-            self.assertIn("matmul is", report)
+            self.assertIn("unavailable", report)
 
     def test_header_keyed_columns_and_alternate_names(self):
         with tempfile.TemporaryDirectory() as tmp:

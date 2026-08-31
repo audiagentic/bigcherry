@@ -235,6 +235,33 @@ def populate_db(db: TempDB) -> Path:
     return meas_path
 
 
+def _insert_screen_duplicate(db: TempDB) -> None:
+    """Clone an existing 'final'-stage measurement row as a 'screen'-stage
+    duplicate with a suspiciously faster median (fewer samples) -- the
+    real shape sql/dispatch-db.sql's UNIQUE constraint allows and the
+    exact shape that used to inflate report.py's counts/comparisons."""
+    row = db.query(
+        "SELECT build_id, hardware_id, signature_id, dispatch_digest, "
+        "candidate_id, run_id, objective, accepted, samples, median_us, "
+        "gpu_mad_us, p95_us, host_median_us, workspace_bytes, effective_us "
+        "FROM measurement WHERE stage = 'final' LIMIT 1"
+    )[0]
+    db_conn = sqlite3.connect(str(db.db_path))
+    try:
+        db_conn.execute(
+            "INSERT INTO measurement (build_id, hardware_id, signature_id, "
+            "dispatch_digest, candidate_id, run_id, objective, stage, "
+            "accepted, samples, median_us, gpu_mad_us, p95_us, "
+            "host_median_us, workspace_bytes, effective_us) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, 'screen', ?, 1, 0.001, 0.0, 0.001, 0.0, ?, 0.001)",
+            (row[0], row[1], row[2], row[3], row[4], row[5], row[6],
+             row[7], row[13]),
+        )
+        db_conn.commit()
+    finally:
+        db_conn.close()
+
+
 # ------------------------------------------------------------------ tests
 
 class TestReadMeasurementsJSONL(unittest.TestCase):
@@ -262,17 +289,36 @@ class TestReadMeasurementsJSONL(unittest.TestCase):
         self.assertEqual(len(results), 1)
 
     def test_truncated_line_ignored(self):
-        path = make_jsonl(
-            TUNING_HEADER,
-            TUNING_RESULT_NATIVE,
-            '{"kind":"result","dispatch":"x',  # truncated
-        )
+        # A genuinely torn write has NO trailing newline on the final line
+        # -- make_jsonl always appends one, so this writes the file
+        # directly to preserve that real-world distinction (gpt-dev-agent
+        # review round 2, 2026-08-31: keepends() makes this matter).
+        path = Path(tempfile.mktemp(suffix=".jsonl"))
+        with path.open("w", encoding="utf-8") as f:
+            f.write(json.dumps(TUNING_HEADER, separators=(",", ":")) + "\n")
+            f.write(json.dumps(TUNING_RESULT_NATIVE, separators=(",", ":")) + "\n")
+            f.write('{"kind":"result","dispatch":"x')  # truncated, no trailing newline
         try:
             results = _report.read_measurements_jsonl(path)
         finally:
             os.unlink(path)
 
         self.assertEqual(len(results), 1)
+
+    def test_newline_terminated_corrupt_final_line_raises_not_tolerated(self):
+        """gpt-dev-agent review round 2, 2026-08-31: a fully-written
+        (newline-terminated) but corrupt final record is NOT a torn write
+        and must not be silently tolerated the way a genuine truncation is."""
+        path = make_jsonl(
+            TUNING_HEADER,
+            TUNING_RESULT_NATIVE,
+            '{"kind":"result","dispatch":"x',  # corrupt, but make_jsonl adds \n
+        )
+        try:
+            with self.assertRaises(_report.ReportError):
+                _report.read_measurements_jsonl(path)
+        finally:
+            os.unlink(path)
 
     def test_interior_corruption_raises_instead_of_silently_dropping(self):
         """gpt-dev-agent review, 2026-08-31: a malformed line that is NOT
@@ -360,29 +406,7 @@ class TestReadMeasurementsSQLite(unittest.TestCase):
         having been measured on far less evidence."""
         with TempDB() as db:
             meas_path = populate_db(db)
-            row = db.query(
-                "SELECT build_id, hardware_id, signature_id, dispatch_digest, "
-                "candidate_id, run_id, objective, accepted, samples, median_us, "
-                "gpu_mad_us, p95_us, host_median_us, workspace_bytes, effective_us "
-                "FROM measurement WHERE stage = 'final' LIMIT 1"
-            )[0]
-            # Clone that row as a 'screen'-stage duplicate with a suspiciously
-            # faster median (fewer samples) -- exactly the shape that used to
-            # win the comparison purely by appearing as a second row.
-            db_conn = sqlite3.connect(str(db.db_path))
-            try:
-                db_conn.execute(
-                    "INSERT INTO measurement (build_id, hardware_id, signature_id, "
-                    "dispatch_digest, candidate_id, run_id, objective, stage, "
-                    "accepted, samples, median_us, gpu_mad_us, p95_us, "
-                    "host_median_us, workspace_bytes, effective_us) VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, 'screen', ?, 1, 0.001, 0.0, 0.001, 0.0, ?, 0.001)",
-                    (row[0], row[1], row[2], row[3], row[4], row[5], row[6],
-                     row[7], row[13]),
-                )
-                db_conn.commit()
-            finally:
-                db_conn.close()
+            _insert_screen_duplicate(db)
 
             default_results = _report.read_measurements_sqlite(db.db_path)
             all_stage_results = _report.read_measurements_sqlite(db.db_path, stage=None)
@@ -438,6 +462,34 @@ class TestCmdSignatures(unittest.TestCase):
             self.assertEqual(status, 0)
         finally:
             os.unlink(path)
+
+
+class TestReadTuningOverview(unittest.TestCase):
+    """gpt-dev-agent review round 2, 2026-08-31: fixing
+    read_measurements_sqlite's stage filtering alone was not enough --
+    read_tuning_overview() ran its OWN independent, unfiltered
+    `measurement` queries for pipeline generated/measured/rejection
+    counts, so a screen-stage duplicate row still inflated those."""
+
+    def test_screen_stage_duplicate_does_not_inflate_pipeline_counts(self):
+        with TempDB() as db:
+            meas_path = populate_db(db)
+            before = _report.read_tuning_overview(db.db_path)
+            _insert_screen_duplicate(db)
+            after = _report.read_tuning_overview(db.db_path)
+        os.unlink(meas_path)
+
+        self.assertEqual(before["pipeline"], after["pipeline"])
+
+    def test_stage_none_opts_into_seeing_the_duplicate(self):
+        with TempDB() as db:
+            meas_path = populate_db(db)
+            before = _report.read_tuning_overview(db.db_path, stage=None)
+            _insert_screen_duplicate(db)
+            after = _report.read_tuning_overview(db.db_path, stage=None)
+        os.unlink(meas_path)
+
+        self.assertEqual(after["pipeline"]["generated"], before["pipeline"]["generated"] + 1)
 
 
 class TestCmdSummary(unittest.TestCase):

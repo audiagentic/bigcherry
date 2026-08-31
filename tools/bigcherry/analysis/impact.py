@@ -154,41 +154,54 @@ def expected_decode_effect(saving_pct: Any, decode_matmul_fraction: Any) -> floa
 def load_observations(path: Path) -> list[dict[str, Any]]:
     """Read a record file (JSONL with a header + observation rows).
 
-        Reuses the record parser so the impact tool and the inventory tool cannot
-    drift apart on the wire format.  A missing header is an error, not an empty
-    result: an empty observations list would read as 'zero calls' rather than as
-    'a file this loader cannot read'.
-    """
-    from ..tuning import inventory  # local: inventory pulls in a large dependency tree
+    A missing header is an error, not an empty result: an empty
+    observations list would read as 'zero calls' rather than as 'a file
+    this loader cannot read'.
 
-    record = inventory.read_jsonl(Path(path))
-    return record.observations
+    Uses analysis/jsonl_io.py's shared strict reader rather than
+    tuning/inventory.py's read_jsonl -- the two had DIFFERENT tolerance
+    bugs (inventory.read_jsonl silently drops everything after the first
+    malformed line, not just that line), and this module's job is
+    validating input to a statistical calculation, not the wider
+    inventory tool's own established (and separately-owned) tolerance
+    behavior. Not delegating to inventory.read_jsonl here also avoids
+    pulling in its larger dependency tree for this narrower need
+    (gpt-dev-agent review round 2, 2026-08-31).
+    """
+    from . import jsonl_io
+
+    try:
+        rows = jsonl_io.read_rows(Path(path))
+    except jsonl_io.JsonlReadError as exc:
+        raise ImpactError(str(exc)) from exc
+    if not any(row.get("kind") == "header" for row in rows):
+        raise ImpactError(
+            f"{Path(path)}: no header line. Either the file is not a "
+            f"bigcherry record, or the run died before its first flush."
+        )
+    return [row for row in rows if row.get("kind") == "observation"]
 
 
 def load_results(path: Path) -> list[dict[str, Any]]:
     """Read a measurements JSONL and return its result rows only.
 
-    Header rows and any non-``result`` rows are dropped.  A truncated final
-    line is tolerated (a run killed mid-flush leaves one) rather than fatal.
+    Header rows and any non-``result`` rows are dropped. Delegates to
+    analysis/jsonl_io.py's shared strict reader: only a genuinely
+    TRUNCATED final line (no trailing newline) is tolerated -- interior
+    corruption, or a fully-written but corrupt final record, raises
+    instead of silently dropping evidence this module feeds directly into
+    a bootstrap confidence interval (gpt-dev-agent review round 2,
+    2026-08-31: this loader's ORIGINAL bug -- `except: break` on ANY
+    malformed line, discarding everything after it too, not just that one
+    line -- was still present after report.py's independent round-1 fix;
+    now both share one implementation).
     """
-    results: list[dict[str, Any]] = []
-    with Path(path).open(encoding="utf-8") as handle:
-        for number, line in enumerate(handle, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                print(
-                    f"warning: {Path(path).name} line {number} is truncated or "
-                    "malformed; ignoring it and everything after",
-                    file=sys.stderr,
-                )
-                break
-            if row.get("kind") == "result":
-                results.append(row)
-    return results
+    from . import jsonl_io
+
+    try:
+        return jsonl_io.read_result_records(path)
+    except jsonl_io.JsonlReadError as exc:
+        raise ImpactError(str(exc)) from exc
 
 
 # ------------------------------------------------------------------ interval
@@ -300,13 +313,28 @@ def saving_interval(
 
 def _usable_pairs(observations, results, calls):
     """Collect (count, [(native_round, winner_round), ...]) for every
-    signature with at least MIN_PAIRED_ROUNDS real paired rounds."""
+    signature with at least MIN_PAIRED_ROUNDS real paired rounds.
+
+    Uses the SAME native-name fallback as predicted_saving() (a result
+    row's own "native" field, falling back to the observation's declared
+    native) -- an earlier version omitted that fallback, so a result row
+    that relied on it could silently be excluded here even though
+    predicted_saving() counted it (gpt-dev-agent review round 2,
+    2026-08-31). Keeping these two functions' inclusion criteria in sync
+    is what lets sample_backed_coverage() report a real subset relationship.
+    """
+    native_names = {
+        row["signature"]: row.get("native", "")
+        for row in observations
+        if isinstance(row.get("signature"), str)
+    }
     pairs: list[tuple[int, list[tuple[float, float]]]] = []
     for result in results:
         signature = result.get("signature")
         if not isinstance(signature, str) or signature not in calls:
             continue
-        native = _candidate(result, result.get("native") or "")
+        native_name = result.get("native") or native_names.get(signature, "")
+        native = _candidate(result, native_name)
         winner = _candidate(result, result.get("winner", ""))
         if native is None or winner is None:
             continue
@@ -325,23 +353,27 @@ def sample_backed_coverage(observations: list[dict[str, Any]], results: list[dic
     estimate purely from ``median_us`` with no ``samples_us`` at all (or
     too few paired rounds to bootstrap).
 
-    gpt-dev-agent review, 2026-08-31: the CI and the point estimate can
-    describe DIFFERENT populations -- a high-call signature with only
-    median_us (no samples_us) can dominate the displayed point estimate
-    while contributing nothing to the interval, so a reader sees "49.96%
-    [10%, 10%]" and reasonably (wrongly) assumes the interval covers the
-    displayed point. This reports the gap explicitly instead of leaving it
-    implicit.
+    The denominator is ``predicted_saving``'s OWN ``coverage.calls_covered``
+    -- the calls actually included in the displayed point estimate -- not
+    every recorded call. gpt-dev-agent review round 2, 2026-08-31: an
+    earlier version divided by ALL recorded calls (including record-only/
+    measurement-only signatures never in the point estimate at all), so a
+    signature with 1M record-only calls and a fully sample-backed 10-call
+    point estimate would report coverage of ~0.001% instead of 100% --
+    exactly backwards from what this function exists to state. Since
+    ``_usable_pairs`` now shares the same native-name fallback as
+    ``predicted_saving``, sample-backed calls are a real subset of
+    point-estimate-covered calls, so this ratio is always in [0, 1].
     """
     calls = {o["signature"]: int(o.get("calls", 0)) for o in observations}
     sample_backed = _usable_pairs(observations, results, calls)
     sample_backed_calls = sum(count for count, _ in sample_backed)
-    total_calls = sum(calls.values())
+    point_estimate_calls = predicted_saving(observations, results)["coverage"].calls_covered
     return {
-        "total_calls": total_calls,
+        "point_estimate_calls": point_estimate_calls,
         "sample_backed_calls": sample_backed_calls,
         "sample_backed_fraction": (
-            sample_backed_calls / total_calls if total_calls else 0.0
+            sample_backed_calls / point_estimate_calls if point_estimate_calls else 0.0
         ),
         "sample_backed_signature_count": len(sample_backed),
     }
@@ -453,10 +485,10 @@ def render_report(
         # covers the whole displayed point.
         lines.append(
             f"            interval covers {interval_coverage['sample_backed_calls']:,} "
-            f"of {interval_coverage['total_calls']:,} recorded calls "
+            f"of {interval_coverage['point_estimate_calls']:,} point-estimate calls "
             f"({100.0 * interval_coverage['sample_backed_fraction']:.1f}%) across "
             f"{interval_coverage['sample_backed_signature_count']} signature(s) "
-            "with raw samples -- NOT necessarily the same population as the point estimate above"
+            "with raw samples"
         )
     lines.append("")
     lines.append("by family   calls       native      tuned    saved   share of saving")

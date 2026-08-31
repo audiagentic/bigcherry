@@ -112,12 +112,38 @@ class RankedCandidate:
     rejection_reason: str
 
     @classmethod
-    def from_json(cls, entry: dict[str, Any]) -> "RankedCandidate":
+    def from_json(cls, entry: Any) -> "RankedCandidate":
+        """Strict-typed parse. gpt-dev-agent review round 2, 2026-08-31:
+        PolicyDecision.from_json validates ITS OWN fields strictly but
+        used to hand list elements straight to this constructor with no
+        type check at all -- a malformed candidate entry (not a dict, or
+        with a non-string name/verdict) raised AttributeError/TypeError
+        from deep inside dict.get() instead of a clean RankingPolicyError,
+        breaking the "every malformed ranking record fails through
+        RankingPolicyError" contract tune_promotion.py's error handling
+        relies on.
+        """
+        if not isinstance(entry, dict):
+            raise RankingPolicyError(f"ranking candidate entry must be a dict, got {type(entry).__name__}")
+        name = entry.get("name", "")
+        if not isinstance(name, str) or not name:
+            raise RankingPolicyError("ranking candidate entry: name must be a non-empty string")
+        effective_us = entry.get("effective_us")
+        if effective_us is not None and (
+            isinstance(effective_us, bool) or not isinstance(effective_us, (int, float))
+        ):
+            raise RankingPolicyError("ranking candidate entry: effective_us must be numeric or null")
+        verdict = entry.get("verdict", "")
+        if not isinstance(verdict, str):
+            raise RankingPolicyError("ranking candidate entry: verdict must be a string")
+        rejection_reason = entry.get("rejection_reason", "")
+        if not isinstance(rejection_reason, str):
+            raise RankingPolicyError("ranking candidate entry: rejection_reason must be a string")
         return cls(
-            name=entry.get("name", ""),
-            effective_us=entry.get("effective_us"),
-            verdict=entry.get("verdict", ""),
-            rejection_reason=entry.get("rejection_reason", ""),
+            name=name,
+            effective_us=float(effective_us) if effective_us is not None else None,
+            verdict=verdict,
+            rejection_reason=rejection_reason,
         )
 
 
