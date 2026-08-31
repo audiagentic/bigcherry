@@ -552,7 +552,9 @@ def rd08_validation_lane_commands(
 
 def run_rd08_validation_lanes(
     *, contract: object, control_binary: Path, subject_binary: Path, model: Path,
-    hip_path: Path, run_dir: Path, pairs: int = 3,
+    model_ref: str, hip_path: Path, run_dir: Path,
+    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    pairs: int = 3,
 ) -> dict[str, object]:
     """VA14-B: execute RD08's real positive (decode) and control (prefill)
     lanes via experiment/execution.py's paired runner, persist raw
@@ -567,47 +569,83 @@ def run_rd08_validation_lanes(
     evaluate_promotion_gate(), and the eligibility cutover are deferred)."""
     from bigcherry.experiment import contract as experiment_contract
     from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.campaign.benchmark import sanitize_environment
 
     positive_pattern = re.compile(r"tg128\s*\|\s*([0-9.]+)")
     control_pattern = re.compile(r"pp512\s*\|\s*([0-9.]+)")
 
-    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-        env = _hip_env(hip_path)
-        completed = subprocess.run(
-            command, capture_output=True, text=True, check=False, env=env,
-        )
-        return experiment_execution.RunnerOutput(
-            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
-        )
+    # GPT round 3 (req_e75c4936e2354351): _hip_env() alone does not strip
+    # inherited GGML_HIP_DISPATCH_*/GGML_HIP_FORCE_*/GGML_HIP_TUNE_*
+    # overrides from the ambient shell -- a validation lane must run in the
+    # same "stock" contamination-free environment sanitize_environment()
+    # already establishes for native campaign arms, plus clearing
+    # BIGCHERRY_*/GGML_CUDA_DISABLE_FUSION which that helper does not touch.
+    clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
+    for key in list(clean_env):
+        if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
+            clean_env.pop(key, None)
+
+    # Raw per-arm stdout/stderr, keyed by (workload, mode, pair) -- VA14-B's
+    # own docstring promises this is retained; run_paired_lane()'s
+    # PairedLaneRun.runs only carries {pair, mode, metrics} (VA14's already-
+    # reviewed contract), so it is captured here, at the runner boundary,
+    # instead of changing that primitive's API.
+    raw_logs: list[dict[str, object]] = []
+
+    def _make_runner(workload: str):
+        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+            completed = subprocess.run(
+                command, capture_output=True, text=True, check=False, env=clean_env,
+            )
+            raw_logs.append({
+                "workload": workload, "command": command,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout, "stderr": completed.stderr,
+            })
+            return experiment_execution.RunnerOutput(
+                returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+            )
+        return _runner
 
     decode_control_cmd, decode_subject_cmd = rd08_validation_lane_commands(
         control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
     )
     decode_run = experiment_execution.run_paired_lane(
         metric="tg128", control_command=decode_control_cmd, subject_command=decode_subject_cmd,
-        pattern=positive_pattern, pairs=pairs, runner=_runner,
+        pattern=positive_pattern, pairs=pairs, runner=_make_runner("decode"),
     )
     prefill_control_cmd, prefill_subject_cmd = rd08_validation_lane_commands(
         control_binary=control_binary, subject_binary=subject_binary, model=model, workload="prefill",
     )
     prefill_run = experiment_execution.run_paired_lane(
         metric="pp512", control_command=prefill_control_cmd, subject_command=prefill_subject_cmd,
-        pattern=control_pattern, pairs=pairs, runner=_runner,
+        pattern=control_pattern, pairs=pairs, runner=_make_runner("prefill"),
     )
     effects = [
         experiment_execution.lane_effect_from_run("positive", "tg128", decode_run),
         experiment_execution.lane_effect_from_run("control", "pp512", prefill_run),
     ]
+    positive_ref = experiment_contract.evidence_ref_for_lane(
+        contract, role="positive", workload_tag="decode", model_ref=model_ref,
+    )
+    control_ref = experiment_contract.evidence_ref_for_lane(
+        contract, role="control", workload_tag="prefill", model_ref=model_ref,
+    )
     lane_evidence = {
-        "contract_id": getattr(contract, "contract_id", None),
+        "contract_id": contract.id,
+        "model_ref": model_ref, "model_path": str(model),
+        "validation_build_identities": {
+            "control": control_build_identity, "subject": subject_build_identity,
+        },
+        "raw_logs": raw_logs,
         "lanes": {
             "positive": {
-                "role": "positive", "workload": "decode", "metric": "tg128",
+                "contract_evidence": positive_ref.document(),
                 "control_command": decode_control_cmd, "subject_command": decode_subject_cmd,
                 "runs": list(decode_run.runs), "stats": decode_run.stats,
             },
             "control": {
-                "role": "control", "workload": "prefill", "metric": "pp512",
+                "contract_evidence": control_ref.document(),
                 "control_command": prefill_control_cmd, "subject_command": prefill_subject_cmd,
                 "runs": list(prefill_run.runs), "stats": prefill_run.stats,
             },
@@ -853,10 +891,13 @@ def run(args: argparse.Namespace) -> int:
         workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
         extra_cmake_args=[],
     )
+    # GPT round 3 (req_e75c4936e2354351): capture symmetrically with
+    # control_build_evidence below (binary=llama-bench only, no
+    # extra_binaries) -- an asymmetric capture is not a like-for-like
+    # comparison even when the underlying build tree is parity.
     validation_subject_build_evidence = capture_completed_build_evidence(
         build_root / "validation-subject", source_root=patched_src,
-        architecture=args.amdgpu_targets, binary=validation_subject_bin / f"llama-server{exe}",
-        extra_binaries=(validation_subject_bin / f"llama-bench{exe}",),
+        architecture=args.amdgpu_targets, binary=validation_subject_bin / f"llama-bench{exe}",
         requested_cmake_args=stock_cmake_args, build_env=build_env,
     )
     assert_validation_subject_parity(
@@ -1104,7 +1145,10 @@ def run(args: argparse.Namespace) -> int:
         rd08_lane_evidence = run_rd08_validation_lanes(
             contract=rd08_contract, control_binary=control_bin / f"llama-bench{exe}",
             subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
+            model_ref=rd08_contract.positive.models[0],
             hip_path=args.hip_path, run_dir=campaign_run_dir,
+            control_build_identity=control_build_evidence.campaign_identity(),
+            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
         )
         _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
 
