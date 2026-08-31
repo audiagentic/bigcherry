@@ -1070,9 +1070,22 @@ def run(args: argparse.Namespace) -> int:
     from bigcherry.patch import registry as patch_registry, validation as patch_validation
     from bigcherry.patch import validation_policy as patch_validation_policy # noqa: E402
     from bigcherry.core import paths as bc_paths # noqa: E402
+    from bigcherry.core import config as campaign_config # noqa: E402
 
     registry = patch_registry.load_registry(bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
+
+    # GPT round 2 (req_71217bba406f4941, VA04 real-hardware finding): the
+    # pinned ref MUST be resolved before any source materialization --
+    # the hardcoded literal "HEAD" below used to silently build against whatever
+    # the shared vendor/llama.cpp checkout's HEAD happened to be at run
+    # time, while the evidence record was later labeled base_ref=cfg.pinned
+    # regardless of whether HEAD actually matched the pin. A real RD04
+    # hardware run on Brutus resolved and built against vendor HEAD while
+    # its own evidence claimed pin b10705 -- VA08's stale-detection
+    # correctly caught the mismatch and rejected the record. cfg is loaded
+    # ONCE here and reused for evidence writing below (no duplicate load).
+    cfg = campaign_config.load(bc_paths.RECIPES)
 
     # VA02 execution-side anti-grandfather guard (unconditional, per GPT
     # round-5 code review req_86cfd3a0bff04716: this command IS "start a
@@ -1094,10 +1107,10 @@ def run(args: argparse.Namespace) -> int:
     # scan), resolved through the exact-composition validator; the base ref
     # resolves to an immutable SHA that enters the v2 source identity.
     control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", focal=None, base_ref="HEAD", base_repo=LLAMA_CPP_SRC,
+        "bigcherry", focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry", focal=args.patch, base_ref="HEAD", base_repo=LLAMA_CPP_SRC,
+        "bigcherry", focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
         raise RuntimeError("control and subject source plans resolved different base revisions")
@@ -1106,24 +1119,24 @@ def run(args: argparse.Namespace) -> int:
     control_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
         resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
     patched_src = psi.materialize_composition(
         base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
         resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
     _print(f"control source: {control_src}")
     _print(f"subject source: {patched_src}")
     control_idempotent = psi.verify_composition_idempotent(
         base_repo=LLAMA_CPP_SRC, source=control_src, worktree_root=worktree_root / "control",
         resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
     subject_idempotent = psi.verify_composition_idempotent(
         base_repo=LLAMA_CPP_SRC, source=patched_src, worktree_root=worktree_root / "subject",
         resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision="HEAD",
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
     stock_src = psi.materialize_stock_source(
         base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
@@ -1438,10 +1451,11 @@ def run(args: argparse.Namespace) -> int:
     # deferred). A campaign with no correctness evidence and/or no
     # activation probe for this patch still writes a real record; it is
     # simply not eligible_for_validated_state.
-    from bigcherry.core import config as campaign_config # noqa: E402
     from bigcherry.patch import evidence as patch_validation_evidence # noqa: E402
 
-    cfg = campaign_config.load(bc_paths.RECIPES)
+    # cfg is loaded once, above, before source resolution -- reused here
+    # (was previously loaded a second time in this exact spot, after
+    # source materialization had already resolved against "HEAD").
     # RS04: the evidence record's patch file path resolves through the
     # registry descriptor (flat or packaged) -- no f"{patch_id}.py" guessing
     # in this caller.
