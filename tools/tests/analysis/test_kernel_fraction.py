@@ -103,5 +103,70 @@ class AgentFormatTests(unittest.TestCase):
         self.assertEqual(trace["wall_ns"], 1200)
 
 
+class TimingFailClosedTests(unittest.TestCase):
+    """gpt-dev-agent review, 2026-08-31: a blank timing cell used to
+    silently become 0ns instead of failing, and a short/truncated row was
+    silently skipped instead of raising."""
+
+    def test_blank_duration_cell_raises_instead_of_becoming_zero(self):
+        header = '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp","Duration"'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join(
+                    [
+                        header,
+                        '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,1000,1000',
+                        # blank Duration on an otherwise-valid row -- must
+                        # not silently contribute 0ns to the totals.
+                        '"KERNEL_DISPATCH","mul_mat_vec_q_b",2000,3000,',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(kernel_fraction.KernelFractionError):
+                kernel_fraction.parse_kernel_trace([path])
+
+    def test_truncated_row_raises_instead_of_being_silently_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join(
+                    [
+                        '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp"',
+                        '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,1000',
+                        '"KERNEL_DISPATCH","mul_mat_vec_q_b",2000',  # short row
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(kernel_fraction.KernelFractionError):
+                kernel_fraction.parse_kernel_trace([path])
+
+    def test_blank_start_cell_raises_instead_of_becoming_zero(self):
+        header = '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp"'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join([header, '"KERNEL_DISPATCH","mul_mat_vec_q_a",,1000']) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(kernel_fraction.KernelFractionError):
+                kernel_fraction.parse_kernel_trace([path])
+
+    def test_zero_is_a_valid_value_not_confused_with_blank(self):
+        header = '"Kind","Kernel_Name","Start_Timestamp","End_Timestamp"'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.csv"
+            path.write_text(
+                "\n".join([header, '"KERNEL_DISPATCH","mul_mat_vec_q_a",0,0']) + "\n",
+                encoding="utf-8",
+            )
+            trace = kernel_fraction.parse_kernel_trace([path])  # must not raise
+        self.assertEqual(trace["rows"][0]["dur_ns"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

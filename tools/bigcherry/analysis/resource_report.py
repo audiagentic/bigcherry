@@ -184,9 +184,19 @@ def apply_policy(
             reasons.append("scratch")
         if (record.sgpr_spills or 0) > 0 or (record.vgpr_spills or 0) > 0:
             reasons.append("register_spill")
-        if (policy.reject_lds_gt is not None and record.lds_bytes is not None and
-                record.lds_bytes > policy.reject_lds_gt):
-            reasons.append("lds_limit")
+        if policy.reject_lds_gt is not None:
+            if record.lds_bytes is None:
+                # An ACTIVE threshold makes its field mandatory -- LDS is
+                # not in the parser's required-field set (a block can be
+                # "resolved" without ever reporting LDS at all), so a
+                # missing field used to silently skip the threshold check
+                # entirely instead of failing closed: --reject-lds-gt 0
+                # against a genuinely LDS-omitting remark returned exit 0,
+                # no exclusion, recognized_schema:true (gpt-dev-agent
+                # review, 2026-08-31).
+                reasons.append("lds_unknown")
+            elif record.lds_bytes > policy.reject_lds_gt:
+                reasons.append("lds_limit")
         if reasons:
             exclusions.append({
                 "stable_name": record.stable_name,

@@ -10,15 +10,16 @@ def _remark(body: str, line: int) -> str:
     return f"kernel.cu:{line}:1: remark: {body} [-Rpass-analysis=kernel-resource-usage]\n"
 
 
-def _raw(symbol="_Z6kernelv", scratch=0, occupancy=5, lds=0, sgpr_spill=0):
+def _raw(symbol="_Z6kernelv", scratch=0, occupancy=5, lds=0, sgpr_spill=0, omit_lds=False):
     values = [
         f"Function Name: {symbol}",
         "TotalSGPRs: 24", "VGPRs: 32", "AGPRs: 0",
         f"ScratchSize [bytes/lane]: {scratch}", "Dynamic Stack: False",
         f"Occupancy [waves/SIMD]: {occupancy}",
         f"SGPRs Spill: {sgpr_spill}", "VGPRs Spill: 0",
-        f"LDS Size [bytes/block]: {lds}",
     ]
+    if not omit_lds:
+        values.append(f"LDS Size [bytes/block]: {lds}")
     return "".join(_remark(value, index + 1) for index, value in enumerate(values))
 
 
@@ -68,6 +69,32 @@ class ResourceReportTests(unittest.TestCase):
             self.assertTrue(report["recognized_schema"])
             self.assertEqual(report["resolution_counts"][status], 1)
             self.assertEqual(report["exclusions"], [])
+
+    def test_missing_lds_fails_closed_under_an_active_lds_threshold(self):
+        """gpt-dev-agent review, 2026-08-31: LDS is not in the parser's
+        required-field set, so a block that omits the LDS remark line
+        entirely still parses as "resolved". --reject-lds-gt is an ACTIVE
+        threshold the caller explicitly asked for; a missing field must not
+        silently skip it (the previous behavior: recognized_schema=true,
+        no exclusion, exit 0 -- looked like a clean pass)."""
+        policy = resource_report.ResourcePolicyV1(
+            "gfx1100-lds-v1", "gfx1100", reject_lds_gt=0)
+        report = resource_report.build_report(
+            _raw(omit_lds=True).encode(), compiler_family="clang", compiler_major=21,
+            compiler_version="21.0.0git", architecture="gfx1100",
+            source_revision="a" * 40, manifest_hash="b" * 32,
+            symbol_map={"_Z6kernelv": ["mmq:q8_0:j64:fb0:v1"]}, policy=policy)
+        self.assertTrue(report["recognized_schema"])  # still a valid LLVM-21 block
+        self.assertEqual(report["exclusions"][0]["reasons"], ["lds_unknown"])
+
+    def test_missing_lds_is_fine_when_no_lds_threshold_is_active(self):
+        policy = resource_report.ResourcePolicyV1("gfx1100-no-lds-v1", "gfx1100")
+        report = resource_report.build_report(
+            _raw(omit_lds=True).encode(), compiler_family="clang", compiler_major=21,
+            compiler_version="21.0.0git", architecture="gfx1100",
+            source_revision="a" * 40, manifest_hash="b" * 32,
+            symbol_map={"_Z6kernelv": ["mmq:q8_0:j64:fb0:v1"]}, policy=policy)
+        self.assertEqual(report["exclusions"], [])
 
     def test_report_is_deterministic_and_raw_hash_changes(self):
         policy = resource_report.ResourcePolicyV1("p", "gfx1100")

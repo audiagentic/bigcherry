@@ -148,5 +148,54 @@ class PolicySpecValidationTests(unittest.TestCase):
             rp.validate_policy_spec(spec)
 
 
+def _decision_json(*, policy_name="latency-v1", policy_version=1, is_production=True,
+                    predicted_winner="candidate_a", candidates=None):
+    return {
+        "policy_name": policy_name, "policy_version": policy_version,
+        "is_production": is_production, "predicted_winner": predicted_winner,
+        "candidates": candidates or [],
+    }
+
+
+class PolicyDecisionStrictTypingTests(unittest.TestCase):
+    """gpt-dev-agent review, 2026-08-31: PolicyDecision.from_json used to
+    coerce types instead of validating them, and this feeds
+    tune_promotion.py's production-policy identity check directly -- a
+    type-coerced field here is a real correctness-boundary bug."""
+
+    def test_valid_decision_round_trips(self):
+        decision = rp.PolicyDecision.from_json(_decision_json())
+        self.assertEqual(decision.policy_name, "latency-v1")
+        self.assertEqual(decision.policy_version, 1)
+        self.assertIs(decision.is_production, True)
+
+    def test_string_false_for_is_production_is_rejected_not_coerced_true(self):
+        # bool("false") == True in Python -- this must not silently pass.
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(is_production="false"))
+
+    def test_boolean_policy_version_is_rejected_not_treated_as_int(self):
+        # True == 1 in Python -- a boolean must not satisfy an int field.
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(policy_version=True))
+
+    def test_empty_policy_name_is_rejected(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(policy_name=""))
+
+    def test_non_string_policy_name_is_rejected(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(policy_name=123))
+
+    def test_non_list_candidates_is_rejected(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(candidates="not-a-list"))
+
+    def test_malformed_decision_in_parse_ranking_decisions_fails_closed(self):
+        result = {"ranking_decisions": [_decision_json(is_production="false")]}
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.parse_ranking_decisions(result)
+
+
 if __name__ == "__main__":
     unittest.main()

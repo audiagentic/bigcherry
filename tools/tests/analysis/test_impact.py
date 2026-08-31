@@ -185,6 +185,8 @@ class ImpactTests(unittest.TestCase):
         )
 
     def test_interval_brackets_point_with_raw_samples(self):
+        # 8 rounds -- exactly impact.MIN_PAIRED_ROUNDS, the floor below
+        # which a signature is excluded from the interval entirely.
         observations = [{"signature": "a", "calls": 100, "native": "mmq:native:v1"}]
         results = [
             {
@@ -196,13 +198,13 @@ class ImpactTests(unittest.TestCase):
                         "name": "mmq:native:v1",
                         "status": "ok",
                         "median_us": 10.0,
-                        "samples_us": [9.5, 10.0, 10.5, 11.0, 9.9],
+                        "samples_us": [9.5, 10.0, 10.5, 11.0, 9.9, 10.1, 9.8, 10.2],
                     },
                     {
                         "name": "mmq:cand:v1",
                         "status": "ok",
                         "median_us": 8.0,
-                        "samples_us": [7.5, 8.0, 8.5, 9.0, 7.9],
+                        "samples_us": [7.5, 8.0, 8.5, 9.0, 7.9, 8.1, 7.8, 8.2],
                     },
                 ],
             }
@@ -214,7 +216,77 @@ class ImpactTests(unittest.TestCase):
         self.assertLess(low, report["saving_pct"])
         self.assertGreater(high, report["saving_pct"])
 
-    def test_interval_strips_null_padding(self):
+    def test_interval_below_min_paired_rounds_is_none(self):
+        """gpt-dev-agent review, 2026-08-31: a singleton (or any tiny) paired
+        sample used to produce a confident-looking zero-width "95% CI" from
+        essentially no evidence. Below MIN_PAIRED_ROUNDS the signature must
+        be excluded from the interval entirely, not silently trusted."""
+        observations = [{"signature": "a", "calls": 100, "native": "mmq:native:v1"}]
+        results = [
+            {
+                "signature": "a",
+                "native": "mmq:native:v1",
+                "winner": "mmq:cand:v1",
+                "candidates": [
+                    {"name": "mmq:native:v1", "status": "ok", "median_us": 10.0,
+                     "samples_us": [100.0]},
+                    {"name": "mmq:cand:v1", "status": "ok", "median_us": 8.0,
+                     "samples_us": [90.0]},
+                ],
+            }
+        ]
+        self.assertIsNone(impact.saving_interval(observations, results, draws=50, seed=0))
+
+    def test_interval_preserves_round_pairing_not_independent_resampling(self):
+        """gpt-dev-agent review, 2026-08-31: native=[100,200,...,800],
+        winner=[90,180,...,720] is EXACTLY 10% faster every single round.
+        A correct paired bootstrap must always return exactly 10% (every
+        resampled round preserves that exact ratio); independently
+        resampling native and winner destroys the pairing and would widen
+        the interval away from the true fixed point."""
+        native = [100.0 * i for i in range(1, 9)]
+        winner = [0.9 * v for v in native]
+        observations = [{"signature": "a", "calls": 1, "native": "mmq:native:v1"}]
+        results = [
+            {
+                "signature": "a",
+                "native": "mmq:native:v1",
+                "winner": "mmq:cand:v1",
+                "candidates": [
+                    {"name": "mmq:native:v1", "status": "ok", "median_us": 400.0,
+                     "samples_us": native},
+                    {"name": "mmq:cand:v1", "status": "ok", "median_us": 360.0,
+                     "samples_us": winner},
+                ],
+            }
+        ]
+        interval = impact.saving_interval(observations, results, draws=500, seed=0)
+        self.assertIsNotNone(interval)
+        low, high = interval
+        self.assertAlmostEqual(low, 10.0, places=6)
+        self.assertAlmostEqual(high, 10.0, places=6)
+
+    def test_interval_requires_equal_length_round_aligned_samples(self):
+        observations = [{"signature": "a", "calls": 10, "native": "mmq:native:v1"}]
+        results = [
+            {
+                "signature": "a",
+                "native": "mmq:native:v1",
+                "winner": "mmq:cand:v1",
+                "candidates": [
+                    {"name": "mmq:native:v1", "status": "ok", "median_us": 10.0,
+                     "samples_us": [10.0] * 8},
+                    {"name": "mmq:cand:v1", "status": "ok", "median_us": 8.0,
+                     "samples_us": [8.0] * 7},  # different length -- not round-aligned
+                ],
+            }
+        ]
+        with self.assertRaises(impact.ImpactError):
+            impact._usable_pairs(
+                observations, results, {"a": 10},
+            )
+
+    def test_interval_drops_only_the_null_round_keeping_the_rest_paired(self):
         observations = [{"signature": "a", "calls": 10, "native": "mmq:native:v1"}]
         results = [
             {
@@ -223,22 +295,18 @@ class ImpactTests(unittest.TestCase):
                 "winner": "mmq:cand:v1",
                 "candidates": [
                     {
-                        "name": "mmq:native:v1",
-                        "status": "ok",
-                        "median_us": 10.0,
-                        "samples_us": [None, 10.0, None, 10.2],
+                        "name": "mmq:native:v1", "status": "ok", "median_us": 10.0,
+                        "samples_us": [10.0, 10.1, None, 10.2, 9.9, 10.0, 10.1, 9.8, 10.0],
                     },
                     {
-                        "name": "mmq:cand:v1",
-                        "status": "ok",
-                        "median_us": 8.0,
-                        "samples_us": [8.1, None, 7.9, None],
+                        "name": "mmq:cand:v1", "status": "ok", "median_us": 8.0,
+                        "samples_us": [8.0, 8.1, 7.9, 8.2, 7.9, 8.0, 8.1, 7.8, 8.0],
                     },
                 ],
             }
         ]
         interval = impact.saving_interval(observations, results, draws=50, seed=0)
-        self.assertIsNotNone(interval)
+        self.assertIsNotNone(interval)  # 8 of 9 rounds survive -- still >= MIN_PAIRED_ROUNDS
 
     def test_load_results_tolerates_truncated_tail(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -330,6 +398,46 @@ class ImpactTests(unittest.TestCase):
         self.assertIn("[19.0 - 21.0]", text)
         self.assertIn("top contributors", text)
         self.assertIn("SLOWER: 0", text)
+
+    def test_report_states_the_interval_coverage_gap_explicitly(self):
+        """gpt-dev-agent review, 2026-08-31: the point estimate and CI can
+        describe different populations -- the report must say so rather
+        than let a reader assume the interval covers the whole point."""
+        observations, results = self._data()
+        report = impact.predicted_saving(observations, results)
+        coverage = impact.sample_backed_coverage(observations, results)
+        text = impact.render_report(
+            report, "MTP 27B Q8_0", interval=(19.0, 21.0), interval_coverage=coverage,
+        )
+        self.assertIn("interval covers", text)
+        self.assertIn("NOT necessarily the same population", text)
+
+
+class SampleBackedCoverageTests(unittest.TestCase):
+    def test_high_call_signature_without_samples_us_is_excluded_from_coverage(self):
+        observations = [
+            {"signature": "a", "calls": 10, "native": "n"},
+            {"signature": "b", "calls": 1_000_000, "native": "n"},
+        ]
+        results = [
+            {"signature": "a", "native": "n", "winner": "w", "candidates": [
+                {"name": "n", "status": "ok", "median_us": 10.0,
+                 "samples_us": [10.0] * 8},
+                {"name": "w", "status": "ok", "median_us": 9.0,
+                 "samples_us": [9.0] * 8},
+            ]},
+            {"signature": "b", "native": "n", "winner": "w", "candidates": [
+                # No samples_us at all -- counted in the point estimate,
+                # must NOT be counted as sample-backed.
+                {"name": "n", "status": "ok", "median_us": 100.0},
+                {"name": "w", "status": "ok", "median_us": 50.0},
+            ]},
+        ]
+        coverage = impact.sample_backed_coverage(observations, results)
+        self.assertEqual(coverage["total_calls"], 1_000_010)
+        self.assertEqual(coverage["sample_backed_calls"], 10)
+        self.assertAlmostEqual(coverage["sample_backed_fraction"], 10 / 1_000_010)
+        self.assertEqual(coverage["sample_backed_signature_count"], 1)
 
 
 class KernelFractionTests(unittest.TestCase):

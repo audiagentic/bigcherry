@@ -138,12 +138,40 @@ class PolicyDecision:
 
     @classmethod
     def from_json(cls, entry: dict[str, Any]) -> "PolicyDecision":
+        """Strict-typed parse -- this feeds tune_promotion.py's production-
+        policy identity check directly, so a type-coerced field here is a
+        real correctness-boundary bug, not just a display bug (gpt-dev-agent
+        review, 2026-08-31). ``bool(entry.get("is_production"))`` used to
+        coerce the STRING ``"false"`` to Python ``True`` (any non-empty
+        string is truthy) -- a malformed decision record with
+        ``"is_production": "false"`` would count as a real production
+        decision in ``parse_ranking_decisions``'s production-count check and
+        in ``_validate_policy_identity``'s coverage check. Likewise
+        ``policy_version`` had no type check at all, so a boolean ``true``
+        would satisfy ``prod.policy_version != row_policy["version"]`` for
+        any ``row_policy["version"] == 1`` (Python: ``True == 1``).
+        """
+        policy_name = entry.get("policy_name", "")
+        if not isinstance(policy_name, str) or not policy_name:
+            raise RankingPolicyError("ranking_decisions entry: policy_name must be a non-empty string")
+        policy_version = entry.get("policy_version", 0)
+        if isinstance(policy_version, bool) or not isinstance(policy_version, int):
+            raise RankingPolicyError("ranking_decisions entry: policy_version must be an integer")
+        is_production = entry.get("is_production", False)
+        if not isinstance(is_production, bool):
+            raise RankingPolicyError("ranking_decisions entry: is_production must be a boolean")
+        predicted_winner = entry.get("predicted_winner", "")
+        if not isinstance(predicted_winner, str):
+            raise RankingPolicyError("ranking_decisions entry: predicted_winner must be a string")
+        candidates_raw = entry.get("candidates", [])
+        if not isinstance(candidates_raw, list):
+            raise RankingPolicyError("ranking_decisions entry: candidates must be a list")
         return cls(
-            policy_name=entry.get("policy_name", ""),
-            policy_version=entry.get("policy_version", 0),
-            is_production=bool(entry.get("is_production")),
-            predicted_winner=entry.get("predicted_winner", ""),
-            candidates=[RankedCandidate.from_json(c) for c in entry.get("candidates", [])],
+            policy_name=policy_name,
+            policy_version=policy_version,
+            is_production=is_production,
+            predicted_winner=predicted_winner,
+            candidates=[RankedCandidate.from_json(c) for c in candidates_raw],
         )
 
 
