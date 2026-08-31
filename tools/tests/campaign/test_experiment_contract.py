@@ -698,6 +698,22 @@ class AggregateContractEffectsTests(unittest.TestCase):
         result = ec.aggregate_contract_effects(contract, effects, target_metric="tg")
         self.assertEqual(result["max_control_regression_pct"], 0.0)
 
+    def test_control_regression_computed_across_a_different_metric_than_target(self):
+        """GPT round 2 (req_240634997c1a4ee9): a control lane very often
+        measures a structurally different workload than the positive lane
+        (e.g. RD08: positive=decode/tg128, control=prefill/pp512) and
+        reports its own natural metric -- max_control_regression_pct must
+        be computed from ALL control-role effects regardless of metric,
+        never filtered to target_metric."""
+        contract = _minimal_contract()
+        effects = [
+            ec.LaneEffect(role="positive", metric="tg128", geometric_effect_pct=5.0),
+            ec.LaneEffect(role="control", metric="pp512", geometric_effect_pct=-2.0),
+        ]
+        result = ec.aggregate_contract_effects(contract, effects, target_metric="tg128")
+        self.assertEqual(result["target_kernel_gain_pct"], 5.0)
+        self.assertEqual(result["max_control_regression_pct"], 2.0)
+
     def test_missing_positive_effects_rejected(self):
         contract = _minimal_contract()
         effects = [ec.LaneEffect(role="control", metric="tg", geometric_effect_pct=1.0)]

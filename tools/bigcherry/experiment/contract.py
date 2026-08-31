@@ -1197,12 +1197,20 @@ def aggregate_contract_effects(
       a contract's own performance claim is about what it targets, not
       diluted by what it deliberately isn't supposed to touch.
     - max_control_regression_pct: the WORST (most negative-for-target-
-      direction, i.e. numerically most negative) ``target_metric`` effect
-      across CONTROL-role lanes, never an average -- a contract that wins
-      on average while quietly regressing one control model must not pass.
-      A contract with zero control-role effects raises rather than
-      silently reporting 0.0 (undefined is not the same as "no
-      regression").
+      direction, i.e. numerically most negative) effect across ALL
+      CONTROL-role lanes, REGARDLESS of which metric each control lane
+      reports -- never an average, and never filtered to target_metric.
+      A real control lane very often measures a structurally different
+      workload than the positive lane (e.g. RD08: positive=decode/tg128,
+      control=prefill/pp512) and reports its own natural metric; requiring
+      an exact target_metric match would either force a fabricated
+      same-metric relabeling or silently drop real heterogeneous control
+      evidence (GPT round-2 correction, req_240634997c1a4ee9, after this
+      exact confusion showed up in VA14's first RD08 composition test). A
+      contract that wins on average while quietly regressing one control
+      lane, on that lane's own metric, must not pass. A contract with zero
+      control-role effects raises rather than silently reporting 0.0
+      (undefined is not the same as "no regression").
     - end_to_end_gain_pct: mean of ``end_to_end_metric``'s effect (falls
       back to ``target_metric`` if no separate end-to-end metric is named)
       across positive-role lanes -- the whole-workload effect, which can
@@ -1225,13 +1233,13 @@ def aggregate_contract_effects(
 
     control_effects = [
         effect.geometric_effect_pct for effect in lane_effects
-        if effect.role == "control" and effect.metric == target_metric
+        if effect.role == "control"
     ]
     if not control_effects:
         raise ExperimentContractError(
-            f"contract {contract.id!r}: no control-role effects for metric "
-            f"{target_metric!r} -- every contract must measure its declared "
-            f"controls, an empty set is not evidence of no regression"
+            f"contract {contract.id!r}: no control-role effects at all -- every "
+            f"contract must measure its declared controls, an empty set is not "
+            f"evidence of no regression"
         )
     # A negative effect (replay/candidate slower than native/reference) is a
     # regression; the WORST control result is the most negative one.

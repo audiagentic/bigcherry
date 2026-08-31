@@ -57,14 +57,38 @@ def metric_for_workload(workload: str) -> str:
         ) from None
 
 
-def _default_runner(command: list[str]) -> str:
+@dataclass(frozen=True)
+class RunnerOutput:
+    """A completed arm execution's structured result -- GPT round 2
+    (req_240634997c1a4ee9): the runner must expose returncode so a failed
+    benchmark that happens to print a parseable metric can never become
+    valid LaneEffect evidence. Real callers construct this from
+    subprocess.CompletedProcess; fake/injected runners in tests construct
+    it directly."""
+    returncode: int
+    stdout: str
+    stderr: str
+
+    @property
+    def combined(self) -> str:
+        return self.stdout + "\n" + self.stderr
+
+
+def _default_runner(command: list[str]) -> RunnerOutput:
     completed = subprocess.run(
         command, capture_output=True, text=True, check=False,
     )
-    return completed.stdout + "\n" + completed.stderr
+    return RunnerOutput(
+        returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+    )
 
 
-Runner = Callable[[list[str]], str]
+Runner = Callable[[list[str]], RunnerOutput]
+
+
+class LaneExecutionError(RuntimeError):
+    """A control/subject arm execution failed (nonzero exit) -- fail
+    closed, never salvage a parseable metric from a failed run."""
 
 
 @dataclass(frozen=True)
@@ -77,7 +101,7 @@ class PairedLaneRun:
 
 
 def run_paired_lane(
-    *, role: str, metric: str, control_command: list[str], subject_command: list[str],
+    *, metric: str, control_command: list[str], subject_command: list[str],
     pattern: re.Pattern[str], pairs: int = 3, runner: Runner | None = None,
     lower_is_better: bool = False, seed: int = 0, resamples: int = 10_000,
 ) -> PairedLaneRun:
@@ -88,7 +112,10 @@ def run_paired_lane(
     injectable so this is fully unit-testable without real hardware --
     defaults to a real subprocess.run. Alternates starting order each
     round (matching ab_benchmark.py's own precedent) so thermal/clock
-    drift cannot quietly become a control/subject result."""
+    drift cannot quietly become a control/subject result. A nonzero
+    return code from either arm raises LaneExecutionError immediately --
+    never salvages a parseable metric from a failed run (GPT round 2,
+    req_240634997c1a4ee9)."""
     if pairs < 1:
         raise ValueError("pairs must be >= 1")
     active_runner = runner or _default_runner
@@ -97,8 +124,13 @@ def run_paired_lane(
         order = ("control", "subject") if pair % 2 == 0 else ("subject", "control")
         for mode in order:
             command = control_command if mode == "control" else subject_command
-            output = active_runner(command)
-            metrics = extract_metrics(output, {metric: pattern})
+            result = active_runner(command)
+            if result.returncode != 0:
+                raise LaneExecutionError(
+                    f"{mode} arm exited {result.returncode} (pair {pair}): "
+                    f"command={command!r}; stderr={result.stderr[-500:]!r}"
+                )
+            metrics = extract_metrics(result.combined, {metric: pattern})
             runs.append({"pair": pair, "mode": mode, "metrics": metrics})
     stats = block_bootstrap_effect(
         runs, candidate="subject", reference="control", metric=metric,
