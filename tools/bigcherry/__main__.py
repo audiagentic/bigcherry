@@ -19,13 +19,17 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from . import __version__
 from .core import paths
 from .patch import catalog as patch_catalog
 from .patch import apply as patcher
 from .patch import patchset
+from .patch import rebase as patch_rebase_module
+
+if TYPE_CHECKING:
+    from .patch.selection import CliPatchSelection
 from .release import pin_status
 from . import pin_transition
 from . import recipes
@@ -303,6 +307,132 @@ def _apply_selection(
             record.notes = ""
         # Key what the tree now carries, so `build` can tell whether it needs
         # a reset or can compile against this selection as-is.
+        record.tree_state = intended_tree_state if ok else ""
+        record.save()
+    return ok
+
+
+def _apply_exact_selection(
+    root: Path,
+    selection: "CliPatchSelection",
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> bool:
+    """The ``--source`` (v2, exact-mode) sibling of ``_apply_selection`` --
+    compat.recipe removal plan, gpt-dev-agent-reviewed design (session
+    ses_5307d9c58ec645cb). Kept as a separate function rather than
+    branching inside ``_apply_selection`` so the well-tested predicate
+    path is untouched by this migration.
+
+    Real safety requirements this satisfies (all found necessary by gpt's
+    review, not hypothetical): (1) verifies the LIVE vendor HEAD (a real,
+    immutable commit SHA) matches the source's expected ref before any
+    mutation -- a moved pin must not silently apply the wrong composition;
+    (2) re-resolves the canonical source immediately before mutating and
+    requires patch_set_id + patch_ids to be unchanged from the selection
+    passed in -- a TOCTOU guard for this shared, multi-agent repo, where
+    config/recipes.toml or the patch registry could genuinely change
+    between CLI startup and this call; (3) never installs the overlay for
+    a source whose overlay flag is False (llama-native, vulkan-stock are
+    real overlay=false sources today) and fails closed if that flag was
+    never resolved, rather than defaulting to "install it anyway"."""
+    from .patch import selection as patch_selection
+
+    live_revision = patch_rebase_module._git(root, "rev-parse", "HEAD")
+    # selection.source_ref may be a movable symbolic ref (e.g. the pin tag
+    # "b10705"), not yet a commit SHA -- resolve it in the SAME local repo
+    # before comparing, or a correctly-pinned checkout would always look
+    # mismatched (a real bug caught by testing this against the live
+    # project instead of only synthetic fixtures).
+    try:
+        expected_revision = patch_rebase_module._git(
+            root, "rev-parse", f"{selection.source_ref}^{{commit}}"
+        )
+    except Exception as exc:  # noqa: BLE001 -- surfaces as a clear apply-time error
+        print(
+            f"apply: --source {selection.source_name!r}'s ref "
+            f"{selection.source_ref!r} does not resolve in this checkout: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    if expected_revision != live_revision:
+        print(
+            f"apply: --source {selection.source_name!r} expects upstream "
+            f"revision {selection.source_ref!r} ({expected_revision}), but "
+            f"the live checkout is at {live_revision!r} -- pull first, or "
+            "re-run patch-rebase-check",
+            file=sys.stderr,
+        )
+        return False
+
+    fresh = patch_selection._resolve_exact_selection(selection.source_name)
+    if fresh.patch_set_id != selection.patch_set_id or fresh.patch_ids != selection.patch_ids:
+        print(
+            f"apply: --source {selection.source_name!r}'s composition changed "
+            "since it was resolved (config/recipes.toml or the patch "
+            "registry moved concurrently) -- re-run to pick up the current "
+            "composition",
+            file=sys.stderr,
+        )
+        return False
+    selection = fresh
+
+    if selection.overlay is None:
+        print(
+            f"apply: --source {selection.source_name!r}'s overlay flag was "
+            "never resolved -- refusing to guess whether to install it",
+            file=sys.stderr,
+        )
+        return False
+
+    record = _record_for(root)
+    if not force and not record.audit.get("passed"):
+        print(
+            "refusing to patch a tree that has not passed a strict audit.\n"
+            "  run `python -m bigcherry audit` first, or pass --force.",
+            file=sys.stderr,
+        )
+        return False
+
+    overlay_backup: dict[str, str | None] = {}
+    overlay_sim: dict[str, str] = {}
+    written: list[str] = []
+    if selection.overlay:
+        written = _copy_overlay(root, dry_run=dry_run, backup=overlay_backup, sim_texts=overlay_sim)
+
+    resolved = patchset.resolve_exact(selection.patch_ids, allow_rejected=False)
+    patches = patchset.load_resolved(resolved)
+    results = patcher.apply_all(patches, root, dry_run=dry_run, initial_texts=overlay_sim)
+    ok = all(r.ok for r in results)
+    if not ok and not dry_run and overlay_backup:
+        _restore_overlay(root, overlay_backup)
+
+    intended_tree_state = selection.tree_state_key(live_revision)
+    selection_changed = record.tree_state != intended_tree_state
+    tree_mutated = bool(written) or any(result.changed for result in results)
+
+    if ok:
+        verb = "would write" if dry_run else "wrote"
+        print(f"overlay: {verb} {len(written)} file(s)" if selection.overlay else "overlay: none (source overlay=false)")
+    else:
+        verb = "not written (dry run)" if dry_run else "rolled back"
+        print(f"overlay: {verb} -- patches failed")
+    print(f"patches ({len(patches)} file(s)):")
+    print(patcher.format_results(results))
+
+    if not dry_run:
+        record = _record_for(root)
+        record.patches = releases.summarise_patches(results)
+        releases.record_apply_result(
+            record, ok, mutated=selection_changed or tree_mutated
+        )
+        if not ok:
+            record.notes = "patches failed: " + ", ".join(
+                record.patches["failed_edits"]
+            )
+        elif record.notes.startswith("patches failed:"):
+            record.notes = ""
         record.tree_state = intended_tree_state if ok else ""
         record.save()
     return ok

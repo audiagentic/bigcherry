@@ -8,7 +8,6 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..core import paths
-from .. import recipes
 from ..patch import catalog as patch_catalog
 from ..patch import disposition as patch_disposition
 from ..patch import lifecycle as patch_lifecycle
@@ -38,12 +37,13 @@ def cmd_apply(args: Namespace) -> int:
     if report_path:
         if (
             getattr(args, "recipe", None)
+            or getattr(args, "source", None)
             or getattr(args, "groups", None) is not None
             or getattr(args, "states", None) is not None
         ):
             print(
                 "apply: --rebase-report owns the exact logical selection; "
-                "do not combine it with --recipe/--groups/--states",
+                "do not combine it with --recipe/--source/--groups/--states",
                 file=sys.stderr,
             )
             return 2
@@ -66,14 +66,21 @@ def cmd_apply(args: Namespace) -> int:
         return 0 if result.ok else 1
 
     try:
-        groups, states, label = legacy._resolve_selection(args)
-    except recipes.RecipeError as exc:
+        selection = patch_selection.resolve_cli_selection(args)
+    except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    ok = legacy._apply_selection(
-        root, groups, states, force=args.force, dry_run=args.dry_run
-    )
-    print(f"selection: {label}")
+
+    if selection.mode == "exact":
+        ok = legacy._apply_exact_selection(
+            root, selection, force=args.force, dry_run=args.dry_run
+        )
+    else:
+        ok = legacy._apply_selection(
+            root, selection.groups, selection.states,
+            force=args.force, dry_run=args.dry_run,
+        )
+    print(f"selection: {selection.label}")
     print("  RESULT: " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
