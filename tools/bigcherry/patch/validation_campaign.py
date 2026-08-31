@@ -1023,6 +1023,7 @@ def run_rd58_state_restore_evidence(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
     run_dir: Path, campaign_id: str,
     control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    observed_devices: dict[str, object] | None = None,
     repetitions: int = 3,
 ) -> dict[str, object]:
     """VA05: an RD58-scoped validation-domain state-restore evidence
@@ -1083,7 +1084,16 @@ def run_rd58_state_restore_evidence(
     correctness_passed = all(r["returncode"] == 0 for r in subject_runs)
     subject_hit = any(r["marker_hit"] for r in subject_runs)
     control_hit = any(r["marker_hit"] for r in control_runs)
-    controls_passed = all(r["returncode"] == 0 for r in control_runs)
+    # GPT round 3: the controls artifact claims "no crash/regression
+    # across repeated control/subject execution" -- it must fail if
+    # EITHER arm fails, not just the control arm (a subject that only
+    # crashed on repeated runs would otherwise be reported as a controls
+    # pass).
+    controls_passed = (
+        all(r["returncode"] == 0 for r in control_runs)
+        and all(r["returncode"] == 0 for r in subject_runs)
+    )
+    hardware_doc = dict(observed_devices) if observed_devices else {}
 
     def _strip_output(runs: list[dict[str, object]]) -> list[dict[str, object]]:
         # Persist returncode/marker_hit/command in full; truncate raw
@@ -1100,6 +1110,7 @@ def run_rd58_state_restore_evidence(
         "validation_build_identities": {
             "control": control_build_identity, "subject": subject_build_identity,
         },
+        "hardware": hardware_doc,
         "subject_runs": _strip_output(subject_runs),
     }
     correctness_path = run_dir / "rd58-correctness.json"
@@ -1139,6 +1150,7 @@ def run_rd58_state_restore_evidence(
         "validation_build_identities": {
             "control": control_build_identity, "subject": subject_build_identity,
         },
+        "hardware": hardware_doc,
     }
     controls_path = run_dir / "performance.json"
     _atomic_write_json(controls_path, controls_doc)
@@ -1919,13 +1931,23 @@ def run(args: argparse.Namespace) -> int:
                 f"{args.patch}: HIP_VISIBLE_DEVICES ({hip_devices_raw!r}) and "
                 f"ROCR_VISIBLE_DEVICES ({rocr_devices_raw!r}) must match exactly"
             )
+        # GPT round 3: a duplicated id (e.g. "0,0") must not count as 2
+        # distinct real GPUs.
+        if len(set(hip_device_ids)) != len(hip_device_ids):
+            raise PatchCampaignError(
+                f"{args.patch}: HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES contains duplicate "
+                f"device ids ({hip_devices_raw!r}) -- this does not expose distinct real GPUs"
+            )
         if required_gpu_count is not None and len(hip_device_ids) < required_gpu_count:
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd58-state-restore requires {required_gpu_count}+ GPUs; "
                 f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose only {len(hip_device_ids)} "
                 f"({hip_devices_raw!r})"
             )
-        rd58_observed_devices = {"hip_visible_devices": hip_device_ids, "count": len(hip_device_ids)}
+        rd58_observed_devices = {
+            "hip_visible_devices": hip_device_ids, "rocr_visible_devices": rocr_device_ids,
+            "gpu_count": len(hip_device_ids),
+        }
 
         rd58_build_root = build_root / "rd58-state-restore"
         rd58_control_bin = build_tree(
@@ -1959,6 +1981,41 @@ def run(args: argparse.Namespace) -> int:
         assert_validation_subject_parity(
             rd58_control_build_evidence, rd58_subject_build_evidence, patch_id=args.patch,
         )
+        # GPT round 3: RD58's evidence-producing binary is
+        # test-save-load-state, not the generic llama-bench control/
+        # subject builds -- ValidationContext must see THESE build
+        # identities/evidence when RD58 ran, mirroring the shape the
+        # generic path already builds for build_evidence above.
+        rd58_build_evidence = {
+            "control": {
+                "build_id": rd58_control_build_evidence.effective_build_id,
+                "source_tree": control_source_tree,
+                "architecture": args.amdgpu_targets,
+                "options": rd58_control_build_evidence.effective_configure,
+                "compile_commands": _write_bound_artifact(
+                    campaign_run_dir, "build/rd58-control-compile-commands.json",
+                    rd58_control_build_evidence.verification.to_dict(),
+                ),
+                "runtime_bundle": _write_bound_artifact(
+                    campaign_run_dir, "build/rd58-control-runtime-bundle.json",
+                    rd58_control_build_evidence.runtime_artifacts,
+                ),
+            },
+            "subject": {
+                "build_id": rd58_subject_build_evidence.effective_build_id,
+                "source_tree": patched_source_tree,
+                "architecture": args.amdgpu_targets,
+                "options": rd58_subject_build_evidence.effective_configure,
+                "compile_commands": _write_bound_artifact(
+                    campaign_run_dir, "build/rd58-subject-compile-commands.json",
+                    rd58_subject_build_evidence.verification.to_dict(),
+                ),
+                "runtime_bundle": _write_bound_artifact(
+                    campaign_run_dir, "build/rd58-subject-runtime-bundle.json",
+                    rd58_subject_build_evidence.runtime_artifacts,
+                ),
+            },
+        }
         rd58_result = run_rd58_state_restore_evidence(
             control_binary=rd58_control_bin / f"test-save-load-state{exe}",
             subject_binary=rd58_subject_bin / f"test-save-load-state{exe}", model=args.model,
@@ -1966,6 +2023,7 @@ def run(args: argparse.Namespace) -> int:
             campaign_id=campaign.campaign_identity_digest,
             control_build_identity=rd58_control_build_evidence.campaign_identity(),
             subject_build_identity=rd58_subject_build_evidence.campaign_identity(),
+            observed_devices=rd58_observed_devices,
         )
         correctness_evidence = {"artifact": rd58_result["correctness_artifact"]}
         performance_evidence = {"artifact": rd58_result["controls_artifact"]}
@@ -2066,11 +2124,21 @@ def run(args: argparse.Namespace) -> int:
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
             package_root=package_root,
             control_tree=control_source_tree, subject_tree=patched_source_tree,
-            build_identities={
-                "control": control_build_evidence.effective_build_id,
-                "subject": validation_subject_build_evidence.effective_build_id,
-            },
-            build_evidence=build_evidence, apply_evidence=apply_evidence,
+            # GPT round 3: RD58's real build check must be evaluated
+            # against ITS test-save-load-state builds, not the generic
+            # llama-bench builds the final record no longer identifies it
+            # with.
+            build_identities=(
+                {
+                    "control": rd58_control_build_evidence.effective_build_id,
+                    "subject": rd58_subject_build_evidence.effective_build_id,
+                } if args.run_rd58_state_restore else {
+                    "control": control_build_evidence.effective_build_id,
+                    "subject": validation_subject_build_evidence.effective_build_id,
+                }
+            ),
+            build_evidence=(rd58_build_evidence if args.run_rd58_state_restore else build_evidence),
+            apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets, model=str(args.model),
             contract=validation_plan.contract,
             contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
