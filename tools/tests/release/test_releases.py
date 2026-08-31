@@ -336,6 +336,141 @@ class ReleaseLifecycleTests(unittest.TestCase):
         self.assertEqual(record.stage, "patched")
         self.assertEqual(record.manifest_hash, "")
 
+    def test_apply_exact_selection_verifies_live_revision_first(self):
+        # compat.recipe removal plan (gpt-dev-agent reviewed, session
+        # ses_5307d9c58ec645cb): a moved pin (or any HEAD mismatch) must
+        # refuse to mutate, before anything else is even attempted.
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            mode="exact", label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git",
+            side_effect=lambda root, *a: (
+                "deadbeef" * 5 if a == ("rev-parse", "deadbeef" * 5 + "^{commit}")
+                else "cafef00d" * 5
+            ),
+        ):
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertFalse(ok)
+
+    def test_apply_exact_selection_rejects_toctou_composition_drift(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            mode="exact", label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid-old",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        drifted = CliPatchSelection(
+            mode="exact", label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid-NEW",
+            patch_ids=("0100_x", "0200_y"), overlay=True, overlay_digest="digest",
+        )
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=drifted,
+        ):
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertFalse(ok)
+
+    def test_apply_exact_selection_fails_closed_on_unresolved_overlay(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            mode="exact", label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=None,
+        )
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ):
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertFalse(ok)
+
+    def test_apply_exact_selection_skips_overlay_when_source_overlay_false(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            mode="exact", label="", source_name="llama-native",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=(), overlay=False, overlay_digest=None,
+        )
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            bigcherry_main, "_record_for", return_value=record,
+        ), mock.patch.object(
+            bigcherry_main, "_copy_overlay",
+        ) as copy_overlay, mock.patch.object(
+            bigcherry_main.patchset, "resolve_exact", return_value=object(),
+        ), mock.patch.object(
+            bigcherry_main.patchset, "load_resolved", return_value=[],
+        ), mock.patch.object(
+            bigcherry_main.patcher, "apply_all", return_value=[],
+        ), mock.patch.object(record, "save"):
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertTrue(ok)
+        copy_overlay.assert_not_called()
+
+    def test_apply_exact_selection_happy_path_updates_record(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            mode="exact", label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        patch_result = SimpleNamespace(
+            path="src/example.cpp", results=[], failed=[], changed=True, ok=True)
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            bigcherry_main, "_record_for", return_value=record,
+        ), mock.patch.object(
+            bigcherry_main, "_copy_overlay", return_value=[],
+        ), mock.patch.object(
+            bigcherry_main.patchset, "resolve_exact", return_value=object(),
+        ), mock.patch.object(
+            bigcherry_main.patchset, "load_resolved", return_value=[object()],
+        ), mock.patch.object(
+            bigcherry_main.patcher, "apply_all", return_value=[patch_result],
+        ), mock.patch.object(record, "save"):
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(record.stage, "patched")
+        self.assertEqual(
+            record.tree_state, selection.tree_state_key("deadbeef" * 5)
+        )
+
     def test_successful_reapply_recovers_explicit_broken_state(self):
         record = releases.ReleaseRecord(revision="abc123", stage="broken")
         releases.record_apply_result(record, True)
