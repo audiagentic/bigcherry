@@ -289,6 +289,131 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         )  # must not raise -- that is the entire test
 
 
+class RequireCoverageReportTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
+    the coverage-report digest gate must be unconditional and run every
+    time apply is about to happen, not only on --resume."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
+            selector_kind="recipe", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",), coverage_report_sha256="",
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_unbound_digest_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state(coverage_report_sha256="")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_UNBOUND")
+
+    def test_missing_report_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"  # never written
+            state = self._state(coverage_report_sha256="deadbeef")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MISSING")
+
+    def test_modified_report_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text('{"a": 1}', encoding="utf-8")
+            recorded = pin_bump._sha256_file(report_path)
+            report_path.write_text('{"a": 2}', encoding="utf-8")  # modified after
+            state = self._state(coverage_report_sha256=recorded)
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MODIFIED")
+
+    def test_matching_digest_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text('{"a": 1}', encoding="utf-8")
+            recorded = pin_bump._sha256_file(report_path)
+            state = self._state(coverage_report_sha256=recorded)
+            pin_bump._require_coverage_report(state, report_path)  # no raise
+
+
+class RunResumeStateMissingTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1): --resume must never silently
+    reinterpret a missing state.json as "start a fresh run"."""
+
+    def test_resume_with_no_state_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b99999"  # never created
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(
+                    target_ref="b99999", resume=True, report_dir=report_dir,
+                )
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_MISSING")
+            # gpt-dev-agent review P2: even this early failure must carry
+            # real context, not fall through as "unresolved" -- here there
+            # genuinely is no state yet, so run_id=="unresolved" IS correct;
+            # this asserts the placeholder path itself still populates all
+            # three fields rather than leaving any unset/None.
+            self.assertEqual(ctx.exception.run_id, "unresolved")
+            self.assertEqual(ctx.exception.target, {"from_ref": "?", "to_ref": "b99999"})
+            self.assertIsNotNone(ctx.exception.tree)
+
+    def test_resume_with_mismatched_target_retains_loaded_state_context(self):
+        # gpt-dev-agent review P2: a PinBumpStop raised by resume
+        # VALIDATION (state WAS loaded) must attach that state's real
+        # run_id/target/tree -- not the "unresolved" placeholder -- since
+        # moving _validate_resume() inside run()'s try is what this test
+        # actually exercises.
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b10680"
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="real-run-id", from_ref="b10502",
+                from_sha="a" * 40, to_ref="b10680", to_sha="b" * 40,
+                transition_commit="c" * 40, tree_name="local",
+                tree_path=str(Path("/some/path")),
+                completed_phases=["preflight"], next_phase="declare",
+                selector_kind="recipe", selector_name="bigcherry",
+                selector_patch_ids=("0100_x",),
+            )
+            state.save(report_dir)
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(
+                    target_ref="b99999-WRONG",  # deliberate mismatch
+                    resume=True, report_dir=report_dir,
+                    root=Path("/some/path"),
+                )
+            self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
+            self.assertEqual(ctx.exception.run_id, "real-run-id")
+            self.assertEqual(ctx.exception.target, {"from_ref": "b10502", "to_ref": "b10680"})
+
+
+class WriteReleaseDocReportBindingTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1): with report_dir supplied, a
+    missing/invalid report must skip the doc, never silently fall back to
+    a fresh (TOCTOU-prone) selector resolution."""
+
+    def test_missing_report_skips_doc_without_fresh_resolution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory)  # no rebase-recipe.json in it
+            from unittest import mock
+
+            with mock.patch(
+                "bigcherry.patch.rebase._selection_patch_ids",
+            ) as fresh_resolve:
+                pin_bump._write_release_doc_best_effort(
+                    repo_root=Path("H:/development/projects/bigcherry"),
+                    vendor_root=Path("does-not-exist"),
+                    recipe_name="bigcherry", target_ref="b99999",
+                    report_dir=report_dir,
+                )  # must not raise
+            fresh_resolve.assert_not_called()
+
+
 class CommitReleaseRecordsTests(unittest.TestCase):
     """gpt-dev-agent review, 2026-08-31: a successful bump used to leave its
     own releases/<tag>.json etc uncommitted, blocking the very next
