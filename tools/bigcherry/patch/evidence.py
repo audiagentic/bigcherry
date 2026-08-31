@@ -645,10 +645,13 @@ def _record_qualifies_for_benched(
     benchmark actually ran -- validation_build_identities populated with
     real build identities, real hardware architectures recorded, AND a
     real check_results entry proving a performance/controls check
-    actually passed with a bound artifact (build/hardware provenance
-    alone only proves binaries were built, not that they were
-    benchmarked, GPT round 2 req_ecaa87b450294084) -- with no recorded
-    correctness FAILURE. Deliberately NOT full
+    actually passed with an artifact that is cross-checked against the
+    record's OWN authoritative artifact_hashes map (build/hardware
+    provenance alone only proves binaries were built, not that they were
+    benchmarked -- GPT round 2 req_ecaa87b450294084; a bare non-empty
+    artifacts list is not proof either -- GPT round 4
+    req_73faeb08760c42fd) -- with no recorded correctness FAILURE.
+    Deliberately NOT full
     eligible_for_validated_state (STATE='validated' is a strictly higher
     bar) and NOT activation executed+verified (activation is an
     orthogonal claim from "a real paired benchmark ran")."""
@@ -705,21 +708,42 @@ def _record_qualifies_for_benched(
     # serializes its actual evaluated ValidationResults there) with a
     # successful status AND a bound artifact -- an unbound/missing
     # artifact is not real evidence of execution either.
+    # GPT round 4 (req_73faeb08760c42fd): a non-empty artifacts list alone
+    # is not proof either -- anything could be typed into check_results by
+    # hand (or corrupted). record["artifact_hashes"] is the record's own
+    # authoritative path->sha256 map (make_record() builds it from the real
+    # files _artifact_refs() found on disk at write time); cross-check each
+    # candidate artifact against it rather than trusting the check_results
+    # entry's own claimed hash.
+    artifact_hashes = record.get("artifact_hashes")
     check_results = record.get("check_results")
     benchmark_executed = False
-    if isinstance(check_results, Mapping):
+    if isinstance(check_results, Mapping) and isinstance(artifact_hashes, Mapping):
         for entry in check_results.values():
-            if (
+            if not (
                 isinstance(entry, Mapping) and entry.get("capability") in ("performance", "controls")
-                and entry.get("status") == "pass" and isinstance(entry.get("artifacts"), (list, tuple))
-                and len(entry["artifacts"]) > 0
+                and entry.get("status") == "pass"
             ):
-                benchmark_executed = True
+                continue
+            for artifact in entry.get("artifacts") or ():
+                if not isinstance(artifact, Mapping):
+                    continue
+                path = artifact.get("path")
+                sha256 = artifact.get("sha256")
+                if (
+                    isinstance(path, str) and path and isinstance(sha256, str)
+                    and len(sha256) == 64 and all(c in "0123456789abcdef" for c in sha256.lower())
+                    and artifact_hashes.get(path) == sha256
+                ):
+                    benchmark_executed = True
+                    break
+            if benchmark_executed:
                 break
     if not benchmark_executed:
         problems.append(
             "no recorded benchmark execution -- check_results has no passing "
-            "performance/controls check with a bound artifact"
+            "performance/controls check with an artifact that matches the "
+            "record's own authoritative artifact_hashes"
         )
     try:
         _require_hex(record.get("patch_implementation_digest"), "patch_implementation_digest", (64,))
