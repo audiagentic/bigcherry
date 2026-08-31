@@ -46,6 +46,7 @@ struct meta_trace_v1 {
 // accessibility so later hardware grouping does not depend on ordinal names.
 struct ggml_hip_reduce_signature_v1 {
     int64_t     element_count;
+    size_t      reduction_bytes;  // ggml_nbytes(tensors[0]) -- HI155's real dispatch input
     int64_t     slice_shape[4];
     size_t      device_count;
     const int * devices;

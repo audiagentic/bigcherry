@@ -234,6 +234,8 @@ ggml_hip_reduce_signature_v1 make_signature(
     ggml_hip_reduce_signature_v1 signature{};
     signature.element_count = tensors != nullptr && tensors[0] != nullptr
         ? ggml_nelements(tensors[0]) : 0;
+    signature.reduction_bytes = tensors != nullptr && tensors[0] != nullptr
+        ? ggml_nbytes(tensors[0]) : 0;
     if (tensors != nullptr && tensors[0] != nullptr) {
         for (size_t i = 0; i < 4; ++i) {
             signature.slice_shape[i] = tensors[0]->ne[i];
@@ -287,9 +289,10 @@ void write_event(const int * devices,
         "\"timing_mode\":\"%s\","
         "\"requested_provider\":\"%s\",\"effective_provider\":\"%s\","
         "\"handoff\":\"%s\",\"fallback_depth\":%zu,"
-        "\"element_count\":%lld,\"element_type\":\"%s\","
+        "\"element_count\":%lld,\"element_type\":\"%s\",\"reduction_bytes\":%zu,"
         "\"reduction_signature\":{"
         "\"version\":1,\"element_count\":%lld,\"element_type\":\"%s\","
+        "\"reduction_bytes\":%zu,"
         "\"slice_shape\":[%lld,%lld,%lld,%lld],\"topology_key\":\"%s\","
         "\"peer_access\":\"%s\"},"
         "\"device_count\":%zu,\"devices\":[",
@@ -297,7 +300,9 @@ void write_event(const int * devices,
         provider_label(requested), provider_label(effective),
         handoff_label(handoff), normalized_fallback_depth,
         static_cast<long long>(signature.element_count), signature.element_type,
+        signature.reduction_bytes,
         static_cast<long long>(signature.element_count), signature.element_type,
+        signature.reduction_bytes,
         static_cast<long long>(signature.slice_shape[0]),
         static_cast<long long>(signature.slice_shape[1]),
         static_cast<long long>(signature.slice_shape[2]),
