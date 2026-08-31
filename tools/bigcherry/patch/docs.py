@@ -17,11 +17,21 @@ that flags it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+from ..core import paths
 from . import patchset
+from . import registry as patch_registry
 
 SUMMARY_FILENAME = "SUMMARY.md"
+
+_HEADER_PATTERN = re.compile(
+    r"^\*\*Status:\*\*\s*(?P<status>\S+)\s*$\n"
+    r"^\*\*Group:\*\*\s*(?P<group>\S+)\s*$\n"
+    r"^\*\*Plan item:\*\*\s*(?P<plan_item>.+?)\s*$",
+    re.MULTILINE,
+)
 
 
 def patch_summary_path(module: "patchset.PatchModule") -> Path:
@@ -41,6 +51,70 @@ def read_patch_summary(module: "patchset.PatchModule") -> str:
             "`patches/_template/SUMMARY.md`)._\n"
         )
     return summary_path.read_text(encoding="utf-8")
+
+
+def parse_summary_header(text: str) -> dict[str, str] | None:
+    """Extract the Status/Group/Plan item header fields, or None if the
+    required shape (see patches/_template/SUMMARY.md) isn't present."""
+    match = _HEADER_PATTERN.search(text)
+    if not match:
+        return None
+    return {
+        "status": match.group("status"),
+        "group": match.group("group"),
+        "plan_item": match.group("plan_item").strip(),
+    }
+
+
+def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
+    """Fully mechanical drift check, no judgment involved: every patch's
+    SUMMARY.md Status/Group header must equal its own module STATE/GROUP
+    (patch.toml is authoritative where one exists -- see patchset.catalog),
+    and Plan item must equal patch.toml's own plan-item field where a
+    packaged patch declares one. Returns a list of problem descriptions
+    (empty = clean); never raises.
+
+    Exists because this drifted for real once already: 1201's patch.toml
+    state changed (rejected -> superseded) without anyone -- human or
+    agent -- re-checking whether the prose summary still agreed with it.
+    A stale SUMMARY.md is worse than a missing one (it looks authoritative
+    and is wrong), so this belongs in patch-lint's non-mutating gate, not
+    left to be caught by a reviewer reading prose.
+    """
+    problems: list[str] = []
+    registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
+    plan_items_by_id = {d.patch_id: d.plan_item for d in registry.descriptors}
+
+    for module in patchset.catalog(patches_dir):
+        summary_path = patch_summary_path(module)
+        if not summary_path.is_file():
+            problems.append(f"{module.patch_id}: missing SUMMARY.md")
+            continue
+        header = parse_summary_header(summary_path.read_text(encoding="utf-8"))
+        if header is None:
+            problems.append(
+                f"{module.patch_id}: SUMMARY.md is missing the required "
+                "Status/Group/Plan item header (see patches/_template/SUMMARY.md)"
+            )
+            continue
+        if header["status"] != module.state:
+            problems.append(
+                f"{module.patch_id}: SUMMARY.md Status={header['status']!r} "
+                f"does not match module STATE={module.state!r}"
+            )
+        if header["group"] != module.group:
+            problems.append(
+                f"{module.patch_id}: SUMMARY.md Group={header['group']!r} "
+                f"does not match module GROUP={module.group!r}"
+            )
+        declared_plan_item = plan_items_by_id.get(module.patch_id)
+        if declared_plan_item and header["plan_item"] != declared_plan_item:
+            problems.append(
+                f"{module.patch_id}: SUMMARY.md Plan item={header['plan_item']!r} "
+                f"does not match patch.toml plan-item={declared_plan_item!r}"
+            )
+
+    return problems
 
 
 def render_release_doc(
