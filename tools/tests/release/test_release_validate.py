@@ -208,16 +208,6 @@ needs = ["inventory"]
 [build.needs-replay]
 options = {}
 needs = ["inventory", "promoted-winners"]
-
-[compat.recipe.test-source]
-ref = "pinned"
-builds = ["stock"]
-platform = "linux-multi"
-
-[compat.recipe.test-source-full]
-ref = "pinned"
-builds = ["stock", "needs-inventory", "needs-replay"]
-platform = "linux-multi"
 """
 
 
@@ -295,16 +285,18 @@ class ProbeTests(unittest.TestCase):
             staging = Path(directory)
             (staging / "dup").mkdir()
             with self.assertRaises(FileExistsError):
-                release_validate.probe("dup", staging, "master", "test-source")
+                release_validate.probe(
+                    "dup", staging, "master", "test-source", "linux-multi", ("stock",))
 
-    def test_unknown_recipe_is_a_config_error_not_a_build_failure(self):
+    def test_unknown_source_is_a_config_error_not_a_build_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             harness = _ProbeHarness(root)
             patches = harness.patches()
             with patches[0], patches[1]:
                 code, path = release_validate.probe(
-                    "r0", root / "staging", "HEAD", "no-such-recipe")
+                    "r0", root / "staging", "HEAD", "no-such-source", "linux-multi",
+                    ("stock",))
             self.assertEqual(code, 1)
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "config-error"', record)
@@ -316,7 +308,8 @@ class ProbeTests(unittest.TestCase):
             patches = harness.patches()
             with patches[0], patches[1]:
                 code, path = release_validate.probe(
-                    "r1", root / "staging", "no-such-ref", "test-source")
+                    "r1", root / "staging", "no-such-ref", "test-source",
+                    "linux-multi", ("stock",))
             self.assertEqual(code, 1)
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "pull-failed"', record)
@@ -331,7 +324,8 @@ class ProbeTests(unittest.TestCase):
             patches = harness.patches(calls)
             with patches[0], patches[1]:
                 code, path = release_validate.probe(
-                    "r3", root / "staging", "HEAD", "test-source")
+                    "r3", root / "staging", "HEAD", "test-source", "linux-multi",
+                    ("stock",))
             self.assertEqual(code, 0)
             self.assertTrue(calls, "expected the fake cmake/compiler to have been invoked")
             record = path.read_text(encoding="utf-8")
@@ -356,7 +350,8 @@ class ProbeTests(unittest.TestCase):
             with patches[0], mock.patch(
                 "bigcherry.campaign.workers.subprocess.run", side_effect=failing_run):
                 code, path = release_validate.probe(
-                    "r2", root / "staging", "HEAD", "test-source")
+                    "r2", root / "staging", "HEAD", "test-source", "linux-multi",
+                    ("stock",))
             self.assertEqual(code, 1)
             record = path.read_text(encoding="utf-8")
             self.assertIn('"outcome": "patch-drift-or-build-failed"', record)
@@ -375,7 +370,8 @@ class ProbeTests(unittest.TestCase):
             patches = harness.patches()
             with patches[0], patches[1]:
                 code, path = release_validate.probe(
-                    "r5", root / "staging", "HEAD", "test-source-full")
+                    "r5", root / "staging", "HEAD", "test-source-full", "linux-multi",
+                    ("stock", "needs-inventory", "needs-replay"))
             self.assertEqual(code, 0)
             record = path.read_text(encoding="utf-8")
             # GPT-auto-agent review (RE13 follow-up): "compatible-partial",
@@ -396,7 +392,8 @@ class ProbeTests(unittest.TestCase):
             patches = harness.patches(calls)
             with patches[0], patches[1]:
                 code, path = release_validate.probe(
-                    "r6", root / "staging", "HEAD", "test-source-full",
+                    "r6", root / "staging", "HEAD", "test-source-full", "linux-multi",
+                    ("stock", "needs-inventory", "needs-replay"),
                     inventory=inventory)
             self.assertEqual(code, 0)
             record = path.read_text(encoding="utf-8")
