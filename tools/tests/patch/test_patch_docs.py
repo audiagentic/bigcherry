@@ -66,5 +66,72 @@ class RenderReleaseDocTests(unittest.TestCase):
             self.assertLess(doc.index("first patch"), doc.index("second patch"))
 
 
+class ParseSummaryHeaderTests(unittest.TestCase):
+    def test_extracts_all_three_fields(self):
+        header = patch_docs.parse_summary_header(
+            "# x\n\n**Status:** validated\n**Group:** core\n**Plan item:** RD20\n\n## What it does\n"
+        )
+        self.assertEqual(header, {"status": "validated", "group": "core", "plan_item": "RD20"})
+
+    def test_returns_none_when_header_is_missing(self):
+        self.assertIsNone(patch_docs.parse_summary_header("# x\n\nno header here\n"))
+
+
+class CheckSummaryConsistencyTests(unittest.TestCase):
+    def _write_patch(self, root: Path, patch_id: str, *, state: str, group: str,
+                      plan_item: str | None = None) -> None:
+        # Every real production patch is a packaged directory ("<id>/patch.py"
+        # + "<id>/patch.toml", patch.toml authoritative for state/group) --
+        # matches that shape rather than the legacy flat "<id>.py" one.
+        patch_dir = root / patch_id
+        patch_dir.mkdir()
+        (patch_dir / "patch.py").write_text('PATCHES = []\n', encoding="utf-8")
+        (patch_dir / "patch.toml").write_text(
+            "schema = 1\n"
+            f'id = "{patch_id}"\n'
+            "order = 100\n"
+            f'group = "{group}"\n'
+            f'state = "{state}"\n'
+            'kind = "framework"\n'
+            'origin = "local"\n'
+            'backend = "agnostic"\n'
+            + (f'plan-item = "{plan_item}"\n' if plan_item else "")
+            + "plan-ids = []\nrequires = []\nconflicts = []\n"
+            "requires-options = []\nforbids-options = []\nsubsystems = []\n"
+            "hardware = []\nvalidation-architectures = []\nbackends = []\n",
+            encoding="utf-8",
+        )
+
+    def test_flags_missing_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_patch(root, "0100_x", state="validated", group="core")
+            problems = patch_docs.check_summary_consistency(root)
+            self.assertEqual(problems, ["0100_x: missing SUMMARY.md"])
+
+    def test_flags_status_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_patch(root, "0100_x", state="superseded", group="core")
+            (root / "0100_x" / "SUMMARY.md").write_text(
+                "# 0100_x\n\n**Status:** untested\n**Group:** core\n**Plan item:** none\n",
+                encoding="utf-8",
+            )
+            problems = patch_docs.check_summary_consistency(root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("Status='untested'", problems[0])
+            self.assertIn("STATE='superseded'", problems[0])
+
+    def test_clean_when_everything_agrees(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_patch(root, "0100_x", state="validated", group="core")
+            (root / "0100_x" / "SUMMARY.md").write_text(
+                "# 0100_x\n\n**Status:** validated\n**Group:** core\n**Plan item:** none\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(patch_docs.check_summary_consistency(root), [])
+
+
 if __name__ == "__main__":
     unittest.main()

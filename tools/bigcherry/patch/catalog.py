@@ -412,6 +412,13 @@ def cross_check(
                 f"module STATE {module_state!r}"
             )
 
+    # SUMMARY.md is a real-repository convention; synthetic/temp catalogs
+    # used by unit tests have no reason to carry one -- same real-repo-only
+    # gating verify_validation_evidence already uses below.
+    if catalog_path is None and patches_dir is None:
+        from . import docs as patch_docs
+        problems.extend(patch_docs.check_summary_consistency(patches_dir))
+
     if verify_validation_evidence is None:
         verify_validation_evidence = catalog_path is None and patches_dir is None
 
