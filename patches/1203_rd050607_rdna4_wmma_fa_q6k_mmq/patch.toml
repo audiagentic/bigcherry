@@ -8,6 +8,11 @@ origin = "external-fork"
 backend = "hip"
 plan-item = "RD05/RD06/RD07"
 external-source = "stew675-rdna-boosts"
+experiment-contracts = [
+  "RD05-WMMA-FA-CORRECTNESS-BARRIERS",
+  "RD06-RDNA4-WMMA-FA-CONFIG",
+  "RD07-Q6K-MMQ-PREFILL-FOLD",
+]
 plan-ids = []
 requires = []
 conflicts = []

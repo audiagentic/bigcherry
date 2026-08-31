@@ -77,6 +77,7 @@ _PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "group", "state"
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
     "plan-ids", "requires", "conflicts", "requires-options", "forbids-options",
     "subsystems", "hardware", "validation-architectures", "backends",
+    "experiment-contracts",
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
     "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
@@ -266,7 +267,10 @@ class PatchDescriptor:
     hardware: tuple[str, ...]
     validation_architectures: tuple[str, ...]
 
-    experiment_contract: str | None
+    # VA09A (VA16): canonical plural authority -- 0, 1, or many contract
+    # IDs, sorted+deduped. experiment_contract below is a temporary
+    # compatibility property, not a stored field.
+    experiment_contracts: tuple[str, ...]
 
     implementation_digest: str
 
@@ -278,6 +282,24 @@ class PatchDescriptor:
     retirement: str | None = None
     plan_item: str | None = None
     backends: tuple[str, ...] = ()
+
+    @property
+    def experiment_contract(self) -> str | None:
+        """Compatibility shim (VA09A/VA16) for callers not yet updated for
+        plural contract bindings. Returns the sole bound contract for a
+        0/1-contract patch. Raises for a multi-contract patch rather than
+        silently picking one -- an unconverted caller must fail closed, not
+        guess which of RD05/RD06/RD07 it meant."""
+        if not self.experiment_contracts:
+            return None
+        if len(self.experiment_contracts) == 1:
+            return self.experiment_contracts[0]
+        raise PatchRegistryError(
+            f"{self.patch_id}: has {len(self.experiment_contracts)} experiment contracts "
+            f"({', '.join(self.experiment_contracts)}) -- this caller uses the singular "
+            ".experiment_contract compatibility property and must be updated for plural "
+            "access (descriptor.experiment_contracts) before it can handle this patch"
+        )
 
 
 # ------------------------------------------------------------------ legacy
@@ -326,7 +348,7 @@ def _legacy_descriptor(
         subsystems=(),
         hardware=(),
         validation_architectures=(),
-        experiment_contract=None,
+        experiment_contracts=(),
         implementation_digest=_sha256_bytes(path.read_bytes()),
         validation_path=None,
         validation_digest=None,
@@ -434,6 +456,22 @@ def _parse_patch_toml(
     record = dict(raw)
     for key in _PATCH_TOML_STRING_LIST_KEYS:
         record[key] = _string_list(raw, key, patch_id=patch_id, label="")
+
+    # VA09A (VA16): experiment-contract (singular, legacy) and
+    # experiment-contracts (plural) are mutually exclusive authorities --
+    # a patch declares its contract binding one way, never both, and an
+    # explicit empty plural list is a real error (indistinguishable from
+    # "field absent" once parsed, so checked against the raw dict here).
+    if "experiment-contract" in raw and "experiment-contracts" in raw:
+        raise PatchRegistryError(
+            f"{where}: experiment-contract and experiment-contracts must not both be present "
+            "-- declare the contract binding one way, not both"
+        )
+    if "experiment-contracts" in raw and not record["experiment-contracts"]:
+        raise PatchRegistryError(
+            f"{where}: experiment-contracts must not be an empty list when present -- "
+            "omit the key entirely for a patch with no contract binding"
+        )
     return record
 
 
@@ -479,14 +517,24 @@ def _validation_identity(
     root: Path,
     package_dir: Path,
     *,
-    contract_id: str | None,
-    contract_hash: str | None = None,
+    contract_ids: tuple[str, ...] = (),
+    contracts_path: Path | None = None,
 ) -> tuple[Path | None, str | None]:
     """(validation_path, validation_digest) for a package (runbook 14.2).
 
     Absent ``validation.toml`` -> (None, None): a packaged patch may ship
     implementation first and add validation later (state promotion is a
     separate concern, runbook 39).
+
+    VA09A (VA16): for 0 or 1 contract_ids, the payload's ``schema`` and
+    ``experiment_contract`` key are BYTE-IDENTICAL to the pre-plural
+    behavior -- every existing single-contract package's validation_digest
+    is unchanged. A genuinely plural (>1) package adds a new
+    ``experiment_contracts`` array key (sorted, one {id, sha256} entry per
+    bound contract) -- this key never existed before, so introducing it
+    cannot change any existing digest; it only applies to a package (like
+    1203_rd050607) that had no contract binding, and therefore no stable
+    digest to preserve, before this change.
     """
     manifest_toml = package_dir / "validation.toml"
     _safe_resolve(package_dir, manifest_toml, what="validation manifest")
@@ -506,18 +554,22 @@ def _validation_identity(
         entries.append((relative, _sha256_bytes(file_path.read_bytes())))
 
     contract = None
-    if contract_id is not None:
-        if contract_hash is None:
-            raise PatchRegistryError(
-                f"{contract_id}: contract hash must be precomputed by the caller"
-            )
-        contract = {"id": contract_id, "sha256": contract_hash}
+    if len(contract_ids) == 1:
+        contract = {
+            "id": contract_ids[0],
+            "sha256": _contract_hash(contract_ids[0], contracts_path=contracts_path),
+        }
     payload = {
         "schema": "bigcherry-patch-validation-identity-v1",
         "validation_framework_version": VALIDATION_FRAMEWORK_VERSION,
         "files": entries,  # already sorted by relative path
         "experiment_contract": contract,
     }
+    if len(contract_ids) > 1:
+        payload["experiment_contracts"] = [
+            {"id": cid, "sha256": _contract_hash(cid, contracts_path=contracts_path)}
+            for cid in sorted(contract_ids)
+        ]
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return (
         manifest_toml.relative_to(root),
@@ -540,17 +592,23 @@ def _packaged_descriptor(
         raise PatchRegistryError(f"{patch_id}: package is missing patch.py at {implementation}")
     _safe_resolve(package_dir, implementation, what="patch.py")
 
-    contract_id = record.get("experiment-contract")
+    # VA09A (VA16): experiment-contracts (plural, sorted+deduped) is the
+    # canonical binding; legacy singular experiment-contract normalizes to
+    # a one-element tuple. _parse_patch_toml() already rejected both keys
+    # present together and an explicit empty plural list.
+    contract_ids_raw = record.get("experiment-contracts") or (
+        (record["experiment-contract"],) if record.get("experiment-contract") is not None else ()
+    )
+    contract_ids = tuple(sorted(contract_ids_raw))
     # A packaged patch referencing a contract that does not exist is a tree
     # error at DISCOVERY time (fail-closed), regardless of whether this
     # package ships validation yet -- the reference is metadata authority.
-    contract_hash = (
+    # Resolving every bound contract here (not just the first) means a
+    # multi-contract patch with one bad ID fails discovery immediately.
+    for contract_id in contract_ids:
         _contract_hash(contract_id, contracts_path=contracts_path)
-        if contract_id is not None
-        else None
-    )
     validation_path, validation_digest = _validation_identity(
-        root, package_dir, contract_id=contract_id, contract_hash=contract_hash,
+        root, package_dir, contract_ids=contract_ids, contracts_path=contracts_path,
     )
     return PatchDescriptor(
         patch_id=patch_id,
@@ -578,7 +636,7 @@ def _packaged_descriptor(
         subsystems=record["subsystems"],
         hardware=record["hardware"],
         validation_architectures=record["validation-architectures"],
-        experiment_contract=record.get("experiment-contract"),
+        experiment_contracts=contract_ids,
         implementation_digest=_sha256_bytes(implementation.read_bytes()),
         validation_path=validation_path,
         validation_digest=validation_digest,
