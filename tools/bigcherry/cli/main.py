@@ -468,12 +468,18 @@ def build_parser() -> argparse.ArgumentParser:
         "afterward on each required tree.",
     )
     pin_bump_cmd.add_argument("target", help="upstream ref/tag to bump to (e.g. b10680)")
-    pin_bump_cmd.add_argument(
+    pin_bump_selector = pin_bump_cmd.add_mutually_exclusive_group()
+    pin_bump_selector.add_argument(
         "--recipe", default=None,
-        help="[legacy] selector for this run (default: 'bigcherry' on a "
-             "fresh run; a --resume with no selector reuses the run's "
-             "original one). --source support is not yet wired into "
-             "pin-bump's phases (compat.recipe removal plan, in progress).",
+        help="[legacy, being retired] selector for this run. A --resume "
+             "with no selector reuses the run's original one.",
+    )
+    pin_bump_selector.add_argument(
+        "--source", default=None,
+        help="canonical v2 [source.*] selector for this run (default: "
+             "'bigcherry' on a fresh run) -- the compat.recipe removal "
+             "plan's replacement for --recipe. A --resume with no selector "
+             "reuses the run's original one.",
     )
     pin_bump_cmd.add_argument("--resume", action="store_true")
     pin_bump_cmd.add_argument("--report-dir", default=None)
@@ -1479,7 +1485,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     )
     try:
         result = _pin_bump.run(
-            target_ref=args.target, recipe_name=args.recipe,
+            target_ref=args.target, recipe_name=args.recipe, source_name=args.source,
             resume=args.resume, report_dir=report_dir,
         )
     except _pin_bump.PinBumpStop as exc:

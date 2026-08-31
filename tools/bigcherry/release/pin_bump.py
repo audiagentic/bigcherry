@@ -396,7 +396,8 @@ class PinBumpResult:
 
 
 def run(
-    *, target_ref: str, recipe_name: str | None = None, root: Path | None = None,
+    *, target_ref: str, recipe_name: str | None = None, source_name: str | None = None,
+    root: Path | None = None,
     dispositions_dir: Path | None = None, resume: bool = False,
     report_dir: Path | None = None,
 ) -> PinBumpResult:
@@ -405,16 +406,25 @@ def run(
     the caller is expected to catch it, write ``failure_envelope(...)``
     under ``report_dir``, and exit non-zero.
 
-    ``recipe_name=None`` means "no selector explicitly supplied": a fresh
-    run defaults to ``"bigcherry"`` (today's real behavior, unchanged by
-    the compat.recipe removal plan's schema-2 binding work -- see
-    ``_run_phases``' state-creation branch); a ``--resume`` with no
-    selector reuses whatever the original invocation was started with
-    (``_resume_selector``), rather than re-defaulting.
+    ``recipe_name``/``source_name`` are mutually exclusive selectors.
+    Neither supplied on a fresh run defaults to ``source:bigcherry`` (the
+    real v2 ``patch-set.framework`` composition -- compat.recipe removal
+    plan, gpt-dev-agent-reviewed, session ses_5307d9c58ec645cb;
+    ``_resolve_fresh_selector``). A ``--resume`` with no selector reuses
+    whatever the original invocation was started with (``_resume_selector``),
+    rather than re-defaulting.
     """
     from .. import __main__ as legacy
     from ..source import audit as source_audit
     from ..patch import catalog as patch_catalog
+
+    if recipe_name is not None and source_name is not None:
+        raise PinBumpStop(
+            "preflight", "AMBIGUOUS_SELECTOR",
+            "both --recipe and --source were given -- pass exactly one",
+            evidence={"recipe_name": recipe_name, "source_name": source_name},
+            recommended_actions=["pass only --recipe or only --source"],
+        )
 
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else paths.llama_root()
@@ -448,13 +458,18 @@ def run(
                 )
             state = _load_state_or_stop(report_dir)
             _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
-            _, resolved_recipe_name = _resume_selector(state, recipe_name=recipe_name)
+            resolved_kind, resolved_name = _resume_selector(
+                state, recipe_name=recipe_name, source_name=source_name,
+            )
         else:
             state = None
-            resolved_recipe_name = recipe_name if recipe_name is not None else "bigcherry"
+            resolved_kind, resolved_name = _resolve_fresh_selector(
+                recipe_name=recipe_name, source_name=source_name,
+            )
 
         return _run_phases(
-            state=state, target_ref=target_ref, recipe_name=resolved_recipe_name,
+            state=state, target_ref=target_ref,
+            selector_kind=resolved_kind, selector_name=resolved_name,
             repo_root=repo_root, vendor_root=vendor_root,
             dispositions_dir=dispositions_dir, report_dir=report_dir,
         )
@@ -631,35 +646,62 @@ def _validate_resume(
         )
 
 
+def _resolve_fresh_selector(
+    *, recipe_name: str | None, source_name: str | None,
+) -> tuple[str, str]:
+    """Fresh-run selector default (compat.recipe removal plan, gpt-dev-
+    agent-reviewed, session ses_5307d9c58ec645cb): no selector supplied ->
+    ("source", "bigcherry") -- the real v2 patch-set.framework composition,
+    not the legacy states=["validated"] one that leaks non-framework
+    validated patches in (the exact bug this whole plan targets; see
+    patches/1001_hip_internal_allreduce's real divergence). An explicit
+    --recipe stays honored as-is (legacy, still supported)."""
+    if source_name is not None:
+        return "source", source_name
+    if recipe_name is not None:
+        return "recipe", recipe_name
+    return "source", "bigcherry"
+
+
+def _selector_patch_ids(*, selector_kind: str, selector_name: str) -> tuple[str, ...]:
+    if selector_kind == "source":
+        return patch_rebase._selection_patch_ids(source_name=selector_name, all_patches=False)
+    return patch_rebase._selection_patch_ids(recipe_name=selector_name, all_patches=False)
+
+
 def _resume_selector(
-    state: "PinBumpState", *, recipe_name: str | None,
+    state: "PinBumpState", *, recipe_name: str | None, source_name: str | None = None,
 ) -> tuple[str, str]:
     """Reconciles the RESUMING invocation's selector against the state's
     recorded one. Caller supplies none -> use the persisted selector;
     caller supplies one -> it must exactly equal the persisted kind+name.
     Never silently reinterprets -- a real, deliberate change requires a
     fresh run, not a --resume."""
-    if recipe_name is None:
+    if recipe_name is None and source_name is None:
         return state.selector_kind, state.selector_name
-    if (state.selector_kind, state.selector_name) != ("recipe", recipe_name):
+    requested_kind, requested_name = (
+        ("source", source_name) if source_name is not None else ("recipe", recipe_name)
+    )
+    if (state.selector_kind, state.selector_name) != (requested_kind, requested_name):
         raise PinBumpStop(
             "resume", "RESUME_SELECTOR_MISMATCH",
-            f"--resume was given --recipe {recipe_name!r}, but this run's "
-            f"recorded selector is {state.selector_kind}:{state.selector_name!r}",
+            f"--resume was given {requested_kind}:{requested_name!r}, but "
+            f"this run's recorded selector is "
+            f"{state.selector_kind}:{state.selector_name!r}",
             evidence={
-                "resumed_selector": f"recipe:{recipe_name}",
+                "resumed_selector": f"{requested_kind}:{requested_name}",
                 "state_selector": f"{state.selector_kind}:{state.selector_name}",
             },
             recommended_actions=[
-                "omit --recipe on --resume to use the run's original selector, "
-                "or start a fresh run with the new one",
+                "omit --recipe/--source on --resume to use the run's "
+                "original selector, or start a fresh run with the new one",
             ],
         )
     return state.selector_kind, state.selector_name
 
 
 def _require_selector_membership_unchanged(
-    state: "PinBumpState", *, recipe_name: str,
+    state: "PinBumpState", *, selector_kind: str, selector_name: str,
 ) -> None:
     """Before coverage runs (fresh or resumed), re-derive the selector's
     real patch-id membership and require it still matches what the state
@@ -668,7 +710,7 @@ def _require_selector_membership_unchanged(
     --resume. Membership drift requires a deliberate restart, not a
     silent scope change to a production release run."""
     current_ids = tuple(sorted(
-        patch_rebase._selection_patch_ids(recipe_name=recipe_name, all_patches=False)
+        _selector_patch_ids(selector_kind=selector_kind, selector_name=selector_name)
     ))
     recorded_ids = tuple(sorted(state.selector_patch_ids))
     if current_ids != recorded_ids:
@@ -687,25 +729,33 @@ def _require_selector_membership_unchanged(
 
 
 def _run_phases(
-    *, state: "PinBumpState | None", target_ref: str, recipe_name: str,
+    *, state: "PinBumpState | None", target_ref: str,
+    selector_kind: str, selector_name: str,
     repo_root: Path, vendor_root: Path, dispositions_dir: Path, report_dir: Path,
 ) -> "PinBumpResult":
     from .. import __main__ as legacy
     from ..source import audit as source_audit
     from ..patch import catalog as patch_catalog
 
+    # Only "recipe" still flows into legacy call sites (pull's Namespace,
+    # patch_rebase.run_rebase_check's recipe_name kwarg) that don't yet
+    # understand "source" directly -- those call sites branch on
+    # selector_kind themselves below, this is not a silent recipe-only
+    # fallback.
+    recipe_name = selector_name if selector_kind == "recipe" else None
+
     with acquire_maintenance_lock(repo_root):
         if state is None:
             from_ref, to_sha = run_phase_preflight(repo_root=repo_root, target_ref=target_ref)
             selector_patch_ids = tuple(sorted(
-                patch_rebase._selection_patch_ids(recipe_name=recipe_name, all_patches=False)
+                _selector_patch_ids(selector_kind=selector_kind, selector_name=selector_name)
             ))
             state = PinBumpState(
                 schema_version=2, run_id=uuid.uuid4().hex, from_ref=from_ref, from_sha="",
                 to_ref=target_ref, to_sha=to_sha, transition_commit="",
                 tree_name="local", tree_path=str(vendor_root),
                 completed_phases=["preflight"], next_phase="declare",
-                selector_kind="recipe", selector_name=recipe_name,
+                selector_kind=selector_kind, selector_name=selector_name,
                 selector_patch_ids=selector_patch_ids,
             )
             state.save(report_dir)
@@ -721,8 +771,14 @@ def _run_phases(
             from ..cli import source as cli_source
             from argparse import Namespace
 
+            # gpt-dev-agent review (session ses_5307d9c58ec645cb): the
+            # orchestrator already owns the exact target ref -- pull must
+            # not be made composition-dependent (recipe=None/source=None,
+            # not selector_name), matching its own real ref-resolution
+            # priority (--ref, when given, is used as-is; --recipe/--source
+            # are only ever a fallback for resolving a ref from a name).
             rc = cli_source.cmd_pull(Namespace(
-                llama_root=None, ref=target_ref, recipe=recipe_name, full=False,
+                llama_root=None, ref=target_ref, recipe=None, source=None, full=False,
             ))
             if rc != 0:
                 raise PinBumpStop(
@@ -785,9 +841,22 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "coverage":
-            _require_selector_membership_unchanged(state, recipe_name=recipe_name)
+            _require_selector_membership_unchanged(
+                state, selector_kind=selector_kind, selector_name=selector_name,
+            )
             all_report = patch_rebase.run_rebase_check(vendor_root, all_patches=True)
-            recipe_report = patch_rebase.run_rebase_check(vendor_root, recipe_name=recipe_name)
+            # gpt-dev-agent review (session ses_5307d9c58ec645cb): branches
+            # on selector_kind rather than always going through the legacy
+            # recipe_name path -- this is the actual switch to canonical
+            # source:bigcherry coverage.
+            if selector_kind == "source":
+                recipe_report = patch_rebase.run_rebase_check(
+                    vendor_root, source_name=selector_name,
+                )
+            else:
+                recipe_report = patch_rebase.run_rebase_check(
+                    vendor_root, recipe_name=selector_name,
+                )
             for entry in recipe_report.get("patches", ()):
                 if entry["status"] not in patch_disposition.CLEAN_STATUSES:
                     stop_on_bad_rebase_status(
@@ -850,8 +919,8 @@ def _run_phases(
         if state.next_phase == "complete" and "complete" not in state.completed_phases:
             _write_release_doc_best_effort(
                 repo_root=repo_root, vendor_root=vendor_root,
-                recipe_name=recipe_name, target_ref=target_ref,
-                report_dir=report_dir,
+                selector_kind=selector_kind, selector_name=selector_name,
+                target_ref=target_ref, report_dir=report_dir,
             )
             _commit_release_records(repo_root=repo_root, target_ref=target_ref)
             state.completed_phases.append("complete")
@@ -931,8 +1000,8 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
 
 
 def _write_release_doc_best_effort(
-    *, repo_root: Path, vendor_root: Path, recipe_name: str, target_ref: str,
-    report_dir: Path | None = None,
+    *, repo_root: Path, vendor_root: Path, selector_kind: str, selector_name: str,
+    target_ref: str, report_dir: Path | None = None,
 ) -> None:
     """Merge the applied recipe's per-patch SUMMARY.md into a release doc.
 
@@ -979,24 +1048,26 @@ def _write_release_doc_best_effort(
                 ["selection"]["patch_ids"]
             )
         else:
-            patch_ids = patch_rebase._selection_patch_ids(
-                recipe_name=recipe_name, all_patches=False,
+            patch_ids = _selector_patch_ids(
+                selector_kind=selector_kind, selector_name=selector_name,
             )
+        selector_flag = "--source" if selector_kind == "source" else "--recipe"
         pin_info = {
             "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
             "bigcherry revision": patch_rebase._git(repo_root, "rev-parse", "HEAD"),
-            "recipe": recipe_name,
+            "recipe" if selector_kind == "recipe" else "source": selector_name,
             "target": target_ref,
         }
         doc = patch_docs.render_patch_selection_doc(
             patch_ids=patch_ids, pin_info=pin_info,
-            selection_label=f"--recipe {recipe_name}",
+            selection_label=f"{selector_flag} {selector_name}",
         )
         release_records.RELEASES_DIR.mkdir(parents=True, exist_ok=True)
         (release_records.RELEASES_DIR / f"{target_ref}-patches.md").write_text(doc, encoding="utf-8")
     except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
         print(
-            f"pin-bump: release doc for {target_ref!r} (recipe {recipe_name!r}) "
-            f"was not written: {type(exc).__name__}: {exc}",
+            f"pin-bump: release doc for {target_ref!r} "
+            f"({selector_kind}:{selector_name!r}) was not written: "
+            f"{type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
