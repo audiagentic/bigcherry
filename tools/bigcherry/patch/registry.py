@@ -513,6 +513,23 @@ def _contract_hash(contract_id: str, *, contracts_path: Path | None = None) -> s
         ) from None
 
 
+# Generated tooling residue that must never affect validation identity --
+# a package's real validation content is whatever a human/tool actually
+# authored, not whichever cache directories happen to exist locally when
+# the registry was last loaded (found via VA16's real before/after digest
+# investigation on RD08: stale .ruff_cache/__pycache__ files under
+# validation/ made the "same" package hash differently depending on
+# unrelated local tooling state).
+_GENERATED_RESIDUE_DIR_NAMES = frozenset({"__pycache__", ".ruff_cache", ".pytest_cache"})
+_GENERATED_RESIDUE_SUFFIXES = frozenset({".pyc", ".pyo"})
+
+
+def _is_generated_tooling_residue(path: Path) -> bool:
+    if path.suffix in _GENERATED_RESIDUE_SUFFIXES:
+        return True
+    return any(part in _GENERATED_RESIDUE_DIR_NAMES for part in path.parts)
+
+
 def _validation_identity(
     root: Path,
     package_dir: Path,
@@ -546,7 +563,7 @@ def _validation_identity(
     validation_dir = package_dir / "validation"
     if validation_dir.is_dir():
         for candidate in sorted(validation_dir.rglob("*")):
-            if candidate.is_file():
+            if candidate.is_file() and not _is_generated_tooling_residue(candidate):
                 _safe_resolve(package_dir, candidate, what="validation file")
                 files.append(candidate)
     for file_path in sorted(files, key=lambda p: p.relative_to(package_dir).as_posix()):
