@@ -1886,6 +1886,47 @@ def run(args: argparse.Namespace) -> int:
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd58-state-restore is RD58-only today"
             )
+        # GPT round 2 (req_3616cc1d90dc4512): the contract's own
+        # scope.gpu_count.minimum=2 was not execution-enforced anywhere --
+        # preserving ambient device visibility is necessary but not
+        # sufficient; a real one-GPU invocation could still execute (and
+        # potentially qualify) against a contract that requires 2+.
+        # Fail closed before any build: require HIP_VISIBLE_DEVICES and
+        # ROCR_VISIBLE_DEVICES both explicitly set, consistent with each
+        # other, and exposing at least the contract's declared minimum.
+        from bigcherry.experiment import contract as _ec
+
+        rd58_contract_check = _ec.load_contracts(
+            REPO_ROOT / "config" / "experiment-contracts.toml"
+        ).contracts["RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE"]
+        required_gpu_count = (
+            rd58_contract_check.scope.gpu_count.minimum
+            if rd58_contract_check.scope.gpu_count is not None else None
+        )
+        hip_devices_raw = os.environ.get("HIP_VISIBLE_DEVICES")
+        rocr_devices_raw = os.environ.get("ROCR_VISIBLE_DEVICES")
+        if not hip_devices_raw or not rocr_devices_raw:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd58-state-restore requires HIP_VISIBLE_DEVICES and "
+                "ROCR_VISIBLE_DEVICES to be explicitly set (this contract requires "
+                f"{required_gpu_count}+ real GPUs -- an unset/ambient-default device list "
+                "cannot be trusted to expose that many)"
+            )
+        hip_device_ids = [d.strip() for d in hip_devices_raw.split(",") if d.strip()]
+        rocr_device_ids = [d.strip() for d in rocr_devices_raw.split(",") if d.strip()]
+        if hip_device_ids != rocr_device_ids:
+            raise PatchCampaignError(
+                f"{args.patch}: HIP_VISIBLE_DEVICES ({hip_devices_raw!r}) and "
+                f"ROCR_VISIBLE_DEVICES ({rocr_devices_raw!r}) must match exactly"
+            )
+        if required_gpu_count is not None and len(hip_device_ids) < required_gpu_count:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd58-state-restore requires {required_gpu_count}+ GPUs; "
+                f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose only {len(hip_device_ids)} "
+                f"({hip_devices_raw!r})"
+            )
+        rd58_observed_devices = {"hip_visible_devices": hip_device_ids, "count": len(hip_device_ids)}
+
         rd58_build_root = build_root / "rd58-state-restore"
         rd58_control_bin = build_tree(
             name="rd58-control", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
@@ -1897,16 +1938,56 @@ def run(args: argparse.Namespace) -> int:
             workdir=rd58_build_root, targets=["test-save-load-state"], source=patched_src,
             extra_cmake_args=[],
         )
+        # GPT round 2: RD58's real evidence-producing binary is
+        # test-save-load-state, not llama-server/llama-bench -- capture
+        # ITS build identities (not the unrelated generic control_build_evidence/
+        # validation_subject_build_evidence) and use them everywhere RD58
+        # evidence/the final record references a validation build.
+        rd58_cmake_args = _full_requested_cmake_args(
+            hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=[],
+        )
+        rd58_control_build_evidence = capture_completed_build_evidence(
+            rd58_build_root / "rd58-control", source_root=control_src,
+            architecture=args.amdgpu_targets, binary=rd58_control_bin / f"test-save-load-state{exe}",
+            requested_cmake_args=rd58_cmake_args, build_env=build_env,
+        )
+        rd58_subject_build_evidence = capture_completed_build_evidence(
+            rd58_build_root / "rd58-subject", source_root=patched_src,
+            architecture=args.amdgpu_targets, binary=rd58_subject_bin / f"test-save-load-state{exe}",
+            requested_cmake_args=rd58_cmake_args, build_env=build_env,
+        )
+        assert_validation_subject_parity(
+            rd58_control_build_evidence, rd58_subject_build_evidence, patch_id=args.patch,
+        )
         rd58_result = run_rd58_state_restore_evidence(
             control_binary=rd58_control_bin / f"test-save-load-state{exe}",
             subject_binary=rd58_subject_bin / f"test-save-load-state{exe}", model=args.model,
             hip_path=args.hip_path, run_dir=campaign_run_dir,
             campaign_id=campaign.campaign_identity_digest,
-            control_build_identity=control_build_evidence.campaign_identity(),
-            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
+            control_build_identity=rd58_control_build_evidence.campaign_identity(),
+            subject_build_identity=rd58_subject_build_evidence.campaign_identity(),
         )
         correctness_evidence = {"artifact": rd58_result["correctness_artifact"]}
         performance_evidence = {"artifact": rd58_result["controls_artifact"]}
+
+        # GPT round 2: RD58's contract requires the NAMED
+        # state_restore_integrity check, not the adapter's generic
+        # backend-ops capability -- compute_contract_correctness_gate()
+        # only receives named results for RD08 today, so RD58's real
+        # test-save-load-state evidence was never actually connected to
+        # its own contract's correctness gate. contract_promotions stays
+        # empty regardless -- this is diagnostic, not a promotion.
+        rd58_contract_correctness_result = _ec.CorrectnessResult(
+            check="state_restore_integrity", passed=rd58_result["correctness_passed"],
+            detail=(
+                "subject test-save-load-state (all 5 internal tests, including "
+                "Test 4: seq copy (host)) "
+                + ("passed" if rd58_result["correctness_passed"] else "failed")
+            ),
+        )
+        rd58_contract_correctness_named_results = {
+            "state_restore_integrity": rd58_contract_correctness_result,
+        }
 
         def _bind_rd58_log(relative_log_path: str) -> dict[str, str]:
             target = (campaign_run_dir / relative_log_path).resolve()
@@ -2015,9 +2096,19 @@ def run(args: argparse.Namespace) -> int:
             rd08_contract if rd08_qualification is not None
             else patch_validation.load_contract_for_descriptor(descriptor)
         )
+        # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
+        # test-save-load-state evidence produces a named
+        # state_restore_integrity CorrectnessResult -- thread it through
+        # the same way rd08_qualification's named results are threaded,
+        # so the contract's own correctness gate actually reflects the
+        # real evidence instead of reporting missing_checks.
         contract_correctness_gate = compute_contract_correctness_gate(
             full_contract,
-            (rd08_qualification["correctness"]["results"] if rd08_qualification is not None else None),
+            (
+                rd08_qualification["correctness"]["results"] if rd08_qualification is not None
+                else rd58_contract_correctness_named_results if args.run_rd58_state_restore
+                else None
+            ),
         )
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
@@ -2053,10 +2144,19 @@ def run(args: argparse.Namespace) -> int:
         # same physical build as campaign.tune today (the tune build IS
         # the patch under validation) -- the schema records both roles
         # explicitly rather than assuming that equality.
-        validation_build_identities={
-            "control": control_build_evidence.campaign_identity(),
-            "subject": validation_subject_build_evidence.campaign_identity(),
-        },
+        # GPT round 2 (blocker #1): RD58's real validation build is
+        # test-save-load-state, not the generic llama-bench control/
+        # validation-subject builds -- record ITS identities when RD58 ran.
+        validation_build_identities=(
+            {
+                "control": rd58_control_build_evidence.campaign_identity(),
+                "subject": rd58_subject_build_evidence.campaign_identity(),
+            }
+            if args.run_rd58_state_restore else {
+                "control": control_build_evidence.campaign_identity(),
+                "subject": validation_subject_build_evidence.campaign_identity(),
+            }
+        ),
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
         # VA14 final slice: eligible_for_validated_state for a bound-contract

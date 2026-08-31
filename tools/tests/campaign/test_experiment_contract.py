@@ -252,17 +252,19 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
                 self.assertEqual(contract.target.family, family)
                 self.assertEqual(contract.hypothesis.family, family)
 
-    def test_all_contracts_in_the_real_registry_parse(self):
+    def test_all_eighteen_contracts_in_the_real_registry_parse(self):
         # EC17 regression proof: adding [source-evidence] as an optional
         # section must not break any of the 5 original (EC02) or 12
         # EC16-backfilled contracts already committed to
-        # config/experiment-contracts.toml. Count grows over time (VA05
-        # added RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE) -- assert a lower
-        # bound, not an exact historical count, so this test doesn't need
-        # editing every time a real contract is added.
+        # config/experiment-contracts.toml, plus VA05's
+        # RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE (18th). GPT review
+        # (req_3616cc1d90dc4512): keep this an exact count, not a lower
+        # bound -- a >= assertion silently stops catching a contract that
+        # fails to load/register at all, which is exactly the regression
+        # this test exists to guard against.
         from bigcherry.core import paths as _paths
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
-        self.assertGreaterEqual(len(registry.contracts), 17)
+        self.assertEqual(len(registry.contracts), 18)
 
 
 class SourceEvidenceTests(unittest.TestCase):
