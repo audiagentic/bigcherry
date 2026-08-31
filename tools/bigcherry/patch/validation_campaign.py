@@ -460,6 +460,52 @@ def run_trace_activation_probes(
     return evidence, detail
 
 
+def compute_contract_correctness_gate(
+    descriptor: object, correctness_summary: dict[str, object] | None,
+) -> dict[str, object] | None:
+    """VA11A: named-correctness independence, computed as a real,
+    independent diagnostic -- NEVER wired into this slice's own eligibility
+    (compute_verdict() stays the only thing that gates VA11A; composing
+    adapter-verdict AND contract-qualification into final eligibility is
+    VA11B's job). Returns None when the patch has no bound contract at all.
+
+    A contract requiring more than one named correctness check (e.g. RD04:
+    backend_reference AND ppl_equality) cannot yet be satisfied -- there is
+    no per-named-check evidence input mechanism today, only one generic
+    --correctness-evidence summary. Rather than fabricate N independent
+    passes from that one disposition, this returns a structured 'blocked'
+    result. A contract requiring exactly one named check can be evaluated
+    for real via experiment_contract.evaluate_correctness_gate()."""
+    if descriptor.experiment_contract is None:
+        return None
+    from bigcherry.patch import validation as patch_validation
+    from bigcherry.experiment import contract as experiment_contract
+
+    full_contract = patch_validation.load_contract_for_descriptor(descriptor)
+    if full_contract is None:
+        return None
+    required_checks = full_contract.correctness.required_checks
+    if len(required_checks) > 1:
+        return {
+            "passed": False,
+            "status": "blocked",
+            "detail": (
+                f"contract requires {len(required_checks)} independent correctness "
+                f"checks {list(required_checks)!r}; no per-check evidence input exists "
+                "yet (VA11B) -- refusing to infer multiple passes from one generic "
+                "correctness summary"
+            ),
+        }
+    if not required_checks or correctness_summary is None:
+        return None
+    result = experiment_contract.CorrectnessResult(
+        check=required_checks[0],
+        passed=correctness_summary.get("disposition") == "passed",
+        detail=str(correctness_summary.get("detail", "")),
+    )
+    return experiment_contract.evaluate_correctness_gate(full_contract, {required_checks[0]: result})
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -738,6 +784,14 @@ def run(args: argparse.Namespace) -> int:
         hip_path=args.hip_path, workdir=workdir / "campaign",
         bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
     )
+    # VA11A: real bound trace_evidence for ValidationContext (was {}
+    # unconditionally, which made _builtin_trace_marker always BLOCKED --
+    # GPT round-7 review, req_3d12aa6668b14bb1). Built from the real
+    # positive/negative probe logs run_trace_activation_probes() already
+    # wrote to workdir/"campaign"/"logs"/... -- the same directory
+    # ValidationContext.run_dir (campaign_run_dir) resolves bound artifacts
+    # against, so no copy is needed, only a path+sha256 reference.
+    trace_evidence: dict[str, object] = {}
     if trace_result is not None:
         activation_evidence, trace_detail = trace_result
         # This stage establishes activation evidence only -- the existing
@@ -753,6 +807,24 @@ def run(args: argparse.Namespace) -> int:
             },
         )
         _print(f"activation: {activation_evidence.status} ({activation_evidence.mechanism})")
+
+        def _bind_existing(relative_log_path: str) -> dict[str, str]:
+            target = (workdir / "campaign" / relative_log_path).resolve()
+            return {
+                "path": relative_log_path,
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            }
+
+        trace_evidence = {
+            "positive": {
+                "marker_regex": trace_detail["marker_regex"],
+                "artifact": _bind_existing(trace_detail["positive"]["log"]),
+            },
+            "negative": {
+                "marker_regex": trace_detail["marker_regex"],
+                "artifact": _bind_existing(trace_detail["negative_control"]["log"]),
+            },
+        }
 
     try:
         campaign.run()
@@ -781,7 +853,15 @@ def run(args: argparse.Namespace) -> int:
     # in this caller.
     _descriptor = descriptor
     _patch_file = registry.root / _descriptor.implementation_path
+    campaign_run_dir = workdir / "campaign"
     correctness_summary = None
+    # VA11A: ctx.correctness_evidence must carry a BOUND artifact reference
+    # ({"artifact": {"path", "sha256"}}) -- _builtin_backend_ops reads via
+    # ctx.correctness_evidence.get("artifact"), and a raw decoded dict with
+    # no "artifact" key made every backend-ops check unconditionally BLOCKED
+    # (real bug, confirmed by reading validation.py::_builtin_backend_ops
+    # before this fix -- GPT round-7 review, req_3d12aa6668b14bb1).
+    correctness_evidence: dict[str, object] = {}
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
             args.correctness_evidence, patch_id=args.patch,
@@ -792,9 +872,14 @@ def run(args: argparse.Namespace) -> int:
             campaign_identity_digest=campaign.campaign_identity_digest,
             gpu_architectures=(args.amdgpu_targets,),
         )
-        _atomic_write_json(workdir / "campaign" / "correctness.json", correctness_summary)
-
-    campaign_run_dir = workdir / "campaign"
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
     build_evidence = {
         "control": {
             "build_id": control_build_evidence.effective_build_id,
@@ -845,9 +930,17 @@ def run(args: argparse.Namespace) -> int:
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
+        # VA11A: package_root lets a packaged patch's custom validator
+        # actually resolve its check(ctx) file (was always None -- any
+        # custom check would fail closed for every packaged RD patch).
+        package_root = (
+            (registry.root / descriptor.package_root)
+            if descriptor.package_root is not None else None
+        )
         validation_ctx = patch_validation.ValidationContext(
             descriptor=descriptor, base_revision=base_revision,
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
+            package_root=package_root,
             control_tree=control_source_tree, subject_tree=patched_source_tree,
             build_identities={
                 "control": control_build_evidence.effective_build_id,
@@ -858,16 +951,26 @@ def run(args: argparse.Namespace) -> int:
             contract=validation_plan.contract,
             contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
             run_dir=campaign_run_dir,
-            trace_evidence={}, correctness_evidence=correctness_summary or {},
+            trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
         )
         evaluated = {
             spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
             for spec in validation_plan.checks
         }
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
+
+        contract_correctness_gate = compute_contract_correctness_gate(
+            descriptor, correctness_summary
+        )
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
         }
+        if contract_correctness_gate is not None:
+            validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
+            _print(
+                f"contract correctness gate: "
+                f"{'passed' if contract_correctness_gate.get('passed') else contract_correctness_gate.get('status', 'not passed')}"
+            )
         _print(
             f"validation verdict: {'eligible' if validation_verdict.eligible else 'ineligible'} "
             f"({len(validation_verdict.reasons)} blocking reasons)"
