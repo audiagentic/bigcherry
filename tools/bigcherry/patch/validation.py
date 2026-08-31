@@ -97,6 +97,20 @@ def _capability_is_custom(validator: str) -> bool:
     return validator == "custom"
 
 
+def validator_produces(capability: str, validator: str) -> bool:
+    """Public equivalent of ``_produces()``'s capability/validator check,
+    for callers (VA02's static lint) that need to reject a supplementary
+    check whose declared validator cannot actually produce its declared
+    capability -- e.g. ``capability = "performance", validator = "apply"``
+    would otherwise silently enter a plan and later emit a PASS mislabeled
+    as a performance result. ``custom`` always returns True here: a custom
+    check produces exactly whatever capability it declares (section 31),
+    and it is not this function's job to second-guess that."""
+    if _capability_is_custom(validator):
+        return True
+    return validator in _CAPABILITY_PRODUCERS.get(capability, frozenset())
+
+
 class ValidationError(ValueError):
     """Base class for patch-validation failures."""
 

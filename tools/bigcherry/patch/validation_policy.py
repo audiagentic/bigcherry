@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,6 +35,22 @@ VALIDATION_PACKAGE_POLICY_VERSION = "rd-validation-package-v1"
 # Tracked-status values (source/sources.py::TRACKED_STATUSES) that require
 # a full validation package before they may be reported as current.
 PACKAGE_STATUSES = frozenset({"ported-benched", "ported-validated", "deferred-hardware"})
+
+_RD_PLAN_ITEM = re.compile(r"^RD\d+$")
+
+
+def is_rd_validation_patch(descriptor: patch_registry.PatchDescriptor) -> bool:
+    """Whether this patch's plan-item binding puts it in RD/experimental
+    validation-package scope, per GPT round-6 review (req_6e54ebe0b3764350):
+    plan_item is the authoritative planning-namespace signal -- NOT
+    descriptor.kind ('enhancement' vs 'framework'), which describes
+    implementation class, not scope, and would silently miss or
+    misclassify future patches. Handles compound bindings like
+    'RD05/RD06/RD07' (one packaged patch, several distinct hypotheses)."""
+    return any(
+        _RD_PLAN_ITEM.fullmatch(token.strip())
+        for token in (descriptor.plan_item or "").split("/")
+    )
 
 
 class PolicyError(ValueError):
@@ -225,16 +242,14 @@ def check_validation_packages(
         # GPT round-5 (req_86cfd3a0bff04716) directed: a descriptor.state=
         # "validated" patch must be covered even if its tracked-status
         # metadata is absent or doesn't itself include a PACKAGE_STATUSES
-        # value. CORRECTED to scope this to kind="enhancement" (RD/
-        # experimental) patches only -- applying it unscoped swept in every
-        # core kind="framework" patch (0100-1100 series: dispatch_hook,
-        # mmq_forced_j, ...), which are state="validated" by construction
-        # and were never in the standard's stated scope ("RD/experimental
-        # patch validation packages", docs/reference/testing/
-        # PATCH_VALIDATION.md; see also [[feedback_framework_vs_enhancement]]
-        # -- framework vs RD-enhancement is a load-bearing distinction in
-        # this project, not a detail).
-        is_rd_patch = descriptor.kind == "enhancement"
+        # value. First scoped this to kind="enhancement" after finding it
+        # unscoped swept in every core framework patch; GPT round 6
+        # (req_6e54ebe0b3764350) corrected the discriminator itself:
+        # descriptor.kind describes implementation class, not planning
+        # scope, and would silently miss/misclassify future patches.
+        # is_rd_validation_patch() uses the authoritative RD plan-item
+        # binding instead (handles compound bindings like RD05/RD06/RD07).
+        is_rd_patch = is_rd_validation_patch(descriptor)
         requires_package = bool(tracked & PACKAGE_STATUSES) or (
             is_rd_patch and descriptor.state == "validated"
         )
@@ -287,6 +302,19 @@ def check_validation_packages(
                 elif spec.validator not in patch_validation.BUILTIN_VALIDATORS:
                     patch_problems.append(
                         f"{descriptor.patch_id}: check {spec.check_id!r} uses unknown validator {spec.validator!r}"
+                    )
+                # GPT round 6 (req_6e54ebe0b3764350): build_validation_plan()
+                # only calls _produces() for universal/contract-required
+                # capabilities -- a SUPPLEMENTARY check (one the adapter adds
+                # beyond what's required) with a capability its validator
+                # can't actually produce (e.g. capability="performance",
+                # validator="apply") would otherwise silently enter the plan
+                # and later emit a PASS mislabeled as that capability.
+                if not patch_validation.validator_produces(spec.capability, spec.validator):
+                    patch_problems.append(
+                        f"{descriptor.patch_id}: check {spec.check_id!r} declares "
+                        f"capability={spec.capability!r} but validator={spec.validator!r} "
+                        "cannot produce it"
                     )
 
         if plan is not None and requires_architectures:
