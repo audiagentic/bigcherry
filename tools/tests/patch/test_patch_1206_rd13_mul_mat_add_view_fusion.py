@@ -46,14 +46,33 @@ class Rd13PatchApplicationTests(unittest.TestCase):
         self.assertEqual(result.results[0].status, "applied")
 
     def test_current_pinned_source_has_the_expected_fusion_site(self) -> None:
-        """The current pin still has the RD13 site and its structural guards."""
+        """The current pin still has RD13's PRE-patch anchor site -- i.e. the
+        patch could still apply, proving upstream hasn't refactored the
+        target away. This checks RD13._OLD content, not RD13._NEW.
+
+        This assertion previously checked strings from RD13._NEW (the
+        patch's own POST-patch guards: has_view, fused_node_count, etc.)
+        instead of RD13._OLD -- those strings can only ever be present in
+        vendor/llama.cpp if this patch has actually been applied there.
+        RD13 is GROUP="rdna-boosts"/STATE="untested" (see
+        patches/1206_rd13_mul_mat_add_view_fusion/patch.toml): the
+        production "bigcherry" recipe only selects state="validated"
+        (config/recipes.toml), so RD13 has never been part of any real
+        pin-bump's applied patch set, and this test failed on every single
+        real bump this whole session (b10502 through b10705) for that
+        reason -- not because the patch's real target site (which
+        patch-rebase-check --all independently confirms as CLEAN every
+        bump) had actually drifted.
+        """
         source = VENDOR_SOURCE.read_text(encoding="utf-8")
-        self.assertIn("const bool has_view = i + 1 < cgraph->n_nodes", source)
-        self.assertIn("cgraph->nodes[i + 1]->op == GGML_OP_RESHAPE", source)
-        self.assertIn("const ggml_op ops[3] = { op, GGML_OP_RESHAPE, bias_op }", source)
-        self.assertIn("cgraph->nodes[i + 1]->src[0] != cgraph->nodes[i]", source)
-        self.assertIn("bias_node = cgraph->nodes[has_view ? i + 2 : i + 1]", source)
-        self.assertIn("fused_node_count  = has_view ? 3 : 2", source)
+        self.assertIn("// mul_mat + add\n", source)
+        self.assertIn("if (!ggml_can_fuse(cgraph, i, { op, bias_op })) {", source)
+        self.assertIn("ggml_tensor * mm_node   = cgraph->nodes[i];", source)
+        self.assertIn("ggml_tensor * bias_node = cgraph->nodes[i + 1];", source)
+        self.assertIn(
+            "if (bias_op == GGML_OP_ADD && !ggml_are_same_shape(bias_node->src[0], bias_node->src[1])) {",
+            source,
+        )
 
 
 class Rd13NearMissGuardTests(unittest.TestCase):
