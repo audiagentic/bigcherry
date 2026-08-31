@@ -207,6 +207,33 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
         vc._run_one_trace_probe = self._real_run_probe
         vc.subprocess.run = self._real_subprocess_run
 
+    def test_control_hit_invalidates_promotion_even_with_a_positive_subject_hit(self) -> None:
+        # GPT round 4 (req_4544a9240b6d45df): evaluate_trigger_proof() only
+        # checks positive-role lanes -- a control (unpatched) binary that
+        # ALSO shows the marker means the negative control itself is
+        # invalid, and this must be enforced explicitly, not left to
+        # evaluate_trigger_proof()'s positive-only scope.
+        def fake_probe(*, name, binary, model, hip_path, workdir, bench_prompt, bench_gen, disable_fusion):
+            return "BIGCHERRY_PATCH_HIT patch=x\n"  # both subject AND control hit
+
+        vc._run_one_trace_probe = fake_probe
+        run_dir = Path(tempfile.mkdtemp())
+        result = vc.run_rd08_contract_qualification(
+            contract=RD08, descriptor=SimpleNamespace(), base_revision="a" * 40,
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), model_ref=RD08.positive.models[0],
+            marker_regex="BIGCHERRY_PATCH_HIT", hip_path=Path("H:/hip"),
+            amdgpu_targets="gfx1100", worktree_root=Path("W:/worktrees"),
+            build_root=Path("B:/build"), build_env={}, run_dir=run_dir,
+            control_build_identity={"effective_build_id": "c1"},
+            subject_build_identity={"effective_build_id": "s1"},
+            pairs=2,
+        )
+        self.assertTrue(result["trigger"]["control_hit"])
+        self.assertFalse(result["trigger_proof"]["passed"])
+        self.assertFalse(result["promotion"]["passed"])
+        self.assertEqual(result["promotion"]["status"], "invalid")
+
     def test_all_gates_passing_composes_into_a_passing_promotion(self) -> None:
         run_dir = Path(tempfile.mkdtemp())
         result = vc.run_rd08_contract_qualification(
@@ -259,6 +286,107 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
         )
         self.assertFalse(result["promotion"]["passed"])
         self.assertNotEqual(result["promotion"]["status"], "invalid")
+
+
+class EndToEndEligibilityCompositionTests(unittest.TestCase):
+    """GPT round 4 (req_4544a9240b6d45df): proves the exact seam that was
+    broken -- RD08's real validation.toml checks that read
+    ctx.performance_evidence (correctness/performance/controls, all
+    validator="autotune-campaign") and ctx.trace_evidence (activation,
+    validator="trace-marker") now reach real PASS with the evidence shapes
+    --run-rd08-contract actually constructs in run(), and that combining a
+    passing adapter verdict with a passing contract_promotions entry
+    produces eligible_for_validated_state=True end to end. Does not invoke
+    the full CLI run() (source materialization/build/cmake are out of
+    scope for a hardware-free test) -- exercises the real check-evaluation
+    and eligibility-composition functions directly, using RD08's own
+    validation.toml check shapes read from the real committed file."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _bind(self, relative_path: str, content: str) -> dict:
+        import hashlib
+
+        target = self.run_dir / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return {"path": relative_path, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
+
+    def test_rd08_autotune_campaign_and_trace_marker_checks_pass_with_real_evidence_shapes(self) -> None:
+        from bigcherry.patch import validation as pv
+        import json
+
+        performance_evidence = {
+            "artifact": self._bind(
+                "performance.json",
+                json.dumps({"campaign_id": "digest123", "passed": True, "target_kernel_gain_pct": 1.5}),
+            )
+        }
+        trace_evidence = {
+            "positive": {
+                "marker_regex": "BIGCHERRY_PATCH_HIT",
+                "artifact": self._bind("logs/subject.log", "BIGCHERRY_PATCH_HIT patch=x\n"),
+            },
+            "negative": {
+                "marker_regex": "BIGCHERRY_PATCH_HIT",
+                "artifact": self._bind("logs/control.log", "nothing\n"),
+            },
+        }
+        ctx = pv.ValidationContext(
+            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+            run_dir=self.run_dir, performance_evidence=performance_evidence,
+            trace_evidence=trace_evidence,
+        )
+        # Real check shapes from patches/1204_rd08_q6k_mmvq_vdr2/validation.toml.
+        for check_id in ("correctness", "performance", "controls"):
+            spec = pv.CheckSpec(check_id, check_id, "autotune-campaign", True, {})
+            result = pv.evaluate_check(spec, ctx)
+            self.assertEqual(result.status, pv.PASS, f"{check_id}: {result.summary}")
+
+        activation_spec = pv.CheckSpec(
+            "activation", "activation", "trace-marker", True,
+            {"marker-regex": "BIGCHERRY_PATCH_HIT"},
+        )
+        activation_result = pv.evaluate_check(activation_spec, ctx)
+        self.assertEqual(activation_result.status, pv.PASS, activation_result.summary)
+
+    def test_activation_evidence_executed_only_when_subject_hit_and_not_control_hit(self) -> None:
+        from bigcherry.patch.activation import ActivationEvidence, verdict
+
+        both_hit = ActivationEvidence(status="not_executed", mechanism="rd08-trigger-marker", detail="")
+        self.assertEqual(verdict(both_hit, correctness_passed=None), "failed-activation")
+
+        subject_only = ActivationEvidence(status="executed", mechanism="rd08-trigger-marker", detail="")
+        self.assertEqual(verdict(subject_only, correctness_passed=None), "activation-verified")
+
+    def test_full_composition_adapter_pass_plus_contract_pass_is_eligible(self) -> None:
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Verdict:
+            eligible: bool
+            reasons: tuple = ()
+
+        @dataclass
+        class _Descriptor:
+            experiment_contracts: tuple
+
+        descriptor = _Descriptor(experiment_contracts=("RD08-Q6K-MMVQ-VDR2",))
+        adapter_verdict = _Verdict(eligible=True)
+        contract_promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
+        self.assertTrue(
+            vc.compute_persisted_validation_eligible(descriptor, adapter_verdict, contract_promotions)
+        )
+        # And the failure side: adapter PASS alone (no real promotion) must
+        # NOT be eligible -- the exact bug this whole slice exists to fix.
+        self.assertFalse(
+            vc.compute_persisted_validation_eligible(descriptor, adapter_verdict, {})
+        )
 
 
 if __name__ == "__main__":

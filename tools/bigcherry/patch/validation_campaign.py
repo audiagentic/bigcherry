@@ -803,6 +803,15 @@ def run_rd08_contract_trigger(
     return {
         "evidence": [subject_te, control_te], "artifact": artifact_ref,
         "subject_hit": subject_hit, "control_hit": control_hit,
+        # GPT round 4 (req_4544a9240b6d45df): the real subject/control probe
+        # logs _run_one_trace_probe() already writes to run_dir/"logs"/... --
+        # exposed here (paths relative to run_dir) so the caller can bind
+        # them as the RD08-authoritative activation evidence (adapter
+        # trace-marker check AND the record's top-level activation field),
+        # instead of the generic tune-binary/fusion-disabled probe, which is
+        # not a valid negative control for RD08's MMVQ marker.
+        "subject_log_path": "logs/activation-rd08-trigger-subject.log",
+        "control_log_path": "logs/activation-rd08-trigger-control.log",
     }
 
 
@@ -841,6 +850,23 @@ def run_rd08_contract_qualification(
         contract, lanes["effects"], target_metric="tg128",
     )
     trigger_proof = experiment_contract.evaluate_trigger_proof(trigger["evidence"])
+    # GPT round 4 (req_4544a9240b6d45df): evaluate_trigger_proof() only
+    # checks positive-role lanes (by design -- EC18 scopes control lanes
+    # out, since most contracts' control lanes should NOT trigger). RD08's
+    # negative control is a real, separate claim this gate must still
+    # enforce here: if the control (unpatched) binary ALSO shows the
+    # marker, the negative control itself is invalid, and no promotion
+    # verdict can be trusted regardless of what the positive lane showed.
+    if trigger["control_hit"]:
+        trigger_proof = {
+            "passed": False,
+            "reasons": list(trigger_proof.get("reasons") or []) + [
+                "control-role lane observed the target marker -- the negative "
+                "control is invalid, so trigger proof cannot be trusted"
+            ],
+            "checked_lanes": trigger_proof.get("checked_lanes", 0),
+            "untriggered_lanes": list(trigger_proof.get("untriggered_lanes") or []),
+        }
     promotion = experiment_contract.evaluate_promotion_gate(
         contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
         trigger_proof=trigger_proof,
@@ -1272,6 +1298,7 @@ def run(args: argparse.Namespace) -> int:
     # (real bug, confirmed by reading validation.py::_builtin_backend_ops
     # before this fix -- GPT round-7 review, req_3d12aa6668b14bb1).
     correctness_evidence: dict[str, object] = {}
+    performance_evidence: dict[str, object] = {}
     if args.correctness_evidence is not None and args.run_rd08_contract:
         raise PatchCampaignError(
             f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
@@ -1408,6 +1435,65 @@ def run(args: argparse.Namespace) -> int:
                 "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
             }
         }
+        # GPT round 4 (req_4544a9240b6d45df): RD08's validation.toml declares
+        # its correctness/performance/controls checks with
+        # validator="autotune-campaign", which reads ctx.performance_evidence
+        # (_builtin_autotune_campaign requires a bound artifact with a
+        # truthy campaign_id) -- without this, those three checks always
+        # error/fail and validation_verdict.eligible can never become True,
+        # so the record's final eligibility can never become True either.
+        # Bind the real RD08 qualification result here -- campaign_id is the
+        # actual completed campaign's own identity digest, not fabricated.
+        performance_doc = {
+            "campaign_id": campaign.campaign_identity_digest,
+            "passed": bool(rd08_qualification["promotion"].get("passed")),
+            "target_kernel_gain_pct": rd08_qualification["aggregated_effects"].get(
+                "target_kernel_gain_pct"
+            ),
+            "max_control_regression_pct": rd08_qualification["aggregated_effects"].get(
+                "max_control_regression_pct"
+            ),
+        }
+        performance_path = campaign_run_dir / "performance.json"
+        _atomic_write_json(performance_path, performance_doc)
+        performance_evidence = {
+            "artifact": {
+                "path": performance_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(performance_path.read_bytes()).hexdigest(),
+            }
+        }
+        # GPT round 4: the adapter's trace-marker check AND the record's
+        # top-level activation field must use RD08's OWN authoritative
+        # subject-hit/control-miss trigger evidence, not the earlier generic
+        # tune-binary/GGML_CUDA_DISABLE_FUSION=1 probe -- that probe is not a
+        # valid negative control for RD08's specific MMVQ marker.
+        def _bind_rd08_log(relative_log_path: str) -> dict[str, str]:
+            target = (campaign_run_dir / relative_log_path).resolve()
+            return {
+                "path": relative_log_path,
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            }
+
+        trace_evidence = {
+            "positive": {
+                "marker_regex": trace_marker_regex,
+                "artifact": _bind_rd08_log(rd08_qualification["trigger"]["subject_log_path"]),
+            },
+            "negative": {
+                "marker_regex": trace_marker_regex,
+                "artifact": _bind_rd08_log(rd08_qualification["trigger"]["control_log_path"]),
+            },
+        }
+        activation_evidence = ActivationEvidence(
+            status=(
+                "executed"
+                if rd08_qualification["trigger"]["subject_hit"]
+                and not rd08_qualification["trigger"]["control_hit"]
+                else "not_executed"
+            ),
+            mechanism="rd08-trigger-marker", detail=f"marker={trace_marker_regex!r}",
+        )
+        activation_verdict = verdict(activation_evidence, correctness_passed=None)
     elif args.run_rd08_lanes:
         from bigcherry.patch import validation as _pv
 
@@ -1451,6 +1537,7 @@ def run(args: argparse.Namespace) -> int:
             contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
             run_dir=campaign_run_dir,
             trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
+            performance_evidence=performance_evidence,
         )
         evaluated = {
             spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
