@@ -176,7 +176,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             )),
         )
         pin_bump._require_selector_membership_unchanged(
-            state, recipe_name="bigcherry-native",
+            state, selector_kind="recipe", selector_name="bigcherry-native",
         )  # no raise -- real catalog, unchanged since state was built above
 
     def test_drifted_membership_fails_closed(self):
@@ -189,7 +189,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
         )
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._require_selector_membership_unchanged(
-                state, recipe_name="bigcherry-native",
+                state, selector_kind="recipe", selector_name="bigcherry-native",
             )
         self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
 
@@ -284,7 +284,7 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         pin_bump._write_release_doc_best_effort(
             repo_root=Path("H:/development/projects/bigcherry"),
             vendor_root=Path("does-not-exist"),
-            recipe_name="not-a-real-recipe-name",
+            selector_kind="recipe", selector_name="not-a-real-recipe-name",
             target_ref="b99999",
         )  # must not raise -- that is the entire test
 
@@ -517,7 +517,8 @@ class WriteReleaseDocReportBindingTests(unittest.TestCase):
                 pin_bump._write_release_doc_best_effort(
                     repo_root=Path("H:/development/projects/bigcherry"),
                     vendor_root=Path("does-not-exist"),
-                    recipe_name="bigcherry", target_ref="b99999",
+                    selector_kind="recipe", selector_name="bigcherry",
+                    target_ref="b99999",
                     report_dir=report_dir,
                 )  # must not raise
             fresh_resolve.assert_not_called()
