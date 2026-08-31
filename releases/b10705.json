@@ -14,7 +14,7 @@
   "bigcherry_revision": "c8a3a445d9f65886cf9f608afa0ef8da1ed71a31",
   "first_seen": "2026-08-31T00:25:53.443513+00:00",
   "manifest_hash": "",
-  "notes": "",
+  "notes": "Real build + smoke test on local Windows GPU (bigcherry-native:control:windows-gfx1100, gfx1100/RX 7900 GRE), qwen35 0.8B BF16: pp32 1942.26 t/s, tg8 136.58 t/s. `bigcherry build --lane bigcherry-native:control:windows-gfx1100 --model artifacts/qwen0.8b-bf16.gguf --hip-visible-devices 0` -> ok. Root-caused an initial 0xC0000135 (DLL_NOT_FOUND) smoke failure to this session's shell having a stale PATH predating the ROCm bin dir's User-level persistence -- not a code bug; confirmed by running the built llama-bench.exe directly with ROCm PATH added, which succeeded. `bigcherry pin-status --complete --all-remotes` verbatim:\n\npin-status: local\n  pin           b10705 -> 2578138397d7\n  vendor HEAD   2578138397d7 (tag b10705)  [15 modified, 33 untracked]\n  marker        370cb12e8bb7 -> 2578138397d7 (b10705) [committed-clean]\n  VERDICT       consistent  (content-unverified: 15 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\npin-status: brutus (remote)\n  vendor HEAD   c841aeeb8bb2\n  pin           b10687 -> c841aeeb8bb2\n  VERDICT       mismatch  (remote pin b10687 != local pin b10705)\n\nAGGREGATE  DIVERGED  (tree brutus pinned at b10687, local at b10705)\nCOMPLETION  FAIL -- brutus intentionally not re-converged this run (explicit scope decision: local-only test bump); local tree itself is fully consistent and smoke-verified.",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
