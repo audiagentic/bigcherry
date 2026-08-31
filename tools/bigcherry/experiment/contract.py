@@ -47,6 +47,11 @@ EXPECTED_EFFECTS: tuple[str, ...] = ("performance", "correctness", "both")
 WORKLOAD_TAGS: tuple[str, ...] = (
     "decode", "prefill", "mtp_verify", "moe_prefill", "moe_decode",
     "long_context", "gdn_prefill", "multi_gpu_copy", "small_m",
+    # VA10: RD58's real claim (repeated multi-GPU state-restore integrity)
+    # is not multi_gpu_copy -- that tag is a generic transfer workload, not
+    # a save/restore cycle. Do not misuse multi_gpu_copy for this claim
+    # class (GPT round 3/4 review).
+    "state_restore",
 )
 
 # Guide Appendix A's concrete correctness requirements across the 12xx
@@ -55,6 +60,13 @@ WORKLOAD_TAGS: tuple[str, ...] = (
 # output gates), ppl_equality (1207's MoE fusion gate).
 CORRECTNESS_CHECKS: tuple[str, ...] = (
     "backend_reference", "greedy_parity", "bit_identical", "ppl_equality",
+    # VA10: RD58's claim needs an affirmative "state correctly restored"
+    # check, not an absence-of-fault claim -- "zero observed faults" is not
+    # proof (Brutus's own 530+ cycles never reproduced the originating SDMA
+    # fault, so failing to observe it again would prove nothing). This
+    # token names what IS checked: saved state -> repeated multi-GPU
+    # restore -> restored state/continuation agrees with reference.
+    "state_restore_integrity",
 )
 
 ACCEPTANCE_FIELDS: tuple[str, ...] = (

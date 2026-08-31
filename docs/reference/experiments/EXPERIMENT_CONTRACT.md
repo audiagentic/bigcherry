@@ -67,7 +67,18 @@ The parser validates known workload tags, kernel-family names, thresholds,
 source linkage, prerequisites, and prerequisite cycles. Optional scope fields
 include integrated/UMA/peer-access requirements, GPU-count bounds, and driver
 version bounds. Correctness checks are drawn from the closed set
-`backend_reference`, `greedy_parity`, `bit_identical`, and `ppl_equality`.
+`backend_reference`, `greedy_parity`, `bit_identical`, `ppl_equality`, and
+`state_restore_integrity`.
+
+`state_restore_integrity` (VA10) names an affirmative invariant --
+saved state → repeated multi-GPU restore → restored state/continuation
+agrees with reference -- for patches whose claim is about correctness of a
+save/restore cycle rather than kernel output parity. It is deliberately
+NOT an absence-of-fault claim: failing to observe a specific fault again is
+not proof the fault is fixed, especially when that fault was itself hard to
+reproduce in the first place. Pair it with the `state_restore` workload tag
+(distinct from the generic `multi_gpu_copy` transfer-workload tag -- a
+save/restore cycle is not simply a copy).
 
 ## Identity and evidence rules
 
