@@ -51,10 +51,33 @@ class PortedBenchedTests(unittest.TestCase):
             upstream=None, content_hash="deadbeef" * 8,
         )
 
-    def _real_v3_record(self, *, correctness_disposition: str = "passed") -> dict:
+    def _real_check_results(self, *, with_artifact: bool = True) -> dict:
+        """The real ValidationResult.asdict() shape validation_campaign.run()
+        actually serializes into check_results -- a passing "performance"
+        check with a bound artifact, exactly what a real paired benchmark
+        run produces."""
+        return {
+            "performance": {
+                "check_id": "performance", "capability": "performance", "status": "pass",
+                "summary": "benchmark evidence is verified and bound", "details": [],
+                "artifacts": (
+                    [{"name": "bench", "path": "bench.json", "sha256": "c" * 64}]
+                    if with_artifact else []
+                ),
+            },
+        }
+
+    def _real_v3_record(
+        self, *, correctness_disposition: str = "passed", check_results: dict | None = "__default__",
+    ) -> dict:
         """A real record built via make_record() -- the same real schema a
         real campaign produces, not a hand-authored fixture pretending to
-        be one."""
+        be one. check_results defaults to a real passing, bound
+        performance check (what an actual benchmark run produces); pass
+        check_results=None to simulate a build-only record with no
+        recorded benchmark execution."""
+        if check_results == "__default__":
+            check_results = self._real_check_results()
         activation_evidence = ActivationEvidence(status="not_executed", mechanism="m", detail="d")
         correctness = {
             "schema_version": 1, "disposition": correctness_disposition, "mechanism": "m", "detail": "d",
@@ -70,6 +93,7 @@ class PortedBenchedTests(unittest.TestCase):
                                "stock": _build_identity("3")},
             validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
             campaign_workdir=self.workdir,
+            check_results=check_results,
         )
 
     def test_current_pin_real_benchmark_evidence_passes(self) -> None:
@@ -104,6 +128,29 @@ class PortedBenchedTests(unittest.TestCase):
         record = self._real_v3_record()
         del record["validation_build_identities"]
         record["record_digest"] = pve._record_digest(record)
+        pve.write_record(record, root=self.root)
+        result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
+        self.assertEqual(result.status, "missing-or-stale")
+        self.assertFalse(result.ok)
+
+    def test_build_and_hardware_provenance_without_a_benchmark_result_fails(self) -> None:
+        # GPT round 2 (req_ecaa87b450294084): the real bug -- build/
+        # hardware provenance alone is NOT proof a benchmark ran. A
+        # build-only record (check_results defaults to activation+
+        # correctness only, no performance/controls entry) must fail.
+        record = self._real_v3_record(check_results=None)
+        pve.write_record(record, root=self.root)
+        result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
+        self.assertEqual(result.status, "missing-or-stale")
+        self.assertFalse(result.ok)
+
+    def test_benchmark_result_without_a_bound_artifact_fails(self) -> None:
+        # A "passing" performance check with no artifacts is not real
+        # evidence of execution either -- an unbound claim is exactly as
+        # unverifiable as no claim at all.
+        record = self._real_v3_record(
+            check_results=self._real_check_results(with_artifact=False)
+        )
         pve.write_record(record, root=self.root)
         result = pve.verify_ported_benched_patch(self._module(), pinned_ref="b10705", root=self.root)
         self.assertEqual(result.status, "missing-or-stale")
