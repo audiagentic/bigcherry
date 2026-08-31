@@ -81,11 +81,22 @@ def _v2_source_names() -> list[str] | None:
 
 def _add_selection_args(parser: argparse.ArgumentParser) -> None:
     """The patch-selection flags, shared by every command that selects."""
-    parser.add_argument(
+    recipe_or_source = parser.add_mutually_exclusive_group()
+    recipe_or_source.add_argument(
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="named build definition from config/recipes.toml (default: all patches)",
+        help="[legacy, being retired -- prefer --source] named build "
+             "definition from config/recipes.toml (default: all patches)",
+    )
+    recipe_or_source.add_argument(
+        "--source",
+        default=None,
+        choices=_v2_source_names(),
+        help="canonical v2 [source.*] name (e.g. 'bigcherry') -- the exact, "
+             "curated patch-set this source declares. The compat.recipe "
+             "removal plan's replacement for --recipe. Cannot be combined "
+             "with --groups/--states (v2 patch-sets have no filtering axis).",
     )
     parser.add_argument(
         "--groups",

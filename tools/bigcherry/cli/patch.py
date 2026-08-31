@@ -13,6 +13,7 @@ from ..patch import catalog as patch_catalog
 from ..patch import disposition as patch_disposition
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
+from ..patch import selection as patch_selection
 from ..patch import rebase as patch_rebase
 from ..patch import docs as patch_docs
 from ..patch import validation_policy as patch_validation_policy
@@ -101,86 +102,6 @@ def cmd_patch_rebase_check(args: Namespace) -> int:
         print(f"report: {args.json}")
 
     return 1 if report["summary"]["reconciliation_required"] else 0
-
-
-def cmd_patches(args: Namespace) -> int:
-    from .. import __main__ as legacy
-
-    try:
-        snapshot = patch_catalog.build_snapshot()
-    except ValueError as exc:
-        print(f"patches: could not load patches/catalog.toml: {exc}", file=sys.stderr)
-        return 2
-    if not snapshot.modules:
-        print("no patches found", file=sys.stderr)
-        return 1
-    try:
-        groups, states, label = legacy._resolve_selection(args)
-    except recipes.RecipeError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    filtered = bool(args.kind or args.backend or args.origin)
-    root = paths.llama_root(args.llama_root)
-    print(f"selection: {label}\ncheckout:  {root}")
-    if filtered:
-        print(
-            f"catalog:   kind={args.kind or 'any'} backend={args.backend or 'any'} origin={args.origin or 'any'}"
-        )
-    print()
-    rows, problems, selected = [], [], 0
-    for module in snapshot.modules:
-        entry = snapshot.entry_for(module.patch_id)
-        if filtered and (
-            entry is None
-            or (args.kind and entry.kind != args.kind)
-            or (args.backend and entry.backend != args.backend)
-            or (args.origin and entry.origin != args.origin)
-        ):
-            continue
-        taken = (groups is None or module.group in groups) and (
-            states is None or module.state in states
-        )
-        selected += taken
-        note = ""
-        if module.upstream:
-            landed = patchset.upstream_landed(module.upstream, root)
-            note = (
-                f"upstream {module.upstream[:8]} landed -- redundant here"
-                if landed
-                else f"upstream {module.upstream[:8]} unknown"
-                if landed is None
-                else f"upstream {module.upstream[:8]} not in this checkout"
-            )
-        if module.state not in patchset.STATES:
-            problems.append(
-                f"{module.patch_id}: STATE={module.state!r} is not one of {', '.join(patchset.STATES)} -- no recipe will select it"
-            )
-        label_value = f"{entry.kind}/{entry.backend}" if entry is not None else ""
-        rows.append(
-            (
-                "[x]" if taken else "[ ]",
-                module.patch_id,
-                module.group,
-                module.state,
-                label_value,
-                note,
-            )
-        )
-    if not rows:
-        print("no patches match the given --kind/--backend/--origin filter")
-        return 0
-    widths = [max(len(row[i]) for row in rows) for i in range(5)]
-    for mark, name, group, state, catalog_label, note in rows:
-        print(
-            f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  {state:<{widths[3]}}  {catalog_label:<{widths[4]}}  {note}".rstrip()
-        )
-    print(
-        f"\n{selected} of {len(rows)} shown selected"
-        + ("" if not filtered else f" ({len(snapshot.modules)} total in catalog)")
-    )
-    for problem in problems:
-        print(f"warning: {problem}", file=sys.stderr)
-    return 1 if problems else 0
 
 
 def cmd_patch_status(args: Namespace) -> int:
@@ -440,8 +361,6 @@ def cmd_patches(args: Namespace) -> int:
     CatalogSnapshot, instead of the two independent scans (patchset.describe()
     + patch_catalog.load_catalog()) this command used to make.
     """
-    from .. import __main__ as legacy
-
     try:
         snapshot = patch_catalog.build_snapshot()
     except ValueError as exc:
@@ -452,15 +371,15 @@ def cmd_patches(args: Namespace) -> int:
         return 1
 
     try:
-        groups, states, label = legacy._resolve_selection(args)
-    except recipes.RecipeError as exc:
+        selection = patch_selection.resolve_cli_selection(args)
+    except patch_selection.SelectionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
     catalog_filter_active = bool(args.kind or args.backend or args.origin)
 
     root = paths.llama_root(args.llama_root)
-    print(f"selection: {label}")
+    print(f"selection: {selection.label}")
     print(f"checkout:  {root}")
     if catalog_filter_active:
         print(
@@ -482,9 +401,7 @@ def cmd_patches(args: Namespace) -> int:
             if args.origin and entry.origin != args.origin:
                 continue
 
-        taken = (groups is None or module.group in groups) and (
-            states is None or module.state in states
-        )
+        taken = selection.matches(module)
         selected += taken
 
         note = ""
