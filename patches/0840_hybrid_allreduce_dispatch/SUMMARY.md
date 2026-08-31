@@ -14,7 +14,11 @@ first (falling through to RCCL on failure); at or above it, goes straight
 to RCCL. `comm_ctx->provider_name` is set per call right before each
 sub-provider runs, so the existing 0830 telemetry seam attributes every
 call correctly (`effective_provider`: "internal" or "rccl") with no
-separate labeling change needed.
+separate labeling change needed. Init also forces the internal pipeline
+to exact F32 (`ggml_cuda_ar_pipeline_force_exact_f32`) rather than
+trusting `GGML_CUDA_AR_BF16_THRESHOLD`'s own default (1, BF16 for every
+nonzero reduction) -- hybrid's internal side must never silently degrade
+to the same lossy wire encoding 1001's evidence shows is a net loss.
 
 ## Why
 
