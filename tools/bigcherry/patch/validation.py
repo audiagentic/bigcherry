@@ -824,9 +824,21 @@ def _evidence_pass(
             check_id=spec.check_id, capability=spec.capability, status=FAIL,
             summary=f"{label} evidence failed",
         )
+    # VA08 round 3 (req_021c2eb498e04bc0): a PASS here already proves the
+    # evidence artifact is bound (verified by _read_bound_json() above) --
+    # surface that same artifact in ValidationResult.artifacts so it is
+    # actually visible in the serialized record's check_results, not
+    # silently dropped. Without this, every real benchmark/autotune-
+    # campaign PASS through this shared helper serialized artifacts=()
+    # despite genuinely having bound evidence.
+    artifact = evidence.get("artifact")
+    artifacts = (
+        (ArtifactRef(name=label, path=str(artifact["path"]), sha256=str(artifact["sha256"])),)
+        if isinstance(artifact, dict) else ()
+    )
     return ValidationResult(
         check_id=spec.check_id, capability=spec.capability, status=PASS,
-        summary=f"{label} evidence is verified and bound",
+        summary=f"{label} evidence is verified and bound", artifacts=artifacts,
     )
 
 

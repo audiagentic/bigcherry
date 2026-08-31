@@ -52,20 +52,37 @@ class PortedBenchedTests(unittest.TestCase):
         )
 
     def _real_check_results(self, *, with_artifact: bool = True) -> dict:
-        """The real ValidationResult.asdict() shape validation_campaign.run()
-        actually serializes into check_results -- a passing "performance"
-        check with a bound artifact, exactly what a real paired benchmark
-        run produces."""
-        return {
-            "performance": {
-                "check_id": "performance", "capability": "performance", "status": "pass",
-                "summary": "benchmark evidence is verified and bound", "details": [],
-                "artifacts": (
-                    [{"name": "bench", "path": "bench.json", "sha256": "c" * 64}]
-                    if with_artifact else []
-                ),
-            },
-        }
+        """Runs the REAL bigcherry.patch.validation.evaluate_check() against
+        a genuine bound performance.json artifact through the actual
+        "autotune-campaign" validator (_builtin_autotune_campaign ->
+        _evidence_pass()) -- the same producer real campaigns use, not a
+        hand-authored ValidationResult shape guessing at what it emits.
+        with_artifact=False writes NO bound artifact at all, so the real
+        producer returns BLOCKED (not a hand-faked "pass with no
+        artifacts", which the real producer can never actually emit)."""
+        import hashlib
+        import json
+        from dataclasses import asdict
+
+        from bigcherry.patch import validation as pv
+
+        performance_evidence: dict = {}
+        if with_artifact:
+            perf_path = self.workdir / "performance.json"
+            perf_path.write_text(json.dumps({"campaign_id": "x", "passed": True}), encoding="utf-8")
+            performance_evidence = {
+                "artifact": {
+                    "path": "performance.json",
+                    "sha256": hashlib.sha256(perf_path.read_bytes()).hexdigest(),
+                }
+            }
+        ctx = pv.ValidationContext(
+            descriptor=None, base_revision=_HEX40, control_source=None, subject_source=None,
+            run_dir=self.workdir, performance_evidence=performance_evidence,
+        )
+        spec = pv.CheckSpec("performance", "performance", "autotune-campaign", True, {})
+        result = pv.evaluate_check(spec, ctx)
+        return {"performance": asdict(result)}
 
     def _real_v3_record(
         self, *, correctness_disposition: str = "passed", check_results: dict | None = "__default__",
@@ -95,6 +112,20 @@ class PortedBenchedTests(unittest.TestCase):
             campaign_workdir=self.workdir,
             check_results=check_results,
         )
+
+    def test_real_evaluate_check_pass_serializes_a_non_empty_bound_artifact(self) -> None:
+        # GPT round 3 (req_021c2eb498e04bc0): the real bug -- _evidence_pass()
+        # (shared by the "benchmark"/"autotune-campaign" built-in
+        # validators) verified the bound artifact but never put it into
+        # ValidationResult.artifacts, so a genuine PASS always serialized
+        # artifacts=(). Assert the fix directly: a real evaluate_check()
+        # PASS now has exactly one artifact matching the real bound path.
+        check_results = self._real_check_results()
+        self.assertEqual(check_results["performance"]["status"], "pass")
+        artifacts = check_results["performance"]["artifacts"]
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["path"], "performance.json")
+        self.assertTrue(artifacts[0]["sha256"])
 
     def test_current_pin_real_benchmark_evidence_passes(self) -> None:
         # A real control/subject benchmark ran (validation_build_identities
