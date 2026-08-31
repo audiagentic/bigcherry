@@ -261,3 +261,56 @@ def resolve_lane(
             cfg.patch_sets["validated-enhancements"].patches
         ) if "validated-enhancements" in cfg.patch_sets else (),
     )
+
+
+@dataclass(frozen=True)
+class CanonicalSelection:
+    """The minimal shape a legacy ``--recipe``-consuming command actually
+    needs: a resolved upstream ref plus an exact patch-set identity.
+
+    Introduced to remove ``recipes.py``'s ``[compat.recipe.*]`` bridge (see
+    docs/planning/active/... the compat.recipe removal plan) without
+    smuggling ``Recipe``'s unrelated build/platform/groups/states baggage
+    back in through a different name. Deliberately NOT a drop-in
+    replacement for every legacy ``Recipe`` field -- a caller that also
+    needs build or platform info should resolve those directly from
+    ``cfg``, not extend this type.
+    """
+    source_name: str
+    source_ref: str
+    patch_set_id: str
+    patch_ids: tuple[str, ...]
+
+
+def resolve_canonical_selection(
+    source_name: str,
+    cfg: config.Config,
+    catalog: list[patchset.PatchModule],
+    *,
+    experiment: str | None = None,
+    catalog_directory: object = None,
+) -> CanonicalSelection:
+    """Resolve ``source_name`` to its real upstream ref and exact patch-set
+    identity, in one call -- the two things every migrated legacy command
+    (``pull``, ``patch-rebase-check``, ``patch-doc``, ``pin-bump``,
+    ``probe-release``/``validate-ref``) needs.
+
+    Ref resolution matches ``campaign/source.py``'s own
+    ``revision = cfg.pinned if source.ref == "pinned" else source.ref``
+    convention exactly, so a migrated caller sees the identical ref it
+    would have seen under the old ``Recipe.follows_pin`` semantics.
+    """
+    if source_name not in cfg.sources:
+        raise ResolutionError(f"unknown source {source_name!r}")
+    source = cfg.sources[source_name]
+    lane = resolve_lane(
+        source_name, cfg, catalog,
+        experiment=experiment, catalog_directory=catalog_directory,
+    )
+    resolved_ref = cfg.pinned if source.ref == "pinned" else source.ref
+    return CanonicalSelection(
+        source_name=source_name,
+        source_ref=resolved_ref,
+        patch_set_id=lane.patch_set.patch_set_id,
+        patch_ids=lane.patch_set.module_ids,
+    )

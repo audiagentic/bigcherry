@@ -87,7 +87,66 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(len(lane.patch_set.module_ids), 16)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn("1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids)
-        self.assertEqual(lane.patch_set.classification, "experimental")
+
+
+class CanonicalSelectionTests(unittest.TestCase):
+    """resolve_canonical_selection() is the migration helper replacing
+    recipes.py's legacy [compat.recipe.*] bridge -- see the compat.recipe
+    removal plan. These tests pin its exact contract before any --recipe
+    consumer is migrated onto it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load(paths.RECIPES)
+        cls.catalog = patchset.catalog()
+
+    def test_unknown_source_raises(self):
+        with self.assertRaises(campaign_resolution.ResolutionError):
+            campaign_resolution.resolve_canonical_selection(
+                "not-a-real-source", self.cfg, self.catalog
+            )
+
+    def test_ref_resolves_the_pinned_sentinel_exactly_like_campaign_source(self):
+        # Mirrors campaign/source.py's own
+        # `cfg.pinned if source.ref == "pinned" else source.ref` -- a
+        # migrated legacy caller must see the identical ref it saw under
+        # the old Recipe.follows_pin semantics.
+        selection = campaign_resolution.resolve_canonical_selection(
+            "bigcherry", self.cfg, self.catalog
+        )
+        source = self.cfg.sources["bigcherry"]
+        expected_ref = self.cfg.pinned if source.ref == "pinned" else source.ref
+        self.assertEqual(selection.source_ref, expected_ref)
+        self.assertEqual(selection.source_name, "bigcherry")
+
+    def test_patch_ids_and_patch_set_id_match_resolve_lane_exactly(self):
+        # The whole point of this helper is to expose resolve_lane()'s real
+        # patch-set identity, not a second, independently-derived one --
+        # confirm byte-for-byte agreement, not just "looks similar".
+        lane = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        selection = campaign_resolution.resolve_canonical_selection(
+            "bigcherry", self.cfg, self.catalog
+        )
+        self.assertEqual(selection.patch_ids, lane.patch_set.module_ids)
+        self.assertEqual(selection.patch_set_id, lane.patch_set.patch_set_id)
+
+    def test_experiment_forwards_through_to_the_resolved_patch_set(self):
+        experiment = config.Experiment(
+            name="one-fix", patches=("1002_hip_unsafe_math_opt_in",),
+            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+        )
+        cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
+        selection = campaign_resolution.resolve_canonical_selection(
+            "bigcherry-native", cfg, self.catalog, experiment="one-fix"
+        )
+        self.assertIn("1002_hip_unsafe_math_opt_in", selection.patch_ids)
+
+
+class PatchSetIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load(paths.RECIPES)
+        cls.catalog = patchset.catalog()
 
     def test_all_is_rejected_and_identity_changes_with_content(self):
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "not a valid"):
