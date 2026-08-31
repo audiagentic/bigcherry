@@ -1,0 +1,51 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
+
+# No real per-check correctness producer exists yet for RD73's
+# bit_identical obligation -- declared honestly against a real validator
+# shape (backend-ops), never faked via autotune-campaign as a
+# placeholder. Stays BLOCKED (no ctx.correctness_evidence bound) until a
+# real producer exists. See README.md's "Known limitations".
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "backend-ops"
+required = true
+ops = ["RD73_MTP_BIT_IDENTICAL"]
+
+# No real subject-hit/control-miss RD73 marker probe exists yet (RD73's
+# patch source carries no BIGCHERRY_PATCH_TRACE-gated marker). Declared
+# honestly against the real, future exact marker text this patch would
+# need to emit -- the generic tune-binary/GGML_CUDA_DISABLE_FUSION
+# negative control is NOT valid for this patch (RD73 is graph-cache
+# keying, not a fusion path) and must never be substituted here. Stays
+# BLOCKED until a real marker + probe exist.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key"
