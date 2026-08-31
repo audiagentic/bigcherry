@@ -88,7 +88,10 @@ class EvidenceCheck:
 
     @property
     def ok(self) -> bool:
-        return self.status in {"not-required", "validated-evidence", "legacy-grandfathered"}
+        return self.status in {
+            "not-required", "validated-evidence", "legacy-grandfathered",
+            "ported-benched-evidence", "deferred-hardware-evidence",
+        }
 
 
 def _sha256_file(path: Path) -> str:
@@ -631,6 +634,106 @@ def _record_qualifies(
     return (not problems, tuple(problems))
 
 
+def _record_qualifies_for_benched(
+    record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
+    resolved_base_revision: str | None = None, validation_digest: str | None = None,
+    contract_id: str | None = None, contract_hash: str | None = None,
+) -> tuple[bool, tuple[str, ...]]:
+    """VA08: the 'ported-benched' tracked-status obligation -- the same
+    identity/freshness/schema-v3 provenance discipline as
+    _record_qualifies(), but requires only that a real control/subject
+    benchmark actually ran (validation_build_identities populated with
+    real build identities, real hardware architectures recorded) with no
+    recorded correctness FAILURE -- NOT full eligible_for_validated_state
+    (STATE='validated' is a strictly higher bar) and NOT activation
+    executed+verified (activation is an orthogonal claim from "a real
+    paired benchmark ran")."""
+    problems: list[str] = []
+    if record.get("record_schema_version") != 3:
+        return False, ("ported-benched requires a schema-v3 record",)
+    expected = {
+        "patch_id": module.patch_id, "patch_validation_subject_digest": subject_digest,
+        "base_ref": pinned_ref,
+    }
+    for key, wanted in expected.items():
+        if record.get(key) != wanted:
+            problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
+    if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
+        problems.append("validation implementation digest is stale")
+    if record.get("contract_id") != contract_id:
+        problems.append("contract identity is stale")
+    if contract_hash is not None and record.get("contract_hash") != contract_hash:
+        problems.append("contract hash is stale")
+    if record.get("record_digest") != _record_digest(record):
+        problems.append("record_digest does not match the evidence payload")
+    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
+        problems.append(
+            f"base_revision={record.get('base_revision')!r} does not match the currently "
+            f"resolved pin {resolved_base_revision!r}"
+        )
+    validation_builds = record.get("validation_build_identities")
+    if not isinstance(validation_builds, Mapping):
+        problems.append("validation_build_identities must be an object")
+    elif set(validation_builds) != set(VALIDATION_BUILD_ROLES):
+        problems.append(
+            f"validation_build_identities role set must be exactly "
+            f"{set(VALIDATION_BUILD_ROLES)!r}, got {set(validation_builds)!r}"
+        )
+    else:
+        for role in VALIDATION_BUILD_ROLES:
+            try:
+                _validate_build_identity(
+                    validation_builds.get(role), field=f"validation_build_identities.{role}"
+                )
+            except ValidationEvidenceError as exc:
+                problems.append(str(exc))
+    hardware = record.get("hardware")
+    if not isinstance(hardware, Mapping) or not hardware.get("architectures"):
+        problems.append("hardware provenance (architectures) is missing")
+    correctness = record.get("correctness")
+    if isinstance(correctness, Mapping) and correctness.get("disposition") == "failed":
+        problems.append("correctness recorded a failure")
+    try:
+        _require_hex(record.get("patch_implementation_digest"), "patch_implementation_digest", (64,))
+        _require_hex(record.get("base_revision"), "base_revision", (40, 64))
+        _require_hex(record.get("campaign_identity_digest"), "campaign_identity_digest", (64,))
+    except ValidationEvidenceError as exc:
+        problems.append(str(exc))
+    return (not problems, tuple(problems))
+
+
+def _record_qualifies_for_deferred_hardware(
+    record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
+    resolved_base_revision: str | None = None,
+) -> tuple[bool, tuple[str, ...]]:
+    """VA08: the 'deferred-hardware' tracked-status obligation -- requires
+    only a fresh, structured BLOCKED evidence record (real patch identity
+    + resolved base revision, both current). Deliberately does NOT require
+    completed hardware/build/benchmark evidence -- the entire point of
+    this status is that hardware was unavailable, so demanding hardware
+    evidence to qualify it would be self-defeating."""
+    problems: list[str] = []
+    if record.get("patch_id") != module.patch_id:
+        problems.append(f"patch_id={record.get('patch_id')!r}, expected {module.patch_id!r}")
+    if record.get("patch_validation_subject_digest") != subject_digest:
+        problems.append("patch implementation digest is stale")
+    if record.get("base_ref") != pinned_ref:
+        problems.append(f"base_ref={record.get('base_ref')!r}, expected {pinned_ref!r}")
+    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
+        problems.append(
+            f"base_revision={record.get('base_revision')!r} does not match the currently "
+            f"resolved pin {resolved_base_revision!r}"
+        )
+    if not record.get("blockers"):
+        problems.append("no structured blockers recorded")
+    try:
+        _require_hex(record.get("patch_implementation_digest"), "patch_implementation_digest", (64,))
+        _require_hex(record.get("base_revision"), "base_revision", (40, 64))
+    except ValidationEvidenceError as exc:
+        problems.append(str(exc))
+    return (not problems, tuple(problems))
+
+
 def _legacy_hashes(root: Path | None) -> dict[str, str]:
     path = Path(root or paths.PATCHES / "_validation") / "legacy-baseline.json"
     if not path.is_file():
@@ -724,6 +827,102 @@ def verify_validated_patch(
         problems.append("no current qualifying HI83 validation record")
     if missing_architectures:
         problems.append("missing architecture(s): " + ", ".join(missing_architectures))
+    if stale:
+        problems.append("stale/ineligible: " + " | ".join(stale[:3]))
+    return EvidenceCheck("missing-or-stale", tuple(problems))
+
+
+def _resolve_contract_identity(
+    module: patchset.PatchModule,
+) -> tuple[str | None, str | None, str | None]:
+    """Shared descriptor/contract lookup used by both status-obligation
+    verifiers below, mirroring verify_validated_patch()'s own resolution
+    exactly (validation_digest, contract_id, contract_hash)."""
+    validation_digest = None
+    contract_id = None
+    contract_hash = None
+    try:
+        from . import registry as patch_registry
+        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
+        descriptor = registry.get(module.patch_id)
+        validation_digest = descriptor.validation_digest or _validation_digest(module.path)
+        contract_id = descriptor.experiment_contract
+        if descriptor.experiment_contract is not None:
+            from . import validation as patch_validation
+            binding = patch_validation.load_contract_for_descriptor(descriptor)
+            if binding is not None:
+                contract_hash = binding.contract_hash
+    except (OSError, ValueError, KeyError):
+        pass
+    return validation_digest, contract_id, contract_hash
+
+
+def verify_ported_benched_patch(
+    module: patchset.PatchModule, *, pinned_ref: str, root: Path | None = None,
+    resolved_base_revision: str | None = None,
+) -> EvidenceCheck:
+    """VA08: current-pin qualification for the 'ported-benched'
+    tracked-status (docs/reference/testing/PATCH_VALIDATION.md's table) --
+    a real control/subject benchmark actually ran, with build and hardware
+    identities recorded, and no recorded correctness failure. A failing
+    required correctness result forbids qualification at this level; a
+    generic missing/unattempted correctness claim does not (STATE=
+    'validated' is the status that demands full correctness passing)."""
+    subject_digest = patch_validation_subject_digest(module.path)
+    validation_digest, contract_id, contract_hash = _resolve_contract_identity(module)
+    qualifying: list[dict[str, object]] = []
+    stale: list[str] = []
+    for record in load_records(module.patch_id, root=root):
+        ok, why = _record_qualifies_for_benched(
+            record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
+            resolved_base_revision=resolved_base_revision, validation_digest=validation_digest,
+            contract_id=contract_id, contract_hash=contract_hash,
+        )
+        if ok:
+            qualifying.append(record)
+        else:
+            digest_prefix = str(record.get("campaign_identity_digest", "?"))[:12]
+            stale.append(f"{digest_prefix}: " + "; ".join(why))
+    if qualifying:
+        return EvidenceCheck(
+            "ported-benched-evidence",
+            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+        )
+    problems = ["no current qualifying ported-benched evidence"]
+    if stale:
+        problems.append("stale/ineligible: " + " | ".join(stale[:3]))
+    return EvidenceCheck("missing-or-stale", tuple(problems))
+
+
+def verify_deferred_hardware_patch(
+    module: patchset.PatchModule, *, pinned_ref: str, root: Path | None = None,
+    resolved_base_revision: str | None = None,
+) -> EvidenceCheck:
+    """VA08: current-pin qualification for the 'deferred-hardware'
+    tracked-status -- requires only a fresh, structured BLOCKED/deferred
+    evidence record whose patch identity and resolved base revision are
+    current. Never requires completed hardware/build/benchmark evidence
+    (that would be self-defeating for a status whose whole meaning is
+    "hardware was unavailable")."""
+    subject_digest = patch_validation_subject_digest(module.path)
+    qualifying: list[dict[str, object]] = []
+    stale: list[str] = []
+    for record in load_records(module.patch_id, root=root):
+        ok, why = _record_qualifies_for_deferred_hardware(
+            record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
+            resolved_base_revision=resolved_base_revision,
+        )
+        if ok:
+            qualifying.append(record)
+        else:
+            digest_prefix = str(record.get("campaign_identity_digest", "?"))[:12]
+            stale.append(f"{digest_prefix}: " + "; ".join(why))
+    if qualifying:
+        return EvidenceCheck(
+            "deferred-hardware-evidence",
+            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+        )
+    problems = ["no current qualifying deferred-hardware (BLOCKED) evidence"]
     if stale:
         problems.append("stale/ineligible: " + " | ".join(stale[:3]))
     return EvidenceCheck("missing-or-stale", tuple(problems))
