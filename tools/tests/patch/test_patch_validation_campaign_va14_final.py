@@ -47,7 +47,7 @@ class _FakeRd08CorrectnessModule:
     def materialize_rd08_variants(self, *, base_repo, worktree_root, base_revision):
         return Path("subject_src"), Path("control_src")
 
-    def require_rd08_correctness_evidence(self, *, subject_binary, control_binary):
+    def require_rd08_correctness_evidence(self, *, subject_binary, control_binary, runner=None):
         if self._fail:
             raise self.Rd08CorrectnessError("mismatch at shape=shape0 seed=1")
         return self.rows

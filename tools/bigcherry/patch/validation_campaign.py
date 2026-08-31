@@ -737,10 +737,25 @@ def run_rd08_contract_correctness(
         requested_cmake_args=cmake_args, build_env=build_env,
     )
 
+    # VA15 real-hardware finding: correctness_evidence.run_test_backend_ops()
+    # calls subprocess.run(argv, env=run_env) with run_env built from
+    # scratch ({} plus its own explicit keys) -- an explicit env=
+    # REPLACES the child's environment rather than extending it, so
+    # HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES set on this process are
+    # silently dropped and the subprocess sees every GPU again, crashing
+    # against an architecture-restricted build exactly like the earlier
+    # multi-GPU segfault this campaign already worked around. Wrap the
+    # runner to restore the real ambient environment underneath whatever
+    # run_test_backend_ops() explicitly sets (which must still win).
+    def _correctness_runner(argv, **kwargs):
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
     try:
         rows = rd08_correctness.require_rd08_correctness_evidence(
             subject_binary=subject_bin / f"test-backend-ops{exe}",
             control_binary=control_bin / f"test-backend-ops{exe}",
+            runner=_correctness_runner,
         )
         result = experiment_contract.CorrectnessResult(
             check="bit_identical", passed=True,
