@@ -134,9 +134,16 @@ class FakeTransport:
     uses -- lets the harness's control-flow/fail-closed logic be tested
     without a real GPU/server."""
 
-    def __init__(self, *, slots: int = 1, metrics_available: bool = True) -> None:
+    def __init__(self, *, slots: int = 1, metrics_available: bool = True, metrics_lag_polls: int = 0) -> None:
         self.slots = slots
         self.metrics_available = metrics_available
+        # gpt-dev-agent review round 2, 2026-08-31: b10687 flushes global
+        # speculative metrics from callback_on_reset() AFTER the HTTP
+        # response is already sent -- simulate that lag by holding the
+        # NEXT `metrics_lag_polls` /metrics reads at the pre-request
+        # snapshot before actually reflecting the completed request.
+        self.metrics_lag_polls = metrics_lag_polls
+        self._pending_advance: tuple[float, float, float, dict[int, float]] | None = None
         self._draft = 0.0
         self._accepted = 0.0
         self._drafts = 0.0
@@ -148,6 +155,17 @@ class FakeTransport:
         if path == "/metrics":
             if not self.metrics_available:
                 raise sc.BenchmarkError("metrics disabled")
+            if self._pending_advance is not None:
+                if self.metrics_lag_polls > 0:
+                    self.metrics_lag_polls -= 1
+                else:
+                    draft, accepted, drafts, per_position = self._pending_advance
+                    self._draft += draft
+                    self._accepted += accepted
+                    self._drafts += drafts
+                    for position, count in per_position.items():
+                        self._per_position[position] = self._per_position.get(position, 0.0) + count
+                    self._pending_advance = None
             return _metrics_text(self._draft, self._accepted, self._drafts, self._per_position)
         raise AssertionError(f"unexpected GET {path}")
 
@@ -161,19 +179,19 @@ class FakeTransport:
         self.completion_calls.append(payload)
         response = self.next_response
         assert response is not None, "test must set next_response before each completion call"
-        # Advance the underlying metrics counters to match the queued
-        # response's own draft_n/draft_n_accepted -- matching what a real
-        # server would actually do.
+        # Queue the metrics advance rather than applying it immediately --
+        # get_text("/metrics") above is what actually applies it, honoring
+        # metrics_lag_polls. Advance from dedicated "_actual_*" fields, NOT
+        # draft_n/draft_n_accepted -- a test tampering with the response's
+        # draft_n (to simulate a real disagreement) must not also silently
+        # tamper with what /metrics itself reports.
         timings = response.get("timings", {})
-        # Advance from dedicated "_actual_*" fields, NOT draft_n/draft_n_accepted
-        # -- a test tampering with the response's draft_n (to simulate a
-        # real disagreement between /completion and /metrics) must not
-        # also silently tamper with what /metrics itself reports.
-        self._draft += timings.get("_actual_draft_n", timings.get("draft_n", 0))
-        self._accepted += timings.get("_actual_draft_n_accepted", timings.get("draft_n_accepted", 0))
-        self._drafts += timings.get("_verification_cycles", 1)
-        for position, count in timings.get("_per_position_delta", {}).items():
-            self._per_position[position] = self._per_position.get(position, 0.0) + count
+        self._pending_advance = (
+            timings.get("_actual_draft_n", timings.get("draft_n", 0)),
+            timings.get("_actual_draft_n_accepted", timings.get("draft_n_accepted", 0)),
+            timings.get("_verification_cycles", 1),
+            timings.get("_per_position_delta", {}),
+        )
         return response
 
 
@@ -234,7 +252,16 @@ class RunRequestTests(unittest.TestCase):
         self.assertAlmostEqual(record["draft_acceptance"], 168 / 426)
         self.assertAlmostEqual(record["mean_accepted_length"], 1.0 + 168 / 86)
         self.assertEqual(record["accepted_count_by_position"], [86, 55, 21, 6])
-        self.assertAlmostEqual(sum(record["acceptance_rate_by_position"]), 1.0)
+        # gpt-dev-agent review round 2, 2026-08-31: rates are count/verification_cycles
+        # (a survival curve -- "fraction of steps accepting >= i+1 tokens"),
+        # NOT count/sum(counts) -- they do not sum to 1. Real numbers from
+        # the actual 2026-08-31 baseline server log: [86,55,21,6]/86.
+        self.assertEqual(
+            record["acceptance_rate_by_position"],
+            [86 / 86, 55 / 86, 21 / 86, 6 / 86],
+        )
+        # The real invariant: summed counts equal total accepted tokens.
+        self.assertEqual(sum(record["accepted_count_by_position"]), record["draft_accepted"])
 
     def test_short_response_fails_closed(self):
         transport = FakeTransport()
@@ -250,6 +277,40 @@ class RunRequestTests(unittest.TestCase):
         with self.assertRaises(sc.BenchmarkError):
             sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
 
+    def test_tolerates_a_short_metrics_flush_lag(self):
+        """gpt-dev-agent review round 2, 2026-08-31: real b10687 flushes
+        global speculative metrics AFTER the HTTP response is already
+        sent (callback_on_reset() during slot.release()). A brief lag
+        must not falsely trip the disagreement check."""
+        transport = FakeTransport(metrics_lag_polls=2)
+        prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
+        transport.next_response = _completion_response(
+            tokens_predicted=256, draft_n=426, draft_n_accepted=168,
+            verification_cycles=86, per_position_delta={0: 86, 1: 55, 2: 21, 3: 6},
+        )
+        record = sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
+        self.assertEqual(record["draft_generated"], 426)  # eventually caught up, no error
+
+    def test_metrics_that_never_catch_up_times_out_fail_closed(self):
+        transport = FakeTransport(metrics_lag_polls=10_000)  # effectively never catches up
+        prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
+        transport.next_response = _completion_response(tokens_predicted=256, draft_n=426, draft_n_accepted=168)
+        original_timeout = sc._METRICS_POLL_TIMEOUT_S
+        sc._METRICS_POLL_TIMEOUT_S = 0.15  # keep the test fast
+        try:
+            with self.assertRaises(sc.BenchmarkError):
+                sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
+        finally:
+            sc._METRICS_POLL_TIMEOUT_S = original_timeout
+
+    def test_missing_draft_fields_in_completion_response_fails_closed(self):
+        transport = FakeTransport()
+        prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
+        response = {"tokens_predicted": 256, "tokens_evaluated": 10, "timings": {"predicted_ms": 1000.0}}
+        transport.next_response = response
+        with self.assertRaises(sc.BenchmarkError):
+            sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
+
     def test_completion_metrics_disagreement_fails_closed(self):
         """gpt-dev-agent-recommended fail-closed check: /completion's own
         draft_n must agree with the /metrics delta, or something is wrong
@@ -260,6 +321,9 @@ class RunRequestTests(unittest.TestCase):
         response["timings"]["_actual_draft_n"] = 426  # what /metrics really advanced by
         response["timings"]["draft_n"] = 999  # but /completion CLAIMS a different value
         transport.next_response = response
+        original_timeout = sc._METRICS_POLL_TIMEOUT_S
+        sc._METRICS_POLL_TIMEOUT_S = 0.15  # 999 is never reached -- keep the test fast
+        self.addCleanup(lambda: setattr(sc, "_METRICS_POLL_TIMEOUT_S", original_timeout))
         with self.assertRaises(sc.BenchmarkError):
             sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
 

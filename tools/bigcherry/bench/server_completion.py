@@ -279,6 +279,49 @@ def _deterministic_order(prompt_ids: list[str], seed: int) -> list[int]:
     return indices
 
 
+_METRICS_POLL_TIMEOUT_S = 2.0
+_METRICS_POLL_INTERVAL_S = 0.05
+
+
+def _poll_metrics_until_matches(
+    transport: Transport, before: Metrics, *, expected_draft_n: int, expected_draft_accepted: int,
+) -> Metrics:
+    """b10687's server flushes global speculative metrics from
+    ``callback_on_reset()`` during ``slot.release()``, AFTER
+    ``send_final_response()`` -- so the HTTP /completion response can
+    become observable to this client before /metrics reflects the same
+    request. A single immediate post-response snapshot can therefore
+    falsely trip the disagreement check on a real server (gpt-dev-agent
+    review round 2, 2026-08-31). Poll with a short bound instead; still
+    fails closed (BenchmarkError) if the deltas never agree within the
+    timeout, an overshoot happens, or a counter goes backwards -- never
+    silently accepts a mismatch.
+    """
+    deadline = time.monotonic() + _METRICS_POLL_TIMEOUT_S
+    last_delta: dict[str, Any] | None = None
+    while True:
+        after = fetch_metrics(transport)
+        delta = metrics_delta(before, after)
+        if delta["draft_generated"] == expected_draft_n and delta["draft_accepted"] == expected_draft_accepted:
+            return after
+        if delta["draft_generated"] > expected_draft_n or delta["draft_accepted"] > expected_draft_accepted:
+            raise BenchmarkError(
+                f"/metrics overshot the response's own draft_n/draft_n_accepted "
+                f"(response said {expected_draft_n}/{expected_draft_accepted}, /metrics "
+                f"delta is now {delta['draft_generated']}/{delta['draft_accepted']}) -- "
+                f"concurrent traffic on this 'single-slot' server, not a flush race"
+            )
+        last_delta = delta
+        if time.monotonic() >= deadline:
+            raise BenchmarkError(
+                f"/metrics never caught up to /completion's reported "
+                f"draft_n={expected_draft_n}/draft_n_accepted={expected_draft_accepted} "
+                f"within {_METRICS_POLL_TIMEOUT_S}s (last seen: "
+                f"{last_delta['draft_generated']}/{last_delta['draft_accepted']})"
+            )
+        time.sleep(_METRICS_POLL_INTERVAL_S)
+
+
 def run_request(
     transport: Transport, prompt: CorpusPrompt, config: SessionConfig, *, pass_number: int, order_index: int,
 ) -> dict[str, Any]:
@@ -295,7 +338,6 @@ def run_request(
         "ignore_eos": True,
     })
     wall_s = time.monotonic() - start
-    after = fetch_metrics(transport)
 
     timings = response.get("timings", {})
     tokens_predicted = response.get("tokens_predicted")
@@ -312,23 +354,26 @@ def run_request(
             f"short/long response is a failed run, not a data point"
         )
 
+    # This harness exists specifically to benchmark MTP speculative decode
+    # -- b10687 emits both fields whenever any drafting occurred at all,
+    # so their absence here means either drafting didn't happen (wrong
+    # server config for this benchmark) or a schema change; either way,
+    # fail closed rather than silently recording a non-speculative sample
+    # under a benchmark whose whole point is speculative-decode evidence.
+    completion_draft_n = timings.get("draft_n")
+    completion_draft_accepted = timings.get("draft_n_accepted")
+    if completion_draft_n is None or completion_draft_accepted is None:
+        raise BenchmarkError(
+            f"prompt {prompt.id!r}: /completion's timings has no draft_n/draft_n_accepted "
+            f"-- either speculative decoding did not run for this request, or this "
+            f"server/build's response schema has changed; this harness requires real "
+            f"speculative-decode evidence for every request"
+        )
+
+    after = _poll_metrics_until_matches(
+        transport, before, expected_draft_n=completion_draft_n, expected_draft_accepted=completion_draft_accepted,
+    )
     delta = metrics_delta(before, after)
-    completion_draft_n = response.get("timings", {}).get("draft_n")
-    completion_draft_accepted = response.get("timings", {}).get("draft_n_accepted")
-    if completion_draft_n is not None and completion_draft_n != delta["draft_generated"]:
-        raise BenchmarkError(
-            f"prompt {prompt.id!r}: /completion draft_n={completion_draft_n} != "
-            f"/metrics delta draft_generated={delta['draft_generated']} -- concurrent "
-            f"traffic, a server restart, or a schema drift between the two; refusing "
-            f"to record disagreeing evidence"
-        )
-    if completion_draft_accepted is not None and completion_draft_accepted != delta["draft_accepted"]:
-        raise BenchmarkError(
-            f"prompt {prompt.id!r}: /completion draft_n_accepted={completion_draft_accepted} != "
-            f"/metrics delta draft_accepted={delta['draft_accepted']} -- concurrent "
-            f"traffic, a server restart, or a schema drift between the two; refusing "
-            f"to record disagreeing evidence"
-        )
 
     verification_cycles = delta["verification_cycles"]
     mean_accepted_length = (
@@ -337,10 +382,20 @@ def run_request(
     draft_acceptance = (
         delta["draft_accepted"] / delta["draft_generated"] if delta["draft_generated"] else None
     )
-    total_by_position = sum(delta["accepted_count_by_position"]) or None
+    # gpt-dev-agent review round 2, 2026-08-31: acceptance_rate_by_position
+    # is NOT count-at-position / sum-of-counts (that would force the rates
+    # to sum to 1, which is not what the vendor semantics mean). The
+    # server increments positions 0..k-1 once per verification step that
+    # accepted k tokens, so accepted_count_by_position[i] / verification_cycles
+    # is "fraction of verification steps that accepted AT LEAST i+1
+    # tokens" -- a survival curve (position 0 near 1.0, decreasing), not a
+    # distribution. sum(accepted_count_by_position) == draft_accepted is
+    # the real invariant (verified against real server log evidence: the
+    # 2026-08-31 baseline's counts [86,55,21,6,0] sum to 168 ==
+    # draft_accepted, and 168/86 == mean len 2.95 the server itself logged).
     acceptance_rate_by_position = (
-        [count / total_by_position for count in delta["accepted_count_by_position"]]
-        if total_by_position
+        [count / verification_cycles for count in delta["accepted_count_by_position"]]
+        if verification_cycles
         else None
     )
 
