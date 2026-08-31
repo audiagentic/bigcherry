@@ -1230,7 +1230,15 @@ def run(args: argparse.Namespace) -> int:
             raise PatchCampaignError(
                 f"{args.patch}: trace CLI options require a trace-marker validation check"
             )
-    trace_result = run_trace_activation_probes(
+    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
+    # generic tune-binary/fusion-disabled probe is redundant for
+    # --run-rd08-contract -- it is replaced by RD08's own authoritative
+    # validation-subject/control trigger probe below, which is a valid
+    # negative control for RD08's specific marker (the generic probe's
+    # negative control, GGML_CUDA_DISABLE_FUSION=1, is not). Skipping it
+    # here also avoids wasted GPU time on a probe whose result gets
+    # overwritten anyway.
+    trace_result = None if args.run_rd08_contract else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -1278,15 +1286,27 @@ def run(args: argparse.Namespace) -> int:
             },
         }
 
-    try:
-        campaign.run()
-    except CampaignError as exc:
-        _print(f"CAMPAIGN FAILED: {exc}")
-        return 1
+    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
+    # generic S1-S7 record/tune/promote/replay/bench/report campaign is
+    # unrelated to RD08's own contract evidence -- lanes/correctness/
+    # trigger/promotion never consume promoted.jsonl, dispatch.cache,
+    # replay coverage, or S6/S7 results. Making that unrelated pipeline's
+    # own promotion decision (which can legitimately promote zero
+    # candidates on a real, honest run -- that is not a bug) a hard
+    # prerequisite of --run-rd08-contract was itself the real bug,
+    # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
+    # above still ran, so campaign.campaign_identity_digest remains valid
+    # for RD08's evidence below.
+    if not args.run_rd08_contract:
+        try:
+            campaign.run()
+        except CampaignError as exc:
+            _print(f"CAMPAIGN FAILED: {exc}")
+            return 1
 
-    report_path = workdir / "campaign" / "report.md"
-    _print(f"done -- report: {report_path}")
-    print(report_path.read_text(encoding="utf-8"))
+        report_path = workdir / "campaign" / "report.md"
+        _print(f"done -- report: {report_path}")
+        print(report_path.read_text(encoding="utf-8"))
 
     # HI83: record what this campaign proved (or didn't), tracked so
     # STATE="validated" can eventually be checked against it. This is
