@@ -395,7 +395,7 @@ class DigestTests(unittest.TestCase):
         (package / "validation.toml").write_text("schema = 1\n", encoding="utf-8")
         baseline = patch_registry.load_registry(self.root, contracts_path=self.contracts)
         digest = baseline.get("1204_rd08_test").validation_digest
-        self.assertEqual(patch_registry.VALIDATION_FRAMEWORK_VERSION, "1")
+        self.assertEqual(patch_registry.VALIDATION_FRAMEWORK_VERSION, "2")
         # The digest is stable absent semantic change...
         second = patch_registry.load_registry(self.root, contracts_path=self.contracts)
         self.assertEqual(
@@ -405,7 +405,7 @@ class DigestTests(unittest.TestCase):
         # ...and a semantic-version bump MUST invalidate it (runbook 14.2/15).
         original = patch_registry.VALIDATION_FRAMEWORK_VERSION
         try:
-            patch_registry.VALIDATION_FRAMEWORK_VERSION = "2"
+            patch_registry.VALIDATION_FRAMEWORK_VERSION = "3"
             bumped = patch_registry.load_registry(self.root, contracts_path=self.contracts)
             self.assertNotEqual(
                 bumped.get("1204_rd08_test").validation_digest, digest,

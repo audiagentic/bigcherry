@@ -232,7 +232,8 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
     names = (
         "status.json", "activation.json", "correctness.json", "bench.json", "report.md",
         "tune.jsonl.measurements.jsonl", "promoted.jsonl", "coverage.json", "dispatch.cache",
-        "artifacts/validation-lanes.json",
+        "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
+        "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 

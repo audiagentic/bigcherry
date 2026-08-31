@@ -432,7 +432,7 @@ class RegistryAndVersionTests(unittest.TestCase):
         self.assertEqual(
             pv.VALIDATION_FRAMEWORK_VERSION, patch_registry.VALIDATION_FRAMEWORK_VERSION
         )
-        self.assertEqual(pv.VALIDATION_FRAMEWORK_VERSION, "1")
+        self.assertEqual(pv.VALIDATION_FRAMEWORK_VERSION, "2")
 
     def test_builtin_apply_requires_explicit_sources(self) -> None:
         spec = pv.CheckSpec(

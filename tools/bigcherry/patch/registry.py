@@ -51,7 +51,7 @@ from .apply import FilePatch
 # identity reusable (15). Pinned HERE (lower layer) so the validation digest
 # computed at discovery time stays import-cycle-free; patch_validation.py
 # imports and re-exports it.
-VALIDATION_FRAMEWORK_VERSION = "1"
+VALIDATION_FRAMEWORK_VERSION = "2"
 
 STATES: tuple[str, ...] = ("validated", "rejected", "untested", "superseded")
 # Both are terminal/excluded from discovery (patch-rebase-check --all,

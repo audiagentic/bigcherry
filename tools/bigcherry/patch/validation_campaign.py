@@ -462,45 +462,48 @@ def run_trace_activation_probes(
 
 
 def compute_contract_correctness_gate(
-    descriptor: object, correctness_summary: dict[str, object] | None,
+    contract: object | None, named_results: "dict[str, object] | None" = None,
 ) -> dict[str, object] | None:
-    """VA11A: named-correctness independence, computed as a real,
-    independent diagnostic -- NEVER wired into this slice's own eligibility
-    (compute_verdict() stays the only thing that gates VA11A; composing
-    adapter-verdict AND contract-qualification into final eligibility is
-    VA11B's job). Returns None when the patch has no bound contract at all,
-    or the contract declares no required correctness checks.
+    """VA14 final slice (GPT session ses_5bbee8ce5c9a4265, req_75c09f14757640af):
+    delegates to the real, native `experiment_contract.evaluate_correctness_gate()`
+    instead of always reporting BLOCKED -- a real per-named-check evidence
+    producer now exists for at least one contract (RD08's
+    require_rd08_correctness_evidence(), orchestrated by
+    run_rd08_contract_correctness() below). Returns None when there is no
+    bound contract at all, or the contract declares no required correctness
+    checks (a pure-performance contract passes trivially).
 
-    ANY non-empty required_checks -- one name or several -- is reported
-    BLOCKED here, never a real pass. GPT round 8 (req_84fca34f83064678)
-    corrected an earlier version of this function that treated a
-    single-required-check contract as safely provable from the one generic
-    --correctness-evidence summary: that summary has no machine-readable
-    field naming WHICH check it actually proves (load_correctness_summary()
-    validates identity/disposition only), so constructing
-    CorrectnessResult(check=required_checks[0], passed=disposition=='passed')
-    silently asserted the summary proved that specific named check when it
-    never claimed to. A real per-named-check evidence producer (token-bound
-    to the check it proves) is VA14's job, not this plumbing slice's."""
-    if descriptor.experiment_contract is None:
+    ``named_results`` must be real ``CorrectnessResult``s keyed by check
+    name, never a generic --correctness-evidence summary standing in for a
+    specific named check (GPT round 8, req_84fca34f83064678 -- that
+    confusion is exactly what this signature change prevents: there is no
+    longer a `correctness_summary` parameter to misuse this way). Missing
+    results (None, or a check simply absent from the dict) are reported via
+    evaluate_correctness_gate()'s own missing_checks -- caught here as a
+    BLOCKED-shaped dict only when the gate would otherwise raise for
+    receiving literally zero results against a contract that requires some
+    (its own hard-fail-on-truly-empty-input behavior); any check present in
+    ``named_results`` is judged on its own passed/failed value."""
+    if contract is None or not contract.correctness.required_checks:
         return None
-    from bigcherry.patch import validation as patch_validation
+    from bigcherry.experiment import contract as experiment_contract
 
-    full_contract = patch_validation.load_contract_for_descriptor(descriptor)
-    if full_contract is None:
-        return None
-    required_checks = full_contract.correctness.required_checks
-    if not required_checks:
-        return None
-    return {
-        "passed": False,
-        "status": "blocked",
-        "detail": (
-            f"contract requires correctness check(s) {list(required_checks)!r}; no "
-            "per-named-check evidence producer exists yet (VA14) -- refusing to infer "
-            "a named check's result from one generic, untagged correctness summary"
-        ),
-    }
+    try:
+        return experiment_contract.evaluate_correctness_gate(contract, dict(named_results or {}))
+    except experiment_contract.ExperimentContractError:
+        required_checks = contract.correctness.required_checks
+        return {
+            "passed": False,
+            "status": "blocked",
+            "required_checks": list(required_checks),
+            "missing_checks": list(required_checks),
+            "failed_checks": [],
+            "results": {},
+            "detail": (
+                f"contract requires correctness check(s) {list(required_checks)!r}; no "
+                "per-named-check evidence was supplied for this run"
+            ),
+        }
 
 
 def assert_validation_subject_parity(
@@ -655,27 +658,233 @@ def run_rd08_validation_lanes(
     return {"artifact": artifact_ref, "effects": effects}
 
 
+def _load_rd08_correctness_module() -> object:
+    """Dynamically load the real, already-reviewed RD08 correctness
+    producer (patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py)
+    -- orchestrated here, never reimplemented (that module is the
+    authoritative 5-shape x 3-seed exact-digest proof; this caller's job is
+    build/execute/persist plumbing only)."""
+    module_path = (
+        REPO_ROOT / "patches" / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "rd08_correctness.py"
+    )
+    if not module_path.is_file():
+        raise PatchCampaignError(f"rd08 correctness producer not found at {module_path}")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bigcherry_rd08_correctness", module_path)
+    if spec is None or spec.loader is None:
+        raise PatchCampaignError(f"cannot load rd08 correctness producer at {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_rd08_contract_correctness(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, build_env: dict[str, str], run_dir: Path, _module: object | None = None,
+) -> dict[str, object]:
+    """VA14 final slice: RD08's real bit-identical correctness producer,
+    orchestrated. materialize_rd08_variants() builds its OWN isolated
+    VDR2-subject/VDR1-control worktrees -- a source-level A/B distinct from
+    this campaign's control/validation-subject trees -- which this function
+    then builds symmetrically (extra_cmake_args=[], matching each other)
+    and hands to require_rd08_correctness_evidence(), the authoritative
+    5-shape x 3-seed exact-digest proof.
+
+    Only Rd08CorrectnessError (a real, specific correctness failure) is
+    caught and turned into passed=False; materialization/build/
+    infrastructure errors remain hard campaign errors, never silently
+    downgraded to a correctness result. ``_module`` is injectable for
+    hardware-free testing; defaults to the real dynamically-loaded
+    producer."""
+    from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.patch import source as psi
+
+    rd08_correctness = _module or _load_rd08_correctness_module()
+    subject_src, control_src = rd08_correctness.materialize_rd08_variants(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root, base_revision=base_revision,
+    )
+    exe = ".exe" if sys.platform == "win32" else ""
+    correctness_build_root = build_root / "rd08-correctness"
+
+    subject_bin = build_tree(
+        name="rd08-correctness-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["test-backend-ops"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name="rd08-correctness-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["test-backend-ops"], source=control_src,
+        extra_cmake_args=[],
+    )
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / "rd08-correctness-subject", source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_bin / f"test-backend-ops{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / "rd08-correctness-control", source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"test-backend-ops{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+
+    try:
+        rows = rd08_correctness.require_rd08_correctness_evidence(
+            subject_binary=subject_bin / f"test-backend-ops{exe}",
+            control_binary=control_bin / f"test-backend-ops{exe}",
+        )
+        result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=True,
+            detail=f"{len(rows)} (shape,seed) pairs bit-identical",
+        )
+        rows_doc = [{"shape": r.shape_name, "seed": r.seed, "ok": r.ok} for r in rows]
+    except rd08_correctness.Rd08CorrectnessError as exc:
+        result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=False, detail=str(exc),
+        )
+        rows_doc = []
+
+    correctness_doc = {
+        "check": "bit_identical", "passed": result.passed, "detail": result.detail,
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "rows": rows_doc,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd08-correctness.json", correctness_doc)
+    return {
+        "results": {"bit_identical": result}, "artifact": artifact_ref,
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+    }
+
+
+def run_rd08_contract_trigger(
+    *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
+    hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
+) -> dict[str, object]:
+    """VA14 final slice: RD08's real trigger proof. Unlike the generic
+    activation probe (tune binary + GGML_CUDA_DISABLE_FUSION=1 as its
+    negative control, which proves nothing about RD08's specific MMVQ
+    marker), this runs the SAME decode command against the validation
+    control binary (which never has the RD08 patch applied at all -- a
+    genuine negative) and the validation-subject binary (the parity-built
+    patched binary), both with BIGCHERRY_PATCH_TRACE=1 via the existing
+    trace-probe machinery (_run_one_trace_probe)."""
+    from bigcherry.experiment import execution as experiment_execution
+
+    pattern = re.compile(marker_regex)
+    subject_log = _run_one_trace_probe(
+        name="rd08-trigger-subject", binary=subject_binary, model=model, hip_path=hip_path,
+        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+    )
+    control_log = _run_one_trace_probe(
+        name="rd08-trigger-control", binary=control_binary, model=model, hip_path=hip_path,
+        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+    )
+    subject_hit = pattern.search(subject_log) is not None
+    control_hit = pattern.search(control_log) is not None
+    subject_te = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="rd08-decode-subject", role="positive", positive_hit=subject_hit,
+    )
+    control_te = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="rd08-decode-control", role="control", positive_hit=control_hit,
+    )
+    trigger_doc = {
+        "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
+        "positive": {"lane_id": subject_te.lane_id, "candidate_launches": subject_te.candidate_launches},
+        "control": {"lane_id": control_te.lane_id, "candidate_launches": control_te.candidate_launches},
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd08-trigger.json", trigger_doc)
+    return {
+        "evidence": [subject_te, control_te], "artifact": artifact_ref,
+        "subject_hit": subject_hit, "control_hit": control_hit,
+    }
+
+
+def run_rd08_contract_qualification(
+    *, contract: object, descriptor: object, base_revision: str,
+    control_binary: Path, subject_binary: Path, model: Path, model_ref: str,
+    marker_regex: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, build_env: dict[str, str], run_dir: Path,
+    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    pairs: int = 3,
+) -> dict[str, object]:
+    """VA14 final slice: the authoritative RD08 full-qualification path
+    (``--run-rd08-contract``). Composes real lane execution + real
+    per-named correctness + real trigger proof into
+    evaluate_promotion_gate()'s verdict -- this is the ONLY path allowed to
+    produce contract promotion/eligibility; ``run_rd08_validation_lanes()``
+    alone (``--run-rd08-lanes``) stays diagnostic-only."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    lanes = run_rd08_validation_lanes(
+        contract=contract, control_binary=control_binary, subject_binary=subject_binary,
+        model=model, model_ref=model_ref, hip_path=hip_path, run_dir=run_dir,
+        control_build_identity=control_build_identity, subject_build_identity=subject_build_identity,
+        pairs=pairs,
+    )
+    correctness = run_rd08_contract_correctness(
+        base_revision=base_revision, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        worktree_root=worktree_root, build_root=build_root, build_env=build_env, run_dir=run_dir,
+    )
+    trigger = run_rd08_contract_trigger(
+        marker_regex=marker_regex, control_binary=control_binary, subject_binary=subject_binary,
+        model=model, hip_path=hip_path, workdir=run_dir, run_dir=run_dir,
+    )
+    correctness_gate = compute_contract_correctness_gate(contract, correctness["results"])
+    aggregated_effects = experiment_contract.aggregate_contract_effects(
+        contract, lanes["effects"], target_metric="tg128",
+    )
+    trigger_proof = experiment_contract.evaluate_trigger_proof(trigger["evidence"])
+    promotion = experiment_contract.evaluate_promotion_gate(
+        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
+        trigger_proof=trigger_proof,
+    )
+    qualification_doc = {
+        "contract_id": contract.id, "contract_hash": contract.contract_hash,
+        "lanes_artifact": lanes["artifact"], "correctness_artifact": correctness["artifact"],
+        "trigger_artifact": trigger["artifact"],
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "trigger_proof": trigger_proof, "promotion": promotion,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "contract-qualification.json", qualification_doc)
+    return {
+        "lanes": lanes, "correctness": correctness, "trigger": trigger,
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "trigger_proof": trigger_proof, "promotion": promotion, "artifact": artifact_ref,
+    }
+
+
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
+    contract_promotions: "dict[str, dict[str, object]] | None" = None,
 ) -> bool | None:
-    """VA13/VA11A fail-closed invariant (GPT round 8, req_84fca34f83064678):
-    this slice explicitly cannot grant full Experiment-Contract
-    qualification. Persisting the raw adapter verdict for a bound-contract
-    patch would let patch-verify-evidence read it as fully 'validated' off
-    adapter-only evidence (compute_verdict() checks only that the
-    validation.toml adapter's own checks pass -- it says nothing about
-    contract-level named-correctness/performance/promotion qualification,
-    which is VA14's job). Force False whenever a contract is bound; the
-    adapter verdict remains a real diagnostic in check_results/
-    validation_verdict, it just cannot flow into
-    eligible_for_validated_state until VA14 composes it with real contract
-    qualification. A patch with NO bound contract is unaffected -- the
-    adapter verdict is the only qualification such a patch ever claims."""
-    if descriptor.experiment_contract is not None:
+    """VA14 final slice (GPT req_75c09f14757640af): a bound-contract patch
+    is eligible_for_validated_state only when BOTH the adapter verdict
+    (compute_verdict() -- validation.toml's own checks) AND every one of
+    the patch's bound Experiment Contracts have a passing
+    evaluate_promotion_gate() result in ``contract_promotions`` (keyed by
+    contract id). Uses the plural ``descriptor.experiment_contracts`` --
+    never the singular ``.experiment_contract`` compatibility property,
+    which raises for a multi-contract patch. A patch with NO bound contract
+    is unaffected -- the adapter verdict alone is the only qualification
+    such a patch ever claims, exactly as before."""
+    if not descriptor.experiment_contracts:
+        if validation_verdict is None:
+            return None
+        return validation_verdict.eligible
+    if validation_verdict is None or not validation_verdict.eligible:
         return False
-    if validation_verdict is None:
-        return None
-    return validation_verdict.eligible
+    promotions = contract_promotions or {}
+    return all(
+        promotions.get(contract_id, {}).get("passed") is True
+        for contract_id in descriptor.experiment_contracts
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -1063,6 +1272,12 @@ def run(args: argparse.Namespace) -> int:
     # (real bug, confirmed by reading validation.py::_builtin_backend_ops
     # before this fix -- GPT round-7 review, req_3d12aa6668b14bb1).
     correctness_evidence: dict[str, object] = {}
+    if args.correctness_evidence is not None and args.run_rd08_contract:
+        raise PatchCampaignError(
+            f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
+            "together -- --run-rd08-contract already produces its own authoritative "
+            "correctness.json"
+        )
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
             args.correctness_evidence, patch_id=args.patch,
@@ -1128,13 +1343,72 @@ def run(args: argparse.Namespace) -> int:
         },
     }
 
-    # VA14-B: RD08's real positive/control lane execution, opt-in and scoped
-    # to RD08 only (per GPT's explicit slice scope). Deliberately does NOT
-    # feed correctness/promotion/eligibility -- purely execution + raw
-    # evidence persistence, so a later slice can compose it with
-    # evaluate_promotion_gate() without re-running hardware.
+    # VA14-B/VA14-final: RD08 execution, opt-in and scoped to RD08 only.
+    # --run-rd08-lanes stays diagnostic-only (execution + evidence, never
+    # feeds eligibility). --run-rd08-contract is the authoritative full-
+    # qualification path (lanes + real named correctness + real trigger
+    # proof, composed via evaluate_promotion_gate()) and is the ONLY thing
+    # allowed to populate contract_promotions below. The two are mutually
+    # exclusive to avoid a redundant duplicate lane run.
+    if args.run_rd08_lanes and args.run_rd08_contract:
+        raise PatchCampaignError(
+            f"{args.patch}: --run-rd08-contract already runs the lanes -- "
+            "do not also pass --run-rd08-lanes"
+        )
     rd08_lane_evidence: dict[str, object] | None = None
-    if args.run_rd08_lanes and descriptor.experiment_contract == "RD08-Q6K-MMVQ-VDR2":
+    rd08_qualification: dict[str, object] | None = None
+    contract_promotions: dict[str, dict[str, object]] = {}
+    if (args.run_rd08_lanes or args.run_rd08_contract) and descriptor.experiment_contract != "RD08-Q6K-MMVQ-VDR2":
+        raise PatchCampaignError(
+            f"{args.patch}: --run-rd08-lanes/--run-rd08-contract are RD08-only today"
+        )
+    if args.run_rd08_contract:
+        from bigcherry.patch import validation as _pv
+
+        rd08_contract = _pv.load_contract_for_descriptor(descriptor)
+        if rd08_contract is None:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd08-contract requires a resolvable RD08 contract"
+            )
+        rd08_qualification = run_rd08_contract_qualification(
+            contract=rd08_contract, descriptor=descriptor, base_revision=base_revision,
+            control_binary=control_bin / f"llama-bench{exe}",
+            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
+            model_ref=rd08_contract.positive.models[0], marker_regex=trace_marker_regex,
+            hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+            worktree_root=args.worktree_root, build_root=build_root, build_env=build_env,
+            run_dir=campaign_run_dir,
+            control_build_identity=control_build_evidence.campaign_identity(),
+            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
+        )
+        contract_promotions[rd08_contract.id] = rd08_qualification["promotion"]
+        _print(f"rd08 contract qualification: {rd08_qualification['artifact']['path']}")
+        _print(
+            f"rd08 promotion: "
+            f"{'PASS' if rd08_qualification['promotion'].get('passed') else rd08_qualification['promotion'].get('status', 'FAIL')}"
+        )
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": "passed" if rd08_qualification["correctness_gate"].get("passed") else "failed",
+            "mechanism": "rd08-bit-identical-5shape-3seed",
+            "detail": rd08_qualification["correctness"]["results"]["bit_identical"].detail,
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
+    elif args.run_rd08_lanes:
         from bigcherry.patch import validation as _pv
 
         rd08_contract = _pv.load_contract_for_descriptor(descriptor)
@@ -1185,11 +1459,19 @@ def run(args: argparse.Namespace) -> int:
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
 
         contract_correctness_gate = compute_contract_correctness_gate(
-            descriptor, correctness_summary
+            validation_plan.contract,
+            (rd08_qualification["correctness"]["results"] if rd08_qualification is not None else None),
         )
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
         }
+        if rd08_qualification is not None:
+            validation_check_results["_contract_qualification"] = {
+                "promotion": rd08_qualification["promotion"],
+                "trigger_proof": rd08_qualification["trigger_proof"],
+                "aggregated_effects": rd08_qualification["aggregated_effects"],
+                "artifact": rd08_qualification["artifact"],
+            }
         if contract_correctness_gate is not None:
             validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
             _print(
@@ -1220,16 +1502,15 @@ def run(args: argparse.Namespace) -> int:
         },
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
-        # VA13/VA11A fail-closed invariant (GPT round 8, req_84fca34f83064678):
-        # this slice explicitly cannot grant full Experiment-Contract
-        # qualification -- persisting the raw adapter verdict here would let
-        # patch-verify-evidence read a bound-contract patch as "validated"
-        # off adapter-only evidence. Force False whenever a contract is
-        # bound; the adapter verdict remains a real diagnostic in
-        # check_results/validation_verdict, it just cannot flow into
-        # eligible_for_validated_state until VA14 composes it with real
-        # contract qualification.
-        validation_eligible=compute_persisted_validation_eligible(_descriptor, validation_verdict),
+        # VA14 final slice: eligible_for_validated_state for a bound-contract
+        # patch now requires BOTH the adapter verdict AND every bound
+        # contract's own evaluate_promotion_gate() PASS (contract_promotions,
+        # populated only by --run-rd08-contract today). A bound contract with
+        # no promotion result at all still forces False -- see
+        # compute_persisted_validation_eligible()'s docstring.
+        validation_eligible=compute_persisted_validation_eligible(
+            _descriptor, validation_verdict, contract_promotions
+        ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contract_id=_descriptor.experiment_contract,
@@ -1293,8 +1574,17 @@ def main(argv: list[str] | None = None) -> int:
         "--run-rd08-lanes", action="store_true", default=False,
         help="VA14-B: execute RD08's real positive(decode)/control(prefill) lane pairs "
              "against the parity-verified control/validation-subject builds and persist "
-             "the raw evidence. Only meaningful for a patch bound to "
-             "RD08-Q6K-MMVQ-VDR2; a no-op otherwise. Does not affect eligibility.",
+             "the raw evidence. Diagnostic-only -- does not affect eligibility. RD08-only; "
+             "an error for any other patch. Mutually exclusive with --run-rd08-contract.",
+    )
+    parser.add_argument(
+        "--run-rd08-contract", action="store_true", default=False,
+        help="VA14 final slice: the authoritative RD08 full-qualification path -- real "
+             "lane execution + real bit-identical correctness "
+             "(require_rd08_correctness_evidence()) + real trigger proof, composed via "
+             "evaluate_promotion_gate(). The only path that can make an RD08-bound patch "
+             "eligible_for_validated_state. RD08-only; an error for any other patch. "
+             "Mutually exclusive with --run-rd08-lanes and --correctness-evidence.",
     )
     args = parser.parse_args(argv)
     return run(args)
