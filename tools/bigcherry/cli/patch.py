@@ -381,16 +381,17 @@ def cmd_patch_validate(args: Namespace) -> int:
 def cmd_patch_doc(args: Namespace) -> int:
     """Merge the selected patches' SUMMARY.md into one release doc.
 
-    Reuses patch-rebase-check's exact selection logic (--recipe NAME or
-    --all) so "what's in this doc" always matches "what's in this build" --
-    no separate selection language to drift out of sync.
+    Reuses patch-rebase-check's exact selection logic (--recipe NAME,
+    --source NAME, or --all) so "what's in this doc" always matches "what's
+    in this build" -- no separate selection language to drift out of sync.
     """
     root = paths.llama_root(args.llama_root)
     recipe_name = getattr(args, "recipe", None)
+    source_name = getattr(args, "source", None)
     all_patches = bool(getattr(args, "all_patches", False))
     try:
         patch_ids = patch_rebase._selection_patch_ids(
-            recipe_name=recipe_name, all_patches=all_patches,
+            recipe_name=recipe_name, source_name=source_name, all_patches=all_patches,
         )
     except patch_rebase.RebaseCheckError as exc:
         print(f"patch-doc: {exc}", file=sys.stderr)
@@ -402,7 +403,12 @@ def cmd_patch_doc(args: Namespace) -> int:
         "llama.cpp revision": upstream_revision,
         "bigcherry revision": bigcherry_revision,
     }
-    selection_label = f"--recipe {recipe_name}" if recipe_name else "--all"
+    if recipe_name:
+        selection_label = f"--recipe {recipe_name}"
+    elif source_name:
+        selection_label = f"--source {source_name}"
+    else:
+        selection_label = "--all"
 
     try:
         doc = patch_docs.render_patch_selection_doc(

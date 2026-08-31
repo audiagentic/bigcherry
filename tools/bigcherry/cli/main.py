@@ -239,7 +239,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="document the exact logical patch selection for this compatibility recipe",
+        help="[legacy, being retired -- prefer --source] document the exact "
+             "logical patch selection for this compatibility recipe",
+    )
+    patch_doc_selection.add_argument(
+        "--source",
+        default=None,
+        choices=_v2_source_names(),
+        help="document the exact logical patch selection for this "
+             "canonical v2 [source.*] name (e.g. 'bigcherry') -- the "
+             "compat.recipe removal plan's replacement for --recipe",
     )
     patch_doc_selection.add_argument(
         "--all",
