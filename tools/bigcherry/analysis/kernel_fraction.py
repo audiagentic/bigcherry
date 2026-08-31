@@ -26,6 +26,31 @@ class KernelFractionError(ValueError):
     pass
 
 
+def _required_timing_value(record: dict[str, str], column: str, path: Any, row_number: int) -> float:
+    """A timing cell (duration/start/end) must be a real number -- a
+    missing or blank cell is a malformed row, not an implicit zero.
+
+    gpt-dev-agent review, 2026-08-31: ``float(record.get(col) or 0)``
+    turned a blank cell into 0ns silently. A row with a valid Start/End
+    but a blank Duration column would then contribute 0ns instead of
+    being computed from Start/End or flagged; a truncated Duration cell
+    on an otherwise-valid row disappeared from the totals entirely with
+    no warning.
+    """
+    raw = record.get(column)
+    if raw is None or raw.strip() == "":
+        raise KernelFractionError(
+            f"{path}: row {row_number} has a blank/missing {column!r} value -- "
+            "refusing to treat it as zero"
+        )
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise KernelFractionError(
+            f"{path}: row {row_number} has an unparseable {column!r} value {raw!r}"
+        ) from exc
+
+
 # rocprofv3's CSV column names have moved between point releases.  Key by
 # header, never by position, and report which columns were found -- a silently
 # mis-parsed trace produces a plausible percentage.
@@ -149,28 +174,37 @@ def parse_kernel_trace(paths: list[Path]) -> dict[str, Any]:
                     f"{path}: kernel-name column differs across inputs"
                 )
 
-            for line in reader:
+            for row_number, line in enumerate(reader, start=2):  # header is row 1
                 if not line or len(line) < len(header):
-                    continue
+                    # gpt-dev-agent review, 2026-08-31: a truncated/short
+                    # row used to be silently continued -- an expensive
+                    # kernel's timing row cut off mid-write would simply
+                    # vanish from the report with no indication it was
+                    # ever there.
+                    raise KernelFractionError(
+                        f"{path}: row {row_number} has {len(line)} field(s), "
+                        f"expected {len(header)} -- truncated or malformed row"
+                    )
                 record = dict(zip(header, line, strict=False))
                 kernel = demangle((record.get(name_col) or "").strip())
                 if not kernel:
                     continue
                 if dur_col is not None:
-                    dur = int(float(record.get(dur_col) or 0))
+                    dur = int(_required_timing_value(record, dur_col, path, row_number))
                 else:
                     assert (
                         start_col is not None and end_col is not None
                     )  # checked above
-                    dur = int(float(record.get(end_col) or 0)) - int(
-                        float(record.get(start_col) or 0)
+                    dur = int(
+                        _required_timing_value(record, end_col, path, row_number)
+                        - _required_timing_value(record, start_col, path, row_number)
                     )
                 if dur < 0:
                     raise KernelFractionError(
                         f"{path}: negative kernel duration for {kernel!r}"
                     )
                 if start_col is not None and end_col is not None:
-                    start = int(float(record.get(start_col) or 0))
+                    start = int(_required_timing_value(record, start_col, path, row_number))
                     spans.append((start, start + dur))
                 agent = record.get(agent_col) if agent_col else None
                 rows.append(

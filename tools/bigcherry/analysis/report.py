@@ -24,40 +24,87 @@ from pathlib import Path
 from typing import Any
 
 
+class ReportError(ValueError):
+    pass
+
+
 def read_measurements_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Parse a measurements JSONL, returning only result records."""
+    """Parse a measurements JSONL, returning only result records.
+
+    Tolerates only a genuinely TRUNCATED final line (a run killed mid-flush
+    leaves exactly one, matching analysis/impact.py's load_results). Any
+    OTHER malformed line -- interior corruption -- raises ReportError
+    instead of being silently skipped. gpt-dev-agent review, 2026-08-31:
+    the previous `except (...): continue` silently dropped every malformed
+    line unconditionally -- valid record A, corrupted interior record B,
+    valid record C would report A and C with exit 0 and zero indication B
+    was ever lost.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    non_blank_indices = [i for i, line in enumerate(lines) if line.strip()]
+    last_non_blank = non_blank_indices[-1] if non_blank_indices else -1
+
     results: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if row.get("kind") == "result":
-                results.append(row)
+    for index, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except (json.JSONDecodeError, ValueError) as exc:
+            if index == last_non_blank:
+                print(
+                    f"warning: {path.name} line {index + 1} is truncated or "
+                    "malformed; ignoring it (final line)",
+                    file=sys.stderr,
+                )
+                break
+            raise ReportError(
+                f"{path.name} line {index + 1} is malformed JSON, not the "
+                f"final line -- refusing to silently drop an interior "
+                f"record: {exc}"
+            ) from exc
+        if row.get("kind") == "result":
+            results.append(row)
     return results
 
 
 def read_measurements_sqlite(
-    path: Path, dispatch_filter: str | None = None
+    path: Path, dispatch_filter: str | None = None, *, stage: str = "final"
 ) -> list[dict[str, Any]]:
     """Read measurement and winner data from SQLite, returning one dict per
     dispatch digest with the same shape as the JSONL format.
 
     When ``dispatch_filter`` is set, only that dispatch digest is returned.
+
+    ``stage`` defaults to ``"final"`` -- sql/dispatch-db.sql's own schema
+    makes ``stage`` (``screen``|``final``) part of ``measurement``'s
+    UNIQUE constraint, meaning the SAME candidate legitimately has TWO
+    separate rows: a cheap early screening pass and the authoritative
+    final timing pass. The previous query selected neither column nor
+    filtered on it at all, so a candidate could appear TWICE in one
+    dispatch's report -- e.g. screen 90us/3 samples and final 110us/20
+    samples -- both counted toward generated/measured, and a
+    fewer-samples screening result could sort as the "best" candidate in
+    `report families`/`report signatures` purely because it happened to
+    look faster on far less evidence (gpt-dev-agent review, 2026-08-31).
+    Pass ``stage=None`` to intentionally see every row across both stages
+    (e.g. for a pipeline-progress view, not a candidate-comparison one) --
+    that caller is then responsible for not comparing across stages.
     """
     connection = sqlite3.connect(str(path))
     connection.row_factory = sqlite3.Row  # type: ignore[attr-defined]
     try:
+        clauses: list[str] = []
+        params: list[Any] = []
         if dispatch_filter:
-            where = "WHERE m.dispatch_digest = ?"
-            params: tuple[bytes, ...] = (bytes.fromhex(dispatch_filter),)
-        else:
-            where = ""
-            params = ()
+            clauses.append("m.dispatch_digest = ?")
+            params.append(bytes.fromhex(dispatch_filter))
+        if stage is not None:
+            clauses.append("m.stage = ?")
+            params.append(stage)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        params = tuple(params)
 
         cursor = connection.execute(
             f"""SELECT m.dispatch_digest, c.stable_name AS candidate_name,
@@ -488,15 +535,20 @@ def cmd_families(args: argparse.Namespace) -> int:
 
     if args.measurements:
         results = read_measurements_jsonl(Path(args.measurements))
-        match = [r for r in results if r.get("dispatch") == args.dispatch]
-        if not match:
-            print(f"dispatch digest {args.dispatch} not found", file=sys.stderr)
-            return 1
+        results = [r for r in results if r.get("dispatch") == args.dispatch]
     elif args.database:
         results = read_measurements_sqlite(Path(args.database), args.dispatch)
     else:
         print("error: must specify --measurements or --database", file=sys.stderr)
         return 2
+
+    # Same not-found check for BOTH paths -- the DB path used to skip this
+    # entirely and crash on results[0] (IndexError) for an unknown digest
+    # instead of the same clean exit 1 the JSONL path already had
+    # (gpt-dev-agent review, 2026-08-31).
+    if not results:
+        print(f"dispatch digest {args.dispatch} not found", file=sys.stderr)
+        return 1
 
     result = results[0]
     dispatch = (

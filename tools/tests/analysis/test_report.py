@@ -274,6 +274,23 @@ class TestReadMeasurementsJSONL(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
 
+    def test_interior_corruption_raises_instead_of_silently_dropping(self):
+        """gpt-dev-agent review, 2026-08-31: a malformed line that is NOT
+        the final line used to be silently skipped -- valid A, corrupt
+        interior B, valid C would report A and C with no indication B was
+        lost. Only a truncated FINAL line is tolerable."""
+        path = make_jsonl(
+            TUNING_HEADER,
+            TUNING_RESULT_NATIVE,
+            '{"kind":"result","dispatch":"corrupt-interior-line',  # NOT the last line
+            TUNING_RESULT_IMPROVED,
+        )
+        try:
+            with self.assertRaises(_report.ReportError):
+                _report.read_measurements_jsonl(path)
+        finally:
+            os.unlink(path)
+
 
 class TestFmtUs(unittest.TestCase):
     """Formatting helper for microsecond values."""
@@ -332,6 +349,52 @@ class TestReadMeasurementsSQLite(unittest.TestCase):
         os.unlink(meas_path)
 
         self.assertEqual(results, [])
+
+    def test_screen_stage_duplicate_excluded_from_default_final_view(self):
+        """gpt-dev-agent review, 2026-08-31: sql/dispatch-db.sql makes stage
+        (screen|final) part of measurement's UNIQUE constraint -- the same
+        candidate can legitimately have both a cheap early screening row and
+        the authoritative final row. Reading without a stage filter used to
+        emit BOTH as separate candidate rows for one dispatch, so a
+        fewer-samples screening result could sort as "best" purely from
+        having been measured on far less evidence."""
+        with TempDB() as db:
+            meas_path = populate_db(db)
+            row = db.query(
+                "SELECT build_id, hardware_id, signature_id, dispatch_digest, "
+                "candidate_id, run_id, objective, accepted, samples, median_us, "
+                "gpu_mad_us, p95_us, host_median_us, workspace_bytes, effective_us "
+                "FROM measurement WHERE stage = 'final' LIMIT 1"
+            )[0]
+            # Clone that row as a 'screen'-stage duplicate with a suspiciously
+            # faster median (fewer samples) -- exactly the shape that used to
+            # win the comparison purely by appearing as a second row.
+            db_conn = sqlite3.connect(str(db.db_path))
+            try:
+                db_conn.execute(
+                    "INSERT INTO measurement (build_id, hardware_id, signature_id, "
+                    "dispatch_digest, candidate_id, run_id, objective, stage, "
+                    "accepted, samples, median_us, gpu_mad_us, p95_us, "
+                    "host_median_us, workspace_bytes, effective_us) VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?, 'screen', ?, 1, 0.001, 0.0, 0.001, 0.0, ?, 0.001)",
+                    (row[0], row[1], row[2], row[3], row[4], row[5], row[6],
+                     row[7], row[13]),
+                )
+                db_conn.commit()
+            finally:
+                db_conn.close()
+
+            default_results = _report.read_measurements_sqlite(db.db_path)
+            all_stage_results = _report.read_measurements_sqlite(db.db_path, stage=None)
+        os.unlink(meas_path)
+
+        default_dispatch = [r for r in default_results if r["dispatch"] == "e" * 32][0]
+        all_dispatch = [r for r in all_stage_results if r["dispatch"] == "e" * 32][0]
+        # The default (stage="final") view must be unaffected by the
+        # screen-stage duplicate; the explicit stage=None view sees it.
+        self.assertEqual(len(default_dispatch["candidates"]), 3)
+        self.assertEqual(len(all_dispatch["candidates"]), 4)
+        self.assertTrue(all(c["median_us"] != 0.001 for c in default_dispatch["candidates"]))
 
 
 class TestCmdSignatures(unittest.TestCase):
@@ -435,6 +498,21 @@ class TestCmdFamilies(unittest.TestCase):
             self.assertEqual(status, 1)
         finally:
             os.unlink(path)
+
+    def test_dispatch_not_found_via_database_does_not_crash(self):
+        """gpt-dev-agent review, 2026-08-31: the JSONL path already returned
+        a clean exit 1 for an unknown digest; the database path skipped
+        that check entirely and crashed on results[0] (IndexError)."""
+        with TempDB() as db:
+            meas_path = populate_db(db)
+            import argparse
+            args = argparse.Namespace(
+                measurements=None, database=str(db.db_path),
+                dispatch="9" * 32, json=False,
+            )
+            status = _report.cmd_families(args)
+        os.unlink(meas_path)
+        self.assertEqual(status, 1)
 
     def test_no_dispatch_given(self):
         import argparse

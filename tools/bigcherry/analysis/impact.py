@@ -194,21 +194,50 @@ def load_results(path: Path) -> list[dict[str, Any]]:
 # ------------------------------------------------------------------ interval
 
 
-def _finite_samples(samples: Any, name: str) -> list[float]:
-    """Strip the nulls out of a ``samples_us`` list.
+# Matches tuning/tune_promotion.py's own MIN_PAIRED_ROUNDS -- a production
+# promotion decision requires at least this many paired rounds before
+# trusting a bootstrap CI; this offline tool should not report false
+# confidence from fewer rounds than production itself would ever act on.
+# Kept as a local constant (not imported) so `bigcherry power`/`impact`
+# stay cheap to invoke -- tune_promotion.py pulls in sqlite3/argparse and a
+# larger dependency tree for something this module only needs one int from.
+MIN_PAIRED_ROUNDS = 8
 
-    ``samples_us`` is round-aligned and NaN-padded on the C++ side, serialised
-    as JSON ``null`` for a round where the candidate failed to launch.
-    The padding exists so the paired sign test compares round r against round
-    r; a bootstrap over medians does not need the alignment and must not
-    resample the nulls.
+
+def _round_aligned_pairs(native_samples: Any, winner_samples: Any, name: str) -> list[tuple[float, float]]:
+    """Zip native/winner ``samples_us`` INDEX-WISE and keep only rounds where
+    both are present and finite -- the actual paired observation the tuner
+    recorded, round r vs round r.
+
+    gpt-dev-agent review, 2026-08-31: the previous version independently
+    stripped nulls from each series and independently bootstrap-resampled
+    them, which throws away the pairing entirely. With native=[100,200,300,
+    400,500] and winner=[90,180,270,360,450] -- exactly 10% faster every
+    single round -- the correct paired bootstrap always returns exactly
+    10%; independently resampling two series that happen to be
+    proportional does NOT preserve that exact ratio per draw, producing a
+    spurious, overstated interval. Independently-stripped nulls could also
+    silently misalign different-length series (native round 3 failed,
+    winner round 3 succeeded) so index i in the old "native_samples" and
+    index i in the old "winner_samples" were not even the same round.
     """
-    if not isinstance(samples, (list, tuple)):
+    if not isinstance(native_samples, (list, tuple)) or not isinstance(winner_samples, (list, tuple)):
         raise ImpactError(f"{name} samples_us must be a list")
-    cleaned = [s for s in samples if s is not None]
-    if not cleaned:
-        raise ImpactError(f"{name} has no usable samples_us (all null)")
-    return [_finite(s, f"{name} sample", positive=True) for s in cleaned]
+    if len(native_samples) != len(winner_samples):
+        raise ImpactError(
+            f"{name} native/winner samples_us have different lengths -- not round-aligned"
+        )
+    pairs: list[tuple[float, float]] = []
+    for native_value, winner_value in zip(native_samples, winner_samples):
+        if native_value is None or winner_value is None:
+            continue
+        pairs.append(
+            (
+                _finite(native_value, f"{name} native sample", positive=True),
+                _finite(winner_value, f"{name} winner sample", positive=True),
+            )
+        )
+    return pairs
 
 
 def saving_interval(
@@ -217,50 +246,62 @@ def saving_interval(
     draws: int = 2000,
     seed: int = 0,
 ) -> tuple[float, float] | None:
-    """Bootstrap the predicted total over the raw per-round samples.
+    """Bootstrap the predicted total over the raw per-round PAIRED samples.
 
     A median times an exact call count is not an exact product: the median has
     a sampling distribution and many of them are being summed.  Reporting
     '10.2%' without a band asserts more than a handful of samples per signature
     supports.
 
-    Returns ``(low, high)`` percentiles, or ``None`` when the file carries no
-    ``samples_us`` -- every artifact predating the E2 sample capture, including
-    the ones the original hand calculation was computed from.  An interval
-    invented from MAD instead would be narrower than the truth and would look
-    like the real thing, which is worse than not having one.
+    Each draw resamples ROUND INDICES (not native and winner independently)
+    for every usable signature, so the native/winner relationship measured
+    in each real round is preserved in every bootstrap draw -- see
+    ``_round_aligned_pairs``. A signature with fewer than
+    ``MIN_PAIRED_ROUNDS`` real paired rounds is excluded from the interval
+    entirely (not silently included with a single round, which would report
+    a zero-width "95% CI" from N=1 -- maximal apparent certainty from
+    essentially no evidence).
+
+    Returns ``(low, high)`` percentiles, or ``None`` when no signature has
+    enough paired ``samples_us`` to bootstrap at all -- every artifact
+    predating the E2 sample capture, including the ones the original hand
+    calculation was computed from. An interval invented from MAD instead
+    would be narrower than the truth and would look like the real thing,
+    which is worse than not having one.
     """
     if draws < 2:
         raise ImpactError("draws must be at least 2")
     calls = {o["signature"]: int(o.get("calls", 0)) for o in observations}
     pairs = _usable_pairs(observations, results, calls)
+    # A zero-call signature contributes nothing to either total and would
+    # otherwise leave an empty `totals` list for that draw (IndexError on
+    # the percentile lookup below) if it were the only usable signature.
+    pairs = [(count, rounds) for count, rounds in pairs if count > 0]
     if not pairs:
         return None
 
-    # Each draw resamples the native and winner round samples for every usable
-    # signature, multiplies each resampled median by that signature's exact
-    # call count, and forms the call-weighted saving.  The call weight is bound
-    # per signature (it is exact), never resampled.
+    # The call weight is bound per signature (it is exact, never resampled);
+    # only the ROUND INDEX is resampled, jointly for native and winner.
     rng = random.Random(seed)
     totals: list[float] = []
     for _ in range(draws):
         native_total = tuned_total = 0.0
-        for count, native_samples, winner_samples in pairs:
-            native_total += count * statistics.median(
-                rng.choices(native_samples, k=len(native_samples))
-            )
-            tuned_total += count * statistics.median(
-                rng.choices(winner_samples, k=len(winner_samples))
-            )
+        for count, rounds in pairs:
+            sample = rng.choices(rounds, k=len(rounds))
+            native_total += count * statistics.median(a for a, _ in sample)
+            tuned_total += count * statistics.median(b for _, b in sample)
         if native_total > 0:
             totals.append(100.0 * (native_total - tuned_total) / native_total)
+    if not totals:
+        return None
     totals.sort()
     return (totals[int(0.025 * len(totals))], totals[int(0.975 * len(totals))])
 
 
 def _usable_pairs(observations, results, calls):
-    """Collect (count, native_samples, winner_samples) for every usable signature."""
-    pairs: list[tuple[int, list[float], list[float]]] = []
+    """Collect (count, [(native_round, winner_round), ...]) for every
+    signature with at least MIN_PAIRED_ROUNDS real paired rounds."""
+    pairs: list[tuple[int, list[tuple[float, float]]]] = []
     for result in results:
         signature = result.get("signature")
         if not isinstance(signature, str) or signature not in calls:
@@ -271,14 +312,39 @@ def _usable_pairs(observations, results, calls):
             continue
         if "samples_us" not in native or "samples_us" not in winner:
             continue
-        pairs.append(
-            (
-                int(calls[signature]),
-                _finite_samples(native["samples_us"], "native"),
-                _finite_samples(winner["samples_us"], "winner"),
-            )
-        )
+        rounds = _round_aligned_pairs(native["samples_us"], winner["samples_us"], signature)
+        if len(rounds) < MIN_PAIRED_ROUNDS:
+            continue
+        pairs.append((int(calls[signature]), rounds))
     return pairs
+
+
+def sample_backed_coverage(observations: list[dict[str, Any]], results: list[dict[str, Any]]) -> dict[str, Any]:
+    """How much of ``predicted_saving``'s point estimate is actually backed
+    by the bootstrap CI's evidence, vs signatures counted in the point
+    estimate purely from ``median_us`` with no ``samples_us`` at all (or
+    too few paired rounds to bootstrap).
+
+    gpt-dev-agent review, 2026-08-31: the CI and the point estimate can
+    describe DIFFERENT populations -- a high-call signature with only
+    median_us (no samples_us) can dominate the displayed point estimate
+    while contributing nothing to the interval, so a reader sees "49.96%
+    [10%, 10%]" and reasonably (wrongly) assumes the interval covers the
+    displayed point. This reports the gap explicitly instead of leaving it
+    implicit.
+    """
+    calls = {o["signature"]: int(o.get("calls", 0)) for o in observations}
+    sample_backed = _usable_pairs(observations, results, calls)
+    sample_backed_calls = sum(count for count, _ in sample_backed)
+    total_calls = sum(calls.values())
+    return {
+        "total_calls": total_calls,
+        "sample_backed_calls": sample_backed_calls,
+        "sample_backed_fraction": (
+            sample_backed_calls / total_calls if total_calls else 0.0
+        ),
+        "sample_backed_signature_count": len(sample_backed),
+    }
 
 
 # ------------------------------------------------------------------ power
@@ -297,13 +363,25 @@ def repetitions_needed(
     arms when rounds are interleaved within one session, which is the one lever
     that helps: pairing removes the shared machine-state variance, and the
     required n falls by ``(1 - r)``.
+
+    ``spread_pct`` MUST be a per-arm standard deviation (the formula's model
+    is Gaussian, roughly-equal-variance data) -- MAD, range, CV, or max-min
+    spread are all different statistics and would silently produce a
+    precise-looking but meaningless sample count if passed here instead
+    (gpt-dev-agent review, 2026-08-31: this was previously undocumented).
     """
     effect = _finite(effect_pct, "effect_pct", positive=False)
     spread = _finite(spread_pct, "spread_pct")
     if effect <= 0:
         raise ImpactError("effect_pct must be positive")
-    if not 0.0 < power < 1.0:
-        raise ImpactError("power must be in (0, 1)")
+    if not 0.5 <= power < 1.0:
+        # Below 0.5, z_b = norm_ppf(power) goes negative and the formula's
+        # (z_a + z_b) term is no longer monotonic in the requested power --
+        # a caller could get a SMALLER n for a higher-sounding but
+        # nonsensical request. No real study design targets < 50% power
+        # anyway, so this is a floor, not a restriction anyone should hit
+        # (gpt-dev-agent review, 2026-08-31).
+        raise ImpactError("power must be in [0.5, 1)")
     if not 0.0 < alpha < 1.0:
         raise ImpactError("alpha must be in (0, 1)")
     if not 0.0 <= paired_r < 1.0:
@@ -332,7 +410,8 @@ def _fmt_ms(us: float) -> str:
 
 
 def render_report(
-    result: dict[str, Any], title: str, interval: tuple[float, float] | None = None
+    result: dict[str, Any], title: str, interval: tuple[float, float] | None = None,
+    interval_coverage: dict[str, Any] | None = None,
 ) -> str:
     """Render the human-readable impact report (the standing IMPACT.md body)."""
     coverage: Coverage = result["coverage"]
@@ -365,6 +444,20 @@ def render_report(
         f"{_fmt_ms(result['tuned_total_us'])}\n"
         f"            {saving:.1f}%{tail}"
     )
+    if interval is not None and interval_coverage is not None:
+        # gpt-dev-agent review, 2026-08-31: the point estimate and the CI
+        # can describe DIFFERENT populations -- a high-call signature with
+        # only median_us (no raw samples_us) can dominate the point
+        # estimate while contributing nothing to the interval. State the
+        # gap explicitly rather than let a reader assume the interval
+        # covers the whole displayed point.
+        lines.append(
+            f"            interval covers {interval_coverage['sample_backed_calls']:,} "
+            f"of {interval_coverage['total_calls']:,} recorded calls "
+            f"({100.0 * interval_coverage['sample_backed_fraction']:.1f}%) across "
+            f"{interval_coverage['sample_backed_signature_count']} signature(s) "
+            "with raw samples -- NOT necessarily the same population as the point estimate above"
+        )
     lines.append("")
     lines.append("by family   calls       native      tuned    saved   share of saving")
     total_saved = result["native_total_us"] - result["tuned_total_us"]
@@ -415,10 +508,13 @@ def _cmd_impact(args: argparse.Namespace) -> int:
         interval = saving_interval(
             observations, results, draws=args.draws, seed=args.seed
         )
+        interval_coverage = (
+            sample_backed_coverage(observations, results) if interval is not None else None
+        )
     except (ImpactError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    text = render_report(report, args.title, interval)
+    text = render_report(report, args.title, interval, interval_coverage)
     if args.report:
         Path(args.report).write_text(text, encoding="utf-8")
     print(text, end="")
@@ -501,7 +597,13 @@ def build_parser(subparsers) -> None:
         help="expected end-to-end effect, percent",
     )
     power_cmd.add_argument(
-        "--spread", type=float, required=True, help="observed benchmark spread, percent"
+        "--spread", type=float, required=True,
+        help=(
+            "observed benchmark STANDARD DEVIATION per arm, percent -- the "
+            "formula assumes this, not MAD/range/CV/max-min spread; passing "
+            "one of those instead yields a precise-looking but meaningless "
+            "sample count"
+        ),
     )
     power_cmd.add_argument("--alpha", type=float, default=0.05)
     power_cmd.add_argument("--power", type=float, default=0.8)
