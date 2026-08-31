@@ -639,3 +639,42 @@ state_restore_integrity = "required"
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.acceptance]
 max_control_regression_pct = 5
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY]
+title = "RD73: stable FNV-1a shape-fingerprint key for the HIP/CUDA graph cache"
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.source]
+source_id = "mrlordcat-rdna-lab"
+commits = ["7f2e7e4a3ebf8e3b5aade75743c267f5ad7df199"]
+atomic_part = "1233_rd73_stable_graph_cache_key"
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.target]
+kind = "orchestration"
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.hypothesis]
+expected_effect = "performance"
+rationale = "The HIP/CUDA graph cache was keyed by the raw first-node pointer (allocation-dependent), so a fresh allocation for an otherwise-identical recurring MTP speculative-verify shape caused a cold cache miss almost every time even though the shape hadn't changed. Replacing the key with a stable FNV-1a shape fingerprint (node count + first/last node op/name/dims) lets recurring verify shapes hit the same cache slot and reuse a captured graph -- the existing per-node memcmp correctness check in ggml_cuda_graph_update_required() is unchanged, so a fingerprint collision only costs an extra recapture, never stale-graph reuse. Production dual-XTX/27B instrumentation (2026-08-23) confirmed the mechanism directly: recapture rate control=49.6% vs treatment=38.9% (~22% relative reduction). An earlier, sequential-with-debug-logging production benchmark found a mixed throughput result (tg128 -15.6%, tg2048 +16.6%); a LATER definitive clean (interleaved, no debug logging) 10-round production benchmark superseded it, finding all 9 configs' throughput deltas within 0.1-2.3% of control -- the earlier mixed result was a measurement artifact, not a real effect. The mechanism is real (recapture-rate reduction) but throughput-neutral at production scale under clean measurement, not yet a demonstrated end-to-end win; upstream-fork's own measured verify-ubatch-sync improvement (150ms -> 57ms, 3.8k-node graph) has not been reproduced on BigCherry hardware. VA06's own bounded characterization (2026-09-01, 3 reps/arm, fully deterministic) found the mechanism trades increased cache-key cardinality for higher hit rates: peak graph_cache_entries control=386 vs subject=651 (~68.7% relative increase) under a fixed 12-request repeated-shape MTP burst -- this is the resource-cost tradeoff this contract's resource_limits exists to bound."
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.controls]
+models = ["tierL-qwen27b-q8"]
+workloads = ["decode"]
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.correctness]
+bit_identical = "required"
+
+[contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance]
+end_to_end_gain_pct = 3.0
+max_control_regression_pct = 2.3
+
+[[contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance.resource_limits]]
+metric = "graph_cache_entries"
+unit = "count"
+max_value = 800
