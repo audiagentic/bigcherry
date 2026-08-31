@@ -443,31 +443,46 @@ as "done."**
     every other patch today. **This is deliberately RD08-only scaffolding,
     not a general N-contract executor yet.**
 
-**As of this writing, VA14's final composition slice is not done**: the
-real RD08 bit-identical correctness producer already exists at
+**VA14's final composition slice is now implemented for RD08.** The real
+RD08 bit-identical correctness producer at
 `patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`
 (`materialize_rd08_variants()`, `require_rd08_correctness_evidence()` —
 runs all 5 RD08 shapes × 3 seeds, requires exact digest equality,
-fail-closed) but is **not yet wired** through
-`compute_contract_correctness_gate()`, which today unconditionally reports
-any RD08-bound patch's correctness as `blocked`. Composing correctness +
-trigger evidence + `aggregate_contract_effects()` + `evaluate_promotion_gate()`
-into real `eligible_for_validated_state`, and the associated single
-`VALIDATION_FRAMEWORK_VERSION` bump, are the remaining work — see VA14's
-plan item for current status before assuming any of this composition is
-live.
+fail-closed) is orchestrated (not reimplemented) by
+`run_rd08_contract_correctness()`; a real subject-hit/control-miss marker
+probe against the validation-domain binaries (distinct from the generic
+tune-binary/fusion-disabled activation probe, which is not a valid
+negative control for a specific patch marker) is produced by
+`run_rd08_contract_trigger()`; and `run_rd08_contract_qualification()`
+composes lane execution + correctness + trigger proof through
+`aggregate_contract_effects()` / `evaluate_trigger_proof()` /
+`evaluate_promotion_gate()` into one real promotion verdict. This whole
+path runs behind an opt-in `--run-rd08-contract` CLI flag (mutually
+exclusive with the diagnostic-only `--run-rd08-lanes` and with
+`--correctness-evidence`) — it is the **only** path allowed to populate
+`contract_promotions`, which `compute_persisted_validation_eligible()`
+now requires (alongside the adapter verdict) for every one of a patch's
+bound Experiment Contracts before `eligible_for_validated_state` can be
+`True`. `VALIDATION_FRAMEWORK_VERSION` was bumped `"1"` → `"2"` in this
+slice, invalidating prior evidence (intentionally — see
+[Current-pin freshness](#current-pin-freshness)).
+
+**This is RD08-only scaffolding, not a general N-contract executor.**
+Every other contract-bound patch still gets `compute_contract_correctness_gate()`
+reporting `blocked` (no per-named-check evidence producer exists for it
+yet) and `eligible_for_validated_state` forced `False` — that only changes
+once a patch gets its own real correctness/trigger orchestration, the same
+way RD08 did.
 
 ## Validation workflow
 
 **Current implementation note:** `patch-validation-campaign` must not be
-treated as final contract qualification for any plan requiring trace,
-performance, custom, or named Experiment-Contract checks until VA14's
-final composition slice (above) lands. Today it can produce real campaign
-AND real RD08 lane-execution evidence (for RD08-bound patches, opt-in via
-`--run-rd08-lanes`), but that evidence is not yet composed into
-`eligible_for_validated_state` — do not read a clean campaign run, or even
-a clean RD08 lane run, alone as proof of a `ported-validated` claim until
-VA14 is fully done.
+treated as final contract qualification for any contract-bound patch
+other than RD08. For RD08, `--run-rd08-contract` is now the real,
+authoritative full-qualification path (see above); for every other
+contract-bound patch, a clean campaign run alone is still not proof of a
+`ported-validated` claim — check VA14's plan item for which contracts have
+their own real correctness/trigger producer wired.
 
 1. Bind (or, if none exists yet, first author) the patch's Experiment
    Contract.
