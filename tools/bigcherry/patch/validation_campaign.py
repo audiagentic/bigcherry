@@ -923,6 +923,102 @@ def run_rd08_contract_qualification(
     }
 
 
+def run_rd04_benchmark_evidence(
+    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
+    run_dir: Path, campaign_id: str, amdgpu_targets: str,
+    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    pairs: int = 3,
+) -> dict[str, object]:
+    """VA04 hardware-free preflight slice (GPT session ses_5bbee8ce5c9a4265,
+    req_da015a1366044ad1): an RD04-scoped validation-domain paired
+    benchmark producer, analogous to RD08's real lanes (run_rd08_
+    validation_lanes()) but deliberately without contract promotion or
+    generalisation -- this slice only proves a real benchmark executed
+    and binds it as evidence; qualification against RD04's real
+    acceptance thresholds is separate, later, real-hardware work. Does
+    NOT depend on the generic S1-S7 campaign succeeding -- that pipeline's
+    own promotion decision is unrelated to RD04's own validation-domain
+    evidence (the exact real bug VA15 found and fixed for RD08).
+
+    ``passed`` means "benchmark evidence executed successfully" (both
+    paired lanes completed with finite statistics), NOT "RD04 met its
+    3.39% target" -- threshold qualification stays separate."""
+    import math
+
+    from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.campaign.benchmark import sanitize_environment
+
+    rd04_flags = ["-fa", "on", "-ctk", "bf16", "-ctv", "bf16"]
+
+    def _command(binary: Path, workload_flags: list[str]) -> list[str]:
+        return [str(binary), "-m", str(model), *workload_flags, *rd04_flags]
+
+    clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
+    for key in list(clean_env):
+        if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
+            clean_env.pop(key, None)
+
+    raw_logs: list[dict[str, object]] = []
+
+    def _make_runner(workload: str):
+        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+            completed = subprocess.run(
+                command, capture_output=True, text=True, check=False, env=clean_env,
+            )
+            raw_logs.append({
+                "workload": workload, "command": command,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout, "stderr": completed.stderr,
+            })
+            return experiment_execution.RunnerOutput(
+                returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+            )
+        return _runner
+
+    decode_control_cmd = _command(control_binary, ["-p", "0", "-n", "128"])
+    decode_subject_cmd = _command(subject_binary, ["-p", "0", "-n", "128"])
+    decode_run = experiment_execution.run_paired_lane(
+        metric="tg128", control_command=decode_control_cmd, subject_command=decode_subject_cmd,
+        pattern=re.compile(r"tg128\s*\|\s*([0-9.]+)"), pairs=pairs, runner=_make_runner("decode"),
+    )
+    prefill_control_cmd = _command(control_binary, ["-p", "512", "-n", "0"])
+    prefill_subject_cmd = _command(subject_binary, ["-p", "512", "-n", "0"])
+    prefill_run = experiment_execution.run_paired_lane(
+        metric="pp512", control_command=prefill_control_cmd, subject_command=prefill_subject_cmd,
+        pattern=re.compile(r"pp512\s*\|\s*([0-9.]+)"), pairs=pairs, runner=_make_runner("prefill"),
+    )
+
+    def _finite(stats: dict[str, object]) -> bool:
+        value = stats.get("geometric_effect_pct")
+        return isinstance(value, (int, float)) and math.isfinite(value)
+
+    passed = _finite(decode_run.stats) and _finite(prefill_run.stats)
+
+    performance_doc = {
+        "passed": passed, "campaign_id": campaign_id,
+        "model": str(model), "architecture": amdgpu_targets,
+        "validation_build_identities": {
+            "control": control_build_identity, "subject": subject_build_identity,
+        },
+        "commands": {
+            "decode": {"control": decode_control_cmd, "subject": decode_subject_cmd},
+            "prefill": {"control": prefill_control_cmd, "subject": prefill_subject_cmd},
+        },
+        "raw_logs": raw_logs,
+        "metrics": {
+            "decode": {"metric": "tg128", "stats": decode_run.stats, "runs": list(decode_run.runs)},
+            "prefill": {"metric": "pp512", "stats": prefill_run.stats, "runs": list(prefill_run.runs)},
+        },
+    }
+    performance_path = run_dir / "performance.json"
+    _atomic_write_json(performance_path, performance_doc)
+    artifact_ref = {
+        "path": "performance.json",
+        "sha256": hashlib.sha256(performance_path.read_bytes()).hexdigest(),
+    }
+    return {"performance_doc": performance_doc, "artifact": artifact_ref, "passed": passed}
+
+
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
     contract_promotions: "dict[str, dict[str, object]] | None" = None,
