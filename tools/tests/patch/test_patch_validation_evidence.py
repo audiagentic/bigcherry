@@ -117,6 +117,7 @@ class MakeRecordTests(unittest.TestCase):
             campaign_identity_digest=_HEX64,
             build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
                                "stock": _build_identity("3")},
+            validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
             campaign_workdir=self.workdir, **record_kwargs,
         )
 
@@ -124,7 +125,7 @@ class MakeRecordTests(unittest.TestCase):
         record = self._make()
         self.assertTrue(record["eligible_for_validated_state"])
         self.assertEqual(record["validation_disposition"], "validated")
-        self.assertEqual(record["record_schema_version"], 2)
+        self.assertEqual(record["record_schema_version"], 3)
         self.assertEqual(record["record_digest"], pve._record_digest(record))
         self.assertIn("representation", record)
         self.assertIn("hardware", record)
@@ -167,6 +168,7 @@ class MakeRecordTests(unittest.TestCase):
                 correctness={"schema_version": 1, "disposition": "passed", "mechanism": "m", "detail": "d"},
                 campaign_identity_digest=_HEX64,
                 build_identities={"tune": _build_identity("1")},  # replay/stock missing
+                validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
                 campaign_workdir=self.workdir,
             )
 

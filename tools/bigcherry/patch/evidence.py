@@ -299,6 +299,7 @@ def make_record(
     gpu_architectures: str | Iterable[str], activation_evidence: ActivationEvidence | None,
     activation_disposition: str | None, correctness: Mapping[str, object] | None,
     campaign_identity_digest: str, build_identities: Mapping[str, Mapping[str, object]],
+    validation_build_identities: Mapping[str, Mapping[str, object]],
     campaign_workdir: Path,
     representation: str = "simple", validation_implementation_digest: str | None = None,
     contract_id: str | None = None, contract_hash: str | None = None,
@@ -309,41 +310,46 @@ def make_record(
     stock_tree: str | None = None, blockers: Iterable[str] = (),
     check_results: Mapping[str, object] | None = None,
     validation_eligible: bool | None = None,
-    validation_build_identities: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
     """``build_identities`` is the campaign-build domain
-    ({tune,replay,stock} -- unchanged from v1/v2, kept under that name for
-    backward compatibility with existing callers/tests). Passing
-    ``validation_build_identities`` ({control,subject}) additionally
-    produces a schema-v3 record with BOTH domains recorded under their own
-    real field names (VA07) -- omit it to keep producing a v2 record
-    exactly as before. It is intentional and expected that
-    validation.subject may carry the same physical build identity as
-    campaign.tune; the schema does not require or assume equality, since a
-    future validation executor may use a genuinely distinct subject
-    build."""
+    ({tune,replay,stock}); ``validation_build_identities`` is the
+    validation-build domain ({control,subject}) -- two genuinely distinct
+    provenance domains (VA07, GPT round-4 correction req_82dc1c3dcc744fb2),
+    both mandatory, always producing a schema-v3 record with both domains
+    as real top-level fields. GPT round 5 (req_48c36d9e3d324ec5): making
+    this optional preserved an accidental v2-downgrade path -- every NEW
+    validation now writes v3; v1/v2 backward-COMPATIBILITY (reading old
+    records) lives in load_records()/_record_qualifies(), not here. It is
+    intentional and expected that validation.subject may carry the same
+    physical build identity as campaign.tune; the schema does not require
+    or assume equality, since a future validation executor may use a
+    genuinely distinct subject build."""
     subject_digest = patch_validation_subject_digest(patch_path)
     archs = _architectures(gpu_architectures)
     if not archs:
         raise ValidationEvidenceError("gpu_architectures must not be empty")
 
-    builds: dict[str, object] = {}
-    for role in BUILD_ROLES:
-        if role not in build_identities:
-            raise ValidationEvidenceError(f"missing build identity role {role!r}")
-        builds[role] = _validate_build_identity(
-            build_identities[role], field=f"build_identities.{role}"
+    if set(build_identities) != set(CAMPAIGN_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            f"build_identities role set must be exactly {set(CAMPAIGN_BUILD_ROLES)!r}, "
+            f"got {set(build_identities)!r}"
         )
+    builds: dict[str, object] = {
+        role: _validate_build_identity(build_identities[role], field=f"build_identities.{role}")
+        for role in CAMPAIGN_BUILD_ROLES
+    }
 
-    validation_builds: dict[str, object] | None = None
-    if validation_build_identities is not None:
-        validation_builds = {}
-        for role in VALIDATION_BUILD_ROLES:
-            if role not in validation_build_identities:
-                raise ValidationEvidenceError(f"missing validation build identity role {role!r}")
-            validation_builds[role] = _validate_build_identity(
-                validation_build_identities[role], field=f"validation_build_identities.{role}"
-            )
+    if set(validation_build_identities) != set(VALIDATION_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            f"validation_build_identities role set must be exactly {set(VALIDATION_BUILD_ROLES)!r}, "
+            f"got {set(validation_build_identities)!r}"
+        )
+    validation_builds: dict[str, object] = {
+        role: _validate_build_identity(
+            validation_build_identities[role], field=f"validation_build_identities.{role}"
+        )
+        for role in VALIDATION_BUILD_ROLES
+    }
 
     if activation_evidence is None:
         activation = {"status": "unknown", "disposition": "unknown", "mechanism": "", "detail": ""}
@@ -376,10 +382,12 @@ def make_record(
         eligible = validation_eligible
 
     result = {
-        # v3 only when the caller actually supplied validation_build_identities
-        # -- omitting it keeps producing an ordinary v2 record exactly as
-        # before, never silently upgrading a record's meaning.
-        "record_schema_version": 3 if validation_builds is not None else 2,
+        # Always v3: every new validation writes the current schema.
+        # v1/v2 records already on disk remain readable unchanged --
+        # backward compatibility is a read-side (load_records/
+        # _record_qualifies) concern, never a writer concern (GPT round 5,
+        # req_48c36d9e3d324ec5).
+        "record_schema_version": 3,
         "validation_contract_version": CONTRACT_VERSION,
         "representation": representation,
         "validation_implementation_digest": validation_implementation_digest or _validation_digest(patch_path),
@@ -420,19 +428,12 @@ def make_record(
         "campaign_identity_digest": _require_hex(
             campaign_identity_digest, "campaign_identity_digest", (64,)
         ),
-        # v1/v2 field name preserved unchanged; v3 records additionally set
-        # campaign_build_identities to the SAME dict (v3 rejects the legacy
-        # top-level name to prevent mixed/ambiguous records -- see
-        # write_record()/_record_qualifies()).
-        "build_identities": builds,
+        "campaign_build_identities": builds,
+        "validation_build_identities": validation_builds,
         "campaign_artifacts": _artifact_refs(campaign_workdir),
         "validation_disposition": "validated" if eligible else "incomplete",
         "eligible_for_validated_state": eligible,
     }
-    if validation_builds is not None:
-        del result["build_identities"]
-        result["campaign_build_identities"] = builds
-        result["validation_build_identities"] = validation_builds
     result["record_digest"] = _record_digest(result)
     return result
 
@@ -452,8 +453,9 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
             or document.get("patch_id") != patch_id or not isinstance(document.get("records"), list)
         ):
             raise ValidationEvidenceError(f"{path}: invalid evidence file")
-        # Reading a v1 container is supported; any successful write upgrades
-        # the container header to v2 without rewriting legacy records.
+        # Reading a v1 or v2 container is supported; any successful write
+        # upgrades the container header to the current SCHEMA_VERSION (3)
+        # without rewriting any legacy record already present.
         document["schema_version"] = SCHEMA_VERSION
     else:
         document = {"schema_version": SCHEMA_VERSION, "patch_id": patch_id, "records": []}
@@ -545,6 +547,11 @@ def _record_qualifies(
         campaign_builds = record.get("campaign_build_identities")
         if not isinstance(campaign_builds, Mapping):
             problems.append("campaign_build_identities must be an object")
+        elif set(campaign_builds) != set(CAMPAIGN_BUILD_ROLES):
+            problems.append(
+                f"campaign_build_identities role set must be exactly "
+                f"{set(CAMPAIGN_BUILD_ROLES)!r}, got {set(campaign_builds)!r}"
+            )
         else:
             for role in CAMPAIGN_BUILD_ROLES:
                 try:
@@ -556,6 +563,11 @@ def _record_qualifies(
         validation_builds = record.get("validation_build_identities")
         if not isinstance(validation_builds, Mapping):
             problems.append("validation_build_identities must be an object")
+        elif set(validation_builds) != set(VALIDATION_BUILD_ROLES):
+            problems.append(
+                f"validation_build_identities role set must be exactly "
+                f"{set(VALIDATION_BUILD_ROLES)!r}, got {set(validation_builds)!r}"
+            )
         else:
             for role in VALIDATION_BUILD_ROLES:
                 try:
