@@ -31,42 +31,18 @@ class ReportError(ValueError):
 def read_measurements_jsonl(path: Path) -> list[dict[str, Any]]:
     """Parse a measurements JSONL, returning only result records.
 
-    Tolerates only a genuinely TRUNCATED final line (a run killed mid-flush
-    leaves exactly one, matching analysis/impact.py's load_results). Any
-    OTHER malformed line -- interior corruption -- raises ReportError
-    instead of being silently skipped. gpt-dev-agent review, 2026-08-31:
-    the previous `except (...): continue` silently dropped every malformed
-    line unconditionally -- valid record A, corrupted interior record B,
-    valid record C would report A and C with exit 0 and zero indication B
-    was ever lost.
+    Delegates to analysis/jsonl_io.py's shared strict reader (see its
+    module docstring for the torn-vs-corrupt distinction) -- this used to
+    be an independent, subtly different implementation; sharing it with
+    analysis/impact.py's loader means both stay correct together
+    (gpt-dev-agent review round 2, 2026-08-31).
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
-    non_blank_indices = [i for i, line in enumerate(lines) if line.strip()]
-    last_non_blank = non_blank_indices[-1] if non_blank_indices else -1
+    from . import jsonl_io
 
-    results: list[dict[str, Any]] = []
-    for index, raw_line in enumerate(lines):
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except (json.JSONDecodeError, ValueError) as exc:
-            if index == last_non_blank:
-                print(
-                    f"warning: {path.name} line {index + 1} is truncated or "
-                    "malformed; ignoring it (final line)",
-                    file=sys.stderr,
-                )
-                break
-            raise ReportError(
-                f"{path.name} line {index + 1} is malformed JSON, not the "
-                f"final line -- refusing to silently drop an interior "
-                f"record: {exc}"
-            ) from exc
-        if row.get("kind") == "result":
-            results.append(row)
-    return results
+    try:
+        return jsonl_io.read_result_records(path)
+    except jsonl_io.JsonlReadError as exc:
+        raise ReportError(str(exc)) from exc
 
 
 def read_measurements_sqlite(
@@ -240,10 +216,20 @@ def read_hot_signatures(path: Path, n: int = 20) -> list[dict[str, Any]]:
         connection.close()
 
 
-def read_tuning_overview(path: Path) -> dict[str, Any]:
+def read_tuning_overview(path: Path, *, stage: str = "final") -> dict[str, Any]:
     """Read a quick overview of the tuning run from SQLite.
 
     Returns a compact dict suitable for human-readable output or JSON.
+
+    ``stage`` defaults to ``"final"`` for every ``measurement``-table query
+    here too, matching ``read_measurements_sqlite``'s own default -- this
+    function ran its OWN independent, unfiltered ``measurement`` queries
+    (total/accepted/rejection counts), so fixing the candidate-comparison
+    reader alone left a screen-stage duplicate row still inflating the
+    pipeline generated/measured/rejection counts here (gpt-dev-agent
+    review round 2, 2026-08-31). ``winner`` has no stage column (one row
+    per decision, already final by construction) so its queries are
+    unaffected either way.
     """
     connection = sqlite3.connect(str(path))
     connection.row_factory = sqlite3.Row  # type: ignore[attr-defined]
@@ -266,19 +252,30 @@ def read_tuning_overview(path: Path) -> dict[str, Any]:
         )
         imp = cursor.fetchone()
 
-        # Pipeline stats
-        cursor = connection.execute("SELECT COUNT(*) as total FROM measurement")
+        # Pipeline stats -- stage-filtered, matching read_measurements_sqlite.
+        # `stage = ?` with a bound NULL matches nothing in SQL (NULL
+        # comparisons are never true), so stage=None must build a
+        # different, unconstrained clause -- not just bind None.
+        stage_clause = "stage = ? AND " if stage is not None else ""
+        stage_params = (stage,) if stage is not None else ()
+
+        cursor = connection.execute(
+            f"SELECT COUNT(*) as total FROM measurement WHERE {stage_clause}1=1",
+            stage_params,
+        )
         total_cands = cursor.fetchone()["total"]
 
         cursor = connection.execute(
-            "SELECT COUNT(*) as count, reject_reason FROM measurement "
-            "WHERE accepted = 0 AND reject_reason IS NOT NULL "
-            "GROUP BY reject_reason ORDER BY count DESC"
+            f"SELECT COUNT(*) as count, reject_reason FROM measurement "
+            f"WHERE {stage_clause}accepted = 0 AND reject_reason IS NOT NULL "
+            "GROUP BY reject_reason ORDER BY count DESC",
+            stage_params,
         )
         rejections: dict[str, int] = {r["reject_reason"]: r["count"] for r in cursor}
 
         cursor = connection.execute(
-            "SELECT COUNT(*) as count FROM measurement WHERE accepted = 1"
+            f"SELECT COUNT(*) as count FROM measurement WHERE {stage_clause}accepted = 1",
+            stage_params,
         )
         measured = cursor.fetchone()["count"]
 
