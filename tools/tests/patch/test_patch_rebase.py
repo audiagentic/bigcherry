@@ -605,5 +605,44 @@ class ApplyKnownGoodTests(unittest.TestCase):
         self.assertEqual(record.manifest_hash, "")
 
 
+class SourceSelectorTests(unittest.TestCase):
+    """--source (compat.recipe removal plan, gpt-dev-agent-reviewed session
+    ses_5307d9c58ec645cb): _selection_patch_ids' new v2 selector, checked
+    against the REAL project catalog/config -- must agree exactly with
+    resolve_canonical_selection(), and the exactly-one-selector contract
+    must hold across all three selector kinds now that there are three."""
+
+    def test_source_selector_matches_resolve_canonical_selection_exactly(self):
+        from bigcherry.campaign import resolution as campaign_resolution
+        from bigcherry.core import config as campaign_config
+        from bigcherry.patch import patchset
+
+        cfg = campaign_config.load(paths.RECIPES)
+        catalog = patchset.catalog()
+        expected = campaign_resolution.resolve_canonical_selection(
+            "bigcherry", cfg, catalog
+        )
+        ids = rebase._selection_patch_ids(source_name="bigcherry", all_patches=False)
+        self.assertEqual(set(ids), set(expected.patch_ids))
+
+    def test_unknown_source_raises_rebase_check_error(self):
+        with self.assertRaises(rebase.RebaseCheckError):
+            rebase._selection_patch_ids(source_name="not-a-real-source", all_patches=False)
+
+    def test_no_selector_given_raises(self):
+        with self.assertRaises(rebase.RebaseCheckError):
+            rebase._selection_patch_ids(all_patches=False)
+
+    def test_recipe_and_source_together_raises(self):
+        with self.assertRaises(rebase.RebaseCheckError):
+            rebase._selection_patch_ids(
+                recipe_name="bigcherry", source_name="bigcherry", all_patches=False,
+            )
+
+    def test_source_and_all_together_raises(self):
+        with self.assertRaises(rebase.RebaseCheckError):
+            rebase._selection_patch_ids(source_name="bigcherry", all_patches=True)
+
+
 if __name__ == "__main__":
     unittest.main()

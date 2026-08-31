@@ -85,6 +85,7 @@ def cmd_patch_rebase_check(args: Namespace) -> int:
         report = patch_rebase.run_rebase_check(
             root,
             recipe_name=getattr(args, "recipe", None),
+            source_name=getattr(args, "source", None),
             all_patches=bool(getattr(args, "all_patches", False)),
             context_lines=args.context_lines,
         )
