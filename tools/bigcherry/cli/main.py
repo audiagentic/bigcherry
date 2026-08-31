@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 from .. import __version__, recipes
+from ..core import config as campaign_config
+from ..core import paths as core_paths
 from ..patch import catalog as patch_catalog
 from ..patch import patchset
 from ..source import sources
@@ -63,6 +65,18 @@ the stage before it. That ordering is the whole point: patches are only
 meaningful against a tree whose shape has been verified, and a build is only
 meaningful against a manifest generated from that same tree.
 """
+
+
+def _v2_source_names() -> list[str] | None:
+    """The canonical v2 ``[source.*]`` names, for ``--source`` choices --
+    the compat.recipe removal plan's replacement for ``--recipe``. Mirrors
+    ``recipes.names() or None``'s own fail-soft shape (an argparse
+    ``choices=None`` accepts anything) so a config load error here does not
+    crash unrelated CLI startup."""
+    try:
+        return sorted(campaign_config.load(core_paths.RECIPES).sources) or None
+    except Exception:
+        return None
 
 
 def _add_selection_args(parser: argparse.ArgumentParser) -> None:
@@ -182,7 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="probe the exact logical patch selection for this compatibility recipe",
+        help="[legacy, being retired -- prefer --source] probe the exact "
+             "logical patch selection for this compatibility recipe",
+    )
+    rebase_selection.add_argument(
+        "--source",
+        default=None,
+        choices=_v2_source_names(),
+        help="probe the exact logical patch selection for this canonical "
+             "v2 [source.*] name (e.g. 'bigcherry') -- the compat.recipe "
+             "removal plan's replacement for --recipe",
     )
     rebase_selection.add_argument(
         "--all",
