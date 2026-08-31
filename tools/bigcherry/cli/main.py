@@ -129,11 +129,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="tag, branch or sha to check out (e.g. b1234), or 'latest' for "
         "the newest upstream release. Overrides --recipe.",
     )
-    pull.add_argument(
+    pull_recipe_or_source = pull.add_mutually_exclusive_group()
+    pull_recipe_or_source.add_argument(
         "--recipe",
         default=None,
         choices=recipes.names() or None,
-        help="take the ref from this recipe in config/recipes.toml",
+        help="[legacy, being retired -- prefer --source] take the ref from "
+             "this recipe in config/recipes.toml",
+    )
+    pull_recipe_or_source.add_argument(
+        "--source",
+        default=None,
+        choices=_v2_source_names(),
+        help="take the ref from this canonical v2 [source.*] name (e.g. "
+             "'bigcherry') -- the compat.recipe removal plan's replacement "
+             "for --recipe",
     )
     pull.add_argument(
         "--full",

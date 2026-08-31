@@ -83,11 +83,22 @@ def cmd_pull(args: Namespace) -> int:
         )
         return 2
 
-    # Ref resolution order: explicit --ref, else the recipe's, else stay put.
-    # `latest` resolves against the remote here so what gets recorded is the
-    # tag that was actually built, not a moving alias.
+    # Ref resolution order: explicit --ref, else --source's/--recipe's, else
+    # stay put. `latest` resolves against the remote here so what gets
+    # recorded is the tag that was actually built, not a moving alias.
     ref = args.ref
-    if ref is None and getattr(args, "recipe", None):
+    source_name = getattr(args, "source", None)
+    if ref is None and source_name:
+        from ..core import config as campaign_config  # noqa: PLC0415
+
+        try:
+            cfg = campaign_config.load(paths.RECIPES)
+            source = cfg.sources[source_name]
+        except (campaign_config.ConfigError, KeyError) as exc:
+            print(f"pull: unknown source {source_name!r}: {exc}", file=legacy.sys.stderr)
+            return 2
+        ref = cfg.pinned if source.ref == "pinned" else source.ref
+    elif ref is None and getattr(args, "recipe", None):
         try:
             ref = legacy.recipes.get(args.recipe).ref
         except legacy.recipes.RecipeError as exc:
