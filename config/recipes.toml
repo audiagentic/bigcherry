@@ -121,6 +121,17 @@ patches = ["1224_hi18_reduce_correctness_probe"]
 # compiled out). One-off validation build, not a permanent recipe.
 patches = ["1001_hip_internal_allreduce", "1224_hi18_reduce_correctness_probe"]
 
+[experiment.hi155-hybrid-allreduce-gate]
+# 0840 (the hybrid dispatcher) depends on 1001 (the internal pipeline it
+# dispatches into); 1224 (the SPLIT_REDUCE correctness probe) is included
+# so test-hip-reduce can exercise both sides of the dispatch threshold.
+# One-off validation build, not a permanent recipe.
+patches = [
+    "1001_hip_internal_allreduce",
+    "0840_hybrid_allreduce_dispatch",
+    "1224_hi18_reduce_correctness_probe",
+]
+
 [experiment.hi134-meta-stage-trace]
 # 0830 (validated, always in the default control build) satisfies 1242's
 # REQUIRES via resolve_exact's context_ids param -- see patchset.py.
