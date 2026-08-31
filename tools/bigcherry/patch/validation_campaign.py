@@ -467,43 +467,62 @@ def compute_contract_correctness_gate(
     independent diagnostic -- NEVER wired into this slice's own eligibility
     (compute_verdict() stays the only thing that gates VA11A; composing
     adapter-verdict AND contract-qualification into final eligibility is
-    VA11B's job). Returns None when the patch has no bound contract at all.
+    VA11B's job). Returns None when the patch has no bound contract at all,
+    or the contract declares no required correctness checks.
 
-    A contract requiring more than one named correctness check (e.g. RD04:
-    backend_reference AND ppl_equality) cannot yet be satisfied -- there is
-    no per-named-check evidence input mechanism today, only one generic
-    --correctness-evidence summary. Rather than fabricate N independent
-    passes from that one disposition, this returns a structured 'blocked'
-    result. A contract requiring exactly one named check can be evaluated
-    for real via experiment_contract.evaluate_correctness_gate()."""
+    ANY non-empty required_checks -- one name or several -- is reported
+    BLOCKED here, never a real pass. GPT round 8 (req_84fca34f83064678)
+    corrected an earlier version of this function that treated a
+    single-required-check contract as safely provable from the one generic
+    --correctness-evidence summary: that summary has no machine-readable
+    field naming WHICH check it actually proves (load_correctness_summary()
+    validates identity/disposition only), so constructing
+    CorrectnessResult(check=required_checks[0], passed=disposition=='passed')
+    silently asserted the summary proved that specific named check when it
+    never claimed to. A real per-named-check evidence producer (token-bound
+    to the check it proves) is VA14's job, not this plumbing slice's."""
     if descriptor.experiment_contract is None:
         return None
     from bigcherry.patch import validation as patch_validation
-    from bigcherry.experiment import contract as experiment_contract
 
     full_contract = patch_validation.load_contract_for_descriptor(descriptor)
     if full_contract is None:
         return None
     required_checks = full_contract.correctness.required_checks
-    if len(required_checks) > 1:
-        return {
-            "passed": False,
-            "status": "blocked",
-            "detail": (
-                f"contract requires {len(required_checks)} independent correctness "
-                f"checks {list(required_checks)!r}; no per-check evidence input exists "
-                "yet (VA11B) -- refusing to infer multiple passes from one generic "
-                "correctness summary"
-            ),
-        }
-    if not required_checks or correctness_summary is None:
+    if not required_checks:
         return None
-    result = experiment_contract.CorrectnessResult(
-        check=required_checks[0],
-        passed=correctness_summary.get("disposition") == "passed",
-        detail=str(correctness_summary.get("detail", "")),
-    )
-    return experiment_contract.evaluate_correctness_gate(full_contract, {required_checks[0]: result})
+    return {
+        "passed": False,
+        "status": "blocked",
+        "detail": (
+            f"contract requires correctness check(s) {list(required_checks)!r}; no "
+            "per-named-check evidence producer exists yet (VA14) -- refusing to infer "
+            "a named check's result from one generic, untagged correctness summary"
+        ),
+    }
+
+
+def compute_persisted_validation_eligible(
+    descriptor: object, validation_verdict: object | None,
+) -> bool | None:
+    """VA13/VA11A fail-closed invariant (GPT round 8, req_84fca34f83064678):
+    this slice explicitly cannot grant full Experiment-Contract
+    qualification. Persisting the raw adapter verdict for a bound-contract
+    patch would let patch-verify-evidence read it as fully 'validated' off
+    adapter-only evidence (compute_verdict() checks only that the
+    validation.toml adapter's own checks pass -- it says nothing about
+    contract-level named-correctness/performance/promotion qualification,
+    which is VA14's job). Force False whenever a contract is bound; the
+    adapter verdict remains a real diagnostic in check_results/
+    validation_verdict, it just cannot flow into
+    eligible_for_validated_state until VA14 composes it with real contract
+    qualification. A patch with NO bound contract is unaffected -- the
+    adapter verdict is the only qualification such a patch ever claims."""
+    if descriptor.experiment_contract is not None:
+        return False
+    if validation_verdict is None:
+        return None
+    return validation_verdict.eligible
 
 
 def run(args: argparse.Namespace) -> int:
@@ -995,7 +1014,16 @@ def run(args: argparse.Namespace) -> int:
         },
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
-        validation_eligible=(validation_verdict.eligible if validation_verdict is not None else None),
+        # VA13/VA11A fail-closed invariant (GPT round 8, req_84fca34f83064678):
+        # this slice explicitly cannot grant full Experiment-Contract
+        # qualification -- persisting the raw adapter verdict here would let
+        # patch-verify-evidence read a bound-contract patch as "validated"
+        # off adapter-only evidence. Force False whenever a contract is
+        # bound; the adapter verdict remains a real diagnostic in
+        # check_results/validation_verdict, it just cannot flow into
+        # eligible_for_validated_state until VA14 composes it with real
+        # contract qualification.
+        validation_eligible=compute_persisted_validation_eligible(_descriptor, validation_verdict),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contract_id=_descriptor.experiment_contract,

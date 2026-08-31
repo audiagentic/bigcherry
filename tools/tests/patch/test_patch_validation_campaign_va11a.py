@@ -25,31 +25,31 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
     def test_no_bound_contract_returns_none(self) -> None:
         self.assertIsNone(vc.compute_contract_correctness_gate(_FakeDescriptor(None), None))
 
-    def test_single_required_check_no_summary_returns_none(self) -> None:
-        # RD08-Q6K-MMVQ-VDR2 requires exactly one check (bit_identical) --
-        # with no correctness_summary supplied at all, there is nothing to
-        # evaluate against, so this must stay None (not fabricate a result).
+    def test_single_required_check_no_summary_is_blocked(self) -> None:
+        # RD08-Q6K-MMVQ-VDR2 requires exactly one check (bit_identical).
         descriptor = _FakeDescriptor("RD08-Q6K-MMVQ-VDR2")
-        self.assertIsNone(vc.compute_contract_correctness_gate(descriptor, None))
+        gate = vc.compute_contract_correctness_gate(descriptor, None)
+        self.assertIsNotNone(gate)
+        self.assertEqual(gate.get("status"), "blocked")
+        self.assertFalse(gate["passed"])
 
-    def test_single_required_check_passing_summary_passes(self) -> None:
+    def test_single_required_check_is_ALWAYS_blocked_even_with_a_passing_summary(self) -> None:
+        """GPT round 8 (req_84fca34f83064678): the earlier version of this
+        function treated a single-required-check contract as provable from
+        the one generic --correctness-evidence summary. That summary has no
+        machine-readable field naming WHICH check it proves -- an arbitrary
+        passing summary could silently become 'bit_identical passed' without
+        ever proving bit-identical was what actually ran. Fixed: ANY
+        non-empty required_checks is blocked, one name or several, until a
+        real per-named-check evidence producer exists (VA14)."""
         descriptor = _FakeDescriptor("RD08-Q6K-MMVQ-VDR2")
         gate = vc.compute_contract_correctness_gate(
             descriptor, {"disposition": "passed", "detail": "bit-identical vs native"}
         )
         self.assertIsNotNone(gate)
-        self.assertTrue(gate["passed"])
-        self.assertEqual(gate["required_checks"], ["bit_identical"])
-        self.assertEqual(gate["missing_checks"], [])
-        self.assertEqual(gate["failed_checks"], [])
-
-    def test_single_required_check_failing_summary_fails(self) -> None:
-        descriptor = _FakeDescriptor("RD08-Q6K-MMVQ-VDR2")
-        gate = vc.compute_contract_correctness_gate(
-            descriptor, {"disposition": "failed", "detail": "diverged"}
-        )
+        self.assertEqual(gate.get("status"), "blocked")
         self.assertFalse(gate["passed"])
-        self.assertEqual(gate["failed_checks"], ["bit_identical"])
+        self.assertIn("bit_identical", gate["detail"])
 
     def test_two_required_checks_is_blocked_never_fabricates_two_passes(self) -> None:
         """The real bug this item fixes: RD04's contract requires BOTH
@@ -76,6 +76,37 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
         descriptor = _FakeDescriptor("NOT-A-REAL-CONTRACT-ID")
         with self.assertRaises(Exception):
             vc.compute_contract_correctness_gate(descriptor, {"disposition": "passed"})
+
+
+@dataclass
+class _FakeVerdict:
+    eligible: bool
+
+
+class ComputePersistedValidationEligibleTests(unittest.TestCase):
+    """GPT round 8 (req_84fca34f83064678): a bound-contract patch must
+    never have the raw adapter verdict persisted as its evidence
+    eligibility -- that would let patch-verify-evidence read adapter-only
+    evidence as full contract qualification, which VA13 explicitly cannot
+    grant (VA14's job)."""
+
+    def test_bound_contract_forces_false_even_when_adapter_verdict_is_eligible(self) -> None:
+        descriptor = _FakeDescriptor("RD08-Q6K-MMVQ-VDR2")
+        result = vc.compute_persisted_validation_eligible(descriptor, _FakeVerdict(eligible=True))
+        self.assertFalse(result)
+
+    def test_bound_contract_forces_false_even_with_no_verdict_at_all(self) -> None:
+        descriptor = _FakeDescriptor("RD08-Q6K-MMVQ-VDR2")
+        self.assertFalse(vc.compute_persisted_validation_eligible(descriptor, None))
+
+    def test_no_contract_passes_through_the_real_adapter_verdict(self) -> None:
+        descriptor = _FakeDescriptor(None)
+        self.assertTrue(vc.compute_persisted_validation_eligible(descriptor, _FakeVerdict(eligible=True)))
+        self.assertFalse(vc.compute_persisted_validation_eligible(descriptor, _FakeVerdict(eligible=False)))
+
+    def test_no_contract_no_verdict_returns_none(self) -> None:
+        descriptor = _FakeDescriptor(None)
+        self.assertIsNone(vc.compute_persisted_validation_eligible(descriptor, None))
 
 
 class BoundArtifactShapesActuallyPassTests(unittest.TestCase):
