@@ -426,6 +426,55 @@ class StaleReportTests(unittest.TestCase):
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(dict(self.report), self.upstream)
 
+    def test_source_report_binds_on_patch_set_id_not_just_patch_ids(self):
+        # gpt-dev-agent review (compat.recipe removal plan, session
+        # ses_5307d9c58ec645cb): two logically distinct v2 patch-set
+        # compositions can resolve to the identical module-id set --
+        # re-deriving patch_ids alone would miss that, so a --source report
+        # must also bind on patch_set_id (and source_ref). Mocks
+        # _resolve_v2_source so this exercises the binding logic in
+        # isolation, without needing the real project's recipes.toml/
+        # catalog to agree with this fixture's synthetic patches root.
+        from unittest import mock
+        from bigcherry.campaign.resolution import CanonicalSelection
+
+        fresh = CanonicalSelection(
+            source_name="bigcherry", source_ref="deadbeef" * 5,
+            patch_set_id="psid-fresh", patch_ids=("0100_clean",),
+        )
+        source_report = dict(
+            self.report,
+            selection={
+                "patch_ids": ["0100_clean"], "recipe": None, "source": "bigcherry",
+                "source_ref": "deadbeef" * 5, "source_patch_set_id": "psid-fresh",
+                "all_patches": False,
+            },
+        )
+        with mock.patch.object(rebase, "_resolve_v2_source", return_value=fresh):
+            # Fresh: patch_set_id/source_ref/patch_ids all agree -- passes.
+            rebase._require_fresh(dict(source_report), self.upstream)
+
+        # Same resulting patch_ids, but a DIFFERENT live patch_set_id (the
+        # exact case patch_set_id exists to catch) -- must be rejected even
+        # though patch_ids alone would look identical.
+        changed_composition = CanonicalSelection(
+            source_name="bigcherry", source_ref="deadbeef" * 5,
+            patch_set_id="psid-DIFFERENT", patch_ids=("0100_clean",),
+        )
+        with mock.patch.object(rebase, "_resolve_v2_source", return_value=changed_composition):
+            with self.assertRaises(rebase.StaleRebaseReportError):
+                rebase._require_fresh(dict(source_report), self.upstream)
+
+        # Same patch_set_id, but the source's ref moved (e.g. a pin bump) --
+        # must also be rejected.
+        moved_ref = CanonicalSelection(
+            source_name="bigcherry", source_ref="cafef00d" * 5,
+            patch_set_id="psid-fresh", patch_ids=("0100_clean",),
+        )
+        with mock.patch.object(rebase, "_resolve_v2_source", return_value=moved_ref):
+            with self.assertRaises(rebase.StaleRebaseReportError):
+                rebase._require_fresh(dict(source_report), self.upstream)
+
     def test_apply_known_good_rejects_stale_report(self):
         report_path = self.base / "report.json"
         stale = dict(self.report, upstream_revision="0" * 40)

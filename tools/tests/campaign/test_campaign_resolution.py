@@ -87,6 +87,7 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(len(lane.patch_set.module_ids), 16)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn("1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids)
+        self.assertEqual(lane.patch_set.classification, "experimental")
 
 
 class CanonicalSelectionTests(unittest.TestCase):
