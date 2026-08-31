@@ -928,6 +928,29 @@ def build_parser() -> argparse.ArgumentParser:
     ab.add_argument("--stock-cmake-cache", default=None)
     ab.add_argument("--patched-cmake-cache", default=None)
     ab.add_argument("command", nargs=argparse.REMAINDER)
+    # nargs=argparse.REMAINDER does not reliably gobble option-like tokens
+    # when nested under a parent parser that itself has optionals (a real,
+    # longstanding CPython argparse limitation, confirmed live: `bigcherry
+    # completion-bench --server-url ...` was rejected by the OUTER parser
+    # before even reaching this subparser). Compose via `parents=` instead
+    # -- reuses server_completion's own flag definitions directly, so the
+    # two can never drift apart, and normal argparse validation/--help work.
+    from ..bench.server_completion import _build_parser as _completion_bench_parser
+    completion_bench = sub.add_parser(
+        "completion-bench",
+        parents=[_completion_bench_parser()],
+        help=(
+            "repeated-completion MTP speculative-decode benchmark against "
+            "an already-running llama-server (see bigcherry/bench/server_completion.py)"
+        ),
+    )
+
+    def _completion_bench_main(args: argparse.Namespace) -> int:
+        from ..bench import server_completion
+        return server_completion.run_from_namespace(args)
+
+    completion_bench.set_defaults(func=_completion_bench_main)
+
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
