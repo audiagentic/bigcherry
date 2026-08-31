@@ -642,12 +642,16 @@ def _record_qualifies_for_benched(
     """VA08: the 'ported-benched' tracked-status obligation -- the same
     identity/freshness/schema-v3 provenance discipline as
     _record_qualifies(), but requires only that a real control/subject
-    benchmark actually ran (validation_build_identities populated with
-    real build identities, real hardware architectures recorded) with no
-    recorded correctness FAILURE -- NOT full eligible_for_validated_state
-    (STATE='validated' is a strictly higher bar) and NOT activation
-    executed+verified (activation is an orthogonal claim from "a real
-    paired benchmark ran")."""
+    benchmark actually ran -- validation_build_identities populated with
+    real build identities, real hardware architectures recorded, AND a
+    real check_results entry proving a performance/controls check
+    actually passed with a bound artifact (build/hardware provenance
+    alone only proves binaries were built, not that they were
+    benchmarked, GPT round 2 req_ecaa87b450294084) -- with no recorded
+    correctness FAILURE. Deliberately NOT full
+    eligible_for_validated_state (STATE='validated' is a strictly higher
+    bar) and NOT activation executed+verified (activation is an
+    orthogonal claim from "a real paired benchmark ran")."""
     problems: list[str] = []
     if record.get("record_schema_version") != 3:
         return False, ("ported-benched requires a schema-v3 record",)
@@ -693,6 +697,30 @@ def _record_qualifies_for_benched(
     correctness = record.get("correctness")
     if isinstance(correctness, Mapping) and correctness.get("disposition") == "failed":
         problems.append("correctness recorded a failure")
+    # GPT round 2 (req_ecaa87b450294084): build/hardware provenance alone
+    # only proves binaries were BUILT, not that a benchmark actually RAN --
+    # a build-only record (no benchmark) would otherwise silently qualify
+    # as "ported-benched-evidence". Require at least one real
+    # performance/controls check_results entry (validation_campaign.run()
+    # serializes its actual evaluated ValidationResults there) with a
+    # successful status AND a bound artifact -- an unbound/missing
+    # artifact is not real evidence of execution either.
+    check_results = record.get("check_results")
+    benchmark_executed = False
+    if isinstance(check_results, Mapping):
+        for entry in check_results.values():
+            if (
+                isinstance(entry, Mapping) and entry.get("capability") in ("performance", "controls")
+                and entry.get("status") == "pass" and isinstance(entry.get("artifacts"), (list, tuple))
+                and len(entry["artifacts"]) > 0
+            ):
+                benchmark_executed = True
+                break
+    if not benchmark_executed:
+        problems.append(
+            "no recorded benchmark execution -- check_results has no passing "
+            "performance/controls check with a bound artifact"
+        )
     try:
         _require_hex(record.get("patch_implementation_digest"), "patch_implementation_digest", (64,))
         _require_hex(record.get("base_revision"), "base_revision", (40, 64))
