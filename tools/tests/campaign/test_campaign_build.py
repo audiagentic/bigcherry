@@ -453,7 +453,12 @@ class PublishBuildOutputsTests(unittest.TestCase):
 
 
 class RenderBuildPatchDocBestEffortTests(unittest.TestCase):
-    def test_never_raises_on_a_broken_context_and_drops_unknown_ids(self):
+    def test_an_unresolvable_patch_id_returns_none_not_a_partial_doc(self):
+        """A real regression this replaces: an unknown patch_id used to be
+        silently filtered out of the merged doc, so a build's real N-patch
+        selection could render as a doc claiming 0 patches were included.
+        Now it correctly refuses to render a partial doc; the best-effort
+        wrapper still must not raise, so it returns None instead."""
         from bigcherry.campaign.build import _render_build_patch_doc_best_effort
 
         with tempfile.TemporaryDirectory() as directory:
@@ -462,10 +467,7 @@ class RenderBuildPatchDocBestEffortTests(unittest.TestCase):
             result = _render_build_patch_doc_best_effort(
                 context, ("not-a-real-patch-id",), {"upstream_revision": "deadbeef"},
             )
-            # must not raise -- an unresolvable patches_root just yields an
-            # empty catalog, so the unknown id silently drops out
-            self.assertIsNotNone(result)
-            self.assertIn("0 patch(es) included", result)
+            self.assertIsNone(result)  # must not raise -- but also no partial doc
 
     def test_returns_none_when_render_itself_fails(self):
         from bigcherry.campaign.build import _render_build_patch_doc_best_effort
@@ -480,7 +482,10 @@ class RenderBuildPatchDocBestEffortTests(unittest.TestCase):
         from bigcherry.campaign.build import _render_build_patch_doc_best_effort
         from bigcherry.core import paths as core_paths
 
-        context = SimpleNamespace(patches_root=core_paths.REPO_ROOT / "patches")
+        context = SimpleNamespace(
+            patches_root=core_paths.REPO_ROOT / "patches",
+            project_root=core_paths.REPO_ROOT,
+        )
         result = _render_build_patch_doc_best_effort(
             context, ("0100_cmake_options",), {"upstream_revision": "deadbeef"},
         )

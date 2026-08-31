@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -762,21 +763,34 @@ def _render_build_patch_doc_best_effort(
     lane's patch set need not correspond to any named recipe at all. Every
     real build gets its own doc this way, not just pin-bump's target
     revision. Best-effort like the pin-bump equivalent: a doc failure must
-    never fail a real build.
+    never fail a real build -- but WHAT failed is printed to stderr rather
+    than silently discarded (gpt-dev-agent review, 2026-08-31).
     """
     try:
         from ..patch import docs as patch_docs
-        from ..patch import patchset
 
-        modules_by_id = {m.patch_id: m for m in patchset.catalog(context.patches_root)}
-        modules = [modules_by_id[pid] for pid in patch_ids if pid in modules_by_id]
+        bigcherry_revision = "unknown"
+        rev_result = subprocess.run(
+            ["git", "-C", str(context.project_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        )
+        if rev_result.returncode == 0:
+            bigcherry_revision = rev_result.stdout.strip()
+
         pin_info = {
             "llama.cpp revision": str(source_metadata.get("upstream_revision", "unknown")),
+            "bigcherry revision": bigcherry_revision,
             "source_slice_id": str(source_metadata.get("source_slice_id", "unknown")),
         }
-        return patch_docs.render_release_doc(
-            modules=modules, pin_info=pin_info,
+        return patch_docs.render_patch_selection_doc(
+            patch_ids=patch_ids, pin_info=pin_info,
             selection_label=f"campaign build ({len(patch_ids)} patch(es) resolved)",
+            patches_dir=context.patches_root,
         )
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
+        print(
+            f"campaign build: patches.md was not rendered ({len(patch_ids)} "
+            f"patch_ids): {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
         return None
