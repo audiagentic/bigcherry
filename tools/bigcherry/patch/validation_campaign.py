@@ -1604,8 +1604,20 @@ def run(args: argparse.Namespace) -> int:
         }
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
 
+        # VA15 real-hardware finding: validation_plan.contract is a
+        # patch_validation.ContractBinding -- a lightweight PROJECTION
+        # (contract_id/hash/expected_effect/etc) that deliberately does NOT
+        # carry .correctness/.acceptance/etc. compute_contract_correctness_gate()
+        # needs the real experiment_contract.ExperimentContract, which
+        # run_rd08_contract already loaded as rd08_contract for the
+        # --run-rd08-contract path; other contract-bound patches load it
+        # fresh here the same way that block does.
+        full_contract = (
+            rd08_contract if rd08_qualification is not None
+            else patch_validation.load_contract_for_descriptor(descriptor)
+        )
         contract_correctness_gate = compute_contract_correctness_gate(
-            validation_plan.contract,
+            full_contract,
             (rd08_qualification["correctness"]["results"] if rd08_qualification is not None else None),
         )
         validation_check_results = {
