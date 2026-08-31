@@ -8,7 +8,6 @@ runner -- consistent with VA14's established pattern
 from __future__ import annotations
 
 import json
-import re
 import sys
 import unittest
 from dataclasses import dataclass
@@ -17,7 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.experiment import contract as ex_contract  # noqa: E402
-from bigcherry.experiment import execution as ex  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 
