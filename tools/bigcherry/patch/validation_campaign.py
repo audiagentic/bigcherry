@@ -880,7 +880,17 @@ def run(args: argparse.Namespace) -> int:
         patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
         activation_evidence=activation_evidence, activation_disposition=activation_verdict,
         correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,
-        build_identities=identity_context.build_identities, campaign_workdir=workdir / "campaign",
+        build_identities=identity_context.build_identities,
+        # VA07: real validation-build domain, distinct from the campaign
+        # {tune,replay,stock} domain above. subject is intentionally the
+        # same physical build as campaign.tune today (the tune build IS
+        # the patch under validation) -- the schema records both roles
+        # explicitly rather than assuming that equality.
+        validation_build_identities={
+            "control": control_build_evidence.campaign_identity(),
+            "subject": tune_build_evidence.campaign_identity(),
+        },
+        campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
         validation_eligible=(validation_verdict.eligible if validation_verdict is not None else None),
         representation=_descriptor.representation,
