@@ -359,16 +359,115 @@ affirmative correctness claim — absence of an observed failure is not
 proof the underlying issue is fixed, especially where the fault was itself
 hard to reproduce in the first place.
 
+## Real contract-execution architecture (VA14)
+
+The real per-lane executor that produces a contract's actual measured
+evidence (as opposed to `validation.toml`'s adapter checklist, which only
+proves an adapter-declared check ran, not that it satisfies the bound
+contract's own thresholds) lives in `tools/bigcherry/experiment/`, not in
+`tools/bigcherry/campaign/`. **This is a living section — check
+`docs/planning/active/validation-package-standard/VA14.md`'s change log
+for the authoritative, up-to-date status before relying on anything below
+as "done."**
+
+- `tools/bigcherry/experiment/execution.py` — the paired control/subject
+  lane runner:
+  - `Runner` / `RunnerOutput` (`returncode`, `stdout`, `stderr`, `.combined`)
+    — the execution contract. A real runner shells out via `subprocess.run`;
+    tests inject a fake one. **A nonzero `returncode` from either arm raises
+    `LaneExecutionError` before any metric is extracted** — a failed
+    benchmark can never masquerade as a valid measurement.
+  - `run_paired_lane(metric, control_command, subject_command, pattern,
+    pairs, runner, ...)` — alternates control/subject execution order each
+    pair (so clock/thermal drift can't bias the comparison), reuses
+    `campaign/benchmark.py`'s already arm-name-neutral
+    `block_bootstrap_effect()` for the paired geometric effect + bootstrap
+    CI. Returns a `PairedLaneRun` (raw `.runs`, `.stats`).
+  - `metric_for_workload()` / `WORKLOAD_METRIC` — the one place workload
+    tags (`decode`, `prefill`) map to llama-bench metric names
+    (`tg128`, `pp512`). Extend only when a new workload is actually being
+    validated.
+  - `lane_effect_from_run(role, metric, run)` — turns a `PairedLaneRun`
+    into a `LaneEffect` for `contract.py`'s aggregation functions.
+  - `trigger_evidence_from_marker_probe(lane_id, role, positive_hit)` —
+    turns a boolean trace-marker observation into real `TriggerEvidence`.
+
+- `tools/bigcherry/experiment/contract.py`'s execution-facing surface
+  (schema/hashing covered above under [Contract shape](#contract-shape)):
+  - `aggregate_contract_effects(contract, effects, target_metric, ...)` —
+    computes `target_kernel_gain_pct` from positive-role effects and
+    `max_control_regression_pct` across **all control-role effects,
+    regardless of their metric** — a control lane legitimately measures a
+    structurally different workload than the positive lane (RD08:
+    positive=decode/tg128, control=prefill/pp512), so this must never
+    filter control effects by the positive lane's target metric.
+  - `evaluate_correctness_gate()` / `evaluate_trigger_proof()` /
+    `evaluate_resource_gate()` / `evaluate_promotion_gate()` — the
+    independent, fail-closed gates a contract's evidence must pass. Missing
+    or ambiguous evidence is always a FAIL/BLOCKED, never a silent pass.
+  - `evidence_ref_for_lane(contract, role, workload_tag, model_ref, ...)` /
+    `ContractEvidenceRef.document()` — the real per-lane provenance sidecar
+    (contract id, contract hash, optimization id, role, workload, model
+    ref) attached to persisted lane evidence. Use `contract.id`, never a
+    `contract_id` attribute — `ExperimentContract`'s real field is `id`.
+
+- `tools/bigcherry/patch/validation_campaign.py`'s validation-domain build
+  and lane wiring:
+  - The validation domain's **subject** build is a real, independently
+    built `validation-subject` binary from `patched_src`, built with the
+    *exact same* `extra_cmake_args` as `control` (`[]`) — **not** the
+    `tune` build, which carries `GGML_HIP_AUTOTUNE`/`AUTOTUNE_RECORD`/
+    `ROUTING_TRANSFORM` instrumentation the control build never had. Using
+    the tune build would confound a measured lane effect with
+    instrumentation overhead, not just the patch under test.
+  - `assert_validation_subject_parity(control_build_evidence,
+    validation_subject_build_evidence, patch_id)` — fails closed
+    (`PatchCampaignError`) unless `effective_configure` AND
+    `effective_build_id` both match control. Deliberately does **not**
+    compare `runtime_bundle_hash`/`compile_verification_id`/full
+    `campaign_identity()` — source content legitimately differs between
+    control and subject; that's the entire point of the comparison.
+  - `rd08_validation_lane_commands()` / `run_rd08_validation_lanes()` —
+    RD08's real positive(decode)/control(prefill) lane pair, executed in a
+    sanitized environment (`campaign.benchmark.sanitize_environment(mode=
+    "stock")` plus stripping `BIGCHERRY_*`/`GGML_CUDA_DISABLE_FUSION`, not
+    raw `_hip_env()`, so inherited dispatch/tune overrides from the ambient
+    shell can never contaminate a lane run). Persists a bound
+    `artifacts/validation-lanes.json` (contract id/hash, per-lane metric,
+    raw commands, raw stdout/stderr/returncode, paired runs, bootstrap
+    stats, resolved model ref/path, and the actual control/subject build
+    identities that ran) — bound into `evidence.py`'s `_artifact_refs()`
+    so it is tracked in the validation record, not merely written.
+  - Gated behind an opt-in `--run-rd08-lanes` CLI flag, itself gated to
+    `descriptor.experiment_contract == "RD08-Q6K-MMVQ-VDR2"` — a no-op for
+    every other patch today. **This is deliberately RD08-only scaffolding,
+    not a general N-contract executor yet.**
+
+**As of this writing, VA14's final composition slice is not done**: the
+real RD08 bit-identical correctness producer already exists at
+`patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`
+(`materialize_rd08_variants()`, `require_rd08_correctness_evidence()` —
+runs all 5 RD08 shapes × 3 seeds, requires exact digest equality,
+fail-closed) but is **not yet wired** through
+`compute_contract_correctness_gate()`, which today unconditionally reports
+any RD08-bound patch's correctness as `blocked`. Composing correctness +
+trigger evidence + `aggregate_contract_effects()` + `evaluate_promotion_gate()`
+into real `eligible_for_validated_state`, and the associated single
+`VALIDATION_FRAMEWORK_VERSION` bump, are the remaining work — see VA14's
+plan item for current status before assuming any of this composition is
+live.
+
 ## Validation workflow
 
-**Current implementation note:** until VA11 (wiring the real
-`ValidationPlan`/Experiment-Contract executor) lands, `patch-validation-campaign`
-must not be treated as final contract qualification for any plan requiring
-trace, performance, custom, or named Experiment-Contract checks. Today it
-can produce campaign evidence, but final qualification remains blocked
-wherever the required evidence isn't yet actually wired through — do not
-read a clean campaign run alone as proof of a `ported-validated` claim
-until VA11 is done.
+**Current implementation note:** `patch-validation-campaign` must not be
+treated as final contract qualification for any plan requiring trace,
+performance, custom, or named Experiment-Contract checks until VA14's
+final composition slice (above) lands. Today it can produce real campaign
+AND real RD08 lane-execution evidence (for RD08-bound patches, opt-in via
+`--run-rd08-lanes`), but that evidence is not yet composed into
+`eligible_for_validated_state` — do not read a clean campaign run, or even
+a clean RD08 lane run, alone as proof of a `ported-validated` claim until
+VA14 is fully done.
 
 1. Bind (or, if none exists yet, first author) the patch's Experiment
    Contract.

@@ -8,9 +8,16 @@ family, dispatch key, benchmark framework, or runtime model dispatcher.
 ## Source of truth
 
 - Registry: `config/experiment-contracts.toml`
-- Schema, parsing, hashing, and promotion helpers:
+- Schema, parsing, hashing, gates, and promotion helpers:
   `tools/bigcherry/experiment/contract.py`
-- Campaign expansion and execution: `tools/bigcherry/campaign/`
+- Real per-lane paired execution: `tools/bigcherry/experiment/execution.py`
+  (VA14 — see
+  [PATCH_VALIDATION.md's "Real contract-execution architecture"](../testing/PATCH_VALIDATION.md#real-contract-execution-architecture-va14)
+  for the full picture, including `patch/validation_campaign.py`'s
+  validation-domain build/lane wiring). `tools/bigcherry/campaign/` provides
+  shared statistics/environment primitives (`block_bootstrap_effect()`,
+  `sanitize_environment()`) that `execution.py` reuses — it is not itself
+  the contract executor.
 - Current work and acceptance state: the matching item under
   `docs/planning/active/` or `docs/planning/completed/`
 
