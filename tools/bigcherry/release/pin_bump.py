@@ -421,15 +421,33 @@ def run(
     dispositions_dir = dispositions_dir or paths.DISPOSITIONS
     report_dir = report_dir or (paths.ARTIFACTS / "pin-bump" / f"resume-{target_ref}")
 
-    if resume and (report_dir / "state.json").is_file():
-        state = PinBumpState.load(report_dir)
-        _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
-        _, resolved_recipe_name = _resume_selector(state, recipe_name=recipe_name)
-    else:
-        state = None
-        resolved_recipe_name = recipe_name if recipe_name is not None else "bigcherry"
-
     try:
+        # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
+        # --resume must never silently reinterpret a missing/wrong state as
+        # "start fresh" -- that would let preflight/declare re-execute as a
+        # NEW operation under a resume invocation. State load, resume
+        # validation, and selector reconciliation all now happen INSIDE this
+        # try (P2 of the same review): so a PinBumpStop raised by any of
+        # them still gets real run_id/target/tree context attached below,
+        # instead of falling through to the "unresolved" placeholder.
+        if resume:
+            if not (report_dir / "state.json").is_file():
+                raise PinBumpStop(
+                    "resume", "RESUME_STATE_MISSING",
+                    f"--resume was given but no state.json exists under {report_dir}",
+                    evidence={"report_dir": str(report_dir)},
+                    recommended_actions=[
+                        "omit --resume to start a fresh run, or point "
+                        "--report-dir at the run you meant to resume",
+                    ],
+                )
+            state = PinBumpState.load(report_dir)
+            _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
+            _, resolved_recipe_name = _resume_selector(state, recipe_name=recipe_name)
+        else:
+            state = None
+            resolved_recipe_name = recipe_name if recipe_name is not None else "bigcherry"
+
         return _run_phases(
             state=state, target_ref=target_ref, recipe_name=resolved_recipe_name,
             repo_root=repo_root, vendor_root=vendor_root,
@@ -456,6 +474,48 @@ def run(
 
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
+    """Unconditional pre-apply gate (gpt-dev-agent review of c236acc, P1,
+    session ses_5307d9c58ec645cb): the coverage phase's rebase-recipe.json
+    must exist, and its live bytes must match what coverage actually wrote,
+    every time apply is about to run -- fresh same-process coverage->apply
+    included, not just a --resume. A missing or empty-bound digest is
+    itself a failure, not something to silently skip past."""
+    if not state.coverage_report_sha256:
+        raise PinBumpStop(
+            "apply", "COVERAGE_REPORT_UNBOUND",
+            "no coverage_report_sha256 was ever recorded for this run -- "
+            "refusing to apply an unproven report",
+            recommended_actions=["re-run coverage from a fresh run"],
+        )
+    if not report_path.is_file():
+        raise PinBumpStop(
+            "apply", "COVERAGE_REPORT_MISSING",
+            f"{report_path} does not exist -- refusing to apply",
+            evidence={"report_path": str(report_path)},
+            recommended_actions=[
+                "restore the original rebase-recipe.json, or re-run "
+                "coverage from a fresh run",
+            ],
+        )
+    live_digest = _sha256_file(report_path)
+    if live_digest != state.coverage_report_sha256:
+        raise PinBumpStop(
+            "apply", "COVERAGE_REPORT_MODIFIED",
+            "rebase-recipe.json's contents no longer match what the "
+            "coverage phase wrote (modified or replaced on disk) -- "
+            "refusing to apply an unproven report",
+            evidence={
+                "recorded_sha256": state.coverage_report_sha256,
+                "live_sha256": live_digest,
+            },
+            recommended_actions=[
+                "restore the original rebase-recipe.json, or re-run "
+                "coverage from a fresh run",
+            ],
+        )
 
 
 def _validate_resume(
@@ -689,25 +749,14 @@ def _run_phases(
             recipe_report_path = report_dir / "rebase-recipe.json"
             coverage = json.loads((report_dir / "coverage.json").read_text(encoding="utf-8")) \
                 if (report_dir / "coverage.json").is_file() else {}
-            if state.coverage_report_sha256 and recipe_report_path.is_file():
-                live_digest = _sha256_file(recipe_report_path)
-                if live_digest != state.coverage_report_sha256:
-                    raise PinBumpStop(
-                        "apply", "COVERAGE_REPORT_MODIFIED",
-                        "rebase-recipe.json's contents no longer match what "
-                        "the coverage phase wrote (modified or replaced on "
-                        "disk) -- refusing to apply an unproven report",
-                        evidence={
-                            "recorded_sha256": state.coverage_report_sha256,
-                            "live_sha256": live_digest,
-                        },
-                        recommended_actions=[
-                            "restore the original rebase-recipe.json, or "
-                            "re-run coverage from a fresh run",
-                        ],
-                    )
 
+        # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
+        # the digest check used to run ONLY in the resumed (`else`) branch,
+        # so a fresh same-process coverage->apply never re-checked, and a
+        # deleted report skipped the check entirely instead of failing
+        # closed. Unconditional, immediately before apply, covers both.
         if state.next_phase == "apply":
+            _require_coverage_report(state, recipe_report_path)
             result = patch_rebase.apply_known_good(vendor_root, recipe_report_path, force=False, dry_run=False)
             if not result.ok:
                 raise PinBumpStop(
@@ -833,22 +882,32 @@ def _write_release_doc_best_effort(
 
     compat.recipe removal plan (gpt-dev-agent review, session
     ses_5307d9c58ec645cb): reads patch_ids from the SAME
-    rebase-recipe.json report that authorized `apply` (when available),
-    rather than re-resolving the selector fresh at completion time -- a
-    real TOCTOU otherwise, since config/recipes.toml or the patch
-    registry could have changed between the coverage/apply phases and
-    this one on this shared, multi-agent repo. Falls back to a fresh
-    resolution only if no report is available (e.g. a direct call site
-    that never ran coverage), so this function's existing callers/tests
-    keep working.
+    rebase-recipe.json report that authorized `apply`, rather than
+    re-resolving the selector fresh at completion time -- a real TOCTOU
+    otherwise, since config/recipes.toml or the patch registry could have
+    changed between the coverage/apply phases and this one on this shared,
+    multi-agent repo. When ``report_dir`` is supplied, this is now the
+    ONLY source: a missing/invalid report skips the doc (still
+    best-effort, never a PinBumpStop) rather than silently falling back to
+    a fresh, TOCTOU-prone resolution. Fresh resolution only remains for a
+    direct call site with no ``report_dir`` at all (e.g. a legacy/manual
+    invocation that never ran coverage) -- existing callers/tests without
+    report_dir keep working exactly as before.
     """
     try:
         from ..patch import docs as patch_docs
         from ..patch import rebase as patch_rebase
         from . import records as release_records
 
-        report_path = (report_dir / "rebase-recipe.json") if report_dir else None
-        if report_path is not None and report_path.is_file():
+        if report_dir is not None:
+            report_path = report_dir / "rebase-recipe.json"
+            if not report_path.is_file():
+                print(
+                    f"pin-bump: release doc for {target_ref!r} skipped: "
+                    f"{report_path} does not exist",
+                    file=sys.stderr,
+                )
+                return
             patch_ids = tuple(
                 json.loads(report_path.read_text(encoding="utf-8"))
                 ["selection"]["patch_ids"]
