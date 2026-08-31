@@ -117,6 +117,46 @@ class RunRd58StateRestoreEvidenceTests(unittest.TestCase):
         self.assertTrue(result["correctness_passed"])
         self.assertFalse(result["controls_passed"])
 
+    def test_subject_failure_also_fails_controls(self) -> None:
+        # GPT round 3: the controls artifact claims no crash/regression
+        # across BOTH control and subject repeated execution -- a subject
+        # that crashes on repeated runs must fail controls too, not just
+        # correctness.
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            if command[0] == "subject_bin":
+                return _Result(1, "", "crash\n")
+            return _Result(0, "All tests passed.\n")
+
+        vc.subprocess.run = fake_run
+        result = vc.run_rd58_state_restore_evidence(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self._run_dir(),
+            campaign_id="campaign123", control_build_identity={}, subject_build_identity={},
+            repetitions=2,
+        )
+        self.assertFalse(result["correctness_passed"])
+        self.assertFalse(result["controls_passed"])
+
+    def test_observed_devices_persisted_into_artifacts(self) -> None:
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            return _Result(0, "All tests passed.\n")
+
+        vc.subprocess.run = fake_run
+        run_dir = self._run_dir()
+        devices = {
+            "hip_visible_devices": ["0", "1"], "rocr_visible_devices": ["0", "1"], "gpu_count": 2,
+        }
+        vc.run_rd58_state_restore_evidence(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=run_dir,
+            campaign_id="campaign123", control_build_identity={}, subject_build_identity={},
+            observed_devices=devices, repetitions=1,
+        )
+        correctness_doc = json.loads((run_dir / "rd58-correctness.json").read_text(encoding="utf-8"))
+        controls_doc = json.loads((run_dir / "performance.json").read_text(encoding="utf-8"))
+        self.assertEqual(correctness_doc["hardware"], devices)
+        self.assertEqual(controls_doc["hardware"], devices)
+
     def test_ambient_device_visibility_is_preserved(self) -> None:
         # Unlike RD04/RD08, RD58 must NOT restrict HIP_VISIBLE_DEVICES --
         # it needs 2+ real GPUs. Confirm the env passed to subprocess.run
@@ -178,6 +218,20 @@ class Rd58CliWiringTests(unittest.TestCase):
         rd58_block_start = self.source.index("if args.run_rd58_state_restore:")
         rd58_block = self.source[rd58_block_start:self.source.index("validation_check_results: dict")]
         self.assertNotIn("contract_promotions[", rd58_block)
+
+    def test_gpu_preflight_rejects_duplicate_device_ids(self) -> None:
+        # GPT round 3: "0,0" must not be accepted as 2 distinct real GPUs.
+        self.assertIn("len(set(hip_device_ids)) != len(hip_device_ids)", self.source)
+
+    def test_validation_context_uses_rd58_build_identities_when_rd58_ran(self) -> None:
+        # GPT round 3: ValidationContext's build check must be evaluated
+        # against RD58's own test-save-load-state builds, not the generic
+        # llama-bench builds, when --run-rd58-state-restore ran.
+        self.assertIn("rd58_control_build_evidence.effective_build_id", self.source)
+        self.assertIn(
+            "build_evidence=(rd58_build_evidence if args.run_rd58_state_restore else build_evidence)",
+            self.source,
+        )
 
 
 if __name__ == "__main__":
