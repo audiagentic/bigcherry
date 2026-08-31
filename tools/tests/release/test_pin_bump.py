@@ -342,6 +342,115 @@ class RequireCoverageReportTests(unittest.TestCase):
             pin_bump._require_coverage_report(state, report_path)  # no raise
 
 
+class LoadStateOrStopTests(unittest.TestCase):
+    """gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass on
+    e0a5b34): PinBumpState.load() itself can raise JSONDecodeError/KeyError/
+    OSError on a corrupt state.json, violating pin_bump's own "PinBumpStop,
+    never a bare exception" contract. _load_state_or_stop() closes that."""
+
+    def test_malformed_json_fails_closed_with_structured_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text("{not valid json", encoding="utf-8")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+    def test_missing_required_field_fails_closed_with_structured_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                '{"schema_version": 2}', encoding="utf-8",  # missing run_id, target, etc.
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+    def test_valid_state_loads_normally(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+                to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/p",
+                completed_phases=[], next_phase="declare",
+                selector_kind="recipe", selector_name="bigcherry",
+                selector_patch_ids=("0100_x",),
+            )
+            state.save(state_dir)
+            loaded = pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(loaded, state)
+
+
+class RequireCoverageReportIOErrorTests(unittest.TestCase):
+    """gpt-dev-agent review (second pass on e0a5b34): _sha256_file() can
+    raise OSError/FileNotFoundError if the report becomes unreadable or
+    disappears between the is_file() check and the read -- must become a
+    structured PinBumpStop, not a bare exception."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
+            selector_kind="recipe", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",), coverage_report_sha256="deadbeef",
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_disappearing_report_between_check_and_read_fails_closed(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state()
+            with mock.patch.object(
+                pin_bump, "_sha256_file", side_effect=FileNotFoundError("gone"),
+            ):
+                with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                    pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MISSING")
+
+    def test_unreadable_report_fails_closed(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state()
+            with mock.patch.object(
+                pin_bump, "_sha256_file",
+                side_effect=PermissionError("denied"),
+            ):
+                with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                    pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_UNREADABLE")
+
+
+class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
+    """gpt-dev-agent review (second pass): the except block's best-effort
+    disk re-read (when `state` is None) must never itself raise and
+    replace the original PinBumpStop with an unrelated one."""
+
+    def test_corrupt_state_on_disk_during_context_recovery_does_not_mask_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b99999"
+            report_dir.mkdir(parents=True)
+            # A state.json exists but is corrupt -- run() never gets far
+            # enough to bind `state` locally (RESUME_STATE_MISSING path
+            # isn't hit since the file DOES exist; _load_state_or_stop
+            # itself raises RESUME_STATE_INVALID, and `state` stays None
+            # per its unconditional pre-try initialization).
+            (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(target_ref="b99999", resume=True, report_dir=report_dir)
+            # The ORIGINAL failure must survive -- not get replaced by a
+            # second failure from the except block's own disk re-read.
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+
 class RunResumeStateMissingTests(unittest.TestCase):
     """gpt-dev-agent review of c236acc (P1): --resume must never silently
     reinterpret a missing state.json as "start a fresh run"."""

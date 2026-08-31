@@ -421,6 +421,11 @@ def run(
     dispositions_dir = dispositions_dir or paths.DISPOSITIONS
     report_dir = report_dir or (paths.ARTIFACTS / "pin-bump" / f"resume-{target_ref}")
 
+    # Bound before the try, unconditionally: RESUME_STATE_MISSING and
+    # _load_state_or_stop() can both raise before any assignment below
+    # would otherwise run, and the except block needs `state` defined
+    # either way (None means "fall back to a best-effort disk re-read").
+    state: "PinBumpState | None" = None
     try:
         # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
         # --resume must never silently reinterpret a missing/wrong state as
@@ -441,7 +446,7 @@ def run(
                         "--report-dir at the run you meant to resume",
                     ],
                 )
-            state = PinBumpState.load(report_dir)
+            state = _load_state_or_stop(report_dir)
             _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
             _, resolved_recipe_name = _resume_selector(state, recipe_name=recipe_name)
         else:
@@ -454,22 +459,58 @@ def run(
             dispositions_dir=dispositions_dir, report_dir=report_dir,
         )
     except PinBumpStop as exc:
-        # `state` may have been created (and mutated) inside _run_phases
-        # even though this `state` local is still whatever it was before
-        # the call -- PinBumpStop always carries its own `evidence`, but
-        # attach run/target/tree context here from what we DO know for
-        # certain (the resume file on disk, updated after every phase).
-        if (report_dir / "state.json").is_file():
-            saved = PinBumpState.load(report_dir)
-            exc.run_id = saved.run_id
-            exc.target = {"from_ref": saved.from_ref, "to_ref": saved.to_ref}
-            exc.transition_commit = saved.transition_commit
-            exc.tree = {"name": saved.tree_name, "path": saved.tree_path}
+        # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
+        # prefer the ALREADY-LOADED `state` local for context when we have
+        # one -- re-reading disk here could itself hit a corrupt/missing
+        # state.json and mask the ORIGINAL structured failure with a
+        # different, unrelated one. Only best-effort re-read from disk when
+        # we don't already have a state (e.g. the exception came from
+        # inside _run_phases, which may have advanced state past what this
+        # local variable holds) -- and that best-effort attempt must never
+        # itself raise and replace `exc`.
+        if state is not None:
+            exc.run_id = state.run_id
+            exc.target = {"from_ref": state.from_ref, "to_ref": state.to_ref}
+            exc.transition_commit = state.transition_commit
+            exc.tree = {"name": state.tree_name, "path": state.tree_path}
         else:
-            exc.run_id = "unresolved"
-            exc.target = {"from_ref": "?", "to_ref": target_ref}
-            exc.tree = {"name": "local", "path": str(vendor_root)}
+            saved = None
+            try:
+                if (report_dir / "state.json").is_file():
+                    saved = PinBumpState.load(report_dir)
+            except Exception:  # noqa: BLE001 -- context recovery must never mask exc
+                saved = None
+            if saved is not None:
+                exc.run_id = saved.run_id
+                exc.target = {"from_ref": saved.from_ref, "to_ref": saved.to_ref}
+                exc.transition_commit = saved.transition_commit
+                exc.tree = {"name": saved.tree_name, "path": saved.tree_path}
+            else:
+                exc.run_id = "unresolved"
+                exc.target = {"from_ref": "?", "to_ref": target_ref}
+                exc.tree = {"name": "local", "path": str(vendor_root)}
         raise
+
+
+def _load_state_or_stop(report_dir: Path) -> "PinBumpState":
+    """Wraps PinBumpState.load() so a corrupt/unreadable state.json becomes
+    a structured PinBumpStop (gpt-dev-agent review, session
+    ses_5307d9c58ec645cb, second pass) -- pin_bump's own contract is "raise
+    PinBumpStop, never a bare exception", which PinBumpState.load() itself
+    does not uphold (JSONDecodeError/KeyError/OSError on bad input)."""
+    try:
+        return PinBumpState.load(report_dir)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise PinBumpStop(
+            "resume", "RESUME_STATE_INVALID",
+            f"state.json under {report_dir} could not be loaded: "
+            f"{type(exc).__name__}: {exc}",
+            evidence={"report_dir": str(report_dir), "error": str(exc)},
+            recommended_actions=[
+                "inspect state.json by hand",
+                "if it is unrecoverable, start a fresh run instead",
+            ],
+        ) from exc
 
 
 def _sha256_file(path: Path) -> str:
@@ -500,7 +541,32 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
                 "coverage from a fresh run",
             ],
         )
-    live_digest = _sha256_file(report_path)
+    try:
+        live_digest = _sha256_file(report_path)
+    except FileNotFoundError as exc:
+        # A TOCTOU window against is_file() above -- the report vanished
+        # between the check and the read (a concurrent process on this
+        # shared, multi-agent repo, or a race with cleanup).
+        raise PinBumpStop(
+            "apply", "COVERAGE_REPORT_MISSING",
+            f"{report_path} disappeared before it could be read -- "
+            "refusing to apply",
+            evidence={"report_path": str(report_path), "error": str(exc)},
+            recommended_actions=[
+                "restore the original rebase-recipe.json, or re-run "
+                "coverage from a fresh run",
+            ],
+        ) from exc
+    except OSError as exc:
+        raise PinBumpStop(
+            "apply", "COVERAGE_REPORT_UNREADABLE",
+            f"{report_path} could not be read: {exc}",
+            evidence={"report_path": str(report_path), "error": str(exc)},
+            recommended_actions=[
+                "inspect the report file's permissions/state by hand",
+                "re-run coverage from a fresh run",
+            ],
+        ) from exc
     if live_digest != state.coverage_report_sha256:
         raise PinBumpStop(
             "apply", "COVERAGE_REPORT_MODIFIED",
