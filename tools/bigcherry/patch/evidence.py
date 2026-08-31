@@ -41,8 +41,8 @@ from ..core import paths
 from . import patchset
 from .activation import ActivationEvidence
 
-SCHEMA_VERSION = 2
-READABLE_SCHEMA_VERSIONS = (1, 2)
+SCHEMA_VERSION = 3
+READABLE_SCHEMA_VERSIONS = (1, 2, 3)
 CONTRACT_VERSION = "hi83-v1"
 CORRECTNESS_SCHEMA_VERSION = 1
 
@@ -51,6 +51,13 @@ LEGACY_SCHEMA_VERSION = 1
 LEGACY_CONTRACT = "hi83-legacy-grandfather-v1"
 
 BUILD_ROLES = ("tune", "replay", "stock")
+# VA07: two genuinely distinct provenance domains (GPT round-4 correction,
+# req_82dc1c3dcc744fb2 -- tune/replay/stock are real, distinct CAMPAIGN
+# build variants, not mislabeled validation roles). CAMPAIGN_BUILD_ROLES is
+# an alias of the historical BUILD_ROLES kept for v1/v2 records and
+# call sites; VALIDATION_BUILD_ROLES is new in schema v3.
+CAMPAIGN_BUILD_ROLES = BUILD_ROLES
+VALIDATION_BUILD_ROLES = ("control", "subject")
 
 # Exact builds.CompletedBuildEvidence.campaign_identity() shape -- also
 # enforced in e2e_smoke_campaign.py's _require_completed_build_identity_shape()
@@ -173,25 +180,32 @@ def patch_validation_subject_digest(path: Path) -> str:
     )
 
 
-def _validate_build_identity(role: str, value: object) -> dict[str, object]:
+def _validate_build_identity(value: object, *, field: str) -> dict[str, object]:
+    """Full CompletedBuildEvidence.campaign_identity() shape validation,
+    parameterized by the caller's field path (VA07: reused identically for
+    all five build roles across both provenance domains -- v1/v2's
+    build_identities.{tune,replay,stock} and v3's
+    campaign_build_identities.{tune,replay,stock} /
+    validation_build_identities.{control,subject}. No weaker validation-
+    build identity is defined; every role uses the same BUILD_IDENTITY_KEYS."""
     if not isinstance(value, Mapping):
-        raise ValidationEvidenceError(f"build_identities.{role} must be an object")
+        raise ValidationEvidenceError(f"{field} must be an object")
     missing = [key for key in BUILD_IDENTITY_KEYS if key not in value]
     if missing:
-        raise ValidationEvidenceError(f"build_identities.{role} missing field(s) {missing!r}")
+        raise ValidationEvidenceError(f"{field} missing field(s) {missing!r}")
 
     result = dict(value)
     for key in BUILD_IDENTITY_KEYS:
-        field = f"build_identities.{role}.{key}"
+        subfield = f"{field}.{key}"
         if key == "runtime_artifacts":
             artifacts = result[key]
             if not isinstance(artifacts, Mapping) or not artifacts:
-                raise ValidationEvidenceError(f"{field} must be a non-empty object")
+                raise ValidationEvidenceError(f"{subfield} must be a non-empty object")
             for name, digest in artifacts.items():
-                _require_string(name, f"{field} artifact name")
-                _require_hex(digest, f"{field}.{name}", (64,))
+                _require_string(name, f"{subfield} artifact name")
+                _require_hex(digest, f"{subfield}.{name}", (64,))
         else:
-            _require_string(result[key], field)
+            _require_string(result[key], subfield)
     return result
 
 
@@ -295,7 +309,19 @@ def make_record(
     stock_tree: str | None = None, blockers: Iterable[str] = (),
     check_results: Mapping[str, object] | None = None,
     validation_eligible: bool | None = None,
+    validation_build_identities: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
+    """``build_identities`` is the campaign-build domain
+    ({tune,replay,stock} -- unchanged from v1/v2, kept under that name for
+    backward compatibility with existing callers/tests). Passing
+    ``validation_build_identities`` ({control,subject}) additionally
+    produces a schema-v3 record with BOTH domains recorded under their own
+    real field names (VA07) -- omit it to keep producing a v2 record
+    exactly as before. It is intentional and expected that
+    validation.subject may carry the same physical build identity as
+    campaign.tune; the schema does not require or assume equality, since a
+    future validation executor may use a genuinely distinct subject
+    build."""
     subject_digest = patch_validation_subject_digest(patch_path)
     archs = _architectures(gpu_architectures)
     if not archs:
@@ -305,7 +331,19 @@ def make_record(
     for role in BUILD_ROLES:
         if role not in build_identities:
             raise ValidationEvidenceError(f"missing build identity role {role!r}")
-        builds[role] = _validate_build_identity(role, build_identities[role])
+        builds[role] = _validate_build_identity(
+            build_identities[role], field=f"build_identities.{role}"
+        )
+
+    validation_builds: dict[str, object] | None = None
+    if validation_build_identities is not None:
+        validation_builds = {}
+        for role in VALIDATION_BUILD_ROLES:
+            if role not in validation_build_identities:
+                raise ValidationEvidenceError(f"missing validation build identity role {role!r}")
+            validation_builds[role] = _validate_build_identity(
+                validation_build_identities[role], field=f"validation_build_identities.{role}"
+            )
 
     if activation_evidence is None:
         activation = {"status": "unknown", "disposition": "unknown", "mechanism": "", "detail": ""}
@@ -338,7 +376,10 @@ def make_record(
         eligible = validation_eligible
 
     result = {
-        "record_schema_version": SCHEMA_VERSION,
+        # v3 only when the caller actually supplied validation_build_identities
+        # -- omitting it keeps producing an ordinary v2 record exactly as
+        # before, never silently upgrading a record's meaning.
+        "record_schema_version": 3 if validation_builds is not None else 2,
         "validation_contract_version": CONTRACT_VERSION,
         "representation": representation,
         "validation_implementation_digest": validation_implementation_digest or _validation_digest(patch_path),
@@ -379,11 +420,19 @@ def make_record(
         "campaign_identity_digest": _require_hex(
             campaign_identity_digest, "campaign_identity_digest", (64,)
         ),
+        # v1/v2 field name preserved unchanged; v3 records additionally set
+        # campaign_build_identities to the SAME dict (v3 rejects the legacy
+        # top-level name to prevent mixed/ambiguous records -- see
+        # write_record()/_record_qualifies()).
         "build_identities": builds,
         "campaign_artifacts": _artifact_refs(campaign_workdir),
         "validation_disposition": "validated" if eligible else "incomplete",
         "eligible_for_validated_state": eligible,
     }
+    if validation_builds is not None:
+        del result["build_identities"]
+        result["campaign_build_identities"] = builds
+        result["validation_build_identities"] = validation_builds
     result["record_digest"] = _record_digest(result)
     return result
 
@@ -461,7 +510,7 @@ def _record_qualifies(
     }
     if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
         problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
-    if record.get("record_schema_version") == 2:
+    if record.get("record_schema_version") in (2, 3):
         if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
             problems.append("validation implementation digest is stale")
         if record.get("contract_id") != contract_id:
@@ -469,7 +518,7 @@ def _record_qualifies(
         if contract_hash is not None and record.get("contract_hash") != contract_hash:
             problems.append("contract hash is stale")
         if record.get("record_digest") != _record_digest(record):
-            problems.append("record_digest does not match the v2 evidence payload")
+            problems.append("record_digest does not match the evidence payload")
         required_v2 = ("representation", "validation_implementation_digest",
                        "baseline_composition", "control_composition", "subject_composition",
                        "control_tree", "subject_tree", "stock_tree", "check_results",
@@ -477,7 +526,7 @@ def _record_qualifies(
         for key in required_v2:
             value = record.get(key)
             if value is None or value == {}:
-                problems.append(f"v2 provenance field {key!r} is missing")
+                problems.append(f"provenance field {key!r} is missing")
         try:
             _require_hex(record.get("validation_implementation_digest"),
                          "validation_implementation_digest", (64,))
@@ -485,6 +534,36 @@ def _record_qualifies(
             problems.append(str(exc))
         if record.get("contract_id") is not None and not record.get("contract_hash"):
             problems.append("contract_hash is required when contract_id is present")
+    if record.get("record_schema_version") == 3:
+        # VA07: v3 records use campaign_build_identities/
+        # validation_build_identities exclusively -- the legacy top-level
+        # build_identities field must be absent to prevent a mixed/
+        # ambiguous record (which domain would a stray legacy field even
+        # belong to?).
+        if "build_identities" in record:
+            problems.append("v3 record must not carry the legacy top-level build_identities field")
+        campaign_builds = record.get("campaign_build_identities")
+        if not isinstance(campaign_builds, Mapping):
+            problems.append("campaign_build_identities must be an object")
+        else:
+            for role in CAMPAIGN_BUILD_ROLES:
+                try:
+                    _validate_build_identity(
+                        campaign_builds.get(role), field=f"campaign_build_identities.{role}"
+                    )
+                except ValidationEvidenceError as exc:
+                    problems.append(str(exc))
+        validation_builds = record.get("validation_build_identities")
+        if not isinstance(validation_builds, Mapping):
+            problems.append("validation_build_identities must be an object")
+        else:
+            for role in VALIDATION_BUILD_ROLES:
+                try:
+                    _validate_build_identity(
+                        validation_builds.get(role), field=f"validation_build_identities.{role}"
+                    )
+                except ValidationEvidenceError as exc:
+                    problems.append(str(exc))
     for key, wanted in expected.items():
         if record.get(key) != wanted:
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
@@ -519,11 +598,14 @@ def _record_qualifies(
         _require_hex(record.get("framework_baseline_digest"), "framework_baseline_digest", (64,))
         _require_hex(record.get("patched_source_tree"), "patched_source_tree", (40, 64))
         _require_hex(record.get("campaign_identity_digest"), "campaign_identity_digest", (64,))
-        builds = record.get("build_identities")
-        if not isinstance(builds, Mapping):
-            raise ValidationEvidenceError("build_identities must be an object")
-        for role in BUILD_ROLES:
-            _validate_build_identity(role, builds.get(role))
+        if record.get("record_schema_version") != 3:
+            # v3's own build_identities check (campaign_/validation_ split)
+            # already ran above -- this is the v1/v2 legacy shape only.
+            builds = record.get("build_identities")
+            if not isinstance(builds, Mapping):
+                raise ValidationEvidenceError("build_identities must be an object")
+            for role in BUILD_ROLES:
+                _validate_build_identity(builds.get(role), field=f"build_identities.{role}")
     except ValidationEvidenceError as exc:
         problems.append(str(exc))
 
