@@ -1110,3 +1110,50 @@ correctness") generalizes here to "communicator-init success alone is not
 runtime admissibility": the same "looks fine at init, faults on first real
 collective" pattern applies to any caller of RCCL on this hardware, not only
 RCCL Tests.
+
+## Addendum (2026-09-02): RCCL 2.30.4 regresses the confirmed-viable
+{0,2}/{1,2} subset -- RCCLCompatibilityRevision must be pinned, not assumed
+
+HI138's Phase 1 closure (and everything above) qualified against one exact
+RCCL build: source revision 57e58688f44c77076ad536ef1f6b68741fc6e694,
+reporting as RCCL 2.28.3/1.0.70204 depending on which packaged install is
+queried (`vendor/rocm/7.2.4`). Per this runbook's own P2.1
+`RCCLCompatibilityRevision` requirement, that qualification does not
+automatically extend to a different RCCL build merely because both report
+similar version numbers or are used on the same box.
+
+Real hardware finding (GP06, `docs/planning/active/gpu-collectives/GP06.md`):
+running `rccl_qualify.py`'s crash-isolated matrix ({0,1} homogeneous
+control, {0,2}/{1,2} HI138-confirmed-viable heterogeneous, {0,3} device-3
+negative control x Ring/Tree x Simple/LL/LL128) against RCCL 2.30.4 --
+tested via TWO independently-built ROCm installs sharing that version
+(`vendor/rocm/7.14`, a TheRock dev build, and a freshly-installed
+`vendor/rocm/10.0`, ROCm 10.0.0 stable) -- reproduces the identical
+regression on both: {0,1} passes, but {0,2}/{1,2}/{0,3} ALL fail
+(`gpu_fault`), not just the device-3 case this runbook already explains.
+Re-running the SAME matrix against RCCL 1.0.70204 (`vendor/rocm/7.2.4`)
+reproduces HI138's original disposition exactly: {0,1}/{0,2}/{1,2} PASS,
+only {0,3} fails.
+
+This is evidence of a real RCCL-version regression between 1.0.70204 and
+2.30.4 for the {0,2}/{1,2} topology class specifically -- not a build
+artifact of one install, since two independently-built 2.30.4s agree. The
+underlying mechanism has not yet been source-localized (GP06's step 2,
+open) the way HI138 localized the device-3/hostcall failure; only the
+existence and reproducibility of the regression is established so far.
+
+**Runbook-level correction**: any qualification result recorded under this
+runbook's Phase 1/Phase 2 procedures MUST bind to the exact RCCL version
+tested (source revision preferred; packaged version string as a fallback
+identifier only when source revision isn't available), and MUST NOT be
+treated as transferable to a different RCCL build without re-running the
+qualification matrix against that build specifically -- this applies even
+when the newer build reports the "same" version number as another build
+that was actually tested (2.30.4 was seen from two source-independent
+installs in this finding). GP01 (Phase 2 execution) is blocked pending
+GP06 pinning which RCCL version bigcherry's default build should actually
+ship for the RCCL-viable subset.
+
+Full evidence: GP06's plan notes (3-way jsonl comparison,
+`/tmp/rccl-qualify-{7.2.4,7.14,10.0}.jsonl` on Brutus, not yet copied to a
+durable `artifacts/` location).
