@@ -1475,25 +1475,23 @@ def run_rd73_mtp_server_lane(
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Opt-in RD73 markers are always enabled here (harmless when unused --
-    # one log line per process) so this lane's own server logs double as
-    # RD73's real activation/resource evidence source: the servers are
-    # already running the patched/control binaries under real repeated
-    # MTP traffic, so a second llama-bench-based probe would be both
-    # redundant and (per real hardware findings) actively broken for this
-    # 27B/dual-GPU config. See evaluate_rd73_activation_evidence()/
-    # evaluate_rd73_resource_evidence() below.
-    control_log_path = logs_dir / "rd73-mtp-control-server.log"
-    subject_log_path = logs_dir / "rd73-mtp-subject-server.log"
+    # User redirect (2026-09-01, real hardware finding): control and
+    # subject servers must NEVER run concurrently for this model --
+    # each needs ~13GB/GPU under -sm tensor split, and two full copies
+    # exceed the 24.5GB/GPU Brutus dual-XTX cards (a real cudaMalloc
+    # out-of-memory abort, confirmed on hardware). So each single
+    # measured/warmup request gets its own fresh server: launch, one
+    # request, shut down -- alternating control/subject in the same
+    # order run_paired_lane already calls them, preserving the real
+    # alternating-order/thermal-drift discipline this project's own
+    # prior production benchmarking found necessary (a non-alternating
+    # "all control then all subject" design previously produced a real,
+    # since-corrected measurement artifact on this exact model/hardware
+    # -- see patches/1233.../README.md's "Historical evidence" section).
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
-    control_runner = ServerRunner(
-        binary=control_binary, model=model, host=host, port=control_port,
-        extra_args=server_args, log_path=control_log_path, env_overrides=rd73_env,
-    )
-    subject_runner = ServerRunner(
-        binary=subject_binary, model=model, host=host, port=subject_port,
-        extra_args=server_args, log_path=subject_log_path, env_overrides=rd73_env,
-    )
+    ports = {"control": control_port, "subject": subject_port}
+    binaries = {"control": control_binary, "subject": subject_binary}
+    per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
 
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
     session_kwargs = dict(
@@ -1508,50 +1506,62 @@ def run_rd73_mtp_server_lane(
         spec_draft_k="default", spec_draft_v="default",
         sampling=sampling, n_predict=n_predict, order_seed=12345,
     )
+    configs = {
+        "control": sc.SessionConfig(session_id="rd73-mtp-control", **session_kwargs),
+        "subject": sc.SessionConfig(session_id="rd73-mtp-subject", **session_kwargs),
+    }
 
     request_records: dict[str, list[dict[str, object]]] = {"control": [], "subject": []}
     request_counters = {"control": 0, "subject": 0}
 
-    with control_runner, subject_runner:
-        transports = {
-            "control": sc.HttpTransport(f"http://{host}:{control_port}"),
-            "subject": sc.HttpTransport(f"http://{host}:{subject_port}"),
-        }
-        sc.validate_server(transports["control"])
-        sc.validate_server(transports["subject"])
-        configs = {
-            "control": sc.SessionConfig(session_id="rd73-mtp-control", **session_kwargs),
-            "subject": sc.SessionConfig(session_id="rd73-mtp-subject", **session_kwargs),
-        }
-
-        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-            arm = command[-1]
-            index = request_counters[arm]
-            request_counters[arm] += 1
-            prompt = prompts[index % len(prompts)]
-            record = sc.run_request(
-                transports[arm], prompt, configs[arm], pass_number=1, order_index=index,
-            )
-            request_records[arm].append(record)
-            if not isinstance(record.get("wall_tps"), (int, float)):
-                raise PatchCampaignError(
-                    f"rd73 mtp lane ({arm}, request {index}): no usable wall_tps in the "
-                    f"real completion response -- refusing to feed a missing sample into "
-                    f"the paired statistics"
-                )
-            return experiment_execution.RunnerOutput(
-                returncode=0, stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n", stderr="",
-            )
-
-        for _ in range(warmup_pairs):
-            _runner(["rd73-mtp-lane", "control"])
-            _runner(["rd73-mtp-lane", "subject"])
-
-        paired_run = experiment_execution.run_paired_lane(
-            metric="mtp_wall_tps", control_command=["rd73-mtp-lane", "control"],
-            subject_command=["rd73-mtp-lane", "subject"], pattern=metric_pattern,
-            pairs=measured_pairs, runner=_runner,
+    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+        arm = command[-1]
+        index = request_counters[arm]
+        request_counters[arm] += 1
+        log_path = logs_dir / f"rd73-mtp-{arm}-server-{index}.log"
+        per_request_logs[arm].append(log_path)
+        runner = ServerRunner(
+            binary=binaries[arm], model=model, host=host, port=ports[arm],
+            extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
         )
+        with runner:
+            transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
+            sc.validate_server(transport)
+            prompt = prompts[index % len(prompts)]
+            record = sc.run_request(transport, prompt, configs[arm], pass_number=1, order_index=index)
+        request_records[arm].append(record)
+        if not isinstance(record.get("wall_tps"), (int, float)):
+            raise PatchCampaignError(
+                f"rd73 mtp lane ({arm}, request {index}): no usable wall_tps in the "
+                f"real completion response -- refusing to feed a missing sample into "
+                f"the paired statistics"
+            )
+        return experiment_execution.RunnerOutput(
+            returncode=0, stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n", stderr="",
+        )
+
+    for _ in range(warmup_pairs):
+        _runner(["rd73-mtp-lane", "control"])
+        _runner(["rd73-mtp-lane", "subject"])
+
+    paired_run = experiment_execution.run_paired_lane(
+        metric="mtp_wall_tps", control_command=["rd73-mtp-lane", "control"],
+        subject_command=["rd73-mtp-lane", "subject"], pattern=metric_pattern,
+        pairs=measured_pairs, runner=_runner,
+    )
+
+    # Concatenate each arm's per-request server logs into one combined
+    # log file, so downstream evidence readers (correctness/activation
+    # investigation, manual debugging) see one file per arm as before,
+    # even though each request used its own fresh process.
+    combined_log_paths: dict[str, Path] = {}
+    for arm in ("control", "subject"):
+        combined_path = logs_dir / f"rd73-mtp-{arm}-server.log"
+        combined_path.write_text(
+            "".join(p.read_text(encoding="utf-8", errors="replace") for p in per_request_logs[arm]),
+            encoding="utf-8",
+        )
+        combined_log_paths[arm] = combined_path
 
     effect = experiment_execution.lane_effect_from_run("positive", "mtp_wall_tps", paired_run)
     doc = {
@@ -1563,7 +1573,7 @@ def run_rd73_mtp_server_lane(
     return {
         "effect": effect, "artifact": artifact_ref, "stats": paired_run.stats,
         "control_requests": request_records["control"], "subject_requests": request_records["subject"],
-        "control_log_path": control_log_path, "subject_log_path": subject_log_path,
+        "control_log_path": combined_log_paths["control"], "subject_log_path": combined_log_paths["subject"],
     }
 
 
@@ -1649,41 +1659,44 @@ def run_rd73_decode_control_lane(
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    control_runner = ServerRunner(
-        binary=control_binary, model=model, host=host, port=control_port,
-        extra_args=server_args, log_path=logs_dir / "rd73-decode-control-server.log",
-    )
-    subject_runner = ServerRunner(
-        binary=subject_binary, model=model, host=host, port=subject_port,
-        extra_args=server_args, log_path=logs_dir / "rd73-decode-subject-server.log",
-    )
-
-    server_urls = {
-        "control": f"http://{host}:{control_port}", "subject": f"http://{host}:{subject_port}",
-    }
+    # Real hardware finding (2026-09-01): control and subject servers
+    # must never run concurrently for this model -- each needs
+    # ~13GB/GPU under -sm tensor, exceeding the 24.5GB/GPU cards
+    # together (a real cudaMalloc OOM abort). One fresh server per
+    # single bench-runner call, alternating arms, mirrors
+    # run_rd73_mtp_server_lane()'s same fix.
+    ports = {"control": control_port, "subject": subject_port}
+    binaries = {"control": control_binary, "subject": subject_binary}
+    request_counters = {"control": 0, "subject": 0}
     raw_metrics: dict[str, list[dict[str, float]]] = {"control": [], "subject": []}
 
-    with control_runner, subject_runner:
-        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-            arm = command[-1]
-            metrics = run_bench_runner_server_bench(
-                server_url=server_urls[arm], bench_configs="tg128", repetitions=1,
-            )
-            raw_metrics[arm].append(metrics)
-            if "tg128_tps" not in metrics:
-                raise PatchCampaignError(
-                    f"rd73 decode control lane ({arm}): bench runner produced no tg128_tps "
-                    f"metric (got {sorted(metrics)})"
-                )
-            return experiment_execution.RunnerOutput(
-                returncode=0, stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n", stderr="",
-            )
-
-        decode_run = experiment_execution.run_paired_lane(
-            metric="tg128", control_command=["rd73-decode-lane", "control"],
-            subject_command=["rd73-decode-lane", "subject"], pattern=metric_pattern,
-            pairs=pairs, runner=_runner,
+    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+        arm = command[-1]
+        index = request_counters[arm]
+        request_counters[arm] += 1
+        runner = ServerRunner(
+            binary=binaries[arm], model=model, host=host, port=ports[arm],
+            extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
         )
+        with runner:
+            metrics = run_bench_runner_server_bench(
+                server_url=f"http://{host}:{ports[arm]}", bench_configs="tg128", repetitions=1,
+            )
+        raw_metrics[arm].append(metrics)
+        if "tg128_tps" not in metrics:
+            raise PatchCampaignError(
+                f"rd73 decode control lane ({arm}): bench runner produced no tg128_tps "
+                f"metric (got {sorted(metrics)})"
+            )
+        return experiment_execution.RunnerOutput(
+            returncode=0, stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n", stderr="",
+        )
+
+    decode_run = experiment_execution.run_paired_lane(
+        metric="tg128", control_command=["rd73-decode-lane", "control"],
+        subject_command=["rd73-decode-lane", "subject"], pattern=metric_pattern,
+        pairs=pairs, runner=_runner,
+    )
 
     effect = experiment_execution.lane_effect_from_run("control", "tg128", decode_run)
     doc = {
@@ -1721,6 +1734,59 @@ def evaluate_rd73_resource_evidence(
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-resource.json", doc)
     return {"result": result, "artifact": artifact_ref, "readings": readings}
+
+
+def run_rd73_resource_burst_session(
+    *, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    host: str = "127.0.0.1", port: int = 18084, burst_requests: int = 20, n_predict: int = 32,
+) -> dict[str, object]:
+    """VA06 (real hardware finding, 2026-09-01): RD73's graph-cache-entries
+    resource evidence needs a real accumulated-cache burst -- repeated
+    requests against ONE long-lived subject server (matching the
+    contract's own documented methodology: "a fixed repeated-shape MTP
+    completion burst", patches/1233.../README.md). This is NOT compatible
+    with run_rd73_mtp_server_lane()'s per-request server restart (needed
+    there to avoid a real control+subject concurrent-VRAM OOM): a fresh
+    process resets the in-memory graph cache every single request, so
+    that lane's own combined logs would only ever show a trivial
+    peak (~1), never the real accumulated cache size the contract's
+    max_value=800 bound was calibrated against (subject peak 651 under
+    VA06's original characterization run). This session is subject-only
+    (no concurrent control server), so it needs no restart discipline --
+    launch once, drive burst_requests real repeated requests against the
+    SAME live process, read the resulting log, shut down."""
+    from bigcherry.bench import server_completion as sc
+    from bigcherry.tuning.server_runner import ServerRunner
+
+    prompts, _ = sc.load_corpus(corpus_path)
+    burst_prompt = prompts[0]
+    server_args = (
+        "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+    )
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / "rd73-resource-burst-subject-server.log"
+    rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
+    runner = ServerRunner(
+        binary=subject_binary, model=model, host=host, port=port,
+        extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
+    )
+    sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
+    config = sc.SessionConfig(
+        session_id="rd73-resource-burst", corpus_id=corpus_path.stem, corpus_sha256="",
+        bigcherry_revision="rd73-va06", llama_pin="", llama_revision="", model_id=str(model),
+        server_argv=server_args, spec_type="draft-mtp", spec_n_max=4,
+        spec_draft_k="default", spec_draft_v="default", sampling=sampling,
+        n_predict=n_predict, order_seed=12345,
+    )
+    with runner:
+        transport = sc.HttpTransport(f"http://{host}:{port}")
+        sc.validate_server(transport)
+        for index in range(burst_requests):
+            sc.run_request(transport, burst_prompt, config, pass_number=1, order_index=index)
+
+    return evaluate_rd73_resource_evidence(subject_log_path=log_path, run_dir=run_dir)
 
 
 class Rd73CorrectnessError(PatchCampaignError):
@@ -1798,10 +1864,19 @@ def run_rd73_contract_qualification(
     Brutus bench runner -- never a raw llama-bench subprocess, which
     proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on
     real hardware. The MTP performance lane runs first; its own
-    control/subject server log files (BIGCHERRY_PATCH_TRACE=1 and
-    BIGCHERRY_RD73_RESOURCE_TRACE=1 are always set on them) are then the
-    real source for activation/resource evidence too -- no second probe
-    launch, no second 27B model load."""
+    control/subject server log files (BIGCHERRY_PATCH_TRACE=1 is always
+    set on them) are the real source for activation evidence. Resource
+    evidence uses a SEPARATE subject-only burst session
+    (run_rd73_resource_burst_session()): the MTP lane restarts a fresh
+    server per single request (a real hardware constraint -- control and
+    subject cannot run concurrently, each needs ~13GB/GPU and two copies
+    exceed the 24.5GB/GPU cards), which resets the in-memory graph cache
+    every request and would make a peak reading trivial/meaningless;
+    the burst session's one long-lived process gets the real
+    accumulated-cache reading the contract's resource bound needs.
+    Decode control similarly launches its own control/subject servers
+    one-request-at-a-time (never concurrently) for the same VRAM
+    reason."""
     from bigcherry.experiment import contract as experiment_contract
 
     mtp = run_rd73_mtp_server_lane(
@@ -1812,8 +1887,8 @@ def run_rd73_contract_qualification(
         marker_regex=marker_regex, control_log_path=mtp["control_log_path"],
         subject_log_path=mtp["subject_log_path"], run_dir=run_dir,
     )
-    resource = evaluate_rd73_resource_evidence(
-        subject_log_path=mtp["subject_log_path"], run_dir=run_dir,
+    resource = run_rd73_resource_burst_session(
+        subject_binary=subject_server_binary, model=model, corpus_path=corpus_path, run_dir=run_dir,
     )
     decode_control = run_rd73_decode_control_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
