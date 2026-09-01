@@ -23,7 +23,7 @@ The workflow for a new llama.cpp release is:
 ```bash
 python -m bigcherry pull   --ref b1234        # fetch/checkout upstream
 python -m bigcherry audit                     # strict invariant audit
-python -m bigcherry apply                     # src/ overlay + anchored patches
+python -m bigcherry apply --source bigcherry  # src/ overlay + anchored patches
 python -m bigcherry generate --arch all       # candidate catalog -> artifacts
 python -m bigcherry build   --profile replay-full
 ```
