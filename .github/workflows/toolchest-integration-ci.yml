@@ -1,0 +1,45 @@
+name: Toolchest integration CI
+
+on:
+  pull_request:
+    paths:
+      - "tools/bigcherry/campaign/planner.py"
+      - "tools/bigcherry/cli/build.py"
+      - "tools/bigcherry/integrations/**"
+      - "tools/tests/test_toolchest_integration.py"
+      - "tools/tests/test_campaign_extra_targets.py"
+      - ".github/workflows/toolchest-integration-ci.yml"
+  push:
+    branches:
+      - toolchest-publish
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test runner
+        run: python -m pip install pytest
+
+      - name: Compile touched modules
+        run: |
+          python -m py_compile \
+            tools/bigcherry/campaign/planner.py \
+            tools/bigcherry/cli/build.py \
+            tools/bigcherry/integrations/toolchest.py
+
+      - name: Run Toolchest integration tests
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m pytest -q \
+            tools/tests/test_toolchest_integration.py \
+            tools/tests/test_campaign_extra_targets.py
