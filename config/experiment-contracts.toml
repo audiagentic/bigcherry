@@ -36,21 +36,25 @@ architectures = ["gfx1100", "gfx1201", "gfx1030"]
 weight_types = ["q6_k"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.positive]
-# VA21: was tierM-gptoss20b-q6k (this project's MoE-designated model
-# tier -- see RD17-MOE-TOPK-DOWN-FOLD/RD39-42-STREAM-MOE-OVERLAP, which
-# pair it with moe_decode/moe_prefill workloads). VA15's real-hardware
-# run found subject_hit=false: gpt-oss-20B's real decode-step Q6_K
-# tensors route through a batched/grouped MoE matmul kernel, never the
-# plain per-tensor mmvq dispatch this patch instruments. RD08's own
-# patch.py source comment cites its original fork validation target as
-# "Qwen3.6-27B decode shapes (n=1, mmvq path)" -- a dense model.
-# tierA-qwen4b-q6k is this project's established dense-model tier for
-# generic decode/prefill workloads.
-models = ["tierA-qwen4b-q6k"]
+# VA21 REVERTED (2026-09-01): briefly changed to tierA-qwen4b-q6k based
+# on VA15's real-hardware subject_hit=false finding against
+# tierM-gptoss20b-q6k, hypothesized as an MoE-vs-dense dispatch-routing
+# gap. That hypothesis was WRONG -- root-caused via bounded temporary
+# trace instrumentation to a pure logging-observability bug: RD08's
+# activation marker used GGML_LOG_INFO, and llama-bench.cpp gates
+# ggml's log level on its own --verbose flag (ERROR by default,
+# filtering both INFO and WARN). Fixed at the source
+# (GGML_LOG_INFO->GGML_LOG_WARN in patch.py, commit 991e761; --verbose
+# added to the shared trace-probe primitive, commit 222f162). Re-tested
+# clean on gfx1201 against BOTH models: subject_hit=true/control_hit=false
+# for tierM-gptoss20b-q6k AND tierA-qwen4b-q6k -- RD08's dispatch fires
+# correctly for both. Reverted to the original tierM-gptoss20b-q6k
+# binding since the change was never actually justified.
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["decode"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.controls]
-models = ["tierA-qwen4b-q6k"]
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["prefill"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.correctness]
