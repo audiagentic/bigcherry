@@ -263,6 +263,27 @@ class RunRequestTests(unittest.TestCase):
         # The real invariant: summed counts equal total accepted tokens.
         self.assertEqual(sum(record["accepted_count_by_position"]), record["draft_accepted"])
 
+    def test_wall_clock_fields_present_and_consistent(self):
+        # RD73/VA06: wall_tps is a client-measured end-to-end throughput,
+        # independent of the server's own self-reported predicted_tps --
+        # must be derivable from wall_s and tokens_predicted alone.
+        transport = FakeTransport()
+        prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
+        transport.next_response = _completion_response(tokens_predicted=256, draft_n=426, draft_n_accepted=168)
+        record = sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
+        self.assertIsInstance(record["wall_s"], float)
+        self.assertGreater(record["wall_s"], 0.0)
+        self.assertAlmostEqual(record["wall_tps"], record["tokens_predicted"] / record["wall_s"])
+
+    def test_content_passed_through_for_correctness_comparison(self):
+        transport = FakeTransport()
+        prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
+        response = _completion_response(tokens_predicted=256, draft_n=426, draft_n_accepted=168)
+        response["content"] = "the generated text"
+        transport.next_response = response
+        record = sc.run_request(transport, prompt, _config(n_predict=256), pass_number=1, order_index=0)
+        self.assertEqual(record["content"], "the generated text")
+
     def test_short_response_fails_closed(self):
         transport = FakeTransport()
         prompt = sc.CorpusPrompt(id="p1", seed=1, category="prose", prompt="hi")
