@@ -40,7 +40,13 @@ class MetricForWorkloadTests(unittest.TestCase):
 
     def test_unmapped_workload_raises(self):
         with self.assertRaises(ec.ExperimentContractError):
-            ex.metric_for_workload("mtp_verify")
+            ex.metric_for_workload("moe_prefill")
+
+    def test_mtp_verify_is_now_mapped(self) -> None:
+        # RD73/VA06: registered once run_rd73_mtp_server_lane() existed and
+        # was proven with real tests (previously unmapped -- see git
+        # history of this test for the prior "raises" expectation).
+        self.assertEqual(ex.metric_for_workload("mtp_verify"), "mtp_wall_tps")
 
 
 class RunPairedLaneTests(unittest.TestCase):

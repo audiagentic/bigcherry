@@ -1524,6 +1524,266 @@ def run_rd73_mtp_server_lane(
     }
 
 
+def run_rd73_decode_control_lane(
+    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
+    run_dir: Path, pairs: int = 3,
+) -> dict[str, object]:
+    """VA06 next slice: RD73's decode control lane -- mirrors RD08's real
+    paired llama-bench subprocess path (rd08_validation_lane_commands() /
+    run_rd08_validation_lanes()'s runner, including the fixed -ngl 99 and
+    the fail-closed real-GPU-execution guard) exactly, never the
+    ServerRunner/speculative-flags path run_rd73_mtp_server_lane() uses --
+    decode is a plain, non-speculative workload and needs no server."""
+    from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.campaign.benchmark import sanitize_environment
+
+    control_pattern = re.compile(r"tg128\s*\|\s*([0-9.]+)")
+    clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
+    for key in list(clean_env):
+        if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
+            clean_env.pop(key, None)
+
+    raw_logs: list[dict[str, object]] = []
+
+    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, env=clean_env)
+        raw_logs.append({
+            "command": command, "returncode": completed.returncode,
+            "stdout": completed.stdout, "stderr": completed.stderr,
+        })
+        if completed.returncode == 0:
+            _require_real_gpu_execution(
+                completed.stdout, completed.stderr,
+                context=f"rd73 decode control lane ({Path(command[0]).name})",
+            )
+        return experiment_execution.RunnerOutput(
+            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+        )
+
+    control_command, subject_command = rd08_validation_lane_commands(
+        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
+    )
+    decode_run = experiment_execution.run_paired_lane(
+        metric="tg128", control_command=control_command, subject_command=subject_command,
+        pattern=control_pattern, pairs=pairs, runner=_runner,
+    )
+    effect = experiment_execution.lane_effect_from_run("control", "tg128", decode_run)
+    doc = {
+        "metric": "tg128", "stats": decode_run.stats, "control_command": control_command,
+        "subject_command": subject_command, "raw_logs": raw_logs, "runs": list(decode_run.runs),
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-decode-control.json", doc)
+    return {"effect": effect, "artifact": artifact_ref, "stats": decode_run.stats}
+
+
+def run_rd73_resource_evidence(
+    *, subject_binary: Path, model: Path, hip_path: Path, workdir: Path, run_dir: Path,
+    bench_prompt: int = 0, bench_gen: int = 128,
+) -> dict[str, object]:
+    """VA06 next slice: RD73's real graph-cache-entries resource-evidence
+    producer. Subject-only (GPT's phase-1 scoping: the contract's
+    resource_limits only bounds max_value, so no paired control reading
+    is needed -- inventing one would be unjustified extra scope). Runs the
+    subject binary once with BIGCHERRY_RD73_RESOURCE_TRACE=1, parses every
+    real graph_cache_entries=N reading (parse_rd73_resource_telemetry(),
+    fails closed on any malformed line), and reduces to a peak
+    ResourceResult (peak_rd73_resource_result())."""
+    binary = Path(subject_binary)
+    model = Path(model)
+    if not binary.is_file():
+        raise PatchCampaignError(f"rd73 resource probe binary does not exist: {binary}")
+    if not model.is_file():
+        raise PatchCampaignError(f"rd73 resource probe model does not exist: {model}")
+
+    env = _trace_probe_env(hip_path=hip_path, disable_fusion=False)
+    env.pop("BIGCHERRY_PATCH_TRACE", None)
+    env["BIGCHERRY_RD73_RESOURCE_TRACE"] = "1"
+
+    command = [
+        str(binary.resolve()), "-m", str(model.resolve()),
+        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
+    ]
+    log_dir = workdir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "rd73-resource-subject.log"
+    completed = subprocess.run(
+        command, cwd=workdir, env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        encoding="utf-8", errors="replace",
+    )
+    combined = completed.stdout + "\n" + completed.stderr
+    log_path.write_text(
+        f"command: {command!r}\n\nstdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise PatchCampaignError(
+            f"rd73 resource probe failed with exit code {completed.returncode}; see {log_path}"
+        )
+    _require_real_gpu_execution(completed.stdout, completed.stderr, context="rd73 resource probe")
+
+    readings = parse_rd73_resource_telemetry(combined)
+    result = peak_rd73_resource_result(readings)
+    log_relpath = "logs/rd73-resource-subject.log"
+    doc = {
+        "readings": list(readings), "peak": result.subject_value,
+        "artifact": {
+            "path": log_relpath,
+            "sha256": hashlib.sha256((run_dir / log_relpath).read_bytes()).hexdigest(),
+        },
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-resource.json", doc)
+    return {"result": result, "artifact": artifact_ref, "readings": readings}
+
+
+class Rd73CorrectnessError(PatchCampaignError):
+    """RD73's bit-identical correctness check found a real content
+    mismatch -- distinct from PatchCampaignError's other, infrastructure-
+    level failure modes only in name (still fails the campaign)."""
+
+
+def evaluate_rd73_mtp_correctness(
+    *, control_requests: list[dict[str, object]], subject_requests: list[dict[str, object]],
+    run_dir: Path,
+) -> dict[str, object]:
+    """VA06 next slice: RD73's bit-identical correctness check, evaluated
+    from run_rd73_mtp_server_lane()'s already-retained per-request
+    ``content`` fields -- reuses the exact same real MTP requests already
+    executed for the performance lane; never launches a second server
+    lane just for correctness. Pairs control/subject requests by
+    order_index (both arms ran the identical corpus/order, so index
+    alignment is real pairing, not a coincidence) and requires EXACT
+    string equality -- no trimming/normalization/tolerance. Fails closed
+    on a mismatch, missing/non-string content, or an unpairable
+    (differently-sized) record set; never silently skips a bad pair."""
+    if len(control_requests) != len(subject_requests):
+        raise Rd73CorrectnessError(
+            f"rd73 correctness: control has {len(control_requests)} request(s) but subject "
+            f"has {len(subject_requests)} -- cannot pair records for comparison"
+        )
+    rows: list[dict[str, object]] = []
+    mismatches: list[str] = []
+    for control_record, subject_record in zip(control_requests, subject_requests):
+        control_index = control_record.get("order_index")
+        subject_index = subject_record.get("order_index")
+        if control_index != subject_index:
+            raise Rd73CorrectnessError(
+                f"rd73 correctness: control/subject request order_index mismatch "
+                f"({control_index!r} vs {subject_index!r}) -- records are not aligned"
+            )
+        control_content = control_record.get("content")
+        subject_content = subject_record.get("content")
+        if not isinstance(control_content, str) or not isinstance(subject_content, str):
+            raise Rd73CorrectnessError(
+                f"rd73 correctness: request order_index={control_index!r} has non-string "
+                f"content (control={type(control_content).__name__}, "
+                f"subject={type(subject_content).__name__}) -- cannot compare"
+            )
+        ok = control_content == subject_content
+        if not ok:
+            mismatches.append(f"order_index={control_index!r}")
+        rows.append({"order_index": control_index, "ok": ok})
+    if mismatches:
+        raise Rd73CorrectnessError(
+            f"rd73 correctness: {len(mismatches)} request(s) mismatched: {', '.join(mismatches)}"
+        )
+    doc = {"check": "bit_identical", "passed": True, "rows": rows}
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-correctness.json", doc)
+    return {"artifact": artifact_ref, "rows": rows}
+
+
+def run_rd73_contract_qualification(
+    *, contract: object, control_binary: Path, subject_binary: Path,
+    control_server_binary: Path, subject_server_binary: Path, model: Path,
+    marker_regex: str, corpus_path: Path, hip_path: Path, workdir: Path, run_dir: Path,
+    decode_pairs: int = 3, warmup_pairs: int = 2, measured_pairs: int = 10,
+) -> dict[str, object]:
+    """VA06 next slice: the authoritative RD73 full-qualification path
+    (``--run-rd73-contract``), mirroring RD08's own
+    run_rd08_contract_qualification() result/schema/promotion semantics
+    (real lane execution + real correctness + real trigger proof, composed
+    via evaluate_promotion_gate()) -- no RD73-specific parallel gate model.
+    Every threshold comes from ``contract`` itself
+    (aggregate_contract_effects() / evaluate_resource_gate() /
+    evaluate_promotion_gate()); nothing here hardcodes a number."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    activation = run_rd73_activation_evidence(
+        marker_regex=marker_regex, control_binary=control_binary, subject_binary=subject_binary,
+        model=model, hip_path=hip_path, workdir=workdir, run_dir=run_dir,
+    )
+    mtp = run_rd73_mtp_server_lane(
+        control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
+        corpus_path=corpus_path, run_dir=run_dir, warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
+    )
+    decode_control = run_rd73_decode_control_lane(
+        control_binary=control_binary, subject_binary=subject_binary, model=model,
+        hip_path=hip_path, run_dir=run_dir, pairs=decode_pairs,
+    )
+    resource = run_rd73_resource_evidence(
+        subject_binary=subject_binary, model=model, hip_path=hip_path, workdir=workdir, run_dir=run_dir,
+    )
+    # A real content mismatch (or a missing/non-string/unpaired record) is a
+    # genuine correctness RESULT, not an infrastructure failure -- it must
+    # flow into correctness_gate/promotion as passed=False, never abort the
+    # whole qualification run (mirrors RD08's Rd08CorrectnessError handling
+    # in run_rd08_contract_correctness()).
+    try:
+        correctness = evaluate_rd73_mtp_correctness(
+            control_requests=mtp["control_requests"], subject_requests=mtp["subject_requests"],
+            run_dir=run_dir,
+        )
+        correctness_result = experiment_contract.CorrectnessResult(check="bit_identical", passed=True)
+    except Rd73CorrectnessError as exc:
+        correctness = {"artifact": None, "rows": [], "error": str(exc)}
+        correctness_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=False, detail=str(exc),
+        )
+    correctness_gate = compute_contract_correctness_gate(contract, {"bit_identical": correctness_result})
+    aggregated_effects = experiment_contract.aggregate_contract_effects(
+        contract, [mtp["effect"], decode_control["effect"]], target_metric="mtp_wall_tps",
+    )
+    resource_gate = experiment_contract.evaluate_resource_gate(
+        contract, {"graph_cache_entries": resource["result"]},
+    )
+    trigger_proof = experiment_contract.evaluate_trigger_proof([
+        experiment_contract.TriggerEvidence(
+            role="positive", lane_id="rd73-mtp-subject",
+            candidate_launches=1 if activation["subject_hit"] else 0,
+        ),
+    ])
+    if activation["control_hit"]:
+        trigger_proof = {
+            "passed": False,
+            "reasons": list(trigger_proof.get("reasons") or []) + [
+                "control-role lane observed the target marker -- the negative "
+                "control is invalid, so trigger proof cannot be trusted"
+            ],
+            "checked_lanes": trigger_proof.get("checked_lanes", 0),
+            "untriggered_lanes": list(trigger_proof.get("untriggered_lanes") or []),
+        }
+    promotion = experiment_contract.evaluate_promotion_gate(
+        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
+        trigger_proof=trigger_proof, resource_gate=resource_gate,
+    )
+    qualification_doc = {
+        "contract_id": contract.id, "contract_hash": contract.contract_hash,
+        "activation_artifact": activation["artifact"], "mtp_lane_artifact": mtp["artifact"],
+        "decode_control_artifact": decode_control["artifact"], "resource_artifact": resource["artifact"],
+        "correctness_artifact": correctness["artifact"],
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-contract-qualification.json", qualification_doc)
+    return {
+        "activation": activation, "mtp": mtp, "decode_control": decode_control,
+        "resource": resource, "correctness": correctness,
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
+        "artifact": artifact_ref,
+    }
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -2439,6 +2699,57 @@ def run(args: argparse.Namespace) -> int:
             f"controls={'pass' if rd58_result['controls_passed'] else 'fail'}"
         )
 
+    # VA06: RD73 execution, opt-in and scoped to RD73 only. Mirrors RD08's
+    # --run-rd08-contract dispatch (mutual exclusion, descriptor check,
+    # single orchestrator call, contract_promotions population, pass/fail
+    # print) -- but deliberately does NOT also rebind the generic
+    # adapter's correctness/performance/trace evidence the way the RD08
+    # block above does (validation.toml's own generic checks are outside
+    # this slice's scope). eligible_for_validated_state therefore cannot
+    # become True from --run-rd73-contract alone yet --
+    # compute_persisted_validation_eligible() requires BOTH the adapter
+    # verdict AND every bound contract's promotion; rebinding the generic
+    # adapter evidence for RD73 is separate, deferred work. The real,
+    # auditable per-contract PASS/FAIL/INVALID verdict is still produced
+    # and printed here.
+    rd73_qualification: dict[str, object] | None = None
+    if args.run_rd73_contract:
+        if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
+                "RD04/RD08/RD58 execution modes"
+            )
+        if descriptor.experiment_contract != "RD73-STABLE-GRAPH-CACHE-KEY":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd73-contract is RD73-only today"
+            )
+        if args.rd73_corpus is None:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd73-contract requires --rd73-corpus"
+            )
+        from bigcherry.patch import validation as _pv
+
+        rd73_contract = _pv.load_contract_for_descriptor(descriptor)
+        if rd73_contract is None:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd73-contract requires a resolvable RD73 contract"
+            )
+        rd73_qualification = run_rd73_contract_qualification(
+            contract=rd73_contract,
+            control_binary=control_bin / f"llama-bench{exe}",
+            subject_binary=validation_subject_bin / f"llama-bench{exe}",
+            control_server_binary=control_bin / f"llama-server{exe}",
+            subject_server_binary=validation_subject_bin / f"llama-server{exe}",
+            model=args.model, marker_regex=trace_marker_regex, corpus_path=args.rd73_corpus,
+            hip_path=args.hip_path, workdir=campaign_run_dir, run_dir=campaign_run_dir,
+        )
+        contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
+        _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
+        _print(
+            f"rd73 promotion: "
+            f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
+        )
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -2663,6 +2974,22 @@ def main(argv: list[str] | None = None) -> int:
              "Diagnostic-only for eligibility -- does not attempt contract promotion, so "
              "eligible_for_validated_state stays False. RD58-only; an error for any other "
              "patch. Mutually exclusive with the RD04/RD08 execution modes.",
+    )
+    parser.add_argument(
+        "--run-rd73-contract", action="store_true", default=False,
+        help="VA06: the RD73 full-qualification path -- activation + graph-cache resource "
+             "evidence + real paired MTP-verify performance (server harness) + decode "
+             "control + bit-identical correctness, composed via evaluate_promotion_gate(). "
+             "Populates contract_promotions for RD73 (a real PASS/FAIL/INVALID verdict is "
+             "printed), but does NOT rebind the generic adapter's own checks -- "
+             "eligible_for_validated_state cannot become True from this flag alone yet. "
+             "RD73-only; an error for any other patch. Mutually exclusive with the "
+             "RD04/RD08/RD58 execution modes. Requires --rd73-corpus.",
+    )
+    parser.add_argument(
+        "--rd73-corpus", type=Path, default=None,
+        help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
+             "(bench/server_completion.py's load_corpus() format).",
     )
     args = parser.parse_args(argv)
     return run(args)

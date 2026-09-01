@@ -209,7 +209,7 @@ class Rd04CliWiringTests(unittest.TestCase):
         # RD04 mode must never write into contract_promotions -- eligibility
         # must stay false regardless of a PASS.
         rd04_block_start = self.source.index("if args.run_rd04_benchmark:")
-        rd04_block = self.source[rd04_block_start:self.source.index("validation_check_results: dict")]
+        rd04_block = self.source[rd04_block_start:self.source.index("if args.run_rd58_state_restore:")]
         self.assertIn("performance_evidence = {\"artifact\": rd04_result[\"artifact\"]}", rd04_block)
         self.assertNotIn("contract_promotions[", rd04_block)
 
