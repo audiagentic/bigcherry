@@ -54,16 +54,21 @@ methodology is recorded in `docs/planning/active/validation-package-standard/VA0
 
 ## How to invoke validation
 
-**No real validation producer is wired yet.** `validation.toml`
-declares all 6 checks honestly against real validator shapes, but none
-of correctness/activation/performance/controls has a real evidence
-producer behind it in `validation_campaign.py` -- unlike RD04/RD08/RD58,
-there is no `--run-rd73-...` CLI flag yet. Running the generic
-adapter today reports every non-apply/build check as `BLOCKED`, not a
-fabricated pass. Building the real executor (paired MTP-verify
-performance/controls lanes, a real bit-identical correctness producer,
-and a real subject-hit/control-miss activation marker) is separate,
-future work -- see the "Known limitations" section below.
+**Partial: activation + resource producers exist; no orchestrated
+contract run yet.** `validation.toml` declares all 6 checks honestly
+against real validator shapes. As of VA06 phase 1, the patch source
+carries a real `BIGCHERRY_PATCH_TRACE`-gated activation marker and a
+real `BIGCHERRY_RD73_RESOURCE_TRACE`-gated `graph_cache_entries`
+telemetry line, and `validation_campaign.py` has real, tested
+producers for both (`run_rd73_activation_evidence()`,
+`parse_rd73_resource_telemetry()` / `peak_rd73_resource_result()`).
+Performance/controls/correctness still have no real producer -- unlike
+RD04/RD08/RD58, there is no `--run-rd73-contract` CLI flag yet.
+Running the generic adapter today still reports every check other than
+activation/resource as `BLOCKED`, not a fabricated pass. Building the
+remaining executor (paired MTP-verify performance/controls lanes and a
+real bit-identical correctness producer) plus the `--run-rd73-contract`
+entry point is separate, future work -- see "Known limitations" below.
 
 ## Known limitations
 
@@ -80,22 +85,25 @@ future work -- see the "Known limitations" section below.
   validator shape (`backend-ops`, op label `RD73_MTP_BIT_IDENTICAL`),
   but no evidence is bound -- it reports `BLOCKED`, not a fabricated
   pass.
-- **Activation has no real marker probe yet.** RD73's patch source
-  carries no `BIGCHERRY_PATCH_TRACE`-gated marker. The generic
-  tune-binary/`GGML_CUDA_DISABLE_FUSION`-based negative control is
-  **not** valid for this patch (RD73 is graph-cache keying, not a
-  fusion path `GGML_CUDA_DISABLE_FUSION` controls) and must never be
-  reused here. `validation.toml` declares the check against the real,
-  future exact marker text this patch would need to emit
-  (`BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key`)
-  -- stays declared but unsatisfied (`BLOCKED`) until a real
-  subject-hit/control-miss probe exists.
-- **`resource_limits` also has no real producer yet.** The contract's
+- **Activation has a real marker probe (VA06).** RD73's patch source
+  now carries a `BIGCHERRY_PATCH_TRACE`-gated marker at the stable-key
+  execution site (`BIGCHERRY_PATCH_HIT patch=1233_rd73
+  path=stable_graph_cache_key`), and
+  `validation_campaign.run_rd73_activation_evidence()` produces a real
+  subject-hit/control-miss result reusing the fixed generic trace probe.
+  The generic tune-binary/`GGML_CUDA_DISABLE_FUSION`-based negative
+  control is still **not** valid for this patch (RD73 is graph-cache
+  keying, not a fusion path `GGML_CUDA_DISABLE_FUSION` controls) and
+  must never be reused here -- the RD73-specific probe above is the
+  correct control instead.
+- **`resource_limits` has a real producer (VA06).** The contract's
   `graph_cache_entries` bound is real (derived from VA06's actual
-  measurement), but nothing in `validation_campaign.py` yet produces a
-  real `ResourceResult` to check against it during a validation run --
-  VA06's characterization was a one-off, uncommitted, temporary-
-  instrumentation experiment, not a repeatable evidence producer.
+  measurement). `validation_campaign.py` now has real, tested
+  `parse_rd73_resource_telemetry()` (fails closed on any malformed
+  `BIGCHERRY_RD73_RESOURCE`-prefixed line) and
+  `peak_rd73_resource_result()` (peak-of-subject-readings ->
+  `ResourceResult`, no paired control required) producers, driven by
+  the patch's `BIGCHERRY_RD73_RESOURCE_TRACE`-gated telemetry.
 - These gaps mean this patch's tracked-status stays `untested` until a
   real RD73 executor exists; it cannot honestly claim `ported-benched`
   or `ported-validated` on the strength of the contract alone.
