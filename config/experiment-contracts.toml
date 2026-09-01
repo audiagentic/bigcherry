@@ -36,11 +36,21 @@ architectures = ["gfx1100", "gfx1201", "gfx1030"]
 weight_types = ["q6_k"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.positive]
-models = ["tierM-gptoss20b-q6k"]
+# VA21: was tierM-gptoss20b-q6k (this project's MoE-designated model
+# tier -- see RD17-MOE-TOPK-DOWN-FOLD/RD39-42-STREAM-MOE-OVERLAP, which
+# pair it with moe_decode/moe_prefill workloads). VA15's real-hardware
+# run found subject_hit=false: gpt-oss-20B's real decode-step Q6_K
+# tensors route through a batched/grouped MoE matmul kernel, never the
+# plain per-tensor mmvq dispatch this patch instruments. RD08's own
+# patch.py source comment cites its original fork validation target as
+# "Qwen3.6-27B decode shapes (n=1, mmvq path)" -- a dense model.
+# tierA-qwen4b-q6k is this project's established dense-model tier for
+# generic decode/prefill workloads.
+models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.controls]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierA-qwen4b-q6k"]
 workloads = ["prefill"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.correctness]
