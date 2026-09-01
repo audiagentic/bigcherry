@@ -28,7 +28,7 @@ Real, authoritative full-qualification path (VA14):
 ```
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1204_rd08_q6k_mmvq_vdr2 \
-  --model <tierM-gptoss20b-q6k.gguf> \
+  --model <tierA-qwen4b-q6k.gguf> \
   --hip-path <production-rocm> --amdgpu-targets gfx1100 \
   --manifest <hip-autotune-manifest.json> \
   --workdir <fresh-workdir> --build-root <build-root> \
