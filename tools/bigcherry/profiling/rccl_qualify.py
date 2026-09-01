@@ -177,15 +177,20 @@ class RcclCaseResult:
     stdout_path: str
     stderr_path: str
 
-    # GP07: added at the end with a default so every existing positional/
-    # keyword construction of this dataclass (tests included) stays valid
-    # unchanged. None means "not recorded" -- callers that care about
-    # cross-revision portability (GP01/GP06) must supply it, but this
-    # module does not itself invent a value.
-    compatibility_revision_id: str | None = None
-    attempt: int | None = None
-    plan_verification: str | None = None
-    qualification_key: str | None = None
+    # GP07: required, no defaults -- this project migrates every caller to
+    # a new field rather than shipping it as an optional, default-
+    # preserving addition (CLAUDE.md: "No legacy, no backward
+    # compatibility -- always migrate up"). compatibility_revision_id and
+    # qualification_key are always a real durable identity (RcclCompatibilityRevision
+    # is a required run_case() argument); attempt is always a real rep
+    # index. plan_verification's type stays Optional because None is a
+    # legitimate DOMAIN value here (e.g. a TIMEOUT/SIGNAL/GPU_FAULT result
+    # never reaches plan verification at all) -- that is not the same
+    # thing as an optional field with a compatibility-preserving default.
+    compatibility_revision_id: str
+    attempt: int
+    plan_verification: str | None
+    qualification_key: str
 
     def __post_init__(self) -> None:
         if self.classification not in CLASSIFICATIONS:
@@ -425,18 +430,15 @@ _COMPATIBILITY_MANIFEST_NAME = "compatibility.json"
 
 
 def _resolve_case_output_dir(
-    output_dir: Path, compatibility: RcclCompatibilityRevision | None,
+    output_dir: Path, compatibility: RcclCompatibilityRevision,
 ) -> Path:
-    """When `compatibility` is supplied, artifacts are written under
-    output_dir/<revision_id>/ automatically -- enforced namespacing, not
-    left to the caller to remember. Writes (or verifies against) a
-    `compatibility.json` manifest in that namespaced directory so a second
-    run under a DIFFERENT compatibility that happens to resolve to the
-    same directory is caught rather than silently overwriting evidence.
+    """Artifacts are always written under output_dir/<revision_id>/ --
+    enforced namespacing, not left to the caller to remember. Writes (or
+    verifies against) a `compatibility.json` manifest in that namespaced
+    directory so a second run under a DIFFERENT compatibility that happens
+    to resolve to the same directory is caught rather than silently
+    overwriting evidence.
     """
-    if compatibility is None:
-        return output_dir
-
     namespaced = output_dir / compatibility.revision_id
     namespaced.mkdir(parents=True, exist_ok=True)
     manifest_path = namespaced / _COMPATIBILITY_MANIFEST_NAME
@@ -466,31 +468,33 @@ def _resolve_case_output_dir(
 
 def run_case(
     case: RcclCase, *, binary: str, visible_devices: tuple[int, ...],
-    output_dir: Path, outer_timeout: float = 30.0,
-    attempt: int | None = None,
-    compatibility: RcclCompatibilityRevision | None = None,
+    output_dir: Path, attempt: int,
+    compatibility: RcclCompatibilityRevision,
+    outer_timeout: float = 30.0,
 ) -> RcclCaseResult:
     """Run exactly one case in its own subprocess/process-group.
 
     Never retries automatically (RQ02). The caller decides whether/when to
     re-run after inspecting the classification.
 
-    ``attempt`` and ``compatibility`` are both optional and default to the
-    prior (pre-GP07) behaviour when omitted: ``attempt=None`` produces the
-    exact same filenames as before (no suffix), so a caller that doesn't
-    care about repetitions sees no change. A caller running a repeated
-    qualification (e.g. the runbook's 20-fresh-process P1.12 gate) MUST
-    pass a distinct ``attempt`` per rep -- otherwise every rep's
-    stdout/stderr/rccl.json overwrites the previous one while cases.jsonl
-    keeps accumulating rows that no longer match any file on disk (GP07's
-    real found bug).
+    ``attempt`` (the rep index within a qualification run) and
+    ``compatibility`` (the exact RCCL build under test) are both required,
+    not optional -- this project migrates every caller to a new capability
+    rather than keeping the old behavior reachable behind a default
+    (CLAUDE.md: "No legacy, no backward compatibility -- always migrate
+    up"). Every case run through this harness is part of SOME qualification
+    attempt against SOME RCCL build; there is no meaningful "don't care"
+    case. Every rep MUST get a distinct ``attempt`` -- otherwise repeated
+    stdout/stderr/rccl.json overwrite each other while cases.jsonl keeps
+    accumulating rows that no longer match any file on disk (the bug this
+    parameter exists to close).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     # Raises InsufficientCompatibilityIdentity / CompatibilityManifestMismatch
     # -- deliberately propagated before any subprocess work starts.
     case_output_dir = _resolve_case_output_dir(output_dir, compatibility)
     case_id = case.case_id
-    suffix = "" if attempt is None else f"__attempt{attempt}"
+    suffix = f"__attempt{attempt}"
     stdout_path = case_output_dir / f"{case_id}{suffix}.stdout.log"
     stderr_path = case_output_dir / f"{case_id}{suffix}.stderr.log"
     rccl_output_path = case_output_dir / f"{case_id}{suffix}.rccl.json"
@@ -552,8 +556,9 @@ def run_case(
             correct=None, detail=f"failed to launch subprocess: {exc}",
             rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
             stderr_path=str(stderr_path),
-            compatibility_revision_id=compatibility.revision_id if compatibility else None,
-            attempt=attempt,
+            compatibility_revision_id=compatibility.revision_id,
+            attempt=attempt, plan_verification=None,
+            qualification_key=qualification_key(compatibility, case_id),
         )
 
     elapsed = time.monotonic() - start
@@ -583,12 +588,12 @@ def run_case(
         observed_algorithm=observed_algorithm, observed_protocol=observed_protocol,
     )
 
-    # Raises InsufficientCompatibilityIdentity if `compatibility` was
-    # supplied but lacks a durable identity component (library_build_id or
-    # rccl_source_revision) -- deliberately propagated, not swallowed: a
+    # compatibility.revision_id raises InsufficientCompatibilityIdentity if
+    # `compatibility` lacks a durable identity component (library_build_id
+    # or rccl_source_revision) -- deliberately propagated, not swallowed: a
     # qualification result recorded under insufficient identity is worse
     # than one that fails loudly at record time (GP07/gpt-dev-agent review).
-    revision_id = compatibility.revision_id if compatibility else None
+    revision_id = compatibility.revision_id
 
     return RcclCaseResult(
         schema_version=SCHEMA_VERSION, case_id=case_id,
@@ -604,9 +609,7 @@ def run_case(
         classification=classification, correct=correct, detail=detail,
         plan_verification=plan_verification,
         compatibility_revision_id=revision_id,
-        qualification_key=(
-            qualification_key(compatibility, case_id) if compatibility else None
-        ),
+        qualification_key=qualification_key(compatibility, case_id),
         attempt=attempt,
         rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
