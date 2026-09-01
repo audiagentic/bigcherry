@@ -25,6 +25,14 @@ XTX_XTX_6900XT = rq.RcclTopology(
     topology_id="xtx_xtx_6900xt", device_arches=("gfx1100", "gfx1100", "gfx1030")
 )
 
+# run_case() requires a real compatibility+attempt on every call (GP07: no
+# default-preserving optional params -- CLAUDE.md's "always migrate up").
+# This is a fixed TEST fixture used where the exact revision doesn't matter
+# to the assertion, not a library-level default.
+_TEST_REVISION = rs.RcclCompatibilityRevision(
+    rccl_version="2.28.3", rccl_source_revision="57e58688f44c77076ad536ef1f6b68741fc6e694",
+)
+
 
 def _fake_case(topology: rq.RcclTopology = XTX_XTX, **overrides) -> rq.RcclCase:
     kwargs = dict(topology=topology, element_count=8192, dtype="float")
@@ -118,7 +126,10 @@ def test_visible_devices_set_from_diagnostic_binding_only():
 # ---------------------------------------------------------------------------
 
 
-def _run_fake(tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, name: str = "fake"):
+def _run_fake(
+    tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, name: str = "fake",
+    attempt: int = 1, compatibility: rs.RcclCompatibilityRevision = _TEST_REVISION,
+):
     """Write `script` as a standalone python file and run it through
     rccl_qualify.run_case via a thin wrapper (run_case takes a single
     executable path, not "python script.py"), simulating one case's
@@ -140,6 +151,7 @@ def _run_fake(tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, nam
     return rq.run_case(
         used_case, binary=binary, visible_devices=(0, 1),
         output_dir=tmp_path / "out", outer_timeout=outer_timeout,
+        attempt=attempt, compatibility=compatibility,
     )
 
 
@@ -276,6 +288,7 @@ def test_missing_binary_classified_harness_failure(tmp_path: Path):
     result = rq.run_case(
         case, binary=str(tmp_path / "does_not_exist_binary"),
         visible_devices=(0, 1), output_dir=tmp_path / "out", outer_timeout=5.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     assert result.classification == rq.HARNESS_FAILURE
 
@@ -333,10 +346,12 @@ def test_topology_identity_unaffected_by_diagnostic_visible_devices(tmp_path: Pa
     result_a = rq.run_case(
         _fake_case(), binary=str(wrapper), visible_devices=(0, 1),
         output_dir=tmp_path / "out_a", outer_timeout=10.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     result_b = rq.run_case(
         _fake_case(), binary=str(wrapper), visible_devices=(5, 9),
         output_dir=tmp_path / "out_b", outer_timeout=10.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     assert result_a.topology_id == result_b.topology_id
     assert result_a.case_id == result_b.case_id
@@ -360,6 +375,9 @@ def test_rccl_case_result_rejects_unknown_classification(tmp_path: Path):
             returncode=0, terminating_signal=None, elapsed_seconds=0.1,
             classification="not_a_real_state", correct=True, detail="",
             rccl_output_path="", stdout_path="", stderr_path="",
+            compatibility_revision_id=_TEST_REVISION.revision_id, attempt=1,
+            plan_verification=None,
+            qualification_key=rs.qualification_key(_TEST_REVISION, "x"),
         )
 
 
@@ -378,6 +396,9 @@ def test_results_jsonl_append_only(tmp_path: Path):
         returncode=0, terminating_signal=None, elapsed_seconds=0.1,
         classification=rq.PASS, correct=True, detail="", rccl_output_path="",
         stdout_path="", stderr_path="",
+        compatibility_revision_id=_TEST_REVISION.revision_id, attempt=1,
+        plan_verification=rq.PLAN_VERIFIED,
+        qualification_key=rs.qualification_key(_TEST_REVISION, "a"),
     )
     r2 = r1
     rq.append_result(r1, path)
@@ -396,8 +417,14 @@ def test_output_files_are_unique_per_case(tmp_path: Path):
         case_a, binary="x", visible_devices=(0, 1), rccl_output_path="/tmp/a.json",
     )
     out_dir = tmp_path / "out"
-    result_a = rq.run_case(case_a, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir)
-    result_b = rq.run_case(case_b, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir)
+    result_a = rq.run_case(
+        case_a, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
+    )
+    result_b = rq.run_case(
+        case_b, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
+    )
     assert result_a.stdout_path != result_b.stdout_path
     assert result_a.rccl_output_path != result_b.rccl_output_path
 
@@ -487,11 +514,6 @@ def test_explicit_decline_marked_explicit_declined(tmp_path: Path):
     assert result.plan_verification == rq.PLAN_EXPLICIT_DECLINE
 
 
-_DURABLE_REVISION = rs.RcclCompatibilityRevision(
-    rccl_version="2.28.3", rccl_source_revision="57e58688f44c77076ad536ef1f6b68741fc6e694",
-)
-
-
 def test_revision_id_requires_durable_identity():
     bare_version_only = rs.RcclCompatibilityRevision(rccl_version="2.30.4")
     with pytest.raises(rs.InsufficientCompatibilityIdentity):
@@ -527,12 +549,12 @@ def test_run_case_with_durable_compatibility_records_revision_and_key(tmp_path: 
 
     result = rq.run_case(
         case, binary=str(wrapper), visible_devices=(0, 1),
-        output_dir=tmp_path / "out", compatibility=_DURABLE_REVISION,
+        output_dir=tmp_path / "out", attempt=1, compatibility=_TEST_REVISION,
     )
-    assert result.compatibility_revision_id == _DURABLE_REVISION.revision_id
-    assert result.qualification_key == rs.qualification_key(_DURABLE_REVISION, case.case_id)
+    assert result.compatibility_revision_id == _TEST_REVISION.revision_id
+    assert result.qualification_key == rs.qualification_key(_TEST_REVISION, case.case_id)
     # Enforced namespacing: artifacts land under output_dir/<revision_id>/.
-    assert _DURABLE_REVISION.revision_id in result.stdout_path
+    assert _TEST_REVISION.revision_id in result.stdout_path
 
 
 def test_run_case_rejects_insufficient_compatibility_identity(tmp_path: Path):
@@ -541,7 +563,7 @@ def test_run_case_rejects_insufficient_compatibility_identity(tmp_path: Path):
     with pytest.raises(rs.InsufficientCompatibilityIdentity):
         rq.run_case(
             case, binary=str(tmp_path / "does_not_exist"), visible_devices=(0, 1),
-            output_dir=tmp_path / "out", compatibility=bare_version_only,
+            output_dir=tmp_path / "out", attempt=1, compatibility=bare_version_only,
         )
 
 
@@ -560,12 +582,12 @@ def test_compatibility_manifest_mismatch_rejected(tmp_path: Path):
     out_dir = tmp_path / "out"
     rq.run_case(
         case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
-        output_dir=out_dir, compatibility=rev_a,
+        output_dir=out_dir, attempt=1, compatibility=rev_a,
     )
     with pytest.raises(rq.CompatibilityManifestMismatch):
         rq.run_case(
             case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
-            output_dir=out_dir, compatibility=rev_b,
+            output_dir=out_dir, attempt=1, compatibility=rev_b,
         )
 
 
@@ -590,10 +612,12 @@ def test_attempt_suffix_isolates_repeated_case_artifacts(tmp_path: Path):
 
     out_dir = tmp_path / "out"
     result_1 = rq.run_case(
-        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir, attempt=1,
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     result_2 = rq.run_case(
-        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir, attempt=2,
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=2, compatibility=_TEST_REVISION,
     )
     assert result_1.stdout_path != result_2.stdout_path
     assert result_1.rccl_output_path != result_2.rccl_output_path
