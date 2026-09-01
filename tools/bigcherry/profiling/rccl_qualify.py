@@ -33,6 +33,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bigcherry.profiling.rccl_schema import RcclCompatibilityRevision
+
 SCHEMA_VERSION = 1
 
 # Runbook P1.6/P2.4 superset (10 states) -- gpt-agreed (session
@@ -174,6 +176,14 @@ class RcclCaseResult:
     stdout_path: str
     stderr_path: str
 
+    # GP07: added at the end with a default so every existing positional/
+    # keyword construction of this dataclass (tests included) stays valid
+    # unchanged. None means "not recorded" -- callers that care about
+    # cross-revision portability (GP01/GP06) must supply it, but this
+    # module does not itself invent a value.
+    compatibility_revision_id: str | None = None
+    attempt: int | None = None
+
     def __post_init__(self) -> None:
         if self.classification not in CLASSIFICATIONS:
             raise ValueError(f"unknown classification: {self.classification!r}")
@@ -203,6 +213,8 @@ class RcclCaseResult:
             "rccl_output_path": self.rccl_output_path,
             "stdout_path": self.stdout_path,
             "stderr_path": self.stderr_path,
+            "compatibility_revision_id": self.compatibility_revision_id,
+            "attempt": self.attempt,
         }
 
 
@@ -249,6 +261,8 @@ def build_command(
 def _classify(
     *, returncode: int | None, term_signal: int | None, timed_out: bool,
     combined_output: str, rccl_json: list | None,
+    requested_algorithm: str | None = None, requested_protocol: str | None = None,
+    observed_algorithm: str | None = None, observed_protocol: str | None = None,
 ) -> tuple[str, bool | None, str]:
     """Return (classification, correct, detail). Order matters: check the
     most specific/actionable signal before falling back to a bare
@@ -312,6 +326,29 @@ def _classify(
     if total_wrong != 0:
         return WRONG_RESULT, False, f"RCCL reported {total_wrong} correctness error(s) across {len(rccl_json)} record(s)"
 
+    # GP07 (gpt-dev-agent finding, 2026-09-02): a clean exit with zero
+    # correctness errors is NOT sufficient for PASS on its own --
+    # RCCL_OVERRIDE_ALGO/PROTO constrain selection, they don't guarantee
+    # it, so RCCL can silently execute a different plan than requested and
+    # still exit 0/correct. A qualification result must attest to the
+    # PLAN actually qualified, not merely "some plan worked." When the
+    # observed plan is known (parsed from -M 1's table) and differs from
+    # what was requested, this is exactly the UNSUPPORTED case (RCCL
+    # itself declined the requested plan) -- reuse that classification
+    # rather than inventing a new one.
+    if (
+        requested_algorithm is not None and observed_algorithm is not None
+        and observed_algorithm.upper() != requested_algorithm.upper()
+    ) or (
+        requested_protocol is not None and observed_protocol is not None
+        and observed_protocol.upper() != requested_protocol.upper()
+    ):
+        return (
+            UNSUPPORTED, None,
+            f"requested {requested_algorithm}/{requested_protocol} but RCCL "
+            f"selected {observed_algorithm}/{observed_protocol}",
+        )
+
     return PASS, True, "clean exit, correctness check passed"
 
 
@@ -338,17 +375,30 @@ def _parse_observed_plan(combined_output: str) -> tuple[str | None, str | None, 
 def run_case(
     case: RcclCase, *, binary: str, visible_devices: tuple[int, ...],
     output_dir: Path, outer_timeout: float = 30.0,
+    attempt: int | None = None,
+    compatibility: RcclCompatibilityRevision | None = None,
 ) -> RcclCaseResult:
     """Run exactly one case in its own subprocess/process-group.
 
     Never retries automatically (RQ02). The caller decides whether/when to
     re-run after inspecting the classification.
+
+    ``attempt`` and ``compatibility`` are both optional and default to the
+    prior (pre-GP07) behaviour when omitted: ``attempt=None`` produces the
+    exact same filenames as before (no suffix), so a caller that doesn't
+    care about repetitions sees no change. A caller running a repeated
+    qualification (e.g. the runbook's 20-fresh-process P1.12 gate) MUST
+    pass a distinct ``attempt`` per rep -- otherwise every rep's
+    stdout/stderr/rccl.json overwrites the previous one while cases.jsonl
+    keeps accumulating rows that no longer match any file on disk (GP07's
+    real found bug).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     case_id = case.case_id
-    stdout_path = output_dir / f"{case_id}.stdout.log"
-    stderr_path = output_dir / f"{case_id}.stderr.log"
-    rccl_output_path = output_dir / f"{case_id}.rccl.json"
+    suffix = "" if attempt is None else f"__attempt{attempt}"
+    stdout_path = output_dir / f"{case_id}{suffix}.stdout.log"
+    stderr_path = output_dir / f"{case_id}{suffix}.stderr.log"
+    rccl_output_path = output_dir / f"{case_id}{suffix}.rccl.json"
 
     command, env = build_command(
         case, binary=binary, visible_devices=visible_devices,
@@ -407,6 +457,8 @@ def run_case(
             correct=None, detail=f"failed to launch subprocess: {exc}",
             rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
             stderr_path=str(stderr_path),
+            compatibility_revision_id=compatibility.revision_id if compatibility else None,
+            attempt=attempt,
         )
 
     elapsed = time.monotonic() - start
@@ -432,6 +484,8 @@ def run_case(
     classification, correct, detail = _classify(
         returncode=returncode, term_signal=term_signal, timed_out=timed_out,
         combined_output=combined_output, rccl_json=rccl_json,
+        requested_algorithm=case.algorithm, requested_protocol=case.protocol,
+        observed_algorithm=observed_algorithm, observed_protocol=observed_protocol,
     )
 
     return RcclCaseResult(
@@ -446,6 +500,8 @@ def run_case(
         observed_channels=observed_channels, returncode=returncode,
         terminating_signal=term_signal, elapsed_seconds=elapsed,
         classification=classification, correct=correct, detail=detail,
+        compatibility_revision_id=compatibility.revision_id if compatibility else None,
+        attempt=attempt,
         rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
     )
