@@ -148,6 +148,23 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         self.assertTrue((self.run_dir / "artifacts" / "rd73-mtp-lane.json").is_file())
         self.assertIsNotNone(result["artifact"])
 
+    def test_server_launched_with_real_llama_server_flags(self) -> None:
+        # Regression coverage: an earlier draft invented "--spec-n-max"/
+        # "--spec-draft-k"/"--spec-draft-v", none of which are real
+        # llama-server flags (verified against vendor/llama.cpp's
+        # common/arg.cpp before the real Brutus hardware run) -- the real
+        # flag is --spec-draft-n-max, and -sm tensor is required for this
+        # 27B model on 2x gfx1100.
+        self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
+        for instance in _FakeServerRunner.instances:
+            extra_args = instance.kwargs["extra_args"]
+            self.assertIn("--spec-draft-n-max", extra_args)
+            self.assertNotIn("--spec-n-max", extra_args)
+            self.assertNotIn("--spec-draft-k", extra_args)
+            self.assertNotIn("--spec-draft-v", extra_args)
+            self.assertIn("-sm", extra_args)
+            self.assertEqual(extra_args[extra_args.index("-sm") + 1], "tensor")
+
 
 if __name__ == "__main__":
     unittest.main()
