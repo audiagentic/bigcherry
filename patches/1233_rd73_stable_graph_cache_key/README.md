@@ -54,37 +54,57 @@ methodology is recorded in `docs/planning/active/validation-package-standard/VA0
 
 ## How to invoke validation
 
-**Partial: activation + resource producers exist; no orchestrated
-contract run yet.** `validation.toml` declares all 6 checks honestly
-against real validator shapes. As of VA06 phase 1, the patch source
-carries a real `BIGCHERRY_PATCH_TRACE`-gated activation marker and a
-real `BIGCHERRY_RD73_RESOURCE_TRACE`-gated `graph_cache_entries`
-telemetry line, and `validation_campaign.py` has real, tested
-producers for both (`run_rd73_activation_evidence()`,
-`parse_rd73_resource_telemetry()` / `peak_rd73_resource_result()`).
-Performance/controls/correctness still have no real producer -- unlike
-RD04/RD08/RD58, there is no `--run-rd73-contract` CLI flag yet.
-Running the generic adapter today still reports every check other than
-activation/resource as `BLOCKED`, not a fabricated pass. Building the
-remaining executor (paired MTP-verify performance/controls lanes and a
-real bit-identical correctness producer) plus the `--run-rd73-contract`
-entry point is separate, future work -- see "Known limitations" below.
+Real, authoritative full-qualification path (VA06):
+
+```
+PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
+  --patch 1233_rd73_stable_graph_cache_key \
+  --model <tierL-qwen27b-q8.gguf> \
+  --hip-path <production-rocm> --amdgpu-targets gfx1100 \
+  --manifest <hip-autotune-manifest.json> \
+  --workdir <fresh-workdir> --build-root <build-root> \
+  --worktree-root <worktree-root> \
+  --rd73-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl \
+  --run-rd73-contract
+```
+
+`--run-rd73-contract` executes RD73's real activation probe
+(`run_rd73_activation_evidence()`), graph-cache resource evidence
+(`run_rd73_resource_evidence()`), paired MTP-verify performance lane
+over a real llama-server HTTP harness (`run_rd73_mtp_server_lane()`),
+decode control lane (`run_rd73_decode_control_lane()`, mirrors RD08's
+paired llama-bench path), and bit-identical correctness
+(`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's own
+retained request/response pairs -- never a second server run), then
+composes them via `run_rd73_contract_qualification()` into a real
+`evaluate_promotion_gate()` verdict (PASS/FAIL/INVALID).
+
+**Known gap (VA06):** unlike `--run-rd08-contract`, this does not yet
+rebind the generic adapter's own `validation.toml` correctness/
+performance/trace evidence -- `eligible_for_validated_state` cannot
+become `True` from `--run-rd73-contract` alone yet, even on a full
+contract PASS. The contract-level PASS/FAIL/INVALID verdict itself is
+real and auditable (`artifacts/.../rd73-contract-qualification.json`);
+only its integration into the generic adapter's own eligibility
+computation remains separate, deferred work.
 
 ## Known limitations
 
-- **Performance/controls have no real producer yet.** `validation.toml`
-  declares `performance`/`controls` against the real `benchmark`
-  validator shape, but no evidence is bound -- both report `BLOCKED`.
-  A real executor needs to run the actual MTP verify workload
-  (`--spec-type draft-mtp`) this contract's `positive.workloads =
-  ["mtp_verify"]` names, paired against a `decode` control lane, to
-  produce a real `end_to_end_gain_pct`/`max_control_regression_pct`
-  result.
-- **Correctness (`bit_identical`) has no real producer yet.**
-  `validation.toml` declares the check honestly against a real
-  validator shape (`backend-ops`, op label `RD73_MTP_BIT_IDENTICAL`),
-  but no evidence is bound -- it reports `BLOCKED`, not a fabricated
-  pass.
+- **Performance/controls have a real producer (VA06).** RD73's own
+  `run_rd73_mtp_server_lane()` (paired control/subject llama-server
+  processes, real MTP-verify HTTP requests, client-measured `wall_tps`)
+  and `run_rd73_decode_control_lane()` (RD08-style paired llama-bench)
+  produce real evidence, composed via `aggregate_contract_effects()`
+  against the contract's own `end_to_end_gain_pct`/
+  `max_control_regression_pct` thresholds. `validation.toml`'s generic
+  `performance`/`controls` checks (validator="benchmark") are unaffected
+  by this and still report `BLOCKED` -- see "Known gap" above.
+- **Correctness (`bit_identical`) has a real producer (VA06).**
+  `evaluate_rd73_mtp_correctness()` performs exact string-equality
+  comparison of the MTP lane's paired control/subject generated content,
+  failing closed on mismatch/missing/non-string/unpaired records.
+  `validation.toml`'s generic `correctness` check (validator=
+  "backend-ops") is unaffected and still reports `BLOCKED`.
 - **Activation has a real marker probe (VA06).** RD73's patch source
   now carries a `BIGCHERRY_PATCH_TRACE`-gated marker at the stable-key
   execution site (`BIGCHERRY_PATCH_HIT patch=1233_rd73
@@ -104,9 +124,12 @@ entry point is separate, future work -- see "Known limitations" below.
   `peak_rd73_resource_result()` (peak-of-subject-readings ->
   `ResourceResult`, no paired control required) producers, driven by
   the patch's `BIGCHERRY_RD73_RESOURCE_TRACE`-gated telemetry.
-- These gaps mean this patch's tracked-status stays `untested` until a
-  real RD73 executor exists; it cannot honestly claim `ported-benched`
-  or `ported-validated` on the strength of the contract alone.
+- The remaining gap is the generic adapter's `validation.toml`
+  rebinding (see "Known gap" above) -- this patch's tracked-status
+  stays `untested` until that lands and a real hardware
+  `--run-rd73-contract` qualification passes; the executor's own real
+  contract PASS/FAIL/INVALID verdict alone does not update tracked
+  status.
 
 ## Control vs. subject
 
