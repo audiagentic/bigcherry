@@ -60,7 +60,7 @@ window; bump one, record, then bump the other.
 2. **Move the checkout.**
 
    ```text
-   bigcherry pull --recipe bigcherry
+   bigcherry pull --source bigcherry
    ```
 
 3. **Audit the new upstream tree, then mechanically rebase-check the selected
@@ -73,7 +73,7 @@ window; bump one, record, then bump the other.
 
    ```text
    bigcherry audit
-   bigcherry patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json
+   bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
    ```
 
    This is a mechanical gate, not prose review: `patch-rebase-check` runs in

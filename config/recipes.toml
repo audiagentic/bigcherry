@@ -259,7 +259,7 @@ cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
 [platform.vulkan-linux]
 description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
 # "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
-# the legacy recipes.py loader requires a non-empty list for every platform
+# core/config.py's v2 parser requires a non-empty list for every platform
 # regardless of backend, so this is a placeholder, not a real GPU target --
 # cmake_configure_args(backend="vulkan") ignores platform.targets entirely
 # (see campaign_build._backend_configure_options). Replace with real
