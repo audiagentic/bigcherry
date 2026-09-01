@@ -104,6 +104,10 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
         for command in seen_commands:
             self.assertIn("-sm", command)
             self.assertEqual(command[command.index("-sm") + 1], "tensor")
+            # Real hardware finding: llama.cpp's automatic device-memory
+            # fit feature aborts under SPLIT_MODE_TENSOR unless disabled.
+            self.assertIn("--fit", command)
+            self.assertEqual(command[command.index("--fit") + 1], "off")
 
 
 class RunRd73ResourceEvidenceTests(unittest.TestCase):
