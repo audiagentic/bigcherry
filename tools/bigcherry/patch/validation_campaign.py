@@ -1397,6 +1397,133 @@ def run_rd73_activation_evidence(
     }
 
 
+def run_rd73_mtp_server_lane(
+    *, control_binary: Path, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    host: str = "127.0.0.1", control_port: int = 18080, subject_port: int = 18081,
+    spec_n_max: int = 5, spec_draft_k: str = "f16", spec_draft_v: str = "f16",
+    n_predict: int = 128, warmup_pairs: int = 2, measured_pairs: int = 10,
+) -> dict[str, object]:
+    """VA06 next slice: RD73's paired control/subject mtp_verify
+    performance lane over a real llama-server HTTP harness (GPT scoping,
+    session ses_89a3ef2b02b94469, req_a25bb805975c43c0/req corrected):
+    upstream llama-bench does not support speculative/MTP flags at all,
+    so unlike RD08's simple paired-subprocess lanes, this reuses
+    tuning/server_runner.py's ServerRunner for real process lifecycle
+    (launch/health-check/shutdown) and bench/server_completion.py's real
+    request/metrics machinery for each measured sample.
+
+    Target metric is wall_tps (client-measured, real request-to-response
+    wall-clock throughput) -- deliberately NOT predicted_tps, which is
+    the server's own self-reported decode timing and can exclude HTTP/
+    queueing overhead; per GPT direction, "the number an end user
+    actually experiences" is what this contract's end_to_end_gain_pct
+    must measure.
+
+    Reuses experiment/execution.py's run_paired_lane() (RD08's own
+    alternating-order + block-bootstrap statistics engine) via a
+    synthetic-stdout adapter rather than duplicating that statistics
+    code: each paired-lane "command" is a control/subject arm tag, and
+    the injected runner performs one real HTTP completion request against
+    the already-launched server for that arm, encoding the real wall_tps
+    it measured into a parseable stdout line. warmup_pairs real paired
+    requests execute first (cold-cache discipline, matching
+    server_completion.run_session()'s own pattern) and are never fed into
+    the paired statistics; only the following measured_pairs are.
+
+    Every per-request record (including generated ``content``) is
+    retained and returned for RD73's separate bit-identical correctness
+    lane to consume -- this function does not itself judge correctness.
+    Fails closed: a request with no usable wall_tps raises
+    PatchCampaignError immediately, never silently drops a sample."""
+    from bigcherry.bench import server_completion as sc
+    from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.tuning.server_runner import ServerRunner
+
+    prompts, corpus_sha256 = sc.load_corpus(corpus_path)
+    metric_pattern = re.compile(r"BIGCHERRY_RD73_MTP wall_tps=([0-9.]+)")
+
+    server_args = (
+        "--parallel", "1", "--metrics",
+        "--spec-type", "draft-mtp", "--spec-n-max", str(spec_n_max),
+        "--spec-draft-k", spec_draft_k, "--spec-draft-v", spec_draft_v,
+    )
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    control_runner = ServerRunner(
+        binary=control_binary, model=model, host=host, port=control_port,
+        extra_args=server_args, log_path=logs_dir / "rd73-mtp-control-server.log",
+    )
+    subject_runner = ServerRunner(
+        binary=subject_binary, model=model, host=host, port=subject_port,
+        extra_args=server_args, log_path=logs_dir / "rd73-mtp-subject-server.log",
+    )
+
+    sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
+    session_kwargs = dict(
+        corpus_id=corpus_path.stem, corpus_sha256=corpus_sha256, bigcherry_revision="rd73-va06",
+        llama_pin="", llama_revision="", model_id=str(model), server_argv=server_args,
+        spec_type="draft-mtp", spec_n_max=spec_n_max, spec_draft_k=spec_draft_k,
+        spec_draft_v=spec_draft_v, sampling=sampling, n_predict=n_predict, order_seed=12345,
+    )
+
+    request_records: dict[str, list[dict[str, object]]] = {"control": [], "subject": []}
+    request_counters = {"control": 0, "subject": 0}
+
+    with control_runner, subject_runner:
+        transports = {
+            "control": sc.HttpTransport(f"http://{host}:{control_port}"),
+            "subject": sc.HttpTransport(f"http://{host}:{subject_port}"),
+        }
+        sc.validate_server(transports["control"])
+        sc.validate_server(transports["subject"])
+        configs = {
+            "control": sc.SessionConfig(session_id="rd73-mtp-control", **session_kwargs),
+            "subject": sc.SessionConfig(session_id="rd73-mtp-subject", **session_kwargs),
+        }
+
+        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+            arm = command[-1]
+            index = request_counters[arm]
+            request_counters[arm] += 1
+            prompt = prompts[index % len(prompts)]
+            record = sc.run_request(
+                transports[arm], prompt, configs[arm], pass_number=1, order_index=index,
+            )
+            request_records[arm].append(record)
+            if not isinstance(record.get("wall_tps"), (int, float)):
+                raise PatchCampaignError(
+                    f"rd73 mtp lane ({arm}, request {index}): no usable wall_tps in the "
+                    f"real completion response -- refusing to feed a missing sample into "
+                    f"the paired statistics"
+                )
+            return experiment_execution.RunnerOutput(
+                returncode=0, stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n", stderr="",
+            )
+
+        for _ in range(warmup_pairs):
+            _runner(["rd73-mtp-lane", "control"])
+            _runner(["rd73-mtp-lane", "subject"])
+
+        paired_run = experiment_execution.run_paired_lane(
+            metric="mtp_wall_tps", control_command=["rd73-mtp-lane", "control"],
+            subject_command=["rd73-mtp-lane", "subject"], pattern=metric_pattern,
+            pairs=measured_pairs, runner=_runner,
+        )
+
+    effect = experiment_execution.lane_effect_from_run("positive", "mtp_wall_tps", paired_run)
+    doc = {
+        "metric": "mtp_wall_tps", "stats": paired_run.stats,
+        "warmup_pairs": warmup_pairs, "measured_pairs": measured_pairs,
+        "control_requests": request_records["control"], "subject_requests": request_records["subject"],
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-mtp-lane.json", doc)
+    return {
+        "effect": effect, "artifact": artifact_ref, "stats": paired_run.stats,
+        "control_requests": request_records["control"], "subject_requests": request_records["subject"],
+    }
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
