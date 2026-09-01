@@ -241,6 +241,35 @@ def test_unsupported_text_classified_unsupported(tmp_path: Path):
     assert result.classification == rq.UNSUPPORTED
 
 
+def test_symmetric_memory_benign_line_does_not_classify_unsupported(tmp_path: Path):
+    # Real hardware regression (2026-09-02): "Symmetric memory is not
+    # supported. cuMemEnable 0, ..." is a routine NCCL_DEBUG=INFO
+    # capability-negotiation trace line printed on every run on this
+    # hardware, successful or not -- it previously misclassified a clean
+    # PASS as UNSUPPORTED via the bare "not supported" substring marker.
+    result = _run_fake(tmp_path, """
+        import sys
+        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+              "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
+        print('    RING    SIMPLE           2')
+        sys.exit(0)
+    """)
+    assert result.classification != rq.UNSUPPORTED
+
+
+def test_real_unsupported_line_alongside_benign_line_still_classified_unsupported(tmp_path: Path):
+    # The benign-line exclusion must not swallow a genuine decline that
+    # happens to share a process with the routine trace line.
+    result = _run_fake(tmp_path, """
+        import sys
+        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+              "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
+        print("RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
+        sys.exit(1)
+    """)
+    assert result.classification == rq.UNSUPPORTED
+
+
 def test_missing_binary_classified_harness_failure(tmp_path: Path):
     case = _fake_case()
     result = rq.run_case(
