@@ -157,6 +157,26 @@ class CaseRoundTripTests(unittest.TestCase):
                     peer_access="partial", devices=devices, slice_shape=(4, 1, 1, 1),
                 )
 
+    def test_slice_shape_wrong_length_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices, slice_shape=(2, 2, 2),
+                )
+
+    def test_slice_shape_non_positive_dims_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices, slice_shape=(-8, 1, 1, 1),
+                )
+
 
 class SignatureKeyTests(unittest.TestCase):
     def test_matches_real_telemetry_key_format(self):
@@ -189,6 +209,53 @@ class SignatureKeyTests(unittest.TestCase):
                 topology_key="n2:peer1001", peer_access="partial",
                 devices=devices, slice_shape=(8, 1, 1, 1),
             )
+
+
+# The 4-signature representative subset GPT scoped from the real dual-XTX
+# Qwen3.8-27B MTP production capture (artifacts/hardware/20260820-qwen38-
+# mtp-dual-xtx/reduction.jsonl): dominant anchor, max-s1 stress, near-max-odd
+# stress, and the s1=1 minimum boundary.
+REAL_PRODUCTION_SIGNATURES = [
+    (30720, (5120, 6, 1, 1), 460200, "dominant real decode signature"),
+    (2621440, (5120, 512, 1, 1), 7150, "max s1, power-of-two stress"),
+    (2606080, (5120, 509, 1, 1), 2600, "near-max odd/non-power-of-two stress"),
+    (5120, (5120, 1, 1, 1), 41130, "minimum/boundary s1=1"),
+]
+
+
+class RealProductionSignatureTests(unittest.TestCase):
+    def test_real_production_signature_keys_are_well_formed(self):
+        for element_count, slice_shape, observation_count, note in REAL_PRODUCTION_SIGNATURES:
+            with self.subTest(note=note):
+                key = rc.make_reduction_signature_key(
+                    element_type="f32", element_count=element_count,
+                    slice_shape=slice_shape, topology_key="n2:peer1001",
+                )
+                s0, s1, s2, s3 = slice_shape
+                self.assertEqual(key, f"split_reduce:v1:f32:{element_count}:{s0},{s1},{s2},{s3}:n2:peer1001")
+                self.assertEqual(s0 * s1 * s2 * s3, element_count)
+                self.assertGreater(observation_count, 0)
+
+    def test_real_production_signatures_write_case_round_trips(self):
+        for element_count, slice_shape, _observation_count, note in REAL_PRODUCTION_SIGNATURES:
+            with self.subTest(note=note):
+                devices = rc.generate_case(
+                    seed=1, pattern="ordinary_signed", element_count=element_count, device_count=2,
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    case_dir = Path(tmp) / "case-0001"
+                    rc.write_case(
+                        case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
+                        reduction_signature_key=rc.make_reduction_signature_key(
+                            element_type="f32", element_count=element_count,
+                            slice_shape=slice_shape, topology_key="n2:peer1001",
+                        ),
+                        topology_key="n2:peer1001", peer_access="partial",
+                        devices=devices, slice_shape=slice_shape,
+                    )
+                    loaded_manifest, ranks = rc.load_case(case_dir)
+                    self.assertEqual(loaded_manifest["element_count"], element_count)
+                    self.assertEqual(rc.from_f32_bytes(ranks[0]), devices[0])
 
 
 class AnalyticalBoundTests(unittest.TestCase):

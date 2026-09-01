@@ -212,6 +212,15 @@ def write_case(
             "comparable to a real recorded reduction_signature_key if it reproduces "
             "that signature's exact 4D shape, not merely its total element count"
         )
+    if len(slice_shape) != 4:
+        raise CorrectnessError(
+            f"case {case_id}: slice_shape must have exactly 4 entries, got "
+            f"{len(slice_shape)}: {slice_shape}"
+        )
+    if any(dim <= 0 for dim in slice_shape):
+        raise CorrectnessError(
+            f"case {case_id}: slice_shape entries must all be positive, got {slice_shape}"
+        )
     shape_product = slice_shape[0] * slice_shape[1] * slice_shape[2] * slice_shape[3]
     if shape_product != element_count:
         raise CorrectnessError(
