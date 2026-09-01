@@ -339,6 +339,48 @@ def _trace_probe_env(*, hip_path: Path, disable_fusion: bool) -> dict[str, str]:
     return env
 
 
+# VA21 real-hardware finding: a llama.cpp binary whose ROCm/HIP device
+# init fails silently falls back to CPU execution, but still prints a
+# normal-looking llama-bench table under a "backend: ROCm" label with
+# real-looking (if CPU-speed) numbers -- a benchmark/trigger-probe run's
+# exit code and printed metrics alone cannot be trusted as proof that it
+# actually executed on the GPU. Fail closed: require the real, positive
+# "ggml_cuda_init: found N ROCm devices" line and reject any known
+# ROCm-init-failure signature, rather than accepting output that never
+# actually touched the GPU (which is exactly what let RD08's real
+# subject_hit=false confound with a genuine dispatch-routing question on
+# 2026-09-01 -- gfx1030's HIP runtime failed to detect the device at all,
+# and nothing caught it before the trigger check quietly "ran" and
+# reported a negative).
+_ROCM_INIT_FAILURE_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"failed to initialize ROCm"),
+    re.compile(r"no ROCm-capable device is detected"),
+    re.compile(r"hipErrorNoDevice"),
+)
+_ROCM_INIT_SUCCESS_PATTERN = re.compile(r"ggml_cuda_init:\s*found\s+(\d+)\s+ROCm device")
+
+
+def _require_real_gpu_execution(stdout: str, stderr: str, *, context: str) -> None:
+    """Fail closed unless the combined output carries real, positive
+    evidence of ROCm/HIP device initialization (not merely the absence of
+    an error) -- see the module comment above this function for why
+    absence-of-failure is not itself sufficient evidence here."""
+    combined = f"{stdout}\n{stderr}"
+    for pattern in _ROCM_INIT_FAILURE_PATTERNS:
+        if pattern.search(combined):
+            raise PatchCampaignError(
+                f"{context}: ROCm/HIP device initialization failed -- real GPU execution "
+                f"cannot be confirmed (matched {pattern.pattern!r} in the process output)"
+            )
+    match = _ROCM_INIT_SUCCESS_PATTERN.search(combined)
+    if match is None or int(match.group(1)) < 1:
+        raise PatchCampaignError(
+            f"{context}: no real GPU execution evidence in the process output -- expected a "
+            "'ggml_cuda_init: found N ROCm devices' line; a benchmark/probe that silently ran "
+            "CPU-only must never be accepted as real hardware evidence"
+        )
+
+
 def _run_one_trace_probe(
     *, name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
     bench_prompt: int, bench_gen: int, disable_fusion: bool,
@@ -354,7 +396,7 @@ def _run_one_trace_probe(
 
     command = [
         str(binary.resolve()), "-m", str(model.resolve()),
-        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1",
+        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99",
     ]
     env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
 
@@ -379,6 +421,9 @@ def _run_one_trace_probe(
             f"activation probe {name!r} failed with exit code {completed.returncode}; "
             f"see {log_path}"
         )
+    _require_real_gpu_execution(
+        completed.stdout, completed.stderr, context=f"activation probe {name!r}",
+    )
     return combined
 
 
@@ -548,8 +593,8 @@ def rd08_validation_lane_commands(
         workload_flags = ["-p", "512", "-n", "0"]
     else:
         raise PatchCampaignError(f"rd08 lane: no llama-bench flag mapping for workload {workload!r}")
-    control_command = [str(control_binary), "-m", str(model), *workload_flags]
-    subject_command = [str(subject_binary), "-m", str(model), *workload_flags]
+    control_command = [str(control_binary), "-m", str(model), *workload_flags, "-ngl", "99"]
+    subject_command = [str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99"]
     return control_command, subject_command
 
 
@@ -605,6 +650,16 @@ def run_rd08_validation_lanes(
                 "returncode": completed.returncode,
                 "stdout": completed.stdout, "stderr": completed.stderr,
             })
+            if completed.returncode == 0:
+                # A nonzero-returncode run already fails via its own real
+                # signal (LaneExecutionError downstream); GPU-execution
+                # evidence is only meaningful to demand of an apparently
+                # successful run, which is exactly the case that silently
+                # accepted a CPU-fallback result before this fix.
+                _require_real_gpu_execution(
+                    completed.stdout, completed.stderr,
+                    context=f"rd08 {workload} lane ({Path(command[0]).name})",
+                )
             return experiment_execution.RunnerOutput(
                 returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
             )
@@ -951,7 +1006,7 @@ def run_rd04_benchmark_evidence(
     rd04_flags = ["-fa", "on", "-ctk", "bf16", "-ctv", "bf16"]
 
     def _command(binary: Path, workload_flags: list[str]) -> list[str]:
-        return [str(binary), "-m", str(model), *workload_flags, *rd04_flags]
+        return [str(binary), "-m", str(model), *workload_flags, *rd04_flags, "-ngl", "99"]
 
     clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
     for key in list(clean_env):
@@ -970,6 +1025,11 @@ def run_rd04_benchmark_evidence(
                 "returncode": completed.returncode,
                 "stdout": completed.stdout, "stderr": completed.stderr,
             })
+            if completed.returncode == 0:
+                _require_real_gpu_execution(
+                    completed.stdout, completed.stderr,
+                    context=f"rd04 {workload} lane ({Path(command[0]).name})",
+                )
             return experiment_execution.RunnerOutput(
                 returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
             )
