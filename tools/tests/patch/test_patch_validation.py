@@ -347,7 +347,6 @@ def _plan_with(checks: list[tuple[str, bool, str]]) -> pv.ValidationPlan:
             for c, required, cap in checks
         ),
         universal_capabilities=(),
-        contract=None,
         required_capabilities=tuple(cap for c, required, cap in checks if required),
     )
 
@@ -615,7 +614,7 @@ class RegistryAndVersionTests(unittest.TestCase):
             pv.CheckSpec(check_id="b", capability="build", validator="build", required=True),
         )
         plan = pv.ValidationPlan(
-            patch_id="1201", checks=specs, universal_capabilities=(), contract=None,
+            patch_id="1201", checks=specs, universal_capabilities=(),
             required_capabilities=("apply", "build"),
         )
         first = pv.plan_digest(plan)
@@ -625,7 +624,7 @@ class RegistryAndVersionTests(unittest.TestCase):
             patch_id="1201",
             checks=specs + (pv.CheckSpec(check_id="c", capability="smoke",
                                          validator="runtime-smoke", required=False),),
-            universal_capabilities=(), contract=None,
+            universal_capabilities=(),
             required_capabilities=("apply", "build"),
         )
         self.assertNotEqual(first, pv.plan_digest(changed))

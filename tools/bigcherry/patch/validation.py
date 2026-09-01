@@ -179,6 +179,13 @@ class CheckSpec:
     validator: str
     required: bool
     config: dict[str, Any] = field(default_factory=dict)
+    # VA17 slice 1: which bound contract(s) this check's evidence satisfies
+    # (routing metadata, not validator config -- never a Contract Authority
+    # field). Empty means "unscoped": on a single-contract patch that means
+    # the sole contract (compat, unchanged behavior); on a multi-contract
+    # patch an unscoped check satisfies NO contract-derived requirement --
+    # ambiguity between multiple bound contracts is never silently resolved.
+    contract_ids: tuple[str, ...] = ()
 
 
 _CHECK_REQUIRED_KEYS = ("id", "capability", "validator")
@@ -272,10 +279,30 @@ def parse_validation_toml(
         required = table.get("required", True)
         if not isinstance(required, bool):
             raise ConfigurationError(f"{where}: 'required' must be a boolean")
+        # VA17 slice 1: 'contracts' is generic adapter ROUTING metadata (which
+        # bound contract(s) this check's evidence satisfies), not validator
+        # config -- extracted here, never left in `config` for a validator to
+        # see, and never treated as a Contract Authority field either (it
+        # names contracts, it does not carry their content).
+        contracts_raw = table.get("contracts")
+        contract_ids: tuple[str, ...] = ()
+        if contracts_raw is not None:
+            if not isinstance(contracts_raw, list) or not all(
+                isinstance(c, str) and c for c in contracts_raw
+            ):
+                raise ConfigurationError(f"{where}: 'contracts' must be a list of non-empty strings")
+            if not contracts_raw:
+                raise ConfigurationError(
+                    f"{where}: 'contracts' must not be an empty list "
+                    "(omit the field entirely for an unscoped check)"
+                )
+            if len(set(contracts_raw)) != len(contracts_raw):
+                raise ConfigurationError(f"{where}: 'contracts' contains duplicate id(s)")
+            contract_ids = tuple(contracts_raw)
         config = {
             key: value
             for key, value in table.items()
-            if key not in ("id", "capability", "validator", "required")
+            if key not in ("id", "capability", "validator", "required", "contracts")
         }
         shadowed = _contract_authority_keys_in(config)
         if shadowed:
@@ -290,6 +317,7 @@ def parse_validation_toml(
                 validator=validator,
                 required=required,
                 config=config,
+                contract_ids=contract_ids,
             )
         )
     return tuple(specs)
@@ -490,6 +518,34 @@ def load_contract_for_descriptor(
         ) from None
 
 
+def load_contracts_for_descriptor(
+    descriptor: patch_registry.PatchDescriptor,
+    *,
+    contracts_path: str | Path | None = None,
+) -> tuple[experiment_contract.ExperimentContract, ...]:
+    """VA17 slice 1: resolve ALL of the descriptor's linked Experiment
+    Contracts (plural, VA16's ``descriptor.experiment_contracts``) --
+    the multi-contract counterpart of :func:`load_contract_for_descriptor`.
+    A reference to a non-existent contract is a ConfigurationError, same
+    as the singular loader."""
+    if not descriptor.experiment_contracts:
+        return ()
+    from ..core import paths
+
+    path = Path(contracts_path) if contracts_path is not None else paths.EXPERIMENT_CONTRACTS
+    registry = experiment_contract.load_contracts(path)
+    resolved: list[experiment_contract.ExperimentContract] = []
+    for contract_id in descriptor.experiment_contracts:
+        try:
+            resolved.append(registry[contract_id])
+        except KeyError:
+            raise ConfigurationError(
+                f"{descriptor.patch_id}: experiment contract "
+                f"{contract_id!r} not found in {path.name}"
+            ) from None
+    return tuple(resolved)
+
+
 def build_plan_for_patch(
     descriptor: patch_registry.PatchDescriptor,
     *,
@@ -512,9 +568,9 @@ def build_plan_for_patch(
     """
     from ..core import paths
 
-    contract = load_contract_for_descriptor(descriptor, contracts_path=contracts_path)
-    binding = bind_contract(contract) if contract is not None else None
-    if binding is not None:
+    contracts = load_contracts_for_descriptor(descriptor, contracts_path=contracts_path)
+    bindings = tuple(bind_contract(c) for c in contracts)
+    for binding in bindings:
         check_contract_compatibility(
             binding,
             patch_backend=descriptor.backend,
@@ -522,13 +578,13 @@ def build_plan_for_patch(
         )
 
     if descriptor.validation_path is None:
-        if contract is None:
+        if not contracts:
             return None
         # A contract demands evidence but the adapter is missing: no
         # producer can exist -> fail closed, not skip.
         raise ConfigurationError(
-            f"{descriptor.patch_id}: experiment contract "
-            f"{descriptor.experiment_contract!r} requires validation evidence but "
+            f"{descriptor.patch_id}: experiment contract(s) "
+            f"{', '.join(descriptor.experiment_contracts)!r} require validation evidence but "
             "no validation.toml adapter exists"
         )
 
@@ -536,7 +592,7 @@ def build_plan_for_patch(
     checks = parse_validation_toml(
         resolved_root / descriptor.validation_path, patch_id=descriptor.patch_id
     )
-    return build_validation_plan(descriptor.patch_id, checks, binding=binding)
+    return build_validation_plan(descriptor.patch_id, checks, bindings=bindings)
 
 
 # -------------------------------------------------------------- requirement
@@ -551,15 +607,40 @@ UNIVERSAL_REQUIREMENTS: tuple[str, ...] = ("apply", "build")
 class ValidationPlan:
     """The aggregated validation plan for one patch (section 18):
     universal requirements + linked contract requirements + the adapter's
-    checks. ``required_capabilities`` is the demand side; ``checks`` is the
-    supply side. The adapter may add, never remove."""
+    checks. ``required_capabilities`` is the demand side (flat union, for
+    simple listing); ``checks`` is the supply side. The adapter may add,
+    never remove.
+
+    VA17 slice 1: ``contracts`` is plural (0, 1, or many bound Experiment
+    Contracts). ``contract_requirements`` represents contract-derived
+    demand as ``(contract_id, capability)`` pairs -- the unit multi-
+    contract coverage is actually checked against, since a capability name
+    alone (e.g. "correctness") is ambiguous when multiple contracts each
+    require their own independent correctness proof."""
 
     patch_id: str
     checks: tuple[CheckSpec, ...]
     universal_capabilities: tuple[str, ...]
-    contract: ContractBinding | None
-    required_capabilities: tuple[str, ...]
+    contracts: tuple[ContractBinding, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
+    contract_requirements: tuple[tuple[str, str], ...] = ()
     framework_version: str = VALIDATION_FRAMEWORK_VERSION
+
+    @property
+    def contract(self) -> ContractBinding | None:
+        """0/1-contract compatibility view. Fails closed for >1 bound
+        contracts -- callers that only understand a single contract must
+        be updated to the plural ``.contracts`` before they can handle a
+        multi-contract patch; they must never silently see just one of
+        several bound contracts."""
+        if len(self.contracts) > 1:
+            raise ConfigurationError(
+                f"{self.patch_id}: has {len(self.contracts)} bound contracts "
+                f"({', '.join(b.contract_id for b in self.contracts)}) -- this caller uses "
+                "the singular .contract compatibility property and must be updated for "
+                "plural access (.contracts) before it can handle this patch"
+            )
+        return self.contracts[0] if self.contracts else None
 
     def checks_for(self, capability: str) -> tuple[CheckSpec, ...]:
         return tuple(c for c in self.checks if c.capability == capability)
@@ -587,33 +668,110 @@ def _produces(capability: str, spec: CheckSpec) -> bool:
     return spec.validator in _CAPABILITY_PRODUCERS.get(capability, frozenset())
 
 
+def _check_covers(
+    spec: CheckSpec, capability: str, *, contract_id: str | None, contract_count: int,
+) -> bool:
+    """VA17 slice 1 coverage rule for a (contract_id, capability) pair (or a
+    plain universal capability when ``contract_id`` is None):
+
+    - the check must actually produce the capability (section 18, RS08's
+      existing rule, unchanged);
+    - an explicitly-scoped check (``spec.contract_ids`` non-empty) covers
+      only the contract(s) it names -- a check scoped to [RD05] never
+      satisfies RD06's requirement even if the capability name matches;
+    - an UNSCOPED check on a 0/1-contract patch keeps today's implicit
+      sole-contract behavior (back-compat);
+    - an UNSCOPED check on a >1-contract patch satisfies NO contract-
+      derived requirement -- ambiguity between multiple bound contracts is
+      never silently resolved in the check's favor.
+    """
+    if not _produces(capability, spec):
+        return False
+    if contract_id is None:
+        return True  # universal requirement: any producer counts
+    if spec.contract_ids:
+        return contract_id in spec.contract_ids
+    return contract_count <= 1
+
+
 def build_validation_plan(
     patch_id: str,
     checks: tuple[CheckSpec, ...] | list[CheckSpec],
     *,
     binding: ContractBinding | None = None,
+    bindings: tuple[ContractBinding, ...] = (),
     universal: tuple[str, ...] = UNIVERSAL_REQUIREMENTS,
     framework_version: str = VALIDATION_FRAMEWORK_VERSION,
 ) -> ValidationPlan:
     """Aggregate the three requirement sources (section 18).
 
+    ``binding`` (singular) is a 0/1-contract convenience -- equivalent to
+    ``bindings=(binding,)``. Pass ``bindings`` (plural) for a multi-contract
+    patch. Passing both is a ConfigurationError.
+
     Fails with :class:`ConfigurationError` when any required capability
-    (universal or contract) has no capable producer among the checks.
+    (universal, or a bound contract's own (contract_id, capability) pair)
+    has no capable producer among the checks -- see :func:`_check_covers`
+    for exactly what "capable producer" means once multiple contracts are
+    bound.
     """
+    if binding is not None and bindings:
+        raise ConfigurationError(
+            f"{patch_id}: build_validation_plan() got both binding= and bindings= -- pass "
+            "exactly one"
+        )
+    resolved_bindings = bindings if bindings else ((binding,) if binding is not None else ())
+
+    bound_ids = [b.contract_id for b in resolved_bindings]
+    if len(set(bound_ids)) != len(bound_ids):
+        raise ConfigurationError(f"{patch_id}: duplicate contract id(s) among bound contracts")
+    bound_id_set = set(bound_ids)
+
+    unknown_scopes = sorted({
+        contract_id
+        for spec in checks
+        for contract_id in spec.contract_ids
+        if contract_id not in bound_id_set
+    })
+    if unknown_scopes:
+        raise ConfigurationError(
+            f"{patch_id}: check(s) scoped to unknown/unbound contract id(s): "
+            f"{', '.join(unknown_scopes)}"
+        )
+
     required = tuple(universal)
-    if binding is not None:
-        for capability in binding.required_capabilities:
+    contract_requirements: list[tuple[str, str]] = []
+    for b in resolved_bindings:
+        for capability in b.required_capabilities:
             if capability not in required:
                 required = required + (capability,)
+            contract_requirements.append((b.contract_id, capability))
 
-    missing = [
-        capability for capability in required
-        if not any(spec.required and _produces(capability, spec) for spec in checks)
+    missing_universal = [
+        capability for capability in universal
+        if not any(
+            spec.required and _check_covers(
+                spec, capability, contract_id=None, contract_count=len(resolved_bindings),
+            )
+            for spec in checks
+        )
     ]
-    if missing:
+    missing_pairs = [
+        (contract_id, capability) for contract_id, capability in contract_requirements
+        if not any(
+            spec.required and _check_covers(
+                spec, capability, contract_id=contract_id, contract_count=len(resolved_bindings),
+            )
+            for spec in checks
+        )
+    ]
+    if missing_universal or missing_pairs:
+        parts = list(missing_universal) + [
+            f"{contract_id}:{capability}" for contract_id, capability in missing_pairs
+        ]
         raise ConfigurationError(
             f"{patch_id}: required capabilities with no producer: "
-            f"{', '.join(missing)} "
+            f"{', '.join(parts)} "
             "(section 18: configuration error, not skip)"
         )
 
@@ -621,8 +779,9 @@ def build_validation_plan(
         patch_id=patch_id,
         checks=tuple(checks),
         universal_capabilities=tuple(universal),
-        contract=binding,
+        contracts=resolved_bindings,
         required_capabilities=required,
+        contract_requirements=tuple(contract_requirements),
         framework_version=framework_version,
     )
 
@@ -1169,27 +1328,43 @@ def compute_verdict(
 
 
 def plan_canonical_payload(plan: ValidationPlan) -> dict[str, Any]:
+    """VA17 slice 1: v2 -- plural, sorted ``contracts`` (a single-contract
+    plan no longer serializes any differently from a bare ``{id,hash,
+    required}`` dict inside a one-element list, so a two-plan diff that
+    differs ONLY in which contract a check applies to no longer hashes
+    identically: each check's own ``contract_ids`` scope is now part of the
+    payload too, alongside the pair-shaped ``contract_requirements``)."""
     return {
-        "schema": "bigcherry-validation-plan/v1",
+        "schema": "bigcherry-validation-plan/v2",
         "framework_version": plan.framework_version,
         "patch_id": plan.patch_id,
         "universal": list(plan.universal_capabilities),
-        "contract": (
-            {
-                "id": plan.contract.contract_id,
-                "hash": plan.contract.contract_hash,
-                "required": list(plan.contract.required_capabilities),
-            }
-            if plan.contract is not None
-            else None
+        "contracts": sorted(
+            (
+                {
+                    "id": binding.contract_id,
+                    "hash": binding.contract_hash,
+                    "required": list(binding.required_capabilities),
+                }
+                for binding in plan.contracts
+            ),
+            key=lambda entry: entry["id"],
         ),
-        "required_capabilities": list(plan.required_capabilities),
+        # Sorted for deterministic serialization -- plan.required_capabilities
+        # itself preserves first-appearance order (cosmetic, for callers that
+        # print it), but that order depends on the arbitrary input order of
+        # resolved_bindings and must not leak into the canonical payload.
+        "required_capabilities": sorted(plan.required_capabilities),
+        "contract_requirements": sorted(
+            [list(pair) for pair in plan.contract_requirements]
+        ),
         "checks": [
             {
                 "id": spec.check_id,
                 "capability": spec.capability,
                 "validator": spec.validator,
                 "required": spec.required,
+                "contracts": sorted(spec.contract_ids),
             }
             for spec in plan.checks
         ],
