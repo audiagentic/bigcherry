@@ -60,6 +60,11 @@ class CampaignLane:
     inputs: tuple[tuple[str, LaneInputValue], ...] = ()
     validation: RuntimeSmokeSpec | None = None
     binary_relative_path: str = "bin/llama-bench"
+    # Additional executables compiled from the exact same configure/build
+    # identity and published into the same verified runtime bundle. This is
+    # intentionally part of the lane request because BuildPlan.requested_targets
+    # already treats the target set as build identity.
+    extra_cmake_targets: tuple[str, ...] = ()
     c_compiler: str | None = None
     cxx_compiler: str | None = None
     smoke_environment: tuple[tuple[str, str], ...] | None = None
@@ -101,6 +106,7 @@ class CampaignRequest:
     validation_by_build: Mapping[str, RuntimeSmokeSpec | None] = field(
         default_factory=dict)
     binary_relative_path: str = "bin/llama-bench"
+    extra_cmake_targets: tuple[str, ...] = ()
     c_compiler: str | None = None
     cxx_compiler: str | None = None
     smoke_environment: tuple[tuple[str, str], ...] | None = None
@@ -206,6 +212,7 @@ def plan(
             inputs=request.inputs_by_build.get(selector.build, ()),
             validation=request.validation_by_build.get(selector.build),
             binary_relative_path=request.binary_relative_path,
+            extra_cmake_targets=request.extra_cmake_targets,
             c_compiler=request.c_compiler, cxx_compiler=request.cxx_compiler,
             smoke_environment=request.smoke_environment,
             experiment=request.experiment,
@@ -224,6 +231,7 @@ def expand_contract(
     inputs: tuple[tuple[str, LaneInputValue], ...] = (),
     validation: RuntimeSmokeSpec | None = None,
     binary_relative_path: str = "bin/llama-bench",
+    extra_cmake_targets: tuple[str, ...] = (),
     c_compiler: str | None = None,
     cxx_compiler: str | None = None,
     smoke_environment: tuple[tuple[str, str], ...] | None = None,
@@ -238,8 +246,8 @@ def expand_contract(
     (and therefore the same build_plan_id/effective_build_id) -- a contract
     plans many EVALUATION ROLES over one build shape, it does not plan
     separate builds. This is exactly the "keep runtime candidate identity
-    separate from experiment identity" non-negotiable from the Experiment
-    Contract guide: contract_id/role/workload_tag/model_ref/boundary_* are
+    separate from source provenance and from experiment identity" non-negotiable
+    architecture: contract_id/role/workload_tag/model_ref/boundary_* are
     the only things that vary between these lanes' specs (see
     CampaignLaneExecutionSpec's own docstring for the identity-separation
     invariant).
@@ -264,7 +272,9 @@ def expand_contract(
         return CampaignLane(
             source_name=source_name, build_name=build_name, platform_name=platform_name,
             architectures=resolved_architectures, inputs=inputs, validation=validation,
-            binary_relative_path=binary_relative_path, c_compiler=c_compiler,
+            binary_relative_path=binary_relative_path,
+            extra_cmake_targets=extra_cmake_targets,
+            c_compiler=c_compiler,
             cxx_compiler=cxx_compiler, smoke_environment=smoke_environment,
             experiment=experiment,
             contract_id=contract.id, optimization_id=contract.source.atomic_part,
@@ -305,6 +315,7 @@ def _to_spec(lane: CampaignLane) -> CampaignLaneExecutionSpec:
         platform_name=lane.platform_name, architectures=lane.architectures,
         inputs=lane.inputs, validation=lane.validation,
         binary_relative_path=lane.binary_relative_path,
+        extra_cmake_targets=lane.extra_cmake_targets,
         c_compiler=lane.c_compiler, cxx_compiler=lane.cxx_compiler,
         smoke_environment=lane.smoke_environment,
         experiment=lane.experiment,
