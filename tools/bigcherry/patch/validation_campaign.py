@@ -384,6 +384,7 @@ def _require_real_gpu_execution(stdout: str, stderr: str, *, context: str) -> No
 def _run_one_trace_probe(
     *, name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
     bench_prompt: int, bench_gen: int, disable_fusion: bool,
+    extra_flags: tuple[str, ...] = (),
 ) -> str:
     import subprocess
 
@@ -405,6 +406,7 @@ def _run_one_trace_probe(
     command = [
         str(binary.resolve()), "-m", str(model.resolve()),
         "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
+        *extra_flags,
     ]
     env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
 
@@ -1361,6 +1363,7 @@ def peak_rd73_resource_result(
 def run_rd73_activation_evidence(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
+    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06: RD73's real subject-hit/control-miss activation probe.
     Mirrors RD08's run_rd08_contract_trigger() (real control-vs-subject
@@ -1369,15 +1372,21 @@ def run_rd73_activation_evidence(
     related, so that generic negative control would be semantically
     wrong here for the same reason RD08's own docstring already
     establishes). No lanes/correctness/promotion composition yet -- this
-    producer proves activation evidence only, per VA06's phase scoping."""
+    producer proves activation evidence only, per VA06's phase scoping.
+    ``extra_flags`` defaults to -sm tensor: RD73's real contract model
+    (tierL-qwen27b-q8) needs it on Brutus's dual gfx1100 GPUs -- without
+    it, llama-bench fails to load this model at all (real hardware
+    finding: a raw vector::_M_range_check crash, not merely slower)."""
     pattern = re.compile(marker_regex)
     subject_log = _run_one_trace_probe(
         name="rd73-activation-subject", binary=subject_binary, model=model, hip_path=hip_path,
         workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+        extra_flags=extra_flags,
     )
     control_log = _run_one_trace_probe(
         name="rd73-activation-control", binary=control_binary, model=model, hip_path=hip_path,
         workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+        extra_flags=extra_flags,
     )
     subject_hit = pattern.search(subject_log) is not None
     control_hit = pattern.search(control_log) is not None
@@ -1607,7 +1616,7 @@ def run_rd73_decode_control_lane(
 
 def run_rd73_resource_evidence(
     *, subject_binary: Path, model: Path, hip_path: Path, workdir: Path, run_dir: Path,
-    bench_prompt: int = 0, bench_gen: int = 128,
+    bench_prompt: int = 0, bench_gen: int = 128, extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06 next slice: RD73's real graph-cache-entries resource-evidence
     producer. Subject-only (GPT's phase-1 scoping: the contract's
@@ -1616,7 +1625,10 @@ def run_rd73_resource_evidence(
     subject binary once with BIGCHERRY_RD73_RESOURCE_TRACE=1, parses every
     real graph_cache_entries=N reading (parse_rd73_resource_telemetry(),
     fails closed on any malformed line), and reduces to a peak
-    ResourceResult (peak_rd73_resource_result())."""
+    ResourceResult (peak_rd73_resource_result()). ``extra_flags`` defaults
+    to -sm tensor -- required for RD73's real 27B contract model on
+    Brutus's dual gfx1100 GPUs (without it, llama-bench fails to load the
+    model at all: a real vector::_M_range_check crash)."""
     binary = Path(subject_binary)
     model = Path(model)
     if not binary.is_file():
@@ -1631,6 +1643,7 @@ def run_rd73_resource_evidence(
     command = [
         str(binary.resolve()), "-m", str(model.resolve()),
         "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
+        *extra_flags,
     ]
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -2140,7 +2153,15 @@ def run(args: argparse.Namespace) -> int:
     # and the generic negative control (GGML_CUDA_DISABLE_FUSION) is not
     # valid for a flash-attention patch. Activation stays explicitly
     # BLOCKED for this slice rather than fabricated.
-    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore) else run_trace_activation_probes(
+    # VA06: --run-rd73-contract also skips the generic probe -- the
+    # generic tune-binary/GGML_CUDA_DISABLE_FUSION negative control is
+    # not valid for RD73 (graph-cache keying, not a fusion path), and
+    # the generic probe's plain llama-bench invocation (no -sm tensor)
+    # cannot even load RD73's real 27B contract model on Brutus's dual
+    # gfx1100 GPUs. RD73's own authoritative activation evidence comes
+    # from run_rd73_activation_evidence() inside
+    # run_rd73_contract_qualification().
+    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -2199,7 +2220,16 @@ def run(args: argparse.Namespace) -> int:
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
     # for RD08's evidence below.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore):
+    # VA06: --run-rd73-contract also skips the generic S1-S7 campaign
+    # pipeline, for the same reason RD08/RD04/RD58 do -- RD73's real
+    # evidence comes entirely from run_rd73_contract_qualification(),
+    # which never reads promoted.jsonl/dispatch.cache/replay coverage/S6
+    # or S7 results. This was actually the real, first root cause hit
+    # during the Brutus qualification run (a manifest_hash mismatch
+    # inside this unrelated pipeline) -- discovered before this
+    # exclusion was added; kept for defense-in-depth even though a
+    # correctly-generated manifest can also make the S1-S7 path succeed.
+    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract):
         try:
             campaign.run()
         except CampaignError as exc:
