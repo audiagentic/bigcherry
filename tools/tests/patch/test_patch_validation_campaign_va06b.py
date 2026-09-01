@@ -171,6 +171,22 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
             self.assertIn("--fit", extra_args)
             self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
 
+    def test_servers_always_carry_rd73_activation_and_resource_env(self) -> None:
+        # User redirect (2026-09-01): activation/resource evidence is now
+        # read from these SAME servers' own log files rather than a
+        # separate llama-bench probe -- both markers must always be
+        # enabled here.
+        self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
+        for instance in _FakeServerRunner.instances:
+            env_overrides = instance.kwargs["env_overrides"]
+            self.assertEqual(env_overrides.get("BIGCHERRY_PATCH_TRACE"), "1")
+            self.assertEqual(env_overrides.get("BIGCHERRY_RD73_RESOURCE_TRACE"), "1")
+
+    def test_returns_server_log_paths_for_activation_and_resource_evidence(self) -> None:
+        result = self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
+        self.assertIn("control_log_path", result)
+        self.assertIn("subject_log_path", result)
+
 
 if __name__ == "__main__":
     unittest.main()

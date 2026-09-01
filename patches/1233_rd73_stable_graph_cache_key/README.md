@@ -68,16 +68,24 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --run-rd73-contract
 ```
 
-`--run-rd73-contract` executes RD73's real activation probe
-(`run_rd73_activation_evidence()`), graph-cache resource evidence
-(`run_rd73_resource_evidence()`), paired MTP-verify performance lane
-over a real llama-server HTTP harness (`run_rd73_mtp_server_lane()`),
-decode control lane (`run_rd73_decode_control_lane()`, mirrors RD08's
-paired llama-bench path), and bit-identical correctness
-(`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's own
-retained request/response pairs -- never a second server run), then
-composes them via `run_rd73_contract_qualification()` into a real
-`evaluate_promotion_gate()` verdict (PASS/FAIL/INVALID).
+`--run-rd73-contract` executes RD73's real paired MTP-verify performance
+lane over a real llama-server HTTP harness
+(`run_rd73_mtp_server_lane()`), activation and graph-cache resource
+evidence read from that SAME lane's own control/subject server log
+files (`evaluate_rd73_activation_evidence()`,
+`evaluate_rd73_resource_evidence()` -- no second server/model load),
+decode control lane over a second real llama-server pair driven via the
+documented Brutus bench runner (`run_rd73_decode_control_lane()` +
+`run_bench_runner_server_bench()`, `docs/reference/testing/TEST.md`'s
+"Server benchmark (Brutus bench runner)" section), and bit-identical
+correctness (`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's
+own retained request/response pairs), then composes them via
+`run_rd73_contract_qualification()` into a real `evaluate_promotion_gate()`
+verdict (PASS/FAIL/INVALID). Real llama-bench is never used anywhere in
+this path -- it proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor
+config on real Brutus hardware (repeated crashes: OOM under resource
+contention with production traffic, and a hard argument-parse error for
+`--fit`, which llama-bench does not even register).
 
 **Known gap (VA06):** unlike `--run-rd08-contract`, this does not yet
 rebind the generic adapter's own `validation.toml` correctness/
@@ -93,8 +101,10 @@ computation remains separate, deferred work.
 - **Performance/controls have a real producer (VA06).** RD73's own
   `run_rd73_mtp_server_lane()` (paired control/subject llama-server
   processes, real MTP-verify HTTP requests, client-measured `wall_tps`)
-  and `run_rd73_decode_control_lane()` (RD08-style paired llama-bench)
-  produce real evidence, composed via `aggregate_contract_effects()`
+  and `run_rd73_decode_control_lane()` (a second paired real
+  llama-server pair, driven via the documented Brutus bench runner --
+  never llama-bench, which is unworkable for this real 27B/dual-GPU
+  config) produce real evidence, composed via `aggregate_contract_effects()`
   against the contract's own `end_to_end_gain_pct`/
   `max_control_regression_pct` thresholds. `validation.toml`'s generic
   `performance`/`controls` checks (validator="benchmark") are unaffected

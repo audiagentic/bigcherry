@@ -1360,57 +1360,48 @@ def peak_rd73_resource_result(
     )
 
 
-def run_rd73_activation_evidence(
-    *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
-    hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
+def evaluate_rd73_activation_evidence(
+    *, marker_regex: str, control_log_path: Path, subject_log_path: Path, run_dir: Path,
 ) -> dict[str, object]:
-    """VA06: RD73's real subject-hit/control-miss activation probe.
-    Mirrors RD08's run_rd08_contract_trigger() (real control-vs-subject
-    binaries, not the generic tune-binary/fusion-disabled negative
-    control -- RD73's marker is graph-cache-key related, not fusion
-    related, so that generic negative control would be semantically
-    wrong here for the same reason RD08's own docstring already
-    establishes). No lanes/correctness/promotion composition yet -- this
-    producer proves activation evidence only, per VA06's phase scoping.
-    ``extra_flags`` defaults to -sm tensor: RD73's real contract model
-    (tierL-qwen27b-q8) needs it on Brutus's dual gfx1100 GPUs -- without
-    it, llama-bench fails to load this model at all (real hardware
-    finding: a raw vector::_M_range_check crash, not merely slower)."""
+    """VA06 (user redirect, 2026-09-01): RD73's real subject-hit/control-miss
+    activation evidence, read from the control/subject llama-server LOG
+    FILES run_rd73_mtp_server_lane() already produced (BIGCHERRY_PATCH_TRACE=1
+    is always set on those servers) -- no separate llama-bench probe.
+    llama-bench itself has proven unworkable for RD73's real 27B/dual-GPU/
+    -sm-tensor config on real hardware (repeated crashes: OOM under
+    resource contention, --fit argument-parse errors), and a second probe
+    would be redundant anyway: the MTP servers already ran the patched/
+    control binaries under real repeated traffic. Mirrors RD08's own
+    control-vs-subject-binary negative control (never the generic tune-
+    binary/GGML_CUDA_DISABLE_FUSION mechanism, which is invalid for RD73's
+    graph-cache-key marker for the same reason RD08's own docstring
+    already establishes)."""
     pattern = re.compile(marker_regex)
-    subject_log = _run_one_trace_probe(
-        name="rd73-activation-subject", binary=subject_binary, model=model, hip_path=hip_path,
-        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
-        extra_flags=extra_flags,
-    )
-    control_log = _run_one_trace_probe(
-        name="rd73-activation-control", binary=control_binary, model=model, hip_path=hip_path,
-        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
-        extra_flags=extra_flags,
-    )
-    subject_hit = pattern.search(subject_log) is not None
-    control_hit = pattern.search(control_log) is not None
-    subject_log_path = "logs/activation-rd73-activation-subject.log"
-    control_log_path = "logs/activation-rd73-activation-control.log"
+    subject_text = Path(subject_log_path).read_text(encoding="utf-8", errors="replace")
+    control_text = Path(control_log_path).read_text(encoding="utf-8", errors="replace")
+    subject_hit = pattern.search(subject_text) is not None
+    control_hit = pattern.search(control_text) is not None
+    subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
+    control_rel = Path(control_log_path).relative_to(run_dir).as_posix()
     doc = {
         "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
         "positive": {
             "artifact": {
-                "path": subject_log_path,
-                "sha256": hashlib.sha256((run_dir / subject_log_path).read_bytes()).hexdigest(),
+                "path": subject_rel,
+                "sha256": hashlib.sha256(Path(subject_log_path).read_bytes()).hexdigest(),
             },
         },
         "control": {
             "artifact": {
-                "path": control_log_path,
-                "sha256": hashlib.sha256((run_dir / control_log_path).read_bytes()).hexdigest(),
+                "path": control_rel,
+                "sha256": hashlib.sha256(Path(control_log_path).read_bytes()).hexdigest(),
             },
         },
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-activation.json", doc)
     return {
         "subject_hit": subject_hit, "control_hit": control_hit, "artifact": artifact_ref,
-        "subject_log_path": subject_log_path, "control_log_path": control_log_path,
+        "subject_log_path": subject_rel, "control_log_path": control_rel,
     }
 
 
@@ -1484,13 +1475,24 @@ def run_rd73_mtp_server_lane(
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Opt-in RD73 markers are always enabled here (harmless when unused --
+    # one log line per process) so this lane's own server logs double as
+    # RD73's real activation/resource evidence source: the servers are
+    # already running the patched/control binaries under real repeated
+    # MTP traffic, so a second llama-bench-based probe would be both
+    # redundant and (per real hardware findings) actively broken for this
+    # 27B/dual-GPU config. See evaluate_rd73_activation_evidence()/
+    # evaluate_rd73_resource_evidence() below.
+    control_log_path = logs_dir / "rd73-mtp-control-server.log"
+    subject_log_path = logs_dir / "rd73-mtp-subject-server.log"
+    rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
     control_runner = ServerRunner(
         binary=control_binary, model=model, host=host, port=control_port,
-        extra_args=server_args, log_path=logs_dir / "rd73-mtp-control-server.log",
+        extra_args=server_args, log_path=control_log_path, env_overrides=rd73_env,
     )
     subject_runner = ServerRunner(
         binary=subject_binary, model=model, host=host, port=subject_port,
-        extra_args=server_args, log_path=logs_dir / "rd73-mtp-subject-server.log",
+        extra_args=server_args, log_path=subject_log_path, env_overrides=rd73_env,
     )
 
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
@@ -1561,128 +1563,160 @@ def run_rd73_mtp_server_lane(
     return {
         "effect": effect, "artifact": artifact_ref, "stats": paired_run.stats,
         "control_requests": request_records["control"], "subject_requests": request_records["subject"],
+        "control_log_path": control_log_path, "subject_log_path": subject_log_path,
     }
 
 
+_RD73_BENCH_RUNNER_ROOT = Path("/mnt/vault/development/llmhosts/llamacpp")
+_BENCH_RUNNER_AGGREGATED_RESULT_PATTERN = re.compile(r"^\s*(\w+_tps):\s+([0-9.]+)\s*$")
+
+
+def run_bench_runner_server_bench(
+    *, server_url: str, bench_configs: str, repetitions: int = 1, timeout_s: int = 300,
+    runner_root: Path = _RD73_BENCH_RUNNER_ROOT,
+) -> dict[str, float]:
+    """VA06 (user redirect, 2026-09-01): drive an already-running
+    llama-server via the documented Brutus bench harness
+    (docs/reference/testing/TEST.md's "Server benchmark (Brutus bench
+    runner)" section: `cd .../llamacpp && python3 bench/run_bench.py
+    --bench-type server-bench --server-url ... --bench-configs ...`) --
+    NOT a raw llama-bench subprocess. llama-bench itself has proven
+    unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on real
+    Brutus hardware (repeated real crashes this session: OOM under
+    resource contention with production traffic, and a hard
+    argument-parse error for --fit, which llama-bench does not even
+    register). Parses the real "Aggregated Results" stdout block
+    (bench/lib/bench_orchestrator.py's own print format: one
+    "  <name>_tps: <value>" line per config) for every <name>_tps
+    metric. Fails closed on a missing runner script, nonzero exit, or no
+    parseable metric at all."""
+    runner_path = runner_root / "bench" / "run_bench.py"
+    if not runner_path.is_file():
+        raise PatchCampaignError(f"rd73 bench runner not found at {runner_path}")
+    command = [
+        sys.executable, str(runner_path),
+        "--bench-type", "server-bench", "--server-url", server_url,
+        "--model", "rd73-va06", "--bench-configs", bench_configs,
+        "--toggles", json.dumps({"repetitions": repetitions}),
+    ]
+    completed = subprocess.run(
+        command, cwd=str(runner_root), capture_output=True, text=True,
+        check=False, timeout=timeout_s,
+    )
+    if completed.returncode != 0:
+        raise PatchCampaignError(
+            f"rd73 bench runner failed (exit {completed.returncode}) against {server_url}: "
+            f"{completed.stdout[-2000:]}\n{completed.stderr[-2000:]}"
+        )
+    metrics: dict[str, float] = {}
+    in_block = False
+    for line in completed.stdout.splitlines():
+        if "Aggregated Results" in line:
+            in_block = True
+            continue
+        if in_block:
+            match = _BENCH_RUNNER_AGGREGATED_RESULT_PATTERN.match(line)
+            if match:
+                metrics[match.group(1)] = float(match.group(2))
+    if not metrics:
+        raise PatchCampaignError(
+            f"rd73 bench runner produced no parseable <name>_tps metric against {server_url}; "
+            f"stdout tail:\n{completed.stdout[-2000:]}"
+        )
+    return metrics
+
+
 def run_rd73_decode_control_lane(
-    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
-    run_dir: Path, pairs: int = 3,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
+    *, control_binary: Path, subject_binary: Path, model: Path, run_dir: Path,
+    host: str = "127.0.0.1", control_port: int = 18082, subject_port: int = 18083,
+    pairs: int = 3, extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
 ) -> dict[str, object]:
-    """VA06 next slice: RD73's decode control lane -- mirrors RD08's real
-    paired llama-bench subprocess path (rd08_validation_lane_commands() /
-    run_rd08_validation_lanes()'s runner, including the fixed -ngl 99 and
-    the fail-closed real-GPU-execution guard) exactly, never the
-    ServerRunner/speculative-flags path run_rd73_mtp_server_lane() uses --
-    decode is a plain, non-speculative workload and needs no server.
-    ``extra_flags`` defaults to -sm tensor: RD73's real contract model
-    (tierL-qwen27b-q8) is a large model measured on Brutus's dual gfx1100
-    GPUs, where the default -sm layer split understates throughput by
-    roughly 2-10x (a real, previously-confirmed production finding, not
-    a guess) -- pass extra_flags=() explicitly for a single-GPU/smaller
-    model."""
+    """VA06 (user redirect, 2026-09-01): RD73's decode control lane --
+    launches real, plain (non-speculative) control/subject llama-server
+    processes (ServerRunner, matching run_rd73_mtp_server_lane()'s
+    lifecycle pattern) and drives each paired measurement via the
+    documented Brutus bench runner (run_bench_runner_server_bench(),
+    "tg128" config) rather than a raw llama-bench subprocess -- see that
+    function's docstring for why llama-bench itself is unworkable here.
+    Reuses experiment/execution.py's run_paired_lane() via the same
+    synthetic-stdout adapter pattern as the MTP lane, rather than
+    duplicating its alternating-order + block-bootstrap statistics."""
     from bigcherry.experiment import execution as experiment_execution
-    from bigcherry.campaign.benchmark import sanitize_environment
+    from bigcherry.tuning.server_runner import ServerRunner
 
-    control_pattern = re.compile(r"tg128\s*\|\s*([0-9.]+)")
-    clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
-    for key in list(clean_env):
-        if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
-            clean_env.pop(key, None)
+    metric_pattern = re.compile(r"BIGCHERRY_RD73_DECODE tg128_tps=([0-9.]+)")
+    server_args = ("--parallel", "1", *extra_flags)
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_logs: list[dict[str, object]] = []
+    control_runner = ServerRunner(
+        binary=control_binary, model=model, host=host, port=control_port,
+        extra_args=server_args, log_path=logs_dir / "rd73-decode-control-server.log",
+    )
+    subject_runner = ServerRunner(
+        binary=subject_binary, model=model, host=host, port=subject_port,
+        extra_args=server_args, log_path=logs_dir / "rd73-decode-subject-server.log",
+    )
 
-    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-        completed = subprocess.run(command, capture_output=True, text=True, check=False, env=clean_env)
-        raw_logs.append({
-            "command": command, "returncode": completed.returncode,
-            "stdout": completed.stdout, "stderr": completed.stderr,
-        })
-        if completed.returncode == 0:
-            _require_real_gpu_execution(
-                completed.stdout, completed.stderr,
-                context=f"rd73 decode control lane ({Path(command[0]).name})",
+    server_urls = {
+        "control": f"http://{host}:{control_port}", "subject": f"http://{host}:{subject_port}",
+    }
+    raw_metrics: dict[str, list[dict[str, float]]] = {"control": [], "subject": []}
+
+    with control_runner, subject_runner:
+        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
+            arm = command[-1]
+            metrics = run_bench_runner_server_bench(
+                server_url=server_urls[arm], bench_configs="tg128", repetitions=1,
             )
-        return experiment_execution.RunnerOutput(
-            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+            raw_metrics[arm].append(metrics)
+            if "tg128_tps" not in metrics:
+                raise PatchCampaignError(
+                    f"rd73 decode control lane ({arm}): bench runner produced no tg128_tps "
+                    f"metric (got {sorted(metrics)})"
+                )
+            return experiment_execution.RunnerOutput(
+                returncode=0, stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n", stderr="",
+            )
+
+        decode_run = experiment_execution.run_paired_lane(
+            metric="tg128", control_command=["rd73-decode-lane", "control"],
+            subject_command=["rd73-decode-lane", "subject"], pattern=metric_pattern,
+            pairs=pairs, runner=_runner,
         )
 
-    control_command, subject_command = rd08_validation_lane_commands(
-        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
-        extra_flags=extra_flags,
-    )
-    decode_run = experiment_execution.run_paired_lane(
-        metric="tg128", control_command=control_command, subject_command=subject_command,
-        pattern=control_pattern, pairs=pairs, runner=_runner,
-    )
     effect = experiment_execution.lane_effect_from_run("control", "tg128", decode_run)
     doc = {
-        "metric": "tg128", "stats": decode_run.stats, "control_command": control_command,
-        "subject_command": subject_command, "raw_logs": raw_logs, "runs": list(decode_run.runs),
+        "metric": "tg128", "stats": decode_run.stats,
+        "control_raw_metrics": raw_metrics["control"], "subject_raw_metrics": raw_metrics["subject"],
+        "runs": list(decode_run.runs),
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-decode-control.json", doc)
     return {"effect": effect, "artifact": artifact_ref, "stats": decode_run.stats}
 
 
-def run_rd73_resource_evidence(
-    *, subject_binary: Path, model: Path, hip_path: Path, workdir: Path, run_dir: Path,
-    bench_prompt: int = 0, bench_gen: int = 128,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
+def evaluate_rd73_resource_evidence(
+    *, subject_log_path: Path, run_dir: Path,
 ) -> dict[str, object]:
-    """VA06 next slice: RD73's real graph-cache-entries resource-evidence
-    producer. Subject-only (GPT's phase-1 scoping: the contract's
-    resource_limits only bounds max_value, so no paired control reading
-    is needed -- inventing one would be unjustified extra scope). Runs the
-    subject binary once with BIGCHERRY_RD73_RESOURCE_TRACE=1, parses every
-    real graph_cache_entries=N reading (parse_rd73_resource_telemetry(),
-    fails closed on any malformed line), and reduces to a peak
-    ResourceResult (peak_rd73_resource_result()). ``extra_flags`` defaults
-    to -sm tensor -- required for RD73's real 27B contract model on
-    Brutus's dual gfx1100 GPUs (without it, llama-bench fails to load the
-    model at all: a real vector::_M_range_check crash)."""
-    binary = Path(subject_binary)
-    model = Path(model)
-    if not binary.is_file():
-        raise PatchCampaignError(f"rd73 resource probe binary does not exist: {binary}")
-    if not model.is_file():
-        raise PatchCampaignError(f"rd73 resource probe model does not exist: {model}")
-
-    env = _trace_probe_env(hip_path=hip_path, disable_fusion=False)
-    env.pop("BIGCHERRY_PATCH_TRACE", None)
-    env["BIGCHERRY_RD73_RESOURCE_TRACE"] = "1"
-
-    command = [
-        str(binary.resolve()), "-m", str(model.resolve()),
-        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
-        *extra_flags,
-    ]
-    log_dir = workdir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "rd73-resource-subject.log"
-    completed = subprocess.run(
-        command, cwd=workdir, env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        encoding="utf-8", errors="replace",
-    )
-    combined = completed.stdout + "\n" + completed.stderr
-    log_path.write_text(
-        f"command: {command!r}\n\nstdout:\n{completed.stdout}\n\nstderr:\n{completed.stderr}",
-        encoding="utf-8",
-    )
-    if completed.returncode != 0:
-        raise PatchCampaignError(
-            f"rd73 resource probe failed with exit code {completed.returncode}; see {log_path}"
-        )
-    _require_real_gpu_execution(completed.stdout, completed.stderr, context="rd73 resource probe")
-
-    readings = parse_rd73_resource_telemetry(combined)
+    """VA06 (user redirect, 2026-09-01): RD73's real graph-cache-entries
+    resource evidence, read from the subject llama-server LOG FILE
+    run_rd73_mtp_server_lane() already produced
+    (BIGCHERRY_RD73_RESOURCE_TRACE=1 is always set on that server) --
+    no separate llama-bench probe. Subject-only (GPT's phase-1 scoping:
+    the contract's resource_limits only bounds max_value, so no paired
+    control reading is needed). Parses every real graph_cache_entries=N
+    reading (parse_rd73_resource_telemetry(), fails closed on any
+    malformed line) and reduces to a peak ResourceResult
+    (peak_rd73_resource_result())."""
+    subject_text = Path(subject_log_path).read_text(encoding="utf-8", errors="replace")
+    readings = parse_rd73_resource_telemetry(subject_text)
     result = peak_rd73_resource_result(readings)
-    log_relpath = "logs/rd73-resource-subject.log"
+    subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
     doc = {
         "readings": list(readings), "peak": result.subject_value,
         "artifact": {
-            "path": log_relpath,
-            "sha256": hashlib.sha256((run_dir / log_relpath).read_bytes()).hexdigest(),
+            "path": subject_rel,
+            "sha256": hashlib.sha256(Path(subject_log_path).read_bytes()).hexdigest(),
         },
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-resource.json", doc)
@@ -1746,9 +1780,8 @@ def evaluate_rd73_mtp_correctness(
 
 
 def run_rd73_contract_qualification(
-    *, contract: object, control_binary: Path, subject_binary: Path,
-    control_server_binary: Path, subject_server_binary: Path, model: Path,
-    marker_regex: str, corpus_path: Path, hip_path: Path, workdir: Path, run_dir: Path,
+    *, contract: object, control_server_binary: Path, subject_server_binary: Path, model: Path,
+    marker_regex: str, corpus_path: Path, run_dir: Path,
     decode_pairs: int = 3, warmup_pairs: int = 2, measured_pairs: int = 10,
 ) -> dict[str, object]:
     """VA06 next slice: the authoritative RD73 full-qualification path
@@ -1758,23 +1791,33 @@ def run_rd73_contract_qualification(
     via evaluate_promotion_gate()) -- no RD73-specific parallel gate model.
     Every threshold comes from ``contract`` itself
     (aggregate_contract_effects() / evaluate_resource_gate() /
-    evaluate_promotion_gate()); nothing here hardcodes a number."""
+    evaluate_promotion_gate()); nothing here hardcodes a number.
+
+    User redirect (2026-09-01): every lane now runs entirely over real
+    llama-server processes driven by HTTP requests / the documented
+    Brutus bench runner -- never a raw llama-bench subprocess, which
+    proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on
+    real hardware. The MTP performance lane runs first; its own
+    control/subject server log files (BIGCHERRY_PATCH_TRACE=1 and
+    BIGCHERRY_RD73_RESOURCE_TRACE=1 are always set on them) are then the
+    real source for activation/resource evidence too -- no second probe
+    launch, no second 27B model load."""
     from bigcherry.experiment import contract as experiment_contract
 
-    activation = run_rd73_activation_evidence(
-        marker_regex=marker_regex, control_binary=control_binary, subject_binary=subject_binary,
-        model=model, hip_path=hip_path, workdir=workdir, run_dir=run_dir,
-    )
     mtp = run_rd73_mtp_server_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
         corpus_path=corpus_path, run_dir=run_dir, warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
     )
-    decode_control = run_rd73_decode_control_lane(
-        control_binary=control_binary, subject_binary=subject_binary, model=model,
-        hip_path=hip_path, run_dir=run_dir, pairs=decode_pairs,
+    activation = evaluate_rd73_activation_evidence(
+        marker_regex=marker_regex, control_log_path=mtp["control_log_path"],
+        subject_log_path=mtp["subject_log_path"], run_dir=run_dir,
     )
-    resource = run_rd73_resource_evidence(
-        subject_binary=subject_binary, model=model, hip_path=hip_path, workdir=workdir, run_dir=run_dir,
+    resource = evaluate_rd73_resource_evidence(
+        subject_log_path=mtp["subject_log_path"], run_dir=run_dir,
+    )
+    decode_control = run_rd73_decode_control_lane(
+        control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
+        run_dir=run_dir, pairs=decode_pairs,
     )
     # A real content mismatch (or a missing/non-string/unpaired record) is a
     # genuine correctness RESULT, not an infrastructure failure -- it must
@@ -2170,7 +2213,7 @@ def run(args: argparse.Namespace) -> int:
     # the generic probe's plain llama-bench invocation (no -sm tensor)
     # cannot even load RD73's real 27B contract model on Brutus's dual
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
-    # from run_rd73_activation_evidence() inside
+    # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
     trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
@@ -2806,12 +2849,10 @@ def run(args: argparse.Namespace) -> int:
             )
         rd73_qualification = run_rd73_contract_qualification(
             contract=rd73_contract,
-            control_binary=control_bin / f"llama-bench{exe}",
-            subject_binary=validation_subject_bin / f"llama-bench{exe}",
             control_server_binary=control_bin / f"llama-server{exe}",
             subject_server_binary=validation_subject_bin / f"llama-server{exe}",
             model=args.model, marker_regex=trace_marker_regex, corpus_path=args.rd73_corpus,
-            hip_path=args.hip_path, workdir=campaign_run_dir, run_dir=campaign_run_dir,
+            run_dir=campaign_run_dir,
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
         _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
