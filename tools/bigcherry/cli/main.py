@@ -285,7 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     patch_explain_cmd = sub.add_parser(
         "patch-explain",
         help="RE43: everything known about one patch -- source, plan, "
-        "requires/conflicts, which recipes/experiments select it, "
+        "requires/conflicts, which sources/experiments select it, "
         "state, content hash, files touched",
     )
     patch_explain_cmd.add_argument(
