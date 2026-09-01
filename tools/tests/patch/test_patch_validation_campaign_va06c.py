@@ -28,118 +28,171 @@ class WorkloadMetricRegistrationTests(unittest.TestCase):
         self.assertEqual(ee.metric_for_workload("mtp_verify"), "mtp_wall_tps")
 
 
-def _fake_subprocess_run_factory(*, resource_readings=None, activation_marker=None):
-    """One fake covering the three subprocess-based RD73 probes
-    (activation, decode control, resource) -- differentiated by env vars,
-    matching how the real probes are actually distinguished."""
-    resource_readings = resource_readings or []
+class _FakeServerRunner:
+    """User redirect (2026-09-01): decode control now launches real
+    ServerRunner-managed llama-server processes (not llama-bench), driven
+    via the documented Brutus bench runner. Faked here for hardware-free
+    testing, matching test_patch_validation_campaign_va06b.py's pattern."""
 
-    def fake_run(command, **kwargs):
-        env = kwargs.get("env") or {}
+    instances: list["_FakeServerRunner"] = []
 
-        class _Result:
-            pass
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        _FakeServerRunner.instances.append(self)
 
-        result = _Result()
-        result.returncode = 0
-        base = "ggml_cuda_init: found 1 ROCm devices\n"
-        if env.get("BIGCHERRY_RD73_RESOURCE_TRACE") == "1":
-            lines = "".join(f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in resource_readings)
-            result.stdout = base + lines
-            result.stderr = ""
-        elif env.get("BIGCHERRY_PATCH_TRACE") == "1":
-            marker_line = f"{activation_marker}\n" if activation_marker and "subject" in command[0] else ""
-            result.stdout = base + marker_line
-            result.stderr = ""
-        else:
-            # decode control lane (paired llama-bench, no BIGCHERRY_* env)
-            value = 100.0 if "subject" in command[0] else 90.0
-            result.stdout = f"{base}tg128 | {value} t/s\n"
-            result.stderr = ""
-        return result
+    def __enter__(self):
+        return self
 
-    return fake_run
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
-class RunRd73DecodeControlLaneTests(unittest.TestCase):
+class RunBenchRunnerServerBenchTests(unittest.TestCase):
     def setUp(self) -> None:
         self._real_run = vc.subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
-        self.run_dir = Path(self._tmp.name)
+        self.runner_root = Path(self._tmp.name)
+        (self.runner_root / "bench").mkdir()
+        (self.runner_root / "bench" / "run_bench.py").write_text("", encoding="utf-8")
 
     def tearDown(self) -> None:
         vc.subprocess.run = self._real_run
         self._tmp.cleanup()
 
-    def test_returns_control_role_effect(self) -> None:
-        vc.subprocess.run = _fake_subprocess_run_factory()
-        result = vc.run_rd73_decode_control_lane(
-            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self.run_dir, pairs=2,
+    def test_parses_aggregated_results_block(self) -> None:
+        def fake_run(command, **kwargs):
+            class _Result:
+                returncode = 0
+                stdout = (
+                    "some header text\n"
+                    "\nAggregated Results (1 test(s)):\n"
+                    "            tg128_tps: 42.5\n"
+                )
+                stderr = ""
+            return _Result()
+
+        vc.subprocess.run = fake_run
+        metrics = vc.run_bench_runner_server_bench(
+            server_url="http://127.0.0.1:18080", bench_configs="tg128",
+            runner_root=self.runner_root,
         )
+        self.assertEqual(metrics["tg128_tps"], 42.5)
+
+    def test_missing_runner_script_fails_closed(self) -> None:
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.run_bench_runner_server_bench(
+                server_url="http://127.0.0.1:18080", bench_configs="tg128",
+                runner_root=Path("/nonexistent"),
+            )
+
+    def test_nonzero_exit_fails_closed(self) -> None:
+        def fake_run(command, **kwargs):
+            class _Result:
+                returncode = 1
+                stdout = "error"
+                stderr = "boom"
+            return _Result()
+
+        vc.subprocess.run = fake_run
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.run_bench_runner_server_bench(
+                server_url="http://127.0.0.1:18080", bench_configs="tg128",
+                runner_root=self.runner_root,
+            )
+
+    def test_no_parseable_metrics_fails_closed(self) -> None:
+        def fake_run(command, **kwargs):
+            class _Result:
+                returncode = 0
+                stdout = "nothing useful here"
+                stderr = ""
+            return _Result()
+
+        vc.subprocess.run = fake_run
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.run_bench_runner_server_bench(
+                server_url="http://127.0.0.1:18080", bench_configs="tg128",
+                runner_root=self.runner_root,
+            )
+
+
+class RunRd73DecodeControlLaneTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _FakeServerRunner.instances = []
+        self._tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _run(self, *, control_tps, subject_tps, pairs=2):
+        counters = {"control": 0, "subject": 0}
+
+        def fake_bench_runner(*, server_url, bench_configs, repetitions=1, timeout_s=300, runner_root=None):
+            arm = "control" if "18082" in server_url else "subject"
+            values = control_tps if arm == "control" else subject_tps
+            index = counters[arm]
+            counters[arm] += 1
+            return {"tg128_tps": values[index]}
+
+        with mock.patch.object(vc, "run_bench_runner_server_bench", side_effect=fake_bench_runner):
+            with mock.patch("bigcherry.tuning.server_runner.ServerRunner", _FakeServerRunner):
+                return vc.run_rd73_decode_control_lane(
+                    control_binary=Path("control-server"), subject_binary=Path("subject-server"),
+                    model=Path("m.gguf"), run_dir=self.run_dir, pairs=pairs,
+                )
+
+    def test_returns_control_role_effect(self) -> None:
+        result = self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
         self.assertEqual(result["effect"].role, "control")
         self.assertEqual(result["effect"].metric, "tg128")
         artifact_path = self.run_dir / result["artifact"]["path"]
         self.assertTrue(artifact_path.is_file())
 
-    def test_default_extra_flags_include_sm_tensor(self) -> None:
-        # RD73's real contract model (tierL-qwen27b-q8) needs -sm tensor
-        # on Brutus's dual gfx1100 GPUs -- the default -sm layer split
-        # understates throughput by roughly 2-10x.
-        seen_commands = []
-
-        def fake_run(command, **kwargs):
-            seen_commands.append(command)
-            class _Result:
-                returncode = 0
-                stdout = "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n"
-                stderr = ""
-            return _Result()
-
-        vc.subprocess.run = fake_run
-        vc.run_rd73_decode_control_lane(
-            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self.run_dir, pairs=1,
-        )
-        for command in seen_commands:
-            self.assertIn("-sm", command)
-            self.assertEqual(command[command.index("-sm") + 1], "tensor")
-            # Real hardware finding: unlike llama-server, llama-bench does
-            # not register --fit at all -- passing it is a hard error
-            # ("invalid parameter for argument: --fit"). Must never be
-            # added to this (llama-bench) lane's extra_flags.
-            self.assertNotIn("--fit", command)
+    def test_default_extra_flags_include_sm_tensor_and_fit_off(self) -> None:
+        # This lane launches real llama-SERVER processes (unlike RD73's
+        # activation/resource evidence, which reuses the MTP lane's own
+        # servers) -- --fit off is required here, unlike llama-bench-based
+        # lanes, which must never receive it (real hardware finding: a
+        # hard argument-parse error).
+        self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
+        for instance in _FakeServerRunner.instances:
+            extra_args = instance.kwargs["extra_args"]
+            self.assertIn("-sm", extra_args)
+            self.assertEqual(extra_args[extra_args.index("-sm") + 1], "tensor")
+            self.assertIn("--fit", extra_args)
+            self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
 
 
-class RunRd73ResourceEvidenceTests(unittest.TestCase):
+class EvaluateRd73ResourceEvidenceTests(unittest.TestCase):
+    """User redirect (2026-09-01): resource evidence is now read from the
+    MTP lane's own subject server log file (always
+    BIGCHERRY_RD73_RESOURCE_TRACE=1) rather than a separate llama-bench
+    probe."""
+
     def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self._tmp.name)
-        self.subject_binary = self.run_dir / "subject-bin"
-        self.subject_binary.write_text("", encoding="utf-8")
-        self.model = self.run_dir / "model.gguf"
-        self.model.write_text("", encoding="utf-8")
+        (self.run_dir / "logs").mkdir()
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
         self._tmp.cleanup()
 
+    def _write_log(self, readings) -> Path:
+        path = self.run_dir / "logs" / "subject.log"
+        lines = "".join(f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in readings)
+        path.write_text(lines, encoding="utf-8")
+        return path
+
     def test_real_contract_800_limit_passes_at_651(self) -> None:
-        vc.subprocess.run = _fake_subprocess_run_factory(resource_readings=[300, 651, 400])
-        result = vc.run_rd73_resource_evidence(
-            subject_binary=self.subject_binary, model=self.model,
-            hip_path=Path("H:/hip"), workdir=self.run_dir, run_dir=self.run_dir,
-        )
+        subject_log = self._write_log([300, 651, 400])
+        result = vc.evaluate_rd73_resource_evidence(subject_log_path=subject_log, run_dir=self.run_dir)
         self.assertEqual(result["result"].subject_value, 651.0)
 
     def test_no_readings_fails_closed(self) -> None:
-        vc.subprocess.run = _fake_subprocess_run_factory(resource_readings=[])
+        subject_log = self._write_log([])
         with self.assertRaises(vc.PatchCampaignError):
-            vc.run_rd73_resource_evidence(
-                subject_binary=self.subject_binary, model=self.model,
-                hip_path=Path("H:/hip"), workdir=self.run_dir, run_dir=self.run_dir,
-            )
+            vc.evaluate_rd73_resource_evidence(subject_log_path=subject_log, run_dir=self.run_dir)
 
 
 class EvaluateRd73MtpCorrectnessTests(unittest.TestCase):
@@ -213,7 +266,15 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         ]
         return control_requests, subject_requests
 
-    def _fake_mtp_lane(self, *, control_content, subject_content, control_tps, subject_tps):
+    def _fake_mtp_lane(
+        self, *, control_content, subject_content, control_tps, subject_tps,
+        resource_readings=(651,), activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
+    ):
+        # User redirect (2026-09-01): activation/resource evidence is now
+        # read from the MTP lane's own server log files, so this fake
+        # writes real log files with real content for
+        # evaluate_rd73_activation_evidence()/evaluate_rd73_resource_evidence()
+        # to read, rather than faking a separate subprocess probe.
         control_requests, subject_requests = self._mtp_records(
             control_content, subject_content, control_tps, subject_tps,
         )
@@ -222,24 +283,41 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             geometric_effect_pct=100.0 * (sum(subject_tps) / len(subject_tps) - sum(control_tps) / len(control_tps))
             / (sum(control_tps) / len(control_tps)),
         )
+        logs_dir = self.run_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        control_log_path = logs_dir / "rd73-mtp-control-server.log"
+        subject_log_path = logs_dir / "rd73-mtp-subject-server.log"
+        control_log_path.write_text("nothing\n", encoding="utf-8")
+        resource_lines = "".join(f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in resource_readings)
+        subject_marker_line = f"{activation_marker}\n" if activation_marker else ""
+        subject_log_path.write_text(subject_marker_line + resource_lines, encoding="utf-8")
         return {
             "effect": effect, "artifact": {"path": "artifacts/fake-mtp.json", "sha256": "x"},
             "stats": {}, "control_requests": control_requests, "subject_requests": subject_requests,
+            "control_log_path": control_log_path, "subject_log_path": subject_log_path,
         }
 
-    def _run_qualification(self, mtp_result, resource_readings, activation_marker):
-        vc.subprocess.run = _fake_subprocess_run_factory(
-            resource_readings=resource_readings, activation_marker=activation_marker,
+    def _fake_decode_control(self, *, control_tps, subject_tps):
+        effect = ec.LaneEffect(
+            role="control", metric="tg128",
+            geometric_effect_pct=100.0 * (subject_tps - control_tps) / control_tps,
         )
+        return {"effect": effect, "artifact": {"path": "artifacts/fake-decode.json", "sha256": "x"}, "stats": {}}
+
+    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0)):
         with mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
-            return vc.run_rd73_contract_qualification(
-                contract=self.contract, control_binary=self.control_binary,
-                subject_binary=self.subject_binary,
-                control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
-                model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-                corpus_path=self.corpus_path, hip_path=Path("H:/hip"),
-                workdir=self.run_dir, run_dir=self.run_dir, decode_pairs=2,
-            )
+            with mock.patch.object(
+                vc, "run_rd73_decode_control_lane",
+                return_value=self._fake_decode_control(
+                    control_tps=decode_control_tps[0], subject_tps=decode_control_tps[1],
+                ),
+            ):
+                return vc.run_rd73_contract_qualification(
+                    contract=self.contract,
+                    control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
+                    model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
+                    corpus_path=self.corpus_path, run_dir=self.run_dir, decode_pairs=2,
+                )
 
     def test_all_green_qualifies(self) -> None:
         # +3.1% gain (>= 3.0 required), decode control regression handled
@@ -249,9 +327,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello", "world"], subject_content=["hello", "world"],
             control_tps=[100.0, 100.0], subject_tps=[103.1, 103.1],
         )
-        result = self._run_qualification(
-            mtp_result, resource_readings=[651], activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-        )
+        result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "pass", result["promotion"])
 
     def test_gain_below_threshold_fails(self) -> None:
@@ -259,19 +335,15 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["hello"],
             control_tps=[100.0], subject_tps=[101.9],  # +1.9%, below 3.0
         )
-        result = self._run_qualification(
-            mtp_result, resource_readings=[651], activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-        )
+        result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "fail")
 
     def test_resource_over_limit_fails(self) -> None:
         mtp_result = self._fake_mtp_lane(
             control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1],
+            control_tps=[100.0], subject_tps=[103.1], resource_readings=(801,),
         )
-        result = self._run_qualification(
-            mtp_result, resource_readings=[801], activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-        )
+        result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "fail")
         self.assertFalse(result["resource_gate"]["passed"])
 
@@ -280,18 +352,16 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["goodbye"],
             control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(
-            mtp_result, resource_readings=[651], activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-        )
+        result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "fail")
         self.assertFalse(result["correctness_gate"]["passed"])
 
     def test_missing_activation_evidence_invalidates(self) -> None:
         mtp_result = self._fake_mtp_lane(
             control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1],
+            control_tps=[100.0], subject_tps=[103.1], activation_marker=None,
         )
-        result = self._run_qualification(mtp_result, resource_readings=[651], activation_marker=None)
+        result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "invalid")
 
     def test_no_cv_gate_required(self) -> None:
@@ -302,9 +372,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["hello"],
             control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(
-            mtp_result, resource_readings=[651], activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-        )
+        result = self._run_qualification(mtp_result)
         self.assertNotIn("cv", json.dumps(result["promotion"]).lower())
         self.assertEqual(result["promotion"]["status"], "pass")
 

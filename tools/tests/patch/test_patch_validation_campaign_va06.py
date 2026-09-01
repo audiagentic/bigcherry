@@ -90,81 +90,60 @@ class PeakRd73ResourceResultTests(unittest.TestCase):
         self.assertIsNone(result.control_value)
 
 
-class RunRd73ActivationEvidenceTests(unittest.TestCase):
+class EvaluateRd73ActivationEvidenceTests(unittest.TestCase):
+    """User redirect (2026-09-01): activation evidence is now read from
+    the MTP server lane's own control/subject log files (always
+    BIGCHERRY_PATCH_TRACE=1) rather than launched via a separate
+    llama-bench probe -- llama-bench itself proved unworkable for RD73's
+    real 27B/dual-GPU config on real hardware."""
+
     def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
-        self.workdir = Path(self._tmp.name)
-        self.control_bin = self.workdir / "control_bin"
-        self.control_bin.write_text("", encoding="utf-8")
-        self.subject_bin = self.workdir / "subject_bin"
-        self.subject_bin.write_text("", encoding="utf-8")
-        self.model = self.workdir / "model.gguf"
-        self.model.write_text("", encoding="utf-8")
+        self.run_dir = Path(self._tmp.name)
+        (self.run_dir / "logs").mkdir()
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
         self._tmp.cleanup()
 
-    def _fake_run(self, stdout_for_binary):
-        def fake_run(command, **kwargs):
-            class _Result:
-                pass
-
-            result = _Result()
-            result.returncode = 0
-            result.stdout = stdout_for_binary(command[0])
-            result.stderr = "ggml_cuda_init: found 1 ROCm devices\n"
-            return result
-
-        vc.subprocess.run = fake_run
+    def _write_log(self, name: str, text: str) -> Path:
+        path = self.run_dir / "logs" / name
+        path.write_text(text, encoding="utf-8")
+        return path
 
     def test_subject_hit_control_miss(self) -> None:
         marker = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key"
-        self._fake_run(lambda binary: f"{marker}\n" if "subject" in binary else "nothing\n")
-        result = vc.run_rd73_activation_evidence(
-            marker_regex=marker, control_binary=self.control_bin,
-            subject_binary=self.subject_bin, model=self.model,
-            hip_path=Path("H:/hip"), workdir=self.workdir, run_dir=self.workdir,
+        subject_log = self._write_log("subject.log", f"{marker}\n")
+        control_log = self._write_log("control.log", "nothing\n")
+        result = vc.evaluate_rd73_activation_evidence(
+            marker_regex=marker, control_log_path=control_log, subject_log_path=subject_log,
+            run_dir=self.run_dir,
         )
         self.assertTrue(result["subject_hit"])
         self.assertFalse(result["control_hit"])
 
     def test_neither_hit(self) -> None:
         marker = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key"
-        self._fake_run(lambda binary: "nothing\n")
-        result = vc.run_rd73_activation_evidence(
-            marker_regex=marker, control_binary=self.control_bin,
-            subject_binary=self.subject_bin, model=self.model,
-            hip_path=Path("H:/hip"), workdir=self.workdir, run_dir=self.workdir,
+        subject_log = self._write_log("subject.log", "nothing\n")
+        control_log = self._write_log("control.log", "nothing\n")
+        result = vc.evaluate_rd73_activation_evidence(
+            marker_regex=marker, control_log_path=control_log, subject_log_path=subject_log,
+            run_dir=self.run_dir,
         )
         self.assertFalse(result["subject_hit"])
         self.assertFalse(result["control_hit"])
 
-    def test_command_includes_verbose_and_ngl(self) -> None:
-        # Confirms this real producer reuses the fixed _run_one_trace_probe
-        # (VA21's --verbose/-ngl fixes), not a bespoke re-implementation.
-        seen_commands = []
-
-        def fake_run(command, **kwargs):
-            seen_commands.append(command)
-
-            class _Result:
-                returncode = 0
-                stdout = "ggml_cuda_init: found 1 ROCm devices\n"
-                stderr = ""
-
-            return _Result()
-
-        vc.subprocess.run = fake_run
-        vc.run_rd73_activation_evidence(
-            marker_regex="x", control_binary=self.control_bin,
-            subject_binary=self.subject_bin, model=self.model,
-            hip_path=Path("H:/hip"), workdir=self.workdir, run_dir=self.workdir,
+    def test_artifact_bound_with_relative_log_paths(self) -> None:
+        marker = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key"
+        subject_log = self._write_log("subject.log", f"{marker}\n")
+        control_log = self._write_log("control.log", "nothing\n")
+        result = vc.evaluate_rd73_activation_evidence(
+            marker_regex=marker, control_log_path=control_log, subject_log_path=subject_log,
+            run_dir=self.run_dir,
         )
-        for command in seen_commands:
-            self.assertIn("--verbose", command)
-            self.assertIn("-ngl", command)
+        self.assertEqual(result["subject_log_path"], "logs/subject.log")
+        self.assertEqual(result["control_log_path"], "logs/control.log")
+        artifact_path = self.run_dir / result["artifact"]["path"]
+        self.assertTrue(artifact_path.is_file())
 
 
 if __name__ == "__main__":
