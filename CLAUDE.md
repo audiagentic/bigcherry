@@ -122,3 +122,27 @@ Never use `git stash` — this is a shared, multi-agent working tree and a stash
 can silently collide with another session's live edits. If work needs to be set
 aside, split it into its own deliberate check-in group or leave it uncommitted.
 <!-- ag:managed:end -->
+
+## No legacy, no backward compatibility -- always migrate up
+
+This project does not carry backward-compatibility shims, legacy fallback
+paths, or default-preserving parameters added "so old callers keep working."
+When a function, schema, or interface changes, migrate every caller to the
+new shape in the same change -- do not leave the old behavior reachable
+behind a default value, an optional flag, or an untouched code path.
+
+This applies at every layer: production code, patches, tooling, and tests.
+A new required field replaces an old one; it does not get bolted on beside
+it with `= None` for compatibility. A changed function signature updates
+every call site; it does not grow an optional parameter whose absence
+silently reproduces the old behavior. If a real external consumer outside
+this repo depends on an old interface, that is a explicit, named exception
+to be called out and justified, not the default assumption.
+
+Rationale: this is a fast-moving, actively-developed research/tuning
+project with a small number of internal call sites per module, not a
+public API with unknown external consumers. Preserving old behavior by
+default hides real migration debt behind "it still works," and multiplies
+the number of code paths that need to be reasoned about and tested. Always
+prefer migrating everything up to the new shape over keeping the old one
+alive alongside it.
