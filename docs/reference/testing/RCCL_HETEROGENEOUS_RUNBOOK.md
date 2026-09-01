@@ -50,7 +50,23 @@ Do not spend a new campaign rediscovering them.
 The following rules apply throughout this runbook:
 
 ```text
-1. Production patch 1225 stays enabled.
+1. RCCL admission remains fail-closed by a shared, reusable predicate
+   consulted by EVERY ncclCommInitAll() entry point in the tree --
+   not just patch 1225's original call site. Patch 1225 as currently
+   written (docs/planning/active/gpu-collectives/GP02.md, rewritten
+   2026-09-02) is a temporary, over-conservative implementation of
+   this invariant: its real predicate is raw GPU-architecture
+   inequality, which would incorrectly reject the {0,2}/{1,2}
+   XTX+R9700 topology this runbook has since confirmed safe (device 3
+   specifically, not architecture mismatch in general, is the actual
+   hazard -- see HI138 below). 1225 also only protects the ORIGINAL
+   comm_init_nccl() call site -- it does nothing for any other
+   ncclCommInitAll() a patch brings up independently (confirmed: both
+   the retired 1243 and the current 0840_hybrid_allreduce_dispatch
+   each do exactly this with zero admission check). GP02 owns
+   replacing 1225's guard with the shared predicate described above;
+   until GP02 lands, treat 1225 as insufficient by itself and do not
+   assume its presence protects anything beyond its one call site.
 
 2. No unqualified heterogeneous communicator may enter RCCL
    through the production path.
@@ -1154,6 +1170,89 @@ installs in this finding). GP01 (Phase 2 execution) is blocked pending
 GP06 pinning which RCCL version bigcherry's default build should actually
 ship for the RCCL-viable subset.
 
-Full evidence: GP06's plan notes (3-way jsonl comparison,
-`/tmp/rccl-qualify-{7.2.4,7.14,10.0}.jsonl` on Brutus, not yet copied to a
-durable `artifacts/` location).
+Full evidence: `artifacts/rccl-heterogeneous/gp06-version-comparison/` on
+Brutus (environment.txt + `rccl-qualify-{7.2.4,7.14,10.0}.jsonl` +
+per-case stdout/stderr under `cases/rccl-qualify-{7.2.4,7.14,10.0}/` --
+preserved from `/tmp` 2026-09-02, see GP06's own notes).
+
+---
+
+# Tooling: where the qualification tools live and how to run them
+
+This section describes tools that exist and are checked in today. It is
+kept separate from the procedural phases above (which describe the
+governing method, independent of any one tool's current CLI surface).
+
+## `tools/bigcherry/profiling/rccl_qualify.py`
+
+One crash-isolated RCCL Tests case, run in its own subprocess so a GPU
+fault or hard abort cannot take down a sibling case or this process.
+Diagnostic tooling only -- never touches `GGML_HIP_REDUCE_PLAN`, patch
+1225, or any other production selection state. Exposes `RcclTopology`,
+`RcclCase`, `RcclCaseResult`, and `run_case()` / `append_result()` as a
+library API; the 10-state classification (`pass` / `wrong_result` /
+`unsupported` / `init_failure` / `launch_failure` / `gpu_fault` /
+`device_lost` / `signal` / `timeout` / `harness_failure`) matches this
+runbook's P1.6/P2.4 required classifications exactly.
+
+**Current known gap (tracked as GP07,
+`docs/planning/active/gpu-collectives/GP07.md`):** case/result identity
+does not yet carry an `RCCLCompatibilityRevision` (see P2.1 above), and
+repeated-rep artifacts are not yet uniquely named -- a 20-rep qualification
+run currently overwrites its own per-attempt stdout/stderr/rccl.json. Do
+not treat a `rccl_qualify.py` result as durable qualification evidence
+across RCCL versions until GP07 lands; always record which exact RCCL
+build produced a result by hand until then (see GP06's addendum above for
+why this matters -- RCCL 2.30.4 silently regresses a topology 1.0.70204
+qualifies cleanly).
+
+## `tools/bigcherry/profiling/rccl_qualify_campaign.py`
+
+Drives `rccl_qualify.run_case()` across a matrix of topologies x
+algorithms x protocols. As checked in today:
+
+```bash
+python -m bigcherry.profiling.rccl_qualify_campaign \
+    --binary /path/to/rccl-tests/build/all_reduce_perf \
+    --output-dir artifacts/rccl-heterogeneous/<run-id>
+```
+
+Runs the six-cell Ring/Tree x Simple/LL/LL128 matrix at a fixed 512KiB
+size against a hardcoded topology list (`{0,2}`, `{1,2}`, `{0,1,2}` --
+XTX+R9700 pairs/triple only). Writes `cases.jsonl` plus per-case
+stdout/stderr/rccl.json under `--output-dir`.
+
+**Current known gap (also GP07):** no `{0,1}` positive control, no `{0,3}`
+device-3 negative control, no repetitions, no RCCL-compatibility argument,
+no post-fault control-recheck, and no way to vary element count or
+topology from the CLI -- every qualification campaign broader than the
+committed six-cell matrix (e.g. GP06's real 3-way RCCL-version comparison)
+has so far been run through an uncommitted, ad-hoc variant of this script
+rather than the checked-in one. GP07 exists specifically to close that gap
+so future campaigns don't repeat it -- extend this file in place rather
+than writing another one-off driver.
+
+## Planned: validate vs. optimize diagnostics package (GP08)
+
+Two separate tools, sharing one identity model, once GP07/GP08 land:
+
+- **VALIDATE** (`tools/bigcherry/profiling/`, this section): crash-safety
+  and correctness qualification for one exact (RCCL revision, topology,
+  candidate) combination. Produces a durable PASS/FAIL artifact. This is
+  the only place RCCL admissibility is ever decided.
+- **OPTIMIZE** (planned: `tools/bigcherry/campaign/collective_benchmark.py`):
+  real end-to-end performance comparison (pp/tg t/s, MTP completion
+  throughput) across provider arms (`rccl` / `internal` / `hybrid` /
+  `meta`) for a topology that already has a PASS qualification artifact.
+  Refuses to run an RCCL-requiring arm against an unqualified topology --
+  never silently falls back to a different provider. Reuses
+  `tools/bigcherry/campaign/benchmark.py`'s existing paired-schedule
+  statistics machinery rather than a new one-off runner; this is the
+  durable form of the manual A/B/C methodology GP03 used informally to
+  validate patch 1243's real hardware numbers.
+
+Do not build a single tool with a `--mode validate|optimize` flag: the two
+sides have different safety contracts (VALIDATE deliberately runs
+crash-prone cases in isolation; OPTIMIZE must never do that), and
+conflating them risks an optimization run silently exercising an
+unqualified, potentially crash-prone topology.
