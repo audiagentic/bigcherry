@@ -9,7 +9,7 @@ that fails closed for >1 bound contracts; requirements become
 (contract_id, capability) pairs, independently proven per contract.
 
 The real authoritative multi-contract fixture on this branch is
-1233_rd050607_rdna4_wmma_fa_q6k_mmq (patch 1203), which binds
+1203_rd050607_rdna4_wmma_fa_q6k_mmq, which binds
 RD05-WMMA-FA-CORRECTNESS-BARRIERS, RD06-RDNA4-WMMA-FA-CONFIG, and
 RD07-Q6K-MMQ-PREFILL-FOLD -- used here as the real descriptor/contract-set
 fixture (it has no validation.toml yet, so it is NOT used as an
