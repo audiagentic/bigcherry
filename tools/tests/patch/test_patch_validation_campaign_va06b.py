@@ -164,6 +164,12 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
             self.assertNotIn("--spec-draft-v", extra_args)
             self.assertIn("-sm", extra_args)
             self.assertEqual(extra_args[extra_args.index("-sm") + 1], "tensor")
+            # Real hardware finding: llama.cpp's automatic device-memory
+            # fit feature (default on) raises "llama_params_fit is not
+            # implemented for SPLIT_MODE_TENSOR" and aborts -- must be
+            # explicitly disabled alongside -sm tensor.
+            self.assertIn("--fit", extra_args)
+            self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
 
 
 if __name__ == "__main__":
