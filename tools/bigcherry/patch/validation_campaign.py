@@ -1363,7 +1363,7 @@ def peak_rd73_resource_result(
 def run_rd73_activation_evidence(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
+    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06: RD73's real subject-hit/control-miss activation probe.
     Mirrors RD08's run_rd08_contract_trigger() (real control-vs-subject
@@ -1468,11 +1468,15 @@ def run_rd73_mtp_server_lane(
     # their defaults too). -sm tensor is REQUIRED for this 27B model on
     # 2x gfx1100 -- the default -sm layer understates throughput by
     # roughly 2-10x (a real, previously-confirmed production finding).
-    # --fit off is ALSO required alongside -sm tensor: llama.cpp's
-    # automatic device-memory-fit feature (default on) raises
-    # "llama_params_fit is not implemented for SPLIT_MODE_TENSOR" and
-    # aborts (common/fit.cpp) -- a real hardware crash found running
-    # this exact lane on Brutus, not a guess.
+    # --fit off is ALSO required alongside -sm tensor for llama-SERVER
+    # specifically: llama.cpp's automatic device-memory-fit feature
+    # (default on) raises "llama_params_fit is not implemented for
+    # SPLIT_MODE_TENSOR" and aborts (common/fit.cpp) -- a real hardware
+    # crash found running this exact lane on Brutus. llama-BENCH (used
+    # by RD73's other lanes) does not register this flag at all --
+    # passing --fit to it is itself a hard error ("invalid parameter for
+    # argument: --fit"), also found on real hardware -- so it must never
+    # be added to those lanes' extra_flags.
     server_args = (
         "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
         "--spec-type", "draft-mtp", "--spec-draft-n-max", str(spec_draft_n_max),
@@ -1563,7 +1567,7 @@ def run_rd73_mtp_server_lane(
 def run_rd73_decode_control_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
     run_dir: Path, pairs: int = 3,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
+    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06 next slice: RD73's decode control lane -- mirrors RD08's real
     paired llama-bench subprocess path (rd08_validation_lane_commands() /
@@ -1623,7 +1627,7 @@ def run_rd73_decode_control_lane(
 def run_rd73_resource_evidence(
     *, subject_binary: Path, model: Path, hip_path: Path, workdir: Path, run_dir: Path,
     bench_prompt: int = 0, bench_gen: int = 128,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
+    extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06 next slice: RD73's real graph-cache-entries resource-evidence
     producer. Subject-only (GPT's phase-1 scoping: the contract's
