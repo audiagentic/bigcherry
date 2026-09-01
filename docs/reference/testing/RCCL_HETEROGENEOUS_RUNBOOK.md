@@ -1055,3 +1055,58 @@ into this Outcome B record.
 Full evidence artifacts: `artifacts/rccl-heterogeneous/rq04-01/` on Brutus
 (environment capture, both RCCL builds, rccl-tests builds, all case
 JSON/stdout logs, extracted/verified AMDGPU kernel metadata).
+
+## Addendum (2026-09-02): GP03 size-adaptive dispatch reconfirms the boundary at the production integration layer
+
+The above closure was established with RCCL Tests (`all_reduce_perf`) directly.
+This addendum reconfirms the identical device-3 boundary one layer up, inside
+BigCherry's actual production reduction dispatch path (`GP03`,
+`docs/planning/active/gpu-collectives/GP03.md`) -- i.e. real `llama-bench`
+`-sm tensor` runs through `ggml_backend_cuda_comm_*`, not the RCCL Tests
+harness. No new source-level finding; this is an independent confirmation at
+a different call site plus one new negative result specific to GP03's own
+code path.
+
+**Confirmed safe (RCCL-viable subset, no device 3):**
+
+| topology | pairing | result | pp512 t/s | tg32 t/s |
+|---|---|---|---|---|
+| `{0,1}` | XTX + XTX (homogeneous, gfx1100+gfx1100) | clean | 1502.49 | 37.23 (n=128 run) |
+| `{0,2}` | XTX + R9700 (gfx1100+gfx1201) | clean | 1205.82 | 29.58 |
+| `{1,2}` | XTX + R9700 (gfx1100+gfx1201) | clean | 1283.78 | 30.46 |
+
+All three ran GP03's real size-adaptive dispatch end-to-end: small (tg-sized,
+~20KB) reductions stayed on the internal pinned-memory path, large (pp-sized,
+~10MB) reductions correctly routed to a secondary `ncclCommInitAll()`
+communicator and completed the real collective with no crash and no
+correctness issue observed.
+
+**New negative result -- device 3 crashes GP03's dispatch, not just raw
+RCCL Tests:**
+
+`{0,3}` (XTX + 6900XT) was run through the same GP03 binary
+(`GGML_CUDA_ALLREDUCE=internal`, real `llama-bench -sm tensor` pp512).
+GP03's secondary `ncclCommInitAll()` call is a **best-effort init with no
+device-3 awareness** -- it does not consult patch 1225's guard or any
+topology qualification list. On `{0,3}` it reports `rc=0` (success) because
+`ncclCommInitAll` only builds communicator state and does not exercise the
+PCIe-atomics hostcall path. The dispatch layer's own admissibility check
+(`comms.size() == backends.size()`) therefore also reports "ready," and the
+first real pp-sized reduction is routed to RCCL and hard-aborts inside
+`ggml_backend_cuda_comm_allreduce_nccl` (`GGML_ASSERT`/`ggml_cuda_error`) --
+same root cause as the original HI138 finding (device 3's chipset-routed PCH
+root port lacks PCIe AtomicOps completion capability), reached through
+GP03's own code path this time, with no fallback: the process aborts rather
+than degrading to the internal/META path.
+
+**Implication for GP03 (recorded as a hard blocker on GP03's own plan
+item):** GP03 must not ship, even experimentally, without either (a)
+consuming patch 1225 / GP01's qualified-topology list before ever attempting
+its secondary `ncclCommInitAll()`, refusing that call outright whenever
+device 3 is in the active device set, or (b) an equivalent topology check
+inlined into GP03 itself. `ncclCommInitAll` returning success is init-time
+evidence only -- Safety invariant 7 above ("crash-freedom alone is not
+correctness") generalizes here to "communicator-init success alone is not
+runtime admissibility": the same "looks fine at init, faults on first real
+collective" pattern applies to any caller of RCCL on this hardware, not only
+RCCL Tests.
