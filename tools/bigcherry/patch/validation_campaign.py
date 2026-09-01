@@ -1289,6 +1289,100 @@ def build_contract_evidence_for_persistence(
     return contracts, verdicts
 
 
+_RD73_RESOURCE_PATTERN = re.compile(r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)")
+
+
+def parse_rd73_resource_telemetry(text: str) -> tuple[int, ...]:
+    """VA06: pure parser for RD73's opt-in graph-cache-entry telemetry
+    (BIGCHERRY_RD73_RESOURCE_TRACE=1, common.cuh's cuda_graph() insertion
+    site) -- extracts every real ``graph_cache_entries=N`` reading from a
+    process's combined stdout/stderr, in emission order. Returns an empty
+    tuple when the patch never emitted (e.g. the control binary, which
+    has no RD73 telemetry code at all)."""
+    return tuple(int(match) for match in _RD73_RESOURCE_PATTERN.findall(text))
+
+
+def peak_rd73_resource_result(
+    subject_readings: "tuple[int, ...] | list[int]",
+    control_readings: "tuple[int, ...] | list[int] | None" = None,
+) -> "experiment_contract.ResourceResult":
+    """VA06: reduce raw telemetry readings into the real
+    ``ResourceResult(metric="graph_cache_entries", unit="count", ...)``
+    evaluate_resource_gate() checks against. Fails closed (raises) on
+    missing/malformed evidence -- an empty subject reading set means the
+    real telemetry was never observed at all, which must never silently
+    read as a zero/passing measurement."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    if not subject_readings:
+        raise PatchCampaignError(
+            "rd73 resource evidence: no graph_cache_entries readings observed -- the "
+            "subject binary's telemetry (BIGCHERRY_RD73_RESOURCE_TRACE=1) never emitted"
+        )
+    if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in subject_readings):
+        raise PatchCampaignError(
+            f"rd73 resource evidence: malformed subject reading(s) in {subject_readings!r}"
+        )
+    control_value = None
+    if control_readings:
+        if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in control_readings):
+            raise PatchCampaignError(
+                f"rd73 resource evidence: malformed control reading(s) in {control_readings!r}"
+            )
+        control_value = float(max(control_readings))
+    return experiment_contract.ResourceResult(
+        metric="graph_cache_entries", unit="count",
+        subject_value=float(max(subject_readings)), control_value=control_value,
+    )
+
+
+def run_rd73_activation_evidence(
+    *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
+    hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
+) -> dict[str, object]:
+    """VA06: RD73's real subject-hit/control-miss activation probe.
+    Mirrors RD08's run_rd08_contract_trigger() (real control-vs-subject
+    binaries, not the generic tune-binary/fusion-disabled negative
+    control -- RD73's marker is graph-cache-key related, not fusion
+    related, so that generic negative control would be semantically
+    wrong here for the same reason RD08's own docstring already
+    establishes). No lanes/correctness/promotion composition yet -- this
+    producer proves activation evidence only, per VA06's phase scoping."""
+    pattern = re.compile(marker_regex)
+    subject_log = _run_one_trace_probe(
+        name="rd73-activation-subject", binary=subject_binary, model=model, hip_path=hip_path,
+        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+    )
+    control_log = _run_one_trace_probe(
+        name="rd73-activation-control", binary=control_binary, model=model, hip_path=hip_path,
+        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+    )
+    subject_hit = pattern.search(subject_log) is not None
+    control_hit = pattern.search(control_log) is not None
+    subject_log_path = "logs/activation-rd73-activation-subject.log"
+    control_log_path = "logs/activation-rd73-activation-control.log"
+    doc = {
+        "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
+        "positive": {
+            "artifact": {
+                "path": subject_log_path,
+                "sha256": hashlib.sha256((run_dir / subject_log_path).read_bytes()).hexdigest(),
+            },
+        },
+        "control": {
+            "artifact": {
+                "path": control_log_path,
+                "sha256": hashlib.sha256((run_dir / control_log_path).read_bytes()).hexdigest(),
+            },
+        },
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd73-activation.json", doc)
+    return {
+        "subject_hit": subject_hit, "control_hit": control_hit, "artifact": artifact_ref,
+        "subject_log_path": subject_log_path, "control_log_path": control_log_path,
+    }
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 

@@ -146,6 +146,22 @@ _KEY_NEW = """static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) 
     // buffer, so two tensors with the same logical name can carry
     // different stale tail bytes there -- hashing the whole buffer would
     // reintroduce the exact key instability this patch exists to remove.
+
+    // bigcherry: HI83 activation-evidence instrumentation, not part of
+    // the ported fork change. Once-per-process, opt-in via
+    // BIGCHERRY_PATCH_TRACE (same pattern as RD08/RD12's markers).
+    // GGML_LOG_WARN, not INFO: llama-bench's own --verbose gate on top
+    // of ggml's log level filters both by default, but the trace-probe
+    // path this marker is read through always requests --verbose (VA21
+    // real-hardware finding) -- WARN still matches HI14's own convention
+    // for opt-in activation evidence at this project's default verbosity.
+    if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+        static std::atomic_flag bigcherry_rd73_logged = ATOMIC_FLAG_INIT;
+        if (!bigcherry_rd73_logged.test_and_set(std::memory_order_relaxed)) {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\\n");
+        }
+    }
+
     uint64_t h = 1469598103934665603ULL; // FNV-1a offset basis (fork's literal)
     auto mix = [&h](const void * data, size_t n) {
         const unsigned char * p = (const unsigned char *) data;
@@ -195,4 +211,54 @@ PATCH = FilePatch(
     ),
 )
 
-PATCHES = [PATCH]
+# VA06: RD73's own resource-cost claim (increased graph-cache key
+# cardinality, since a stable fingerprint no longer collapses distinct
+# shapes onto a shared allocation-dependent pointer -- VA06's real
+# characterization measured 386 -> 651 entries) needs a real, repeatable
+# machine-readable evidence producer, not the earlier one-off temporary
+# instrumentation. Instruments the SAME real insertion site
+# (cuda_graph()'s cuda_graphs.emplace() in common.cuh) characterized
+# then, opt-in and machine-parseable this time.
+_RESOURCE_OLD = """        auto it = cuda_graphs.find(first_node_ptr);
+        if (it == cuda_graphs.end()) {
+            it = cuda_graphs.emplace(first_node_ptr, std::make_unique<ggml_cuda_graph>()).first;
+        }"""
+
+_RESOURCE_NEW = """        auto it = cuda_graphs.find(first_node_ptr);
+        if (it == cuda_graphs.end()) {
+            it = cuda_graphs.emplace(first_node_ptr, std::make_unique<ggml_cuda_graph>()).first;
+            // bigcherry (RD73/VA06): opt-in, machine-readable graph-cache
+            // resource-cost telemetry -- NOT part of the ported fork
+            // change. Emits on every new-entry insertion (not once) so an
+            // offline reducer can take the peak over a real workload;
+            // gated separately from BIGCHERRY_PATCH_TRACE (the activation
+            // marker above) since this is a resource measurement, not an
+            // activation proof, and a caller may want either independently.
+            if (getenv("BIGCHERRY_RD73_RESOURCE_TRACE") != nullptr) {
+                GGML_LOG_WARN("BIGCHERRY_RD73_RESOURCE graph_cache_entries=%zu\\n", cuda_graphs.size());
+            }
+        }"""
+
+RESOURCE_PATCH = FilePatch(
+    path="ggml/src/ggml-cuda/common.cuh",
+    description="Opt-in, machine-readable graph-cache resource-cost "
+                "telemetry at the real cuda_graphs insertion site (RD73 "
+                "/ VA06)",
+    edits=(
+        Edit(
+            id="rd73-resource-telemetry",
+            anchor=re.escape(_RESOURCE_OLD),
+            rationale="cuda_graph(): emit the real cuda_graphs.size() on "
+                      "every new-entry insertion, opt-in via "
+                      "BIGCHERRY_RD73_RESOURCE_TRACE, so a real executor "
+                      "can measure the contract's resource_limits.graph_"
+                      "cache_entries claim without one-off temporary "
+                      "instrumentation",
+            mode="replace",
+            text=_RESOURCE_NEW,
+            guard=r"BIGCHERRY_RD73_RESOURCE_TRACE",
+        ),
+    ),
+)
+
+PATCHES = [PATCH, RESOURCE_PATCH]
