@@ -69,23 +69,40 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
 ```
 
 `--run-rd73-contract` executes RD73's real paired MTP-verify performance
-lane over a real llama-server HTTP harness
-(`run_rd73_mtp_server_lane()`), activation and graph-cache resource
-evidence read from that SAME lane's own control/subject server log
-files (`evaluate_rd73_activation_evidence()`,
-`evaluate_rd73_resource_evidence()` -- no second server/model load),
-decode control lane over a second real llama-server pair driven via the
-documented Brutus bench runner (`run_rd73_decode_control_lane()` +
-`run_bench_runner_server_bench()`, `docs/reference/testing/TEST.md`'s
-"Server benchmark (Brutus bench runner)" section), and bit-identical
-correctness (`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's
-own retained request/response pairs), then composes them via
+lane over a real llama-server HTTP harness (`run_rd73_mtp_server_lane()`),
+activation evidence read from that SAME lane's own control/subject
+server log files (`evaluate_rd73_activation_evidence()` -- no second
+server/model load), a dedicated subject-only graph-cache resource burst
+session (`run_rd73_resource_burst_session()`), decode control lane over
+a second real llama-server pair driven via the documented Brutus bench
+runner (`run_rd73_decode_control_lane()` + `run_bench_runner_server_bench()`,
+`docs/reference/testing/TEST.md`'s "Server benchmark (Brutus bench
+runner)" section), and bit-identical correctness
+(`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's own retained
+request/response pairs), then composes them via
 `run_rd73_contract_qualification()` into a real `evaluate_promotion_gate()`
 verdict (PASS/FAIL/INVALID). Real llama-bench is never used anywhere in
 this path -- it proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor
 config on real Brutus hardware (repeated crashes: OOM under resource
 contention with production traffic, and a hard argument-parse error for
 `--fit`, which llama-bench does not even register).
+
+**Real hardware constraint (VA06):** control and subject llama-server
+processes can never run concurrently for this 27B model -- each needs
+~13GB/GPU under `-sm tensor` split, and two copies exceed the 24.5GB/GPU
+Brutus dual-XTX cards (a real `cudaMalloc` out-of-memory abort, confirmed
+on hardware). The MTP performance lane and decode control lane both
+launch one fresh server per single measured/warmup request, alternating
+control/subject arms sequentially -- this preserves the alternating-order
+discipline this project's own prior production benchmarking found
+necessary (see "Historical evidence is not current" above), at the cost
+of a full server/model reload per request. Because a fresh process
+resets the in-memory graph cache every restart, the resource lane
+cannot reuse these same servers -- `run_rd73_resource_burst_session()`
+launches one long-lived subject-only server (no concurrent control, so
+no VRAM conflict) and drives a real repeated-shape request burst against
+it, matching this contract's own documented characterization
+methodology.
 
 **Known gap (VA06):** unlike `--run-rd08-contract`, this does not yet
 rebind the generic adapter's own `validation.toml` correctness/

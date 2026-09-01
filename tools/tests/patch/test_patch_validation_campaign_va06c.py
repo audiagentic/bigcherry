@@ -304,7 +304,13 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         )
         return {"effect": effect, "artifact": {"path": "artifacts/fake-decode.json", "sha256": "x"}, "stats": {}}
 
-    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0)):
+    def _fake_resource_result(self, readings):
+        result = ec.ResourceResult(
+            metric="graph_cache_entries", unit="count", subject_value=float(max(readings)),
+        )
+        return {"result": result, "artifact": {"path": "artifacts/fake-resource.json", "sha256": "x"}, "readings": readings}
+
+    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0), resource_readings=(651,)):
         with mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
             with mock.patch.object(
                 vc, "run_rd73_decode_control_lane",
@@ -312,12 +318,16 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
                     control_tps=decode_control_tps[0], subject_tps=decode_control_tps[1],
                 ),
             ):
-                return vc.run_rd73_contract_qualification(
-                    contract=self.contract,
-                    control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
-                    model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-                    corpus_path=self.corpus_path, run_dir=self.run_dir, decode_pairs=2,
-                )
+                with mock.patch.object(
+                    vc, "run_rd73_resource_burst_session",
+                    return_value=self._fake_resource_result(resource_readings),
+                ):
+                    return vc.run_rd73_contract_qualification(
+                        contract=self.contract,
+                        control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
+                        model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
+                        corpus_path=self.corpus_path, run_dir=self.run_dir, decode_pairs=2,
+                    )
 
     def test_all_green_qualifies(self) -> None:
         # +3.1% gain (>= 3.0 required), decode control regression handled
@@ -341,9 +351,9 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
     def test_resource_over_limit_fails(self) -> None:
         mtp_result = self._fake_mtp_lane(
             control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1], resource_readings=(801,),
+            control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(mtp_result)
+        result = self._run_qualification(mtp_result, resource_readings=(801,))
         self.assertEqual(result["promotion"]["status"], "fail")
         self.assertFalse(result["resource_gate"]["passed"])
 

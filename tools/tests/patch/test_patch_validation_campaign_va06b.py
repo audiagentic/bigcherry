@@ -30,18 +30,33 @@ class _FakeServerRunner:
 
     instances: list["_FakeServerRunner"] = []
 
+    concurrent_entries: list[int] = []
+    _live_count = 0
+
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.entered = False
         self.exited = False
+        # Real ServerRunner always creates its log file on launch (stdout
+        # redirect); run_rd73_mtp_server_lane() now reads per-request log
+        # files back (sequential single-request-per-launch restart, a real
+        # hardware fix for control+subject VRAM contention) so the fake
+        # must produce one too.
+        log_path = kwargs.get("log_path")
+        if log_path is not None:
+            Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(log_path).write_text("", encoding="utf-8")
         _FakeServerRunner.instances.append(self)
 
     def __enter__(self):
         self.entered = True
+        _FakeServerRunner._live_count += 1
+        _FakeServerRunner.concurrent_entries.append(_FakeServerRunner._live_count)
         return self
 
     def __exit__(self, exc_type, exc, tb):
         self.exited = True
+        _FakeServerRunner._live_count -= 1
         return False
 
 
@@ -61,6 +76,8 @@ def _fake_corpus():
 class RunRd73MtpServerLaneTests(unittest.TestCase):
     def setUp(self) -> None:
         _FakeServerRunner.instances = []
+        _FakeServerRunner.concurrent_entries = []
+        _FakeServerRunner._live_count = 0
         self._tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self._tmp.name)
         self.control_binary = self.run_dir / "control-server"
@@ -125,12 +142,26 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         self.assertEqual(len(result["subject_requests"]), 4)
         self.assertAlmostEqual(result["effect"].geometric_effect_pct, 100.0, delta=1.0)
 
-    def test_both_servers_launched_and_torn_down(self) -> None:
+    def test_one_server_launched_per_single_request_both_arms(self) -> None:
+        # Real hardware fix (2026-09-01): control and subject servers
+        # must never run concurrently for this model (each needs
+        # ~13GB/GPU, two copies exceed the 24.5GB/GPU cards) -- one fresh
+        # server per single request, alternating arms. warmup_pairs=1 +
+        # measured_pairs=3 -> 4 pairs x 2 arms = 8 server launches.
         self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
-        self.assertEqual(len(_FakeServerRunner.instances), 2)
+        self.assertEqual(len(_FakeServerRunner.instances), 8)
         for instance in _FakeServerRunner.instances:
             self.assertTrue(instance.entered)
             self.assertTrue(instance.exited)
+
+    def test_servers_never_run_concurrently(self) -> None:
+        # Real hardware regression guard: control+subject running at the
+        # same time OOMs (each needs ~13GB/GPU, cards are 24.5GB) --
+        # at most one server may be "live" (entered but not yet exited)
+        # at any point during this lane.
+        self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
+        self.assertTrue(_FakeServerRunner.concurrent_entries)
+        self.assertEqual(max(_FakeServerRunner.concurrent_entries), 1)
 
     def test_missing_wall_tps_fails_closed(self) -> None:
         with self.assertRaises(vc.PatchCampaignError):
