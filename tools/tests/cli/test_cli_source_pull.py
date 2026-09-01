@@ -42,11 +42,6 @@ ref = "b9999"
 overlay = false
 patch-sets = []
 
-[compat.recipe.bigcherry]
-ref = "pinned"
-states = ["validated"]
-builds = ["record"]
-
 [build.record]
 """
 
@@ -59,7 +54,7 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         self.recipes_path.write_text(_RECIPES_TOML, encoding="utf-8")
 
     def _args(self, **kwargs):
-        base = {"llama_root": None, "ref": None, "recipe": None, "source": None,
+        base = {"llama_root": None, "ref": None, "source": None,
                 "full": False}
         base.update(kwargs)
         return Namespace(**base)

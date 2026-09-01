@@ -48,6 +48,150 @@ class PinBumpStateTests(unittest.TestCase):
             self.assertEqual(loaded, state)
 
 
+class SchemaTwoRoundTripTests(unittest.TestCase):
+    def test_selector_fields_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/some/path",
+                completed_phases=["preflight", "declare"], next_phase="pull",
+                selector_kind="source", selector_name="bigcherry",
+                selector_patch_ids=("0100_x", "0200_y"),
+                coverage_report_sha256="deadbeef",
+            )
+            state.save(state_dir)
+            loaded = pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(loaded, state)
+
+    def test_schema_one_state_loads_with_empty_selector_not_a_crash(self):
+        # A real schema-1 state.json on disk (written before this plan)
+        # has no "selector" key at all -- load() must not KeyError.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=1, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/some/path",
+                completed_phases=["preflight"], next_phase="declare",
+            )
+            state.save(state_dir)
+            loaded = pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(loaded.selector_kind, "")
+            self.assertEqual(loaded.selector_patch_ids, ())
+
+
+class ValidateResumeTests(unittest.TestCase):
+    """Resume-time identity checks: a --resume with a different
+    target/tree, or an in-flight run whose state predates selector
+    binding, must fail closed, not silently continue."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path=str(Path("/some/path")),
+            completed_phases=["preflight"], next_phase="declare",
+            selector_kind="source", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_schema_one_resume_fails_closed(self):
+        state = self._state(schema_version=1)
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b10680", vendor_root=Path("/some/path"),
+            )
+        self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_target_mismatch_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b99999", vendor_root=Path("/some/path"),
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
+
+    def test_tree_mismatch_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._validate_resume(
+                state, target_ref="b10680", vendor_root=Path("/different/path"),
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_TREE_MISMATCH")
+
+    def test_matching_target_and_tree_passes(self):
+        state = self._state()
+        pin_bump._validate_resume(
+            state, target_ref="b10680", vendor_root=Path("/some/path"),
+        )  # no raise
+
+
+class ResumeSelectorTests(unittest.TestCase):
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
+            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/some/path",
+            completed_phases=["preflight"], next_phase="declare",
+            selector_kind="source", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_no_cli_selector_reuses_persisted_selector(self):
+        state = self._state()
+        kind, name = pin_bump._resume_selector(state, source_name=None)
+        self.assertEqual((kind, name), ("source", "bigcherry"))
+
+    def test_matching_cli_source_is_accepted(self):
+        state = self._state()
+        kind, name = pin_bump._resume_selector(state, source_name="bigcherry")
+        self.assertEqual((kind, name), ("source", "bigcherry"))
+
+    def test_mismatched_cli_source_name_fails_closed(self):
+        state = self._state()
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._resume_selector(state, source_name="release")
+        self.assertEqual(ctx.exception.code, "RESUME_SELECTOR_MISMATCH")
+
+
+class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
+    def test_unchanged_membership_passes(self):
+        state = pin_bump.PinBumpState(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
+            selector_kind="source", selector_name="bigcherry-native",
+            selector_patch_ids=tuple(sorted(
+                pin_bump.patch_rebase._selection_patch_ids(
+                    source_name="bigcherry-native", all_patches=False,
+                )
+            )),
+        )
+        pin_bump._require_selector_membership_unchanged(
+            state, selector_kind="source", selector_name="bigcherry-native",
+        )  # no raise -- real catalog, unchanged since state was built above
+
+    def test_drifted_membership_fails_closed(self):
+        state = pin_bump.PinBumpState(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
+            selector_kind="source", selector_name="bigcherry-native",
+            selector_patch_ids=("this_patch_id_does_not_exist_anymore",),
+        )
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            pin_bump._require_selector_membership_unchanged(
+                state, selector_kind="source", selector_name="bigcherry-native",
+            )
+        self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
+
+
 class FailureEnvelopeTests(unittest.TestCase):
     def test_envelope_has_the_documented_shape(self):
         exc = pin_bump.PinBumpStop(
@@ -138,9 +282,244 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         pin_bump._write_release_doc_best_effort(
             repo_root=Path("H:/development/projects/bigcherry"),
             vendor_root=Path("does-not-exist"),
-            recipe_name="not-a-real-recipe-name",
+            selector_kind="source", selector_name="not-a-real-recipe-name",
             target_ref="b99999",
         )  # must not raise -- that is the entire test
+
+
+class RequireCoverageReportTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
+    the coverage-report digest gate must be unconditional and run every
+    time apply is about to happen, not only on --resume."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
+            selector_kind="source", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",), coverage_report_sha256="",
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_unbound_digest_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state(coverage_report_sha256="")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_UNBOUND")
+
+    def test_missing_report_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"  # never written
+            state = self._state(coverage_report_sha256="deadbeef")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MISSING")
+
+    def test_modified_report_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text('{"a": 1}', encoding="utf-8")
+            recorded = pin_bump._sha256_file(report_path)
+            report_path.write_text('{"a": 2}', encoding="utf-8")  # modified after
+            state = self._state(coverage_report_sha256=recorded)
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MODIFIED")
+
+    def test_matching_digest_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text('{"a": 1}', encoding="utf-8")
+            recorded = pin_bump._sha256_file(report_path)
+            state = self._state(coverage_report_sha256=recorded)
+            pin_bump._require_coverage_report(state, report_path)  # no raise
+
+
+class LoadStateOrStopTests(unittest.TestCase):
+    """gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass on
+    e0a5b34): PinBumpState.load() itself can raise JSONDecodeError/KeyError/
+    OSError on a corrupt state.json, violating pin_bump's own "PinBumpStop,
+    never a bare exception" contract. _load_state_or_stop() closes that."""
+
+    def test_malformed_json_fails_closed_with_structured_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text("{not valid json", encoding="utf-8")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+    def test_missing_required_field_fails_closed_with_structured_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                '{"schema_version": 2}', encoding="utf-8",  # missing run_id, target, etc.
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+    def test_valid_state_loads_normally(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+                to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path="/p",
+                completed_phases=[], next_phase="declare",
+                selector_kind="source", selector_name="bigcherry",
+                selector_patch_ids=("0100_x",),
+            )
+            state.save(state_dir)
+            loaded = pin_bump._load_state_or_stop(state_dir)
+            self.assertEqual(loaded, state)
+
+
+class RequireCoverageReportIOErrorTests(unittest.TestCase):
+    """gpt-dev-agent review (second pass on e0a5b34): _sha256_file() can
+    raise OSError/FileNotFoundError if the report becomes unreadable or
+    disappears between the is_file() check and the read -- must become a
+    structured PinBumpStop, not a bare exception."""
+
+    def _state(self, **overrides) -> pin_bump.PinBumpState:
+        base = dict(
+            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
+            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
+            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
+            selector_kind="source", selector_name="bigcherry",
+            selector_patch_ids=("0100_x",), coverage_report_sha256="deadbeef",
+        )
+        base.update(overrides)
+        return pin_bump.PinBumpState(**base)
+
+    def test_disappearing_report_between_check_and_read_fails_closed(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state()
+            with mock.patch.object(
+                pin_bump, "_sha256_file", side_effect=FileNotFoundError("gone"),
+            ):
+                with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                    pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_MISSING")
+
+    def test_unreadable_report_fails_closed(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "rebase-recipe.json"
+            report_path.write_text("{}", encoding="utf-8")
+            state = self._state()
+            with mock.patch.object(
+                pin_bump, "_sha256_file",
+                side_effect=PermissionError("denied"),
+            ):
+                with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                    pin_bump._require_coverage_report(state, report_path)
+            self.assertEqual(ctx.exception.code, "COVERAGE_REPORT_UNREADABLE")
+
+
+class ContextRecoveryNeverMasksOriginalStopTests(unittest.TestCase):
+    """gpt-dev-agent review (second pass): the except block's best-effort
+    disk re-read (when `state` is None) must never itself raise and
+    replace the original PinBumpStop with an unrelated one."""
+
+    def test_corrupt_state_on_disk_during_context_recovery_does_not_mask_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b99999"
+            report_dir.mkdir(parents=True)
+            # A state.json exists but is corrupt -- run() never gets far
+            # enough to bind `state` locally (RESUME_STATE_MISSING path
+            # isn't hit since the file DOES exist; _load_state_or_stop
+            # itself raises RESUME_STATE_INVALID, and `state` stays None
+            # per its unconditional pre-try initialization).
+            (report_dir / "state.json").write_text("{not valid json", encoding="utf-8")
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(target_ref="b99999", resume=True, report_dir=report_dir)
+            # The ORIGINAL failure must survive -- not get replaced by a
+            # second failure from the except block's own disk re-read.
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_INVALID")
+
+
+class RunResumeStateMissingTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1): --resume must never silently
+    reinterpret a missing state.json as "start a fresh run"."""
+
+    def test_resume_with_no_state_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b99999"  # never created
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(
+                    target_ref="b99999", resume=True, report_dir=report_dir,
+                )
+            self.assertEqual(ctx.exception.code, "RESUME_STATE_MISSING")
+            # gpt-dev-agent review P2: even this early failure must carry
+            # real context, not fall through as "unresolved" -- here there
+            # genuinely is no state yet, so run_id=="unresolved" IS correct;
+            # this asserts the placeholder path itself still populates all
+            # three fields rather than leaving any unset/None.
+            self.assertEqual(ctx.exception.run_id, "unresolved")
+            self.assertEqual(ctx.exception.target, {"from_ref": "?", "to_ref": "b99999"})
+            self.assertIsNotNone(ctx.exception.tree)
+
+    def test_resume_with_mismatched_target_retains_loaded_state_context(self):
+        # gpt-dev-agent review P2: a PinBumpStop raised by resume
+        # VALIDATION (state WAS loaded) must attach that state's real
+        # run_id/target/tree -- not the "unresolved" placeholder -- since
+        # moving _validate_resume() inside run()'s try is what this test
+        # actually exercises.
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "resume-b10680"
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="real-run-id", from_ref="b10502",
+                from_sha="a" * 40, to_ref="b10680", to_sha="b" * 40,
+                transition_commit="c" * 40, tree_name="local",
+                tree_path=str(Path("/some/path")),
+                completed_phases=["preflight"], next_phase="declare",
+                selector_kind="source", selector_name="bigcherry",
+                selector_patch_ids=("0100_x",),
+            )
+            state.save(report_dir)
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.run(
+                    target_ref="b99999-WRONG",  # deliberate mismatch
+                    resume=True, report_dir=report_dir,
+                    root=Path("/some/path"),
+                )
+            self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
+            self.assertEqual(ctx.exception.run_id, "real-run-id")
+            self.assertEqual(ctx.exception.target, {"from_ref": "b10502", "to_ref": "b10680"})
+
+
+class WriteReleaseDocReportBindingTests(unittest.TestCase):
+    """gpt-dev-agent review of c236acc (P1): with report_dir supplied, a
+    missing/invalid report must skip the doc, never silently fall back to
+    a fresh (TOCTOU-prone) selector resolution."""
+
+    def test_missing_report_skips_doc_without_fresh_resolution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory)  # no rebase-recipe.json in it
+            from unittest import mock
+
+            with mock.patch(
+                "bigcherry.patch.rebase._selection_patch_ids",
+            ) as fresh_resolve:
+                pin_bump._write_release_doc_best_effort(
+                    repo_root=Path("H:/development/projects/bigcherry"),
+                    vendor_root=Path("does-not-exist"),
+                    selector_kind="source", selector_name="bigcherry",
+                    target_ref="b99999",
+                    report_dir=report_dir,
+                )  # must not raise
+            fresh_resolve.assert_not_called()
 
 
 class CommitReleaseRecordsTests(unittest.TestCase):
