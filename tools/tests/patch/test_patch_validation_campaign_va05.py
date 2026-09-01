@@ -216,7 +216,7 @@ class Rd58CliWiringTests(unittest.TestCase):
 
     def test_never_touches_contract_promotions(self) -> None:
         rd58_block_start = self.source.index("if args.run_rd58_state_restore:")
-        rd58_block = self.source[rd58_block_start:self.source.index("validation_check_results: dict")]
+        rd58_block = self.source[rd58_block_start:self.source.index("# VA06: RD73 execution")]
         self.assertNotIn("contract_promotions[", rd58_block)
 
     def test_gpu_preflight_rejects_duplicate_device_ids(self) -> None:

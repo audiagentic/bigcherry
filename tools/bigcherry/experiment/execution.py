@@ -43,6 +43,14 @@ from ..campaign.benchmark import block_bootstrap_effect, extract_metrics
 WORKLOAD_METRIC: dict[str, str] = {
     "decode": "tg128",
     "prefill": "pp512",
+    # RD73/VA06: mtp_wall_tps is the CLIENT-measured, real request-to-
+    # response wall-clock throughput from validation_campaign.py's
+    # run_rd73_mtp_server_lane() (bench/server_completion.py's run_request()
+    # wall_tps field) -- deliberately not the server's own self-reported
+    # predicted_tps, which can exclude HTTP/queueing overhead. Registered
+    # only once that adapter existed and was proven with real tests (GPT
+    # scoping, session ses_1e0bd1ea53db4311).
+    "mtp_verify": "mtp_wall_tps",
 }
 
 
