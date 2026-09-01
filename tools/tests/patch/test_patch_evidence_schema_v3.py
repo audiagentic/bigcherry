@@ -88,8 +88,11 @@ class SchemaV3RecordTests(unittest.TestCase):
             )
 
     def test_supplying_validation_builds_produces_v3_with_both_domains(self):
+        # VA18 bumped the writer's default to v4 (plural contract identity);
+        # this test's own subject -- the campaign/validation build-domain
+        # split introduced in v3 -- is unaffected and still applies to v4.
         record = self._make(validation_build_identities=self._validation_builds())
-        self.assertEqual(record["record_schema_version"], 3)
+        self.assertEqual(record["record_schema_version"], 4)
         self.assertNotIn("build_identities", record)
         self.assertIn("campaign_build_identities", record)
         self.assertIn("validation_build_identities", record)
@@ -226,7 +229,7 @@ class WriteRecordSchemaUpgradeTests(unittest.TestCase):
         pve.write_record(new_record, root=self.root)
 
         after = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(after["schema_version"], 3) # container header upgraded
+        self.assertEqual(after["schema_version"], 4) # container header upgraded (VA18: 3 -> 4)
         self.assertIn(old_record, after["records"]) # old record object byte-unchanged
         self.assertEqual(len(after["records"]), 2)
 
@@ -271,7 +274,7 @@ class HistoricalV2FixtureTests(unittest.TestCase):
         record = self._v2_record()
         ok, problems = pve._record_qualifies(
             record, module=_FakeModule("9999_example"), pinned_ref="b10502",
-            subject_digest="a" * 64, validation_digest="d" * 64, contract_id=None, contract_hash=None,
+            subject_digest="a" * 64, validation_digest="d" * 64, contracts=(),
         )
         self.assertTrue(ok, problems)
 

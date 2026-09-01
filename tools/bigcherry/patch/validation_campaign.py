@@ -1194,6 +1194,33 @@ def compute_persisted_validation_eligible(
     )
 
 
+def build_contract_evidence_for_persistence(
+    plan_contracts: "tuple[object, ...]", contract_promotions: "dict[str, dict[str, object]] | None",
+) -> "tuple[list[dict[str, str]], dict[str, dict[str, object]]]":
+    """VA18 persistence plumbing: derive make_record()'s plural
+    ``contracts``/``contract_verdicts`` arguments from
+    ``validation_plan.contracts`` (never the singular
+    ``descriptor.experiment_contract`` compatibility property, which fails
+    closed for a real multi-contract patch) and the existing
+    ``contract_promotions`` dict (populated only by --run-rd08-contract
+    today). A bound contract with no produced promotion result gets an
+    explicit BLOCKED verdict ({"passed": False, "status": "blocked", ...})
+    -- never an inferred PASS."""
+    promotions = contract_promotions or {}
+    contracts = [
+        {"id": binding.contract_id, "hash": binding.contract_hash} for binding in plan_contracts
+    ]
+    verdicts = {
+        binding.contract_id: (
+            {"passed": bool(promotion.get("passed")), "status": promotion.get("status"), "detail": promotion}
+            if (promotion := promotions.get(binding.contract_id)) is not None
+            else {"passed": False, "status": "blocked", "detail": {"reasons": ["no promotion result produced"]}}
+        )
+        for binding in plan_contracts
+    }
+    return contracts, verdicts
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -2199,6 +2226,10 @@ def run(args: argparse.Namespace) -> int:
             f"({len(validation_verdict.reasons)} blocking reasons)"
         )
 
+    validation_contracts, validation_contract_verdicts = build_contract_evidence_for_persistence(
+        validation_plan.contracts if validation_plan is not None else (), contract_promotions,
+    )
+
     validation_record = patch_validation_evidence.make_record(
         patch_id=args.patch, patch_path=_patch_file,
         patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
@@ -2238,8 +2269,8 @@ def run(args: argparse.Namespace) -> int:
         ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
-        contract_id=_descriptor.experiment_contract,
-        contract_hash=(validation_plan.contract.contract_hash if validation_plan and validation_plan.contract else None),
+        contracts=validation_contracts,
+        contract_verdicts=validation_contract_verdicts,
         baseline_composition={"base_revision": base_revision},
         control_composition={"base_revision": base_revision, "patches": list(control_composition)},
         subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
