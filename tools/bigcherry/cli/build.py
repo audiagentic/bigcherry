@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -17,8 +18,9 @@ def cmd_build_new(args: Namespace) -> int:
 
     Exit codes (RE21/RE22): 2 for invalid/unsupported request syntax
     (argparse itself raises this for any legacy-only flag, since this parser
-    simply does not define them); 1 if one or more planned lanes execute and
-    fail; 0 only if every planned lane succeeds.
+    simply does not define them); 1 if one or more planned lanes execute or
+    requested Toolchest publications fail; 0 only if every requested lane and
+    publication succeeds.
     """
     from ..core import config as campaign_config
     from ..core.artifacts import ArtifactStore
@@ -26,6 +28,7 @@ def cmd_build_new(args: Namespace) -> int:
     from ..campaign.planner import (
         CampaignPlannerError,
         CampaignRequest,
+        lane_id,
         plan,
         run_campaign,
     )
@@ -106,6 +109,32 @@ def cmd_build_new(args: Namespace) -> int:
             file=sys.stderr,
         )
 
+    toolchest_url = os.environ.get("BIGCHERRY_TOOLCHEST_URL", "").strip()
+    toolchest_api_key = os.environ.get("BIGCHERRY_TOOLCHEST_API_KEY", "").strip() or None
+    binary_relative_path = args.binary_relative_path
+    # Toolchest's process manager needs llama-server as the registered
+    # entrypoint. The canonical build CLI historically defaults to
+    # llama-bench, so enabling publication upgrades that default into one
+    # deployment bundle containing BOTH targets under one BuildPlan.
+    if toolchest_url:
+        if binary_relative_path == "bin/llama-bench":
+            binary_relative_path = "bin/llama-server"
+        elif Path(binary_relative_path).name != "llama-server":
+            print(
+                "build: BIGCHERRY_TOOLCHEST_URL requires --binary-relative-path "
+                "bin/llama-server (or leave the default, which is upgraded automatically)",
+                file=sys.stderr,
+            )
+            return 2
+
+    extra_cmake_targets: tuple[str, ...] = ()
+    if Path(binary_relative_path).name == "llama-server":
+        # llama-bench is compiled by the exact same configure and published
+        # into the same runtime bundle. Toolchest can then run both server
+        # workloads and raw llama-bench comparisons without mixing build
+        # environments or build identities.
+        extra_cmake_targets = ("llama-bench",)
+
     architectures = tuple(args.arch.split(",")) if args.arch else ()
     inventory = Path(args.inventory) if args.inventory else None
     winners = Path(args.winners) if args.winners else None
@@ -130,7 +159,8 @@ def cmd_build_new(args: Namespace) -> int:
         architectures=architectures,
         inputs_by_build=inputs_by_build,
         validation_by_build=validation_by_build,
-        binary_relative_path=args.binary_relative_path,
+        binary_relative_path=binary_relative_path,
+        extra_cmake_targets=extra_cmake_targets,
         c_compiler=args.c_compiler,
         cxx_compiler=args.cxx_compiler,
         smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
@@ -152,18 +182,45 @@ def cmd_build_new(args: Namespace) -> int:
             lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
         )
 
+    lane_by_id = {lane_id(lane): lane for lane in lanes}
     failed = 0
     for lid in sorted(results):
         result = results[lid]
         if isinstance(result, Exception):
             print(f"{lid}: FAILED -- {result}", file=sys.stderr)
             failed += 1
-        else:
-            print(
-                f"{lid}: ok build_plan_id={result.build_plan_id} "
-                f"workload_id={result.workload_id}"
+            continue
+
+        print(
+            f"{lid}: ok build_plan_id={result.build_plan_id} "
+            f"workload_id={result.workload_id}"
+        )
+
+        if toolchest_url:
+            from ..integrations.toolchest import (
+                ToolchestPublishError,
+                publish_campaign_result,
             )
+
+            lane = lane_by_id[lid]
+            try:
+                registration = publish_campaign_result(
+                    toolchest_url,
+                    lane,
+                    result,
+                    backend=cfg.sources[lane.source_name].backend,
+                    api_key=toolchest_api_key,
+                )
+            except ToolchestPublishError as exc:
+                print(f"{lid}: TOOLCHEST FAILED -- {exc}", file=sys.stderr)
+                failed += 1
+            else:
+                print(f"{lid}: toolchest registered {registration.build_id}")
+
     if failed:
-        print(f"build: {failed}/{len(results)} lane(s) failed", file=sys.stderr)
+        print(
+            f"build: {failed}/{len(results)} lane/publication operation(s) failed",
+            file=sys.stderr,
+        )
         return 1
     return 0
