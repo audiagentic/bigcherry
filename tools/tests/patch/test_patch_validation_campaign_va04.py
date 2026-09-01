@@ -45,7 +45,7 @@ class RunRd04BenchmarkEvidenceTests(unittest.TestCase):
             binary = command[0]
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
             value = {"control_bin": 100.0, "subject_bin": 103.39}[binary]
-            return _Result(0, f"{metric} | {value} t/s\n")
+            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | {value} t/s\n")
 
         vc.subprocess.run = fake_run
         result = vc.run_rd04_benchmark_evidence(
@@ -83,7 +83,7 @@ class RunRd04BenchmarkEvidenceTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             if command[0] == "subject_bin":
                 return _Result(1, "", "boom")
-            return _Result(0, "tg128 | 100.0 t/s\n")
+            return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
 
         vc.subprocess.run = fake_run
         with self.assertRaises(ex.LaneExecutionError):
@@ -97,7 +97,7 @@ class RunRd04BenchmarkEvidenceTests(unittest.TestCase):
     def test_artifact_hash_is_real(self) -> None:
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
-            return _Result(0, f"{metric} | 100.0 t/s\n")
+            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
 
         vc.subprocess.run = fake_run
         run_dir = self._run_dir()
@@ -139,7 +139,7 @@ class BenchmarkArtifactBindingTests(unittest.TestCase):
 
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
-            return _Result(0, f"{metric} | 100.0 t/s\n")
+            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
 
         real_subprocess_run = vc.subprocess.run
         vc.subprocess.run = fake_run
