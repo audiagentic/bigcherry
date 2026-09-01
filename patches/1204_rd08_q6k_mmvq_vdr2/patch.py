@@ -185,8 +185,19 @@ _INCLUDES_NEW = """#include <atomic>
 # 2026-08-21 -- this anchor is byte-identical there). `type` is this
 # function's own template parameter (ggml_type type), so the if constexpr
 # resolves at compile time and costs nothing for any other quant type. Same
-# once-per-process GGML_LOG_INFO + BIGCHERRY_PATCH_TRACE pattern as
+# once-per-process BIGCHERRY_PATCH_TRACE pattern as
 # patches/1205_rd12_paired_mmvq_dual_output/patch.py's activation marker.
+#
+# VA21 real-hardware finding (2026-09-01): uses GGML_LOG_WARN, not
+# GGML_LOG_INFO -- confirmed via bounded temporary trace instrumentation
+# that this exact call site IS reached for real Q6_K decode dispatch (a
+# raw fprintf at the identical location fires reliably), but
+# GGML_LOG_INFO's output is filtered by llama-bench's default log
+# verbosity, so RD08's trigger check (which runs llama-bench) could never
+# observe it regardless of whether the real dispatch happened. Same class
+# of bug HI14 (patches/1231_hi14_graph_capture_lifecycle_evidence)
+# already found and fixed the same way for llama-server's own default
+# verbosity filtering.
 #
 # The anchor is a REGEX (not a literal re.escape'd string): edits match
 # against strip_noise()'d text, which blanks comment bodies to same-length
@@ -212,7 +223,7 @@ _ACTIVATION_MARKER = """        case 1: {
                 if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                     static std::atomic_flag bigcherry_rd08_logged = ATOMIC_FLAG_INIT;
                     if (!bigcherry_rd08_logged.test_and_set(std::memory_order_relaxed)) {
-                        GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2 ncols_dst=1\\n");
+                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2 ncols_dst=1\\n");
                     }
                 }
             }
