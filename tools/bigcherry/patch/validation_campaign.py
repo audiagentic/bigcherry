@@ -1595,11 +1595,14 @@ def run_bench_runner_server_bench(
     Brutus hardware (repeated real crashes this session: OOM under
     resource contention with production traffic, and a hard
     argument-parse error for --fit, which llama-bench does not even
-    register). Parses the real "Aggregated Results" stdout block
-    (bench/lib/bench_orchestrator.py's own print format: one
-    "  <name>_tps: <value>" line per config) for every <name>_tps
-    metric. Fails closed on a missing runner script, nonzero exit, or no
-    parseable metric at all."""
+    register). Parses the real "Extracted Results"/"Aggregated Results"
+    stdout blocks (bench/runners/server_base.py and
+    bench/lib/bench_orchestrator.py print one or the other depending on
+    bench type -- server-bench mode, used here, prints "Extracted
+    Results"; both share the same "  <name>_tps: <value>" per-config
+    line format, confirmed directly against a real Brutus run) for every
+    <name>_tps metric. Fails closed on a missing runner script, nonzero
+    exit, or no parseable metric at all."""
     runner_path = runner_root / "bench" / "run_bench.py"
     if not runner_path.is_file():
         raise PatchCampaignError(f"rd73 bench runner not found at {runner_path}")
@@ -1621,7 +1624,7 @@ def run_bench_runner_server_bench(
     metrics: dict[str, float] = {}
     in_block = False
     for line in completed.stdout.splitlines():
-        if "Aggregated Results" in line:
+        if "Aggregated Results" in line or "Extracted Results" in line:
             in_block = True
             continue
         if in_block:

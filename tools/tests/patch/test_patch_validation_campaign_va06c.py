@@ -78,6 +78,31 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
         )
         self.assertEqual(metrics["tg128_tps"], 42.5)
 
+    def test_parses_extracted_results_block(self) -> None:
+        # Real hardware finding: server-bench mode (used by RD73's decode
+        # control lane) prints "Extracted Results", not "Aggregated
+        # Results" (bench/runners/server_base.py, confirmed against a
+        # real Brutus run) -- an earlier draft only handled the latter.
+        def fake_run(command, **kwargs):
+            class _Result:
+                returncode = 0
+                stdout = (
+                    "some header text\n"
+                    "\nExtracted Results (1 config(s)):\n"
+                    "             tg128_tps: 27.29\n"
+                    "          tg128_stddev: 0.00\n"
+                )
+                stderr = ""
+            return _Result()
+
+        vc.subprocess.run = fake_run
+        metrics = vc.run_bench_runner_server_bench(
+            server_url="http://127.0.0.1:18082", bench_configs="tg128",
+            runner_root=self.runner_root,
+        )
+        self.assertEqual(metrics["tg128_tps"], 27.29)
+        self.assertNotIn("tg128_stddev", metrics)
+
     def test_missing_runner_script_fails_closed(self) -> None:
         with self.assertRaises(vc.PatchCampaignError):
             vc.run_bench_runner_server_bench(
