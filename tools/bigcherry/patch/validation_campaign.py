@@ -394,9 +394,17 @@ def _run_one_trace_probe(
     if not model.is_file():
         raise PatchCampaignError(f"activation probe model does not exist: {model}")
 
+    # VA21 real-hardware finding (2026-09-01): llama-bench.cpp itself gates
+    # ggml's log level on its OWN --verbose flag (GGML_LOG_LEVEL_DEBUG if
+    # verbose else GGML_LOG_LEVEL_ERROR) -- without it, BOTH GGML_LOG_INFO
+    # and GGML_LOG_WARN are filtered before this probe's whole reason for
+    # existing (observing a log-based activation marker) ever has a chance.
+    # Confirmed directly: the exact same binary/env only emits
+    # BIGCHERRY_PATCH_HIT with --verbose present. This function's entire
+    # purpose is reading ggml log output, so it must always request it.
     command = [
         str(binary.resolve()), "-m", str(model.resolve()),
-        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99",
+        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
     ]
     env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
 

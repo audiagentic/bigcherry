@@ -107,6 +107,19 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         self.assertIn("-ngl", self.last_command)
         self.assertEqual(self.last_command[self.last_command.index("-ngl") + 1], "99")
 
+    def test_command_includes_verbose(self) -> None:
+        # VA21 real-hardware finding: llama-bench.cpp gates ggml's log
+        # level on its OWN --verbose flag (ERROR without it, filtering
+        # BOTH GGML_LOG_INFO and GGML_LOG_WARN) -- this probe's entire
+        # purpose is observing log-based activation markers, so it must
+        # always request verbose output.
+        self._fake_run("ggml_cuda_init: found 1 ROCm devices\n")
+        vc._run_one_trace_probe(
+            name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
+            workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
+        )
+        self.assertIn("--verbose", self.last_command)
+
     def test_rocm_init_failure_raises_even_with_returncode_zero(self) -> None:
         self._fake_run(
             "tg128 | 16.33 t/s\n",
