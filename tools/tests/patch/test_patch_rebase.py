@@ -655,11 +655,10 @@ class ApplyKnownGoodTests(unittest.TestCase):
 
 
 class SourceSelectorTests(unittest.TestCase):
-    """--source (compat.recipe removal plan, gpt-dev-agent-reviewed session
-    ses_5307d9c58ec645cb): _selection_patch_ids' new v2 selector, checked
-    against the REAL project catalog/config -- must agree exactly with
+    """--source: _selection_patch_ids' v2 selector, checked against the REAL
+    project catalog/config -- must agree exactly with
     resolve_canonical_selection(), and the exactly-one-selector contract
-    must hold across all three selector kinds now that there are three."""
+    must hold between --source and --all."""
 
     def test_source_selector_matches_resolve_canonical_selection_exactly(self):
         from bigcherry.campaign import resolution as campaign_resolution
@@ -681,12 +680,6 @@ class SourceSelectorTests(unittest.TestCase):
     def test_no_selector_given_raises(self):
         with self.assertRaises(rebase.RebaseCheckError):
             rebase._selection_patch_ids(all_patches=False)
-
-    def test_recipe_and_source_together_raises(self):
-        with self.assertRaises(rebase.RebaseCheckError):
-            rebase._selection_patch_ids(
-                recipe_name="bigcherry", source_name="bigcherry", all_patches=False,
-            )
 
     def test_source_and_all_together_raises(self):
         with self.assertRaises(rebase.RebaseCheckError):

@@ -10,8 +10,8 @@ Answers "do the patches still apply and build cleanly against this ref",
 nothing more: full release validation (the record -> tune -> promote ->
 replay -> coverage gate sequence) is separate, larger work.
 
-This version has no build knowledge of its own beyond the legacy `recipe`
-name -> v2 (source, builds, platform) mapping below: it runs
+This version has no build knowledge of its own beyond the explicit
+(source, platform, builds) triple the caller supplies: it runs
 ``execute_campaign_lane`` directly, the exact same production API a real
 `build` invocation uses, so a probe and a real build can never disagree
 about what building this ref actually does. Earlier versions of this file
@@ -45,42 +45,6 @@ class ProbeConfigError(ValueError):
     """A probe request names a recipe/ref combination the canonical v2
     config cannot express -- distinct from a build/patch failure: this is
     a request the probe cannot even attempt, not evidence about the ref."""
-
-
-# RE13: legacy `[compat.recipe.*]` names are a groups/states-filtered patch
-# selection over one mutable checkout -- a different model from v2's fixed
-# named Source objects. Most compat recipes correspond to a v2 source of the
-# same name directly (bigcherry, bigcherry-native); the rest are explicit
-# aliases here rather than guessed, so a recipe this table cannot place
-# fails closed (ProbeConfigError) instead of silently probing the wrong
-# source. Recipes whose groups/states subset (e.g. "core") has no
-# corresponding v2 Source are deliberately NOT aliased -- add a real
-# [source.*] for them before probing, rather than approximating one here.
-_RECIPE_SOURCE_ALIASES = {
-    "upstream": "llama-native",
-    "workstation": "bigcherry",
-    "dev": "bigcherry",
-}
-
-# The v2 compat loader (recipes.py) injects a "native" alias into ITS OWN
-# builds table only, pointing at the real v2 "control" build -- v2's own
-# config.Config.builds has no "native" key. A compat recipe's builds list
-# can legitimately contain "native"; this is the same rename applied on
-# the v2 lookup side.
-_LEGACY_BUILD_ALIASES = {"native": "control"}
-
-
-def _v2_source_name_for_recipe(recipe: str, cfg: Any) -> str:
-    if recipe in cfg.sources:
-        return recipe
-    alias = _RECIPE_SOURCE_ALIASES.get(recipe)
-    if alias is not None and alias in cfg.sources:
-        return alias
-    raise ProbeConfigError(
-        f"recipe {recipe!r} has no v2 source mapping for the canonical "
-        f"probe -- add a [source.{recipe}] (or extend "
-        f"_RECIPE_SOURCE_ALIASES) before probing it"
-    )
 
 
 PRODUCTION_GATE_STAGES = (
@@ -342,11 +306,23 @@ def probe(
     run_id: str,
     staging_root: Path,
     ref: str,
-    recipe: str,
+    source_name: str,
+    platform_name: str,
+    build_names: tuple[str, ...],
     inventory: Path | None = None,
     promoted_winners: Path | None = None,
 ) -> tuple[int, Path]:
-    """Prove `ref` still audits, patches, and builds clean under `recipe`.
+    """Prove `ref` still audits, patches, and builds clean under the given
+    canonical v2 (source, platform, builds) triple.
+
+    Explicit axes, not a bundled preset (compat.recipe removal plan,
+    gpt-dev-agent-reviewed, session ses_5307d9c58ec645cb): the legacy
+    ``recipe`` parameter silently bundled a patch selection AND a platform
+    AND a build list together; this probe's own internal model already
+    executes one ``CampaignLaneExecutionSpec(source, build, platform)`` per
+    build, so requiring the caller to name all three explicitly matches
+    what actually happens, with no hidden default recreating the deleted
+    bundling as Python policy.
 
     Never touches the pinned checkout: this run gets its own isolated
     ``work_root`` (source/build cache + a dedicated ArtifactStore) under
@@ -363,7 +339,6 @@ def probe(
     from here.
     """
     from .core import config as campaign_config
-    from . import recipes as legacy_recipes
     from .core.artifacts import ArtifactStore
     from .campaign.lane import CampaignLaneError, CampaignLaneExecutionSpec, execute_campaign_lane
     from .core.context import ProjectContext
@@ -374,7 +349,9 @@ def probe(
         raise FileExistsError(f"run already exists: {run}")
     run.mkdir(parents=True)
     record: dict[str, Any] = {
-        "schema_version": 2, "run_id": run_id, "ref": ref, "recipe": recipe,
+        "schema_version": 2, "run_id": run_id, "ref": ref,
+        "source": source_name, "platform": platform_name,
+        "builds_requested": list(build_names),
         "source_revision": ref, "bigcherry_revision": "unknown",
     }
     try:
@@ -391,27 +368,36 @@ def probe(
                               "failure_class": "config-error"}
         return 1, _write(run, record)
 
+    if not build_names:
+        return _config_failure(ProbeConfigError("build_names must be non-empty"))
+    if len(set(build_names)) != len(build_names):
+        return _config_failure(
+            ProbeConfigError(f"build_names has duplicates: {build_names!r} -- "
+                             "run IDs are suffixed by build name, so a repeat "
+                             "would collide"))
+
     default_context = ProjectContext.resolve()
     context = ProjectContext.resolve(
         work_root=run / "work", upstream_repo=default_context.upstream_repo)
 
     try:
-        legacy_recipe = legacy_recipes.get(recipe, path=context.config_path)
         cfg = campaign_config.load(context.config_path)
-        source_name = _v2_source_name_for_recipe(recipe, cfg)
-    except (legacy_recipes.RecipeError, campaign_config.ConfigError, ProbeConfigError) as exc:
+    except campaign_config.ConfigError as exc:
         return _config_failure(exc)
 
-    platform_name = legacy_recipe.platform
-    if platform_name is None or platform_name not in cfg.platforms:
+    if source_name not in cfg.sources:
         return _config_failure(
-            ProbeConfigError(f"recipe {recipe!r} names no usable v2 platform"))
-    build_names = [_LEGACY_BUILD_ALIASES.get(name, name) for name in legacy_recipe.builds]
+            ProbeConfigError(f"unknown source {source_name!r}; known: "
+                             f"{', '.join(sorted(cfg.sources))}"))
+    if platform_name not in cfg.platforms:
+        return _config_failure(
+            ProbeConfigError(f"unknown platform {platform_name!r}; known: "
+                             f"{', '.join(sorted(cfg.platforms))}"))
     unknown_builds = [name for name in build_names if name not in cfg.builds]
     if unknown_builds:
         return _config_failure(
-            ProbeConfigError(f"recipe {recipe!r} names unknown v2 build(s): "
-                             f"{', '.join(unknown_builds)}"))
+            ProbeConfigError(f"unknown build(s): {', '.join(unknown_builds)}; "
+                             f"known: {', '.join(sorted(cfg.builds))}"))
 
     try:
         resolved_ref = UpstreamRepository(context.upstream_repo).fetch_ref(ref)
@@ -501,18 +487,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--staging-root", default=str(paths.ARTIFACTS / "release-runs"))
     parser.add_argument("--ref", default="master")
-    parser.add_argument("--recipe", default="bigcherry")
+    parser.add_argument(
+        "--source", required=True,
+        help="canonical v2 [source.*] name (e.g. 'bigcherry')",
+    )
+    parser.add_argument(
+        "--platform", required=True,
+        help="canonical v2 [platform.*] name (e.g. 'linux-multi')",
+    )
+    parser.add_argument(
+        "--build", action="append", required=True, dest="builds",
+        help="canonical v2 [build.*] name to run -- repeat for multiple "
+             "(e.g. --build record --build tune --build replay)",
+    )
     parser.add_argument(
         "--inventory", default=None,
-        help="record-mode inventory JSON for recipes whose build includes tuning",
+        help="record-mode inventory JSON for builds whose needs include tuning",
     )
     parser.add_argument(
         "--promoted-winners", default=None,
-        help="promoted-winners JSONL for recipes whose build includes replay",
+        help="promoted-winners JSONL for builds whose needs include replay",
     )
     args = parser.parse_args(argv)
     code, path = probe(
-        args.run_id, Path(args.staging_root), args.ref, args.recipe,
+        args.run_id, Path(args.staging_root), args.ref,
+        args.source, args.platform, tuple(args.builds),
         Path(args.inventory) if args.inventory else None,
         Path(args.promoted_winners) if args.promoted_winners else None,
     )

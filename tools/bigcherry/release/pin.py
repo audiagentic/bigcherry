@@ -86,7 +86,7 @@ def cmd_repin(args: argparse.Namespace) -> int:
 
     print(
         "next: COMMIT recipes.toml + the marker together, then "
-        "python -m bigcherry pull --recipe <name>"
+        "python -m bigcherry pull --source <name>"
     )
     return 0
 

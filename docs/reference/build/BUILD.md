@@ -46,22 +46,22 @@ not either doc, and fix whichever doc is behind.)
   scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
   ```
 
-## Recipes — the normal way to build
+## Sources — the normal way to build
 
 `$BC` = `~/bigcherry` on brutus.
 
-A **recipe** names one complete build configuration: an upstream ref, a patch selection, and which variant(s) to compile. Recipes live in `recipes.toml`.
+A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch composition: an upstream ref, an overlay flag, and the exact `patch-set`(s) it applies. Builds and platforms are a separate, orthogonal axis, composed per-lane.
 
-### Recipe concept and axis table
+### Axis table
 
 | Axis | Meaning | Scope | Examples |
 |------|---------|-------|----------|
-| **Recipe** | One whole build identity | Global; names a row in recipes.toml | `upstream`, `bigcherry`, `release` |
-| **Build** | A cmake variant set | Per-recipe; names one output tree | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
-| **Platform** | GPU target(s) and compile flags | Per-recipe; single-GPU or multi-GPU | `linux-multi` (3 GPUs on brutus), `windows-gfx1100` (workstation) |
-| **Patch state** | Patch acceptance status | Per-patch, orthogonal to ref | `validated`, `untested`, `rejected` |
+| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-native`, `bigcherry` |
+| **Build** | A cmake variant set | Named independently, composed per-lane | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
+| **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on brutus), `windows-gfx1100` (workstation) |
+| **Patch state** | Patch acceptance status | Per-patch metadata, informational only under v2 | `validated`, `untested`, `rejected` |
 
-Recipes intentionally avoid the name "profile" — three unrelated PROFILES already exist in this project (patchset groups, release_validate platforms, pareto_report objectives), and a fourth would make ambiguity permanent.
+A source's `patch-sets` list is exact and curated -- there is no groups/states predicate filtering axis to override; a source either names a patch-set or it doesn't.
 
 ### Repinning
 
@@ -69,9 +69,9 @@ Recipes intentionally avoid the name "profile" — three unrelated PROFILES alre
 cd $BC/tools && python3 -m bigcherry repin [--ref <ref>]
 ```
 
-Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comments intact (omit `--ref` to query for the newest upstream release). Recipes with `ref = "pinned"` (the default) now build from the new ref; recipes naming an explicit ref (e.g., `ref = "b10257"`) remain frozen and do not move. This lets you keep a historical recipe around for comparison without the file bloating.
+Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comments intact (omit `--ref` to query for the newest upstream release). Sources with `ref = "pinned"` (the default) now build from the new ref; sources naming an explicit ref remain frozen and do not move. This lets you keep a historical source around for comparison without the file bloating.
 
-**Note:** `--recipe`/`--groups`/`--states` (below) select *which patches get applied to the shared checkout* — they remain real, current flags on `audit`/`apply`/`patches`. `build` itself no longer takes them -- it moved to the campaign engine's isolated, content-addressed per-lane sources, where each lane names its exact patch set directly rather than mutating one shared checkout.
+**Note:** `--source` (below) selects *which patches get applied to the shared checkout* — it's the real, current flag on `audit`/`apply`/`patches`. `build` itself doesn't take it -- it moved to the campaign engine's isolated, content-addressed per-lane sources, where each lane names its exact patch set directly rather than mutating one shared checkout.
 
 ### Patch state semantics
 
@@ -79,13 +79,13 @@ Rewrites `recipes.toml`'s top-level `pinned = "..."` line in place, leaving comm
 - **`rejected`** — Measured or reviewed, rejected (too risky, no benefit, etc.).
 - **`untested`** — New or awaiting measurement.
 
-State is orthogonal to **group** (core/upstream-fixes) — state is a durable judgment about the change itself, not re-derived per pin. Whether a patch *applies* is what `patchset.py`'s anchors already verify on every build.
+Under v2, patch state is informational metadata on the patch itself, not a selection filter -- a source's `patch-sets` list is the sole, exact determinant of what it applies. Whether a patch *applies* is what `patchset.py`'s anchors already verify on every build.
 
 ### Tree-state-key mechanics
 
-A recipe's effective tree state is `tree_state_key(ref, groups, states)`, a 16-character hex digest of the ref, patch groups, and patch states. This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
+A selection's effective tree state is a 16-character hex digest of the ref, the resolved `patch_set_id`, and the overlay digest (when the source has `overlay = true`). This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
 
-**Why it matters:** the 3-recipe default set (`upstream` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: upstream is unpatched, the other two select validated patches -- relevant to `apply`/`patches`, which still share one mutable checkout across recipes. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
+**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: `llama-native` is unpatched, the other two apply the framework patch-set -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
 
 ### The bootstrap dependency chain
 
@@ -101,7 +101,7 @@ Applies to `[build.<name>]` entries in `config/recipes.toml`, selected via `buil
 ```bash
 # 1. Verify the tree (audit + apply) -- shared-checkout patch selection
 cd $BC/tools && python3 -m bigcherry audit
-python3 -m bigcherry apply
+python3 -m bigcherry apply --source bigcherry
 
 # 2. Build via the campaign engine (canonical v2 -- isolated per-lane sources)
 python3 -m bigcherry build --lane bigcherry:record:linux-multi
@@ -109,11 +109,11 @@ python3 -m bigcherry build --lane bigcherry:record:linux-multi
 python3 -m bigcherry build --profile standard
 # --all is shorthand for --profile standard
 
-# 3. View what patches a recipe would use (apply/patches only, not build)
-python3 -m bigcherry patches --recipe release
+# 3. View what patches a source would use (apply/patches only, not build)
+python3 -m bigcherry patches --source bigcherry
 ```
 
-See `build --help` for the full current flag set (`--lane`/`--profile`/`--all`, `--inventory`/`--winners`, `--model`/`--hip-visible-devices` for real runtime-smoke validation, `--binary-relative-path` to select which binary a lane publishes as its primary artifact, e.g. `bin/llama-server` for a real server build vs the `bin/llama-bench` default). `--recipe`/`--groups`/`--states`/`--variant-set`/`--force`/`--target` are NOT valid `build` flags -- argparse rejects them outright (exit 2); those select patches for `apply`/`patches` against the one shared checkout, a different axis from `build`'s isolated per-lane sources.
+See `build --help` for the full current flag set (`--lane`/`--profile`/`--all`, `--inventory`/`--winners`, `--model`/`--hip-visible-devices` for real runtime-smoke validation, `--binary-relative-path` to select which binary a lane publishes as its primary artifact, e.g. `bin/llama-server` for a real server build vs the `bin/llama-bench` default). `--source`/`--variant-set`/`--force`/`--target` are NOT valid `build` flags -- argparse rejects them outright (exit 2); `--source` selects patches for `apply`/`patches` against the one shared checkout, a different axis from `build`'s isolated per-lane sources.
 
 ## Two gaps to know about
 
@@ -125,7 +125,7 @@ These apply to the **manual build cycle** below (standalone `generate` + raw cma
 
 ## Manual build cycle
 
-One-off builds outside a recipe. `$BC` = `~/bigcherry` on brutus.
+One-off builds outside a source. `$BC` = `~/bigcherry` on brutus.
 
 ### Linux — all three GPUs
 
@@ -150,7 +150,7 @@ version. System-wide `/opt/rocm*` still works unmodified if you don't
 ```bash
 cd $BC/tools
 python3 -m bigcherry audit
-python3 -m bigcherry apply
+python3 -m bigcherry apply --source bigcherry
 python3 -m bigcherry generate --variant-set workload-max --inventory <inv.json>
 
 cmake -S $BC/vendor/llama.cpp -B ~/bc-build-multi -G Ninja \

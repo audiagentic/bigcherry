@@ -101,7 +101,7 @@ python -m bigcherry sources check            # ONLINE: has a tracked fork moved/
 ## 2. Resolve the target and run the orchestrator
 
 ```
-python -m bigcherry pin-bump <target-tag> [--recipe bigcherry] [--resume]
+python -m bigcherry pin-bump <target-tag> [--source bigcherry] [--resume]
 ```
 
 This is `tools/bigcherry/release/pin_bump.py` (HI153), a single-tree state
@@ -166,9 +166,9 @@ procedure this skill and the orchestrator both implement. Short version:
 python -m bigcherry repin <tag>
 git add config/recipes.toml releases/pin-transition.json
 git commit -m "pin: <old> -> <tag> (<sha-prefix>) -- rebase in flight"
-python -m bigcherry pull --recipe bigcherry
+python -m bigcherry pull --source bigcherry
 python -m bigcherry audit
-python -m bigcherry patch-rebase-check --recipe bigcherry --json releases/patch-rebase.json
+python -m bigcherry patch-rebase-check --source bigcherry --json releases/patch-rebase.json
 python -m bigcherry apply --rebase-report releases/patch-rebase.json --known-good [--force]
 python -m bigcherry pin-status --all-remotes
 ```

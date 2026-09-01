@@ -41,8 +41,8 @@ from ..core import paths
 from . import patchset
 from .activation import ActivationEvidence
 
-SCHEMA_VERSION = 3
-READABLE_SCHEMA_VERSIONS = (1, 2, 3)
+SCHEMA_VERSION = 4
+READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4)
 CONTRACT_VERSION = "hi83-v1"
 CORRECTNESS_SCHEMA_VERSION = 1
 
@@ -310,6 +310,8 @@ def make_record(
     campaign_workdir: Path,
     representation: str = "simple", validation_implementation_digest: str | None = None,
     contract_id: str | None = None, contract_hash: str | None = None,
+    contracts: Iterable[Mapping[str, str]] = (),
+    contract_verdicts: Mapping[str, Mapping[str, object]] | None = None,
     baseline_composition: Mapping[str, object] | None = None,
     control_composition: Mapping[str, object] | None = None,
     subject_composition: Mapping[str, object] | None = None,
@@ -322,15 +324,27 @@ def make_record(
     ({tune,replay,stock}); ``validation_build_identities`` is the
     validation-build domain ({control,subject}) -- two genuinely distinct
     provenance domains (VA07, GPT round-4 correction req_82dc1c3dcc744fb2),
-    both mandatory, always producing a schema-v3 record with both domains
+    both mandatory, always producing a schema-v4 record with both domains
     as real top-level fields. GPT round 5 (req_48c36d9e3d324ec5): making
     this optional preserved an accidental v2-downgrade path -- every NEW
-    validation now writes v3; v1/v2 backward-COMPATIBILITY (reading old
+    validation now writes v4; v1/v2/v3 backward-COMPATIBILITY (reading old
     records) lives in load_records()/_record_qualifies(), not here. It is
     intentional and expected that validation.subject may carry the same
     physical build identity as campaign.tune; the schema does not require
     or assume equality, since a future validation executor may use a
-    genuinely distinct subject build."""
+    genuinely distinct subject build.
+
+    VA18: contract identity is now PLURAL. Pass either ``contract_id``/
+    ``contract_hash`` (0/1-contract convenience, wrapped internally into a
+    single-entry ``contracts`` list) or ``contracts`` (canonical, a list of
+    ``{"id": ..., "hash": ...}`` -- sorted by id at write time), never
+    both. ``contract_verdicts`` is a dict keyed by contract id; every key
+    must reference a contract actually present in ``contracts`` (an
+    unbound verdict id is a structural error, fail-closed) -- a bound
+    contract with NO verdict entry is not itself an error here (the
+    caller may not have produced one yet), but it does mean that contract
+    reads as an implicit incomplete/BLOCKED verdict at qualification time
+    (_record_qualifies), never an implicit PASS."""
     subject_digest = patch_validation_subject_digest(patch_path)
     archs = _architectures(gpu_architectures)
     if not archs:
@@ -378,6 +392,45 @@ def make_record(
         }
     )
 
+    if contract_id is not None and contracts:
+        raise ValidationEvidenceError(
+            "make_record: pass either contract_id/contract_hash or contracts=, not both"
+        )
+    if contracts:
+        resolved_contracts = tuple(
+            sorted(
+                (
+                    {
+                        "id": _require_string(entry.get("id"), "contracts[].id"),
+                        "hash": _require_string(entry.get("hash"), "contracts[].hash"),
+                    }
+                    for entry in contracts
+                ),
+                key=lambda entry: entry["id"],
+            )
+        )
+    elif contract_id is not None:
+        resolved_contracts = ({"id": contract_id, "hash": contract_hash or ""},)
+    elif correctness_doc.get("contract_id"):
+        resolved_contracts = (
+            {"id": correctness_doc["contract_id"], "hash": correctness_doc.get("contract_hash") or ""},
+        )
+    else:
+        resolved_contracts = ()
+
+    contract_ids = {entry["id"] for entry in resolved_contracts}
+    resolved_verdicts = dict(contract_verdicts or {})
+    unbound_verdicts = sorted(set(resolved_verdicts) - contract_ids)
+    if unbound_verdicts:
+        raise ValidationEvidenceError(
+            f"contract_verdicts references unbound contract id(s): {unbound_verdicts!r}"
+        )
+    for verdict_id, verdict in resolved_verdicts.items():
+        if not isinstance(verdict, Mapping) or not isinstance(verdict.get("passed"), bool):
+            raise ValidationEvidenceError(
+                f"contract_verdicts[{verdict_id!r}] must be an object with a boolean 'passed' field"
+            )
+
     # A gate-proved "not applicable on this GPU" result is useful evidence,
     # but is not enough to make a globally STATE="validated" patch.
     eligible = (
@@ -389,17 +442,21 @@ def make_record(
         eligible = validation_eligible
 
     result = {
-        # Always v3: every new validation writes the current schema.
-        # v1/v2 records already on disk remain readable unchanged --
+        # Always v4: every new validation writes the current schema.
+        # v1/v2/v3 records already on disk remain readable unchanged --
         # backward compatibility is a read-side (load_records/
         # _record_qualifies) concern, never a writer concern (GPT round 5,
-        # req_48c36d9e3d324ec5).
-        "record_schema_version": 3,
+        # req_48c36d9e3d324ec5; VA18 extends this to the v3->v4 contract
+        # pluralization the same way).
+        "record_schema_version": 4,
         "validation_contract_version": CONTRACT_VERSION,
         "representation": representation,
         "validation_implementation_digest": validation_implementation_digest or _validation_digest(patch_path),
-        "contract_id": contract_id or correctness_doc.get("contract_id"),
-        "contract_hash": contract_hash or correctness_doc.get("contract_hash"),
+        # VA18: plural, canonical-sorted -- replaces v1-v3's singular
+        # contract_id/contract_hash fields (which stay readable, never
+        # written, on old records only).
+        "contracts": list(resolved_contracts),
+        "contract_verdicts": resolved_verdicts,
         "baseline_composition": dict(baseline_composition or {}),
         "control_composition": dict(control_composition or correctness_doc.get("control_composition", {})),
         "subject_composition": dict(subject_composition or correctness_doc.get("subject_composition", {})),
@@ -508,7 +565,7 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
 def _record_qualifies(
     record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
     resolved_base_revision: str | None = None, validation_digest: str | None = None,
-    contract_id: str | None = None, contract_hash: str | None = None,
+    contracts: tuple[Mapping[str, str], ...] = (),
 ) -> tuple[bool, tuple[str, ...]]:
     problems: list[str] = []
     expected = {
@@ -517,14 +574,29 @@ def _record_qualifies(
         "base_ref": pinned_ref, "validation_disposition": "validated",
         "eligible_for_validated_state": True,
     }
-    if record.get("record_schema_version") not in READABLE_SCHEMA_VERSIONS:
-        problems.append(f"record_schema_version={record.get('record_schema_version')!r} is unsupported")
-    if record.get("record_schema_version") in (2, 3):
+    record_version = record.get("record_schema_version")
+    if record_version not in READABLE_SCHEMA_VERSIONS:
+        problems.append(f"record_schema_version={record_version!r} is unsupported")
+
+    # VA18: a currently multi-contract patch can NEVER be qualified by a
+    # pre-v4 record -- those schemas have no way to express more than one
+    # contract's identity/verdict at all, so "matches" would be meaningless
+    # (which of RD05/RD06/RD07 would a lone contract_id even mean?).
+    if record_version in (1, 2, 3) and len(contracts) > 1:
+        problems.append(
+            f"record_schema_version={record_version!r} cannot qualify a current "
+            f"{len(contracts)}-contract patch (schema v4 required for multi-contract identity)"
+        )
+
+    single_contract_id = contracts[0]["id"] if len(contracts) == 1 else None
+    single_contract_hash = contracts[0].get("hash") if len(contracts) == 1 else None
+
+    if record_version in (2, 3):
         if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
             problems.append("validation implementation digest is stale")
-        if record.get("contract_id") != contract_id:
+        if record.get("contract_id") != single_contract_id:
             problems.append("contract identity is stale")
-        if contract_hash is not None and record.get("contract_hash") != contract_hash:
+        if single_contract_hash is not None and record.get("contract_hash") != single_contract_hash:
             problems.append("contract hash is stale")
         if record.get("record_digest") != _record_digest(record):
             problems.append("record_digest does not match the evidence payload")
@@ -543,7 +615,63 @@ def _record_qualifies(
             problems.append(str(exc))
         if record.get("contract_id") is not None and not record.get("contract_hash"):
             problems.append("contract_hash is required when contract_id is present")
-    if record.get("record_schema_version") == 3:
+    elif record_version == 4:
+        if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
+            problems.append("validation implementation digest is stale")
+        if record.get("record_digest") != _record_digest(record):
+            problems.append("record_digest does not match the evidence payload")
+        required_v2 = ("representation", "validation_implementation_digest",
+                       "baseline_composition", "control_composition", "subject_composition",
+                       "control_tree", "subject_tree", "stock_tree", "check_results",
+                       "hardware", "artifact_hashes", "blockers", "final_eligibility")
+        for key in required_v2:
+            value = record.get(key)
+            if value is None or value == {}:
+                problems.append(f"provenance field {key!r} is missing")
+        try:
+            _require_hex(record.get("validation_implementation_digest"),
+                         "validation_implementation_digest", (64,))
+        except ValidationEvidenceError as exc:
+            problems.append(str(exc))
+
+        # VA18: exact current contract ID/hash SET (order-independent),
+        # complete verdict set, and every verdict must have passed --
+        # missing/extra/stale-hash on even ONE bound contract is
+        # nonqualification for the WHOLE patch (never partial credit).
+        expected_contracts = {entry["id"]: entry.get("hash") for entry in contracts}
+        record_contracts_raw = record.get("contracts")
+        record_contracts: dict[str, object] = {}
+        if isinstance(record_contracts_raw, list) and all(
+            isinstance(entry, Mapping) for entry in record_contracts_raw
+        ):
+            record_contracts = {
+                str(entry.get("id")): entry.get("hash") for entry in record_contracts_raw
+            }
+        else:
+            problems.append("contracts must be a list of {id,hash} objects")
+        if record_contracts != expected_contracts:
+            problems.append(
+                f"contract identity set is stale: record has {sorted(record_contracts)!r}, "
+                f"current bound set is {sorted(expected_contracts)!r} (or a hash differs)"
+            )
+        verdicts = record.get("contract_verdicts")
+        if not isinstance(verdicts, Mapping):
+            problems.append("contract_verdicts must be an object")
+        else:
+            missing_verdicts = sorted(set(expected_contracts) - set(verdicts))
+            if missing_verdicts:
+                problems.append(f"missing contract_verdicts for: {missing_verdicts!r}")
+            failing_verdicts = sorted(
+                contract_id for contract_id in expected_contracts
+                if contract_id in verdicts
+                and not (
+                    isinstance(verdicts[contract_id], Mapping)
+                    and verdicts[contract_id].get("passed") is True
+                )
+            )
+            if failing_verdicts:
+                problems.append(f"contract_verdicts did not pass for: {failing_verdicts!r}")
+    if record_version in (3, 4):
         # VA07: v3 records use campaign_build_identities/
         # validation_build_identities exclusively -- the legacy top-level
         # build_identities field must be absent to prevent a mixed/
@@ -617,9 +745,9 @@ def _record_qualifies(
         _require_hex(record.get("framework_baseline_digest"), "framework_baseline_digest", (64,))
         _require_hex(record.get("patched_source_tree"), "patched_source_tree", (40, 64))
         _require_hex(record.get("campaign_identity_digest"), "campaign_identity_digest", (64,))
-        if record.get("record_schema_version") != 3:
-            # v3's own build_identities check (campaign_/validation_ split)
-            # already ran above -- this is the v1/v2 legacy shape only.
+        if record.get("record_schema_version") not in (3, 4):
+            # v3/v4's own build_identities check (campaign_/validation_
+            # split) already ran above -- this is the v1/v2 legacy shape only.
             builds = record.get("build_identities")
             if not isinstance(builds, Mapping):
                 raise ValidationEvidenceError("build_identities must be an object")
@@ -637,10 +765,10 @@ def _record_qualifies(
 def _record_qualifies_for_benched(
     record: Mapping[str, object], *, module: patchset.PatchModule, pinned_ref: str, subject_digest: str,
     resolved_base_revision: str | None = None, validation_digest: str | None = None,
-    contract_id: str | None = None, contract_hash: str | None = None,
+    contracts: tuple[Mapping[str, str], ...] = (),
 ) -> tuple[bool, tuple[str, ...]]:
     """VA08: the 'ported-benched' tracked-status obligation -- the same
-    identity/freshness/schema-v3 provenance discipline as
+    identity/freshness/schema-v3-or-v4 provenance discipline as
     _record_qualifies(), but requires only that a real control/subject
     benchmark actually ran -- validation_build_identities populated with
     real build identities, real hardware architectures recorded, AND a
@@ -654,10 +782,23 @@ def _record_qualifies_for_benched(
     Deliberately NOT full
     eligible_for_validated_state (STATE='validated' is a strictly higher
     bar) and NOT activation executed+verified (activation is an
-    orthogonal claim from "a real paired benchmark ran")."""
+    orthogonal claim from "a real paired benchmark ran").
+
+    VA18: contract identity is checked for STALENESS only (the current
+    bound contract SET must match, same as _record_qualifies()) -- unlike
+    validated-state qualification, a v4 record's contract_verdicts may be
+    entirely BLOCKED/incomplete and still qualify ported-benched. Contract
+    PASS is required only for validated promotion, never for ported-
+    benched (a real benchmark having run is a real, independent claim from
+    whether any bound contract's own promotion gate has passed)."""
     problems: list[str] = []
-    if record.get("record_schema_version") != 3:
-        return False, ("ported-benched requires a schema-v3 record",)
+    record_version = record.get("record_schema_version")
+    if record_version not in (3, 4):
+        return False, ("ported-benched requires a schema-v3 or v4 record",)
+    if record_version == 3 and len(contracts) > 1:
+        return False, (
+            f"record_schema_version=3 cannot qualify a current {len(contracts)}-contract patch",
+        )
     expected = {
         "patch_id": module.patch_id, "patch_validation_subject_digest": subject_digest,
         "base_ref": pinned_ref,
@@ -667,10 +808,27 @@ def _record_qualifies_for_benched(
             problems.append(f"{key}={record.get(key)!r}, expected {wanted!r}")
     if validation_digest is not None and record.get("validation_implementation_digest") != validation_digest:
         problems.append("validation implementation digest is stale")
-    if record.get("contract_id") != contract_id:
-        problems.append("contract identity is stale")
-    if contract_hash is not None and record.get("contract_hash") != contract_hash:
-        problems.append("contract hash is stale")
+    if record_version == 4:
+        expected_contracts = {entry["id"]: entry.get("hash") for entry in contracts}
+        record_contracts_raw = record.get("contracts")
+        record_contracts: dict[str, object] = {}
+        if isinstance(record_contracts_raw, list) and all(
+            isinstance(entry, Mapping) for entry in record_contracts_raw
+        ):
+            record_contracts = {
+                str(entry.get("id")): entry.get("hash") for entry in record_contracts_raw
+            }
+        else:
+            problems.append("contracts must be a list of {id,hash} objects")
+        if record_contracts != expected_contracts:
+            problems.append("contract identity set is stale")
+    else:
+        single_contract_id = contracts[0]["id"] if len(contracts) == 1 else None
+        single_contract_hash = contracts[0].get("hash") if len(contracts) == 1 else None
+        if record.get("contract_id") != single_contract_id:
+            problems.append("contract identity is stale")
+        if single_contract_hash is not None and record.get("contract_hash") != single_contract_hash:
+            problems.append("contract hash is stale")
     if record.get("record_digest") != _record_digest(record):
         problems.append("record_digest does not match the evidence payload")
     if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision:
@@ -805,6 +963,54 @@ def _legacy_hashes(root: Path | None) -> dict[str, str]:
     }
 
 
+def _resolve_contract_identities(
+    module: patchset.PatchModule,
+) -> tuple[str | None, tuple[dict[str, str], ...]]:
+    """VA18: shared plural descriptor/contract lookup, used by every
+    status-obligation verifier. Returns ``(validation_digest, contracts)``
+    where ``contracts`` is a canonical id-sorted tuple of ``{"id":...,
+    "hash":...}`` for every experiment contract bound to this patch (0, 1,
+    or many).
+
+    Only genuine "this module has no registry at all" (legacy/synthetic
+    callers, OSError) or "this exact patch id isn't registered"
+    (registry.get()'s own PatchRegistryError, or KeyError) are swallowed
+    -- both pre-existing, narrow tolerances for legacy/synthetic test
+    callers. A real contract-resolution failure (validation.py's
+    ConfigurationError, from a malformed or unresolvable contract
+    reference) is NEVER caught here and always propagates: degrading a
+    real error into silent no-contract identity would let a broken
+    multi-contract patch's evidence quietly stop being checked at all,
+    rather than fail loudly (GPT review, session ses_d1759a9471d443d5).
+    Note this is narrower than a blanket ValueError catch would be --
+    ConfigurationError IS a ValueError subclass, so it must be excluded
+    explicitly rather than by broadening the catch."""
+    validation_digest = None
+    contracts: tuple[dict[str, str], ...] = ()
+    from . import registry as patch_registry
+
+    try:
+        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
+        descriptor = registry.get(module.patch_id)
+    except (OSError, KeyError, patch_registry.PatchRegistryError):
+        return validation_digest, contracts
+
+    validation_digest = descriptor.validation_digest or _validation_digest(module.path)
+    if descriptor.experiment_contracts:
+        from . import validation as patch_validation
+        bindings = tuple(
+            patch_validation.bind_contract(contract)
+            for contract in patch_validation.load_contracts_for_descriptor(descriptor)
+        )
+        contracts = tuple(
+            sorted(
+                ({"id": b.contract_id, "hash": b.contract_hash} for b in bindings),
+                key=lambda entry: entry["id"],
+            )
+        )
+    return validation_digest, contracts
+
+
 def verify_validated_patch(
     module: patchset.PatchModule, *, pinned_ref: str, required_architectures: Iterable[str] = (),
     root: Path | None = None, allow_legacy_grandfather: bool = True,
@@ -821,24 +1027,7 @@ def verify_validated_patch(
         return EvidenceCheck("not-required")
 
     subject_digest = patch_validation_subject_digest(module.path)
-    validation_digest = None
-    contract_id = None
-    contract_hash = None
-    try:
-        from . import registry as patch_registry
-        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
-        descriptor = registry.get(module.patch_id)
-        validation_digest = descriptor.validation_digest or _validation_digest(module.path)
-        contract_id = descriptor.experiment_contract
-        if descriptor.experiment_contract is not None:
-            from . import validation as patch_validation
-            binding = patch_validation.load_contract_for_descriptor(descriptor)
-            if binding is not None:
-                contract_hash = binding.contract_hash
-    except (OSError, ValueError, KeyError):
-        # Legacy/synthetic callers may not have a registry; structural checks
-        # still apply, while production catalog verification remains strict.
-        pass
+    validation_digest, contracts = _resolve_contract_identities(module)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
 
@@ -846,8 +1035,7 @@ def verify_validated_patch(
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
-            validation_digest=validation_digest, contract_id=contract_id,
-            contract_hash=contract_hash,
+            validation_digest=validation_digest, contracts=contracts,
         )
         if ok:
             qualifying.append(record)
@@ -884,31 +1072,6 @@ def verify_validated_patch(
     return EvidenceCheck("missing-or-stale", tuple(problems))
 
 
-def _resolve_contract_identity(
-    module: patchset.PatchModule,
-) -> tuple[str | None, str | None, str | None]:
-    """Shared descriptor/contract lookup used by both status-obligation
-    verifiers below, mirroring verify_validated_patch()'s own resolution
-    exactly (validation_digest, contract_id, contract_hash)."""
-    validation_digest = None
-    contract_id = None
-    contract_hash = None
-    try:
-        from . import registry as patch_registry
-        registry = patch_registry.load_registry(module.catalog_root or paths.PATCHES)
-        descriptor = registry.get(module.patch_id)
-        validation_digest = descriptor.validation_digest or _validation_digest(module.path)
-        contract_id = descriptor.experiment_contract
-        if descriptor.experiment_contract is not None:
-            from . import validation as patch_validation
-            binding = patch_validation.load_contract_for_descriptor(descriptor)
-            if binding is not None:
-                contract_hash = binding.contract_hash
-    except (OSError, ValueError, KeyError):
-        pass
-    return validation_digest, contract_id, contract_hash
-
-
 def verify_ported_benched_patch(
     module: patchset.PatchModule, *, pinned_ref: str, root: Path | None = None,
     resolved_base_revision: str | None = None,
@@ -921,14 +1084,14 @@ def verify_ported_benched_patch(
     generic missing/unattempted correctness claim does not (STATE=
     'validated' is the status that demands full correctness passing)."""
     subject_digest = patch_validation_subject_digest(module.path)
-    validation_digest, contract_id, contract_hash = _resolve_contract_identity(module)
+    validation_digest, contracts = _resolve_contract_identities(module)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
     for record in load_records(module.patch_id, root=root):
         ok, why = _record_qualifies_for_benched(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision, validation_digest=validation_digest,
-            contract_id=contract_id, contract_hash=contract_hash,
+            contracts=contracts,
         )
         if ok:
             qualifying.append(record)

@@ -226,40 +226,20 @@ def _resolve_v2_source(source_name: str) -> "campaign_resolution.CanonicalSelect
 
 
 def _selection_patch_ids(
-    *, recipe_name: str | None = None, source_name: str | None = None,
+    *, source_name: str | None = None,
     all_patches: bool,
 ) -> tuple[str, ...]:
-    """``source_name`` is the v2 replacement for ``recipe_name`` (see the
-    compat.recipe removal plan) -- resolves through
-    ``campaign.resolution.resolve_canonical_selection`` instead of the
-    legacy ``Recipe`` groups/states filter. Exactly one of
-    ``recipe_name``/``source_name``/``all_patches`` must be given; both
-    selector kinds are accepted for now so callers migrate one at a time."""
-    given = sum(bool(x) for x in (recipe_name, source_name, all_patches))
+    """Resolves through ``campaign.resolution.resolve_canonical_selection``.
+    Exactly one of ``source_name``/``all_patches`` must be given."""
+    given = sum(bool(x) for x in (source_name, all_patches))
     if given != 1:
         raise RebaseCheckError(
-            "patch-rebase-check: pass exactly one of --recipe NAME, "
-            "--source NAME, or --all"
+            "patch-rebase-check: pass exactly one of --source NAME or --all"
         )
     modules = patchset.catalog()
     if all_patches:
         return tuple(m.patch_id for m in modules if m.state not in patchset.RETIRED_STATES)
-    if source_name:
-        return _resolve_v2_source(source_name).patch_ids
-
-    from .. import recipes as recipes_module  # noqa: PLC0415 (leaf import, avoids a cycle)
-
-    try:
-        recipe = recipes_module.get(recipe_name)
-    except recipes_module.RecipeError as exc:
-        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
-    ids = tuple(
-        m.patch_id for m in modules
-        if (recipe.groups is None or m.group in recipe.groups)
-        and (recipe.states is None or m.state in recipe.states)
-        and m.state not in patchset.RETIRED_STATES
-    )
-    return ids
+    return _resolve_v2_source(source_name).patch_ids
 
 
 def _partition_conflict_free(
@@ -290,7 +270,7 @@ def _partition_conflict_free(
 
 
 def resolve_selection(
-    *, recipe_name: str | None = None, source_name: str | None = None,
+    *, source_name: str | None = None,
     all_patches: bool,
 ) -> patchset.ResolvedPatchSet:
     """The exact, dependency-complete, topologically-ordered selection to
@@ -299,7 +279,7 @@ def resolve_selection(
     a dependency-incomplete selection fails closed here, before probing,
     rather than silently probing an unsound subset."""
     ids = _selection_patch_ids(
-        recipe_name=recipe_name, source_name=source_name, all_patches=all_patches,
+        source_name=source_name, all_patches=all_patches,
     )
     try:
         return patchset.resolve_exact(ids, allow_rejected=False)
@@ -745,7 +725,6 @@ def _probe_group(
 def run_rebase_check(
     root: Path,
     *,
-    recipe_name: str | None = None,
     source_name: str | None = None,
     all_patches: bool = False,
     context_lines: int = 3,
@@ -795,7 +774,7 @@ def run_rebase_check(
             known_good += group_known_good
     else:
         selection = resolve_selection(
-            recipe_name=recipe_name, source_name=source_name, all_patches=False,
+            source_name=source_name, all_patches=False,
         )
         all_modules, group_probes, known_good = _probe_group(
             tuple(m.patch_id for m in selection.modules), context_ids=frozenset(),
@@ -832,14 +811,6 @@ def run_rebase_check(
         "overlay_digest": _digest_from_texts(overlay_snapshot),
         "selection": {
             "patch_ids": [m.patch_id for m in all_modules],
-            # Adversarial-review follow-up: binds the report to the SELECTOR
-            # that produced patch_ids, not just the resulting id list --
-            # otherwise a concurrent, uncommitted edit to config/recipes.toml
-            # that widens a recipe's groups/states (e.g. [A,B] -> [A,B,C])
-            # leaves every other bound identity unchanged (no patch bytes,
-            # overlay, or revision moved) and a stale report naming only
-            # [A,B] would still pass every other freshness check.
-            "recipe": recipe_name,
             "source": source_name,
             # Only meaningful when "source" is set -- the exact v2
             # composition identity, distinct from the resulting patch_ids:
@@ -1001,7 +972,6 @@ def _require_fresh(
                 )
         else:
             current_ids = set(_selection_patch_ids(
-                recipe_name=selection_input.get("recipe"),
                 all_patches=bool(selection_input.get("all_patches", False)),
             ))
     except RebaseCheckError as exc:
@@ -1011,7 +981,7 @@ def _require_fresh(
     if current_ids != set(selected):
         raise StaleRebaseReportError(
             "report's selection.patch_ids no longer matches what its own "
-            "recipe/source/--all selector currently resolves to "
+            "source/--all selector currently resolves to "
             f"(only in report: {sorted(set(selected) - current_ids)}, "
             f"only live: {sorted(current_ids - set(selected))}) -- "
             "re-run patch-rebase-check"

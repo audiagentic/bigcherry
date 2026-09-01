@@ -307,12 +307,12 @@ def ancestral_to_pin(
 
     ``vendor_root`` defaults to ``paths.llama_root()`` (the real, local
     pinned checkout); ``pin_ref`` defaults to the currently configured pin
-    (``recipes.load_config().pinned``, e.g. ``"b10502"``) resolved within
+    (``recipes.pinned()``, e.g. ``"b10502"``) resolved within
     that checkout.
     """
     root = vendor_root if vendor_root is not None else paths.llama_root()
     if pin_ref is None:
-        pin_ref = recipes.load_config().pinned
+        pin_ref = recipes.pinned()
     if not root.is_dir():
         return "unknown"
 

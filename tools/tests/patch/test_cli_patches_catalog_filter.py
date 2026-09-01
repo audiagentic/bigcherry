@@ -26,26 +26,24 @@ def _run(argv: list[str]) -> tuple[int, str, str]:
 
 class PatchesCatalogFilterTests(unittest.TestCase):
     def test_no_filter_shows_every_patch_unchanged(self):
-        code, out, _ = _run(["patches", "--states", "validated,untested,rejected,superseded"])
+        code, out, _ = _run(["patches"])
         self.assertEqual(code, 0)
         self.assertNotIn("catalog:", out)
-        self.assertIn("51 of 51 shown selected", out)
+        self.assertIn("53 of 53 shown selected", out)
 
     def test_kind_framework_shows_only_framework_patches(self):
         code, out, _ = _run(
             [
                 "patches",
                 "--kind",
-                "framework",
-                "--states",
-                "validated,untested,rejected",
+                "framework"
             ]
         )
         self.assertEqual(code, 0)
         self.assertIn("catalog:   kind=framework backend=any origin=any", out)
         self.assertIn("0100_cmake_options", out)
         self.assertNotIn("1200_rd19_single_gpu_meta_bypass", out)
-        self.assertIn("(51 total in catalog)", out)
+        self.assertIn("(53 total in catalog)", out)
 
     def test_backend_vulkan_currently_matches_nothing(self):
         # Real state of the catalog today: zero Vulkan patches exist (RE30
@@ -55,9 +53,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             [
                 "patches",
                 "--backend",
-                "vulkan",
-                "--states",
-                "validated,untested,rejected",
+                "vulkan"
             ]
         )
         self.assertEqual(code, 0)
@@ -70,22 +66,18 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             [
                 "patches",
                 "--backend",
-                "hip",
-                "--states",
-                "validated,untested,rejected,superseded",
+                "hip"
             ]
         )
         self.assertEqual(code, 0)
-        self.assertIn("51 of 51 shown selected (51 total in catalog)", out)
+        self.assertIn("53 of 53 shown selected (53 total in catalog)", out)
 
     def test_origin_external_fork_matches_only_rdna_boost_patches(self):
         code, out, _ = _run(
             [
                 "patches",
                 "--origin",
-                "external-fork",
-                "--states",
-                "validated,untested,rejected",
+                "external-fork"
             ]
         )
         self.assertEqual(code, 0)
@@ -101,9 +93,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
                 "--backend",
                 "hip",
                 "--origin",
-                "external-fork",
-                "--states",
-                "validated,untested,rejected",
+                "external-fork"
             ]
         )
         self.assertEqual(code, 0)
@@ -120,9 +110,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             [
                 "patches",
                 "--kind",
-                "framework",
-                "--states",
-                "validated,untested,rejected",
+                "framework"
             ]
         )
         self.assertEqual(code, 0)

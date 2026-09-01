@@ -10,7 +10,6 @@ from typing import cast
 
 from .core import config as campaign_config, paths
 from .release import pin_status
-from . import recipes
 from .patch import patchset
 from .core.context import ProjectContext
 
@@ -52,33 +51,24 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         }
         for item in catalog
     ]
+    if version != 2:
+        raise ValueError(
+            f"{context.config_path}: unsupported recipes.toml version {version!r} "
+            "-- only version 2 ([source.*]/[patch-set.*]) is supported"
+        )
     recipes_report: list[dict[str, object]] = []
-    if version == 2:
-        loaded = campaign_config.load(context.config_path)
-        for name, source in sorted(loaded.sources.items()):
-            recipes_report.append(
-                {
-                    "name": name,
-                    "schema": "v2",
-                    "ref": source.ref,
-                    "overlay": source.overlay,
-                    "patch_sets": list(source.patch_sets),
-                    "source_plan_status": "exact-patch-sets",
-                }
-            )
-    else:
-        legacy = recipes.load_config(context.config_path)
-        for name, recipe in sorted(legacy.recipes.items()):
-            recipes_report.append(
-                {
-                    "name": name,
-                    "schema": "v1",
-                    "ref": recipe.ref,
-                    "groups": None if recipe.groups is None else sorted(recipe.groups),
-                    "states": None if recipe.states is None else sorted(recipe.states),
-                    "source_plan_status": "legacy-selector",
-                }
-            )
+    loaded = campaign_config.load(context.config_path)
+    for name, source in sorted(loaded.sources.items()):
+        recipes_report.append(
+            {
+                "name": name,
+                "schema": "v2",
+                "ref": source.ref,
+                "overlay": source.overlay,
+                "patch_sets": list(source.patch_sets),
+                "source_plan_status": "exact-patch-sets",
+            }
+        )
     report: dict[str, object] = {
         "schema_version": 1,
         "project": str(context.project_root),
