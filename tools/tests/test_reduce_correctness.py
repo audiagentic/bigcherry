@@ -20,6 +20,36 @@ def test_make_reduction_signature_key_matches_real_probe_format():
     assert key == "split_reduce:v1:f32:8192:4096,2,1,1:n2:peer1001"
 
 
+# Real production reduction signatures, extracted (2026-09-01) from the
+# authentic Brutus historical artifact HI18.md references
+# (artifacts/hardware/20260820-qwen38-mtp-dual-xtx/reduction.jsonl,
+# SHA-256 43a7cde01dceb5bb6ee863413ce605da0e09d1e8dc6ba29c7d72d53ea17edd52
+# verified to match exactly) -- a real dual-XTX Qwen3.8-27B MTP production
+# inference capture, not a synthetic smoke shape. 4-signature representative
+# subset per GPT scoping: the dominant real decode signature, max/near-max
+# s1 stress, and the minimum/boundary s1=1 case. All topology_key=
+# n2:peer1001, peer_access=partial, element_type=f32 on this real hardware.
+REAL_PRODUCTION_SIGNATURES = [
+    # (element_count, slice_shape, observation_count, note)
+    (30720, (5120, 6, 1, 1), 460200, "dominant real decode signature"),
+    (2621440, (5120, 512, 1, 1), 7150, "max s1, power-of-two stress"),
+    (2606080, (5120, 509, 1, 1), 2600, "near-max odd/non-power-of-two stress"),
+    (5120, (5120, 1, 1, 1), 41130, "minimum/boundary s1=1"),
+]
+
+
+@pytest.mark.parametrize("element_count,slice_shape,observation_count,note", REAL_PRODUCTION_SIGNATURES)
+def test_real_production_signature_keys_are_well_formed(element_count, slice_shape, observation_count, note):
+    # Not a hardware assertion -- just proves the real observed shapes
+    # produce a valid, well-formed signature key and satisfy write_case()'s
+    # own product/length/positivity contract before any hardware run.
+    key = rc.make_reduction_signature_key("f32", element_count, slice_shape, "n2:peer1001")
+    s0, s1, s2, s3 = slice_shape
+    assert key == f"split_reduce:v1:f32:{element_count}:{s0},{s1},{s2},{s3}:n2:peer1001"
+    assert s0 * s1 * s2 * s3 == element_count
+    assert observation_count > 0  # sanity: these are real, non-trivial observation counts
+
+
 def test_compute_topology_key_no_p2p_anywhere_2_devices():
     # Real confirmed Brutus hardware fact: no cross-device peer access.
     matrix = [[False, False], [False, False]]
@@ -96,6 +126,28 @@ def test_write_case_rejects_ragged_ranks(tmp_path: Path):
         rc.write_case(
             tmp_path / "bad2", case_id="x", rank_values=[[1.0, 2.0], [1.0]],
             slice_shape=(2, 1, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+        )
+
+
+def test_write_case_rejects_slice_shape_wrong_length(tmp_path: Path):
+    # Real gap found during HI18's real-production-signature corpus slice
+    # (2026-09-01, GPT review): slice_shape's type hint (4-tuple) was never
+    # runtime-enforced -- only the product check ran, so a wrong-length
+    # slice_shape with a coincidentally matching product would silently
+    # write a malformed case.json. element_count=4 with a 3-tuple product
+    # 4*1*1=4 would have passed the old check.
+    with pytest.raises(ValueError, match="exactly 4 entries"):
+        rc.write_case(
+            tmp_path / "bad5", case_id="x", rank_values=[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+            slice_shape=(4, 1, 1), topology_key="n2:peer1001", peer_access="partial",
+        )
+
+
+def test_write_case_rejects_non_positive_slice_shape_dims(tmp_path: Path):
+    with pytest.raises(ValueError, match="must all be positive"):
+        rc.write_case(
+            tmp_path / "bad6", case_id="x", rank_values=[[1.0, 2.0], [3.0, 4.0]],
+            slice_shape=(2, -1, 1, -1), topology_key="n2:peer1001", peer_access="partial",
         )
 
 
