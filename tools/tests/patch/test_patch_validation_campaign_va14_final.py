@@ -223,7 +223,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
             value = {"control_bin": 100.0, "subject_bin": 105.0}[binary]
             result = _Result()
-            result.stdout = f"{metric} | {value} t/s\n"
+            result.stdout = f"ggml_cuda_init: found 1 ROCm devices\n{metric} | {value} t/s\n"
             return result
 
         vc.subprocess.run = fake_run

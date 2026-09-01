@@ -101,7 +101,7 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
 
             class _Result:
                 returncode = 0
-                stdout = f"{metric} | {value} t/s\n"
+                stdout = f"ggml_cuda_init: found 1 ROCm devices\n{metric} | {value} t/s\n"
                 stderr = ""
 
             return _Result()
@@ -149,7 +149,7 @@ class RunRd08ValidationLanesTests(unittest.TestCase):
 
             class _Result:
                 returncode = 0
-                stdout = "tg128 | 100.0 t/s\npp512 | 100.0 t/s\n"
+                stdout = "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\npp512 | 100.0 t/s\n"
                 stderr = ""
 
             return _Result()
