@@ -153,6 +153,18 @@ def write_case(
         if len(values) != element_count:
             raise ValueError(f"rank {r} has {len(values)} elements, expected {element_count}")
 
+    # Real gap found during HI18's real-production-signature corpus slice
+    # (2026-09-01, GPT review): slice_shape's tuple[int,int,int,int] type
+    # hint is not runtime-enforced -- only the product check below ran, so
+    # a wrong-length or non-positive slice_shape with a coincidentally
+    # matching product would silently write a malformed case.json (the
+    # probe's own reduction_signature_key format is hard-coded to exactly
+    # 4 dimensions -- see make_reduction_signature_key()).
+    if len(slice_shape) != 4:
+        raise ValueError(f"slice_shape must have exactly 4 entries, got {len(slice_shape)}: {slice_shape}")
+    if any(dim <= 0 for dim in slice_shape):
+        raise ValueError(f"slice_shape entries must all be positive, got {slice_shape}")
+
     shape_product = slice_shape[0] * slice_shape[1] * slice_shape[2] * slice_shape[3]
     if shape_product != element_count:
         raise ValueError(
