@@ -262,7 +262,11 @@ def check_validation_packages(
 
         package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
         readme_exists = (package_root / "README.md").is_file()
-        has_contract = descriptor.experiment_contract is not None
+        # VA17 policy slice: plural -- a patch bound to 2+ contracts (e.g.
+        # 1203's RD05/RD06/RD07) has a contract just as much as one bound to
+        # exactly 1; the old singular check would report "no
+        # experiment-contract bound" for a real, multi-contract patch.
+        has_contract = bool(descriptor.experiment_contracts)
         has_adapter = descriptor.validation_path is not None
 
         patch_problems: list[str] = []
@@ -322,14 +326,24 @@ def check_validation_packages(
                 patch_problems.append(
                     f"{descriptor.patch_id}: ported-validated requires non-empty validation-architectures"
                 )
-            elif plan.contract is not None and plan.contract.architectures:
-                declared = set(descriptor.validation_architectures)
-                required = set(plan.contract.architectures)
-                if declared != required:
-                    patch_problems.append(
-                        f"{descriptor.patch_id}: validation-architectures {sorted(declared)} "
-                        f"does not match contract-required architectures {sorted(required)}"
-                    )
+            elif plan.contracts:
+                # VA17 policy slice: the required set is the exact UNION of
+                # every bound contract's own required architectures (1203:
+                # gfx1030/gfx1100/gfx1201, since RD05/RD06 require gfx1201
+                # and RD07 requires all three) -- not just one contract's
+                # view. A contract declaring no architectures at all
+                # contributes nothing to the union (unconstrained, not "no
+                # architectures allowed").
+                required: set[str] = set()
+                for binding in plan.contracts:
+                    required.update(binding.architectures)
+                if required:
+                    declared = set(descriptor.validation_architectures)
+                    if declared != required:
+                        patch_problems.append(
+                            f"{descriptor.patch_id}: validation-architectures {sorted(declared)} "
+                            f"does not match contract-required architectures {sorted(required)}"
+                        )
 
         shape_missing = not readme_exists or not has_contract or not has_adapter
         # Only the SHAPE-absence deficiencies above are grandfatherable.
@@ -374,7 +388,10 @@ def require_execution_package(
             f"{descriptor.patch_id}: cannot start a new validation run -- missing README.md "
             "(structural grandfathering never authorizes execution)"
         )
-    if descriptor.experiment_contract is None:
+    # VA17 policy slice: plural -- require_execution_package() must accept
+    # a real multi-contract patch (e.g. 1203's RD05/RD06/RD07), not just
+    # 0/1-contract patches.
+    if not descriptor.experiment_contracts:
         raise PolicyError(
             f"{descriptor.patch_id}: cannot start a new validation run -- no experiment-contract bound"
         )
