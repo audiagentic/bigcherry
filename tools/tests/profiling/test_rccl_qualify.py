@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from bigcherry.profiling import rccl_qualify as rq
+from bigcherry.profiling import rccl_schema as rs
 
 
 XTX_XTX = rq.RcclTopology(topology_id="xtx_xtx", device_arches=("gfx1100", "gfx1100"))
@@ -423,3 +424,178 @@ def test_byte_count_rejects_unknown_dtype():
     case = _fake_case(dtype="not_a_real_dtype")
     with pytest.raises(ValueError):
         _ = case.byte_count
+
+
+# ---------------------------------------------------------------------------
+# GP07: plan-verification fail-closed behaviour, compatibility identity,
+# attempt artifact isolation (gpt-dev-agent review, req_acf7c8da985f4f17)
+# ---------------------------------------------------------------------------
+
+
+def test_plan_substitution_downgrades_pass_to_unsupported(tmp_path: Path):
+    # Requested Ring/Simple, RCCL actually reports Tree/LL128 -- must not
+    # be a silent PASS.
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    TREE    LL128           4")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.UNSUPPORTED
+    assert result.plan_verification == rq.PLAN_SUBSTITUTED
+
+
+def test_missing_plan_observation_fails_closed_not_pass(tmp_path: Path):
+    # Clean/correct exit but no -M 1 table line at all -- the requested
+    # plan was never actually confirmed, so this must NOT default to PASS.
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_UNVERIFIED
+
+
+def test_matched_plan_classified_pass_with_verified_marker(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.PASS
+    assert result.plan_verification == rq.PLAN_VERIFIED
+
+
+def test_explicit_decline_marked_explicit_declined(tmp_path: Path):
+    result = _run_fake(tmp_path, """
+        import sys
+        print("RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
+        sys.exit(1)
+    """)
+    assert result.classification == rq.UNSUPPORTED
+    assert result.plan_verification == rq.PLAN_EXPLICIT_DECLINE
+
+
+_DURABLE_REVISION = rs.RcclCompatibilityRevision(
+    rccl_version="2.28.3", rccl_source_revision="57e58688f44c77076ad536ef1f6b68741fc6e694",
+)
+
+
+def test_revision_id_requires_durable_identity():
+    bare_version_only = rs.RcclCompatibilityRevision(rccl_version="2.30.4")
+    with pytest.raises(rs.InsufficientCompatibilityIdentity):
+        _ = bare_version_only.revision_id
+
+
+def test_revision_id_prefers_library_build_id_over_source_revision():
+    rev = rs.RcclCompatibilityRevision(
+        rccl_version="2.30.4", rccl_source_revision="abc123",
+        library_build_id="sha256:deadbeef",
+    )
+    assert rev.revision_id == "sha256:deadbeef"
+
+
+def test_run_case_with_durable_compatibility_records_revision_and_key(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    fake = tmp_path / "fake.py"
+    fake.write_text(_py("""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """))
+    if sys.platform.startswith("win"):
+        wrapper = tmp_path / "fake_all_reduce_perf.bat"
+        wrapper.write_text(f'@"{sys.executable}" "{fake}" %*\r\n')
+    else:
+        wrapper = tmp_path / "fake_all_reduce_perf.sh"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
+        wrapper.chmod(0o755)
+
+    result = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1),
+        output_dir=tmp_path / "out", compatibility=_DURABLE_REVISION,
+    )
+    assert result.compatibility_revision_id == _DURABLE_REVISION.revision_id
+    assert result.qualification_key == rs.qualification_key(_DURABLE_REVISION, case.case_id)
+    # Enforced namespacing: artifacts land under output_dir/<revision_id>/.
+    assert _DURABLE_REVISION.revision_id in result.stdout_path
+
+
+def test_run_case_rejects_insufficient_compatibility_identity(tmp_path: Path):
+    case = _fake_case()
+    bare_version_only = rs.RcclCompatibilityRevision(rccl_version="2.30.4")
+    with pytest.raises(rs.InsufficientCompatibilityIdentity):
+        rq.run_case(
+            case, binary=str(tmp_path / "does_not_exist"), visible_devices=(0, 1),
+            output_dir=tmp_path / "out", compatibility=bare_version_only,
+        )
+
+
+def test_compatibility_manifest_mismatch_rejected(tmp_path: Path):
+    # Same revision_id, different recorded fields -- must not silently
+    # share a namespaced directory.
+    rev_a = rs.RcclCompatibilityRevision(
+        rccl_version="2.28.3", rccl_source_revision="samecommit",
+        build_config="Release",
+    )
+    rev_b = rs.RcclCompatibilityRevision(
+        rccl_version="2.28.3", rccl_source_revision="samecommit",
+        build_config="Debug",
+    )
+    case = _fake_case()
+    out_dir = tmp_path / "out"
+    rq.run_case(
+        case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
+        output_dir=out_dir, compatibility=rev_a,
+    )
+    with pytest.raises(rq.CompatibilityManifestMismatch):
+        rq.run_case(
+            case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
+            output_dir=out_dir, compatibility=rev_b,
+        )
+
+
+def test_attempt_suffix_isolates_repeated_case_artifacts(tmp_path: Path):
+    case = _fake_case()
+    fake = tmp_path / "fake.py"
+    fake.write_text(_py("""
+        import sys, json, random
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """))
+    if sys.platform.startswith("win"):
+        wrapper = tmp_path / "fake_all_reduce_perf.bat"
+        wrapper.write_text(f'@"{sys.executable}" "{fake}" %*\r\n')
+    else:
+        wrapper = tmp_path / "fake_all_reduce_perf.sh"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
+        wrapper.chmod(0o755)
+
+    out_dir = tmp_path / "out"
+    result_1 = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir, attempt=1,
+    )
+    result_2 = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir, attempt=2,
+    )
+    assert result_1.stdout_path != result_2.stdout_path
+    assert result_1.rccl_output_path != result_2.rccl_output_path
+    assert Path(result_1.stdout_path).exists()
+    assert Path(result_2.stdout_path).exists()
