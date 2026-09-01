@@ -1289,7 +1289,8 @@ def build_contract_evidence_for_persistence(
     return contracts, verdicts
 
 
-_RD73_RESOURCE_PATTERN = re.compile(r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)")
+_RD73_RESOURCE_PREFIX = "BIGCHERRY_RD73_RESOURCE"
+_RD73_RESOURCE_PATTERN = re.compile(r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)\s*$")
 
 
 def parse_rd73_resource_telemetry(text: str) -> tuple[int, ...]:
@@ -1298,8 +1299,21 @@ def parse_rd73_resource_telemetry(text: str) -> tuple[int, ...]:
     site) -- extracts every real ``graph_cache_entries=N`` reading from a
     process's combined stdout/stderr, in emission order. Returns an empty
     tuple when the patch never emitted (e.g. the control binary, which
-    has no RD73 telemetry code at all)."""
-    return tuple(int(match) for match in _RD73_RESOURCE_PATTERN.findall(text))
+    has no RD73 telemetry code at all). Fails closed: any line carrying
+    the ``BIGCHERRY_RD73_RESOURCE`` prefix that doesn't match the exact
+    expected shape is treated as corrupt evidence, not silently ignored --
+    even when other lines in the same text parse cleanly."""
+    readings = []
+    for line in text.splitlines():
+        if _RD73_RESOURCE_PREFIX not in line:
+            continue
+        match = _RD73_RESOURCE_PATTERN.search(line)
+        if match is None:
+            raise PatchCampaignError(
+                f"rd73 resource telemetry: malformed BIGCHERRY_RD73_RESOURCE line: {line!r}"
+            )
+        readings.append(int(match.group(1)))
+    return tuple(readings)
 
 
 def peak_rd73_resource_result(

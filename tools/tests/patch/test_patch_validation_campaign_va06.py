@@ -35,6 +35,20 @@ class ParseRd73ResourceTelemetryTests(unittest.TestCase):
         text = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
         self.assertEqual(vc.parse_rd73_resource_telemetry(text), ())
 
+    def test_malformed_resource_line_raises(self) -> None:
+        text = "BIGCHERRY_RD73_RESOURCE graph_cache_entries=notanumber\n"
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.parse_rd73_resource_telemetry(text)
+
+    def test_mixed_valid_and_malformed_raises(self) -> None:
+        text = (
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=386\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+        )
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.parse_rd73_resource_telemetry(text)
+
 
 class PeakRd73ResourceResultTests(unittest.TestCase):
     def test_real_contract_800_limit_passes_at_651(self) -> None:
