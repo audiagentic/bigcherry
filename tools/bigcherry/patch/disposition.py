@@ -1,6 +1,6 @@
 """HI152: revision-bound patch coverage/disposition schema + gate.
 
-`patch-rebase-check --recipe <name>` only ever checks the recipe's
+`patch-rebase-check --source <name>` only ever checks that source's
 selected subset -- a patch outside that subset (e.g. an experimental
 `rdna-boosts` patch) can go permanently unchecked by the pin-bump
 procedure, with nothing recording that fact. HI149 found exactly this

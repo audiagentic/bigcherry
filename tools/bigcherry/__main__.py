@@ -235,83 +235,6 @@ def _restore_overlay(root: Path, backup: dict[str, str | None]) -> None:
             pass
 
 
-def _apply_selection(
-    root: Path,
-    groups: frozenset[str] | None,
-    states: frozenset[str] | None,
-    *,
-    force: bool = False,
-    dry_run: bool = False,
-) -> bool:
-    """Install the overlay and apply one patch selection. True if all placed.
-
-    Used by ``apply``, the mutable-checkout diagnostic/development path
-    (RE14 non-goal: raw-Path/mutable-checkout compatibility stays an
-    explicit imported-legacy/development boundary for ad-hoc tuning; only
-    the ``build`` command's own tree-flipping mechanics were retired, RE23).
-    """
-    record = _record_for(root)
-    if not force and not record.audit.get("passed"):
-        print(
-            "refusing to patch a tree that has not passed a strict audit.\n"
-            "  run `python -m bigcherry audit` first, or pass --force.",
-            file=sys.stderr,
-        )
-        return False
-
-    # An anchored edit extends an overlay source; install overlays before
-    # resolving anchors so a fresh upstream clone follows the same path.
-    #
-    # Adversarial-review follow-up: overlay writes were never covered by
-    # apply_all()'s own transaction -- that function only ever snapshots
-    # and rolls back the anchored-patch targets IT writes, so a subsequent
-    # anchored-patch failure previously left the overlay's writes on disk
-    # with no rollback, even though the overall selection reports ok=False.
-    # Capture the overlay's own backup here and restore it on the same
-    # failure condition, matching apply_all()'s all-or-nothing contract for
-    # the WHOLE selection, not just its own half of it.
-    overlay_backup: dict[str, str | None] = {}
-    overlay_sim: dict[str, str] = {}
-    written = _copy_overlay(root, dry_run=dry_run, backup=overlay_backup, sim_texts=overlay_sim)
-    patches = patchset.load_patches(groups=groups, states=states)
-    results = patcher.apply_all(patches, root, dry_run=dry_run, initial_texts=overlay_sim)
-    ok = all(r.ok for r in results)
-    if not ok and not dry_run and overlay_backup:
-        _restore_overlay(root, overlay_backup)
-    intended_tree_state = recipes.tree_state_key(
-        record.release_tag or record.revision, groups, states
-    )
-    selection_changed = record.tree_state != intended_tree_state
-    tree_mutated = bool(written) or any(result.changed for result in results)
-
-    if ok:
-        verb = "would write" if dry_run else "wrote"
-        print(f"overlay: {verb} {len(written)} file(s)")
-    else:
-        verb = "not written (dry run)" if dry_run else "rolled back"
-        print(f"overlay: {verb} -- patches failed")
-    print(f"patches ({len(patches)} file(s)):")
-    print(patcher.format_results(results))
-
-    if not dry_run:
-        record = _record_for(root)
-        record.patches = releases.summarise_patches(results)
-        releases.record_apply_result(
-            record, ok, mutated=selection_changed or tree_mutated
-        )
-        if not ok:
-            record.notes = "patches failed: " + ", ".join(
-                record.patches["failed_edits"]
-            )
-        elif record.notes.startswith("patches failed:"):
-            record.notes = ""
-        # Key what the tree now carries, so `build` can tell whether it needs
-        # a reset or can compile against this selection as-is.
-        record.tree_state = intended_tree_state if ok else ""
-        record.save()
-    return ok
-
-
 def _apply_exact_selection(
     root: Path,
     selection: "CliPatchSelection",
@@ -319,11 +242,8 @@ def _apply_exact_selection(
     force: bool = False,
     dry_run: bool = False,
 ) -> bool:
-    """The ``--source`` (v2, exact-mode) sibling of ``_apply_selection`` --
-    compat.recipe removal plan, gpt-dev-agent-reviewed design (session
-    ses_5307d9c58ec645cb). Kept as a separate function rather than
-    branching inside ``_apply_selection`` so the well-tested predicate
-    path is untouched by this migration.
+    """Install the overlay and apply one exact ``--source``-resolved patch
+    selection. True if all placed.
 
     Real safety requirements this satisfies (all found necessary by gpt's
     review, not hypothetical): (1) verifies the LIVE vendor HEAD (a real,
@@ -519,7 +439,7 @@ def _legacy_cmd_repin(args: argparse.Namespace) -> int:
 
     print(
         "next: COMMIT recipes.toml + the marker together, then "
-        "python -m bigcherry pull --recipe <name>"
+        "python -m bigcherry pull --source <name>"
     )
     return 0
 
@@ -701,41 +621,6 @@ def _overlay_relative_paths() -> list[Path]:
         for source in sorted(paths.SRC_OVERLAY.rglob("*"))
         if source.is_file()
     ]
-
-
-def _resolve_selection(
-    args: argparse.Namespace,
-) -> tuple[frozenset[str] | None, frozenset[str] | None, str]:
-    """Patch selection from ``--recipe``, with ``--groups``/``--states`` on top.
-
-    The explicit flags override the recipe axis by axis rather than replacing
-    it, so ``--recipe release --states untested`` is a one-off question about
-    a known configuration instead of a configuration of its own.
-    """
-    groups = states = None
-    label_parts = []
-
-    if getattr(args, "recipe", None):
-        recipe = recipes.get(args.recipe)
-        groups, states = recipe.groups, recipe.states
-        label_parts.append(f"recipe={recipe.name} ref={recipe.ref}")
-
-    override_groups = patchset.parse_filter(getattr(args, "groups", None))
-    override_states = patchset.parse_filter(getattr(args, "states", None))
-    if override_groups is not None:
-        groups = override_groups
-        label_parts.append("groups overridden")
-    if override_states is not None:
-        states = override_states
-        label_parts.append("states overridden")
-
-    def show(value: frozenset[str] | None) -> str:
-        if value is None:
-            return "all"
-        return ",".join(sorted(value)) or "none"
-
-    label_parts.append(f"groups={show(groups)} states={show(states)}")
-    return groups, states, "  ".join(label_parts)
 
 
 def _resolve_pin_sha(ref: str) -> str:

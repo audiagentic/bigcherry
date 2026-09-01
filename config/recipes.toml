@@ -1,6 +1,5 @@
 # BigCherry campaign configuration v2.
-# Legacy pull/audit/build commands use only the explicit compat.recipe aliases
-# below; campaign code consumes source/build/patch-set objects directly.
+# All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
 pinned = "b10705"
 
@@ -297,16 +296,9 @@ backend = "vulkan"
 backend = "vulkan"
 
 # RE14/RE19: the canonical replacement for legacy `build --all`, expressed
-# directly in v2 source/build/platform identities -- NOT derived from
-# compat.recipe.* below, which are legacy-only labels with their own
-# separate groups/states selection philosophy (compat.recipe.bigcherry-native
-# even aliases the legacy-only build name "native" to this file's real v2
-# "control" build; see recipes.py's _load_v2_compat). This profile's lane
-# set was confirmed to match today's actual default=true recipe/build
-# coverage (upstream/stock, bigcherry-native/native->control,
-# bigcherry/{record,tune,replay}) before being written down here, so
-# `build --all` under the new campaign engine means the same production
-# build roles it always has, not a silently narrower set.
+# directly in v2 source/build/platform identities. This profile's lane set
+# means the same production build roles `build --all` always covered, not
+# a silently narrower set.
 [campaign.standard]
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi" },
@@ -405,60 +397,6 @@ server-args = ["--flash-attn", "on"]
 tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 1073741824  # 1GiB headroom
-
-# Explicit compatibility aliases for the legacy CLI. These selectors are not
-# production source composition; the v2 source definitions above are.
-[compat.recipe.dev]
-ref = "pinned"
-states = ["validated", "untested"]
-builds = ["tune", "replay", "record"]
-platform = "linux-multi"
-
-[compat.recipe.release]
-ref = "pinned"
-states = ["validated"]
-builds = ["record", "tune", "replay"]
-platform = "linux-multi"
-
-[compat.recipe.core]
-ref = "pinned"
-groups = ["core"]
-states = ["validated"]
-builds = ["tune"]
-platform = "linux-multi"
-
-[compat.recipe.upstream]
-ref = "pinned"
-groups = []
-builds = ["stock"]
-platform = "linux-multi"
-default = true
-
-[compat.recipe.bigcherry-native]
-ref = "pinned"
-states = ["validated"]
-builds = ["native"]
-platform = "linux-multi"
-default = true
-
-[compat.recipe.bigcherry]
-ref = "pinned"
-states = ["validated"]
-builds = ["record", "tune", "replay"]
-platform = "linux-multi"
-default = true
-
-[compat.recipe.workstation]
-ref = "pinned"
-states = ["validated", "untested"]
-builds = ["tune"]
-platform = "windows-gfx1100"
-
-[compat.recipe.b10257]
-ref = "b10257"
-states = ["validated"]
-builds = ["tune", "replay"]
-platform = "linux-multi"
 
 # --- RE48: tree registry (pin-status --all-remotes / --complete) ----------------
 # local is implicit (the tree running the command); it is listed so the

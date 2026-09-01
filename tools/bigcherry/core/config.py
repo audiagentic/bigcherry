@@ -1,8 +1,7 @@
 """Strict version-2 campaign configuration models.
 
-This parser is intentionally separate from ``recipes.py``.  Existing v1
-recipes remain the compatibility input until their conversion is reviewed;
-they must never be silently interpreted as v2.
+This parser is intentionally separate from ``recipes.py``, which now only
+handles the top-level ``pinned`` value.
 """
 
 from __future__ import annotations
@@ -282,7 +281,6 @@ def load(path: str | Path) -> Config:
             "build",
             "platform",
             "experiment",
-            "compat",
             "campaign",
             "trees",
             "runtime-profile",

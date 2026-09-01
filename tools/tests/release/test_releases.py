@@ -319,31 +319,13 @@ class ReleaseLifecycleTests(unittest.TestCase):
         releases.record_apply_result(record, True, mutated=True)
         self.assertEqual(record.stage, "patched")
 
-    def test_apply_selection_passes_patch_mutation_to_lifecycle(self):
-        record = releases.ReleaseRecord(
-            revision="abc123", release_tag="b1234", stage="validated",
-            tree_state="already-selected", manifest_hash="dead" * 8,
-            audit={"passed": True})
-        patch_result = SimpleNamespace(
-            path="src/example.cpp", results=[], failed=[], changed=True, ok=True)
-        with mock.patch.object(bigcherry_main, "_record_for", return_value=record), \
-                mock.patch.object(bigcherry_main, "_copy_overlay", return_value=[]), \
-                mock.patch.object(bigcherry_main.patchset, "load_patches", return_value=[object()]), \
-                mock.patch.object(bigcherry_main.patcher, "apply_all", return_value=[patch_result]), \
-                mock.patch.object(record, "save"):
-            self.assertTrue(bigcherry_main._apply_selection(
-                Path("/tmp/bigcherry-test-tree"), frozenset(), frozenset()))
-        self.assertEqual(record.stage, "patched")
-        self.assertEqual(record.manifest_hash, "")
-
     def test_apply_exact_selection_verifies_live_revision_first(self):
-        # compat.recipe removal plan (gpt-dev-agent reviewed, session
-        # ses_5307d9c58ec645cb): a moved pin (or any HEAD mismatch) must
-        # refuse to mutate, before anything else is even attempted.
+        # A moved pin (or any HEAD mismatch) must refuse to mutate, before
+        # anything else is even attempted.
         from bigcherry.patch.selection import CliPatchSelection
 
         selection = CliPatchSelection(
-            mode="exact", label="", source_name="bigcherry",
+            label="", source_name="bigcherry",
             source_ref="deadbeef" * 5, patch_set_id="psid",
             patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
         )
@@ -363,12 +345,12 @@ class ReleaseLifecycleTests(unittest.TestCase):
         from bigcherry.patch.selection import CliPatchSelection
 
         selection = CliPatchSelection(
-            mode="exact", label="", source_name="bigcherry",
+            label="", source_name="bigcherry",
             source_ref="deadbeef" * 5, patch_set_id="psid-old",
             patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
         )
         drifted = CliPatchSelection(
-            mode="exact", label="", source_name="bigcherry",
+            label="", source_name="bigcherry",
             source_ref="deadbeef" * 5, patch_set_id="psid-NEW",
             patch_ids=("0100_x", "0200_y"), overlay=True, overlay_digest="digest",
         )
@@ -386,7 +368,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
         from bigcherry.patch.selection import CliPatchSelection
 
         selection = CliPatchSelection(
-            mode="exact", label="", source_name="bigcherry",
+            label="", source_name="bigcherry",
             source_ref="deadbeef" * 5, patch_set_id="psid",
             patch_ids=("0100_x",), overlay=None,
         )
@@ -404,7 +386,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
         from bigcherry.patch.selection import CliPatchSelection
 
         selection = CliPatchSelection(
-            mode="exact", label="", source_name="llama-native",
+            label="", source_name="llama-native",
             source_ref="deadbeef" * 5, patch_set_id="psid",
             patch_ids=(), overlay=False, overlay_digest=None,
         )
@@ -437,7 +419,7 @@ class ReleaseLifecycleTests(unittest.TestCase):
         from bigcherry.patch.selection import CliPatchSelection
 
         selection = CliPatchSelection(
-            mode="exact", label="", source_name="bigcherry",
+            label="", source_name="bigcherry",
             source_ref="deadbeef" * 5, patch_set_id="psid",
             patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
         )

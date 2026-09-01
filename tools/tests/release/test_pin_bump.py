@@ -57,7 +57,7 @@ class SchemaTwoRoundTripTests(unittest.TestCase):
                 to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
                 tree_name="local", tree_path="/some/path",
                 completed_phases=["preflight", "declare"], next_phase="pull",
-                selector_kind="recipe", selector_name="bigcherry",
+                selector_kind="source", selector_name="bigcherry",
                 selector_patch_ids=("0100_x", "0200_y"),
                 coverage_report_sha256="deadbeef",
             )
@@ -83,11 +83,9 @@ class SchemaTwoRoundTripTests(unittest.TestCase):
 
 
 class ValidateResumeTests(unittest.TestCase):
-    """compat.recipe removal plan (gpt-dev-agent reviewed, session
-    ses_5307d9c58ec645cb): resume-time identity checks that did not exist
-    before this plan -- a --resume with a different target/tree, or an
-    in-flight run whose state predates selector binding, must fail
-    closed, not silently continue."""
+    """Resume-time identity checks: a --resume with a different
+    target/tree, or an in-flight run whose state predates selector
+    binding, must fail closed, not silently continue."""
 
     def _state(self, **overrides) -> pin_bump.PinBumpState:
         base = dict(
@@ -95,7 +93,7 @@ class ValidateResumeTests(unittest.TestCase):
             to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path=str(Path("/some/path")),
             completed_phases=["preflight"], next_phase="declare",
-            selector_kind="recipe", selector_name="bigcherry",
+            selector_kind="source", selector_name="bigcherry",
             selector_patch_ids=("0100_x",),
         )
         base.update(overrides)
@@ -139,7 +137,7 @@ class ResumeSelectorTests(unittest.TestCase):
             to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path="/some/path",
             completed_phases=["preflight"], next_phase="declare",
-            selector_kind="recipe", selector_name="bigcherry",
+            selector_kind="source", selector_name="bigcherry",
             selector_patch_ids=("0100_x",),
         )
         base.update(overrides)
@@ -147,18 +145,18 @@ class ResumeSelectorTests(unittest.TestCase):
 
     def test_no_cli_selector_reuses_persisted_selector(self):
         state = self._state()
-        kind, name = pin_bump._resume_selector(state, recipe_name=None)
-        self.assertEqual((kind, name), ("recipe", "bigcherry"))
+        kind, name = pin_bump._resume_selector(state, source_name=None)
+        self.assertEqual((kind, name), ("source", "bigcherry"))
 
-    def test_matching_cli_recipe_is_accepted(self):
+    def test_matching_cli_source_is_accepted(self):
         state = self._state()
-        kind, name = pin_bump._resume_selector(state, recipe_name="bigcherry")
-        self.assertEqual((kind, name), ("recipe", "bigcherry"))
+        kind, name = pin_bump._resume_selector(state, source_name="bigcherry")
+        self.assertEqual((kind, name), ("source", "bigcherry"))
 
-    def test_mismatched_cli_recipe_name_fails_closed(self):
+    def test_mismatched_cli_source_name_fails_closed(self):
         state = self._state()
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-            pin_bump._resume_selector(state, recipe_name="release")
+            pin_bump._resume_selector(state, source_name="release")
         self.assertEqual(ctx.exception.code, "RESUME_SELECTOR_MISMATCH")
 
 
@@ -168,15 +166,15 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
             to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
-            selector_kind="recipe", selector_name="bigcherry-native",
+            selector_kind="source", selector_name="bigcherry-native",
             selector_patch_ids=tuple(sorted(
                 pin_bump.patch_rebase._selection_patch_ids(
-                    recipe_name="bigcherry-native", all_patches=False,
+                    source_name="bigcherry-native", all_patches=False,
                 )
             )),
         )
         pin_bump._require_selector_membership_unchanged(
-            state, selector_kind="recipe", selector_name="bigcherry-native",
+            state, selector_kind="source", selector_name="bigcherry-native",
         )  # no raise -- real catalog, unchanged since state was built above
 
     def test_drifted_membership_fails_closed(self):
@@ -184,12 +182,12 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
             to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
-            selector_kind="recipe", selector_name="bigcherry-native",
+            selector_kind="source", selector_name="bigcherry-native",
             selector_patch_ids=("this_patch_id_does_not_exist_anymore",),
         )
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._require_selector_membership_unchanged(
-                state, selector_kind="recipe", selector_name="bigcherry-native",
+                state, selector_kind="source", selector_name="bigcherry-native",
             )
         self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
 
@@ -284,7 +282,7 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         pin_bump._write_release_doc_best_effort(
             repo_root=Path("H:/development/projects/bigcherry"),
             vendor_root=Path("does-not-exist"),
-            selector_kind="recipe", selector_name="not-a-real-recipe-name",
+            selector_kind="source", selector_name="not-a-real-recipe-name",
             target_ref="b99999",
         )  # must not raise -- that is the entire test
 
@@ -299,7 +297,7 @@ class RequireCoverageReportTests(unittest.TestCase):
             schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
             to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
-            selector_kind="recipe", selector_name="bigcherry",
+            selector_kind="source", selector_name="bigcherry",
             selector_patch_ids=("0100_x",), coverage_report_sha256="",
         )
         base.update(overrides)
@@ -374,7 +372,7 @@ class LoadStateOrStopTests(unittest.TestCase):
                 to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
                 tree_name="local", tree_path="/p",
                 completed_phases=[], next_phase="declare",
-                selector_kind="recipe", selector_name="bigcherry",
+                selector_kind="source", selector_name="bigcherry",
                 selector_patch_ids=("0100_x",),
             )
             state.save(state_dir)
@@ -393,7 +391,7 @@ class RequireCoverageReportIOErrorTests(unittest.TestCase):
             schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
             to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
             tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
-            selector_kind="recipe", selector_name="bigcherry",
+            selector_kind="source", selector_name="bigcherry",
             selector_patch_ids=("0100_x",), coverage_report_sha256="deadbeef",
         )
         base.update(overrides)
@@ -486,7 +484,7 @@ class RunResumeStateMissingTests(unittest.TestCase):
                 transition_commit="c" * 40, tree_name="local",
                 tree_path=str(Path("/some/path")),
                 completed_phases=["preflight"], next_phase="declare",
-                selector_kind="recipe", selector_name="bigcherry",
+                selector_kind="source", selector_name="bigcherry",
                 selector_patch_ids=("0100_x",),
             )
             state.save(report_dir)
@@ -517,7 +515,7 @@ class WriteReleaseDocReportBindingTests(unittest.TestCase):
                 pin_bump._write_release_doc_best_effort(
                     repo_root=Path("H:/development/projects/bigcherry"),
                     vendor_root=Path("does-not-exist"),
-                    selector_kind="recipe", selector_name="bigcherry",
+                    selector_kind="source", selector_name="bigcherry",
                     target_ref="b99999",
                     report_dir=report_dir,
                 )  # must not raise
