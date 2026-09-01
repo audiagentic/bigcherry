@@ -125,14 +125,14 @@ class MakeRecordTests(unittest.TestCase):
         record = self._make()
         self.assertTrue(record["eligible_for_validated_state"])
         self.assertEqual(record["validation_disposition"], "validated")
-        self.assertEqual(record["record_schema_version"], 3)
+        self.assertEqual(record["record_schema_version"], 4)
         self.assertEqual(record["record_digest"], pve._record_digest(record))
         self.assertIn("representation", record)
         self.assertIn("hardware", record)
 
     def test_v2_integrity_digest_changes_for_each_provenance_field(self):
         record = self._make()
-        for field in ("representation", "validation_implementation_digest", "contract_hash",
+        for field in ("representation", "validation_implementation_digest", "contracts",
                       "baseline_composition", "control_composition", "subject_composition",
                       "subject_tree", "stock_tree", "check_results", "hardware",
                       "artifact_hashes", "final_eligibility"):
@@ -141,9 +141,11 @@ class MakeRecordTests(unittest.TestCase):
             self.assertNotEqual(record["record_digest"], pve._record_digest(changed), field)
 
     def test_contract_hash_is_written_from_authoritative_argument(self):
+        # VA18: contract_id/contract_hash remain a 0/1-contract convenience
+        # on make_record() -- the written field is now the plural, canonical
+        # "contracts" list.
         record = self._make(contract_id="RD08-Q6K-MMVQ-VDR2", contract_hash="c" * 32)
-        self.assertEqual(record["contract_id"], "RD08-Q6K-MMVQ-VDR2")
-        self.assertEqual(record["contract_hash"], "c" * 32)
+        self.assertEqual(record["contracts"], [{"id": "RD08-Q6K-MMVQ-VDR2", "hash": "c" * 32}])
 
     def test_missing_correctness_is_incomplete(self):
         record = self._make(correctness_disposition="unknown")
