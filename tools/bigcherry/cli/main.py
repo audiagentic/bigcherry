@@ -14,11 +14,10 @@ import json
 import sys
 from pathlib import Path
 
-from .. import __version__, recipes
+from .. import __version__
 from ..core import config as campaign_config
 from ..core import paths as core_paths
 from ..patch import catalog as patch_catalog
-from ..patch import patchset
 from ..source import sources
 from ..release import pin as _release_pin
 from .build import cmd_build_new
@@ -68,11 +67,10 @@ meaningful against a manifest generated from that same tree.
 
 
 def _v2_source_names() -> list[str] | None:
-    """The canonical v2 ``[source.*]`` names, for ``--source`` choices --
-    the compat.recipe removal plan's replacement for ``--recipe``. Mirrors
-    ``recipes.names() or None``'s own fail-soft shape (an argparse
-    ``choices=None`` accepts anything) so a config load error here does not
-    crash unrelated CLI startup."""
+    """The canonical v2 ``[source.*]`` names, for ``--source`` choices.
+    Mirrors argparse's own fail-soft shape (``choices=None`` accepts
+    anything) so a config load error here does not crash unrelated CLI
+    startup."""
     try:
         return sorted(campaign_config.load(core_paths.RECIPES).sources) or None
     except Exception:
@@ -80,35 +78,15 @@ def _v2_source_names() -> list[str] | None:
 
 
 def _add_selection_args(parser: argparse.ArgumentParser) -> None:
-    """The patch-selection flags, shared by every command that selects."""
-    recipe_or_source = parser.add_mutually_exclusive_group()
-    recipe_or_source.add_argument(
-        "--recipe",
-        default=None,
-        choices=recipes.names() or None,
-        help="[legacy, being retired -- prefer --source] named build "
-             "definition from config/recipes.toml (default: all patches)",
-    )
-    recipe_or_source.add_argument(
+    """The patch-selection flag, shared by every command that selects."""
+    parser.add_argument(
         "--source",
         default=None,
         choices=_v2_source_names(),
         help="canonical v2 [source.*] name (e.g. 'bigcherry') -- the exact, "
-             "curated patch-set this source declares. The compat.recipe "
-             "removal plan's replacement for --recipe. Cannot be combined "
-             "with --groups/--states (v2 patch-sets have no filtering axis).",
-    )
-    parser.add_argument(
-        "--groups",
-        default=None,
-        help="comma-separated patch groups, overriding the recipe's "
-        "(e.g. 'core'). Empty string selects none.",
-    )
-    parser.add_argument(
-        "--states",
-        default=None,
-        help=f"comma-separated patch states, overriding the recipe's "
-        f"({', '.join(patchset.STATES)}).",
+             "curated patch-set this source declares. Omit to browse/select "
+             "every catalog patch (patches only; apply requires --source, "
+             "or --rebase-report).",
     )
 
 
@@ -127,23 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--ref",
         default=None,
         help="tag, branch or sha to check out (e.g. b1234), or 'latest' for "
-        "the newest upstream release. Overrides --recipe.",
+        "the newest upstream release. Overrides --source.",
     )
-    pull_recipe_or_source = pull.add_mutually_exclusive_group()
-    pull_recipe_or_source.add_argument(
-        "--recipe",
-        default=None,
-        choices=recipes.names() or None,
-        help="[legacy, being retired -- prefer --source] take the ref from "
-             "this recipe in config/recipes.toml",
-    )
-    pull_recipe_or_source.add_argument(
+    pull.add_argument(
         "--source",
         default=None,
         choices=_v2_source_names(),
         help="take the ref from this canonical v2 [source.*] name (e.g. "
-             "'bigcherry') -- the compat.recipe removal plan's replacement "
-             "for --recipe",
+             "'bigcherry')",
     )
     pull.add_argument(
         "--full",
@@ -189,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "PA16 patch-rebase-check report authorizing an exact known-good "
             "subset; requires --known-good, and must not be combined with "
-            "--recipe/--groups/--states"
+            "--source"
         ),
     )
     apply_cmd.add_argument(
@@ -214,19 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebase_selection = patch_rebase_check_cmd.add_mutually_exclusive_group(required=True)
     rebase_selection.add_argument(
-        "--recipe",
-        default=None,
-        choices=recipes.names() or None,
-        help="[legacy, being retired -- prefer --source] probe the exact "
-             "logical patch selection for this compatibility recipe",
-    )
-    rebase_selection.add_argument(
         "--source",
         default=None,
         choices=_v2_source_names(),
         help="probe the exact logical patch selection for this canonical "
-             "v2 [source.*] name (e.g. 'bigcherry') -- the compat.recipe "
-             "removal plan's replacement for --recipe",
+             "v2 [source.*] name (e.g. 'bigcherry')",
     )
     rebase_selection.add_argument(
         "--all",
@@ -257,19 +218,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_doc_selection = patch_doc_cmd.add_mutually_exclusive_group(required=True)
     patch_doc_selection.add_argument(
-        "--recipe",
-        default=None,
-        choices=recipes.names() or None,
-        help="[legacy, being retired -- prefer --source] document the exact "
-             "logical patch selection for this compatibility recipe",
-    )
-    patch_doc_selection.add_argument(
         "--source",
         default=None,
         choices=_v2_source_names(),
         help="document the exact logical patch selection for this "
-             "canonical v2 [source.*] name (e.g. 'bigcherry') -- the "
-             "compat.recipe removal plan's replacement for --recipe",
+             "canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     patch_doc_selection.add_argument(
         "--all",
@@ -468,17 +421,10 @@ def build_parser() -> argparse.ArgumentParser:
         "afterward on each required tree.",
     )
     pin_bump_cmd.add_argument("target", help="upstream ref/tag to bump to (e.g. b10680)")
-    pin_bump_selector = pin_bump_cmd.add_mutually_exclusive_group()
-    pin_bump_selector.add_argument(
-        "--recipe", default=None,
-        help="[legacy, being retired] selector for this run. A --resume "
-             "with no selector reuses the run's original one.",
-    )
-    pin_bump_selector.add_argument(
+    pin_bump_cmd.add_argument(
         "--source", default=None,
         help="canonical v2 [source.*] selector for this run (default: "
-             "'bigcherry' on a fresh run) -- the compat.recipe removal "
-             "plan's replacement for --recipe. A --resume with no selector "
+             "'bigcherry' on a fresh run). A --resume with no selector "
              "reuses the run's original one.",
     )
     pin_bump_cmd.add_argument("--resume", action="store_true")
@@ -1513,7 +1459,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     )
     try:
         result = _pin_bump.run(
-            target_ref=args.target, recipe_name=args.recipe, source_name=args.source,
+            target_ref=args.target, source_name=args.source,
             resume=args.resume, report_dir=report_dir,
         )
     except _pin_bump.PinBumpStop as exc:
