@@ -6,8 +6,7 @@ on:
       - "tools/bigcherry/campaign/planner.py"
       - "tools/bigcherry/cli/build.py"
       - "tools/bigcherry/integrations/**"
-      - "tools/tests/test_toolchest_integration.py"
-      - "tools/tests/test_campaign_extra_targets.py"
+      - "tools/tests/**"
       - ".github/workflows/toolchest-integration-ci.yml"
   push:
     branches:
@@ -36,10 +35,7 @@ jobs:
             tools/bigcherry/cli/build.py \
             tools/bigcherry/integrations/toolchest.py
 
-      - name: Run Toolchest integration tests
+      - name: Run full Python tooling suite
         env:
           PYTHONPATH: tools
-        run: |
-          python -m pytest -q \
-            tools/tests/test_toolchest_integration.py \
-            tools/tests/test_campaign_extra_targets.py
+        run: python -m pytest tools/tests -q
