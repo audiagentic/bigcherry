@@ -590,19 +590,27 @@ def assert_validation_subject_parity(
 
 def rd08_validation_lane_commands(
     *, control_binary: Path, subject_binary: Path, model: Path, workload: str,
+    extra_flags: tuple[str, ...] = (),
 ) -> tuple[list[str], list[str]]:
     """VA14-B: the real, minimal llama-bench command pair for one RD08 lane
     -- control_command, subject_command -- differing only by binary path,
     consistent with metric_for_workload()'s decode->tg128/prefill->pp512
-    mapping (decode: -p 0 -n 128; prefill: -p 512 -n 0)."""
+    mapping (decode: -p 0 -n 128; prefill: -p 512 -n 0). ``extra_flags``
+    (VA06: e.g. ("-sm", "tensor") for a multi-GPU model) is appended
+    after the workload shape/-ngl flags -- empty by default, so RD08's
+    own existing behavior is unchanged."""
     if workload == "decode":
         workload_flags = ["-p", "0", "-n", "128"]
     elif workload == "prefill":
         workload_flags = ["-p", "512", "-n", "0"]
     else:
         raise PatchCampaignError(f"rd08 lane: no llama-bench flag mapping for workload {workload!r}")
-    control_command = [str(control_binary), "-m", str(model), *workload_flags, "-ngl", "99"]
-    subject_command = [str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99"]
+    control_command = [
+        str(control_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
+    ]
+    subject_command = [
+        str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
+    ]
     return control_command, subject_command
 
 
@@ -1400,7 +1408,7 @@ def run_rd73_activation_evidence(
 def run_rd73_mtp_server_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
     host: str = "127.0.0.1", control_port: int = 18080, subject_port: int = 18081,
-    spec_n_max: int = 5, spec_draft_k: str = "f16", spec_draft_v: str = "f16",
+    spec_draft_n_max: int = 4,
     n_predict: int = 128, warmup_pairs: int = 2, measured_pairs: int = 10,
 ) -> dict[str, object]:
     """VA06 next slice: RD73's paired control/subject mtp_verify
@@ -1442,10 +1450,18 @@ def run_rd73_mtp_server_lane(
     prompts, corpus_sha256 = sc.load_corpus(corpus_path)
     metric_pattern = re.compile(r"BIGCHERRY_RD73_MTP wall_tps=([0-9.]+)")
 
+    # Real llama-server CLI flags only (verified against vendor/llama.cpp's
+    # own common/arg.cpp -- an earlier draft of this function invented
+    # "--spec-n-max"/"--spec-draft-k"/"--spec-draft-v", none of which
+    # exist; the real flag is --spec-draft-n-max, and there is no
+    # separate draft-cache-type flag this lane needs to set (the
+    # production dual-XTX/27B baseline profile leaves cache types at
+    # their defaults too). -sm tensor is REQUIRED for this 27B model on
+    # 2x gfx1100 -- the default -sm layer understates throughput by
+    # roughly 2-10x (a real, previously-confirmed production finding).
     server_args = (
-        "--parallel", "1", "--metrics",
-        "--spec-type", "draft-mtp", "--spec-n-max", str(spec_n_max),
-        "--spec-draft-k", spec_draft_k, "--spec-draft-v", spec_draft_v,
+        "--parallel", "1", "--metrics", "-sm", "tensor",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", str(spec_draft_n_max),
     )
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -1463,8 +1479,14 @@ def run_rd73_mtp_server_lane(
     session_kwargs = dict(
         corpus_id=corpus_path.stem, corpus_sha256=corpus_sha256, bigcherry_revision="rd73-va06",
         llama_pin="", llama_revision="", model_id=str(model), server_argv=server_args,
-        spec_type="draft-mtp", spec_n_max=spec_n_max, spec_draft_k=spec_draft_k,
-        spec_draft_v=spec_draft_v, sampling=sampling, n_predict=n_predict, order_seed=12345,
+        spec_type="draft-mtp", spec_n_max=spec_draft_n_max,
+        # SessionConfig's spec_draft_k/spec_draft_v fields are provenance
+        # labels only (there is no real --spec-draft-k/--spec-draft-v
+        # llama-server flag); "default" records that this lane leaves the
+        # draft cache type at its build default, matching the production
+        # dual-XTX/27B baseline profile, which does not override it either.
+        spec_draft_k="default", spec_draft_v="default",
+        sampling=sampling, n_predict=n_predict, order_seed=12345,
     )
 
     request_records: dict[str, list[dict[str, object]]] = {"control": [], "subject": []}
@@ -1526,14 +1548,20 @@ def run_rd73_mtp_server_lane(
 
 def run_rd73_decode_control_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
-    run_dir: Path, pairs: int = 3,
+    run_dir: Path, pairs: int = 3, extra_flags: tuple[str, ...] = ("-sm", "tensor"),
 ) -> dict[str, object]:
     """VA06 next slice: RD73's decode control lane -- mirrors RD08's real
     paired llama-bench subprocess path (rd08_validation_lane_commands() /
     run_rd08_validation_lanes()'s runner, including the fixed -ngl 99 and
     the fail-closed real-GPU-execution guard) exactly, never the
     ServerRunner/speculative-flags path run_rd73_mtp_server_lane() uses --
-    decode is a plain, non-speculative workload and needs no server."""
+    decode is a plain, non-speculative workload and needs no server.
+    ``extra_flags`` defaults to -sm tensor: RD73's real contract model
+    (tierL-qwen27b-q8) is a large model measured on Brutus's dual gfx1100
+    GPUs, where the default -sm layer split understates throughput by
+    roughly 2-10x (a real, previously-confirmed production finding, not
+    a guess) -- pass extra_flags=() explicitly for a single-GPU/smaller
+    model."""
     from bigcherry.experiment import execution as experiment_execution
     from bigcherry.campaign.benchmark import sanitize_environment
 
@@ -1562,6 +1590,7 @@ def run_rd73_decode_control_lane(
 
     control_command, subject_command = rd08_validation_lane_commands(
         control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
+        extra_flags=extra_flags,
     )
     decode_run = experiment_execution.run_paired_lane(
         metric="tg128", control_command=control_command, subject_command=subject_command,

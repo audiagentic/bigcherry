@@ -82,6 +82,29 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
         artifact_path = self.run_dir / result["artifact"]["path"]
         self.assertTrue(artifact_path.is_file())
 
+    def test_default_extra_flags_include_sm_tensor(self) -> None:
+        # RD73's real contract model (tierL-qwen27b-q8) needs -sm tensor
+        # on Brutus's dual gfx1100 GPUs -- the default -sm layer split
+        # understates throughput by roughly 2-10x.
+        seen_commands = []
+
+        def fake_run(command, **kwargs):
+            seen_commands.append(command)
+            class _Result:
+                returncode = 0
+                stdout = "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n"
+                stderr = ""
+            return _Result()
+
+        vc.subprocess.run = fake_run
+        vc.run_rd73_decode_control_lane(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self.run_dir, pairs=1,
+        )
+        for command in seen_commands:
+            self.assertIn("-sm", command)
+            self.assertEqual(command[command.index("-sm") + 1], "tensor")
+
 
 class RunRd73ResourceEvidenceTests(unittest.TestCase):
     def setUp(self) -> None:
