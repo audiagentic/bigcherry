@@ -409,7 +409,7 @@ def cmd_patches(args: Namespace) -> int:
         if module.state not in patchset.STATES:
             problems.append(
                 f"{module.patch_id}: STATE={module.state!r} is not one of "
-                f"{', '.join(patchset.STATES)} -- no recipe will select it"
+                f"{', '.join(patchset.STATES)}"
             )
 
         catalog_label = f"{entry.kind}/{entry.backend}" if entry is not None else ""
