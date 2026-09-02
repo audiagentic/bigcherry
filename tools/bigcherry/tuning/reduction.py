@@ -375,14 +375,31 @@ def analytical_error_bound(
     additions, plus a D*FLT_MIN floor for flush-to-zero/subnormal coverage
     that does not create a meaningful tolerance for ordinary values.
 
-    GP05: when `bf16_wire` is set, widens the bound by BF16_ULP * sum_abs[i]
-    to cover upstream's real BF16-wire-compression regime -- each device's
-    operand is quantized to BF16 (7 explicit mantissa bits) before the
-    collective and reconstructed to F32 on the far end, so the DOMINANT
-    error source there is per-operand BF16 quantization, not F32
-    accumulation rounding. This must never be applied unconditionally: a
-    provider run that stayed exact F32 (meta, or rccl below the real wire
-    threshold) gets NO artificial slack -- see provider_uses_bf16_wire()."""
+    GP05 (gpt-dev-agent review, 2026-09-02, req_8714cf1798af40a4): when
+    `bf16_wire` is set, this must account for TWO distinct BF16 error
+    sources, not one. The first version of this fix only widened by a
+    flat BF16_ULP * sum_abs[i], covering just the initial operand
+    quantization to BF16 before the collective -- it MISSED that RCCL's
+    real BF16 reduction also casts the running sum back to BF16 after
+    EVERY addition (`hip_bfloat16((float)x + (float)y)`), so there are up
+    to (device_count - 1) further BF16-rounded additions on top of the
+    initial quantization, not just one. The corrected composition:
+
+        u_in = BF16_ULP                          (initial quantization)
+        u_step = (1 + F32_ULP) * (1 + BF16_ULP) - 1   (each BF16-rounded add)
+        gamma_step = n * u_step / (1 - n * u_step), n = device_count - 1
+        bound = [u_in + (1 + u_in) * gamma_step] * sum_abs + device_count * FLT_MIN
+
+    This bound is WIDER than the original flat-BF16_ULP version (which was
+    too tight, not too loose) -- a case that passed under the old bound
+    still passes under this one; a case that failed under the old bound
+    may have been a false negative and must be re-evaluated, never taken
+    as proof RCCL itself is wrong without re-checking against this
+    corrected bound first.
+
+    Never applied unconditionally: a provider run that stayed exact F32
+    (meta, or rccl below the real wire threshold) gets NO artificial
+    slack -- see provider_uses_bf16_wire()."""
     if device_count < 1:
         raise CorrectnessError(f"device_count must be >= 1, got {device_count}")
     n = device_count - 1
@@ -393,8 +410,20 @@ def analytical_error_bound(
             "bound to be meaningful (n * unit_roundoff >= 1)"
         )
     gamma = (n * F32_ULP) / denom
-    extra_ulp = BF16_ULP if bf16_wire else 0.0
-    return [(gamma + extra_ulp) * s + device_count * FLT_MIN for s in sum_abs]
+    if not bf16_wire:
+        return [gamma * s + device_count * FLT_MIN for s in sum_abs]
+
+    u_in = BF16_ULP
+    u_step = (1.0 + F32_ULP) * (1.0 + BF16_ULP) - 1.0
+    step_denom = 1.0 - n * u_step
+    if step_denom <= 0.0:
+        raise CorrectnessError(
+            f"device_count={device_count} is too large for the BF16-wire "
+            "summation bound to be meaningful (n * per-step unit_roundoff >= 1)"
+        )
+    gamma_step = (n * u_step) / step_denom
+    coefficient = u_in + (1.0 + u_in) * gamma_step
+    return [coefficient * s + device_count * FLT_MIN for s in sum_abs]
 
 
 # ---------------------------------------------------------------------------
