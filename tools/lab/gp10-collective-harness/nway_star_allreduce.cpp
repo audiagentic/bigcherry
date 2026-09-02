@@ -189,14 +189,50 @@ __global__ void root_kernel(
     if (is_root) {
         const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
         const int gnt  = gridDim.x * blockDim.x;
-        for (int i = gtid; i < count; i += gnt) {
-            float acc = sendbuf[i];
-            for (int leaf = 0; leaf < n_devices; ++leaf) {
-                if (leaf == root) continue;
-                acc += host_peers[leaf][i];
+        // N=3 fast path (per gpt-dev-agent's optimization, req_27af96122a244da5):
+        // load both leaf buffers independently before summing, so both mapped-
+        // host reads can be outstanding simultaneously instead of a serial
+        // dependent-add loop over leaves.
+        if (n_devices == 3) {
+            int leaf0 = -1, leaf1 = -1;
+            for (int p = 0; p < 3; ++p) {
+                if (p == root) continue;
+                if (leaf0 < 0) leaf0 = p; else leaf1 = p;
             }
-            recvbuf[i] = acc;
-            host_mine[i] = acc; // republish for leaves
+            const int count4 = count / 4;
+            const float4 * __restrict__ src4 = reinterpret_cast<const float4 *>(sendbuf);
+            const float4 * __restrict__ l04  = reinterpret_cast<const float4 *>(host_peers[leaf0]);
+            const float4 * __restrict__ l14  = reinterpret_cast<const float4 *>(host_peers[leaf1]);
+            float4       * __restrict__ dst4 = reinterpret_cast<float4 *>(recvbuf);
+            float4       * __restrict__ pub4 = reinterpret_cast<float4 *>(host_mine);
+            for (int i = gtid; i < count4; i += gnt) {
+                const float4 a = l04[i];
+                const float4 b = l14[i];
+                const float4 s = src4[i];
+                float4 out;
+                out.x = s.x + a.x + b.x;
+                out.y = s.y + a.y + b.y;
+                out.z = s.z + a.z + b.z;
+                out.w = s.w + a.w + b.w;
+                dst4[i] = out;
+                pub4[i] = out;
+            }
+            const int tail = count4 * 4;
+            for (int i = tail + gtid; i < count; i += gnt) {
+                const float out = sendbuf[i] + host_peers[leaf0][i] + host_peers[leaf1][i];
+                recvbuf[i] = out;
+                host_mine[i] = out;
+            }
+        } else {
+            for (int i = gtid; i < count; i += gnt) {
+                float acc = sendbuf[i];
+                for (int leaf = 0; leaf < n_devices; ++leaf) {
+                    if (leaf == root) continue;
+                    acc += host_peers[leaf][i];
+                }
+                recvbuf[i] = acc;
+                host_mine[i] = acc; // republish for leaves
+            }
         }
         __threadfence_system();
         __syncthreads();
