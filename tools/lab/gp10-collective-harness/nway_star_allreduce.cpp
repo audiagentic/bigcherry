@@ -1,29 +1,49 @@
 // GP10: base-level (sub-llama.cpp) test harness for collective AllReduce
-// transforms. First primitive: an N-way generalization of patch
-// 1001_hip_internal_allreduce's pairwise pinned-host chunked-kernel
-// mechanism (see vendor/llama.cpp/ggml/src/ggml-cuda/allreduce.cu).
+// transforms. See vendor/llama.cpp/ggml/src/ggml-cuda/allreduce.cu (patch
+// 1001_hip_internal_allreduce) for the real production 2-GPU mechanism this
+// generalizes from, and docs/planning/active/gpu-collectives/GP11.md for
+// full context.
 //
-// The existing internal pipeline hard-requires n_devices == 2: each GPU
-// writes its contribution to its own pinned host slot, signals an arrival
-// token, spins on its ONE peer's token, then reads the ONE peer's slot and
-// sums. This harness generalizes that to N devices with a "star" pattern:
-// each rank still writes exactly once and spins on all N-1 peers' tokens,
-// but then reads and sums all N-1 peer slots instead of just one. This is
-// the most direct N-way extension of the existing mechanism (no ring/tree
-// staging), and is what GP11 needs a real go/no-go signal on before
-// committing to a full ggml-cuda.cu implementation.
+// Two topologies, selected with --mode:
 //
-// Correctness is checked against an independent CPU-computed reference sum.
-// Latency is measured with HIP events (not wall-clock-around-the-process).
+//   star  -- every rank spins on and reads every other rank (N-1 serial
+//            blocking peer reads each). Direct N-way extension of 1001's
+//            pairwise mechanism. First experiment; real hardware showed
+//            latency scaling roughly linearly in N-1.
+//
+//   root  -- fused reduce-to-root + broadcast: leaves each do exactly one
+//            handshake with a single root rank; root reduces and republishes
+//            its result for leaves to read back, in ONE kernel launch per
+//            rank (no CPU-side phase transition), per gpt-dev-agent's
+//            2026-09-02 design review. Root's PCIe endpoint is a real
+//            bottleneck (root reads every leaf's contribution through its
+//            own single link), so this does NOT use per-leaf concurrent
+//            streams on the root side -- see GP11 notes for why that
+//            wouldn't help.
+//
+// 2026-09-02 revisions per reviewer-gpt-agent's adversarial pass on the
+// original star-only version (req_25e6393fd0264cd0):
+//   - arrival slots are now genuinely cache-line-separated per (rank,
+//     block) -- the original ARRIVAL_STRIDE_INTS constant was defined but
+//     never applied to the actual allocation/indexing, so all ranks'
+//     tokens shared one cache line and could manufacture false-sharing
+//     cost that inflates N=3 vs N=2 results.
+//   - correctness is now checked for EVERY rank and EVERY timed rep (was:
+//     rank 0 only, warmup rep only).
+//   - --blocks lets the kernel launch with a production-shaped multi-block
+//     grid (default 8, matching GGML_CUDA_AR_KERNEL_BLOCKS in allreduce.cu)
+//     with vectorized float4 copies, so the star-vs-root comparison isn't
+//     confounded by a deliberately naive single-block kernel.
 //
 // This is NOT production code and does not touch the patched llama.cpp
 // source tree at all -- it links directly against ROCm/HIP, compiles in
-// seconds, and runs in well under a minute for the whole sweep.
+// seconds, and runs in well under a minute for a full sweep.
 //
-// Build (on a box with HIP/ROCm):
+// Build:
 //   hipcc -O3 -std=c++17 -o nway_star_allreduce nway_star_allreduce.cpp
 // Run:
-//   ./nway_star_allreduce --devices 0,1,2 --elements 4096,30720,2621440 --reps 20
+//   ./nway_star_allreduce --mode star --devices 0,1,2 --elements 30720,2621440 --reps 20 --blocks 8
+//   ./nway_star_allreduce --mode root --root 0 --devices 0,1,2 --elements 30720,2621440 --reps 20 --blocks 8
 
 #include <hip/hip_runtime.h>
 
@@ -46,50 +66,62 @@
     } while (0)
 
 static constexpr int MAX_DEVICES = 8;
-static constexpr int ARRIVAL_STRIDE_INTS = 16; // cache-line pad, mirrors allreduce.cu
+static constexpr int MAX_BLOCKS  = 32;
+// 64 bytes = one cache line; each (rank, block) token gets its own line so
+// polling ranks don't false-share a line with another rank's writer.
+static constexpr int ARRIVAL_STRIDE_INTS = 16;
 
-// ---------------------------------------------------------------------------
-// Cross-GPU signal mechanism -- same volatile+threadfence_system design as
-// allreduce.cu's ggml_cuda_ar_signal_set/get, generalized to N peers.
-// ---------------------------------------------------------------------------
+enum Mode { MODE_STAR = 0, MODE_ROOT = 1 };
+
 static __device__ __forceinline__ void ar_signal_set(int * p, int token) {
     *(volatile int *) p = token;
 }
 static __device__ __forceinline__ int ar_signal_get(const int * p) {
     return *(const volatile int *) p;
 }
+static __device__ __forceinline__ int * arrival_slot(int * arrival, int n_devices, int rank, int block) {
+    (void) n_devices;
+    return arrival + (rank * MAX_BLOCKS + block) * ARRIVAL_STRIDE_INTS;
+}
 
-// One kernel launch per rank. host_mine is this rank's pinned staging slot;
-// host_peers[k] (k != rank) are every other rank's slot (host_peers[rank] is
-// unused/nullptr). arrival is a flat n_devices-length array of per-rank
-// tokens in pinned host memory.
-__global__ void nway_star_kernel(
+// Vectorized copy loop: float4 for the bulk, scalar tail. gridDim.x blocks x
+// blockDim.x threads stripe the full [0, count) range.
+static __device__ __forceinline__ void vec_copy(const float * src, float * dst, int count) {
+    const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gnt  = gridDim.x * blockDim.x;
+    const int count4 = count / 4;
+    const float4 * src4 = reinterpret_cast<const float4 *>(src);
+    float4       * dst4 = reinterpret_cast<float4 *>(dst);
+    for (int i = gtid; i < count4; i += gnt) {
+        dst4[i] = src4[i];
+    }
+    const int tail_start = count4 * 4;
+    for (int i = tail_start + gtid; i < count; i += gnt) {
+        dst[i] = src[i];
+    }
+}
+
+// --- star: every rank reads every other rank -------------------------------
+__global__ void star_kernel(
         const float * sendbuf,
         float       * recvbuf,
         float       * host_mine,
-        float * const * host_peers,   // device array of n_devices host pointers
+        float * const * host_peers,
         int             n_devices,
         int             rank,
         int             count,
-        int           * arrival,      // device array of n_devices ints (pinned)
+        int           * arrival,
         int             token) {
-    const int tid = threadIdx.x;
-    const int nt  = blockDim.x;
-
-    // Phase 1: stage local contribution to our own pinned slot.
-    for (int i = tid; i < count; i += nt) {
-        host_mine[i] = sendbuf[i];
-    }
+    vec_copy(sendbuf, host_mine, count);
     __threadfence_system();
     __syncthreads();
 
-    // Phase 2: signal arrival, then spin on every other rank's token.
-    if (tid == 0) {
-        ar_signal_set(&arrival[rank], token);
+    if (threadIdx.x == 0) {
+        ar_signal_set(arrival_slot(arrival, n_devices, rank, blockIdx.x), token);
         __threadfence_system();
         for (int peer = 0; peer < n_devices; ++peer) {
             if (peer == rank) continue;
-            while (ar_signal_get(&arrival[peer]) != token) {
+            while (ar_signal_get(arrival_slot(arrival, n_devices, peer, blockIdx.x)) != token) {
 #if defined(__HIP_DEVICE_COMPILE__)
                 __builtin_amdgcn_s_sleep(4);
 #endif
@@ -99,14 +131,88 @@ __global__ void nway_star_kernel(
     __syncthreads();
     __threadfence_system();
 
-    // Phase 3: sum local + every peer's slot.
-    for (int i = tid; i < count; i += nt) {
+    const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gnt  = gridDim.x * blockDim.x;
+    for (int i = gtid; i < count; i += gnt) {
         float acc = sendbuf[i];
         for (int peer = 0; peer < n_devices; ++peer) {
             if (peer == rank) continue;
             acc += host_peers[peer][i];
         }
         recvbuf[i] = acc;
+    }
+}
+
+// --- root: leaves handshake with root only; root reduces + republishes -----
+// Leaf: stage -> signal -> wait for root's token -> read root's stage.
+// Root: wait for every leaf's token -> sum local + all leaf stages -> write
+//       recvbuf AND republish the same sum into its own stage (so leaves can
+//       read it back) -> signal.
+__global__ void root_kernel(
+        const float * sendbuf,
+        float       * recvbuf,
+        float       * host_mine,       // this rank's pinned stage slot
+        float * const * host_peers,    // all ranks' stage slots
+        int             n_devices,
+        int             rank,
+        int             root,
+        int             count,
+        int           * arrival,
+        int             token) {
+    const bool is_root = (rank == root);
+
+    if (!is_root) {
+        vec_copy(sendbuf, host_mine, count);
+        __threadfence_system();
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            ar_signal_set(arrival_slot(arrival, n_devices, rank, blockIdx.x), token);
+        }
+    } else {
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0 && is_root) {
+        for (int leaf = 0; leaf < n_devices; ++leaf) {
+            if (leaf == root) continue;
+            while (ar_signal_get(arrival_slot(arrival, n_devices, leaf, blockIdx.x)) != token) {
+#if defined(__HIP_DEVICE_COMPILE__)
+                __builtin_amdgcn_s_sleep(4);
+#endif
+            }
+        }
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    if (is_root) {
+        const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+        const int gnt  = gridDim.x * blockDim.x;
+        for (int i = gtid; i < count; i += gnt) {
+            float acc = sendbuf[i];
+            for (int leaf = 0; leaf < n_devices; ++leaf) {
+                if (leaf == root) continue;
+                acc += host_peers[leaf][i];
+            }
+            recvbuf[i] = acc;
+            host_mine[i] = acc; // republish for leaves
+        }
+        __threadfence_system();
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            ar_signal_set(arrival_slot(arrival, n_devices, root, blockIdx.x), token);
+        }
+    } else {
+        if (threadIdx.x == 0) {
+            while (ar_signal_get(arrival_slot(arrival, n_devices, root, blockIdx.x)) != token) {
+#if defined(__HIP_DEVICE_COMPILE__)
+                __builtin_amdgcn_s_sleep(4);
+#endif
+            }
+        }
+        __syncthreads();
+        __threadfence_system();
+        vec_copy(host_peers[root], recvbuf, count);
     }
 }
 
@@ -136,6 +242,9 @@ int main(int argc, char ** argv) {
     std::vector<int> devices = {0, 1};
     std::vector<int> element_counts = {4096, 30720, 2621440};
     int reps = 20;
+    int blocks = 8;
+    int root = 0;
+    Mode mode = MODE_STAR;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -145,6 +254,15 @@ int main(int argc, char ** argv) {
             element_counts = parse_int_list(argv[++i]);
         } else if (arg == "--reps" && i + 1 < argc) {
             reps = std::atoi(argv[++i]);
+        } else if (arg == "--blocks" && i + 1 < argc) {
+            blocks = std::atoi(argv[++i]);
+        } else if (arg == "--root" && i + 1 < argc) {
+            root = std::atoi(argv[++i]);
+        } else if (arg == "--mode" && i + 1 < argc) {
+            std::string m = argv[++i];
+            if (m == "star") mode = MODE_STAR;
+            else if (m == "root") mode = MODE_ROOT;
+            else { fprintf(stderr, "unknown --mode %s\n", m.c_str()); return 2; }
         } else {
             fprintf(stderr, "unknown arg: %s\n", arg.c_str());
             return 2;
@@ -156,16 +274,24 @@ int main(int argc, char ** argv) {
         fprintf(stderr, "need 2..%d devices, got %d\n", MAX_DEVICES, n);
         return 2;
     }
+    if (blocks < 1 || blocks > MAX_BLOCKS) {
+        fprintf(stderr, "--blocks must be 1..%d\n", MAX_BLOCKS);
+        return 2;
+    }
+    if (mode == MODE_ROOT && (root < 0 || root >= n)) {
+        fprintf(stderr, "--root must index into --devices\n");
+        return 2;
+    }
 
-    printf("nway_star_allreduce: devices=[");
+    printf("nway_%s_allreduce: devices=[", mode == MODE_STAR ? "star" : "root");
     for (int i = 0; i < n; ++i) printf("%d%s", devices[i], i + 1 < n ? "," : "");
-    printf("] reps=%d\n", reps);
+    printf("] blocks=%d reps=%d%s\n", blocks, reps,
+           mode == MODE_ROOT ? (" root_rank_index=" + std::to_string(root)).c_str() : "");
 
     for (int elems : element_counts) {
         const size_t bytes = (size_t) elems * sizeof(float);
 
         std::vector<DeviceState> ds(n);
-        // Host-side reference input, one vector per rank.
         std::vector<std::vector<float>> input(n, std::vector<float>(elems));
         std::mt19937 rng(1234 + elems);
         std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
@@ -179,7 +305,6 @@ int main(int argc, char ** argv) {
             reference[i] = acc;
         }
 
-        // Per-device alloc.
         for (int r = 0; r < n; ++r) {
             ds[r].device_id = devices[r];
             HIP_CHECK(hipSetDevice(devices[r]));
@@ -192,12 +317,13 @@ int main(int argc, char ** argv) {
             HIP_CHECK(hipMemcpy(ds[r].d_send, input[r].data(), bytes, hipMemcpyHostToDevice));
         }
 
-        // Pinned arrival ring (one int per rank) and a device-array of peer
-        // staging pointers, visible from every device via mapped memory.
+        // arrival: n_devices * MAX_BLOCKS slots, ARRIVAL_STRIDE_INTS apart --
+        // real cache-line separation per (rank, block).
+        const size_t arrival_ints = (size_t) n * MAX_BLOCKS * ARRIVAL_STRIDE_INTS;
         int * h_arrival = nullptr;
-        HIP_CHECK(hipHostMalloc((void **) &h_arrival, n * sizeof(int),
+        HIP_CHECK(hipHostMalloc((void **) &h_arrival, arrival_ints * sizeof(int),
                                  hipHostMallocPortable | hipHostMallocMapped));
-        memset(h_arrival, 0, n * sizeof(int));
+        memset(h_arrival, 0, arrival_ints * sizeof(int));
         int * d_arrival = nullptr;
         HIP_CHECK(hipHostGetDevicePointer((void **) &d_arrival, h_arrival, 0));
 
@@ -208,51 +334,59 @@ int main(int argc, char ** argv) {
         float ** d_peer_ptrs = nullptr;
         HIP_CHECK(hipHostGetDevicePointer((void **) &d_peer_ptrs, h_peer_ptrs, 0));
 
-        // Warmup (also validates correctness once before timing).
-        int token = 1;
         std::vector<hipEvent_t> start_ev(n), stop_ev(n);
         for (int r = 0; r < n; ++r) {
             HIP_CHECK(hipSetDevice(devices[r]));
             HIP_CHECK(hipEventCreate(&start_ev[r]));
             HIP_CHECK(hipEventCreate(&stop_ev[r]));
-            nway_star_kernel<<<1, 256, 0, ds[r].stream>>>(
-                ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
-                n, r, elems, d_arrival, token);
-        }
-        for (int r = 0; r < n; ++r) {
-            HIP_CHECK(hipSetDevice(devices[r]));
-            HIP_CHECK(hipStreamSynchronize(ds[r].stream));
         }
 
-        std::vector<float> out0(elems);
-        HIP_CHECK(hipSetDevice(devices[0]));
-        HIP_CHECK(hipMemcpy(out0.data(), ds[0].d_recv, bytes, hipMemcpyDeviceToHost));
-        double max_abs_err = 0.0;
-        for (int i = 0; i < elems; ++i) {
-            max_abs_err = std::max(max_abs_err, (double) std::fabs(out0[i] - reference[i]));
-        }
-        // F32 accumulation in a different order than the CPU reference; allow
-        // a generous but real epsilon (not "close enough to hide a bug").
-        const double eps = 1e-4 * n;
-        bool correct = max_abs_err < eps;
-
-        // Timed reps.
-        std::vector<double> elapsed_ms;
-        elapsed_ms.reserve(reps);
-        for (int rep = 0; rep < reps; ++rep) {
-            token++;
+        auto launch = [&](int token) {
             for (int r = 0; r < n; ++r) {
                 HIP_CHECK(hipSetDevice(devices[r]));
                 HIP_CHECK(hipEventRecord(start_ev[r], ds[r].stream));
-                nway_star_kernel<<<1, 256, 0, ds[r].stream>>>(
-                    ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
-                    n, r, elems, d_arrival, token);
+                if (mode == MODE_STAR) {
+                    star_kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
+                        n, r, elems, d_arrival, token);
+                } else {
+                    root_kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
+                        n, r, root, elems, d_arrival, token);
+                }
                 HIP_CHECK(hipEventRecord(stop_ev[r], ds[r].stream));
             }
             for (int r = 0; r < n; ++r) {
                 HIP_CHECK(hipSetDevice(devices[r]));
                 HIP_CHECK(hipStreamSynchronize(ds[r].stream));
             }
+        };
+
+        auto validate = [&]() -> double {
+            double max_abs_err = 0.0;
+            std::vector<float> out(elems);
+            for (int r = 0; r < n; ++r) {
+                HIP_CHECK(hipSetDevice(devices[r]));
+                HIP_CHECK(hipMemcpy(out.data(), ds[r].d_recv, bytes, hipMemcpyDeviceToHost));
+                for (int i = 0; i < elems; ++i) {
+                    max_abs_err = std::max(max_abs_err, (double) std::fabs(out[i] - reference[i]));
+                }
+            }
+            return max_abs_err;
+        };
+
+        int token = 1;
+        launch(token); // warmup
+        double max_abs_err = validate();
+        const double eps = 1e-4 * n;
+
+        std::vector<double> elapsed_ms;
+        elapsed_ms.reserve(reps);
+        for (int rep = 0; rep < reps; ++rep) {
+            token++;
+            launch(token);
+            max_abs_err = std::max(max_abs_err, validate());
+
             float max_ms = 0.0f;
             for (int r = 0; r < n; ++r) {
                 float ms = 0.0f;
@@ -261,6 +395,7 @@ int main(int argc, char ** argv) {
             }
             elapsed_ms.push_back(max_ms);
         }
+        bool correct = max_abs_err < eps;
 
         std::vector<double> sorted = elapsed_ms;
         std::sort(sorted.begin(), sorted.end());
