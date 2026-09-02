@@ -282,11 +282,10 @@ class EvaluateProviderRunTests(unittest.TestCase):
             seed=1, pattern="ordinary_signed", element_count=16, device_count=2,
         )
         self.manifest = _make_manifest(self.device_values)
-        self.reference, sum_abs = rc.cpu_reference(self.device_values)
-        self.allowed = rc.analytical_error_bound(sum_abs, device_count=2)
+        self.reference, self.sum_abs = rc.cpu_reference(self.device_values)
 
     def _eval(self, run: rc.ProviderRun) -> rc.CaseResult:
-        return rc.evaluate_provider_run(self.manifest, self.device_values, self.reference, self.allowed, run)
+        return rc.evaluate_provider_run(self.manifest, self.device_values, self.reference, self.sum_abs, run)
 
     def test_correct_rccl_run_passes(self):
         run = _clean_run(self.manifest, self.device_values, "rccl")
@@ -447,8 +446,7 @@ class AggregateTests(unittest.TestCase):
         manifest = _make_manifest(device_values)
         run = _clean_run(manifest, device_values, "rccl")
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
-        results = [rc.evaluate_provider_run(manifest, device_values, reference, allowed, run)]
+        results = [rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)]
         agg = rc.aggregate_case_results("sig-a", "rccl", results)
         self.assertTrue(agg.all_correct)
         self.assertEqual(agg.failing_case_ids, ())
@@ -457,15 +455,14 @@ class AggregateTests(unittest.TestCase):
         device_values = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
         manifest = _make_manifest(device_values)
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
         good_run = _clean_run(manifest, device_values, "rccl")
         bad = list(reference)
         bad[0] += 1.0
         bad_manifest = _make_manifest(device_values, case_id="case-0002")
         bad_run = _clean_run(bad_manifest, device_values, "rccl",
                               outputs=(_f32_bytes(bad), _f32_bytes(reference)))
-        good_result = rc.evaluate_provider_run(manifest, device_values, reference, allowed, good_run)
-        bad_result = rc.evaluate_provider_run(bad_manifest, device_values, reference, allowed, bad_run)
+        good_result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, good_run)
+        bad_result = rc.evaluate_provider_run(bad_manifest, device_values, reference, sum_abs, bad_run)
         agg = rc.aggregate_case_results("sig-a", "rccl", [good_result, bad_result])
         self.assertFalse(agg.all_correct)
         self.assertEqual(agg.failing_case_ids, ("case-0002",))
@@ -480,9 +477,8 @@ class JsonlWriterTests(unittest.TestCase):
         device_values = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
         manifest = _make_manifest(device_values)
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
         run = _clean_run(manifest, device_values, "rccl")
-        result = rc.evaluate_provider_run(manifest, device_values, reference, allowed, run)
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
         row = rc.case_result_to_row(
             result, source_revision="deadbeef", manifest_hash="cafef00d",
             reduction_signature_key="sig-a", topology_key="n2:peer1001",
@@ -502,6 +498,97 @@ class JsonlWriterTests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             round_tripped = json.loads(lines[0])
             self.assertEqual(round_tripped["case_id"], row["case_id"])
+
+
+class Bf16WireCompressionBoundTests(unittest.TestCase):
+    """GP05: the analytical bound must widen for the rccl provider's real
+    BF16-wire-compression regime (element_count >= the real upstream
+    threshold), and ONLY for that provider/regime -- never a blanket
+    loosening. See tools/bigcherry/tuning/reduction.py's
+    NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT / provider_uses_bf16_wire."""
+
+    def test_thresholds_match_pinned_source(self):
+        self.assertEqual(rc.nccl_bf16_wire_threshold(1), 32768)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(2), 32768)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(3), 131072)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(4), 262144)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(8), 262144)  # >=4 shares one threshold
+
+    def test_provider_uses_bf16_wire_gates_on_provider_and_size(self):
+        self.assertTrue(rc.provider_uses_bf16_wire("rccl", 32768, 2))
+        self.assertTrue(rc.provider_uses_bf16_wire("rccl", 2621440, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("rccl", 32767, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("meta", 2621440, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("auto", 2621440, 2))
+
+    def test_bf16_bound_strictly_wider_than_f32_bound(self):
+        sum_abs = [1.0, 1000.0]
+        f32_bound = rc.analytical_error_bound(sum_abs, device_count=2, bf16_wire=False)
+        bf16_bound = rc.analytical_error_bound(sum_abs, device_count=2, bf16_wire=True)
+        for f32_b, bf16_b in zip(f32_bound, bf16_bound):
+            self.assertGreater(bf16_b, f32_b)
+
+    def _above_threshold_case(self):
+        # element_count=40000 is above the <=2-device 32768 threshold --
+        # real regime the two stress signatures in production evidence
+        # (2621440 / 2606080) fall into, kept smaller here purely so the
+        # pure-Python reference/evaluation loops stay fast in CI.
+        device_values = rc.generate_case(
+            seed=7, pattern="ordinary_signed", element_count=40000, device_count=2,
+        )
+        manifest = _make_manifest(device_values, case_id="bf16-case")
+        manifest["element_count"] = 40000
+        reference, sum_abs = rc.cpu_reference(device_values)
+        return device_values, manifest, reference, sum_abs
+
+    def _bf16_scale_perturb(self, reference: list[float], sum_abs: list[float]) -> list[float]:
+        """Perturb every element by ~half the real BF16 quantization
+        magnitude -- large enough to exceed the plain F32 bound (which is
+        ~2^16x tighter), small enough to stay inside the BF16-widened
+        bound with real margin."""
+        return [
+            v + 0.5 * rc.BF16_ULP * s if s > 0.0 else v
+            for v, s in zip(reference, sum_abs)
+        ]
+
+    def test_rccl_above_threshold_with_bf16_scale_error_passes(self):
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertTrue(result.valid, result.reason)
+        self.assertTrue(result.correct, result.reason)
+
+    def test_meta_above_threshold_with_same_error_still_fails(self):
+        # Same perturbation magnitude, but as a meta run -- meta never gets
+        # BF16 slack (it doesn't wire-compress), so this must still fail.
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        run = _clean_run(
+            manifest, device_values, "meta",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
+
+    def test_rccl_below_threshold_with_same_error_still_fails(self):
+        # Same relative perturbation, but element_count stays below the
+        # real wire threshold -- rccl must NOT get BF16 slack here either.
+        device_values = rc.generate_case(
+            seed=7, pattern="ordinary_signed", element_count=1024, device_count=2,
+        )
+        manifest = _make_manifest(device_values, case_id="below-threshold-case")
+        reference, sum_abs = rc.cpu_reference(device_values)
+        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
 
 
 class LoadProbeRunTests(unittest.TestCase):

@@ -71,6 +71,58 @@ GENERATOR_VERSION = "hi18-f32-v1"
 F32_ULP = 2.0 ** -24
 FLT_MIN = 2.0 ** -126
 
+# GP05: BF16 unit roundoff (7 explicit mantissa bits + implicit leading one
+# => 2^-8), used to extend the analytical bound for the real BF16-wire-
+# compression regime upstream's RCCL provider silently enters at large
+# element counts (see NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT below). This
+# is NOT a hypothetical -- ggml_backend_cuda_comm_allreduce_nccl() really
+# does compress each device's F32 operand to BF16 before the collective and
+# convert back, as a deliberate bandwidth/precision tradeoff, not a bug.
+BF16_ULP = 2.0 ** -8
+
+# GP05: upstream's real hardcoded element-count thresholds (ggml-cuda.cu
+# ~line 1053-1128) above which ggml_backend_cuda_comm_allreduce_nccl()
+# switches from exact F32 to BF16-wire-compressed transport, keyed by
+# participant count. Verified via real hardware threshold bisection
+# (PASS at ne=30720, FAIL at ne=35840, bracketing the <=2-device 32768
+# constant precisely) plus source read. Do not invent additional entries
+# speculatively -- these three are the only ones confirmed against the
+# pinned source; a device_count this table doesn't cover is a real gap to
+# re-verify against source, not to guess at.
+NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT: dict[int, int] = {
+    1: 32768,
+    2: 32768,
+    3: 131072,
+    4: 262144,
+}
+
+
+def nccl_bf16_wire_threshold(device_count: int) -> int:
+    """The real upstream element-count threshold at/above which the rccl
+    provider switches to BF16-wire-compressed transport for this many
+    participants. Devices counts >=4 all share the same >=4 threshold per
+    the pinned source (no further per-count scaling beyond 4)."""
+    if device_count >= 4:
+        return NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT[4]
+    if device_count not in NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT:
+        raise CorrectnessError(
+            f"device_count={device_count} has no confirmed BF16-wire-"
+            "compression threshold -- re-verify against the pinned "
+            "ggml-cuda.cu source before adding it, do not guess"
+        )
+    return NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT[device_count]
+
+
+def provider_uses_bf16_wire(provider: str, element_count: int, device_count: int) -> bool:
+    """Whether THIS specific provider run would have gone through
+    upstream's real BF16-wire-compression path for this case shape. Only
+    the rccl provider does this (confirmed via source read) -- meta and
+    auto (when auto resolves to something other than rccl) stay exact F32,
+    so a shared per-case bound would either be too strict for rccl's real
+    large-signature behavior or too loose for meta's -- this must be
+    evaluated per provider run, not once per case."""
+    return provider == "rccl" and element_count >= nccl_bf16_wire_threshold(device_count)
+
 PATTERNS = (
     "ordinary_signed",
     "all_positive",
@@ -315,11 +367,22 @@ def cpu_reference(device_values: list[list[float]]) -> tuple[list[float], list[f
     return reference, sum_abs
 
 
-def analytical_error_bound(sum_abs: list[float], device_count: int) -> list[float]:
-    """Elementwise F32 summation error bound (standard floating-point
+def analytical_error_bound(
+    sum_abs: list[float], device_count: int, *, bf16_wire: bool = False,
+) -> list[float]:
+    """Elementwise summation error bound (standard floating-point
     analysis): gamma_n = n*u / (1 - n*u) for n = device_count - 1 pairwise
     additions, plus a D*FLT_MIN floor for flush-to-zero/subnormal coverage
-    that does not create a meaningful tolerance for ordinary values."""
+    that does not create a meaningful tolerance for ordinary values.
+
+    GP05: when `bf16_wire` is set, widens the bound by BF16_ULP * sum_abs[i]
+    to cover upstream's real BF16-wire-compression regime -- each device's
+    operand is quantized to BF16 (7 explicit mantissa bits) before the
+    collective and reconstructed to F32 on the far end, so the DOMINANT
+    error source there is per-operand BF16 quantization, not F32
+    accumulation rounding. This must never be applied unconditionally: a
+    provider run that stayed exact F32 (meta, or rccl below the real wire
+    threshold) gets NO artificial slack -- see provider_uses_bf16_wire()."""
     if device_count < 1:
         raise CorrectnessError(f"device_count must be >= 1, got {device_count}")
     n = device_count - 1
@@ -330,7 +393,8 @@ def analytical_error_bound(sum_abs: list[float], device_count: int) -> list[floa
             "bound to be meaningful (n * unit_roundoff >= 1)"
         )
     gamma = (n * F32_ULP) / denom
-    return [gamma * s + device_count * FLT_MIN for s in sum_abs]
+    extra_ulp = BF16_ULP if bf16_wire else 0.0
+    return [(gamma + extra_ulp) * s + device_count * FLT_MIN for s in sum_abs]
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +562,7 @@ def evaluate_provider_run(
     manifest: dict,
     device_values: list[list[float]],
     reference: list[float],
-    allowed_abs_error: list[float],
+    sum_abs: list[float],
     run: ProviderRun,
 ) -> CaseResult:
     """Evaluate one provider's execution against the CPU-double oracle and
@@ -544,6 +608,15 @@ def evaluate_provider_run(
                     f"provenance gate failed for provider={run.provider!r}: "
                     f"{field_name}={actual!r}, required {expected!r}"
                 )
+
+    # GP05: the analytical bound is computed PER RUN, keyed off what this
+    # specific provider run actually did (run.effective_provider, the real
+    # servicing provider, not merely what was requested) -- rccl above the
+    # real wire threshold gets the BF16-widened bound; every other run
+    # (meta, or rccl below threshold) gets the plain exact-F32 bound with
+    # zero artificial slack.
+    bf16_wire = provider_uses_bf16_wire(run.effective_provider, element_count, device_count)
+    allowed_abs_error = analytical_error_bound(sum_abs, device_count, bf16_wire=bf16_wire)
 
     outputs: list[list[float]] = []
     for data in run.outputs:
@@ -618,16 +691,19 @@ def evaluate_case(
     manifest: dict, device_values: list[list[float]], runs: dict[str, ProviderRun],
 ) -> list[CaseResult]:
     """Evaluate every provider arm for one case against a single CPU-double
-    reference and analytical error bound computed once from the frozen
-    input values."""
+    reference. GP05: the analytical error bound is NOT shared across arms
+    -- each provider run gets its own bound from evaluate_provider_run,
+    widened for BF16-wire-compression only when that specific run actually
+    went through it (rccl, at/above the real element-count threshold).
+    sum_abs (the input to every arm's bound) is computed once here since it
+    depends only on the frozen input values, not on which provider ran."""
     element_count = manifest["element_count"]
     if any(len(v) != element_count for v in device_values):
         raise CorrectnessError(
             f"case {manifest['case_id']}: device value arrays disagree with manifest element_count"
         )
     reference, sum_abs = cpu_reference(device_values)
-    allowed = analytical_error_bound(sum_abs, manifest["device_count"])
-    return [evaluate_provider_run(manifest, device_values, reference, allowed, run) for run in runs.values()]
+    return [evaluate_provider_run(manifest, device_values, reference, sum_abs, run) for run in runs.values()]
 
 
 # ---------------------------------------------------------------------------
