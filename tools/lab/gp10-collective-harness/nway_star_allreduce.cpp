@@ -167,6 +167,7 @@ __global__ void root_kernel(
         __syncthreads();
         if (threadIdx.x == 0) {
             ar_signal_set(arrival_slot(arrival, n_devices, rank, blockIdx.x), token);
+            __threadfence_system(); // publish the token itself system-wide (matches production)
         }
     } else {
         __syncthreads();
@@ -201,6 +202,7 @@ __global__ void root_kernel(
         __syncthreads();
         if (threadIdx.x == 0) {
             ar_signal_set(arrival_slot(arrival, n_devices, root, blockIdx.x), token);
+            __threadfence_system(); // publish the token itself system-wide (matches production)
         }
     } else {
         if (threadIdx.x == 0) {
@@ -324,15 +326,30 @@ int main(int argc, char ** argv) {
         HIP_CHECK(hipHostMalloc((void **) &h_arrival, arrival_ints * sizeof(int),
                                  hipHostMallocPortable | hipHostMallocMapped));
         memset(h_arrival, 0, arrival_ints * sizeof(int));
-        int * d_arrival = nullptr;
-        HIP_CHECK(hipHostGetDevicePointer((void **) &d_arrival, h_arrival, 0));
 
-        float ** h_peer_ptrs = nullptr;
-        HIP_CHECK(hipHostMalloc((void **) &h_peer_ptrs, n * sizeof(float *),
-                                 hipHostMallocPortable | hipHostMallocMapped));
-        for (int r = 0; r < n; ++r) h_peer_ptrs[r] = ds[r].d_stage;
-        float ** d_peer_ptrs = nullptr;
-        HIP_CHECK(hipHostGetDevicePointer((void **) &d_peer_ptrs, h_peer_ptrs, 0));
+        // 2026-09-02 fix (per gpt-dev-agent root-cause analysis, req_27af96122a244da5):
+        // hipHostGetDevicePointer() must be called with the CONSUMING device
+        // current -- an alias resolved once under one device's context is not
+        // guaranteed valid when dereferenced by a kernel on a DIFFERENT
+        // device. The original version called it once (with whichever device
+        // happened to be current from the alloc loop above) and shared that
+        // single alias across every rank's kernel launch -- a real, rare
+        // cross-device mapped-pointer bug, not a fence/ordering race. Resolve
+        // a separate alias table per CONSUMING device instead.
+        std::vector<int *>   d_arrival_by_rank(n);
+        std::vector<float **> d_peer_table_by_rank(n);
+        for (int c = 0; c < n; ++c) {
+            HIP_CHECK(hipSetDevice(devices[c]));
+            HIP_CHECK(hipHostGetDevicePointer((void **) &d_arrival_by_rank[c], h_arrival, 0));
+
+            std::vector<float *> aliases(n);
+            for (int owner = 0; owner < n; ++owner) {
+                HIP_CHECK(hipHostGetDevicePointer((void **) &aliases[owner], ds[owner].h_stage, 0));
+            }
+            HIP_CHECK(hipMalloc(&d_peer_table_by_rank[c], n * sizeof(float *)));
+            HIP_CHECK(hipMemcpy(d_peer_table_by_rank[c], aliases.data(), n * sizeof(float *),
+                                 hipMemcpyHostToDevice));
+        }
 
         std::vector<hipEvent_t> start_ev(n), stop_ev(n);
         for (int r = 0; r < n; ++r) {
@@ -347,12 +364,12 @@ int main(int argc, char ** argv) {
                 HIP_CHECK(hipEventRecord(start_ev[r], ds[r].stream));
                 if (mode == MODE_STAR) {
                     star_kernel<<<blocks, 256, 0, ds[r].stream>>>(
-                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
-                        n, r, elems, d_arrival, token);
+                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_table_by_rank[r],
+                        n, r, elems, d_arrival_by_rank[r], token);
                 } else {
                     root_kernel<<<blocks, 256, 0, ds[r].stream>>>(
-                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_ptrs,
-                        n, r, root, elems, d_arrival, token);
+                        ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_table_by_rank[r],
+                        n, r, root, elems, d_arrival_by_rank[r], token);
                 }
                 HIP_CHECK(hipEventRecord(stop_ev[r], ds[r].stream));
             }
@@ -435,10 +452,10 @@ int main(int argc, char ** argv) {
             hipFree(ds[r].d_send);
             hipFree(ds[r].d_recv);
             hipHostFree(ds[r].h_stage);
+            hipFree(d_peer_table_by_rank[r]);
             hipStreamDestroy(ds[r].stream);
         }
         hipHostFree(h_arrival);
-        hipHostFree(h_peer_ptrs);
     }
 
     return 0;
