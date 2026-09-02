@@ -73,15 +73,18 @@ fixed:
    `provider_name = "rccl"` in that shared branch immediately before the
    call.
 
-**Still not fixed / not yet safe to ship, even experimentally**: this
-patch's `ggml_backend_cuda_comm_init_hybrid()` brings up its own secondary
-`ncclCommInitAll()` with zero awareness of GP02's (not yet landed) RCCL
-admission predicate or patch 1225's device-3 guard -- confirmed via the
-identical test that found this gap in the now-retired 1243: a topology
-including physical device 3 will report spurious `ncclCommInitAll` success
-and then hard-crash on the first real collective. Do not enable
-`GGML_CUDA_ALLREDUCE=hybrid` on any device-3-inclusive topology until GP02
-lands and this patch consults it.
+**RESOLVED (2026-09-02, GP02)**: this patch now `requires` the rewritten
+`1225_hi85_nccl_heterogeneous_arch_guard` and calls its shared
+`ggml_backend_cuda_comm_rccl_admission_ok()` before its own secondary
+`ncclCommInitAll()` -- the same real, per-device, ordinal-independent
+PCIe-atomics check (`hipDeviceAttributeHostNativeAtomicSupported`) that
+protects the original RCCL init path. Verified on real hardware: a
+device-3-inclusive topology (`{0,3}`) now declines RCCL cleanly (no crash)
+and falls back to the internal pipeline (unaffected by PCIe atomics, since
+it doesn't use RCCL) -- real working inference, not just a safe abort.
+`{0,2}`/`{1,2}` remain correctly admitted through RCCL (confirms the new
+predicate, unlike the old architecture-inequality version, does not
+falsely reject them). See GP02's plan notes for the full validation.
 
 ## Real hardware validation (2026-09-02) -- CONSOLIDATION COMPLETE
 
