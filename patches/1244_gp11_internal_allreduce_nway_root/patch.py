@@ -57,74 +57,59 @@ from bigcherry.patcher import Edit, FilePatch
 
 _KERNEL3_TEXT = '''
 // ---------------------------------------------------------------------------
-// N=3 fused reduce-to-root + broadcast (GP11, preliminary). devices[0] is
-// always root -- real hardware validated (either RX 7900 XTX as root beats
-// RCCL's own Ring by ~22% at decode-realistic sizes on this box; see
-// tools/lab/gp10-collective-harness/ and docs/planning/.../gpu-collectives/
-// GP11.md). F32 only, no BF16 wire compression (bf16_threshold is forced
-// to 0 for n_devices==3 in pipeline_init) -- narrower than the validated
-// N=2 path, intentionally: this is exactly the regime GP11's own
-// base-level harness tested before this patch was written.
+// N=3 specialized fused reduce-to-root + broadcast (GP11).
 //
-// One kernel body, launched once per device with per-device pointers --
-// the same pattern the N=2 kernel above uses. Root reads both leaves'
-// pinned slots, sums, republishes into its own slot; leaves each do
-// exactly one handshake with root only (not with each other).
+// Rank 0 is always root. F32 only. Root and leaf are separate kernels
+// (gpt-dev-agent design, req_a60b24c16aa542c1, applying the root3-
+// specialized design validated in tools/lab/gp10-collective-harness/ to
+// production) so the hot path contains no is_root/n_devices/root branching
+// or peer-table lookup -- real hardware: 65us median at 30720 F32 elements
+// vs the prior generic kernel's 68.3-68.8us, beats RCCL's 87.8us by ~27%.
+//
+// IMPORTANT correctness invariants (do not regress either):
+//   * arrival_* arguments are BASE (slot,rank) pointers; each kernel adds
+//     blockIdx.x * ARRIVAL_INTS itself (2026-09-02 fix, req_1f050a8abef749a2
+//     -- the original generic kernel signalled the base pointer directly,
+//     so all blocks shared one token: fast, no crash, garbage output).
+//   * all mapped host pointers are consumer-specific aliases resolved by
+//     host_buf_dev3[consumer][owner]/arrival_dev3[consumer] at init (the
+//     same class of cross-device pointer-alias bug already fixed once in
+//     the harness, reintroduced and re-fixed here).
+//   * send/recv are NOT __restrict__: production AllReduce is in-place and
+//     passes the same tensor pointer for both.
+//   * UNROLL=1 only -- real hardware showed UNROLL=2/4 regress at this size
+//     (not enough work per thread for the extra register pressure to pay
+//     off), so the root's reduce loop is deliberately NOT unrolled.
 // ---------------------------------------------------------------------------
 static __global__ void ggml_cuda_ar_kernel3(
-        const float * sendbuf,
-        float       * recvbuf,
-        float       * __restrict__ host_mine,
-        const float * __restrict__ host_leaf0,   // valid only when is_root
-        const float * __restrict__ host_leaf1,   // valid only when is_root
-        const float * __restrict__ host_root,    // valid only when !is_root
-        int                         count,
-        int *                       arrival_mine, // BASE (slot,rank) pointer -- this kernel
-        int *                       arrival_a,    // adds the per-block offset itself, mirroring
-        int *                       arrival_b,    // ggml_cuda_ar_kernel's own per-block scheme
-        int                         token,
-        bool                        is_root) {
-    const int gtid    = blockIdx.x * blockDim.x + threadIdx.x;
-    const int gnt      = gridDim.x * blockDim.x;
-    constexpr int ELEMS_PER_VEC = 4;
-    const int count4  = count / ELEMS_PER_VEC;
-    const int tail     = count4 * ELEMS_PER_VEC;
-
-    // 2026-09-02 fix (gpt-dev-agent root cause, req_1f050a8abef749a2): the
-    // original version signalled/polled the BASE (slot,rank) pointer
-    // directly, so all GGML_CUDA_AR_KERNEL_BLOCKS blocks shared one token --
-    // any block finishing first released every other block's wait, which
-    // then read stripes other blocks hadn't published yet. Real hardware
-    // symptom: ran fast, no crash, garbage output. ggml_cuda_ar_kernel above
-    // (the working N=2 path) already gets this right via
-    // ggml_cuda_ar_arrival_ptr's block-indexed slots; this kernel must do
-    // the equivalent block-offset itself since it's handed BASE pointers.
+        const float4 *              send,
+        float4       *              recv,
+        float4       * __restrict__ publish,
+        const float4 * __restrict__ leaf0,
+        const float4 * __restrict__ leaf1,
+        int                          count,
+        int *                        leaf0_ready,
+        int *                        leaf1_ready,
+        int *                        root_ready,
+        int                          token) {
     constexpr int ARRIVAL_INTS = (int) (GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
-    int * my_slot = arrival_mine + blockIdx.x * ARRIVAL_INTS;
-    int * a_slot  = arrival_a ? arrival_a + blockIdx.x * ARRIVAL_INTS : nullptr;
-    int * b_slot  = arrival_b ? arrival_b + blockIdx.x * ARRIVAL_INTS : nullptr;
 
-    if (!is_root) {
-        const float4 * src4 = reinterpret_cast<const float4 *>(sendbuf);
-        float4       * dst4 = reinterpret_cast<float4 *>(host_mine);
-        for (int i = gtid; i < count4; i += gnt) {
-            dst4[i] = src4[i];
-        }
-        if (blockIdx.x == 0 && threadIdx.x < count - tail) {
-            host_mine[tail + threadIdx.x] = sendbuf[tail + threadIdx.x];
-        }
-        __threadfence_system();
-        __syncthreads();
-        if (threadIdx.x == 0) {
-            ggml_cuda_ar_signal_set(my_slot, token);
-            __threadfence_system();
-        }
-    } else {
-        __syncthreads();
-    }
+    const int tid    = threadIdx.x;
+    const int bid     = blockIdx.x;
+    const int gtid    = bid * blockDim.x + tid;
+    const int gnt     = gridDim.x * blockDim.x;
+    const int count4  = count / 4;
+    const int tail    = count4 * 4;
 
-    if (threadIdx.x == 0 && is_root) {
-        while (ggml_cuda_ar_signal_get(a_slot) != token) {
+    const int * leaf0_slot = leaf0_ready + bid * ARRIVAL_INTS;
+    const int * leaf1_slot = leaf1_ready + bid * ARRIVAL_INTS;
+    int       * root_slot  = root_ready  + bid * ARRIVAL_INTS;
+
+    // P1+P2: separate lanes poll each leaf (matches the stress-validated
+    // harness exactly; a true cross-wave variant using tid==0/tid==warpSize
+    // is a follow-up experiment, not yet validated for production).
+    if (tid == 0) {
+        while (ggml_cuda_ar_signal_get(leaf0_slot) != token) {
 #ifdef GGML_USE_HIP
             __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
@@ -133,7 +118,9 @@ static __global__ void ggml_cuda_ar_kernel3(
             NO_DEVICE_CODE;
 #endif
         }
-        while (ggml_cuda_ar_signal_get(b_slot) != token) {
+    }
+    if (tid == 1) {
+        while (ggml_cuda_ar_signal_get(leaf1_slot) != token) {
 #ifdef GGML_USE_HIP
             __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
@@ -146,69 +133,111 @@ static __global__ void ggml_cuda_ar_kernel3(
     __syncthreads();
     __threadfence_system();
 
-    if (is_root) {
-        const float4 * src4 = reinterpret_cast<const float4 *>(sendbuf);
-        const float4 * l04  = reinterpret_cast<const float4 *>(host_leaf0);
-        const float4 * l14  = reinterpret_cast<const float4 *>(host_leaf1);
-        float4       * dst4 = reinterpret_cast<float4 *>(recvbuf);
-        float4       * pub4 = reinterpret_cast<float4 *>(host_mine);
-        for (int i = gtid; i < count4; i += gnt) {
-            const float4 a = l04[i];
-            const float4 b = l14[i];
-            const float4 s = src4[i];
-            float4 out;
-            out.x = s.x + a.x + b.x;
-            out.y = s.y + a.y + b.y;
-            out.z = s.z + a.z + b.z;
-            out.w = s.w + a.w + b.w;
-            dst4[i] = out;
-            pub4[i] = out;
-        }
-        if (blockIdx.x == 0 && threadIdx.x < count - tail) {
-            const int i = tail + threadIdx.x;
-            const float out = sendbuf[i] + host_leaf0[i] + host_leaf1[i];
-            recvbuf[i]   = out;
-            host_mine[i] = out;
-        }
+    for (int i = gtid; i < count4; i += gnt) {
+        // Explicit independent loads -- the material optimization that made
+        // the N=3 root path beat RCCL (both mapped-host reads outstanding
+        // simultaneously instead of a serial dependent-add).
+        const float4 a = leaf0[i];
+        const float4 b = leaf1[i];
+        const float4 s = send[i];
+        float4 out;
+        out.x = s.x + a.x + b.x;
+        out.y = s.y + a.y + b.y;
+        out.z = s.z + a.z + b.z;
+        out.w = s.w + a.w + b.w;
+        recv[i]    = out;
+        publish[i] = out;
+    }
+
+    // Production must retain arbitrary-F32-count correctness (the harness's
+    // root3 mode required elements%4==0; production cannot assume that).
+    // Only block 0 owns the scalar tail.
+    if (bid == 0 && tid < count - tail) {
+        const float * send_f    = reinterpret_cast<const float *>(send);
+        float       * recv_f    = reinterpret_cast<float *>(recv);
+        float       * publish_f = reinterpret_cast<float *>(publish);
+        const float * leaf0_f   = reinterpret_cast<const float *>(leaf0);
+        const float * leaf1_f   = reinterpret_cast<const float *>(leaf1);
+
+        const int i = tail + tid;
+        const float out = send_f[i] + leaf0_f[i] + leaf1_f[i];
+        recv_f[i]    = out;
+        publish_f[i] = out;
+    }
+
+    __threadfence_system();
+    __syncthreads();
+    if (tid == 0) {
+        ggml_cuda_ar_signal_set(root_slot, token);
         __threadfence_system();
-        __syncthreads();
-        if (threadIdx.x == 0) {
-            ggml_cuda_ar_signal_set(my_slot, token);
-            __threadfence_system();
-        }
-    } else {
-        if (threadIdx.x == 0) {
-            while (ggml_cuda_ar_signal_get(a_slot) != token) {
+    }
+}
+
+static __global__ void ggml_cuda_ar_kernel3_leaf(
+        const float4 *              send,
+        float4       *              recv,
+        float4       * __restrict__ mine,
+        const float4 * __restrict__ root_stage,
+        int                          count,
+        int *                        mine_ready,
+        int *                        root_ready,
+        int                          token) {
+    constexpr int ARRIVAL_INTS = (int) (GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
+
+    const int tid    = threadIdx.x;
+    const int bid     = blockIdx.x;
+    const int gtid    = bid * blockDim.x + tid;
+    const int gnt     = gridDim.x * blockDim.x;
+    const int count4  = count / 4;
+    const int tail    = count4 * 4;
+
+    int       * mine_slot = mine_ready + bid * ARRIVAL_INTS;
+    const int * root_slot = root_ready + bid * ARRIVAL_INTS;
+
+    for (int i = gtid; i < count4; i += gnt) {
+        mine[i] = send[i];
+    }
+    if (bid == 0 && tid < count - tail) {
+        const float * send_f = reinterpret_cast<const float *>(send);
+        float       * mine_f = reinterpret_cast<float *>(mine);
+        mine_f[tail + tid] = send_f[tail + tid];
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (tid == 0) {
+        ggml_cuda_ar_signal_set(mine_slot, token);
+        __threadfence_system();
+    }
+
+    if (tid == 0) {
+        while (ggml_cuda_ar_signal_get(root_slot) != token) {
 #ifdef GGML_USE_HIP
-                __builtin_amdgcn_s_sleep(4);
+            __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
-                __nanosleep(100);
+            __nanosleep(100);
 #else
-                NO_DEVICE_CODE;
+            NO_DEVICE_CODE;
 #endif
-            }
         }
-        __syncthreads();
-        __threadfence_system();
-        const float4 * root4 = reinterpret_cast<const float4 *>(host_root);
-        float4       * dst4  = reinterpret_cast<float4 *>(recvbuf);
-        for (int i = gtid; i < count4; i += gnt) {
-            dst4[i] = root4[i];
-        }
-        if (blockIdx.x == 0 && threadIdx.x < count - tail) {
-            recvbuf[tail + threadIdx.x] = host_root[tail + threadIdx.x];
-        }
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    for (int i = gtid; i < count4; i += gnt) {
+        recv[i] = root_stage[i];
+    }
+    if (bid == 0 && tid < count - tail) {
+        float       * recv_f = reinterpret_cast<float *>(recv);
+        const float * root_f = reinterpret_cast<const float *>(root_stage);
+        recv_f[tail + tid] = root_f[tail + tid];
     }
 }
 '''
 
 _ROOT3_HELPER_TEXT = '''
-// N=3 arrival-slot base pointer, resolved from CONSUMER c's own cross-device
-// alias table (p->arrival_dev3[c]) rather than the single shared p->arrival.dev
-// the N=2 path uses -- see add-n3-alias-fields/resolve-n3-aliases-at-init.
-// Returns the BASE (slot,rank) pointer; ggml_cuda_ar_kernel3 adds the
-// per-block offset itself (same split as ggml_cuda_ar_arrival_ptr/
-// ggml_cuda_ar_kernel above).
+// N=3 arrival BASE pointer for a specific consuming GPU. The kernel adds its
+// own per-block offset. Never substitute p->arrival.dev here: the N=3 path
+// requires the alias resolved with the consuming device current.
 static int * ggml_cuda_ar_arrival_ptr3(
         const ggml_cuda_ar_pipeline * p, int consumer, int slot, int rank) {
     const size_t offset = ((size_t) slot * 3 + rank) *
@@ -217,75 +246,104 @@ static int * ggml_cuda_ar_arrival_ptr3(
         reinterpret_cast<uint8_t *>(p->arrival_dev3[consumer]) + offset);
 }
 
-// N=3 dispatch helper (GP11, preliminary) -- see ggml_cuda_ar_kernel3 above.
-// devices[0] is always root. Reuses the existing per-slot chunking/
-// event-pool machinery (ggml_cuda_ar_acquire_slot) unchanged; pointer
-// aliasing goes through the N=3-specific per-consumer tables above instead
-// of ggml_cuda_ar_arrival_ptr/host_buf[owner].dev (those are only valid
-// from the OWNING device, not every consumer -- see add-n3-alias-fields).
+// N=3 specialized fused-root dispatcher (GP11, gpt-dev-agent design,
+// req_a60b24c16aa542c1). Rank 0 is root; ranks 1/2 are leaves. F32-only
+// admission and large-message RCCL fallback are enforced by the caller
+// (ggml_cuda_ar_allreduce's dispatch-n3-early branch) before entering here.
 static bool ggml_cuda_ar_allreduce_root3(
         ggml_cuda_ar_pipeline * p,
         ggml_backend_t        * backends,
         ggml_tensor           ** tensors,
         int64_t                 ne) {
     GGML_ASSERT(p->n_devices == 3);
+    GGML_ASSERT(ne > 0);
+
     const size_t max_chunk_elems = p->buf_bytes / sizeof(float);
     GGML_ASSERT(max_chunk_elems > 0);
+    // p->buf_bytes is 1 MiB today, hence every non-first chunk starts on a
+    // float4 boundary. Keep this invariant explicit because the specialized
+    // kernels use float4 tensor pointers directly.
+    GGML_ASSERT((max_chunk_elems % 4) == 0);
 
-    bool compute_flag[3];
+    ggml_backend_cuda_context * cuda_ctx[3] = {};
+    cudaStream_t streams[3] = {};
+    float * data_base[3] = {};
+    bool compute[3] = {};
+
+    // Resolve call-invariant state once, outside the chunk loop.
     for (int i = 0; i < 3; ++i) {
-        compute_flag[i] = (tensors[i]->flags & GGML_TENSOR_FLAG_COMPUTE) != 0;
+        cuda_ctx[i] = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
+        GGML_ASSERT(cuda_ctx[i]->device == p->devices[i]);
+
+        streams[i]   = cuda_ctx[i]->stream();
+        data_base[i] = static_cast<float *>(tensors[i]->data);
+        compute[i]   = (tensors[i]->flags & GGML_TENSOR_FLAG_COMPUTE) != 0;
+
+        // Inactive shards contribute zero. N=3 is F32-only, so zero the
+        // complete inactive tensor once rather than issuing one memset per
+        // chunk. Same-stream ordering guarantees all later root3 kernels
+        // observe the zeroed contribution.
+        if (!compute[i]) {
+            ggml_cuda_set_device(p->devices[i]);
+            CUDA_CHECK(cudaMemsetAsync(data_base[i], 0, (size_t) ne * sizeof(float), streams[i]));
+        }
     }
 
     for (int64_t chunk_start = 0; chunk_start < ne; chunk_start += (int64_t) max_chunk_elems) {
-        const size_t remaining_elems = (size_t) (ne - chunk_start);
-        const size_t chunk_elems = remaining_elems < max_chunk_elems ? remaining_elems : max_chunk_elems;
-        const size_t chunk_bytes = chunk_elems * sizeof(float);
+        const size_t remaining = (size_t) (ne - chunk_start);
+        const size_t chunk_elems = remaining < max_chunk_elems ? remaining : max_chunk_elems;
+        const int chunk_count = static_cast<int>(chunk_elems);
 
         const auto [slot, token] = ggml_cuda_ar_acquire_slot(p);
+        const size_t slot_offset = (size_t) slot * p->buf_bytes;
 
-        for (int i = 0; i < 3; ++i) {
-            ggml_cuda_set_device(p->devices[i]);
-            auto * cuda_ctx = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
-            GGML_ASSERT(cuda_ctx->device == p->devices[i]);
-            cudaStream_t stream = cuda_ctx->stream();
+        float * data0 = data_base[0] + chunk_start;
+        float * data1 = data_base[1] + chunk_start;
+        float * data2 = data_base[2] + chunk_start;
 
-            float * data = reinterpret_cast<float *>(tensors[i]->data) + chunk_start;
+        // -- Root = rank 0. Every mapped pointer below is from consumer 0's
+        // alias table. --
+        ggml_cuda_set_device(p->devices[0]);
+        auto * root_publish = reinterpret_cast<float4 *>(p->host_buf_dev3[0][0] + slot_offset);
+        auto * root_leaf0   = reinterpret_cast<const float4 *>(p->host_buf_dev3[0][1] + slot_offset);
+        auto * root_leaf1   = reinterpret_cast<const float4 *>(p->host_buf_dev3[0][2] + slot_offset);
+        ggml_cuda_ar_kernel3<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, streams[0]>>>(
+            reinterpret_cast<const float4 *>(data0), reinterpret_cast<float4 *>(data0),
+            root_publish, root_leaf0, root_leaf1, chunk_count,
+            ggml_cuda_ar_arrival_ptr3(p, 0, slot, 1),
+            ggml_cuda_ar_arrival_ptr3(p, 0, slot, 2),
+            ggml_cuda_ar_arrival_ptr3(p, 0, slot, 0),
+            token);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[0][slot].ker, streams[0]));
 
-            if (!compute_flag[i]) {
-                CUDA_CHECK(cudaMemsetAsync(data, 0, chunk_bytes, stream));
-            }
+        // -- Leaf = rank 1. Every mapped pointer below is from consumer 1's
+        // alias table. --
+        ggml_cuda_set_device(p->devices[1]);
+        auto * leaf1_mine = reinterpret_cast<float4 *>(p->host_buf_dev3[1][1] + slot_offset);
+        auto * leaf1_root = reinterpret_cast<const float4 *>(p->host_buf_dev3[1][0] + slot_offset);
+        ggml_cuda_ar_kernel3_leaf<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, streams[1]>>>(
+            reinterpret_cast<const float4 *>(data1), reinterpret_cast<float4 *>(data1),
+            leaf1_mine, leaf1_root, chunk_count,
+            ggml_cuda_ar_arrival_ptr3(p, 1, slot, 1),
+            ggml_cuda_ar_arrival_ptr3(p, 1, slot, 0),
+            token);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[1][slot].ker, streams[1]));
 
-            const bool is_root = (i == 0);
-            float * host_mine_dev = reinterpret_cast<float *>(
-                p->host_buf_dev3[i][i] + (size_t) slot * p->buf_bytes);
-
-            if (is_root) {
-                float * host0_dev = reinterpret_cast<float *>(
-                    p->host_buf_dev3[i][1] + (size_t) slot * p->buf_bytes);
-                float * host1_dev = reinterpret_cast<float *>(
-                    p->host_buf_dev3[i][2] + (size_t) slot * p->buf_bytes);
-                ggml_cuda_ar_kernel3<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>(
-                    data, data, host_mine_dev, host0_dev, host1_dev, nullptr,
-                    (int) chunk_elems,
-                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 0),
-                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 1),
-                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 2),
-                    token, true);
-            } else {
-                float * hostroot_dev = reinterpret_cast<float *>(
-                    p->host_buf_dev3[i][0] + (size_t) slot * p->buf_bytes);
-                ggml_cuda_ar_kernel3<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>(
-                    data, data, host_mine_dev, nullptr, nullptr, hostroot_dev,
-                    (int) chunk_elems,
-                    ggml_cuda_ar_arrival_ptr3(p, i, slot, i),
-                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 0),
-                    nullptr,
-                    token, false);
-            }
-            CUDA_CHECK(cudaGetLastError());
-            CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, stream));
-        }
+        // -- Leaf = rank 2. Every mapped pointer below is from consumer 2's
+        // alias table. --
+        ggml_cuda_set_device(p->devices[2]);
+        auto * leaf2_mine = reinterpret_cast<float4 *>(p->host_buf_dev3[2][2] + slot_offset);
+        auto * leaf2_root = reinterpret_cast<const float4 *>(p->host_buf_dev3[2][0] + slot_offset);
+        ggml_cuda_ar_kernel3_leaf<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, streams[2]>>>(
+            reinterpret_cast<const float4 *>(data2), reinterpret_cast<float4 *>(data2),
+            leaf2_mine, leaf2_root, chunk_count,
+            ggml_cuda_ar_arrival_ptr3(p, 2, slot, 2),
+            ggml_cuda_ar_arrival_ptr3(p, 2, slot, 0),
+            token);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[2][slot].ker, streams[2]));
     }
     return true;
 }
