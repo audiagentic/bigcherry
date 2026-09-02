@@ -57,6 +57,29 @@ def round_modes(round_index: int, *, include_stock: bool) -> tuple[str, ...]:
     return schedule(round_index + 1, include_stock=include_stock)[round_index]
 
 
+def schedule_named_arms(rounds: int, arm_names: list[str], seed: int = 0) -> list[tuple[str, ...]]:
+    """GP08: generalized version of schedule() for an arbitrary, named set
+    of arms (not just native/replay/stock) -- same balanced-complete-
+    permutation-block methodology, generalized to N arms. Used by
+    collective_benchmark.py to compare an arbitrary provider/build arm set
+    (native-rccl, bigcherry-rccl, internal, hybrid, meta, layer-split, ...)
+    rather than this module's own fixed three-arm vocabulary."""
+    if rounds < 1:
+        raise ValueError("rounds must be positive")
+    if len(arm_names) < 2:
+        raise ValueError("need at least 2 arms to compare")
+    if len(set(arm_names)) != len(arm_names):
+        raise ValueError("arm_names must be unique")
+    orders = list(itertools.permutations(arm_names))
+    rng = random.Random(seed)
+    result: list[tuple[str, ...]] = []
+    for _ in range(math.ceil(rounds / len(orders))):
+        block = list(orders)
+        rng.shuffle(block)
+        result.extend(block)
+    return result[:rounds]
+
+
 _CMAKE_PARITY_KEYS = (
     "CMAKE_BUILD_TYPE",
     "CMAKE_C_COMPILER",
