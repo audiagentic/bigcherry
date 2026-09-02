@@ -183,7 +183,7 @@ CUDA = FilePatch(
             mode="insert_after",
             text=(
                 "\n\n"
-                "// HI155: both providers are alive simultaneously in hybrid mode (see\n"
+                "// HI155/GP03: both providers are alive simultaneously in hybrid mode (see\n"
                 "// ggml_backend_cuda_comm_init_hybrid below). Per call, route reductions\n"
                 "// below the internal pipeline's OWN copy-engine threshold through internal\n"
                 "// (the regime real hardware evidence shows it wins -- decode); everything\n"
@@ -191,24 +191,53 @@ CUDA = FilePatch(
                 "// -32% to -34% against RCCL on real hardware). Internal failure at small\n"
                 "// sizes falls through to RCCL rather than straight to the meta fallback,\n"
                 "// same as the ordinary single-provider chains do on their own init failure.\n"
+                "//\n"
+                "// GP03 fix (gpt-dev-agent review, 2026-09-02): a reduction at/above the\n"
+                "// threshold used to fall straight to META whenever RCCL wasn't available\n"
+                "// (e.g. NCCL init failed, or virtual devices disabled it) even though the\n"
+                "// internal pipeline WAS available and is strictly better than META for any\n"
+                "// size -- only RCCL is unavailable, not internal. Internal is now always the\n"
+                "// last-resort fallback before META, not only the below-threshold path.\n"
+                "//\n"
+                "// GP03 fix: GGML_CUDA_AR_COPY_THRESHOLD=0 is the internal pipeline's own\n"
+                "// sentinel for \"never use the copy-engine, the chunked kernel is eligible for\n"
+                "// every size\" (see allreduce.cu's use_copy_engine computation). The naive\n"
+                "// `reduction_bytes < internal_threshold` comparison inverted that meaning --\n"
+                "// with threshold=0 it was NEVER true, so an operator explicitly forcing\n"
+                "// internal-always via that env var got the opposite of what they asked for.\n"
+                "// below_copy_threshold treats threshold==0 as \"always eligible\" explicitly.\n"
                 "static bool ggml_backend_cuda_comm_try_allreduce_hybrid(\n"
                 "        ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors) {\n"
                 "    const size_t reduction_bytes = tensors != nullptr && tensors[0] != nullptr\n"
                 "        ? ggml_nbytes(tensors[0]) : 0;\n"
-                "    const size_t internal_threshold = comm_ctx->ar_pipeline != nullptr\n"
+                "    const bool have_internal = comm_ctx->ar_pipeline != nullptr;\n"
+                "    const size_t internal_threshold = have_internal\n"
                 "        ? ggml_cuda_ar_pipeline_copy_threshold(comm_ctx->ar_pipeline) : 0;\n"
-                "    if (comm_ctx->ar_pipeline != nullptr && reduction_bytes < internal_threshold) {\n"
+                "    const bool below_copy_threshold = internal_threshold == 0 || reduction_bytes < internal_threshold;\n"
+                "#ifdef GGML_USE_NCCL\n"
+                "    const bool have_rccl = !comm_ctx->comms.empty();\n"
+                "#else\n"
+                "    const bool have_rccl = false;\n"
+                "#endif\n"
+                "    const bool prefer_internal = have_internal && (below_copy_threshold || !have_rccl);\n"
+                "    if (prefer_internal) {\n"
                 "        comm_ctx->provider_name = \"internal\";\n"
                 "        if (ggml_backend_cuda_comm_allreduce_internal(comm_ctx, tensors)) {\n"
                 "            return true;\n"
                 "        }\n"
                 "    }\n"
                 "#ifdef GGML_USE_NCCL\n"
-                "    if (!comm_ctx->comms.empty()) {\n"
+                "    if (have_rccl) {\n"
                 "        comm_ctx->provider_name = \"rccl\";\n"
                 "        return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n"
                 "    }\n"
                 "#endif // GGML_USE_NCCL\n"
+                "    if (have_internal && !prefer_internal) {\n"
+                "        // Large call, RCCL unavailable -- internal is still strictly better\n"
+                "        // than falling straight to META.\n"
+                "        comm_ctx->provider_name = \"internal\";\n"
+                "        return ggml_backend_cuda_comm_allreduce_internal(comm_ctx, tensors);\n"
+                "    }\n"
                 "    return false;\n"
                 "}"
             ),
@@ -295,6 +324,53 @@ CUDA = FilePatch(
                 '        } else {'
             ),
             guard=r'else if \(env_str == "hybrid"\) \{',
+        ),
+        Edit(
+            id="gp03-fix-explicit-rccl-plan-telemetry",
+            # GP03 fix (gpt-dev-agent review, 2026-09-02): 0830's own shared
+            # try_reduce_plan() rccl branch (used whenever the operator
+            # explicitly sets GGML_HIP_REDUCE_PLAN=rccl, bypassing
+            # try_allreduce_hybrid's own per-call dispatch entirely) calls
+            # ggml_backend_cuda_comm_allreduce_nccl() directly without ever
+            # updating comm_ctx->provider_name -- in hybrid mode that field
+            # was last set (at init) to whichever provider initialized
+            # successfully, so an explicit-rccl-forced call can genuinely
+            # run RCCL while telemetry still reports "internal". Not
+            # specific to hybrid mode's own dispatcher -- this is a real
+            # bug in the shared function every provider chain uses -- but
+            # hybrid mode is the first case where the init-time
+            # provider_name and the actually-invoked-per-call provider can
+            # provably diverge, so it is fixed here.
+            # Anchors match against a noise-stripped copy of the source
+            # where string literals -- QUOTES INCLUDED -- are blanked to
+            # spaces of the same length, so the "rccl" literal below is
+            # matched as a bare [^\n]* with no quote characters at all
+            # (same technique the retired 1243 patch used).
+            anchor=(
+                r"    if \(strcmp\(plan, [^\n]*\) == 0\) \{\n"
+                r"#ifdef GGML_USE_NCCL\n"
+                r"        if \(comm_ctx->comms\.size\(\) == comm_ctx->backends\.size\(\)\) \{\n"
+                r"            return ggml_backend_cuda_comm_allreduce_nccl\(comm_ctx, tensors\);\n"
+                r"        \}\n"
+                r"#endif\n"
+                r"    \}\n"
+                r"    return false;"
+            ),
+            rationale="record the actually-invoked provider before the "
+                      "explicit-override rccl call, not just at init time",
+            mode="replace",
+            text=(
+                "    if (strcmp(plan, \"rccl\") == 0) {\n"
+                "#ifdef GGML_USE_NCCL\n"
+                "        if (comm_ctx->comms.size() == comm_ctx->backends.size()) {\n"
+                "            comm_ctx->provider_name = \"rccl\";\n"
+                "            return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n"
+                "        }\n"
+                "#endif\n"
+                "    }\n"
+                "    return false;"
+            ),
+            guard=r"comm_ctx->provider_name = \"rccl\";\n            return ggml_backend_cuda_comm_allreduce_nccl",
         ),
     ),
 )
