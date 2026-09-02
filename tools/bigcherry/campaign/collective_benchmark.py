@@ -255,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             import os as _os
             env = dict(_os.environ)
             env.update(arm["env"])
-            full_command = [arm["binary"], *command[1:], *arm["extra_args"]]
+            full_command = [arm["binary"], *command, *arm["extra_args"]]
             run = run_arm_capture(
                 command=full_command, cwd=cwd, output=output, pair=pair_counter - 1,
                 side=arm_name, env=env, patterns=patterns,

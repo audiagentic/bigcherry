@@ -261,6 +261,45 @@ class MainIntegrationTests(unittest.TestCase):
             summary = json.loads((out_dir / "run.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["qualification"]["compatibility_revision_id"], "abc123")
 
+    def test_shared_command_args_all_reach_the_arm_binary(self):
+        # Regression test: full_command used to build as [binary, *command[1:], *extra_args],
+        # a copy-pasted ab_benchmark convention where command[0] is a placeholder binary --
+        # collective_benchmark has no such placeholder, so that silently dropped the first
+        # shared arg after "--". Verify every shared arg actually reaches the child process.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            echo = tmp_path / "echo_argv.py"
+            echo.write_text(_py("""
+                import sys
+                print("rate: 100.0")
+                print("argv:" + " ".join(sys.argv[1:]), file=sys.stderr)
+            """))
+            wrapper = tmp_path / ("echo.bat" if sys.platform.startswith("win") else "echo.sh")
+            if sys.platform.startswith("win"):
+                wrapper.write_text(f'@"{_python_executable()}" "{echo}" %*\r\n')
+            else:
+                wrapper.write_text(f'#!/bin/sh\nexec "{_python_executable()}" "{echo}" "$@"\n')
+                wrapper.chmod(0o755)
+            arms_config = tmp_path / "arms.json"
+            arms_config.write_text(json.dumps([
+                {"name": "baseline", "binary": str(wrapper)},
+                {"name": "candidate", "binary": str(wrapper)},
+            ]))
+            out_dir = tmp_path / "out"
+            rc = cb.main([
+                "--arms-config", str(arms_config), "--baseline", "baseline",
+                "--output", str(out_dir), "--rounds", "1", "--settle-seconds", "0",
+                "--metric", "rate=rate:\\s*([0-9.]+)", "--",
+                "first-arg", "second-arg",
+            ])
+            self.assertEqual(rc, 0)
+            summary = json.loads((out_dir / "run.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["command"], ["first-arg", "second-arg"])
+            for run in summary["runs"]:
+                stderr_log = (out_dir / run["stderr"]).read_text(encoding="utf-8")
+                self.assertIn("first-arg", stderr_log)
+                self.assertIn("second-arg", stderr_log)
+
     def test_fails_loudly_on_arm_command_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
