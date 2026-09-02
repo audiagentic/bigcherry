@@ -541,19 +541,26 @@ class Bf16WireCompressionBoundTests(unittest.TestCase):
         reference, sum_abs = rc.cpu_reference(device_values)
         return device_values, manifest, reference, sum_abs
 
-    def _bf16_scale_perturb(self, reference: list[float], sum_abs: list[float]) -> list[float]:
-        """Perturb every element by ~half the real BF16 quantization
-        magnitude -- large enough to exceed the plain F32 bound (which is
-        ~2^16x tighter), small enough to stay inside the BF16-widened
-        bound with real margin."""
+    def _bf16_scale_perturb(
+        self, reference: list[float], sum_abs: list[float], device_count: int,
+    ) -> list[float]:
+        """Perturb every element to 90% of the REAL BF16-widened bound
+        (derived from analytical_error_bound itself, not a hardcoded
+        guess) -- large enough to exceed the plain F32 bound by orders of
+        magnitude, and specifically large enough to exceed the FLAT
+        single-quantization bound the first (incomplete) version of this
+        fix used, so this test actually exercises the corrected
+        accumulation-composition formula rather than a magnitude too
+        small to distinguish the two."""
+        bound = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)
         return [
-            v + 0.5 * rc.BF16_ULP * s if s > 0.0 else v
-            for v, s in zip(reference, sum_abs)
+            v + 0.9 * b if s > 0.0 else v
+            for v, s, b in zip(reference, sum_abs, bound)
         ]
 
     def test_rccl_above_threshold_with_bf16_scale_error_passes(self):
         device_values, manifest, reference, sum_abs = self._above_threshold_case()
-        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
         run = _clean_run(
             manifest, device_values, "rccl",
             outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
@@ -566,7 +573,7 @@ class Bf16WireCompressionBoundTests(unittest.TestCase):
         # Same perturbation magnitude, but as a meta run -- meta never gets
         # BF16 slack (it doesn't wire-compress), so this must still fail.
         device_values, manifest, reference, sum_abs = self._above_threshold_case()
-        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
         run = _clean_run(
             manifest, device_values, "meta",
             outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
@@ -582,7 +589,53 @@ class Bf16WireCompressionBoundTests(unittest.TestCase):
         )
         manifest = _make_manifest(device_values, case_id="below-threshold-case")
         reference, sum_abs = rc.cpu_reference(device_values)
-        perturbed = self._bf16_scale_perturb(reference, sum_abs)
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
+
+    def test_corrected_bound_wider_than_original_flat_quantization_only_bound(self):
+        # gpt-dev-agent review, req_8714cf1798af40a4: the FIRST version of
+        # this fix only widened by a flat BF16_ULP * sum_abs (covering
+        # just initial operand quantization), missing that RCCL's real
+        # BF16 reduction also rounds the running sum to BF16 after EVERY
+        # addition -- up to (device_count - 1) further roundings. The
+        # corrected bound must be strictly wider than that original flat
+        # formula, with the gap growing as device_count grows (more
+        # accumulation steps).
+        sum_abs = [1000.0]
+        for device_count in (2, 3, 4):
+            corrected = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)[0]
+            original_flat = rc.BF16_ULP * sum_abs[0]  # what the first fix computed
+            with self.subTest(device_count=device_count):
+                self.assertGreater(
+                    corrected, original_flat,
+                    f"device_count={device_count}: corrected bound must exceed "
+                    "the original single-quantization-only bound",
+                )
+
+    def test_bound_gap_grows_with_device_count(self):
+        # More participating devices -> more BF16-rounded accumulation
+        # steps -> a wider gap between the corrected and flat bounds.
+        sum_abs = [1000.0]
+        gaps = []
+        for device_count in (2, 3, 4):
+            corrected = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)[0]
+            original_flat = rc.BF16_ULP * sum_abs[0]
+            gaps.append(corrected - original_flat)
+        self.assertLess(gaps[0], gaps[1])
+        self.assertLess(gaps[1], gaps[2])
+
+    def test_rccl_above_threshold_fails_when_error_exceeds_corrected_bound(self):
+        # The corrected bound is not infinitely permissive -- an error
+        # clearly beyond it (not just beyond the old flat one) must still
+        # fail, proving this isn't a blanket loosening.
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        bound = rc.analytical_error_bound(sum_abs, manifest["device_count"], bf16_wire=True)
+        perturbed = [v + 5.0 * b for v, b in zip(reference, bound)]
         run = _clean_run(
             manifest, device_values, "rccl",
             outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
