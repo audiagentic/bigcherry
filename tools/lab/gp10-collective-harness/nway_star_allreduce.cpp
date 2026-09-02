@@ -71,7 +71,7 @@ static constexpr int MAX_BLOCKS  = 32;
 // polling ranks don't false-share a line with another rank's writer.
 static constexpr int ARRIVAL_STRIDE_INTS = 16;
 
-enum Mode { MODE_STAR = 0, MODE_ROOT = 1 };
+enum Mode { MODE_STAR = 0, MODE_ROOT = 1, MODE_ROOT3 = 2 };
 
 static __device__ __forceinline__ void ar_signal_set(int * p, int token) {
     *(volatile int *) p = token;
@@ -254,6 +254,99 @@ __global__ void root_kernel(
     }
 }
 
+// --- root3: specialized N=3-only root/leaf kernels (P1+P2, gpt-dev-agent -----
+// design, req_f4cb36cb22fd48a6 / req_1f050a8abef749a2) -- no generic
+// is_root/n_devices/root branching in the hot path; fixed float4 signatures;
+// root's two leaf-token waits are polled by threadIdx 0 and 1 concurrently
+// instead of serially (P2). Uses the SAME arrival_slot() per-block indexing
+// as the generic kernels above -- this is the exact invariant production's
+// kernel3 initially missed, confirmed still correct here by gpt's review.
+__global__ void root3_root_kernel(
+        const float4 * __restrict__ send,
+        float4       * __restrict__ recv,
+        float4       * __restrict__ publish,
+        const float4 * __restrict__ leaf0,
+        const float4 * __restrict__ leaf1,
+        int                          count4,
+        int *                        leaf0_ready,
+        int *                        leaf1_ready,
+        int *                        root_ready,
+        int                          token) {
+    if (threadIdx.x == 0) {
+        while (ar_signal_get(leaf0_ready + blockIdx.x * ARRIVAL_STRIDE_INTS) != token) {
+#if defined(__HIP_DEVICE_COMPILE__)
+            __builtin_amdgcn_s_sleep(4);
+#endif
+        }
+    }
+    if (threadIdx.x == 1) {
+        while (ar_signal_get(leaf1_ready + blockIdx.x * ARRIVAL_STRIDE_INTS) != token) {
+#if defined(__HIP_DEVICE_COMPILE__)
+            __builtin_amdgcn_s_sleep(4);
+#endif
+        }
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gnt  = gridDim.x * blockDim.x;
+    for (int i = gtid; i < count4; i += gnt) {
+        const float4 a = leaf0[i];
+        const float4 b = leaf1[i];
+        const float4 s = send[i];
+        float4 o;
+        o.x = s.x + a.x + b.x;
+        o.y = s.y + a.y + b.y;
+        o.z = s.z + a.z + b.z;
+        o.w = s.w + a.w + b.w;
+        recv[i]    = o;
+        publish[i] = o;
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        ar_signal_set(root_ready + blockIdx.x * ARRIVAL_STRIDE_INTS, token);
+        __threadfence_system();
+    }
+}
+
+__global__ void root3_leaf_kernel(
+        const float4 * __restrict__ send,
+        float4       * __restrict__ recv,
+        float4       * __restrict__ mine,
+        const float4 * __restrict__ root_stage,
+        int                          count4,
+        int *                        mine_ready,
+        int *                        root_ready,
+        int                          token) {
+    const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gnt  = gridDim.x * blockDim.x;
+    for (int i = gtid; i < count4; i += gnt) {
+        mine[i] = send[i];
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        ar_signal_set(mine_ready + blockIdx.x * ARRIVAL_STRIDE_INTS, token);
+        __threadfence_system();
+    }
+
+    if (threadIdx.x == 0) {
+        while (ar_signal_get(root_ready + blockIdx.x * ARRIVAL_STRIDE_INTS) != token) {
+#if defined(__HIP_DEVICE_COMPILE__)
+            __builtin_amdgcn_s_sleep(4);
+#endif
+        }
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    for (int i = gtid; i < count4; i += gnt) {
+        recv[i] = root_stage[i];
+    }
+}
+
 struct DeviceState {
     int      device_id;
     float *  d_send   = nullptr;
@@ -300,6 +393,7 @@ int main(int argc, char ** argv) {
             std::string m = argv[++i];
             if (m == "star") mode = MODE_STAR;
             else if (m == "root") mode = MODE_ROOT;
+            else if (m == "root3") mode = MODE_ROOT3;
             else { fprintf(stderr, "unknown --mode %s\n", m.c_str()); return 2; }
         } else {
             fprintf(stderr, "unknown arg: %s\n", arg.c_str());
@@ -316,17 +410,26 @@ int main(int argc, char ** argv) {
         fprintf(stderr, "--blocks must be 1..%d\n", MAX_BLOCKS);
         return 2;
     }
-    if (mode == MODE_ROOT && (root < 0 || root >= n)) {
+    if ((mode == MODE_ROOT || mode == MODE_ROOT3) && (root < 0 || root >= n)) {
         fprintf(stderr, "--root must index into --devices\n");
         return 2;
     }
+    if (mode == MODE_ROOT3 && n != 3) {
+        fprintf(stderr, "--mode root3 requires exactly 3 --devices\n");
+        return 2;
+    }
 
-    printf("nway_%s_allreduce: devices=[", mode == MODE_STAR ? "star" : "root");
+    const char * mode_name = mode == MODE_STAR ? "star" : mode == MODE_ROOT ? "root" : "root3";
+    printf("nway_%s_allreduce: devices=[", mode_name);
     for (int i = 0; i < n; ++i) printf("%d%s", devices[i], i + 1 < n ? "," : "");
     printf("] blocks=%d reps=%d%s\n", blocks, reps,
-           mode == MODE_ROOT ? (" root_rank_index=" + std::to_string(root)).c_str() : "");
+           (mode == MODE_ROOT || mode == MODE_ROOT3) ? (" root_rank_index=" + std::to_string(root)).c_str() : "");
 
     for (int elems : element_counts) {
+        if (mode == MODE_ROOT3 && elems % 4 != 0) {
+            fprintf(stderr, "--mode root3 requires elements divisible by 4 (no tail handling in this specialized kernel)\n");
+            return 2;
+        }
         const size_t bytes = (size_t) elems * sizeof(float);
 
         std::vector<DeviceState> ds(n);
@@ -374,6 +477,10 @@ int main(int argc, char ** argv) {
         // a separate alias table per CONSUMING device instead.
         std::vector<int *>   d_arrival_by_rank(n);
         std::vector<float **> d_peer_table_by_rank(n);
+        // host-side mirror of the same per-consumer aliases, for root3's
+        // specialized kernels which take direct pointer args (no on-device
+        // table lookup) -- stage_alias_by_rank[c][owner].
+        std::vector<std::vector<float *>> stage_alias_by_rank(n, std::vector<float *>(n));
         for (int c = 0; c < n; ++c) {
             HIP_CHECK(hipSetDevice(devices[c]));
             HIP_CHECK(hipHostGetDevicePointer((void **) &d_arrival_by_rank[c], h_arrival, 0));
@@ -382,6 +489,7 @@ int main(int argc, char ** argv) {
             for (int owner = 0; owner < n; ++owner) {
                 HIP_CHECK(hipHostGetDevicePointer((void **) &aliases[owner], ds[owner].h_stage, 0));
             }
+            stage_alias_by_rank[c] = aliases;
             HIP_CHECK(hipMalloc(&d_peer_table_by_rank[c], n * sizeof(float *)));
             HIP_CHECK(hipMemcpy(d_peer_table_by_rank[c], aliases.data(), n * sizeof(float *),
                                  hipMemcpyHostToDevice));
@@ -402,10 +510,45 @@ int main(int argc, char ** argv) {
                     star_kernel<<<blocks, 256, 0, ds[r].stream>>>(
                         ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_table_by_rank[r],
                         n, r, elems, d_arrival_by_rank[r], token);
-                } else {
+                } else if (mode == MODE_ROOT) {
                     root_kernel<<<blocks, 256, 0, ds[r].stream>>>(
                         ds[r].d_send, ds[r].d_recv, ds[r].d_stage, d_peer_table_by_rank[r],
                         n, r, root, elems, d_arrival_by_rank[r], token);
+                } else {
+                    // root3: specialized fixed-signature kernels, float4-only,
+                    // direct pointer args (no on-device table lookup). Base
+                    // arrival pointer per rank = arrival + rank*MAX_BLOCKS*STRIDE
+                    // (the kernel itself adds the block offset), matching
+                    // arrival_slot()'s own split.
+                    auto rank_base = [&](int rank) {
+                        return d_arrival_by_rank[r] + rank * MAX_BLOCKS * ARRIVAL_STRIDE_INTS;
+                    };
+                    const int count4 = elems / 4;
+                    if (r == root) {
+                        int leaf0 = -1, leaf1 = -1;
+                        for (int p = 0; p < 3; ++p) {
+                            if (p == root) continue;
+                            if (leaf0 < 0) leaf0 = p; else leaf1 = p;
+                        }
+                        root3_root_kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                            reinterpret_cast<const float4 *>(ds[r].d_send),
+                            reinterpret_cast<float4 *>(ds[r].d_recv),
+                            reinterpret_cast<float4 *>(ds[r].d_stage),
+                            reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf0]),
+                            reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf1]),
+                            count4,
+                            rank_base(leaf0), rank_base(leaf1), rank_base(root),
+                            token);
+                    } else {
+                        root3_leaf_kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                            reinterpret_cast<const float4 *>(ds[r].d_send),
+                            reinterpret_cast<float4 *>(ds[r].d_recv),
+                            reinterpret_cast<float4 *>(ds[r].d_stage),
+                            reinterpret_cast<const float4 *>(stage_alias_by_rank[r][root]),
+                            count4,
+                            rank_base(r), rank_base(root),
+                            token);
+                    }
                 }
                 HIP_CHECK(hipEventRecord(stop_ev[r], ds[r].stream));
             }
