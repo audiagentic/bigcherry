@@ -261,6 +261,19 @@ __global__ void root_kernel(
 // instead of serially (P2). Uses the SAME arrival_slot() per-block indexing
 // as the generic kernels above -- this is the exact invariant production's
 // kernel3 initially missed, confirmed still correct here by gpt's review.
+static __device__ __forceinline__ float4 add4(const float4 & a, const float4 & b, const float4 & s) {
+    float4 o;
+    o.x = s.x + a.x + b.x;
+    o.y = s.y + a.y + b.y;
+    o.z = s.z + a.z + b.z;
+    o.w = s.w + a.w + b.w;
+    return o;
+}
+
+// P3 (gpt-dev-agent roadmap): UNROLL issues more independent outstanding
+// mapped-host reads per iteration before consuming them, for memory-level
+// parallelism -- not to reduce arithmetic instruction count.
+template <int UNROLL>
 __global__ void root3_root_kernel(
         const float4 * __restrict__ send,
         float4       * __restrict__ recv,
@@ -291,17 +304,47 @@ __global__ void root3_root_kernel(
 
     const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
     const int gnt  = gridDim.x * blockDim.x;
-    for (int i = gtid; i < count4; i += gnt) {
-        const float4 a = leaf0[i];
-        const float4 b = leaf1[i];
-        const float4 s = send[i];
-        float4 o;
-        o.x = s.x + a.x + b.x;
-        o.y = s.y + a.y + b.y;
-        o.z = s.z + a.z + b.z;
-        o.w = s.w + a.w + b.w;
-        recv[i]    = o;
-        publish[i] = o;
+
+    if constexpr (UNROLL == 1) {
+        for (int i = gtid; i < count4; i += gnt) {
+            const float4 o = add4(leaf0[i], leaf1[i], send[i]);
+            recv[i]    = o;
+            publish[i] = o;
+        }
+    } else if constexpr (UNROLL == 2) {
+        int i0 = gtid, i1 = gtid + gnt;
+        for (; i1 < count4; i0 += 2 * gnt, i1 += 2 * gnt) {
+            const float4 a0 = leaf0[i0], b0 = leaf1[i0], s0 = send[i0];
+            const float4 a1 = leaf0[i1], b1 = leaf1[i1], s1 = send[i1];
+            const float4 o0 = add4(a0, b0, s0);
+            const float4 o1 = add4(a1, b1, s1);
+            recv[i0] = o0; publish[i0] = o0;
+            recv[i1] = o1; publish[i1] = o1;
+        }
+        if (i0 < count4) {
+            const float4 o = add4(leaf0[i0], leaf1[i0], send[i0]);
+            recv[i0] = o; publish[i0] = o;
+        }
+    } else { // UNROLL == 4
+        int i0 = gtid, i1 = gtid + gnt, i2 = gtid + 2 * gnt, i3 = gtid + 3 * gnt;
+        for (; i3 < count4; i0 += 4 * gnt, i1 += 4 * gnt, i2 += 4 * gnt, i3 += 4 * gnt) {
+            const float4 a0 = leaf0[i0], b0 = leaf1[i0], s0 = send[i0];
+            const float4 a1 = leaf0[i1], b1 = leaf1[i1], s1 = send[i1];
+            const float4 a2 = leaf0[i2], b2 = leaf1[i2], s2 = send[i2];
+            const float4 a3 = leaf0[i3], b3 = leaf1[i3], s3 = send[i3];
+            const float4 o0 = add4(a0, b0, s0);
+            const float4 o1 = add4(a1, b1, s1);
+            const float4 o2 = add4(a2, b2, s2);
+            const float4 o3 = add4(a3, b3, s3);
+            recv[i0] = o0; publish[i0] = o0;
+            recv[i1] = o1; publish[i1] = o1;
+            recv[i2] = o2; publish[i2] = o2;
+            recv[i3] = o3; publish[i3] = o3;
+        }
+        for (int i = i0; i < count4; i += gnt) {
+            const float4 o = add4(leaf0[i], leaf1[i], send[i]);
+            recv[i] = o; publish[i] = o;
+        }
     }
     __threadfence_system();
     __syncthreads();
@@ -374,6 +417,7 @@ int main(int argc, char ** argv) {
     std::vector<int> element_counts = {4096, 30720, 2621440};
     int reps = 20;
     int blocks = 8;
+    int unroll = 1;
     int root = 0;
     Mode mode = MODE_STAR;
 
@@ -385,6 +429,12 @@ int main(int argc, char ** argv) {
             element_counts = parse_int_list(argv[++i]);
         } else if (arg == "--reps" && i + 1 < argc) {
             reps = std::atoi(argv[++i]);
+        } else if (arg == "--unroll" && i + 1 < argc) {
+            unroll = std::atoi(argv[++i]);
+            if (unroll != 1 && unroll != 2 && unroll != 4) {
+                fprintf(stderr, "--unroll must be 1, 2, or 4\n");
+                return 2;
+            }
         } else if (arg == "--blocks" && i + 1 < argc) {
             blocks = std::atoi(argv[++i]);
         } else if (arg == "--root" && i + 1 < argc) {
@@ -530,15 +580,20 @@ int main(int argc, char ** argv) {
                             if (p == root) continue;
                             if (leaf0 < 0) leaf0 = p; else leaf1 = p;
                         }
-                        root3_root_kernel<<<blocks, 256, 0, ds[r].stream>>>(
-                            reinterpret_cast<const float4 *>(ds[r].d_send),
-                            reinterpret_cast<float4 *>(ds[r].d_recv),
-                            reinterpret_cast<float4 *>(ds[r].d_stage),
-                            reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf0]),
-                            reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf1]),
-                            count4,
-                            rank_base(leaf0), rank_base(leaf1), rank_base(root),
-                            token);
+                        auto launch_root3 = [&](auto kernel) {
+                            kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                                reinterpret_cast<const float4 *>(ds[r].d_send),
+                                reinterpret_cast<float4 *>(ds[r].d_recv),
+                                reinterpret_cast<float4 *>(ds[r].d_stage),
+                                reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf0]),
+                                reinterpret_cast<const float4 *>(stage_alias_by_rank[r][leaf1]),
+                                count4,
+                                rank_base(leaf0), rank_base(leaf1), rank_base(root),
+                                token);
+                        };
+                        if (unroll == 1) launch_root3(root3_root_kernel<1>);
+                        else if (unroll == 2) launch_root3(root3_root_kernel<2>);
+                        else launch_root3(root3_root_kernel<4>);
                     } else {
                         root3_leaf_kernel<<<blocks, 256, 0, ds[r].stream>>>(
                             reinterpret_cast<const float4 *>(ds[r].d_send),
