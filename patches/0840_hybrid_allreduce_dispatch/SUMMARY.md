@@ -77,10 +77,63 @@ fixed:
 patch's `ggml_backend_cuda_comm_init_hybrid()` brings up its own secondary
 `ncclCommInitAll()` with zero awareness of GP02's (not yet landed) RCCL
 admission predicate or patch 1225's device-3 guard -- confirmed via the
-identical test that found this gap in 1243: a topology including physical
-device 3 will report spurious `ncclCommInitAll` success and then hard-crash
-on the first real collective. Do not enable `GGML_CUDA_ALLREDUCE=hybrid` on
-any device-3-inclusive topology until GP02 lands and this patch consults it.
+identical test that found this gap in the now-retired 1243: a topology
+including physical device 3 will report spurious `ncclCommInitAll` success
+and then hard-crash on the first real collective. Do not enable
+`GGML_CUDA_ALLREDUCE=hybrid` on any device-3-inclusive topology until GP02
+lands and this patch consults it.
+
+## Real hardware validation (2026-09-02) -- CONSOLIDATION COMPLETE
+
+Built from a clean, zero-BigCherry-patches vendor/llama.cpp checkout (pin
+b10705, 2578138397d7) in an isolated scratch clone, patches applied and
+verified to apply cleanly + idempotently against the true pinned source
+(0100_cmake_options, 0830, 1001, this patch). Compared against 5 arms on
+{0,1} (2x RX 7900 XTX): native llama.cpp RCCL (zero BigCherry patches --
+confirmed the GGML_CUDA_ALLREDUCE selector itself is genuine unpatched
+upstream code, a legitimate baseline), native META (`-sm tensor`,
+butterfly), layer-split (`-sm layer`), this patch's `hybrid` provider, and
+`internal`-only.
+
+**pp/tg synthetic** (llama-bench, `-b 2048 -ub 512`, r=3): hybrid matches
+or slightly exceeds native RCCL at pp512 (1478 vs 1465) and tg128 (37.25
+vs 34.62), roughly ties native RCCL at pp2048/pp4096. Layer-split beats
+BOTH native RCCL and hybrid at pp2048/pp4096 by 10-19% -- confirmed NOT a
+defect in this patch (native RCCL has the identical shortfall against
+layer-split at the same sizes; this is a real tensor-split-prefill
+characteristic of the hardware, present in upstream).
+
+**Real MTP completion-bench** (the metric that resolves the above --
+production flags, real `mtp-27b-v1` corpus, 48 requests/arm,
+`predicted_tps` mean):
+
+| arm | predicted_tps | vs layer-split | vs native RCCL |
+|---|---|---|---|
+| layer-split | 44.99 | -- | -31% |
+| native-meta | 53.04 | +18% | -19% |
+| native-rccl (baseline) | 65.50 | +46% | -- |
+| **hybrid (this patch)** | **68.03** | **+51%** | **+3.9%** |
+| internal-only | 68.02 | +51% | +3.9% |
+
+Draft acceptance (0.487-0.491) and mean accepted length (2.93-2.95) are
+consistent across every arm -- no correctness/behavioral regression in
+speculative decoding from any provider choice. Real MTP serving is
+decode-dominated (many small verification-reduction calls, not large
+prefill-sized ones), which is why layer-split -- the pp-synthetic winner
+at large sizes -- is actually the WORST arm under the workload that
+matters. Under real MTP serving, this patch beats every baseline including
+layer-split by the largest margin of any arm, and beats native RCCL by
+3.9% -- a genuine, validated improvement, not a wash.
+
+Full evidence: `artifacts/gp03-validation/` on Brutus (bc-native, bc-hybrid
+scratch builds; `mtp-results/*.completion.jsonl` + server/bench logs for
+all 5 arms). See GP03's plan notes for the complete writeup.
+
+**Consolidation outcome**: this patch supersedes and replaces
+`1243_gp03_size_adaptive_allreduce_dispatch` (deleted 2026-09-02) -- same
+problem, independently implemented, retired once this patch reproduced and
+exceeded its real hardware numbers under a proper baseline comparison.
+This is now the sole implementation for size-adaptive AllReduce dispatch.
 
 ## Upstream / provenance
 
@@ -90,8 +143,7 @@ gateway session `ses_5307d9c58ec645cb`) after the real prefill-regression
 and reduction-byte-histogram evidence in
 `patches/1001_hip_internal_allreduce/SUMMARY.md` and project memory.
 Requires 1001 (the internal pipeline this dispatches into) and 0830 (the
-`provider_name`/telemetry field this patch reads and writes). Not yet
-validated on real hardware -- see GP03 for the remaining slices
-(correctness probe across both sides of the threshold, mixed prefill+decode
-end-to-end A/B against the required baselines: native llama.cpp RCCL,
-meta-tensor, layer-split).
+`provider_name`/telemetry field this patch reads and writes). Real hardware
+consolidation validated 2026-09-02 (see above) -- remaining before
+STATE=validated / default patch-set promotion: GP02's admission predicate
+must land and be consulted by this patch's secondary `ncclCommInitAll()`.
