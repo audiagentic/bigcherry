@@ -79,9 +79,9 @@ static __global__ void ggml_cuda_ar_kernel3(
         const float * __restrict__ host_leaf1,   // valid only when is_root
         const float * __restrict__ host_root,    // valid only when !is_root
         int                         count,
-        int *                       arrival_mine,
-        int *                       arrival_a,    // root: leaf0's slot; leaf: root's slot
-        int *                       arrival_b,    // root: leaf1's slot; leaf: unused
+        int *                       arrival_mine, // BASE (slot,rank) pointer -- this kernel
+        int *                       arrival_a,    // adds the per-block offset itself, mirroring
+        int *                       arrival_b,    // ggml_cuda_ar_kernel's own per-block scheme
         int                         token,
         bool                        is_root) {
     const int gtid    = blockIdx.x * blockDim.x + threadIdx.x;
@@ -89,6 +89,20 @@ static __global__ void ggml_cuda_ar_kernel3(
     constexpr int ELEMS_PER_VEC = 4;
     const int count4  = count / ELEMS_PER_VEC;
     const int tail     = count4 * ELEMS_PER_VEC;
+
+    // 2026-09-02 fix (gpt-dev-agent root cause, req_1f050a8abef749a2): the
+    // original version signalled/polled the BASE (slot,rank) pointer
+    // directly, so all GGML_CUDA_AR_KERNEL_BLOCKS blocks shared one token --
+    // any block finishing first released every other block's wait, which
+    // then read stripes other blocks hadn't published yet. Real hardware
+    // symptom: ran fast, no crash, garbage output. ggml_cuda_ar_kernel above
+    // (the working N=2 path) already gets this right via
+    // ggml_cuda_ar_arrival_ptr's block-indexed slots; this kernel must do
+    // the equivalent block-offset itself since it's handed BASE pointers.
+    constexpr int ARRIVAL_INTS = (int) (GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
+    int * my_slot = arrival_mine + blockIdx.x * ARRIVAL_INTS;
+    int * a_slot  = arrival_a ? arrival_a + blockIdx.x * ARRIVAL_INTS : nullptr;
+    int * b_slot  = arrival_b ? arrival_b + blockIdx.x * ARRIVAL_INTS : nullptr;
 
     if (!is_root) {
         const float4 * src4 = reinterpret_cast<const float4 *>(sendbuf);
@@ -102,7 +116,7 @@ static __global__ void ggml_cuda_ar_kernel3(
         __threadfence_system();
         __syncthreads();
         if (threadIdx.x == 0) {
-            ggml_cuda_ar_signal_set(arrival_mine, token);
+            ggml_cuda_ar_signal_set(my_slot, token);
             __threadfence_system();
         }
     } else {
@@ -110,7 +124,7 @@ static __global__ void ggml_cuda_ar_kernel3(
     }
 
     if (threadIdx.x == 0 && is_root) {
-        while (ggml_cuda_ar_signal_get(arrival_a) != token) {
+        while (ggml_cuda_ar_signal_get(a_slot) != token) {
 #ifdef GGML_USE_HIP
             __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
@@ -119,7 +133,7 @@ static __global__ void ggml_cuda_ar_kernel3(
             NO_DEVICE_CODE;
 #endif
         }
-        while (ggml_cuda_ar_signal_get(arrival_b) != token) {
+        while (ggml_cuda_ar_signal_get(b_slot) != token) {
 #ifdef GGML_USE_HIP
             __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
@@ -159,12 +173,12 @@ static __global__ void ggml_cuda_ar_kernel3(
         __threadfence_system();
         __syncthreads();
         if (threadIdx.x == 0) {
-            ggml_cuda_ar_signal_set(arrival_mine, token);
+            ggml_cuda_ar_signal_set(my_slot, token);
             __threadfence_system();
         }
     } else {
         if (threadIdx.x == 0) {
-            while (ggml_cuda_ar_signal_get(arrival_a) != token) {
+            while (ggml_cuda_ar_signal_get(a_slot) != token) {
 #ifdef GGML_USE_HIP
                 __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
@@ -189,9 +203,26 @@ static __global__ void ggml_cuda_ar_kernel3(
 '''
 
 _ROOT3_HELPER_TEXT = '''
+// N=3 arrival-slot base pointer, resolved from CONSUMER c's own cross-device
+// alias table (p->arrival_dev3[c]) rather than the single shared p->arrival.dev
+// the N=2 path uses -- see add-n3-alias-fields/resolve-n3-aliases-at-init.
+// Returns the BASE (slot,rank) pointer; ggml_cuda_ar_kernel3 adds the
+// per-block offset itself (same split as ggml_cuda_ar_arrival_ptr/
+// ggml_cuda_ar_kernel above).
+static int * ggml_cuda_ar_arrival_ptr3(
+        const ggml_cuda_ar_pipeline * p, int consumer, int slot, int rank) {
+    const size_t offset = ((size_t) slot * 3 + rank) *
+                          GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE;
+    return reinterpret_cast<int *>(
+        reinterpret_cast<uint8_t *>(p->arrival_dev3[consumer]) + offset);
+}
+
 // N=3 dispatch helper (GP11, preliminary) -- see ggml_cuda_ar_kernel3 above.
-// devices[0] is always root. Reuses the existing arrival-slot/event-pool
-// machinery (ggml_cuda_ar_acquire_slot, ggml_cuda_ar_arrival_ptr) unchanged.
+// devices[0] is always root. Reuses the existing per-slot chunking/
+// event-pool machinery (ggml_cuda_ar_acquire_slot) unchanged; pointer
+// aliasing goes through the N=3-specific per-consumer tables above instead
+// of ggml_cuda_ar_arrival_ptr/host_buf[owner].dev (those are only valid
+// from the OWNING device, not every consumer -- see add-n3-alias-fields).
 static bool ggml_cuda_ar_allreduce_root3(
         ggml_cuda_ar_pipeline * p,
         ggml_backend_t        * backends,
@@ -227,28 +258,28 @@ static bool ggml_cuda_ar_allreduce_root3(
 
             const bool is_root = (i == 0);
             float * host_mine_dev = reinterpret_cast<float *>(
-                p->host_buf[i].dev + (size_t) slot * p->buf_bytes);
+                p->host_buf_dev3[i][i] + (size_t) slot * p->buf_bytes);
 
             if (is_root) {
                 float * host0_dev = reinterpret_cast<float *>(
-                    p->host_buf[1].dev + (size_t) slot * p->buf_bytes);
+                    p->host_buf_dev3[i][1] + (size_t) slot * p->buf_bytes);
                 float * host1_dev = reinterpret_cast<float *>(
-                    p->host_buf[2].dev + (size_t) slot * p->buf_bytes);
+                    p->host_buf_dev3[i][2] + (size_t) slot * p->buf_bytes);
                 ggml_cuda_ar_kernel3<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>(
                     data, data, host_mine_dev, host0_dev, host1_dev, nullptr,
                     (int) chunk_elems,
-                    ggml_cuda_ar_arrival_ptr(p, slot, 0),
-                    ggml_cuda_ar_arrival_ptr(p, slot, 1),
-                    ggml_cuda_ar_arrival_ptr(p, slot, 2),
+                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 0),
+                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 1),
+                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 2),
                     token, true);
             } else {
                 float * hostroot_dev = reinterpret_cast<float *>(
-                    p->host_buf[0].dev + (size_t) slot * p->buf_bytes);
+                    p->host_buf_dev3[i][0] + (size_t) slot * p->buf_bytes);
                 ggml_cuda_ar_kernel3<<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>(
                     data, data, host_mine_dev, nullptr, nullptr, hostroot_dev,
                     (int) chunk_elems,
-                    ggml_cuda_ar_arrival_ptr(p, slot, i),
-                    ggml_cuda_ar_arrival_ptr(p, slot, 0),
+                    ggml_cuda_ar_arrival_ptr3(p, i, slot, i),
+                    ggml_cuda_ar_arrival_ptr3(p, i, slot, 0),
                     nullptr,
                     token, false);
             }
@@ -326,6 +357,80 @@ CU = FilePatch(
             mode="insert_before",
             text=_ROOT3_HELPER_TEXT + "\n",
             guard=r"static bool ggml_cuda_ar_allreduce_root3\(",
+        ),
+        Edit(
+            id="add-n3-alias-fields",
+            anchor=(
+                r"    ggml_cuda_ar_host_mapping arrival;\n"
+                r"\};"
+            ),
+            rationale="2026-09-02 fix (gpt-dev-agent, req_1f050a8abef749a2): the "
+                      "original N=3 helper reused host_buf[owner].dev / arrival.dev "
+                      "aliases resolved under whichever device happened to be "
+                      "current in pipeline_init -- the exact same cross-device "
+                      "pointer-alias bug already fixed in the harness "
+                      "(tools/lab/gp10-collective-harness/). hipHostGetDevicePointer "
+                      "must be called with the CONSUMING device current; store a "
+                      "separate alias table per consumer, resolved once at init",
+            mode="replace",
+            text=(
+                "    ggml_cuda_ar_host_mapping arrival;\n"
+                "\n"
+                "    // N=3 preliminary (GP11): per-consuming-device resolved aliases.\n"
+                "    // [consumer][owner] -- host_buf_dev3[c][o] is the device pointer\n"
+                "    // valid when dereferenced from consumer c's own kernel, for\n"
+                "    // owner o's pinned stage buffer. Resolved once at init (not per\n"
+                "    // call) since hipHostGetDevicePointer must be called with the\n"
+                "    // consuming device current to be valid cross-device.\n"
+                "    uint8_t * host_buf_dev3[3][3] = {};\n"
+                "    int     * arrival_dev3[3]     = {};\n"
+                "};"
+            ),
+            guard=r"uint8_t \* host_buf_dev3\[3\]\[3\] = \{\};",
+        ),
+        Edit(
+            id="resolve-n3-aliases-at-init",
+            anchor=(
+                r"        if \(p->host_buf\[i\]\.alloc\(host_buf_total\) != cudaSuccess\) \{\n"
+                r"[^\n]*\n"
+                r"[^\n]*\n"
+                r"            ggml_cuda_ar_pipeline_free\(p\);\n"
+                r"            return nullptr;\n"
+                r"        \}\n"
+                r"    \}"
+            ),
+            rationale="resolve every N=3 cross-device pointer alias once, right "
+                      "after host_buf[] is allocated, with each consuming device "
+                      "current in turn",
+            mode="insert_after",
+            text=(
+                "\n"
+                "\n"
+                "    if (n_devices == 3) {\n"
+                "        for (int c = 0; c < 3; ++c) {\n"
+                "            ggml_cuda_set_device(p->devices[c]);\n"
+                "            void * arrival_alias = nullptr;\n"
+                "            if (cudaHostGetDevicePointer(&arrival_alias, p->arrival.host, 0) != cudaSuccess) {\n"
+                "                GGML_LOG_ERROR(\"%s: N=3 arrival alias resolution failed "
+                "for consumer %d\\n\", __func__, c);\n"
+                "                ggml_cuda_ar_pipeline_free(p);\n"
+                "                return nullptr;\n"
+                "            }\n"
+                "            p->arrival_dev3[c] = reinterpret_cast<int *>(arrival_alias);\n"
+                "            for (int owner = 0; owner < 3; ++owner) {\n"
+                "                void * stage_alias = nullptr;\n"
+                "                if (cudaHostGetDevicePointer(&stage_alias, p->host_buf[owner].host, 0) != cudaSuccess) {\n"
+                "                    GGML_LOG_ERROR(\"%s: N=3 stage alias resolution failed "
+                "for consumer %d owner %d\\n\", __func__, c, owner);\n"
+                "                    ggml_cuda_ar_pipeline_free(p);\n"
+                "                    return nullptr;\n"
+                "                }\n"
+                "                p->host_buf_dev3[c][owner] = reinterpret_cast<uint8_t *>(stage_alias);\n"
+                "            }\n"
+                "        }\n"
+                "    }"
+            ),
+            guard=r"if \(n_devices == 3\) \{\n        for \(int c = 0; c < 3; \+\+c\)",
         ),
         Edit(
             id="relax-n-eq-2-assert",
