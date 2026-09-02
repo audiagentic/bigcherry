@@ -362,14 +362,35 @@ int main(int argc, char ** argv) {
             }
         };
 
-        auto validate = [&]() -> double {
+        auto validate = [&](const char * tag) -> double {
             double max_abs_err = 0.0;
             std::vector<float> out(elems);
             for (int r = 0; r < n; ++r) {
                 HIP_CHECK(hipSetDevice(devices[r]));
                 HIP_CHECK(hipMemcpy(out.data(), ds[r].d_recv, bytes, hipMemcpyDeviceToHost));
+                int wrong_count = 0;
+                int first_bad_i = -1;
+                float first_bad_got = 0.0f, first_bad_want = 0.0f;
+                const double per_elem_eps = 1e-4 * n;
                 for (int i = 0; i < elems; ++i) {
-                    max_abs_err = std::max(max_abs_err, (double) std::fabs(out[i] - reference[i]));
+                    double err = std::fabs(out[i] - reference[i]);
+                    max_abs_err = std::max(max_abs_err, err);
+                    if (err >= per_elem_eps) {
+                        wrong_count++;
+                        if (first_bad_i < 0) {
+                            first_bad_i = i;
+                            first_bad_got = out[i];
+                            first_bad_want = reference[i];
+                        }
+                    }
+                }
+                if (wrong_count > 0) {
+                    const int elems_per_block = (blocks * 256 == 0) ? elems : std::max(1, elems / blocks);
+                    fprintf(stderr,
+                        "[%s] rank=%d(device=%d) wrong_count=%d/%d first_bad_i=%d got=%.6f want=%.6f "
+                        "(approx block owner=%d, elems_per_block~%d)\n",
+                        tag, r, devices[r], wrong_count, elems, first_bad_i, first_bad_got, first_bad_want,
+                        first_bad_i / elems_per_block, elems_per_block);
                 }
             }
             return max_abs_err;
@@ -377,7 +398,7 @@ int main(int argc, char ** argv) {
 
         int token = 1;
         launch(token); // warmup
-        double max_abs_err = validate();
+        double max_abs_err = validate("warmup");
         const double eps = 1e-4 * n;
 
         std::vector<double> elapsed_ms;
@@ -385,7 +406,9 @@ int main(int argc, char ** argv) {
         for (int rep = 0; rep < reps; ++rep) {
             token++;
             launch(token);
-            max_abs_err = std::max(max_abs_err, validate());
+            char tag[32];
+            snprintf(tag, sizeof(tag), "rep%d", rep);
+            max_abs_err = std::max(max_abs_err, validate(tag));
 
             float max_ms = 0.0f;
             for (int r = 0; r < n; ++r) {
