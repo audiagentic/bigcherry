@@ -27,11 +27,46 @@
 //                  ready/wait handshake (same cost as today, not the thing
 //                  being tested).
 //
+// --- 2026-09-04 update: --mode p2p produced a deterministic wrong result
+// (remote contribution reads back as exactly zero, not corrupted noise --
+// see GP11.md). Escalated to gpt-dev-agent (req_877e043460c94bd8), which
+// pointed out ROCm's own kernel-side-P2P tests (RCCL's p2p_latency_test)
+// allocate the peer-visible buffer with hipExtMallocWithFlags(...,
+// hipDeviceMallocFinegrained) under HSA_FORCE_FINE_GRAIN_PCIE=1, NOT plain
+// coarse-grain hipMalloc -- so the failure may be a coarse-memory
+// peer-visibility/coherency gap rather than "kernel-side P2P doesn't work
+// on this stack." Added minimal single-thread discriminator probes below
+// per gpt's recommended test matrix, run BEFORE building any memcpy-based
+// fallback design:
+//
+// --mode probe-coarse -- <<<1,1>>> kernel does out[0] = peer[0] against an
+//                  ordinary coarse-grain hipMalloc peer buffer. Peer buffer's
+//                  element 0 is overwritten with a fresh sentinel (host
+//                  hipMemcpy, synchronous) immediately before every rep, so
+//                  the read result classifies as current / stale / zero
+//                  instead of just "wrong" (the AllReduce test above reuses
+//                  static input every rep, which can't distinguish those).
+// --mode probe-fine -- identical probe, but the peer buffer is allocated
+//                  with hipExtMallocWithFlags(..., hipDeviceMallocFinegrained).
+//                  Run with HSA_FORCE_FINE_GRAIN_PCIE=1 in the environment
+//                  (the harness warns if it isn't set).
+// --peer-order enable-first|alloc-first -- order of hipDeviceEnablePeerAccess
+//                  vs the peer buffer allocation. Default enable-first
+//                  (matches today's --mode p2p and probe-* default). Pass
+//                  alloc-first to test gpt's Arm C: rule out a runtime bug
+//                  where only allocations made AFTER peer-enable get mapped
+//                  (not required by the HIP API -- CLR is documented to
+//                  update pre-existing allocations too -- but worth ruling
+//                  out empirically). Applies to --mode p2p and both probes.
+//
 // Build:
 //   hipcc -O3 -std=c++17 -o p2p_direct_allreduce p2p_direct_allreduce.cpp
 // Run:
 //   ./p2p_direct_allreduce --devices 0,1 --elements 7680,15360,30720,61440,122880 --reps 500 --mode p2p
 //   ./p2p_direct_allreduce --devices 0,1 --elements 7680,15360,30720,61440,122880 --reps 500 --mode host
+//   ./p2p_direct_allreduce --devices 0,1 --reps 50 --mode probe-coarse
+//   HSA_FORCE_FINE_GRAIN_PCIE=1 ./p2p_direct_allreduce --devices 0,1 --reps 50 --mode probe-fine
+//   ./p2p_direct_allreduce --devices 0,1 --reps 50 --mode probe-coarse --peer-order alloc-first
 
 #include <hip/hip_runtime.h>
 
@@ -56,7 +91,8 @@
 static constexpr int MAX_BLOCKS = 32;
 static constexpr int ARRIVAL_STRIDE_INTS = 16; // one cache line per (rank,block)
 
-enum Mode { MODE_HOST = 0, MODE_P2P = 1 };
+enum Mode { MODE_HOST = 0, MODE_P2P = 1, MODE_PROBE_COARSE = 2, MODE_PROBE_FINE = 3 };
+enum PeerOrder { ORDER_ENABLE_FIRST = 0, ORDER_ALLOC_FIRST = 1 };
 
 static __device__ __forceinline__ void ar_signal_set(int * p, int token) {
     *(volatile int *) p = token;
@@ -160,6 +196,14 @@ __global__ void p2p_direct_kernel(
     }
 }
 
+// --- minimal single-thread peer-read discriminator (gpt-dev-agent
+// req_877e043460c94bd8) -- no handshake, no vectorization, just:
+// out[0] = peer[0]. Isolates whether the AllReduce kernel's failure is a
+// mapping/coherency problem versus a race/vectorization artifact.
+__global__ void probe_read_kernel(float * out, const float * peer) {
+    out[0] = peer[0];
+}
+
 struct DeviceState {
     int      device_id;
     float *  d_send   = nullptr;
@@ -182,12 +226,96 @@ static std::vector<int> parse_int_list(const std::string & s) {
     return out;
 }
 
+// Runs gpt's minimal peer-read discriminator: rankA's out[0] = rankB's
+// peer[0], where peer[0] is set to a fresh sentinel via host hipMemcpy
+// immediately before every rep. Classifies each rep's result as
+// current (mapping/coherency fine), stale (sees a PREVIOUS sentinel --
+// visibility/coherency lag), zero (permanently reads 0 -- bad/inaccessible
+// mapping), or other (neither -- report raw value).
+static int run_probe(const std::vector<int> & devices, bool fine_grain,
+                      PeerOrder peer_order, int reps) {
+    if (fine_grain && getenv("HSA_FORCE_FINE_GRAIN_PCIE") == nullptr) {
+        fprintf(stderr, "WARNING: --mode probe-fine without HSA_FORCE_FINE_GRAIN_PCIE=1 set "
+                         "in the environment -- gpt-dev-agent's recommended repro requires it.\n");
+    }
+
+    const int rankA = 0, rankB = 1; // A reads B's buffer
+
+    auto enable_peer = [&]() {
+        HIP_CHECK(hipSetDevice(devices[rankA]));
+        hipError_t eA = hipDeviceEnablePeerAccess(devices[rankB], 0);
+        if (eA != hipSuccess && eA != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(eA);
+        HIP_CHECK(hipSetDevice(devices[rankB]));
+        hipError_t eB = hipDeviceEnablePeerAccess(devices[rankA], 0);
+        if (eB != hipSuccess && eB != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(eB);
+    };
+
+    if (peer_order == ORDER_ENABLE_FIRST) enable_peer();
+
+    HIP_CHECK(hipSetDevice(devices[rankA]));
+    float * d_out = nullptr;
+    HIP_CHECK(hipMalloc(&d_out, sizeof(float)));
+
+    HIP_CHECK(hipSetDevice(devices[rankB]));
+    float * d_peer = nullptr;
+    if (fine_grain) {
+        HIP_CHECK(hipExtMallocWithFlags((void **) &d_peer, sizeof(float), hipDeviceMallocFinegrained));
+    } else {
+        HIP_CHECK(hipMalloc(&d_peer, sizeof(float)));
+    }
+
+    if (peer_order == ORDER_ALLOC_FIRST) enable_peer();
+
+    printf("probe: mode=%s peer_order=%s devices=[%d,%d] reps=%d\n",
+           fine_grain ? "probe-fine" : "probe-coarse",
+           peer_order == ORDER_ENABLE_FIRST ? "enable-first" : "alloc-first",
+           devices[rankA], devices[rankB], reps);
+
+    int n_current = 0, n_stale = 0, n_zero = 0, n_other = 0;
+    float prev_sentinel = 0.0f;
+    for (int rep = 0; rep < reps; ++rep) {
+        const float sentinel = 1.0f + (float) rep; // 1,2,3,... -- never 0
+        HIP_CHECK(hipSetDevice(devices[rankB]));
+        HIP_CHECK(hipMemcpy(d_peer, &sentinel, sizeof(float), hipMemcpyHostToDevice));
+        HIP_CHECK(hipDeviceSynchronize());
+
+        HIP_CHECK(hipSetDevice(devices[rankA]));
+        probe_read_kernel<<<1, 1>>>(d_out, d_peer);
+        HIP_CHECK(hipDeviceSynchronize());
+
+        float got = 0.0f;
+        HIP_CHECK(hipMemcpy(&got, d_out, sizeof(float), hipMemcpyDeviceToHost));
+
+        const char * cls;
+        if (got == sentinel) { cls = "current"; n_current++; }
+        else if (rep > 0 && got == prev_sentinel) { cls = "stale"; n_stale++; }
+        else if (got == 0.0f) { cls = "zero"; n_zero++; }
+        else { cls = "other"; n_other++; }
+
+        if (rep < 5 || cls[0] != 'c') {
+            printf("  rep=%-4d sentinel=%.1f got=%.6f class=%s\n", rep, sentinel, got, cls);
+        }
+        prev_sentinel = sentinel;
+    }
+
+    printf("probe summary: current=%d stale=%d zero=%d other=%d / %d reps\n",
+           n_current, n_stale, n_zero, n_other, reps);
+
+    hipSetDevice(devices[rankA]);
+    hipFree(d_out);
+    hipSetDevice(devices[rankB]);
+    hipFree(d_peer);
+
+    return (n_current == reps) ? 0 : 1;
+}
+
 int main(int argc, char ** argv) {
     std::vector<int> devices = {0, 1};
     std::vector<int> element_counts = {7680, 15360, 30720, 61440, 122880};
     int reps = 500;
     int blocks = 8;
     Mode mode = MODE_HOST;
+    PeerOrder peer_order = ORDER_ENABLE_FIRST;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -203,7 +331,14 @@ int main(int argc, char ** argv) {
             std::string m = argv[++i];
             if (m == "host") mode = MODE_HOST;
             else if (m == "p2p") mode = MODE_P2P;
-            else { fprintf(stderr, "unknown --mode %s (want host|p2p)\n", m.c_str()); return 2; }
+            else if (m == "probe-coarse") mode = MODE_PROBE_COARSE;
+            else if (m == "probe-fine") mode = MODE_PROBE_FINE;
+            else { fprintf(stderr, "unknown --mode %s (want host|p2p|probe-coarse|probe-fine)\n", m.c_str()); return 2; }
+        } else if (arg == "--peer-order" && i + 1 < argc) {
+            std::string o = argv[++i];
+            if (o == "enable-first") peer_order = ORDER_ENABLE_FIRST;
+            else if (o == "alloc-first") peer_order = ORDER_ALLOC_FIRST;
+            else { fprintf(stderr, "unknown --peer-order %s (want enable-first|alloc-first)\n", o.c_str()); return 2; }
         } else {
             fprintf(stderr, "unknown arg: %s\n", arg.c_str());
             return 2;
@@ -214,6 +349,20 @@ int main(int argc, char ** argv) {
         fprintf(stderr, "this harness is N=2 only (dual-XTX P2P prototype), got %zu devices\n", devices.size());
         return 2;
     }
+
+    if (mode == MODE_PROBE_COARSE || mode == MODE_PROBE_FINE) {
+        int can01 = 0, can10 = 0;
+        HIP_CHECK(hipDeviceCanAccessPeer(&can01, devices[0], devices[1]));
+        HIP_CHECK(hipDeviceCanAccessPeer(&can10, devices[1], devices[0]));
+        if (!can01 || !can10) {
+            fprintf(stderr, "probe modes require hipDeviceCanAccessPeer in both directions "
+                             "(got %d->%d=%d, %d->%d=%d)\n",
+                    devices[0], devices[1], can01, devices[1], devices[0], can10);
+            return 2;
+        }
+        return run_probe(devices, mode == MODE_PROBE_FINE, peer_order, reps);
+    }
+
     if (blocks < 1 || blocks > MAX_BLOCKS) {
         fprintf(stderr, "--blocks must be 1..%d\n", MAX_BLOCKS);
         return 2;
@@ -232,12 +381,16 @@ int main(int argc, char ** argv) {
                     devices[0], devices[1], can01, devices[1], devices[0], can10);
             return 2;
         }
-        HIP_CHECK(hipSetDevice(devices[0]));
-        hipError_t e0 = hipDeviceEnablePeerAccess(devices[1], 0);
-        if (e0 != hipSuccess && e0 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e0);
-        HIP_CHECK(hipSetDevice(devices[1]));
-        hipError_t e1 = hipDeviceEnablePeerAccess(devices[0], 0);
-        if (e1 != hipSuccess && e1 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e1);
+        if (peer_order == ORDER_ENABLE_FIRST) {
+            HIP_CHECK(hipSetDevice(devices[0]));
+            hipError_t e0 = hipDeviceEnablePeerAccess(devices[1], 0);
+            if (e0 != hipSuccess && e0 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e0);
+            HIP_CHECK(hipSetDevice(devices[1]));
+            hipError_t e1 = hipDeviceEnablePeerAccess(devices[0], 0);
+            if (e1 != hipSuccess && e1 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e1);
+        }
+        // (ORDER_ALLOC_FIRST for --mode p2p: peer-enable is deferred to just
+        // after the per-element hipMalloc calls below, inside the loop.)
     }
 
     const char * mode_name = mode == MODE_HOST ? "host-staged" : "p2p-direct-load";
@@ -273,6 +426,17 @@ int main(int argc, char ** argv) {
                 HIP_CHECK(hipHostGetDevicePointer((void **) &ds[r].d_stage, ds[r].h_stage, 0));
             }
             HIP_CHECK(hipMemcpy(ds[r].d_send, input[r].data(), bytes, hipMemcpyHostToDevice));
+        }
+        if (mode == MODE_P2P && peer_order == ORDER_ALLOC_FIRST) {
+            // Arm C (gpt-dev-agent req_877e043460c94bd8): enable peer access
+            // AFTER these buffers are already allocated, to rule out a
+            // runtime bug where only future allocations get mapped.
+            HIP_CHECK(hipSetDevice(devices[0]));
+            hipError_t e0 = hipDeviceEnablePeerAccess(devices[1], 0);
+            if (e0 != hipSuccess && e0 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e0);
+            HIP_CHECK(hipSetDevice(devices[1]));
+            hipError_t e1 = hipDeviceEnablePeerAccess(devices[0], 0);
+            if (e1 != hipSuccess && e1 != hipErrorPeerAccessAlreadyEnabled) HIP_CHECK(e1);
         }
 
         const size_t arrival_ints = (size_t) n * MAX_BLOCKS * ARRIVAL_STRIDE_INTS;
