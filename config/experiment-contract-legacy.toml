@@ -1,0 +1,105 @@
+# Frozen legacy manifest for VA24's effect-evidence policy migration.
+#
+# PURPOSE. VA24 introduced acceptance.effect_evidence_policy, whose stronger
+# value `ci95_threshold_bound_v1` requires a declared bound to be established
+# by the confidence interval rather than by a point estimate. Opt-in policies
+# rot, so new performance contracts must adopt it. Contracts that predate VA24
+# are listed here.
+#
+# THIS FILE IS FROZEN. Entries are never added. A new contract cannot acquire a
+# waiver by editing this file in the same change that adds it -- that is the
+# review signal. Entries may only be REMOVED, when a contract migrates.
+#
+# TWO RULES, DELIBERATELY DIFFERENT (design: dev-gpt-agent req_358ce8a96f49469b).
+# The earlier proposal keyed the waiver on the exact contract_hash at LINT
+# time, which conflates two separate invariants and would have made these
+# contracts effectively uneditable: contract_hash covers rationale prose and
+# source provenance, so fixing a typo would evaporate the waiver and demand a
+# fresh hardware qualification run -- impossible for the contracts here that
+# target hardware this project does not own.
+#
+#   1. REGISTRY LINT (edit time), keyed by contract ID.
+#      A contract declaring a gain threshold under `point_estimate_v1` is
+#      valid only if its ID appears below. Legacy contracts therefore stay
+#      EDITABLE: prose and provenance fixes do not trigger migration.
+#
+#   2. QUALIFICATION (evidence time), keyed by baseline_contract_hash.
+#      Legacy point-estimate EVIDENCE is honoured only for the exact hash
+#      recorded here. Any hash-changing edit means this version cannot acquire
+#      fresh legacy qualification -- it must migrate to the interval policy
+#      before it is next qualified.
+#
+# So the migration boundary is the next QUALIFICATION, not an arbitrary source
+# edit. A contract can be maintained; it just cannot generate new
+# weak-policy evidence indefinitely.
+#
+# HARDWARE-DEFERRED AND MULTI-LANE CONTRACTS. Several entries target hardware
+# this project does not have (gfx1151, RDNA4), and three are multi-lane, which
+# the interval evaluator deliberately cannot yet aggregate (it returns
+# "invalid" rather than computing a statistically invalid aggregate interval).
+# Those are registry-valid but unevaluable; the honest state is
+# qualification=deferred / promotion=blocked, NOT a permanent waiver and NOT a
+# lint failure. Lint must never inspect which GPUs the running machine has --
+# identical source must not be valid in one place and invalid in another.
+
+schema = 1
+
+[legacy.RD04-BF16-FLASH-ATTN-TILE]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "e09ec00e8c67f23c1a3a99ba0eb102ee"
+migration = "VA24"
+
+[legacy.RD06-RDNA4-WMMA-FA-CONFIG]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "7ddf2f641565fbe35ceaec47f8f2859b"
+migration = "VA24"
+
+[legacy.RD08-Q6K-MMVQ-VDR2]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "22de05510510abd0cb3b07dbb27870e8"
+migration = "VA24"
+
+[legacy.RD12-PAIRED-MMVQ-DUAL]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "ed1c2431882b1d6dd911b2ab70a6eff7"
+migration = "VA24"
+
+[legacy.RD13-MUL-MAT-ADD-VIEW-FUSION]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "891c51382ec14eec817ef5f8a0bb97a3"
+migration = "VA24"
+
+[legacy.RD17-MOE-TOPK-DOWN-FOLD]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "2634a33d6433513eb89346c4106e834f"
+migration = "VA24"
+
+[legacy.RD19-SINGLE-GPU-META-BYPASS]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "049f71615b24403ac026970204bfd6b0"
+migration = "VA24"
+
+[legacy.RD21-GFX1151-MMVQ-NWARPS]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "0ffdefe0237b7b9d231510690cd1ce25"
+migration = "VA24"
+
+[legacy.RD39-42-STREAM-MOE-OVERLAP]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "cd609b50e0368eb0c3dcaccb0186ab07"
+migration = "VA24"
+
+[legacy.RD44-GRAPH-OPT-DEFAULT-RDNA35]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "58d3448fd7a7e1d8c7075d67590c70a4"
+migration = "VA24"
+
+[legacy.RD50-GDN-CHUNKED-RECURRENCE]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "7fc8bff85135614657aac3d4e6c616b7"
+migration = "VA24"
+
+[legacy.RD73-STABLE-GRAPH-CACHE-KEY]
+waiver_class = "pre_va24_point_estimate"
+baseline_contract_hash = "4026ac5fc4c6fdcae2b312c3b6e2957b"
+migration = "VA24"

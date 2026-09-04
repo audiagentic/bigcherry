@@ -2117,3 +2117,105 @@ def render_report(
     lines.append("")
 
     return "\n".join(lines)
+
+
+# ------------------------------------------------- VA24 legacy migration lint
+
+
+LEGACY_MANIFEST_PATH = "config/experiment-contract-legacy.toml"
+
+
+@dataclass(frozen=True)
+class LegacyWaiver:
+    """One frozen pre-VA24 entry from config/experiment-contract-legacy.toml."""
+    contract_id: str
+    waiver_class: str
+    baseline_contract_hash: str
+    migration: str
+
+
+def load_legacy_waivers(path: Path) -> dict[str, LegacyWaiver]:
+    """Load the frozen legacy manifest. A missing file is an empty mapping --
+    i.e. every gain-declaring contract must then use the interval policy --
+    rather than an error, so the lint fails CLOSED if the manifest is lost."""
+    try:
+        raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    waivers: dict[str, LegacyWaiver] = {}
+    for contract_id, entry in (raw.get("legacy") or {}).items():
+        if not isinstance(entry, dict):
+            raise ExperimentContractError(
+                f"{path}: legacy.{contract_id} must be a table")
+        for field in ("waiver_class", "baseline_contract_hash", "migration"):
+            if not isinstance(entry.get(field), str) or not entry[field]:
+                raise ExperimentContractError(
+                    f"{path}: legacy.{contract_id}.{field} is required")
+        waivers[contract_id] = LegacyWaiver(
+            contract_id=contract_id, waiver_class=entry["waiver_class"],
+            baseline_contract_hash=entry["baseline_contract_hash"],
+            migration=entry["migration"],
+        )
+    return waivers
+
+
+def declares_gain_threshold(contract: ExperimentContract) -> bool:
+    return (contract.acceptance.target_kernel_gain_pct is not None
+            or contract.acceptance.end_to_end_gain_pct is not None)
+
+
+def lint_effect_evidence_policy(
+    registry: ContractRegistry, waivers: dict[str, LegacyWaiver],
+) -> list[str]:
+    """VA24 REGISTRY LINT, keyed by contract ID (edit time).
+
+    A contract declaring a gain threshold under the weaker
+    ``point_estimate_v1`` is valid only if its ID appears in the frozen
+    legacy manifest. New contracts must adopt ``ci95_threshold_bound_v1``.
+
+    Deliberately keyed by ID, NOT by contract_hash. Hash keying was the
+    first proposal and is wrong here: contract_hash covers rationale prose
+    and source provenance, so a typo fix would evaporate the waiver and
+    demand a fresh hardware qualification -- impossible for contracts
+    targeting hardware this project does not own, which would make them
+    permanently uneditable. Evidence identity and migration policy are
+    different invariants; the exact-hash rule belongs at qualification time
+    (see legacy_evidence_is_honoured) where old evidence must genuinely not
+    satisfy an edited contract.
+
+    Returns a list of human-readable problems; empty means clean.
+    """
+    problems: list[str] = []
+    for contract in sorted(registry, key=lambda c: c.id):
+        if not declares_gain_threshold(contract):
+            continue
+        if contract.acceptance.effect_evidence_policy != "point_estimate_v1":
+            continue
+        if contract.id not in waivers:
+            problems.append(
+                f"{contract.id}: declares a gain threshold under "
+                f"point_estimate_v1 but is not in the frozen legacy manifest "
+                f"({LEGACY_MANIFEST_PATH}) -- new performance contracts must "
+                f"declare effect_evidence_policy = 'ci95_threshold_bound_v1' "
+                f"(with a min_paired_rounds floor). The manifest is frozen: "
+                f"adding an entry for a new contract is not the fix."
+            )
+    return problems
+
+
+def legacy_evidence_is_honoured(
+    contract: ExperimentContract, waivers: dict[str, LegacyWaiver],
+) -> bool:
+    """VA24 QUALIFICATION RULE, keyed by exact baseline_contract_hash.
+
+    Legacy point-estimate EVIDENCE is honoured only for the exact contract
+    version recorded in the manifest. Once any edit changes the hash, that
+    version cannot acquire fresh legacy qualification and must migrate to
+    the interval policy before it is next qualified.
+
+    This is where exact-hash strictness genuinely belongs: it is the
+    existing "old evidence must not silently satisfy a changed contract"
+    invariant, not a restriction on editing the registry.
+    """
+    waiver = waivers.get(contract.id)
+    return waiver is not None and waiver.baseline_contract_hash == contract.contract_hash
