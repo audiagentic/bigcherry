@@ -43,8 +43,9 @@ production host-staged design (arm A), all correctness-validated:
 The DMA-push design carries a ~100us FIXED floor (two stream syncs plus a
 kernel boundary) against host staging's ~25us total at decode sizes. Overlap
 really does work -- a consistent ~44us of transfer hides behind compute -- but
-cannot cover that deficit. Parity only arrives at >=1MB; decode traffic is
-20KB-1MB.
+cannot cover that deficit. (The 1MB row's -1.4% here looked like a crossover
+but was noise -- see Round 3, which re-measures it at +6.2% against a properly
+measured baseline. There is no crossover at any size.)
 
 **The governing constraint is that at decode sizes the ENTIRE collective costs
 ~25us, while a single kernel boundary plus stream sync costs tens of us.** Any
