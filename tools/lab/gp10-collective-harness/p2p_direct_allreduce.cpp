@@ -77,13 +77,35 @@
 // genuinely not in the destination's memory yet; this is a writer-side flush
 // problem, not a reader-side cache-coherency problem.
 //
-// Consequence: NO single-kernel, fine-grained handshake collective is possible
-// across these two GPUs -- pull-based (--mode p2p) or push-based
-// (--mode p2p-push) alike. P2P here can only work as
-// push-kernel -> kernel boundary -> reduce-kernel, whose launch and
-// synchronisation overhead exceeds the entire theoretical saving at decode
-// message sizes. The production pinned-host design works precisely BECAUSE
-// host-memory writes are immediately visible to the peer.
+// CORRECTION (later the same day, gpt-dev-agent req_cea35a9e3b4f440a): the
+// paragraph that used to sit here claimed no single-kernel handshake was
+// possible. That was WRONG. The mid-kernel flush failure is a known HIP gap --
+// __threadfence_system() requires an L2 writeback for peer visibility that
+// HIP-Clang does not reliably emit on gfx1100 -- and it is workable two ways:
+//   - HSA_DISABLE_CACHE=1 globally (works, but makes every kernel uncached);
+//   - allocating ONLY the peer exchange + flag buffers with
+//     hipExtMallocWithFlags(..., hipDeviceMallocUncached) -- the --uncached
+//     flag here. Normal caching everywhere else. Note this is NOT the same as
+//     hipDeviceMallocFinegrained, which was tested earlier and does not help.
+// With --uncached, --mode p2p-push is fully CORRECT (max_abs_err=0, all sizes).
+//
+// So the design works. It is simply SLOWER than the incumbent. Measured
+// head-to-head, 50 reps, host-staged vs p2p-push --uncached (median us):
+//   30KB   25.48 vs 27.56    240KB  63.36 vs  74.04    2MB  403.12 vs  517.89
+//   60KB   29.52 vs 34.80    480KB 105.44 vs 135.76    4MB  780.41 vs 1023.97
+//   120KB  42.84 vs 48.60      1MB 302.40 vs 309.92
+// Host staging wins at EVERY size, by 8-31%. The reason is topological: host
+// staging drives both GPUs' independent Gen4 x8 root-port links concurrently
+// into host DRAM, while a peer write has to hairpin through the Alder Lake
+// root complex; and the uncached exchange buffer also penalises the local
+// reduce reads. Host staging is already running at essentially full Gen4 x8
+// line rate, so there is no transport headroom left to win back.
+//
+// The pull direction remains genuinely impossible (finding 1) and that part is
+// confirmed platform-level, not an AMD bug: an independent PCIe-protocol-
+// analyzer report on this exact platform class (Z690 + i7-12700K) shows the
+// Alder Lake root complex completing peer Memory Reads with Unsupported
+// Request while posted writes route fine.
 //
 // Corollary worth recording: an earlier "10.4 GB/s P2P, 1.5x faster than
 // host-staged" measurement from a separate agent's benchmark is INVALID -- that
@@ -467,6 +489,7 @@ int main(int argc, char ** argv) {
     int blocks = 8;
     Mode mode = MODE_HOST;
     PeerOrder peer_order = ORDER_ENABLE_FIRST;
+    bool uncached_exch = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -486,6 +509,8 @@ int main(int argc, char ** argv) {
             else if (m == "probe-fine") mode = MODE_PROBE_FINE;
             else if (m == "p2p-push") mode = MODE_P2P_PUSH;
             else { fprintf(stderr, "unknown --mode %s (want host|p2p|p2p-push|probe-coarse|probe-fine)\n", m.c_str()); return 2; }
+        } else if (arg == "--uncached") {
+            uncached_exch = true;
         } else if (arg == "--peer-order" && i + 1 < argc) {
             std::string o = argv[++i];
             if (o == "enable-first") peer_order = ORDER_ENABLE_FIRST;
@@ -582,8 +607,19 @@ int main(int argc, char ** argv) {
             if (mode == MODE_P2P_PUSH) {
                 // exchange buffer + flag array live in LOCAL VRAM; the peer
                 // writes into them across PCIe (the direction that works).
-                HIP_CHECK(hipMalloc(&ds[r].d_exch, bytes));
-                HIP_CHECK(hipMalloc(&ds[r].d_flag, (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int)));
+                // --uncached allocates just these two buffers as uncached
+                // (hipDeviceMallocUncached), which is the targeted alternative
+                // to a global HSA_DISABLE_CACHE=1: peer writes must reach
+                // memory to be visible, but every OTHER access in the kernel
+                // keeps normal caching. (gpt-dev-agent req_cea35a9e3b4f440a.)
+                if (uncached_exch) {
+                    HIP_CHECK(hipExtMallocWithFlags((void **) &ds[r].d_exch, bytes, hipDeviceMallocUncached));
+                    HIP_CHECK(hipExtMallocWithFlags((void **) &ds[r].d_flag,
+                              (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int), hipDeviceMallocUncached));
+                } else {
+                    HIP_CHECK(hipMalloc(&ds[r].d_exch, bytes));
+                    HIP_CHECK(hipMalloc(&ds[r].d_flag, (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int)));
+                }
                 HIP_CHECK(hipMemset(ds[r].d_flag, 0, (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int)));
                 HIP_CHECK(hipMalloc(&ds[r].d_dead, sizeof(int)));
                 HIP_CHECK(hipMemset(ds[r].d_dead, 0, sizeof(int)));
