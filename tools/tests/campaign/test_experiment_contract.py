@@ -939,6 +939,56 @@ class PromotionGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
 
+    # --------- VA24 P0 hardening (dev-gpt-agent req_d563bd481bcf4324) ---------
+
+    def test_ci_policy_requires_an_explicit_rounds_floor(self):
+        """An interval policy with no evidence-depth floor is weaker than it
+        looks: run_paired_lane() accepts pairs=1, whose bootstrap yields a
+        degenerate interval that can look arbitrarily significant."""
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _minimal_contract(acceptance={
+                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                "effect_evidence_policy": "ci95_threshold_bound_v1"})
+        self.assertIn("min_paired_rounds", str(caught.exception))
+
+    def test_rounds_floor_applies_to_the_control_lane_too(self):
+        """A regression budget from one usable pair is as untrustworthy as a
+        gain from one; the floor must not be gain-only."""
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2,
+            max_control_regression_pct_paired_rounds=1)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("control interval" in r for r in gate["reasons"]), gate)
+
+    def test_inverted_source_interval_is_rejected_before_regression_derivation(self):
+        """max(0, -effect) can hide an inverted source interval, so the
+        LaneEffect must be validated atomically before the transform."""
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            # low > point: incoherent, and the regression transform would
+            # otherwise still yield a plausible non-negative bound.
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=0.9, ci95_high_pct=1.5, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("max_control_regression_pct_ci95_high", agg)
+
+    def test_point_estimate_outside_interval_is_not_usable(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=9.0,
+                          ci95_low_pct=1.0, ci95_high_pct=2.0, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
+
     # ------------- VA24: interval plumbing through aggregation -------------
 
     def test_single_lane_interval_is_carried_through_exactly(self):
@@ -981,7 +1031,8 @@ class PromotionGateTests(unittest.TestCase):
     def test_multi_lane_under_interval_policy_is_invalid_not_pass(self):
         contract = _minimal_contract(acceptance={
             "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0,
-            "effect_evidence_policy": "ci95_threshold_bound_v1"})
+            "effect_evidence_policy": "ci95_threshold_bound_v1",
+            "min_paired_rounds": 10})
         effects = [
             ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
                           ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
@@ -1014,7 +1065,8 @@ class PromotionGateTests(unittest.TestCase):
     }
 
     def _ci_gate(self, **effects):
-        base = {"end_to_end_gain_pct_paired_rounds": 10}
+        base = {"end_to_end_gain_pct_paired_rounds": 10,
+                "max_control_regression_pct_paired_rounds": 10}
         base.update(effects)
         return ec.evaluate_promotion_gate(
             _minimal_contract(acceptance=dict(self.CI_ACCEPT)),

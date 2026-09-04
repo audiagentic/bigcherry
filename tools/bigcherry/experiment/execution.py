@@ -162,15 +162,20 @@ def lane_effect_from_run(role: str, metric: str, run: PairedLaneRun) -> experime
     None, which the gate treats as unevaluable ("invalid") rather than
     passing.
     """
+    # VA24 P0 (dev-gpt-agent, req_d563bd481bcf4324): take paired_rounds ONLY
+    # from the bootstrap's own stats. block_bootstrap_effect() derives it from
+    # COMPLETE candidate/reference pairs that actually contained the metric
+    # (benchmark.py: "paired_rounds": len(ratios)).
+    #
+    # An earlier revision fell back to counting distinct `pair` values in
+    # run.runs when stats lacked the field. That was wrong: it counts pairs
+    # that were incomplete or missing the metric, so it can OVERCOUNT the
+    # usable evidence and let a lane clear a rounds floor it did not really
+    # meet. A missing value must stay None, which an interval policy with a
+    # floor then treats as unevaluable ("invalid") rather than sufficient.
     paired_rounds = run.stats.get("paired_rounds")
     if not isinstance(paired_rounds, int) or isinstance(paired_rounds, bool):
-        # Fall back to the real structure of the run: run_paired_lane()
-        # appends one record per (pair, mode), so the number of distinct
-        # `pair` values is the paired-round count.
-        distinct_pairs = {
-            record.get("pair") for record in run.runs if isinstance(record, dict)
-        }
-        paired_rounds = len(distinct_pairs) if distinct_pairs else None
+        paired_rounds = None
     return experiment_contract.LaneEffect(
         role=role, metric=metric, geometric_effect_pct=run.stats["geometric_effect_pct"],
         ci95_low_pct=run.stats.get("ci95_low_pct"),
