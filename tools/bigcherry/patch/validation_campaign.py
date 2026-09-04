@@ -32,6 +32,7 @@ per-stage resume-check).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -1949,7 +1950,52 @@ def run_rd73_contract_qualification(
         "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-contract-qualification.json", qualification_doc)
+
+    # VA23: emit the generic-adapter performance artifact.
+    #
+    # _builtin_benchmark() (patch/validation.py) requires an artifact with a
+    # non-empty "metrics" dict; without one the declared performance/controls
+    # checks ERROR with "benchmark artifact requires non-empty metrics", and
+    # patch-verify-evidence then reports "no recorded benchmark execution"
+    # even though a real, paired, bootstrapped benchmark demonstrably ran.
+    # That is a false negative in the direction that HIDES real results.
+    #
+    # This is a faithful projection of already-measured values into the
+    # schema the generic validator reads -- the same thing RD58 does via
+    # run_rd58_state_restore_evidence()'s controls_doc. Nothing here is
+    # computed for the first time, and nothing is invented: every number
+    # below is copied from the lane effects the contract gate itself just
+    # consumed. The lane artifacts remain the authoritative record and stay
+    # separately hash-bound; this document references them rather than
+    # replacing them.
+    performance_doc = {
+        "campaign_id": contract.contract_hash,
+        "passed": bool(promotion.get("passed")),
+        "contract_id": contract.id,
+        "target_metric": "mtp_wall_tps",
+        "metrics": {
+            # LaneEffect is a frozen dataclass (experiment/contract.py);
+            # dataclasses.asdict() is its faithful serialisation, so the
+            # recorded fields are exactly the measured
+            # role/metric/geometric_effect_pct/decision the contract gate
+            # consumed -- not a re-derivation.
+            "mtp_verify": {
+                "effect": dataclasses.asdict(mtp["effect"]),
+                "artifact": mtp["artifact"],
+            },
+            "decode_control": {
+                "effect": dataclasses.asdict(decode_control["effect"]),
+                "artifact": decode_control["artifact"],
+            },
+            "aggregated_effects": aggregated_effects,
+        },
+        "promotion": promotion,
+    }
+    performance_artifact = _write_bound_artifact(
+        run_dir, "rd73-performance.json", performance_doc,
+    )
     return {
+        "performance_artifact": performance_artifact,
         "activation": activation, "mtp": mtp, "decode_control": decode_control,
         "resource": resource, "correctness": correctness,
         "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
@@ -2933,6 +2979,23 @@ def run(args: argparse.Namespace) -> int:
             run_dir=campaign_run_dir,
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
+
+        # VA23: bind RD73's real contract-produced evidence into the generic
+        # adapter, exactly as RD58 does. Before this, the RD73 branch produced
+        # authoritative artifacts but bound none of them, so the declared
+        # performance/controls checks ERRORed ("benchmark artifact requires
+        # non-empty metrics") and correctness stayed BLOCKED -- making
+        # patch-verify-evidence report that no benchmark ran when one had.
+        #
+        # correctness is bound ONLY when the bit_identical evaluation actually
+        # produced an artifact. On Rd73CorrectnessError the artifact is None
+        # and correctness must stay BLOCKED rather than silently pass: a
+        # correctness check that could not be evaluated is not a correctness
+        # check that succeeded.
+        performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
+        if rd73_qualification["correctness"].get("artifact") is not None:
+            correctness_evidence = {"artifact": rd73_qualification["correctness"]["artifact"]}
+
         _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
         _print(
             f"rd73 promotion: "
