@@ -71,8 +71,30 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
 
 ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
-    "resource_limits",
+    "resource_limits", "effect_evidence_policy", "min_paired_rounds",
 )
+
+# VA24: how a declared acceptance bound must be evidenced.
+#
+#   point_estimate_v1     -- legacy. Compare the point estimate against the
+#                            bound. This is what every contract predating
+#                            VA24 used, and it cannot distinguish a real
+#                            effect from a lucky sample.
+#   ci95_threshold_bound_v1 -- the bound must be established by the interval,
+#                            not the point estimate:
+#                              gain:       ci95_low  >= declared threshold
+#                              regression: ci95_high <= declared budget
+#
+# Note the gain rule is deliberately STRONGER than "CI excludes zero"
+# (dev-gpt-agent, req_cd86e5fd4a3b4328). "Excludes zero" only establishes
+# "probably positive"; +1.1% with CI [0.1, 2.1] would clear a 1.0 bound
+# without ever establishing a 1.0% gain. Requiring the lower bound to reach
+# the threshold establishes the claim the contract actually makes.
+EFFECT_EVIDENCE_POLICIES: tuple[str, ...] = (
+    "point_estimate_v1",
+    "ci95_threshold_bound_v1",
+)
+DEFAULT_EFFECT_EVIDENCE_POLICY = "point_estimate_v1"
 
 # VA12: RD73-class patches (a stable graph-cache key) trade a timing claim
 # against a resource-cost claim -- retaining more shape-specific cache
@@ -166,6 +188,33 @@ def _percent(raw: object, where: str) -> float | None:
             f"requirement -- {value!r} given)"
         )
     return value
+
+
+def _effect_evidence_policy(raw: object, where: str) -> str:
+    """VA24: parse acceptance.effect_evidence_policy, defaulting for
+    contracts that predate it. Unknown values are a parse error rather than
+    a silent fallback -- a typo must not quietly downgrade a contract to the
+    weaker point-estimate rule."""
+    if raw is None:
+        return DEFAULT_EFFECT_EVIDENCE_POLICY
+    if not isinstance(raw, str) or raw not in EFFECT_EVIDENCE_POLICIES:
+        raise ExperimentContractError(
+            f"{where} must be one of {list(EFFECT_EVIDENCE_POLICIES)} "
+            f"({raw!r} given)"
+        )
+    return raw
+
+
+def _min_paired_rounds(raw: object, where: str) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ExperimentContractError(f"{where} must be an integer")
+    if raw < 1:
+        raise ExperimentContractError(
+            f"{where} must be >= 1 ({raw!r} given)"
+        )
+    return raw
 
 
 def _non_negative_int(raw: object, where: str) -> int:
@@ -511,6 +560,18 @@ class Acceptance:
     end_to_end_gain_pct: float | None
     max_control_regression_pct: float | None
     resource_limits: tuple[ResourceLimit, ...] = ()
+    # VA24. Defaulted so every pre-VA24 contract keeps its exact behaviour
+    # AND its exact contract_hash (both fields are omitted from the identity
+    # payload when left at their defaults, following VA12's resource_limits
+    # precedent). A contract that opts in gets a new hash, which is correct:
+    # it has changed what it demands of evidence.
+    effect_evidence_policy: str = DEFAULT_EFFECT_EVIDENCE_POLICY
+    # Minimum paired rounds a lane must contribute before its interval is
+    # trusted. run_paired_lane() accepts pairs=1, whose bootstrap produces a
+    # degenerate interval that can look arbitrarily significant, so an
+    # interval-based policy without a rounds floor is not actually stronger
+    # than the point estimate it replaces.
+    min_paired_rounds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -608,6 +669,22 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
                     ]
                 }
                 if contract.acceptance.resource_limits else {}
+            ),
+            # VA24: same treatment as resource_limits above -- omitted while
+            # left at the default, so every contract predating VA24 keeps its
+            # exact original contract_hash. A contract that actually opts into
+            # an interval-based policy (or declares a rounds floor) gets a new
+            # hash, which is correct: it has changed what it demands of
+            # evidence, so previously-recorded evidence should not silently
+            # continue to satisfy it.
+            **(
+                {"effect_evidence_policy": contract.acceptance.effect_evidence_policy}
+                if contract.acceptance.effect_evidence_policy != DEFAULT_EFFECT_EVIDENCE_POLICY
+                else {}
+            ),
+            **(
+                {"min_paired_rounds": contract.acceptance.min_paired_rounds}
+                if contract.acceptance.min_paired_rounds is not None else {}
             ),
         },
         "source_evidence": (
@@ -834,6 +911,12 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             acceptance_data.get("max_control_regression_pct"),
             f"{where}.acceptance.max_control_regression_pct"),
         resource_limits=tuple(resource_limits),
+        effect_evidence_policy=_effect_evidence_policy(
+            acceptance_data.get("effect_evidence_policy"),
+            f"{where}.acceptance.effect_evidence_policy"),
+        min_paired_rounds=_min_paired_rounds(
+            acceptance_data.get("min_paired_rounds"),
+            f"{where}.acceptance.min_paired_rounds"),
     )
     if acceptance.max_control_regression_pct is None:
         raise ExperimentContractError(
@@ -1638,28 +1721,95 @@ def evaluate_promotion_gate(
         )
 
     acceptance = contract.acceptance
-    if acceptance.target_kernel_gain_pct is not None:
-        measured = aggregated_effects.get("target_kernel_gain_pct")
-        if not _finite_number(measured) or measured < acceptance.target_kernel_gain_pct:
-            reasons.append(
-                f"target_kernel_gain_pct {measured} below required "
-                f"{acceptance.target_kernel_gain_pct}"
+    interval_policy = acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+    # VA24: evidence that is missing or malformed under an interval policy is
+    # neither a pass nor a measured negative -- it is unevaluable, and must
+    # surface as "invalid" exactly like an unproven trigger_proof does. These
+    # are collected separately from `reasons` so a genuine below-threshold
+    # result stays an ordinary "fail".
+    invalid_reasons: list[str] = []
+
+    def _gain_reasons(field: str, threshold: float) -> None:
+        measured = aggregated_effects.get(field)
+        if not interval_policy:
+            if not _finite_number(measured) or measured < threshold:
+                reasons.append(f"{field} {measured} below required {threshold}")
+            return
+        ci_low = aggregated_effects.get(f"{field}_ci95_low")
+        rounds = aggregated_effects.get(f"{field}_paired_rounds")
+        if not _finite_number(measured) or not _finite_number(ci_low):
+            invalid_reasons.append(
+                f"{field}: ci95_threshold_bound_v1 requires a finite point estimate "
+                f"and ci95 lower bound (got {measured!r} / {ci_low!r})"
             )
-    if acceptance.end_to_end_gain_pct is not None:
-        measured = aggregated_effects.get("end_to_end_gain_pct")
-        if not _finite_number(measured) or measured < acceptance.end_to_end_gain_pct:
+            return
+        if ci_low > measured:
+            invalid_reasons.append(
+                f"{field}: incoherent interval -- ci95_low {ci_low} exceeds the "
+                f"point estimate {measured}"
+            )
+            return
+        required_rounds = acceptance.min_paired_rounds
+        if required_rounds is not None:
+            if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < required_rounds:
+                invalid_reasons.append(
+                    f"{field}: {rounds!r} paired rounds is below the required "
+                    f"minimum {required_rounds} -- the interval is not trustworthy"
+                )
+                return
+        # The BOUND, not merely positivity, must be established by the
+        # interval. "CI excludes zero" would only show "probably positive".
+        if ci_low < threshold:
             reasons.append(
-                f"end_to_end_gain_pct {measured} below required "
-                f"{acceptance.end_to_end_gain_pct}"
+                f"{field} ci95_low {ci_low} below required {threshold} "
+                f"(point estimate {measured})"
             )
 
+    if acceptance.target_kernel_gain_pct is not None:
+        _gain_reasons("target_kernel_gain_pct", acceptance.target_kernel_gain_pct)
+    if acceptance.end_to_end_gain_pct is not None:
+        _gain_reasons("end_to_end_gain_pct", acceptance.end_to_end_gain_pct)
+
     measured_regression = aggregated_effects.get("max_control_regression_pct")
-    if (not _finite_number(measured_regression)
-            or measured_regression > acceptance.max_control_regression_pct):
-        reasons.append(
-            f"max_control_regression_pct {measured_regression} exceeds budget "
-            f"{acceptance.max_control_regression_pct}"
-        )
+    if not interval_policy:
+        if (not _finite_number(measured_regression)
+                or measured_regression > acceptance.max_control_regression_pct):
+            reasons.append(
+                f"max_control_regression_pct {measured_regression} exceeds budget "
+                f"{acceptance.max_control_regression_pct}"
+            )
+    else:
+        # VA24, regression side. The symmetric-looking rule "a regression only
+        # fails when it is SIGNIFICANTLY negative" was explicitly rejected in
+        # review (dev-gpt-agent, req_cd86e5fd4a3b4328) as fail-OPEN: it would
+        # let an uncertain, genuinely-over-budget regression through simply
+        # because the interval was wide.
+        #
+        # The requirement is the mirror of the gain rule: the budget must be
+        # ESTABLISHED by the interval, i.e. the UPPER bound on the regression
+        # must sit inside the budget. With a 1.0 budget:
+        #     point -0.2, ci95_high 0.4  -> passes (noise absorbed)
+        #     point -0.2, ci95_high 1.2  -> fails  (could really exceed 1.0)
+        # This matters most for correctness-first contracts, where the
+        # regression budget is the ONLY performance gate they have.
+        ci_high = aggregated_effects.get("max_control_regression_pct_ci95_high")
+        if not _finite_number(measured_regression) or not _finite_number(ci_high):
+            invalid_reasons.append(
+                f"max_control_regression_pct: ci95_threshold_bound_v1 requires a "
+                f"finite point estimate and ci95 upper bound "
+                f"(got {measured_regression!r} / {ci_high!r})"
+            )
+        elif ci_high < measured_regression:
+            invalid_reasons.append(
+                f"max_control_regression_pct: incoherent interval -- ci95_high "
+                f"{ci_high} is below the point estimate {measured_regression}"
+            )
+        elif ci_high > acceptance.max_control_regression_pct:
+            reasons.append(
+                f"max_control_regression_pct ci95_high {ci_high} exceeds budget "
+                f"{acceptance.max_control_regression_pct} "
+                f"(point estimate {measured_regression})"
+            )
 
     if generalisation_result is not None and not generalisation_result.get("passed"):
         reasons.append("generalisation proof did not pass")
@@ -1680,6 +1830,20 @@ def evaluate_promotion_gate(
             reasons.append(
                 f"resource gate failed (missing={list(missing_r)}, failed={list(failed_r)})"
             )
+
+    # VA24: unevaluable evidence is "invalid", never "fail" and never "pass" --
+    # the same three-state distinction trigger_proof already establishes. A
+    # missing/malformed/degenerate interval means we could not measure the
+    # claim, which is not the same finding as having measured it and found it
+    # wanting. Reported alongside any ordinary failures so a reader sees both.
+    if invalid_reasons:
+        return {
+            "status": "invalid",
+            "passed": False,
+            "reasons": invalid_reasons + reasons,
+            "contract_id": contract.id,
+            "contract_hash": contract.contract_hash,
+        }
 
     return {
         "status": "pass" if not reasons else "fail",
