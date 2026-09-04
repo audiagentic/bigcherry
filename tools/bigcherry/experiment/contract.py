@@ -1264,6 +1264,13 @@ class LaneEffect:
     metric: str
     geometric_effect_pct: float
     decision: str | None = None
+    # VA24. The producing report (comparisons.run_comparison() /
+    # ab_benchmark.paired_summary()) already computes these; LaneEffect
+    # previously discarded them, so the promotion gate never saw an interval.
+    # Optional and defaulted so every existing construction is unchanged.
+    ci95_low_pct: float | None = None
+    ci95_high_pct: float | None = None
+    paired_rounds: int | None = None
 
 
 def aggregate_contract_effects(
@@ -1335,11 +1342,55 @@ def aggregate_contract_effects(
         if effect.role == "positive" and effect.metric == e2e_metric
     ]
 
-    return {
+    aggregated: dict[str, object] = {
         "target_kernel_gain_pct": statistics.mean(positive_target),
         "end_to_end_gain_pct": statistics.mean(e2e_effects) if e2e_effects else None,
         "max_control_regression_pct": max_control_regression_pct,
     }
+
+    # VA24: attach intervals ONLY where they can be carried through exactly.
+    #
+    # For a single contributing lane the aggregate IS that lane, so its
+    # interval transfers unchanged. For several lanes it does NOT:
+    # mean(lane ci95_lows) is not the ci95_low of the mean effect, and the
+    # interval of the lane with the worst POINT estimate is not the interval
+    # of the worst regression. Computing the aggregate interval properly means
+    # bootstrapping the aggregate statistic from the per-round paired data,
+    # which this function does not receive.
+    #
+    # So multi-lane contracts deliberately get NO interval here. Under
+    # ci95_threshold_bound_v1 the gate then reports "invalid" (unevaluable)
+    # rather than passing or failing -- which is the correct fail-closed
+    # outcome, and far better than emitting a plausible-looking number from
+    # invalid statistics. Removing this restriction requires giving this
+    # function the raw paired observations, not a cleverer formula.
+    # (dev-gpt-agent, req_cd86e5fd4a3b4328, P0.)
+    def _sole(role: str, metric: str) -> LaneEffect | None:
+        matching = [
+            effect for effect in lane_effects
+            if effect.role == role and effect.metric == metric
+        ]
+        return matching[0] if len(matching) == 1 else None
+
+    sole_target = _sole("positive", target_metric)
+    if sole_target is not None and sole_target.ci95_low_pct is not None:
+        aggregated["target_kernel_gain_pct_ci95_low"] = sole_target.ci95_low_pct
+        aggregated["target_kernel_gain_pct_paired_rounds"] = sole_target.paired_rounds
+
+    sole_e2e = _sole("positive", e2e_metric)
+    if sole_e2e is not None and sole_e2e.ci95_low_pct is not None:
+        aggregated["end_to_end_gain_pct_ci95_low"] = sole_e2e.ci95_low_pct
+        aggregated["end_to_end_gain_pct_paired_rounds"] = sole_e2e.paired_rounds
+
+    control_lanes = [effect for effect in lane_effects if effect.role == "control"]
+    if len(control_lanes) == 1 and control_lanes[0].ci95_low_pct is not None:
+        # regression = max(0, -effect), so the UPPER bound on the regression
+        # comes from the LOWER bound on the effect (the most negative case).
+        aggregated["max_control_regression_pct_ci95_high"] = max(
+            0.0, -control_lanes[0].ci95_low_pct)
+        aggregated["max_control_regression_pct_paired_rounds"] = control_lanes[0].paired_rounds
+
+    return aggregated
 
 
 # ------------------------------------------------------------- correctness (EC07)

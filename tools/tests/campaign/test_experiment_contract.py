@@ -939,6 +939,73 @@ class PromotionGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
 
+    # ------------- VA24: interval plumbing through aggregation -------------
+
+    def test_single_lane_interval_is_carried_through_exactly(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.855,
+                          ci95_low_pct=1.482, ci95_high_pct=2.169, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertEqual(agg["target_kernel_gain_pct_ci95_low"], 1.482)
+        self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 10)
+        # regression = max(0, -effect), so its UPPER bound comes from the
+        # effect's LOWER bound: max(0, -(-0.6)) == 0.6
+        self.assertAlmostEqual(agg["max_control_regression_pct_ci95_high"], 0.6)
+
+    def test_multi_lane_refuses_to_invent_an_aggregate_interval(self):
+        """mean(lane ci95_lows) is NOT the ci95_low of the mean effect.
+
+        Rather than emit a plausible-looking but statistically invalid
+        number, aggregation omits the interval entirely for multi-lane
+        contracts; the gate then reports "invalid" under an interval policy.
+        """
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
+                          ci95_low_pct=0.5, ci95_high_pct=1.5, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertEqual(agg["target_kernel_gain_pct"], 1.5)          # point estimate still averaged
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)      # interval withheld
+
+    def test_multi_lane_under_interval_policy_is_invalid_not_pass(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+            "effect_evidence_policy": "ci95_threshold_bound_v1"})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.8,
+                          ci95_low_pct=1.4, ci95_high_pct=2.2, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.1,
+                          ci95_low_pct=-0.2, ci95_high_pct=0.4, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=agg)
+        self.assertEqual(gate["status"], "invalid", gate)
+
+    def test_lane_effects_without_intervals_omit_them(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
+        self.assertNotIn("max_control_regression_pct_ci95_high", agg)
+
     # ---------------- VA24: ci95_threshold_bound_v1 ----------------
 
     CI_ACCEPT = {
