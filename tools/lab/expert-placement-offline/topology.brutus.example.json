@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "primary_device": "xtx0",
+  "primary_tensor_group": "target",
+  "devices": [
+    {
+      "id": "xtx0",
+      "backend": "ROCm0",
+      "architecture": "gfx1100",
+      "roles": ["tensor", "expert"],
+      "expert_budget_bytes": 10737418240,
+      "placement_weight": 1.0
+    },
+    {
+      "id": "xtx1",
+      "backend": "ROCm1",
+      "architecture": "gfx1100",
+      "roles": ["tensor", "expert"],
+      "expert_budget_bytes": 12884901888,
+      "placement_weight": 1.0
+    },
+    {
+      "id": "r9700",
+      "backend": "ROCm2",
+      "architecture": "gfx1201",
+      "roles": ["expert"],
+      "expert_budget_bytes": 27917287424,
+      "placement_weight": 0.9
+    },
+    {
+      "id": "rx6900",
+      "backend": "ROCm3",
+      "architecture": "gfx1030",
+      "roles": ["expert"],
+      "expert_budget_bytes": 12884901888,
+      "placement_weight": 0.35
+    }
+  ],
+  "tensor_groups": [
+    {
+      "id": "target",
+      "members": ["xtx0", "xtx1"],
+      "collective": "rccl"
+    }
+  ],
+  "transport": [
+    {"from": "xtx0", "to": "xtx1", "mode": "rccl", "collective_allowed": true},
+    {"from": "xtx0", "to": "r9700", "mode": "backend-copy", "collective_allowed": false},
+    {"from": "xtx1", "to": "r9700", "mode": "backend-copy", "collective_allowed": false},
+    {"from": "xtx0", "to": "rx6900", "mode": "host-staged", "collective_allowed": false},
+    {"from": "xtx1", "to": "rx6900", "mode": "host-staged", "collective_allowed": false}
+  ]
+}
