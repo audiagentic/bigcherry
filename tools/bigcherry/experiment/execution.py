@@ -148,8 +148,34 @@ def run_paired_lane(
 
 
 def lane_effect_from_run(role: str, metric: str, run: PairedLaneRun) -> experiment_contract.LaneEffect:
+    """VA24: carry the interval and the paired-round count through.
+
+    block_bootstrap_effect() already produces ci95_low_pct/ci95_high_pct
+    alongside the point estimate; this function used to drop them, so the
+    promotion gate could only ever see a point estimate. Under
+    ci95_threshold_bound_v1 the gate needs the interval, and needs the round
+    count because run_paired_lane() accepts pairs=1 -- whose bootstrap yields
+    a degenerate interval that can look arbitrarily significant.
+
+    Values are read straight from the producing report; nothing is derived or
+    defaulted to a plausible number. A stats block lacking an interval yields
+    None, which the gate treats as unevaluable ("invalid") rather than
+    passing.
+    """
+    paired_rounds = run.stats.get("paired_rounds")
+    if not isinstance(paired_rounds, int) or isinstance(paired_rounds, bool):
+        # Fall back to the real structure of the run: run_paired_lane()
+        # appends one record per (pair, mode), so the number of distinct
+        # `pair` values is the paired-round count.
+        distinct_pairs = {
+            record.get("pair") for record in run.runs if isinstance(record, dict)
+        }
+        paired_rounds = len(distinct_pairs) if distinct_pairs else None
     return experiment_contract.LaneEffect(
         role=role, metric=metric, geometric_effect_pct=run.stats["geometric_effect_pct"],
+        ci95_low_pct=run.stats.get("ci95_low_pct"),
+        ci95_high_pct=run.stats.get("ci95_high_pct"),
+        paired_rounds=paired_rounds,
     )
 
 
