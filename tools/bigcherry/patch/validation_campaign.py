@@ -1999,6 +1999,14 @@ def run_rd73_contract_qualification(
         "activation": activation, "mtp": mtp, "decode_control": decode_control,
         "resource": resource, "correctness": correctness,
         "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        # VA23: the NAMED correctness result, so the adapter's own
+        # _contract_correctness_gate can be fed the same way RD08's and
+        # RD58's are (see the compute_contract_correctness_gate() call in
+        # run()). Without this RD73 passes None there and the gate reports
+        # missing_checks -> BLOCKED, even though bit_identical was really
+        # evaluated here. Returned as the CorrectnessResult itself, not a
+        # bool, so a failure carries its detail through unchanged.
+        "correctness_named_results": {"bit_identical": correctness_result},
         "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
         "artifact": artifact_ref,
     }
@@ -3068,6 +3076,12 @@ def run(args: argparse.Namespace) -> int:
             (
                 rd08_qualification["correctness"]["results"] if rd08_qualification is not None
                 else rd58_contract_correctness_named_results if args.run_rd58_state_restore
+                # VA23: RD73's bit_identical result is real and already
+                # evaluated inside run_rd73_contract_qualification(); thread
+                # it here exactly as RD08's and RD58's are, so the gate
+                # reflects the evidence instead of reporting missing_checks.
+                else rd73_qualification["correctness_named_results"]
+                if rd73_qualification is not None
                 else None
             ),
         )
