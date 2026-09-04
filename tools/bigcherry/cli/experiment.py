@@ -43,6 +43,21 @@ def cmd_experiment_validate(args: Namespace) -> int:
         print(
             f"  [ OK ] {contract_id}: {contract.title} (hash {contract.contract_hash})"
         )
+
+    # VA24 registry lint: a contract declaring a gain threshold under the
+    # weaker point_estimate_v1 policy must appear in the frozen legacy
+    # manifest. Runs over the WHOLE registry even when --contract-id narrowed
+    # the listing above, because the property being checked is a registry
+    # invariant (is anything using the weak policy without a waiver), not a
+    # property of one contract in isolation.
+    from pathlib import Path as _Path
+
+    waivers = ec.load_legacy_waivers(_Path(ec.LEGACY_MANIFEST_PATH))
+    problems = ec.lint_effect_evidence_policy(registry, waivers)
+    if problems:
+        for problem in problems:
+            print(f"  [FAIL] {problem}", file=sys.stderr)
+        return 1
     return 0
 
 
