@@ -1403,6 +1403,14 @@ def evaluate_rd73_activation_evidence(
     return {
         "subject_hit": subject_hit, "control_hit": control_hit, "artifact": artifact_ref,
         "subject_log_path": subject_rel, "control_log_path": control_rel,
+        # VA23: the per-log bound refs, so the campaign can build the
+        # positive/negative trace_evidence that _builtin_trace_marker()
+        # requires. It re-reads both logs and re-verifies the marker itself,
+        # so this exposes evidence for independent checking rather than
+        # asserting a result -- subject_hit/control_hit above are NOT what
+        # the validator trusts.
+        "positive": {"artifact": doc["positive"]["artifact"], "marker_regex": marker_regex},
+        "negative": {"artifact": doc["control"]["artifact"], "marker_regex": marker_regex},
     }
 
 
@@ -1844,7 +1852,16 @@ def evaluate_rd73_mtp_correctness(
         raise Rd73CorrectnessError(
             f"rd73 correctness: {len(mismatches)} request(s) mismatched: {', '.join(mismatches)}"
         )
-    doc = {"check": "bit_identical", "passed": True, "rows": rows}
+    # VA23: "ops" is what _builtin_backend_ops() matches against the check's
+    # declared config. patch 1233's validation.toml declares
+    # ops = ["RD73_MTP_BIT_IDENTICAL"] for its correctness check, so the
+    # producer must emit that exact identifier or the validator cannot tell
+    # this artifact apart from any other correctness evidence. "passed" stays
+    # the real comparison outcome; only the identifier is added.
+    doc = {
+        "check": "bit_identical", "passed": True, "rows": rows,
+        "ops": ["RD73_MTP_BIT_IDENTICAL"],
+    }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-correctness.json", doc)
     return {"artifact": artifact_ref, "rows": rows}
 
@@ -3003,6 +3020,15 @@ def run(args: argparse.Namespace) -> int:
         performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
         if rd73_qualification["correctness"].get("artifact") is not None:
             correctness_evidence = {"artifact": rd73_qualification["correctness"]["artifact"]}
+        # VA23: the activation lane already ran a real positive/negative
+        # marker probe; bind its bound log refs so _builtin_trace_marker()
+        # can re-read and re-verify them. The validator does its own regex
+        # check against both logs, so this supplies evidence for independent
+        # verification rather than asserting the outcome.
+        trace_evidence = {
+            "positive": rd73_qualification["activation"]["positive"],
+            "negative": rd73_qualification["activation"]["negative"],
+        }
 
         _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
         _print(
