@@ -1554,6 +1554,35 @@ def evaluate_trigger_proof(trigger_evidence: list[TriggerEvidence]) -> dict[str,
 # --------------------------------------------------------------- promotion (EC09)
 
 
+def _finite_number(value: object) -> bool:
+    """True only for a real, finite, non-boolean number.
+
+    ``isinstance(x, (int, float))`` alone is not sufficient for a fail-closed
+    gate, for two reasons found in review (dev-gpt-agent, req_cd86e5fd4a3b4328):
+
+      * ``bool`` is a subclass of ``int``, so ``True`` would be accepted and
+        compared as ``1``.
+      * NaN and infinity pass the isinstance check, and NaN silently defeats
+        BOTH threshold comparisons in evaluate_promotion_gate(), because every
+        ordered comparison against NaN is False:
+
+            float("nan") < required_gain   -> False   (so the gain check passes)
+            float("nan") > regression_budget -> False (so the regression check passes)
+
+        i.e. a NaN effect produced a PASS on both gain and regression. That is
+        a confidently wrong verdict from malformed evidence, which is exactly
+        what a fail-closed gate must never do.
+
+    Malformed evidence must therefore be rejected here and reported as a
+    failure reason, never silently satisfy a bound.
+    """
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
+
+
 def evaluate_promotion_gate(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
@@ -1611,21 +1640,21 @@ def evaluate_promotion_gate(
     acceptance = contract.acceptance
     if acceptance.target_kernel_gain_pct is not None:
         measured = aggregated_effects.get("target_kernel_gain_pct")
-        if not isinstance(measured, (int, float)) or measured < acceptance.target_kernel_gain_pct:
+        if not _finite_number(measured) or measured < acceptance.target_kernel_gain_pct:
             reasons.append(
                 f"target_kernel_gain_pct {measured} below required "
                 f"{acceptance.target_kernel_gain_pct}"
             )
     if acceptance.end_to_end_gain_pct is not None:
         measured = aggregated_effects.get("end_to_end_gain_pct")
-        if not isinstance(measured, (int, float)) or measured < acceptance.end_to_end_gain_pct:
+        if not _finite_number(measured) or measured < acceptance.end_to_end_gain_pct:
             reasons.append(
                 f"end_to_end_gain_pct {measured} below required "
                 f"{acceptance.end_to_end_gain_pct}"
             )
 
     measured_regression = aggregated_effects.get("max_control_regression_pct")
-    if (not isinstance(measured_regression, (int, float))
+    if (not _finite_number(measured_regression)
             or measured_regression > acceptance.max_control_regression_pct):
         reasons.append(
             f"max_control_regression_pct {measured_regression} exceeds budget "
