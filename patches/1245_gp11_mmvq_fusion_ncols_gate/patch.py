@@ -34,16 +34,29 @@ null result: its own eligibility gate is ncols_dst==1, so it never fired on
 ~93% of MMVQ work either. This is one root cause behind several stalled
 items, not a coincidence.
 
-WHY THIS IS SAFE TO WIDEN (source-verified, not assumed):
+WHY WIDENING IS PLAUSIBLE (source-verified), AND THE REAL RISK:
 
-The fused kernel body is ALREADY written generically over ncols_dst. In
+The fused kernel body is written generically over ncols_dst. In
 ``mul_mat_vec_q`` (mmvq.cu): ``x_biases[ncols_dst]`` / ``gate_biases[ncols_dst]``
-are sized by the template parameter; the bias/gate-bias prefetch, the
+are sized by the template parameter, and the bias/gate-bias prefetch, the
 per-column accumulation, and the GLU combine (``switch (active_glu)``) all sit
-inside ``for (int j = 0; j < ncols_dst; ++j)`` loops; and the kernel's own
-comment reads "Block: (warp_size, ncols_dst) - each warp handles one token
-independently". There is no single-column assumption in the fusion
-arithmetic.
+inside ``for (int j = 0; j < ncols_dst; ++j)`` loops. No dense/no-ids indexing
+or stride correctness dependency on ncols==1 was found.
+
+CORRECTION (gpt-dev-agent review, req_6d9ac5777c094cea): an earlier revision of
+this docstring also cited the kernel comment "Block: (warp_size, ncols_dst) --
+each warp handles one token independently" as evidence of safety. **That comment
+belongs to the separate MoE kernel, not to dense MMVQ, and the citation was
+wrong.** It materially understated the real risk, which is REGISTER PRESSURE:
+dense RDNA3 uses nwarps=1 and rows_per_cuda_block=1 for ncols>1, so at ncols=6
+every thread carries ``tmp[6]``, ``tmp_gate[6]``, ``x_biases[6]`` and
+``gate_biases[6]`` -- roughly 24 live float slots before vec-dot temporaries --
+and the bias/gate-bias flags are RUNTIME flags, so a bias-free model does not
+necessarily let the compiler fold those arrays away. Scratch/spill is the
+threat to watch, not shared-memory sizing. Checking VGPR and especially
+private/scratch usage of the new specialization is therefore a go/no-go gate
+BEFORE any timing work: scratch appearing at all is an abandon signal for a
+~1% opportunity.
 
 The restriction lives entirely in the eligibility/instantiation layer:
   * ``mul_mat_vec_q_switch_fusion`` only instantiates the fused variant inside
@@ -58,8 +71,23 @@ Upstream states the limitation flatly ("we only support fusion for
 ncols_dst = 1") with no rationale given, and the generic kernel body
 indicates conservatism rather than a correctness constraint.
 
-SCOPE -- deliberately narrower than the full gate:
+SCOPE -- deliberately a Q8_0 + ncols=6 PROTOTYPE, not a general widening:
 
+  * Fused instantiation is added for exactly ``(c_ncols_dst == 6 && type ==
+    GGML_TYPE_Q8_0)`` alongside the existing ncols==1 case. A general
+    ``c_ncols_dst >= 1`` widening (the first revision of this patch) would have
+    created roughly 23 quantized types x 7 extra widths = ~161 additional fused
+    kernel specializations, which is grossly disproportionate to a ~1% target.
+    This form adds about one specialization per compiled GPU architecture.
+    If it wins, Q8_0 widths 2..6 costs only five more and covers tunable MTP
+    widths (spec_draft_n_max is user-configurable, so the needed width moves
+    with config -- 6 is today's production value, n_max=5 + 1).
+  * Host-side selection is gated to the same shape AND to gfx1100
+    (``GGML_CUDA_CC_IS_RDNA3_0``), matching patch 1241/RD30's precedent of
+    excluding RDNA3.5 pending its own hardware evidence. Host gating does not
+    itself save instantiations -- the compile-time condition above does -- but
+    it keeps the behavioural blast radius on the architecture the evidence
+    covers.
   * Dense ``GGML_OP_MUL_MAT`` only. The ``GGML_OP_MUL_MAT_ID`` (MoE routing)
     gate is left at ``!= 1`` untouched: this project's target model is dense,
     the profiling evidence above is dense-only, and MoE expert routing has its
@@ -68,14 +96,14 @@ SCOPE -- deliberately narrower than the full gate:
     (ggml_cuda_should_fuse_mul_mat_vec_f) is left alone -- this model is Q8_0,
     so MMVQ is the path that matters, and leaving MMVF untouched keeps the
     blast radius to one kernel family.
-  * Bounded by ``MMVQ_MAX_BATCH_SIZE`` (8), which already bounds MMVQ
-    eligibility on the line directly above the gate being changed, so no new
-    ncols_dst values become reachable that MMVQ did not already handle.
 
-COST NOT YET MEASURED: dropping the ``if constexpr`` guard makes the fused
-kernel instantiate for c_ncols_dst 1..8 instead of just 1, i.e. up to 7 extra
-instantiations per quantization type. Compile time and code size must be
-measured, not assumed -- see SUMMARY.md's validation section.
+Note ``ggml_cuda_should_use_mmvq()`` carries its own architecture/type-specific
+thresholds; RDNA3 dense Q8_0 falls through to ``<= MMVQ_MAX_BATCH_SIZE``, so
+ncols=6 is a valid MMVQ shape for this target (corroborated by the trace above,
+which observes 112,110 real ncols=6 Q8_0 MMVQ dispatches). Restricting this
+patch to Q8_0/gfx1100 keeps it inside the regime the evidence actually covers
+rather than enabling multi-column fused MMVQ for type/architecture combinations
+where normal dispatch may stop using MMVQ earlier.
 
 CORRECTNESS GATE IS TOLERANCE, NOT BIT-IDENTITY: fusion changes the
 accumulation/rounding structure relative to running the two matmuls plus a
@@ -96,7 +124,7 @@ MMVQ_CU = FilePatch(
                 "batch range, and widen the dense fusion-prologue assert",
     edits=(
         Edit(
-            id="instantiate-fusion-for-all-ncols",
+            id="instantiate-fusion-q8_0-ncols6",
             anchor=(
                 r"    if constexpr \(c_ncols_dst == 1\) \{\n"
                 r"        if \(has_fusion\) \{"
@@ -106,10 +134,11 @@ MMVQ_CU = FilePatch(
                       "no fused instantiation exists at all",
             mode="replace",
             text=(
-                "    if constexpr (c_ncols_dst >= 1) {\n"
+                "    if constexpr (c_ncols_dst == 1 ||\n"
+                "                  (c_ncols_dst == 6 && type == GGML_TYPE_Q8_0)) {\n"
                 "        if (has_fusion) {"
             ),
-            guard=r"if constexpr \(c_ncols_dst >= 1\) \{",
+            guard=r"c_ncols_dst == 6 && type == GGML_TYPE_Q8_0",
         ),
         # NOTE: the GGML_ASSERT(!has_fusion && "fusion only supported for
         # ncols_dst=1") immediately after that block is deliberately left in
@@ -160,7 +189,9 @@ GGML_CUDA_CU = FilePatch(
                       "shape this workload actually runs",
             mode="replace",
             text=(
-                "    if (tensor->op == GGML_OP_MUL_MAT && dst->ne[1] > MMVQ_MAX_BATCH_SIZE) {\n"
+                "    if (tensor->op == GGML_OP_MUL_MAT &&\n"
+                "        !(dst->ne[1] == 1 ||\n"
+                "          (dst->ne[1] == 6 && src0->type == GGML_TYPE_Q8_0 && GGML_CUDA_CC_IS_RDNA3_0(cc)))) {\n"
                 "        return false;\n"
                 "    }\n"
                 "\n"
@@ -170,7 +201,7 @@ GGML_CUDA_CU = FilePatch(
                 "\n"
                 "    return use_mul_mat_vec_q;"
             ),
-            guard=r"if \(tensor->op == GGML_OP_MUL_MAT && dst->ne\[1\] > MMVQ_MAX_BATCH_SIZE\) \{",
+            guard=r"dst->ne\[1\] == 6 && src0->type == GGML_TYPE_Q8_0 && GGML_CUDA_CC_IS_RDNA3_0\(cc\)",
         ),
     ),
 )
