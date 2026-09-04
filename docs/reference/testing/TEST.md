@@ -37,6 +37,77 @@ validation.toml + evidence/validation.json, Experiment Contract binding,
 tracked-status semantics), see
 [PATCH_VALIDATION.md](PATCH_VALIDATION.md).
 
+### Running a validation campaign on Brutus — working recipe and prerequisites
+
+A real, working invocation (RD73, 2026-09-04). Adapt patch/model/contract
+flags; the surrounding setup is what matters:
+
+```bash
+cd ~/<isolated-bigcherry-clone>
+export PYTHONPATH=tools
+export HIP_VISIBLE_DEVICES=0,1        # REQUIRED - see (1)
+export ROCR_VISIBLE_DEVICES=0,1
+python3 -m bigcherry.patch.validation_campaign \
+  --patch 1233_rd73_stable_graph_cache_key \
+  --model /mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf \
+  --hip-path /home/audumla/rocm-shim \    # NOT /opt/rocm - see (2)
+  --amdgpu-targets gfx1100 \
+  --manifest /home/audumla/bigcherry/artifacts/2578138397d7/hip-autotune-manifest.json \
+  --workdir  ~/rd73-contract-run \
+  --build-root ~/rd73-contract-builds \
+  --worktree-root ~/rd73-contract-worktrees \
+  --run-rd73-contract \
+  --rd73-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl
+```
+
+Three prerequisites that are easy to miss and each cost a failed run:
+
+1. **`HIP_VISIBLE_DEVICES` and `ROCR_VISIBLE_DEVICES` must both be exported.**
+   The campaign deliberately inherits ambient GPU visibility rather than
+   restricting it (so `-sm tensor` topology is preserved) and fails closed if
+   they are unset. On this box, running without them exposes all four
+   heterogeneous GPUs; the server then logs
+   `internal AllReduce init failed (n_devices != 2?)` and **segfaults**
+   (`server process exited (code -11) before becoming healthy`).
+
+2. **`--hip-path` must point at a tree whose `bin/` contains `clang`/`clang++`.**
+   The campaign builds its compiler paths as `<hip-path>/bin/clang`. This
+   ROCm install exposes `amdclang`/`amdclang++` in `/opt/rocm/bin` and puts
+   real `clang` under `/opt/rocm/llvm/bin`, so `--hip-path /opt/rocm` fails
+   configure with *"is not a full path to an existing compiler tool"*. Build a
+   non-invasive shim rather than modifying `/opt/rocm`:
+
+   ```bash
+   R=~/rocm-shim; rm -rf $R; mkdir -p $R/bin
+   for e in /opt/rocm/*;     do b=$(basename $e); [ "$b" = bin ] && continue; ln -s $e $R/$b; done
+   for e in /opt/rocm/bin/*; do ln -s $e $R/bin/$(basename $e); done
+   ln -sf /opt/rocm/llvm/bin/clang   $R/bin/clang
+   ln -sf /opt/rocm/llvm/bin/clang++ $R/bin/clang++
+   ```
+
+   `ROCM_PATH`/`HIP_PATH`/`CMAKE_PREFIX_PATH` all resolve correctly through the
+   shim because every other top-level entry is symlinked straight to
+   `/opt/rocm`.
+
+3. **Never run `cmake --build` by hand inside `~/.cache/bigcherry/builds/...`.**
+   Those directories are identity-bound. Adding a target manually (e.g.
+   building `llama-server` yourself) makes the next campaign fail with
+   *"has an existing bigcherry-build-metadata-llama-bench.json but it failed
+   reuse validation -- refusing to silently rebuild over it: runtime bundle
+   hash does not match recorded identity"*. The campaign builds `llama-server`
+   and `llama-bench` for both control and validation-subject lanes itself, so
+   this is never necessary. If a directory has already been contaminated,
+   delete that build directory and let the campaign rebuild it.
+
+**Do not substitute an ad-hoc A/B for the contract.** A hand-run
+control-vs-subject comparison with one completion per arm cannot resolve a
+low-single-digit effect against this project's measured 0.5-0.9% repetition
+noise floor. RD73 is the worked example: an ad-hoc single-sample run was read
+as "null, mechanism inert", while the contract's 10 paired rounds with 10,000
+bootstrap resamples measured **+1.855%, 95% CI [1.482%, 2.169%]** — a real
+effect that merely missed the contract's 3.0% promotion bar. Use the contract
+path for any claim, positive or negative.
+
 ## Correctness
 
 ```bash
