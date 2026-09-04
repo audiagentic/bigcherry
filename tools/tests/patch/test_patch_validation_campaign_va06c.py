@@ -366,9 +366,17 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         self.assertEqual(result["promotion"]["status"], "pass", result["promotion"])
 
     def test_gain_below_threshold_fails(self) -> None:
+        # 2026-09-04: RD73's acceptance was realigned (end_to_end_gain_pct
+        # 3.0 -> 1.0, max_control_regression_pct 2.3 -> 1.0) because 3.0 was
+        # the registry's only end-to-end bar and an unexplained outlier
+        # against 18 contracts gating kernel gain at 0.3-1.4. This case
+        # previously used +1.9% "below 3.0"; that now legitimately PASSES, so
+        # the probe moves below the new bar rather than the assertion being
+        # relaxed -- the behaviour under test ("a gain beneath the contract's
+        # own threshold must fail") is unchanged.
         mtp_result = self._fake_mtp_lane(
             control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[101.9],  # +1.9%, below 3.0
+            control_tps=[100.0], subject_tps=[100.5],  # +0.5%, below 1.0
         )
         result = self._run_qualification(mtp_result)
         self.assertEqual(result["promotion"]["status"], "fail")

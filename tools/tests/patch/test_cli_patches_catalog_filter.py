@@ -29,7 +29,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         code, out, _ = _run(["patches"])
         self.assertEqual(code, 0)
         self.assertNotIn("catalog:", out)
-        self.assertIn("53 of 53 shown selected", out)
+        self.assertIn("55 of 55 shown selected", out)
 
     def test_kind_framework_shows_only_framework_patches(self):
         code, out, _ = _run(
@@ -43,7 +43,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         self.assertIn("catalog:   kind=framework backend=any origin=any", out)
         self.assertIn("0100_cmake_options", out)
         self.assertNotIn("1200_rd19_single_gpu_meta_bypass", out)
-        self.assertIn("(53 total in catalog)", out)
+        self.assertIn("(55 total in catalog)", out)
 
     def test_backend_vulkan_currently_matches_nothing(self):
         # Real state of the catalog today: zero Vulkan patches exist (RE30
@@ -70,7 +70,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
-        self.assertIn("53 of 53 shown selected (53 total in catalog)", out)
+        self.assertIn("55 of 55 shown selected (55 total in catalog)", out)
 
     def test_origin_external_fork_matches_only_rdna_boost_patches(self):
         code, out, _ = _run(
