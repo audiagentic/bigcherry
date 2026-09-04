@@ -19,6 +19,39 @@ Run order and what each one settles:
 | `p2p_d2d.cpp` | Does `hipMemcpyPeer` / D2D corrupt at realistic sizes? | `hipMemcpyPeer` corrupt both directions. `hipMemcpy` D2D/Default correct when the current device is the **source**. |
 | `p2p_bwval.cpp` | Was the earlier "10.4 GB/s P2P" measurement real? | No. Replicating that benchmark's exact configuration with validation added gives 262144/262144 elements wrong (all zeros). |
 
+## Round 2 (2026-09-04): exhausting the design space
+
+| Program | Question | Result |
+|---|---|---|
+| `asyncprobe.cpp` | Which ASYNC push variants are legal *and* correct? | Exactly one works: `hipMemcpyAsync` + `hipMemcpyDeviceToDevice` + **explicit non-null stream** + current device = **source**. `hipMemcpyDefault`, the null stream, and `hipMemcpyPeerAsync` all silently corrupt. |
+| `dmabench.cpp` | Is a DMA push + kernel-boundary reduce better than host staging? And can the transfer be HIDDEN behind compute? | No, and yes-but-irrelevant. See table below. |
+| `dispatch_overhead.cpp` | What does a kernel dispatch actually cost, and do HIP graphs help? | 3.463 us/kernel stream launch vs 2.848 us via graph replay (1.22x, 0.615 us saved). |
+| `analyze_decode_trace.py` | Where does decode time actually go? (union-of-spans, never summed durations) | MMVQ 50.3%, AllReduce 6.6%, **GPU idle 30.2%**. |
+
+DMA-push (arm C) and DMA-push-overlapped-with-compute (arm D) vs the
+production host-staged design (arm A), all correctness-validated:
+
+| size | A host | C dma | C vs A | D overlap | hidden |
+|---|---|---|---|---|---|
+| 30 KB | 25.48 us | 112.34 | +341% | 154.58 | 44.8 us |
+| 60 KB | 29.52 | 106.10 | +259% | 135.35 | 47.7 |
+| 120 KB | 42.84 | 115.86 | +170% | 142.29 | 46.2 |
+| 240 KB | 63.36 | 130.46 | +106% | 159.72 | 49.9 |
+| 480 KB | 105.44 | 174.02 | +65% | 199.05 | 40.4 |
+| 1 MB | 302.40 | 298.30 | -1.4% | 318.57 | 44.2 |
+
+The DMA-push design carries a ~100us FIXED floor (two stream syncs plus a
+kernel boundary) against host staging's ~25us total at decode sizes. Overlap
+really does work -- a consistent ~44us of transfer hides behind compute -- but
+cannot cover that deficit. Parity only arrives at >=1MB; decode traffic is
+20KB-1MB.
+
+**The governing constraint is that at decode sizes the ENTIRE collective costs
+~25us, while a single kernel boundary plus stream sync costs tens of us.** Any
+design needing an extra dispatch boundary loses before it transfers a byte.
+That is why the production single-kernel, in-kernel-handshake, pinned-host
+design wins, and it is now measured rather than assumed.
+
 ## Conclusion
 
 Two independent blockers, either one fatal:
