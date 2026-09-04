@@ -248,7 +248,7 @@ needs = []
 [platform.linux-multi]
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
-options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON" }
+options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON" }
 c-compiler = "/opt/rocm/llvm/bin/clang"
 cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 
