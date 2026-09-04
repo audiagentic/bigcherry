@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bigcherry.local/schemas/expert-map.schema.json",
+  "title": "BigCherry expert placement map",
+  "type": "object",
+  "required": ["schema", "kind", "model_layout_sha256", "policy", "devices", "layers", "summary"],
+  "properties": {
+    "schema": {"const": 1},
+    "kind": {"const": "bigcherry.expert_map"},
+    "model_layout_sha256": {"type": "string", "minLength": 1},
+    "model_sha256": {"type": ["string", "null"]},
+    "primary_device": {"type": ["string", "null"]},
+    "primary_tensor_group": {"type": ["string", "null"]},
+    "policy": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": true
+    },
+    "devices": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "tensor_groups": {"type": "array", "items": {"type": "object"}},
+    "transport": {"type": "array", "items": {"type": "object"}},
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["layer", "n_experts", "bytes_per_expert", "owners", "local_slots"],
+        "properties": {
+          "layer": {"type": "integer", "minimum": 0},
+          "n_experts": {"type": "integer", "minimum": 1},
+          "bytes_per_expert": {"type": "integer", "minimum": 1},
+          "owners": {"type": "array", "items": {"type": "string"}},
+          "local_slots": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {"type": "object"}
+  },
+  "additionalProperties": false
+}
