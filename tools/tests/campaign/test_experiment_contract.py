@@ -939,6 +939,47 @@ class PromotionGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
 
+    def test_nan_effect_does_not_satisfy_any_threshold(self):
+        """NaN must never PASS a bound.
+
+        Regression test for a real gate hole (dev-gpt-agent review,
+        req_cd86e5fd4a3b4328): the gate used isinstance(x, (int, float)),
+        and every ordered comparison against NaN is False --
+        `nan < required_gain` is False and `nan > regression_budget` is
+        False -- so a NaN effect silently satisfied BOTH the gain and the
+        regression check and produced a PASS from malformed evidence.
+        """
+        nan = float("nan")
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1,
+            "max_control_regression_pct": 1,
+        })
+        effects = {"target_kernel_gain_pct": nan, "end_to_end_gain_pct": nan,
+                   "max_control_regression_pct": nan}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
+        joined = " ".join(gate["reasons"])
+        self.assertIn("target_kernel_gain_pct", joined)
+        self.assertIn("end_to_end_gain_pct", joined)
+        self.assertIn("max_control_regression_pct", joined)
+
+    def test_infinite_regression_does_not_satisfy_budget(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": float("-inf")}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
+
+    def test_bool_is_not_accepted_as_a_measured_effect(self):
+        """bool is a subclass of int; True must not be read as 1.0."""
+        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 0.5,
+                                                 "max_control_regression_pct": 1})
+        effects = {"target_kernel_gain_pct": True, "max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
+
     def test_fails_when_target_gain_below_threshold(self):
         contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
         effects = {"target_kernel_gain_pct": 3.0, "max_control_regression_pct": 0.5}
