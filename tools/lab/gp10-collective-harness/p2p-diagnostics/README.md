@@ -52,6 +52,38 @@ design needing an extra dispatch boundary loses before it transfers a byte.
 That is why the production single-kernel, in-kernel-handshake, pinned-host
 design wins, and it is now measured rather than assumed.
 
+
+### Round 3: large/prefill sizes -- still no crossover
+
+The decode-size table above showed DMA-push converging toward parity with
+size, and a -1.4% reading at 1MB suggested a possible crossover. Re-measured
+against PROPERLY MEASURED host-staged baselines (the earlier large-size
+baselines were estimates, and the -1.4% was noise):
+
+| size | A host (measured) | C DMA push | verdict |
+|---|---|---|---|
+| 1 MB | 304.48 us | 323.27 | +6.2% slower |
+| 2 MB | 403.67 | 521.98 | +29.3% slower |
+| 4 MB | 780.91 | 916.25 | +17.3% slower |
+| 10 MB (prefill AllReduce size) | 1919.01 | 2362.52 | +23.1% slower |
+| 20 MB | 3816.31 | 4538.95 | +18.9% slower |
+
+**There is no size at which P2P wins on this machine.**
+
+Why, and this is the structural point: host staging is NOT serialized. Each
+GPU writes to host memory over ITS OWN dedicated Gen4 x8 root-port link, in
+parallel with the other. P2P instead funnels everything through a single
+hairpin between two separately-bifurcated CPU root ports. So P2P trades two
+parallel links for one shared path that is no faster per byte -- losing on
+both bandwidth and latency. The "avoid the double hop" intuition is wrong
+here because the double hop was never the bottleneck.
+
+Generalization: P2P would only pay off on a topology where both GPUs sit
+under a COMMON PCIe switch (traffic stays in-hierarchy and never reaches the
+root complex), or over a real interconnect (XGMI/NVLink). If these cards are
+ever moved behind a PLX-style switch, the broken pull path may also start
+working and this analysis should be redone. On the current board it is closed.
+
 ## Conclusion
 
 Two independent blockers, either one fatal:
