@@ -52,3 +52,52 @@ for speculative-verify shapes. The port is faithful (byte-for-byte from
 **Disposition: stays `untested`, unpromoted.** Correct and correctness-neutral,
 but no measurable benefit on this hardware and pin. Cheap re-check if the pin
 advances: just compare `graphs reused` between arms -- no full A/B needed.
+
+
+## CORRECTION (2026-09-04, later): the ad-hoc "null" above is RETRACTED
+
+The section immediately above concluded from an ad-hoc single-completion A/B
+that the mechanism does not engage and the +1.22% was noise. **That is
+retracted.** One sample per arm cannot resolve a ~2% effect against this
+project's documented 0.5-0.9% repetition noise floor.
+
+The standardised Experiment Contract was then run
+(`bigcherry.patch.validation_campaign ... --run-rd73-contract --rd73-corpus
+tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl`, dual gfx1100,
+HIP_VISIBLE_DEVICES=0,1, model `tierL-qwen27b-q8`):
+
+```
+metric                   mtp_wall_tps
+paired rounds            10 measured (+2 warmup), 12 control + 12 subject reqs
+geometric effect         +1.855%
+95% CI                   [+1.482%, +2.169%]   <-- excludes zero
+bootstrap                10,000 resamples, seed 0
+max control regression   0.0%
+correctness gate         PASS (bit_identical)
+resource gate            PASS (graph_cache_entries)
+trigger proof            PASS (1 lane, 0 untriggered)
+promotion                FAIL -- 1.855% below required 3.0%
+```
+
+**RD73 produces a real, statistically significant ~+1.9% end-to-end gain on the
+MTP workload**, with zero decode-control regression and bit-identical output. It
+fails promotion only against this contract's 3.0% policy bar.
+
+**Open mechanism question:** `graphs reused` was 65 in *both* arms in the ad-hoc
+capture, which is not what a cold-miss-to-warm-replay conversion should look
+like. Either that counter doesn't measure what was assumed, or the gain arrives
+another way. The contract settles the *effect*, not the *mechanism*.
+
+**Evidence status:** contract artifacts are real and sha256-bound
+(`rd73-contract-qualification.json`, `rd73-mtp-lane.json`,
+`rd73-decode-control.json`, `rd73-activation.json`). But
+`patch-verify-evidence` still reports **missing-or-stale**: the generic checks
+`performance` and `controls` ERROR with *"benchmark artifact requires non-empty
+metrics"*, and `activation`/`correctness` are BLOCKED. That is the same known
+adapter gap this patch's `validation.toml` already documents for correctness --
+now shown to affect performance/controls as well. Recorded as the real state,
+not worked around.
+
+**Disposition:** stays `untested`/unpromoted — but because it **misses the 3%
+bar at a measured +1.86%**, not because it does nothing. Worth re-evaluating if
+the bar is revisited or if it is combined with other gains.
