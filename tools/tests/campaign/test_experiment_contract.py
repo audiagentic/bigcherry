@@ -939,6 +939,87 @@ class PromotionGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
 
+    # ---------------- VA24: ci95_threshold_bound_v1 ----------------
+
+    CI_ACCEPT = {
+        "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "ci95_threshold_bound_v1", "min_paired_rounds": 10,
+    }
+
+    def _ci_gate(self, **effects):
+        base = {"end_to_end_gain_pct_paired_rounds": 10}
+        base.update(effects)
+        return ec.evaluate_promotion_gate(
+            _minimal_contract(acceptance=dict(self.CI_ACCEPT)),
+            correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=base)
+
+    def test_ci_policy_requires_lower_bound_to_reach_the_threshold(self):
+        """The BOUND must be established, not merely positivity.
+
+        +1.1% with CI [0.1, 2.1] "excludes zero" but never establishes the
+        declared 1.0% gain, so it must FAIL. This is the specific weakness
+        of a "CI excludes zero" rule (dev-gpt-agent req_cd86e5fd4a3b4328).
+        """
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.1, end_to_end_gain_pct_ci95_low=0.1,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2)
+        self.assertEqual(gate["status"], "fail", gate)
+        self.assertTrue(any("ci95_low" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_passes_when_lower_bound_clears_the_threshold(self):
+        # RD73's real shape: point 1.855, ci95_low 1.482, threshold 1.0.
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "pass", gate)
+
+    def test_ci_policy_missing_interval_is_invalid_not_fail(self):
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertFalse(gate["passed"])
+
+    def test_ci_policy_insufficient_paired_rounds_is_invalid(self):
+        """pairs=1 yields a degenerate bootstrap interval that can look
+        arbitrarily significant; a rounds floor is what makes the interval
+        policy actually stronger than the point estimate."""
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            end_to_end_gain_pct_paired_rounds=1,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("paired rounds" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_incoherent_interval_is_invalid(self):
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.0, end_to_end_gain_pct_ci95_low=2.0,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("incoherent" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_regression_upper_bound_must_sit_inside_budget(self):
+        """Noise absorbed, uncertain over-budget regression rejected."""
+        ok = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=0.4)
+        self.assertEqual(ok["status"], "pass", ok)
+        bad = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=1.2)
+        self.assertEqual(bad["status"], "fail", bad)
+        self.assertTrue(any("ci95_high" in r for r in bad["reasons"]), bad)
+
+    def test_legacy_contracts_keep_point_estimate_behaviour(self):
+        contract = _minimal_contract(acceptance={
+            "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        self.assertEqual(contract.acceptance.effect_evidence_policy, "point_estimate_v1")
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects={"end_to_end_gain_pct": 1.5,
+                                "max_control_regression_pct": 0.5})
+        self.assertEqual(gate["status"], "pass", gate)
+
     def test_nan_effect_does_not_satisfy_any_threshold(self):
         """NaN must never PASS a bound.
 
