@@ -239,6 +239,20 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
         "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
         "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
+        # VA23: RD73's contract artifacts. This list is the record's own
+        # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
+        # a passing performance/controls check whose artifact appears here,
+        # so a contract whose artifacts are absent reports "no recorded
+        # benchmark execution" no matter how real the run was. The
+        # enumeration is deliberate (only known artifact names count, so an
+        # arbitrary file dropped in the workdir cannot become evidence), so
+        # each new contract's artifacts must be added explicitly, exactly as
+        # RD08's are above.
+        "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
+        "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
+        "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
+        "artifacts/rd73-resource.json",
+        "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
