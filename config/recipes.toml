@@ -102,6 +102,9 @@ patches = ["1235_rd09_q81_activation_cache_foundation"]
 [experiment.rd30-only]
 patches = ["1237_rd30_moe_mmq_compact_grid"]
 
+[experiment.gp11-fusion-ncols]
+patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
+
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
