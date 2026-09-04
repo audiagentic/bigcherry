@@ -124,6 +124,21 @@ absolute tps values are **not** comparable to production numbers.
 Correctness (`test-backend-ops` tolerance comparison at ncols>1) was **not** run:
 the performance result made it moot.
 
+### Evidence status (standard)
+
+`bigcherry patch-verify-evidence 1245...` reports **not-required**: at
+`state=untested` with a local origin and no `ported-benched`/`ported-validated`
+claim, the validation-package standard (docs/reference/testing/PATCH_VALIDATION.md,
+"When a validation package is required") does not require a package here.
+
+Be precise about what the numbers above are, though: they come from an **ad-hoc
+control/subject comparison I ran by hand**, not from a registered Experiment
+Contract executed via `bigcherry.patch.validation_campaign`. They are real
+measurements on real hardware and are sufficient to justify NOT promoting this
+patch, but they are **not contract-qualified evidence** and must not be cited as
+if they were. Were anyone to argue for promoting this patch, the numbers would
+have to be reproduced through the standard contract path first.
+
 **Disposition:** keep at `state=untested`, do not promote, do not add to any
 patch-set. Retained as a documented negative result so the `ncols_dst == 1` gate
 is not "discovered" and re-attempted a fourth time.
