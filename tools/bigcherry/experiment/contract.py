@@ -918,6 +918,22 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             acceptance_data.get("min_paired_rounds"),
             f"{where}.acceptance.min_paired_rounds"),
     )
+    # VA24 P0 (dev-gpt-agent, req_d563bd481bcf4324): an interval policy
+    # without a rounds floor is not actually stronger than the point estimate
+    # it replaces -- run_paired_lane() accepts pairs=1, whose bootstrap yields
+    # a degenerate interval that can look arbitrarily significant. Requiring
+    # the floor makes "this contract uses intervals" mean "this contract
+    # guarantees a minimum evidence depth", rather than leaving that to be
+    # discovered per-contract.
+    if (acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+            and acceptance.min_paired_rounds is None):
+        raise ExperimentContractError(
+            f"{where}.acceptance: effect_evidence_policy="
+            f"'ci95_threshold_bound_v1' requires an explicit min_paired_rounds "
+            f"-- an interval computed from a single paired round is degenerate "
+            f"and can look arbitrarily significant, so a confidence policy with "
+            f"no evidence-depth floor is weaker than it appears"
+        )
     if acceptance.max_control_regression_pct is None:
         raise ExperimentContractError(
             f"{where}.acceptance.max_control_regression_pct is required -- every "
@@ -1365,6 +1381,28 @@ def aggregate_contract_effects(
     # invalid statistics. Removing this restriction requires giving this
     # function the raw paired observations, not a cleverer formula.
     # (dev-gpt-agent, req_cd86e5fd4a3b4328, P0.)
+    def _usable_interval(effect: LaneEffect) -> bool:
+        """VA24 P0: validate the SOURCE interval atomically, before any
+        derivation (dev-gpt-agent, req_d563bd481bcf4324).
+
+        Requires finite point/low/high and ``low <= point <= high`` -- which
+        also proves ``low <= high``, so no separate ordering check is needed.
+
+        Validating here rather than at the gate matters for the control side:
+        the regression transform ``max(0, -effect)`` can otherwise HIDE a
+        malformed source interval (e.g. an inverted low/high still yields a
+        plausible-looking non-negative regression bound). A lane whose
+        interval fails this check contributes no interval at all, so an
+        interval policy reports "invalid" instead of trusting a derived
+        number computed from nonsense.
+        """
+        return (
+            _finite_number(effect.geometric_effect_pct)
+            and _finite_number(effect.ci95_low_pct)
+            and _finite_number(effect.ci95_high_pct)
+            and effect.ci95_low_pct <= effect.geometric_effect_pct <= effect.ci95_high_pct
+        )
+
     def _sole(role: str, metric: str) -> LaneEffect | None:
         matching = [
             effect for effect in lane_effects
@@ -1373,17 +1411,17 @@ def aggregate_contract_effects(
         return matching[0] if len(matching) == 1 else None
 
     sole_target = _sole("positive", target_metric)
-    if sole_target is not None and sole_target.ci95_low_pct is not None:
+    if sole_target is not None and _usable_interval(sole_target):
         aggregated["target_kernel_gain_pct_ci95_low"] = sole_target.ci95_low_pct
         aggregated["target_kernel_gain_pct_paired_rounds"] = sole_target.paired_rounds
 
     sole_e2e = _sole("positive", e2e_metric)
-    if sole_e2e is not None and sole_e2e.ci95_low_pct is not None:
+    if sole_e2e is not None and _usable_interval(sole_e2e):
         aggregated["end_to_end_gain_pct_ci95_low"] = sole_e2e.ci95_low_pct
         aggregated["end_to_end_gain_pct_paired_rounds"] = sole_e2e.paired_rounds
 
     control_lanes = [effect for effect in lane_effects if effect.role == "control"]
-    if len(control_lanes) == 1 and control_lanes[0].ci95_low_pct is not None:
+    if len(control_lanes) == 1 and _usable_interval(control_lanes[0]):
         # regression = max(0, -effect), so the UPPER bound on the regression
         # comes from the LOWER bound on the effect (the most negative case).
         aggregated["max_control_regression_pct_ci95_high"] = max(
@@ -1844,11 +1882,27 @@ def evaluate_promotion_gate(
         # This matters most for correctness-first contracts, where the
         # regression budget is the ONLY performance gate they have.
         ci_high = aggregated_effects.get("max_control_regression_pct_ci95_high")
+        control_rounds = aggregated_effects.get("max_control_regression_pct_paired_rounds")
+        required_rounds = acceptance.min_paired_rounds
         if not _finite_number(measured_regression) or not _finite_number(ci_high):
             invalid_reasons.append(
                 f"max_control_regression_pct: ci95_threshold_bound_v1 requires a "
                 f"finite point estimate and ci95 upper bound "
                 f"(got {measured_regression!r} / {ci_high!r})"
+            )
+        # VA24 P0: the rounds floor applies to the CONTROL lane too. A
+        # regression budget established from a single usable pair is exactly
+        # as untrustworthy as a gain established from one, and leaving the
+        # floor off here meant a contract could demand N rounds of evidence
+        # for its claim while accepting n=1 evidence that it broke nothing.
+        elif (required_rounds is not None
+              and (not isinstance(control_rounds, int)
+                   or isinstance(control_rounds, bool)
+                   or control_rounds < required_rounds)):
+            invalid_reasons.append(
+                f"max_control_regression_pct: {control_rounds!r} paired rounds is "
+                f"below the required minimum {required_rounds} -- the control "
+                f"interval is not trustworthy"
             )
         elif ci_high < measured_regression:
             invalid_reasons.append(
