@@ -46,6 +46,59 @@
 //                  the read result classifies as current / stale / zero
 //                  instead of just "wrong" (the AllReduce test above reuses
 //                  static input every rep, which can't distinguish those).
+// === RESOLVED 2026-09-04: why every P2P design fails on this box ===========
+//
+// Systematic diagnosis (scratch programs p2p_diag / p2p_write / p2p_coh /
+// p2p_spin / p2p_d2d / p2p_bwval, run on brutus 0<->1) established a clean and
+// consistent rule, with a local-read control arm proving the harness itself is
+// sound:
+//
+//   PULL operations silently return ZEROS (no error, no fault):
+//     - kernel-side peer reads, both directions
+//     - hipMemcpy(...) where the CURRENT device is the DESTINATION
+//     - hipMemcpyPeer(), in BOTH directions, at every size tested
+//   PUSH operations work correctly:
+//     - kernel-side peer writes (validated exact to 67 MB, scalar and float4)
+//     - hipMemcpy(...) where the CURRENT device is the SOURCE
+//
+// This is the classic PCIe split: posted writes traverse the path, non-posted
+// reads (which need a completion round-trip) do not. It is exactly why
+// NCCL/RCCL are built around pushing into remote buffers, never pulling.
+//
+// BUT the push direction is still unusable for a low-latency collective:
+// peer-directed writes do NOT become visible to the other GPU until the
+// WRITING KERNEL RETIRES. __threadfence_system() does not flush them. Proven
+// by having one GPU spin on a flag while a concurrently-resident kernel on the
+// other GPU wrote it: 2,000,000 iterations each of sys-scope acquire load,
+// system-scope atomic RMW, non-temporal load, volatile load, and
+// fence-then-load ALL failed to observe the write, while a host readback after
+// the writer retired saw it immediately. The atomic-RMW arm is the decisive
+// one -- an RMW cannot be served from a stale cache line, so the data is
+// genuinely not in the destination's memory yet; this is a writer-side flush
+// problem, not a reader-side cache-coherency problem.
+//
+// Consequence: NO single-kernel, fine-grained handshake collective is possible
+// across these two GPUs -- pull-based (--mode p2p) or push-based
+// (--mode p2p-push) alike. P2P here can only work as
+// push-kernel -> kernel boundary -> reduce-kernel, whose launch and
+// synchronisation overhead exceeds the entire theoretical saving at decode
+// message sizes. The production pinned-host design works precisely BECAUSE
+// host-memory writes are immediately visible to the peer.
+//
+// Corollary worth recording: an earlier "10.4 GB/s P2P, 1.5x faster than
+// host-staged" measurement from a separate agent's benchmark is INVALID -- that
+// benchmark did no correctness validation and used the pull configuration
+// (current device = destination), so it was timing a copy that transferred
+// nothing. Re-running its exact configuration with validation added shows
+// 262144/262144 elements wrong (all zeros).
+//
+// --mode p2p-push -- NCCL-style push design (write into the peer's exchange
+//                  buffer, signal a flag in peer VRAM, spin on our own local
+//                  flag, then reduce from two local operands). Correct in
+//                  principle and in the direction that works, but deadlocks
+//                  here for the flush reason above; the spin is bounded so it
+//                  reports the failure instead of hanging the box.
+//
 // --mode probe-fine -- identical probe, but the peer buffer is allocated
 //                  with hipExtMallocWithFlags(..., hipDeviceMallocFinegrained).
 //                  Run with HSA_FORCE_FINE_GRAIN_PCIE=1 in the environment
@@ -91,7 +144,8 @@
 static constexpr int MAX_BLOCKS = 32;
 static constexpr int ARRIVAL_STRIDE_INTS = 16; // one cache line per (rank,block)
 
-enum Mode { MODE_HOST = 0, MODE_P2P = 1, MODE_PROBE_COARSE = 2, MODE_PROBE_FINE = 3 };
+enum Mode { MODE_HOST = 0, MODE_P2P = 1, MODE_PROBE_COARSE = 2, MODE_PROBE_FINE = 3,
+            MODE_P2P_PUSH = 4 };
 enum PeerOrder { ORDER_ENABLE_FIRST = 0, ORDER_ALLOC_FIRST = 1 };
 
 static __device__ __forceinline__ void ar_signal_set(int * p, int token) {
@@ -102,6 +156,18 @@ static __device__ __forceinline__ int ar_signal_get(const int * p) {
 }
 static __device__ __forceinline__ int * arrival_slot(int * arrival, int rank, int block) {
     return arrival + (rank * MAX_BLOCKS + block) * ARRIVAL_STRIDE_INTS;
+}
+
+// System-scope signalling for the p2p-push path. The KFD topology reports this
+// GPU<->GPU link as NON_COHERENT (io_link flags=3), so a peer's PCIe write
+// lands in our VRAM while our L2 can keep serving a stale line -- a plain
+// volatile load spins forever. System-scope acquire/release atomics emit the
+// cache invalidate/writeback needed to actually observe the peer's write.
+static __device__ __forceinline__ void ar_signal_set_sys(int * p, int token) {
+    __hip_atomic_store(p, token, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
+}
+static __device__ __forceinline__ int ar_signal_get_sys(const int * p) {
+    return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
 }
 
 // --- host-staged baseline (today's production design, N=2 specialization of
@@ -196,6 +262,88 @@ __global__ void p2p_direct_kernel(
     }
 }
 
+// --- P2P PUSH design (2026-09-04). Diagnostics established that on this box
+// peer READS return zero (kernel-side and via hipMemcpyPeer/D2D alike) while
+// kernel-side peer WRITES work correctly and validate at every size. This is
+// the classic PCIe posted-write-works / non-posted-read-fails split, and it is
+// exactly why NCCL/RCCL are architected around pushing into remote buffers
+// rather than pulling from them.
+//
+// Design (NCCL-style, all operations in the direction that actually works):
+//   1. each rank vector-stores its payload INTO the peer's exchange buffer
+//      (peer VRAM) -- a peer WRITE.
+//   2. __threadfence_system(), then the same block writes a per-block flag
+//      token INTO the peer's flag array (also peer VRAM). PCIe posted writes
+//      to the same target stay ordered, so the flag cannot land before the
+//      payload it guards.
+//   3. each rank spins on its OWN LOCAL flag (a local read -- fast, and works)
+//      until the peer's token arrives.
+//   4. sum: recvbuf[i] = sendbuf[i] + my_exchange[i]. BOTH operands are in
+//      local VRAM, so the reduction runs at full local bandwidth with no
+//      peer reads at all.
+//
+// Note this also removes the pinned-host arrival handshake entirely -- the
+// flag lives in device memory rather than host memory.
+__global__ void p2p_push_kernel(
+        const float * sendbuf,
+        float       * recvbuf,
+        float       * peer_exchange,   // peer VRAM: where WE write our payload
+        const float * my_exchange,     // local VRAM: where the PEER wrote its payload
+        int         * peer_flag,       // peer VRAM: flag array we signal into
+        const int   * my_flag,         // local VRAM: flag array we spin on
+        int             count,
+        int             token,
+        int         *   deadlock_flag) {
+    const int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int gnt  = gridDim.x * blockDim.x;
+    const int count4 = count / 4;
+    const int tail   = count4 * 4;
+
+    // 1. push our payload into the peer's exchange buffer (peer WRITE)
+    const float4 * src4  = reinterpret_cast<const float4 *>(sendbuf);
+    float4       * peer4 = reinterpret_cast<float4 *>(peer_exchange);
+    for (int i = gtid; i < count4; i += gnt) peer4[i] = src4[i];
+    for (int i = tail + gtid; i < count; i += gnt) peer_exchange[i] = sendbuf[i];
+
+    // 2. fence, then signal the peer by writing our token into ITS flag array
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        ar_signal_set_sys(peer_flag + blockIdx.x * ARRIVAL_STRIDE_INTS, token);
+        // 3. spin on our OWN local flag (system-scope acquire load -- see note
+        // on ar_signal_get_sys: the link is NON_COHERENT, a volatile load
+        // would spin on a stale L2 line forever)
+        // Bounded spin: on this box the peer's write does NOT become visible
+        // while the writing kernel is still resident (see file header), so an
+        // unbounded spin deadlocks both GPUs. Bail out and report instead.
+        long long budget = 20000000LL;
+        while (ar_signal_get_sys(my_flag + blockIdx.x * ARRIVAL_STRIDE_INTS) != token) {
+            if (--budget <= 0) {
+                __hip_atomic_store(deadlock_flag, 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+                break;
+            }
+#if defined(__HIP_DEVICE_COMPILE__)
+            __builtin_amdgcn_s_sleep(4);
+#endif
+        }
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    // 4. reduce -- both operands local
+    const float4 * mine4 = reinterpret_cast<const float4 *>(my_exchange);
+    float4       * recv4 = reinterpret_cast<float4 *>(recvbuf);
+    for (int i = gtid; i < count4; i += gnt) {
+        const float4 a = src4[i];
+        const float4 b = mine4[i];
+        float4 o; o.x = a.x + b.x; o.y = a.y + b.y; o.z = a.z + b.z; o.w = a.w + b.w;
+        recv4[i] = o;
+    }
+    for (int i = tail + gtid; i < count; i += gnt) {
+        recvbuf[i] = sendbuf[i] + my_exchange[i];
+    }
+}
+
 // --- minimal single-thread peer-read discriminator (gpt-dev-agent
 // req_877e043460c94bd8) -- no handshake, no vectorization, just:
 // out[0] = peer[0]. Isolates whether the AllReduce kernel's failure is a
@@ -210,6 +358,9 @@ struct DeviceState {
     float *  d_recv   = nullptr;
     float *  h_stage  = nullptr;  // pinned, mapped (host mode only)
     float *  d_stage  = nullptr;  // device-mapped pointer to h_stage (host mode only)
+    float *  d_exch   = nullptr;  // local VRAM exchange buffer (p2p-push mode)
+    int   *  d_flag   = nullptr;  // local VRAM flag array (p2p-push mode)
+    int   *  d_dead   = nullptr;  // set by the kernel if its spin budget expires
     hipStream_t stream = nullptr;
 };
 
@@ -333,7 +484,8 @@ int main(int argc, char ** argv) {
             else if (m == "p2p") mode = MODE_P2P;
             else if (m == "probe-coarse") mode = MODE_PROBE_COARSE;
             else if (m == "probe-fine") mode = MODE_PROBE_FINE;
-            else { fprintf(stderr, "unknown --mode %s (want host|p2p|probe-coarse|probe-fine)\n", m.c_str()); return 2; }
+            else if (m == "p2p-push") mode = MODE_P2P_PUSH;
+            else { fprintf(stderr, "unknown --mode %s (want host|p2p|p2p-push|probe-coarse|probe-fine)\n", m.c_str()); return 2; }
         } else if (arg == "--peer-order" && i + 1 < argc) {
             std::string o = argv[++i];
             if (o == "enable-first") peer_order = ORDER_ENABLE_FIRST;
@@ -371,12 +523,12 @@ int main(int argc, char ** argv) {
     const int n = 2;
     const int rankA = 0, rankB = 1;
 
-    if (mode == MODE_P2P) {
+    if (mode == MODE_P2P || mode == MODE_P2P_PUSH) {
         int can01 = 0, can10 = 0;
         HIP_CHECK(hipDeviceCanAccessPeer(&can01, devices[0], devices[1]));
         HIP_CHECK(hipDeviceCanAccessPeer(&can10, devices[1], devices[0]));
         if (!can01 || !can10) {
-            fprintf(stderr, "--mode p2p requires hipDeviceCanAccessPeer in both directions "
+            fprintf(stderr, "p2p modes require hipDeviceCanAccessPeer in both directions "
                              "(got %d->%d=%d, %d->%d=%d) -- this device pair is not P2P-capable\n",
                     devices[0], devices[1], can01, devices[1], devices[0], can10);
             return 2;
@@ -393,7 +545,9 @@ int main(int argc, char ** argv) {
         // after the per-element hipMalloc calls below, inside the loop.)
     }
 
-    const char * mode_name = mode == MODE_HOST ? "host-staged" : "p2p-direct-load";
+    const char * mode_name = mode == MODE_HOST     ? "host-staged"
+                           : mode == MODE_P2P_PUSH ? "p2p-push"
+                                                   : "p2p-direct-load";
     printf("p2p_direct_allreduce: mode=%s devices=[%d,%d] blocks=%d reps=%d\n",
            mode_name, devices[0], devices[1], blocks, reps);
 
@@ -424,6 +578,15 @@ int main(int argc, char ** argv) {
                 HIP_CHECK(hipHostMalloc((void **) &ds[r].h_stage, bytes,
                                          hipHostMallocPortable | hipHostMallocMapped));
                 HIP_CHECK(hipHostGetDevicePointer((void **) &ds[r].d_stage, ds[r].h_stage, 0));
+            }
+            if (mode == MODE_P2P_PUSH) {
+                // exchange buffer + flag array live in LOCAL VRAM; the peer
+                // writes into them across PCIe (the direction that works).
+                HIP_CHECK(hipMalloc(&ds[r].d_exch, bytes));
+                HIP_CHECK(hipMalloc(&ds[r].d_flag, (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int)));
+                HIP_CHECK(hipMemset(ds[r].d_flag, 0, (size_t) MAX_BLOCKS * ARRIVAL_STRIDE_INTS * sizeof(int)));
+                HIP_CHECK(hipMalloc(&ds[r].d_dead, sizeof(int)));
+                HIP_CHECK(hipMemset(ds[r].d_dead, 0, sizeof(int)));
             }
             HIP_CHECK(hipMemcpy(ds[r].d_send, input[r].data(), bytes, hipMemcpyHostToDevice));
         }
@@ -476,6 +639,14 @@ int main(int argc, char ** argv) {
                     host_staged_kernel<<<blocks, 256, 0, ds[r].stream>>>(
                         ds[r].d_send, ds[r].d_recv, ds[r].d_stage, stage_alias_by_rank[r][peer],
                         r, peer, elems, d_arrival_by_rank[r], token);
+                } else if (mode == MODE_P2P_PUSH) {
+                    // push our payload into the PEER's exchange buffer and
+                    // signal the PEER's flag; spin on our own local flag.
+                    p2p_push_kernel<<<blocks, 256, 0, ds[r].stream>>>(
+                        ds[r].d_send, ds[r].d_recv,
+                        ds[peer].d_exch, ds[r].d_exch,
+                        ds[peer].d_flag, ds[r].d_flag,
+                        elems, token, ds[r].d_dead);
                 } else {
                     // direct P2P pointer: the peer's own d_send, dereferenced
                     // from THIS device's kernel via HIP's peer-access mapping
@@ -522,6 +693,21 @@ int main(int argc, char ** argv) {
 
         int token = 1;
         launch(token); // warmup
+        if (mode == MODE_P2P_PUSH) {
+            for (int r = 0; r < n; ++r) {
+                int dead = 0;
+                HIP_CHECK(hipSetDevice(devices[r]));
+                HIP_CHECK(hipMemcpy(&dead, ds[r].d_dead, sizeof(int), hipMemcpyDeviceToHost));
+                if (dead) {
+                    fprintf(stderr,
+                        "rank=%d(device=%d): handshake spin budget EXHAUSTED -- the peer's flag write\n"
+                        "  never became visible while this kernel was resident. On this box peer-directed\n"
+                        "  writes only drain across PCIe when the writing kernel RETIRES;\n"
+                        "  __threadfence_system() does not flush them. A single-kernel in-kernel\n"
+                        "  handshake between these two GPUs is therefore not possible.\n", r, devices[r]);
+                }
+            }
+        }
         double max_abs_err = validate("warmup");
         const double eps = 2e-4;
 
@@ -559,6 +745,7 @@ int main(int argc, char ** argv) {
             hipFree(ds[r].d_send);
             hipFree(ds[r].d_recv);
             if (mode == MODE_HOST) hipHostFree(ds[r].h_stage);
+            if (mode == MODE_P2P_PUSH) { hipFree(ds[r].d_exch); hipFree(ds[r].d_flag); hipFree(ds[r].d_dead); }
             hipStreamDestroy(ds[r].stream);
         }
         hipHostFree(h_arrival);
