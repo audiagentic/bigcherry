@@ -75,6 +75,7 @@ ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
     "resource_limits", "effect_evidence_policy", "min_paired_rounds",
     "min_sessions", "max_sessions", "max_ci95_width_pct",
+    "min_evidence_effect_pct",
 )
 
 # VA24: how a declared acceptance bound must be evidenced.
@@ -120,10 +121,45 @@ ACCEPTANCE_FIELDS: tuple[str, ...] = (
 # session count ONLY. It never looks at where ci95_low sits relative to the
 # threshold, because a stopping rule that can see the answer is a rule that
 # stops when it likes the answer.
+#   improvement_no_regression_v1
+#                          -- asymmetric. An improvement must be ESTABLISHED
+#                            (ci95_low above the evidence floor) but need not
+#                            reach any materiality bar; a regression stays
+#                            strictly bounded by the interval. Sessions are
+#                            the unit, as in the session policy above.
+#
+# Why the asymmetric policy exists. The three policies above all ask "is the
+# gain at least X?", where X mixes two unrelated questions: is the effect REAL
+# (an evidence question) and is it BIG ENOUGH TO BE WORTH CARRYING (a value
+# judgement). Conflating them means a nine-times-measured, never-negative,
+# zero-regression improvement can be refused for missing a bar that was
+# written down before anyone knew what effect sizes this hardware yields.
+#
+# The two errors are not symmetric. Shipping a regression costs real
+# throughput; adopting a genuine small improvement costs almost nothing beyond
+# the patch's own maintenance. So the decision rule should not be symmetric
+# either: hold the regression side strictly, and let any established
+# improvement through.
+#
+# Note this policy needs NO precision/width criterion, and that is not an
+# exemption carved out for convenience. Width mattered only because a bound
+# like ">= 1.0%" had to be resolved; if the question is "is it positive and
+# non-regressing", ci95_low answers it directly and the width of the interval
+# is not what the decision turns on.
+#
+# min_evidence_effect_pct is the floor an improvement's ci95_low must clear.
+# It defaults to 0.0 -- "the interval excludes no-change" -- but it is NOT
+# merely a significance test. It is where a measured harness bias floor
+# belongs: if the rig systematically reads +0.2% for reasons unrelated to any
+# patch, then at a 0.0 floor an unbounded stream of "established" wins would
+# be measurement artifacts, and they would look MORE significant the more
+# sessions were collected. Set it from an A-A null run (control vs control,
+# identical builds); 0.0 is the honest placeholder until one exists.
 EFFECT_EVIDENCE_POLICIES: tuple[str, ...] = (
     "point_estimate_v1",
     "ci95_threshold_bound_v1",
     "session_ci95_threshold_bound_v1",
+    "improvement_no_regression_v1",
 )
 DEFAULT_EFFECT_EVIDENCE_POLICY = "point_estimate_v1"
 
@@ -638,6 +674,11 @@ class Acceptance:
     # against the acceptance threshold -- that would let the rule stop as soon
     # as the answer looked good.
     max_ci95_width_pct: float | None = None
+    # improvement_no_regression_v1: the floor an improvement's ci95_low must
+    # clear to count as ESTABLISHED. 0.0 means "the interval excludes
+    # no-change". Raise it to a measured harness bias floor (from an A-A null
+    # run) so systematic measurement error cannot be adopted as a win.
+    min_evidence_effect_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -768,6 +809,10 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             **(
                 {"max_ci95_width_pct": contract.acceptance.max_ci95_width_pct}
                 if contract.acceptance.max_ci95_width_pct is not None else {}
+            ),
+            **(
+                {"min_evidence_effect_pct": contract.acceptance.min_evidence_effect_pct}
+                if contract.acceptance.min_evidence_effect_pct is not None else {}
             ),
         },
         "source_evidence": (
@@ -1029,7 +1074,63 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         max_ci95_width_pct=_max_ci95_width(
             acceptance_data.get("max_ci95_width_pct"),
             f"{where}.acceptance.max_ci95_width_pct"),
+        min_evidence_effect_pct=_percent(
+            acceptance_data.get("min_evidence_effect_pct"),
+            f"{where}.acceptance.min_evidence_effect_pct"),
     )
+    asymmetric_policy = (
+        acceptance.effect_evidence_policy == "improvement_no_regression_v1"
+    )
+    if asymmetric_policy:
+        # Sessions are still the unit -- between-session drift is real
+        # regardless of which decision rule reads the interval -- but this
+        # policy needs NO max_ci95_width_pct, because no bound has to be
+        # resolved. Declaring one would imply a precision requirement nothing
+        # enforces.
+        if acceptance.min_sessions is None:
+            raise ExperimentContractError(
+                f"{where}.acceptance: effect_evidence_policy="
+                f"'improvement_no_regression_v1' requires min_sessions -- an "
+                f"improvement established from a single run's pairs cannot see "
+                f"between-session drift, and this policy has no other depth floor"
+            )
+        if acceptance.min_sessions < MIN_BOOTSTRAP_SESSIONS:
+            raise ExperimentContractError(
+                f"{where}.acceptance.min_sessions must be >= {MIN_BOOTSTRAP_SESSIONS} "
+                f"({acceptance.min_sessions} given) -- a cluster bootstrap over fewer "
+                f"sessions has too small a resample space to give an honest interval"
+            )
+        if acceptance.max_ci95_width_pct is not None:
+            raise ExperimentContractError(
+                f"{where}.acceptance.max_ci95_width_pct is meaningless under "
+                f"'improvement_no_regression_v1' -- this policy resolves no bound, so "
+                f"interval width is not what its decision turns on"
+            )
+        for field, value in (
+            ("target_kernel_gain_pct", acceptance.target_kernel_gain_pct),
+            ("end_to_end_gain_pct", acceptance.end_to_end_gain_pct),
+        ):
+            if value:
+                raise ExperimentContractError(
+                    f"{where}.acceptance.{field}={value} is a MATERIALITY bar, which "
+                    f"'improvement_no_regression_v1' deliberately does not have. Any "
+                    f"established improvement is acceptable under this policy; set the "
+                    f"bar to 0.0 (or drop it) and use min_evidence_effect_pct to say "
+                    f"what counts as established"
+                )
+        # ... but ONE of them must still be declared (as 0.0), because it names
+        # which measured field the improvement check reads. Leaving both unset
+        # would make this policy silently check nothing at all -- a contract
+        # that looks governed and gates on no gain evidence whatsoever.
+        if (acceptance.target_kernel_gain_pct is None
+                and acceptance.end_to_end_gain_pct is None):
+            raise ExperimentContractError(
+                f"{where}.acceptance: 'improvement_no_regression_v1' requires "
+                f"target_kernel_gain_pct or end_to_end_gain_pct to be declared as 0.0 "
+                f"-- it carries no materiality bar, but the field must name WHICH "
+                f"effect has to be established, or nothing is checked"
+            )
+
     session_policy = (
         acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
     )
@@ -1038,7 +1139,9 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         "max_sessions": acceptance.max_sessions,
         "max_ci95_width_pct": acceptance.max_ci95_width_pct,
     }
-    if session_policy:
+    if asymmetric_policy:
+        pass
+    elif session_policy:
         missing = sorted(name for name, value in session_fields.items() if value is None)
         if missing:
             raise ExperimentContractError(
@@ -2303,8 +2406,12 @@ def evaluate_promotion_gate(
     session_policy = (
         acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
     )
+    asymmetric_policy = (
+        acceptance.effect_evidence_policy == "improvement_no_regression_v1"
+    )
     interval_policy = (
-        acceptance.effect_evidence_policy == "ci95_threshold_bound_v1" or session_policy
+        acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+        or session_policy or asymmetric_policy
     )
     # VA24: evidence that is missing or malformed under an interval policy is
     # neither a pass nor a measured negative -- it is unevaluable, and must
@@ -2344,6 +2451,35 @@ def evaluate_promotion_gate(
         if session_policy and not _session_stopping_rule_met(
             field, acceptance, aggregated_effects, invalid_reasons,
         ):
+            return
+        if asymmetric_policy:
+            # No materiality bar: an ESTABLISHED improvement is acceptable
+            # whatever its size. Only the evidence floor applies, and the
+            # session-depth floor before it -- drift does not stop being real
+            # just because the decision rule changed.
+            sessions = aggregated_effects.get(f"{field}_sessions")
+            if not isinstance(sessions, int) or isinstance(sessions, bool):
+                invalid_reasons.append(
+                    f"{field}: improvement_no_regression_v1 requires a "
+                    f"{field}_sessions count from bootstrap_session_effect() "
+                    f"(got {sessions!r})"
+                )
+                return
+            if sessions < acceptance.min_sessions:
+                invalid_reasons.append(
+                    f"{field}: {sessions} session(s) is below the pre-declared minimum "
+                    f"{acceptance.min_sessions} -- collect more; a within-run interval "
+                    f"cannot represent between-session drift"
+                )
+                return
+            floor = acceptance.min_evidence_effect_pct or 0.0
+            if ci_low <= floor:
+                reasons.append(
+                    f"{field} ci95_low {ci_low} does not establish an improvement above "
+                    f"the evidence floor {floor} (point estimate {measured}) -- a "
+                    f"positive point estimate whose interval reaches the floor is not "
+                    f"an established gain"
+                )
             return
         # The BOUND, not merely positivity, must be established by the
         # interval. "CI excludes zero" would only show "probably positive".
