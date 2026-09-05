@@ -85,6 +85,34 @@ const ggml_hip_candidate_descriptor * ggml_hip_registry_native(
     return family < GGML_HIP_FAMILY_COUNT ? cache[family] : nullptr;
 }
 
+// HI158: is the !native.valid guard capable of firing at all?
+//
+// native.valid is exactly `ggml_hip_registry_native(family) != nullptr`, and
+// that function is a STATIC table built once from the compile-time candidate
+// registry. It depends only on the family enum -- no tensor, no shape, no
+// device state. So native.valid is false only when some family has no
+// NATIVE_WRAPPER candidate registered, which is a property of the BUILD and
+// identical for every dispatch.
+//
+// If every family has one, the guard can never fire, and the deferral is safe
+// with no further proof: there is no invocation on which forcing the selection
+// would have changed the outcome. This is a much stronger argument than the
+// empirical "we never observed an invalid selection on an L1 hit" that HI158
+// originally proposed, and it is checked here rather than assumed -- if a
+// family is ever added without a native wrapper, this returns false and the
+// eager behaviour is restored automatically.
+static bool all_families_have_native() {
+    static const bool all = [] {
+        for (int f = 0; f < GGML_HIP_FAMILY_COUNT; ++f) {
+            if (ggml_hip_registry_native((ggml_hip_kernel_family) f) == nullptr) {
+                return false;
+            }
+        }
+        return true;
+    }();
+    return all;
+}
+
 // --------------------------------------------------------------------- mode
 
 static int ggml_hip_parse_mode() {
@@ -600,9 +628,49 @@ struct Binding {
 struct ThreadBinding {
     bool valid = false;
     int device = -1;
+    // Checked before the full signature compare; see signature_fingerprint().
+    // Placed next to `valid`/`device` so the scan's hot fields share a line.
+    uint64_t fingerprint = 0;
     ggml_hip_dispatch_signature_v1 signature = {};
     Binding binding = {};
 };
+
+// A cheap discriminator over the fields that actually vary between the
+// signatures a real model presents.
+//
+// The lookup previously ran a full ~232-byte memcmp against every occupied
+// slot, so a miss compared ~1.8KB. memcmp's early exit does not rescue that
+// here: these signatures share a long common prefix -- schema version, op,
+// the three types, prec, fusion -- and differ only in extents further in,
+// which is the worst possible layout for early exit.
+//
+// Mixing the discriminating fields into one 64-bit value turns the scan into
+// eight 8-byte compares, with the full memcmp run only when a fingerprint
+// matches. The memcmp is still what decides equality, so this cannot cause a
+// false match -- a fingerprint collision costs one wasted compare, never a
+// wrong binding.
+static inline uint64_t signature_fingerprint(
+        const ggml_hip_dispatch_signature_v1 & s) {
+    uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
+    const auto mix = [&h](uint64_t v) {
+        h ^= v;
+        h *= 1099511628211ull;
+    };
+    mix((uint64_t) s.op | ((uint64_t) s.src0_type << 16)
+        | ((uint64_t) s.src1_type << 24) | ((uint64_t) s.dst_type << 32)
+        | ((uint64_t) s.flags << 40));
+    // The extents that actually move: the two matmul dimensions, the batch,
+    // and the output width. Strides are left out deliberately -- they are
+    // highly correlated with the extents and the memcmp still checks them.
+    mix((uint64_t) s.ne0[0]);
+    mix((uint64_t) s.ne0[1]);
+    mix((uint64_t) s.ne1[1]);
+    mix((uint64_t) s.ne1[2]);
+    mix((uint64_t) s.ned[0]);
+    mix((uint64_t) s.ned[2]);
+    mix((uint64_t) s.n_expert_used);
+    return h;
+}
 
 struct ThreadBindingCache {
     static constexpr size_t slot_count = 8;
@@ -611,8 +679,9 @@ struct ThreadBindingCache {
 
     bool find(int device, const ggml_hip_dispatch_signature_v1 & signature,
               Binding * binding) const {
+        const uint64_t fp = signature_fingerprint(signature);
         for (const auto & slot : slots) {
-            if (slot.valid && slot.device == device &&
+            if (slot.valid && slot.fingerprint == fp && slot.device == device &&
                     memcmp(&slot.signature, &signature, sizeof(signature)) == 0) {
                 *binding = slot.binding;
                 return true;
@@ -626,6 +695,7 @@ struct ThreadBindingCache {
         ThreadBinding & slot = slots[next_slot++ % slot_count];
         slot.valid = true;
         slot.device = device;
+        slot.fingerprint = signature_fingerprint(signature);
         slot.signature = signature;
         slot.binding = binding;
     }
@@ -816,49 +886,29 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.from_cache     = false;
 
     const int mode = ggml_hip_dispatch_mode();
-    // HI158 step 4: the !native.valid guard deliberately stays HERE, which
-    // means the selection is still forced on every dispatch and this patch
-    // saves nothing by itself. That is the intended shape. Moving the guard
-    // below the L1 lookup is what actually pays, and it needs proof that an
-    // L1 hit implies native validity -- a claim that was asserted, challenged,
-    // and is not yet established (see HI158). The shadow counter on the L1-hit
-    // path below is gathering evidence toward exactly that.
-    if (dispatch_counters_enabled()) {
-        g_dispatch_counters.native_forced_entry_guard.fetch_add(1, std::memory_order_relaxed);
-    }
-    const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
-    resolved.candidate = native.candidate;
-    resolved.variant   = native.variant;
-    if (mode == GGML_HIP_DISPATCH_MODE_NATIVE || !native.valid) {
+
+    // Native mode wants the native answer and nothing else, so force it here.
+    if (mode == GGML_HIP_DISPATCH_MODE_NATIVE) {
+        const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
+        resolved.candidate = native.candidate;
+        resolved.variant   = native.variant;
         if (dispatch_counters_enabled()) {
-            if (mode == GGML_HIP_DISPATCH_MODE_NATIVE) {
-                g_dispatch_counters.native_forced_native_mode.fetch_add(1, std::memory_order_relaxed);
-            }
-            // RV133 / dev-gpt-agent req_b48d801c: the NON-VACUOUS form of the
-            // guard-move evidence. HI158 step 6 proposed recomputing native on
-            // the L1-HIT path, which can never disagree because the guard has
-            // already returned for every invalid selection. The informative
-            // observation is the mirror image: on the INVALID path, was there
-            // an L1 entry for this signature anyway?
-            //
-            // A single hit here falsifies "an L1 hit implies native validity"
-            // outright -- it is the exact counterexample the guard move must
-            // not have. Staying zero across broad coverage supports the claim
-            // without ever enabling the unproven behavior, which is why this
-            // is preferable to moving the guards and watching for breakage.
-            //
-            // find() is const and side-effect-free, and this runs only on the
-            // rare invalid path, so it costs nothing on the hot path.
-            if (!native.valid && mode != GGML_HIP_DISPATCH_MODE_RECORD) {
-                Binding probe = {};
-                if (g_thread_bindings.find(ctx.device, sig, &probe)) {
-                    g_dispatch_counters.native_invalid_with_l1_hit.fetch_add(1, std::memory_order_relaxed);
-                }
-                g_dispatch_counters.native_invalid_probed.fetch_add(1, std::memory_order_relaxed);
-            }
+            g_dispatch_counters.native_forced_native_mode.fetch_add(1, std::memory_order_relaxed);
         }
         return resolved;
     }
+
+    // HI158: the L1 lookup now runs BEFORE the native selection, which is the
+    // whole point of the provider. On a hit nothing forces the selection, so
+    // ggml_hip_native_select() -- and the duplicated bad-padding predicate and
+    // contiguity checks inside it -- never run for that dispatch.
+    //
+    // The !native.valid guard that used to sit above this is discharged by
+    // all_families_have_native(), not deferred: native.valid is a pure
+    // function of the family via a static registry table, so if every family
+    // has a native wrapper the guard cannot fire on ANY invocation. When that
+    // does not hold we force the selection before trusting the cached
+    // binding, which reproduces the old ordering exactly.
 
     Binding thread_binding = {};
     const bool l1_attempted = mode != GGML_HIP_DISPATCH_MODE_RECORD;
@@ -874,6 +924,24 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         g_native_select_timing.l1_hit_samples.fetch_add(1, std::memory_order_relaxed);
     }
     if (l1_found) {
+        // The only case that still needs the selection on a hit: a build whose
+        // registry lacks a native wrapper for some family, where the guard can
+        // genuinely fire. Normal builds skip this entirely.
+        if (!all_families_have_native()) {
+            const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
+            if (dispatch_counters_enabled()) {
+                g_dispatch_counters.native_forced_entry_guard.fetch_add(1, std::memory_order_relaxed);
+                g_dispatch_counters.native_invalid_probed.fetch_add(1, std::memory_order_relaxed);
+                if (!native.valid) {
+                    g_dispatch_counters.native_invalid_with_l1_hit.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            if (!native.valid) {
+                resolved.candidate = native.candidate;
+                resolved.variant   = native.variant;
+                return resolved;
+            }
+        }
         if (dispatch_counters_enabled()) {
             g_dispatch_counters.l1_hits.fetch_add(1, std::memory_order_relaxed);
         }
@@ -896,6 +964,22 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     }
     if (l1_attempted && dispatch_counters_enabled()) {
         g_dispatch_counters.l1_misses.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // HI158: THE force point. Everything below needs the native selection --
+    // it seeds the binding, supplies the BLAS workspace family check, and is
+    // what a miss falls back to. This is now the only place the ~193.6ns
+    // selection is paid on a cache-resolving dispatch, instead of on all of
+    // them. The `native` name below is a reference to the memoized value, so
+    // every later use in this function is free.
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.native_forced_miss.fetch_add(1, std::memory_order_relaxed);
+    }
+    const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
+    resolved.candidate = native.candidate;
+    resolved.variant   = native.variant;
+    if (!native.valid) {
+        return resolved;
     }
 
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
@@ -1324,11 +1408,16 @@ bool ggml_hip_dispatch_mul_mat(
     // it still measures one real native_select wherever it is demanded from.
     ggml_hip_native_provider native_provider =
         ggml_hip_make_native_provider(ctx, src0, src1, ids, dst);
-    // ...and then forced immediately, because this early-out needs the answer
-    // before the signature is even built. This is the OTHER half of the guard
-    // HI158 step 4 leaves in place; until both move, the provider changes the
-    // shape of the code without yet changing when the work happens.
-    if (!ggml_hip_native_force(native_provider).valid) {
+    // HI158: the SECOND guard, and it moves for the same reason as the first.
+    // It used to force the selection here, before the signature was even
+    // built, so deferral inside the resolver would have saved nothing.
+    //
+    // In a build where every family has a native wrapper the guard cannot
+    // fire, so it is skipped and the resolver decides everything. Otherwise
+    // force and check exactly as before. The resolver signals "decline" by
+    // returning a null candidate, which is checked after it returns.
+    if (!all_families_have_native()
+            && !ggml_hip_native_force(native_provider).valid) {
         return false;
     }
 
@@ -1353,6 +1442,14 @@ bool ggml_hip_dispatch_mul_mat(
 
     const ggml_hip_resolved_dispatch bound =
         ggml_hip_dispatch_resolve(ctx, sig, native_provider, lc);
+
+    // HI158: with the guards moved, the resolver is the first place that can
+    // discover there is nothing safe to launch, and it says so with a null
+    // candidate. Declining here runs upstream's own code, which is exactly
+    // what the old entry-point guard did.
+    if (bound.candidate == nullptr) {
+        return false;
+    }
 
     // Both counters fire here, because this is the outermost point at which
     // this operation is visible. The family entry will see the same launch
