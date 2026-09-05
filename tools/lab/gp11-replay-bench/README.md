@@ -1,5 +1,24 @@
 # GP11 / HI158 -- replay-vs-control end-to-end bench
 
+> **USE THE REAL TOOLING, NOT THIS.** These scripts were written from scratch
+> while equivalent, better-tested commands already existed. They should not be
+> extended, and should be deleted once the counter plumbing below is folded
+> into the maintained path.
+>
+> | want | use | not |
+> |---|---|---|
+> | paired interleaved A/B | `bigcherry ab-benchmark` -- has `--pairs`, `--schedule-seed`, `--settle-seconds`, `--decision-grade`, and `--stock-cmake-cache`/`--patched-cmake-cache` build verification | `ab-balanced.sh` |
+> | what fraction of time each kernel takes | `bigcherry kernel-fraction` over rocprofv3 kernel-trace CSVs | (nothing -- I wrongly said this did not exist) |
+> | predicted saving from tuning | `bigcherry impact --observations <record jsonl> --measurements <promoted.jsonl>` -- bootstraps a saving interval, `--fail-on-slower` | (nothing) |
+> | repeatable deep profiling | `bigcherry profile-campaign`, see docs/reference/tooling/PROFILING.md | ad-hoc rocprof invocations |
+> | which candidate served which dispatch | `[build.replay-diagnostic]` + `GGML_HIP_DISPATCH_HIT_LOG` | grepping logs |
+>
+> `ab-balanced.sh` reimplemented order balancing badly enough that its first
+> result had to be retracted for a confound `ab-benchmark` already handles.
+> The one genuinely new thing here is routing the dispatch counters into the
+> coverage JSON, because llama-server's log callback swallows the library's
+> GGML_LOG_INFO lines -- that belongs in the maintained path, not in lab.
+
 Plan items: HI158 (lazy native provider), GP11 (dispatch overhead).
 
 ## Question
