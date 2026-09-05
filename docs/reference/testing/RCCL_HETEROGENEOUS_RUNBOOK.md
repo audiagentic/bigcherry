@@ -6,6 +6,13 @@ This runbook owns the executable procedure for investigating whether RCCL can be
 
 It is intentionally separate from ordinary HIP compute-kernel autotuning.
 
+## Agent fast path
+
+For a new investigation, read the governing sequence, safety invariants,
+Phase 0/1 gates, the required evidence layout, and the closure criteria.
+Treat historical outcomes and tooling notes as lookup material; do not reread
+them unless the current topology, build, or runtime matches the question.
+
 The governing sequence is:
 
 ```text
@@ -61,9 +68,9 @@ The following rules apply throughout this runbook:
 ```text
 1. RCCL admission remains fail-closed by a shared, reusable predicate
    consulted by EVERY ncclCommInitAll() entry point in the tree --
-   not just patch 1225's original call site. Patch 1225 as currently
-   written (docs/planning/active/gpu-collectives/GP02.md, rewritten
-   2026-09-02) is a temporary, over-conservative implementation of
+   not just patch 1225's original call site. Patch 1225, as described in the
+   [HI138 closure](../../planning/completed/hip-collectives/HI138.md), is a
+   temporary, over-conservative implementation of
    this invariant: its real predicate is raw GPU-architecture
    inequality, which would incorrectly reject the {0,2}/{1,2}
    XTX+R9700 topology this runbook has since confirmed safe (device 3
@@ -1003,205 +1010,22 @@ A failure to find a tuning override is not by itself Outcome B; HI88 already est
 
 ---
 
-## CLOSED: Outcome B (2026-08-29, HI138)
+## Historical outcomes and current boundaries
 
-Phase 1 executed against RCCL rebuilt from source (ROCm/rccl commit
-`57e58688f44c77076ad536ef1f6b68741fc6e694`, reports as RCCL 2.28.3),
-explicit `--amdgpu_targets "gfx1100;gfx1201;gfx1030"`, code-object
-coverage verified for all three real architectures via
-`clang-offload-bundler --list` on the extracted `.hip_fatbin` section
-(`roc-obj-ls` is non-functional/deprecated and `llvm-objdump --offloading`
-crashes on this bundle format on this ROCm 7.2.4 install).
+The detailed hardware records remain in the completed plan items and their
+artifacts; this runbook keeps only the operational conclusions agents must
+carry into a new qualification:
 
-**Root cause, localized via `AMD_LOG_LEVEL=4` verbose ROCclr tracing on the
-exact failing reproducer**: RCCL's generic device kernel
-(`ncclDevKernel_Generic_1`/`_2`/`_4` -- the arch-independent, unroll-factor
--keyed fat-binary entry points `enqueue.cc`'s `ncclGetKernelIndex`/
-`ncclKerns[]` resolve to) declares a `hidden_hostcall_buffer` hidden kernel
-argument. Hostcall requires PCIe atomics support from the target device.
-This hardware has none anywhere (consistent with HI84's separate finding:
-no PCIe P2P bridge for ANY GPU pair on this box, homogeneous or
-heterogeneous). ROCclr's AQL dispatcher correctly refuses the kernel
-submission:
+| Record | Scoped conclusion |
+| --- | --- |
+| [HI138](../../planning/completed/hip-collectives/HI138.md) | The Brutus device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
+| [GP03](../../planning/completed/gpu-collectives/GP03.md) | Production dispatch reproduced the device-3 boundary; communicator-init success alone is not runtime admissibility. |
+| [GP06](../../planning/completed/gpu-collectives/GP06.md) | RCCL 2.30.4 regressed previously passing `{0,2}`/`{1,2}` cases; every result must bind to the exact RCCL source/build revision. |
+| [GP07](../../planning/completed/gpu-collectives/GP07.md) | The checked-in qualification wrapper has known identity/repetition gaps; do not treat its output as durable qualification until those gaps are handled. |
 
-```text
-ShaderName : ncclDevKernel_Generic_4(ncclDevKernelArgsStorage<4096ul>)
-Pcie atomics not enabled, hostcall not supported
-AQL dispatch failed!
-hipExtLaunchKernel: Returned hipErrorIllegalState
-```
-
--- a real, working-as-designed runtime capability check, not a ROCclr bug.
-This is the same failure class HI85 originally observed, now localized to
-its exact mechanism.
-
-**Repair attempted**: rebuilt RCCL with `-DCOLLTRACE=OFF` +
-`CMAKE_BUILD_TYPE=Release` (NDEBUG reaching device compilation), on the
-hypothesis that dormant device-side `assert()`/COLLTRACE diagnostic code
-was forcing the hostcall metadata even though a plain Ring/Simple AllReduce
-never calls into it. **Result: negative.** Identical failure persists.
-Structurally verified (proper parse of the real `llvm-readobj --notes`
-AMDGPU_METADATA YAML, not a textual/offset heuristic) that all three
-generic kernel variants still declare `hidden_hostcall_buffer` on this
-exact rebuilt image.
-
-**Boundary**: removing the requirement would need either (a) RCCL
-kernel-generation/device-link changes making hostcall declaration
-conditional on actual runtime use, or (b) post-link code-object metadata
-surgery. Both are outside this runbook's P1.11 admissible-repair scope
-(no kernel-generation redesign, no metadata manipulation).
-
-**Scope correction (2026-08-29, same day, after further evidence)**: the
-above cause and repair-failure evidence are real, but the closure below was
-initially over-generalized to "heterogeneous RCCL rejected" broadly. Direct
-PCIe capability inspection (`lspci -vvv` AtomicOpsCap/Ctl) and the AMDGPU
-kernel driver's own boot-time self-test (`dmesg`/`journalctl -k`: `amdgpu
-0000:17:00.0: PCIE atomic ops is not supported`) show the missing PCIe
-AtomicOps completion capability is a property of **one specific device's
-PCIe path** -- physical device 3 (RX 6900XT), whose upstream root port is
-the chipset-routed slot (PCIe 3.0 x4 via the PCH) -- not a property of
-heterogeneous-architecture communicators in general. The other three GPUs
-(2x RX 7900 XTX + R9700, all on CPU-direct root ports) all pass the same
-boot-time test cleanly. External prior art (ROCm GitHub issues #2429,
-#6074, #6520) documents the identical failure signature on other boards
-with the same CPU-direct-vs-chipset-slot split, confirming this is a
-per-PCIe-path property, not an RDNA-generation or architecture-mixing
-limitation.
-
-**Disposition (revised)**: Outcome B applies specifically to any RCCL
-communicator that includes physical device 3 (RX 6900XT) -- its upstream
-PCH root port lacks PCIe AtomicOps completion capability, a real hardware
-limitation not fixable via kernel parameters, BIOS settings, or `setpci`
-(forcing it has been reported elsewhere to hang the system). It does
-**not** establish that RCCL is broadly unusable across mismatched
-architectures. A shared fail-closed guard remains required for any topology
-including device 3; patch 1225 is neither proof that the guard is currently
-shipping nor sufficient protection for every entry point.
-
-**CONFIRMED (2026-08-29, same day)**: live hardware test, XTX+R9700
-(devices 0,2 -- gfx1100 + gfx1201, both CPU-direct root ports), Ring/Simple
-512KiB: **PASS**, exit 0, zero correctness errors, correct algorithm/
-protocol reported. 20/20 fresh-process repetitions passed with zero
-failures (P1.12 gate satisfied). The mandatory homogeneous XTX/XTX control
-also re-confirmed passing with this build. RCCL is viable for any topology
-on this hardware excluding physical device 3: {0,1}, {0,2}, {1,2}, and
-{0,1,2}. Device 3 (6900XT) requires META for any group it participates in.
-**Phase 2 may now proceed for the RCCL-viable subset** -- see HI138's plan
-item for the recommended next scope (a fresh Phase 2 sub-item, not
-continued growth of this closed Phase 1 investigation).
-
-**Separate finding, not part of this closure**: patch 1225 was found to be
-`state=untested` and excluded from every default build's patch-set during
-this investigation -- the guard this closure depends on is not currently
-shipping in any tested binary. Tracked as its own follow-up, not folded
-into this Outcome B record.
-
-Full evidence artifacts: `artifacts/rccl-heterogeneous/rq04-01/` on Brutus
-(environment capture, both RCCL builds, rccl-tests builds, all case
-JSON/stdout logs, extracted/verified AMDGPU kernel metadata).
-
-## Addendum (2026-09-02): GP03 size-adaptive dispatch reconfirms the boundary at the production integration layer
-
-The above closure was established with RCCL Tests (`all_reduce_perf`) directly.
-This addendum reconfirms the identical device-3 boundary one layer up, inside
-BigCherry's actual production reduction dispatch path (`GP03`,
-`docs/planning/active/gpu-collectives/GP03.md`) -- i.e. real `llama-bench`
-`-sm tensor` runs through `ggml_backend_cuda_comm_*`, not the RCCL Tests
-harness. No new source-level finding; this is an independent confirmation at
-a different call site plus one new negative result specific to GP03's own
-code path.
-
-**Confirmed safe (RCCL-viable subset, no device 3):**
-
-| topology | pairing | result | pp512 t/s | tg32 t/s |
-|---|---|---|---|---|
-| `{0,1}` | XTX + XTX (homogeneous, gfx1100+gfx1100) | clean | 1502.49 | 37.23 (n=128 run) |
-| `{0,2}` | XTX + R9700 (gfx1100+gfx1201) | clean | 1205.82 | 29.58 |
-| `{1,2}` | XTX + R9700 (gfx1100+gfx1201) | clean | 1283.78 | 30.46 |
-
-All three ran GP03's real size-adaptive dispatch end-to-end: small (tg-sized,
-~20KB) reductions stayed on the internal pinned-memory path, large (pp-sized,
-~10MB) reductions correctly routed to a secondary `ncclCommInitAll()`
-communicator and completed the real collective with no crash and no
-correctness issue observed.
-
-**New negative result -- device 3 crashes GP03's dispatch, not just raw
-RCCL Tests:**
-
-`{0,3}` (XTX + 6900XT) was run through the same GP03 binary
-(`GGML_CUDA_ALLREDUCE=internal`, real `llama-bench -sm tensor` pp512).
-GP03's secondary `ncclCommInitAll()` call is a **best-effort init with no
-device-3 awareness** -- it does not consult patch 1225's guard or any
-topology qualification list. On `{0,3}` it reports `rc=0` (success) because
-`ncclCommInitAll` only builds communicator state and does not exercise the
-PCIe-atomics hostcall path. The dispatch layer's own admissibility check
-(`comms.size() == backends.size()`) therefore also reports "ready," and the
-first real pp-sized reduction is routed to RCCL and hard-aborts inside
-`ggml_backend_cuda_comm_allreduce_nccl` (`GGML_ASSERT`/`ggml_cuda_error`) --
-same root cause as the original HI138 finding (device 3's chipset-routed PCH
-root port lacks PCIe AtomicOps completion capability), reached through
-GP03's own code path this time, with no fallback: the process aborts rather
-than degrading to the internal/META path.
-
-**Implication for GP03 (recorded as a hard blocker on GP03's own plan
-item):** GP03 must not ship, even experimentally, without either (a)
-consuming patch 1225 / GP01's qualified-topology list before ever attempting
-its secondary `ncclCommInitAll()`, refusing that call outright whenever
-device 3 is in the active device set, or (b) an equivalent topology check
-inlined into GP03 itself. `ncclCommInitAll` returning success is init-time
-evidence only -- Safety invariant 7 above ("crash-freedom alone is not
-correctness") generalizes here to "communicator-init success alone is not
-runtime admissibility": the same "looks fine at init, faults on first real
-collective" pattern applies to any caller of RCCL on this hardware, not only
-RCCL Tests.
-
-## Addendum (2026-09-02): RCCL 2.30.4 regresses the confirmed-viable
-{0,2}/{1,2} subset -- RCCLCompatibilityRevision must be pinned, not assumed
-
-HI138's Phase 1 closure (and everything above) qualified against one exact
-RCCL build: source revision 57e58688f44c77076ad536ef1f6b68741fc6e694,
-reporting as RCCL 2.28.3/1.0.70204 depending on which packaged install is
-queried (`vendor/rocm/7.2.4`). Per this runbook's own P2.1
-`RCCLCompatibilityRevision` requirement, that qualification does not
-automatically extend to a different RCCL build merely because both report
-similar version numbers or are used on the same box.
-
-Real hardware finding (GP06, `docs/planning/active/gpu-collectives/GP06.md`):
-running `rccl_qualify.py`'s crash-isolated matrix ({0,1} homogeneous
-control, {0,2}/{1,2} HI138-confirmed-viable heterogeneous, {0,3} device-3
-negative control x Ring/Tree x Simple/LL/LL128) against RCCL 2.30.4 --
-tested via TWO independently-built ROCm installs sharing that version
-(`vendor/rocm/7.14`, a TheRock dev build, and a freshly-installed
-`vendor/rocm/10.0`, ROCm 10.0.0 stable) -- reproduces the identical
-regression on both: {0,1} passes, but {0,2}/{1,2}/{0,3} ALL fail
-(`gpu_fault`), not just the device-3 case this runbook already explains.
-Re-running the SAME matrix against RCCL 1.0.70204 (`vendor/rocm/7.2.4`)
-reproduces HI138's original disposition exactly: {0,1}/{0,2}/{1,2} PASS,
-only {0,3} fails.
-
-This is evidence of a real RCCL-version regression between 1.0.70204 and
-2.30.4 for the {0,2}/{1,2} topology class specifically -- not a build
-artifact of one install, since two independently-built 2.30.4s agree. The
-underlying mechanism has not yet been source-localized (GP06's step 2,
-open) the way HI138 localized the device-3/hostcall failure; only the
-existence and reproducibility of the regression is established so far.
-
-**Runbook-level correction**: any qualification result recorded under this
-runbook's Phase 1/Phase 2 procedures MUST bind to the exact RCCL version
-tested (source revision preferred; packaged version string as a fallback
-identifier only when source revision isn't available), and MUST NOT be
-treated as transferable to a different RCCL build without re-running the
-qualification matrix against that build specifically -- this applies even
-when the newer build reports the "same" version number as another build
-that was actually tested (2.30.4 was seen from two source-independent
-installs in this finding). GP01 (Phase 2 execution) is blocked pending
-GP06 pinning which RCCL version bigcherry's default build should actually
-ship for the RCCL-viable subset.
-
-Full evidence: `artifacts/rccl-heterogeneous/gp06-version-comparison/` on
-Brutus (environment.txt + `rccl-qualify-{7.2.4,7.14,10.0}.jsonl` +
-per-case stdout/stderr under `cases/rccl-qualify-{7.2.4,7.14,10.0}/` --
-preserved from `/tmp` 2026-09-02, see GP06's own notes).
+These records are historical evidence, not a universal current verdict. A
+new run must re-check the actual patch composition, shared admission guard,
+RCCL revision, topology, and evidence writer.
 
 ---
 
@@ -1223,8 +1047,8 @@ library API; the 10-state classification (`pass` / `wrong_result` /
 `device_lost` / `signal` / `timeout` / `harness_failure`) matches this
 runbook's P1.6/P2.4 required classifications exactly.
 
-**Current known gap (tracked as GP07,
-`docs/planning/active/gpu-collectives/GP07.md`):** case/result identity
+**Current known gap (tracked as
+[GP07](../../planning/completed/gpu-collectives/GP07.md)):** case/result identity
 does not yet carry an `RCCLCompatibilityRevision` (see P2.1 above), and
 repeated-rep artifacts are not yet uniquely named -- a 20-rep qualification
 run currently overwrites its own per-attempt stdout/stderr/rccl.json. Do
@@ -1284,3 +1108,4 @@ sides have different safety contracts (VALIDATE deliberately runs
 crash-prone cases in isolation; OPTIMIZE must never do that), and
 conflating them risks an optimization run silently exercising an
 unqualified, potentially crash-prone topology.
+

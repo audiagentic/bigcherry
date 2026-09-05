@@ -23,7 +23,6 @@ class TestingReferenceTests(unittest.TestCase):
             "testing/PATCH_VALIDATION.md",
             "testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md",
             "testing/RCCL_HETEROGENEOUS_RUNBOOK.md",
-            "testing/COVERAGE_AUDIT.md",
         ):
             self.assertIn(name, index)
 
@@ -53,10 +52,21 @@ class TestingReferenceTests(unittest.TestCase):
         ):
             self.assertIn(flag, document)
         self.assertIn("eligible_for_validated_state", document)
-        self.assertIn("diagnostic PASS", document)
+        self.assertIn("Diagnostic PASS", document)
         self.assertNotIn(
             "docs/planning/active/validation-package-standard/VA14.md", document
         )
+
+    def test_patch_validation_pointer_does_not_duplicate_policy(self) -> None:
+        document = (REPO_ROOT / "docs" / "reference" / "patches" / "PATCH_VALIDATION.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("sole canonical", document)
+        self.assertIn("validation authority", document)
+        self.assertIn("../testing/PATCH_VALIDATION.md", document)
+        self.assertNotIn("--run-rd08-contract", document)
+        self.assertNotIn("end_to_end_gain_pct", document)
+        self.assertNotIn("experiment plan", document.lower())
 
     def test_rd73_reference_tracks_live_contract_acceptance(self) -> None:
         contract_data = tomllib.loads(
@@ -71,13 +81,16 @@ class TestingReferenceTests(unittest.TestCase):
         self.assertEqual(acceptance["max_control_regression_pct"], 1.0)
         self.assertEqual(acceptance["min_paired_rounds"], 10)
         test_doc = (TESTING_ROOT / "TEST.md").read_text(encoding="utf-8")
-        self.assertIn("at least 1.0%", test_doc)
-        self.assertIn("at most 1.0%", test_doc)
-        self.assertIn("at least 10", test_doc)
+        self.assertIn("experiment-contracts.toml", test_doc)
+        self.assertNotIn("at least 1.0%", test_doc)
+        self.assertNotIn("at most 1.0%", test_doc)
+        self.assertNotIn("at least 10", test_doc)
         self.assertNotIn("3.0% promotion bar", test_doc)
 
     def test_empirical_and_historical_documents_are_scoped(self) -> None:
-        coverage = (TESTING_ROOT / "COVERAGE_AUDIT.md").read_text(encoding="utf-8")
+        coverage = (REPO_ROOT / "docs" / "archive" / "COVERAGE_AUDIT.md").read_text(
+            encoding="utf-8"
+        )
         multi_gpu = (TESTING_ROOT / "MULTI_GPU_LARGE_MODEL_VALIDATION.md").read_text(
             encoding="utf-8"
         )
@@ -96,6 +109,25 @@ class TestingReferenceTests(unittest.TestCase):
                 path.name,
             )
 
+    def test_maintained_reference_links_resolve(self) -> None:
+        documents = [
+            REPO_ROOT / "docs" / "reference" / "README.md",
+            *TESTING_ROOT.glob("*.md"),
+        ]
+        link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+        for source in documents:
+            document = source.read_text(encoding="utf-8")
+            for raw_target in link_pattern.findall(document):
+                target = raw_target.strip().strip("<>").split("#", 1)[0]
+                if not target or target.startswith(("http:", "https:", "mailto:")):
+                    continue
+                resolved = (source.parent / target).resolve()
+                self.assertTrue(
+                    resolved.exists(),
+                    f"{source.relative_to(REPO_ROOT)} -> {target}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
+

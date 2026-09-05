@@ -135,12 +135,11 @@ low-single-digit effect against this project's measured 0.5-0.9% repetition
 noise floor. RD73 is the worked example: an ad-hoc single-sample run was read
 as "null, mechanism inert", while the contract's 10 paired rounds with 10,000
 bootstrap resamples measured **+1.855%, 95% CI [1.482%, 2.169%]**. That is a
-historical measurement, not the current acceptance decision: the live RD73
-contract requires the 95% CI lower bound for gain to be at least 1.0%, the
-95% CI upper bound for control regression to be at most 1.0%, and at least 10
-paired rounds under `ci95_threshold_bound_v1`. Resolve thresholds from
-`config/experiment-contracts.toml`; do not copy them into a patch README.
-Use the contract path for any claim, positive or negative.
+historical measurement, not a current acceptance decision. Resolve the live
+RD73 threshold and evidence policy from
+[`config/experiment-contracts.toml`](../../../config/experiment-contracts.toml);
+do not copy scientific thresholds into this guide or a patch README. Use the
+contract path for any claim, positive or negative.
 
 ## Correctness
 
@@ -327,3 +326,4 @@ PYTHONPATH=tools python -m bigcherry.analysis.candidate_report  # -> docs/refere
 ```
 
 Reads the newest manifest plus every log in `artifacts/tuning-logs/`.
+

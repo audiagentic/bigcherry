@@ -13,7 +13,7 @@ promotion verdict.
 | [PATCH_VALIDATION.md](PATCH_VALIDATION.md) | Normative patch lifecycle/evidence contract | Package requirements, named checks, evidence identity, status semantics, promotion, demotion, and re-promotion |
 | [MULTI_GPU_LARGE_MODEL_VALIDATION.md](MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped empirical implementation note | Brutus observations and constraints for the tested large-model multi-GPU configuration |
 | [RCCL_HETEROGENEOUS_RUNBOOK.md](RCCL_HETEROGENEOUS_RUNBOOK.md) | Hardware qualification runbook | RCCL source viability, crash isolation, topology identity, correctness, and admissible performance |
-| [COVERAGE_AUDIT.md](COVERAGE_AUDIT.md) | Historical snapshot | The tuner surface observed in the cited HI34 work; verify current code before acting |
+| [../../archive/COVERAGE_AUDIT.md](../../archive/COVERAGE_AUDIT.md) | Historical snapshot outside the maintained testing corpus | Reviewing the cited HI34 tuner-surface audit; verify current code before acting |
 
 ## Agent decision flow
 
@@ -47,3 +47,4 @@ hardware is `BLOCKED`; infrastructure or runner faults are `ERROR`; an
 observed correctness or acceptance violation is `FAIL`. Only a canonical
 contract qualification path may create the evidence used for a promotion
 decision.
+
