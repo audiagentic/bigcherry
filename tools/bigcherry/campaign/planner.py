@@ -216,7 +216,10 @@ def plan(
             architectures=_resolve_architectures(request.architectures, platform_cfg),
             inputs=request.inputs_by_build.get(selector.build, ()),
             validation=request.validation_by_build.get(selector.build),
-            binary_relative_path=request.binary_relative_path,
+            # A lane's own binary wins: it decides which cmake target is built,
+            # so a profile that needs llama-server must be able to say so
+            # without the caller remembering --binary-relative-path.
+            binary_relative_path=selector.binary or request.binary_relative_path,
             c_compiler=request.c_compiler, cxx_compiler=request.cxx_compiler,
             smoke_environment=request.smoke_environment,
             # A lane's OWN experiment wins over the request-level one. A

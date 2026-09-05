@@ -367,12 +367,23 @@ lanes = [
 #
 # The experiment named here is the patch under test. Swap it per patch; the
 # rest of the profile is invariant.
+# Every lane builds llama-SERVER, not llama-bench. That is not a preference:
+# llama-bench cannot measure what production runs -- it has no speculative/MTP
+# flags at all, and on the real 27B/dual-GPU -sm tensor config it fails
+# outright (OOM under contention; a hard parse error for --fit, which it does
+# not register). The documented measurement path (TEST.md, "Server benchmark
+# (Brutus bench runner)") drives a running llama-server via
+# bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
+#
+# `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
+# it, so a lane left at the default publishes -- and therefore builds -- only
+# llama-bench, and produces no server to measure at all.
 [campaign.patch-qualification]
 lanes = [
-  { source = "llama-native", build = "stock", platform = "linux-multi" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+  { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
 ]
 
 # HI130: named server-args + tuner-context bundles for `bigcherry
