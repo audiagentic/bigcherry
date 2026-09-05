@@ -20,6 +20,21 @@ import urllib.request
 from pathlib import Path
 
 
+def _free_port(host: str) -> int:
+    """Bind port 0 and let the OS choose, then release it.
+
+    There is an unavoidable race between releasing and llama-server binding,
+    but it is far smaller than the certainty of colliding with a long-lived
+    service on a fixed port -- which is what actually happened here.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
+
+
 class ServerError(RuntimeError):
     pass
 
@@ -37,7 +52,8 @@ class ServerRunner:
     """
 
     def __init__(
-        self, *, binary: Path, model: Path, host: str = "127.0.0.1", port: int = 8080,
+        self, *, binary: Path, model: Path, host: str = "127.0.0.1",
+        port: int | None = None,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
@@ -45,7 +61,16 @@ class ServerRunner:
         self.binary = binary
         self.model = model
         self.host = host
-        self.port = port
+        # port=None picks a FREE port instead of defaulting to 8080.
+        #
+        # 8080 was hardcoded, and on the tuning host llama-swap -- the
+        # production inference service -- already owns it. A real
+        # `tune-campaign` run died at its first stage with "exiting due to
+        # HTTP server error", which is what a bind collision looks like from
+        # llama-server. The tuner must be able to run alongside production
+        # without either interfering with the other, and without an operator
+        # remembering to pass a port.
+        self.port = port if port is not None else _free_port(host)
         self.extra_args = extra_args
         self.env_overrides = dict(env_overrides or {})
         # HI143 (gpt review, 2026-08-29): the launched process otherwise
