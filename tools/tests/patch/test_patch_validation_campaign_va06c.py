@@ -366,7 +366,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         """
         ratio = 1.0 + effect_pct / 100.0
         return [
-            {"lane_effects": [{
+            {"gpu_architectures": ["gfx1100"], "lane_effects": [{
                 "role": "positive", "metric": "mtp_wall_tps",
                 "pair_ratios": [
                     ratio * (1.0 + (0.0002 if index % 2 else -0.0002))
@@ -398,6 +398,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
                             () if prior_session_effect_pct is None
                             else self._prior_sessions(prior_session_effect_pct)
                         ),
+                        amdgpu_targets="gfx1100",
                     )
 
     def test_a_single_session_is_inconclusive_not_a_verdict(self):

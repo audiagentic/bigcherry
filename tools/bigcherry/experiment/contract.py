@@ -2252,7 +2252,7 @@ def _finite_number(value: object) -> bool:
 
 def aggregate_session_effects(
     records: Iterable[Mapping[str, object]], *, field: str, role: str, metric: str,
-    seed: int = 0, resamples: int = 10_000,
+    architectures: Iterable[str], seed: int = 0, resamples: int = 10_000,
 ) -> dict[str, object]:
     """RV99: build the ``aggregated_effects`` a session policy needs from
     several validation records -- one per measurement SESSION.
@@ -2272,8 +2272,25 @@ def aggregate_session_effects(
     none is dropped. Selecting which sessions to aggregate is exactly the
     move the frozen re-run policy forbids.
     """
+    # Sessions must come from the SAME hardware. A record carries
+    # gpu_architectures; ignoring it would pool a gfx1201 session with gfx1100
+    # ones into a single "effect" that describes neither -- and would do it
+    # silently, since every input is individually valid. The filter is a
+    # required argument rather than an optional refinement precisely because
+    # forgetting it produces a plausible-looking wrong number, not an error.
+    wanted = frozenset(architectures)
+    if not wanted:
+        raise ExperimentContractError(
+            "aggregate_session_effects: architectures must be non-empty -- an "
+            "unfiltered aggregate silently mixes hardware"
+        )
     sessions: list[tuple[float, ...]] = []
     for record in records:
+        record_archs = record.get("gpu_architectures") or ()
+        if isinstance(record_archs, str):
+            record_archs = (record_archs,)
+        if not wanted.issuperset(record_archs) or not record_archs:
+            continue
         for lane in record.get("lane_effects") or ():
             if not isinstance(lane, Mapping):
                 continue

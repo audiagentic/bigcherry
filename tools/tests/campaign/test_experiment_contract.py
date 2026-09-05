@@ -948,15 +948,18 @@ class AggregateSessionEffectsTests(unittest.TestCase):
 
     METRIC = "mtp_wall_tps"
 
-    def _record(self, *percents, role="positive", metric=None):
-        return {"lane_effects": [{
+    def _record(self, *percents, role="positive", metric=None, arch="gfx1100"):
+        # Real records carry gpu_architectures; the aggregator filters on it,
+        # so a fixture without one is not a realistic record.
+        return {"gpu_architectures": [arch], "lane_effects": [{
             "role": role, "metric": metric or self.METRIC,
             "pair_ratios": [1.0 + pct / 100.0 for pct in percents],
         }]}
 
     def _aggregate(self, records):
         return ec.aggregate_session_effects(
-            records, field="gain", role="positive", metric=self.METRIC)
+            records, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
 
     def test_reports_session_count_even_when_it_cannot_estimate(self):
         # The gate must be able to say how many were found and how many more
@@ -984,7 +987,7 @@ class AggregateSessionEffectsTests(unittest.TestCase):
         # Counting it as zero-effect would quietly drag the estimate toward
         # zero while looking like more evidence.
         records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
-        with_empty = records + [{"lane_effects": []}, {}]
+        with_empty = records + [{"gpu_architectures": ["gfx1100"], "lane_effects": []}, {}]
         self.assertEqual(
             self._aggregate(with_empty)["gain_sessions"],
             self._aggregate(records)["gain_sessions"],
@@ -1003,12 +1006,58 @@ class AggregateSessionEffectsTests(unittest.TestCase):
         self.assertEqual(forward["gain_sessions"], backward["gain_sessions"])
         self.assertAlmostEqual(forward["gain"], backward["gain"], places=9)
 
+    def test_sessions_from_another_architecture_are_never_pooled(self):
+        # Found when preparing a gfx1201 run against a patch already qualified
+        # on gfx1100: without this filter the new architecture's sessions
+        # would be pooled with the old ones into a single "effect" describing
+        # neither -- silently, because every input record is individually
+        # valid. A settled result on one card could be corrupted just by
+        # measuring on another.
+        gfx1100 = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        gfx1201 = [self._record(40.0, 40.0, arch="gfx1201") for _ in range(3)]
+        result = ec.aggregate_session_effects(
+            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        # ~2%, not dragged toward the 40% foreign sessions.
+        self.assertAlmostEqual(result["gain"], 2.0, delta=0.05)
+
+    def test_the_other_architecture_aggregates_on_its_own(self):
+        gfx1100 = [self._record(2.0, 2.0) for _ in range(3)]
+        gfx1201 = [self._record(5.0, 5.0, arch="gfx1201")
+                   for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        result = ec.aggregate_session_effects(
+            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1201"])
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertAlmostEqual(result["gain"], 5.0, delta=0.05)
+
+    def test_a_record_with_no_architecture_is_not_pooled(self):
+        # Pre-RV99 records carry no lane_effects anyway, but a record whose
+        # hardware is unknown must never be assumed to match.
+        records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        unknown = {"lane_effects": [{
+            "role": "positive", "metric": self.METRIC, "pair_ratios": [1.4, 1.4]}]}
+        self.assertEqual(
+            ec.aggregate_session_effects(
+                records + [unknown], field="gain", role="positive",
+                metric=self.METRIC, architectures=["gfx1100"])["gain_sessions"],
+            ec.MIN_BOOTSTRAP_SESSIONS,
+        )
+
+    def test_empty_architecture_filter_is_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.aggregate_session_effects(
+                [self._record(2.0)], field="gain", role="positive",
+                metric=self.METRIC, architectures=[])
+
     def test_result_feeds_the_session_gate_directly(self):
         # The aggregator's output keys must be exactly what the stopping rule
         # reads -- otherwise the two halves never meet.
         records = [self._record(2.0, 1.8) for _ in range(5)]
         aggregated = ec.aggregate_session_effects(
-            records, field="end_to_end_gain_pct", role="positive", metric=self.METRIC)
+            records, field="end_to_end_gain_pct", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
         aggregated.update({
             "max_control_regression_pct": 0.0,
             "max_control_regression_pct_ci95_high": 0.0,
