@@ -58,5 +58,18 @@ Open. First run (2026-09-06) gave, on a single sample per cell:
 | bc-control (no winners) | 701.48 | 99.93 | 985.38 | 1238.18 | 100.02 | 106.92 |
 | bc-REPLAY (19 winners) | 652.78 | 99.39 | 982.76 | 1220.51 | 98.36 | 105.79 |
 
-Replay is worse than control on all six metrics. Needs repeats before it is
-called a result; recorded here so the direction is not lost.
+Replay is worse than control on all six metrics.
+
+**This result is confounded and must not be cited.** The three arms ran once
+each, sequentially, in a fixed order, with replay last. "Replay lost on all
+six metrics" is therefore indistinguishable from "the arm that runs third
+loses on all six metrics" -- which is exactly what thermal drift over a
+~10 minute run would produce. Position and arm are perfectly correlated, so
+no amount of squinting at the numbers separates them. The 6/6 direction that
+made it look non-random is precisely the pattern the confound predicts.
+
+`replay-bench-balanced.sh` supersedes it: each round runs the three arms in a
+rotated order, so over any multiple of 3 rounds every arm occupies every
+position equally and monotone drift cancels. Position is recorded per row so
+the drift can be tested rather than assumed away. First balanced run
+(6 rounds, 18 cells) launched 2026-09-06T02:02.
