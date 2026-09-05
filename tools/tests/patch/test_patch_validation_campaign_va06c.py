@@ -315,6 +315,14 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         effect = ec.LaneEffect(
             role="positive", metric="mtp_wall_tps", geometric_effect_pct=_pct,
             ci95_low_pct=_pct, ci95_high_pct=_pct, paired_rounds=10,
+            # RV99: the ratio vector is now persisted and is what the session
+            # aggregator consumes. A LaneEffect without it contributes NO
+            # session (an empty vector is not a zero-effect measurement), so a
+            # fake lacking it would silently under-count sessions rather than
+            # exercise the gate.
+            pair_ratios=tuple(
+                subject / control for subject, control in zip(subject_tps, control_tps)
+            ),
         )
         logs_dir = self.run_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
@@ -344,7 +352,32 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         )
         return {"result": result, "artifact": {"path": "artifacts/fake-resource.json", "sha256": "x"}, "readings": readings}
 
-    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0), resource_readings=(651,)):
+    def _prior_sessions(self, effect_pct, count=3, pairs=10):
+        """RD73 now uses session_ci95_threshold_bound_v1, so a bound is
+        established across sessions rather than from one run's pairs. A single
+        session is legitimately INCONCLUSIVE (min_sessions=4), so these tests
+        supply prior sessions to reach a decision at all -- the behaviour
+        under test is still "does this gain pass or fail the contract".
+
+        Each prior session carries the same effect as the run under test, so
+        it moves the estimate toward that effect rather than fighting it; the
+        tiny alternating jitter keeps between-session sd non-zero, since a
+        perfectly degenerate set is not a realistic interval.
+        """
+        ratio = 1.0 + effect_pct / 100.0
+        return [
+            {"lane_effects": [{
+                "role": "positive", "metric": "mtp_wall_tps",
+                "pair_ratios": [
+                    ratio * (1.0 + (0.0002 if index % 2 else -0.0002))
+                    for index in range(pairs)
+                ],
+            }]}
+            for _ in range(count)
+        ]
+
+    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0), resource_readings=(651,),
+                            prior_session_effect_pct=None):
         with mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
             with mock.patch.object(
                 vc, "run_rd73_decode_control_lane",
@@ -361,7 +394,26 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
                         control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
                         model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
                         corpus_path=self.corpus_path, run_dir=self.run_dir, decode_pairs=2,
+                        prior_session_records=(
+                            () if prior_session_effect_pct is None
+                            else self._prior_sessions(prior_session_effect_pct)
+                        ),
                     )
+
+    def test_a_single_session_is_inconclusive_not_a_verdict(self):
+        # The defining property of the session policy: one run cannot
+        # establish the bound, however good it looks, because a within-run
+        # interval cannot see between-session drift.
+        mtp_result = self._fake_mtp_lane(
+            control_content=["hello", "world"], subject_content=["hello", "world"],
+            control_tps=[100.0, 100.0], subject_tps=[103.1, 103.1],
+        )
+        result = self._run_qualification(mtp_result)
+        self.assertEqual(result["promotion"]["status"], "invalid", result["promotion"])
+        self.assertTrue(any(
+            "below the pre-declared minimum" in str(reason)
+            for reason in result["promotion"].get("reasons") or []
+        ))
 
     def test_all_green_qualifies(self) -> None:
         # +3.1% gain (>= 3.0 required), decode control regression handled
@@ -371,7 +423,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello", "world"], subject_content=["hello", "world"],
             control_tps=[100.0, 100.0], subject_tps=[103.1, 103.1],
         )
-        result = self._run_qualification(mtp_result)
+        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
         self.assertEqual(result["promotion"]["status"], "pass", result["promotion"])
 
     def test_gain_below_threshold_fails(self) -> None:
@@ -387,7 +439,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["hello"],
             control_tps=[100.0], subject_tps=[100.5],  # +0.5%, below 1.0
         )
-        result = self._run_qualification(mtp_result)
+        result = self._run_qualification(mtp_result, prior_session_effect_pct=0.5)
         self.assertEqual(result["promotion"]["status"], "fail")
 
     def test_resource_over_limit_fails(self) -> None:
@@ -395,16 +447,26 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["hello"],
             control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(mtp_result, resource_readings=(801,))
+        result = self._run_qualification(
+            mtp_result, resource_readings=(801,), prior_session_effect_pct=3.1)
         self.assertEqual(result["promotion"]["status"], "fail")
         self.assertFalse(result["resource_gate"]["passed"])
 
     def test_correctness_mismatch_fails(self) -> None:
+        # Prior sessions supplied so the GAIN is evaluable and the correctness
+        # failure is what decides the verdict. Noted rather than hidden: with
+        # too few sessions this reports "invalid" instead of "fail", because
+        # evaluate_promotion_gate() ranks unevaluable-evidence reasons ahead
+        # of measured ones. A definite correctness failure arguably deserves
+        # "fail" whatever the gain evidence looks like -- it still blocks
+        # promotion either way, so this is a reporting-precision question, not
+        # a safety one, and changing that precedence would affect every
+        # contract rather than just RD73.
         mtp_result = self._fake_mtp_lane(
             control_content=["hello"], subject_content=["goodbye"],
             control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(mtp_result)
+        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
         self.assertEqual(result["promotion"]["status"], "fail")
         self.assertFalse(result["correctness_gate"]["passed"])
 
@@ -424,7 +486,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
             control_content=["hello"], subject_content=["hello"],
             control_tps=[100.0], subject_tps=[103.1],
         )
-        result = self._run_qualification(mtp_result)
+        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
         self.assertNotIn("cv", json.dumps(result["promotion"]).lower())
         self.assertEqual(result["promotion"]["status"], "pass")
 

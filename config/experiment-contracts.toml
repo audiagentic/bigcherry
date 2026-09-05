@@ -769,8 +769,49 @@ max_control_regression_pct = 1.0
 # depth for its primary effect; it is an engineering/statistical floor, not a
 # derived constant, and a different number should come from calibration
 # against historical paired-round variance rather than from lane role.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+#
+# 2026-09-05: MIGRATED to session_ci95_threshold_bound_v1. The stopping rule
+# below is PRE-REGISTERED -- committed before any session it governs is
+# collected, and this contract's hash changes with it, so no earlier evidence
+# can satisfy it.
+#
+# WHY. Four sessions of this same unchanged build measured +1.855%, +1.717%,
+# +1.249% and +2.244%. Between-session sd is 0.411 -- larger than the standard
+# error any individual run reported -- and session 3's point estimate fell
+# below session 2's ci95_low. Every run was honest; ci95_threshold_bound_v1's
+# interval simply cannot see drift between occasions, because it resamples
+# pairs inside a single run. Two of those four sessions clear the 1.0 bar and
+# one does not, so under the old policy "did RD73 pass" depended on which
+# session you looked at. That is not a property a promotion decision may have.
+#
+# max_ci95_width_pct = 1.0 is chosen on a STATED PRINCIPLE, not fitted to the
+# observed data: an interval wider than the threshold it must clear cannot
+# settle a question about that threshold, since it spans both "misses the bar"
+# and "comfortably beats it". Setting the precision target equal to the
+# materiality bar is the weakest requirement that still makes the decision
+# meaningful. For reference the existing 4-session interval is ~1.31 wide, so
+# this target is NOT already satisfied -- it was not picked to be met.
+#
+# min_sessions = 4 is MIN_BOOTSTRAP_SESSIONS, below which a cluster
+# bootstrap's resample space is too small for an honest interval.
+# max_sessions = 8 bounds cost: each session is a full control+subject
+# campaign, ~25 minutes on the dual-XTX host.
+#
+# The criterion is DIRECTION-BLIND: interval WIDTH and session count only,
+# never where ci95_low falls relative to 1.0. Under-collection is
+# INCONCLUSIVE, never a fail. Reaching the precision target and missing the
+# bound is an ordinary FAIL, not grounds to collect more. No session is ever
+# discarded; every valid one is estimated over.
+#
+# The four sessions above were collected under the previous contract hash and
+# under no stopping rule. Per the frozen governance a new policy is
+# prospective: they informed the sd used to plan this rule, and they must NOT
+# be reinterpreted to promote the patch whose behaviour motivated the change.
+effect_evidence_policy = "session_ci95_threshold_bound_v1"
 min_paired_rounds = 10
+min_sessions = 4
+max_sessions = 8
+max_ci95_width_pct = 1.0
 
 [[contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance.resource_limits]]
 metric = "graph_cache_entries"

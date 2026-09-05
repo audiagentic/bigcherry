@@ -40,7 +40,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict
 from pathlib import Path
 
@@ -1959,6 +1959,12 @@ def run_rd73_contract_qualification(
     # req_875d13b29a204075). Costs ~5 extra minutes on a ~15-minute
     # qualification, measured.
     decode_pairs: int = 10, warmup_pairs: int = 2, measured_pairs: int = 10,
+    # RV99: the patch's already-committed validation records, each a prior
+    # measurement SESSION. Required, not defaulted: under a session policy a
+    # caller that forgets them silently under-counts sessions and the gate
+    # reports "collect more" for ever. An empty tuple is the honest value for
+    # a first session, and is meaningless under a non-session policy.
+    prior_session_records: "Iterable[Mapping[str, object]]",
 ) -> dict[str, object]:
     """VA06 next slice: the authoritative RD73 full-qualification path
     (``--run-rd73-contract``), mirroring RD08's own
@@ -2024,6 +2030,34 @@ def run_rd73_contract_qualification(
     aggregated_effects = experiment_contract.aggregate_contract_effects(
         contract, [mtp["effect"], decode_control["effect"]], target_metric="mtp_wall_tps",
     )
+    # RV99: under a session policy the gain bound is established across
+    # repeated SESSIONS, not from the pairs inside this one run. Fold the
+    # prior sessions' persisted lane effects together with the one just
+    # measured and re-aggregate over all of them.
+    #
+    # prior_session_records are the patch's already-committed validation
+    # records; this run's own measurement is appended last, so the gate always
+    # sees every valid session including the current one. Nothing is selected
+    # or dropped -- aggregate_session_effects() consumes them all, and the
+    # stopping rule decides whether that is yet enough.
+    #
+    # Only the gain field is re-aggregated. The control-regression budget is a
+    # per-run property (this build must not have broken the control lane in
+    # THIS run), not a claim being established across occasions.
+    if contract.acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1":
+        this_session = {"lane_effects": collect_lane_effect_records(
+            rd08_qualification=None,
+            rd73_qualification={"mtp": mtp, "decode_control": decode_control},
+        )}
+        gain_field = (
+            "end_to_end_gain_pct" if contract.acceptance.end_to_end_gain_pct is not None
+            else "target_kernel_gain_pct"
+        )
+        aggregated_effects = dict(aggregated_effects)
+        aggregated_effects.update(experiment_contract.aggregate_session_effects(
+            [*prior_session_records, this_session],
+            field=gain_field, role="positive", metric="mtp_wall_tps",
+        ))
     resource_gate = experiment_contract.evaluate_resource_gate(
         contract, {"graph_cache_entries": resource["result"]},
     )
@@ -3093,6 +3127,14 @@ def run(args: argparse.Namespace) -> int:
             subject_server_binary=validation_subject_bin / f"llama-server{exe}",
             model=args.model, marker_regex=trace_marker_regex, corpus_path=args.rd73_corpus,
             run_dir=campaign_run_dir,
+            # RV99: every measurement session already committed for this
+            # patch. Under a session policy the gate aggregates these together
+            # with the session about to be measured, so a run can establish a
+            # bound that no single run could. Read from the tracked evidence
+            # file -- which is exactly why lane_effects had to be persisted
+            # there, and why RV96 had to make a build hold more than one
+            # record before any of this could work.
+            prior_session_records=patch_validation_evidence.load_records(args.patch),
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
 
