@@ -660,24 +660,30 @@ struct ThreadBinding {
 // wrong binding.
 static inline uint64_t signature_fingerprint(
         const ggml_hip_dispatch_signature_v1 & s) {
+    // Hashes the WHOLE signature, not a selected subset.
+    //
+    // An earlier version of this mixed only high-discrimination fields (op,
+    // types, flags, a few extents). dev-gpt-agent (req_64a313fc) pointed out
+    // that a partial discriminator is acceptable for a short linear scan but
+    // wrong for choosing a SET: two signatures differing only in prec,
+    // fusion/glu_op, strides, n_expert or the refinement fields would hash
+    // identically, land in the same set every time, and evict each other.
+    // That converts an omitted dimension from a rare collision into a
+    // systematic conflict miss -- precisely the failure the capacity increase
+    // is meant to remove.
+    //
+    // Cost is ~29 xor/multiply pairs over the struct as 64-bit words. The
+    // signature is memset to zero before construction, so padding bytes are
+    // deterministic and hashing raw storage is well-defined.
+    static_assert(sizeof(ggml_hip_dispatch_signature_v1) % sizeof(uint64_t) == 0,
+                  "signature must be a whole number of 64-bit words to hash as words");
+    const uint64_t * words = reinterpret_cast<const uint64_t *>(&s);
+    const size_t     n     = sizeof(s) / sizeof(uint64_t);
     uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
-    const auto mix = [&h](uint64_t v) {
-        h ^= v;
+    for (size_t i = 0; i < n; ++i) {
+        h ^= words[i];
         h *= 1099511628211ull;
-    };
-    mix((uint64_t) s.op | ((uint64_t) s.src0_type << 16)
-        | ((uint64_t) s.src1_type << 24) | ((uint64_t) s.dst_type << 32)
-        | ((uint64_t) s.flags << 40));
-    // The extents that actually move: the two matmul dimensions, the batch,
-    // and the output width. Strides are left out deliberately -- they are
-    // highly correlated with the extents and the memcmp still checks them.
-    mix((uint64_t) s.ne0[0]);
-    mix((uint64_t) s.ne0[1]);
-    mix((uint64_t) s.ne1[1]);
-    mix((uint64_t) s.ne1[2]);
-    mix((uint64_t) s.ned[0]);
-    mix((uint64_t) s.ned[2]);
-    mix((uint64_t) s.n_expert_used);
+    }
     return h;
 }
 
