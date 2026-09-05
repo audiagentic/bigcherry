@@ -181,6 +181,13 @@ struct DispatchCounters {
     std::atomic<uint64_t> native_forced_tune{0};
     std::atomic<uint64_t> native_forced_record{0};
     std::atomic<uint64_t> native_forced_miss{0};
+    // Evidence for the deferred guard move (RV133). Counts dispatches whose
+    // native selection came back INVALID, and how many of those nonetheless
+    // had an L1 entry. Any nonzero hit count is a direct counterexample to
+    // "an L1 hit implies native validity"; zero over broad coverage supports
+    // it. Named for what it observes, not for the conclusion it might reach.
+    std::atomic<uint64_t> native_invalid_probed{0};
+    std::atomic<uint64_t> native_invalid_with_l1_hit{0};
 };
 
 static DispatchCounters g_dispatch_counters;
@@ -210,12 +217,15 @@ static void report_dispatch_counters() {
         l3l ? 100.0 * (double) l3h / (double) l3l : 0.0);
     GGML_LOG_INFO(
         "bigcherry: native-force sites -- entry_guard=%llu native_mode=%llu "
-        "tune=%llu record=%llu miss=%llu\n",
+        "tune=%llu record=%llu miss=%llu | native-invalid probed=%llu "
+        "with-L1-hit=%llu (any nonzero refutes the guard-move premise)\n",
         (unsigned long long) g_dispatch_counters.native_forced_entry_guard.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_native_mode.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_tune.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_record.load(std::memory_order_relaxed),
-        (unsigned long long) g_dispatch_counters.native_forced_miss.load(std::memory_order_relaxed));
+        (unsigned long long) g_dispatch_counters.native_forced_miss.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_invalid_probed.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_invalid_with_l1_hit.load(std::memory_order_relaxed));
 }
 
 static bool dispatch_counters_enabled() {
@@ -744,8 +754,32 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.candidate = native.candidate;
     resolved.variant   = native.variant;
     if (mode == GGML_HIP_DISPATCH_MODE_NATIVE || !native.valid) {
-        if (dispatch_counters_enabled() && mode == GGML_HIP_DISPATCH_MODE_NATIVE) {
-            g_dispatch_counters.native_forced_native_mode.fetch_add(1, std::memory_order_relaxed);
+        if (dispatch_counters_enabled()) {
+            if (mode == GGML_HIP_DISPATCH_MODE_NATIVE) {
+                g_dispatch_counters.native_forced_native_mode.fetch_add(1, std::memory_order_relaxed);
+            }
+            // RV133 / dev-gpt-agent req_b48d801c: the NON-VACUOUS form of the
+            // guard-move evidence. HI158 step 6 proposed recomputing native on
+            // the L1-HIT path, which can never disagree because the guard has
+            // already returned for every invalid selection. The informative
+            // observation is the mirror image: on the INVALID path, was there
+            // an L1 entry for this signature anyway?
+            //
+            // A single hit here falsifies "an L1 hit implies native validity"
+            // outright -- it is the exact counterexample the guard move must
+            // not have. Staying zero across broad coverage supports the claim
+            // without ever enabling the unproven behavior, which is why this
+            // is preferable to moving the guards and watching for breakage.
+            //
+            // find() is const and side-effect-free, and this runs only on the
+            // rare invalid path, so it costs nothing on the hot path.
+            if (!native.valid && mode != GGML_HIP_DISPATCH_MODE_RECORD) {
+                Binding probe = {};
+                if (g_thread_bindings.find(ctx.device, sig, &probe)) {
+                    g_dispatch_counters.native_invalid_with_l1_hit.fetch_add(1, std::memory_order_relaxed);
+                }
+                g_dispatch_counters.native_invalid_probed.fetch_add(1, std::memory_order_relaxed);
+            }
         }
         return resolved;
     }
