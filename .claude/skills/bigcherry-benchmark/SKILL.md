@@ -61,7 +61,21 @@ docs/reference/build/BUILD.md
 
 tools/bigcherry/tuning/server_runner.py
 
-tools/lab/gp11-replay-bench/ab-balanced.sh (reference implementation)
+bigcherry ab-benchmark -- THE maintained harness: paired, interleaved,
+--pairs/--schedule-seed/--settle-seconds/--practical-threshold-pct/
+--decision-grade, and build verification via --stock-cmake-cache and
+--patched-cmake-cache
+
+bigcherry kernel-fraction -- per-kernel time fractions from rocprofv3 traces
+
+bigcherry impact -- predicted saving from record observations + tuning
+measurements, bootstrapped, with --fail-on-slower
+
+bigcherry profile-campaign -- repeatable deep profiling (PROFILING.md)
+
+tools/lab/gp11-replay-bench/ab-balanced.sh -- NOT a reference implementation.
+Written in ignorance of ab-benchmark, reimplemented order balancing badly, and
+its first result was retracted for a confound ab-benchmark already handles.
 
 tools/lab/gp11-replay-bench/analyse.py
 
@@ -194,7 +208,8 @@ regression.
 1. State the single variable under test. If you cannot name it, stop.
 2. Select arms; prove composition (failure mode 2) BEFORE running.
 3. Confirm hardware authorization and exclusive device access.
-4. Use ab-balanced.sh, or ServerRunner; do not write new bash.
+4. Use `bigcherry ab-benchmark`. Before writing ANY harness, run
+   `python3 -m bigcherry --help` -- the command you need probably exists.
 5. Run balanced; rounds a multiple of arm count.
 6. Check activation and work-equivalence evidence per cell (4, 5).
 7. Analyse with analyse.py: means, deltas, separation, position, outliers.
@@ -202,7 +217,9 @@ regression.
 
 ## Verified commands
 
-    ROUNDS=8 OUT=<log> ARMS="name:digest:cache ..." tools/lab/gp11-replay-bench/ab-balanced.sh
+    python3 -m bigcherry ab-benchmark --cache <cache> --pairs <n>         --decision-grade --stock-cmake-cache <a> --patched-cmake-cache <b>
+    python3 -m bigcherry kernel-fraction <rocprof-kernel-trace.csv>
+    python3 -m bigcherry impact --observations <record.jsonl>         --measurements <promoted.jsonl>
     python3 tools/lab/gp11-replay-bench/analyse.py <log>
 
 Bench harness (endpoint mode only; never llama-bench, which cannot see MTP):
