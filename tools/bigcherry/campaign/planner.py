@@ -114,6 +114,13 @@ class CampaignRequest:
 
 def lane_id(lane: CampaignLane) -> str:
     base = f"{lane.source_name}:{lane.build_name}:{lane.platform_name}"
+    if lane.experiment is not None:
+        # A patch-qualification profile deliberately holds the SAME
+        # source/build/platform twice -- once plain as the baseline, once
+        # carrying the patch under test. Without the experiment in the id
+        # those two collide, and run_campaign()'s duplicate-lane check would
+        # silently drop the arm that gives the comparison its meaning.
+        base = f"{base}+{lane.experiment}"
     if lane.contract_id is None:
         return base
     # Contract-expanded lanes (EC03) legitimately share one source/build/
@@ -195,6 +202,10 @@ def plan(
         # every caller rather than leaving it a fail-open edge in the
         # production planner.
         selector_id = f"{selector.source}:{selector.build}:{selector.platform}"
+        if selector.experiment is not None:
+            # Must match lane_id()'s composition exactly, or a legitimate
+            # patched/unpatched pair on one source is rejected as a duplicate.
+            selector_id = f"{selector_id}+{selector.experiment}"
         if selector_id in seen_lane_ids:
             raise CampaignPlannerError(f"duplicate lane {selector_id!r} in request")
         seen_lane_ids.add(selector_id)
@@ -208,7 +219,13 @@ def plan(
             binary_relative_path=request.binary_relative_path,
             c_compiler=request.c_compiler, cxx_compiler=request.cxx_compiler,
             smoke_environment=request.smoke_environment,
-            experiment=request.experiment,
+            # A lane's OWN experiment wins over the request-level one. A
+            # patch-qualification profile needs arms that carry the patch and
+            # arms that deliberately do not (the baselines they are measured
+            # against), which a single request-level --experiment applying to
+            # every lane cannot express. Request-level remains the default for
+            # "isolate one patch across the standard lane set".
+            experiment=selector.experiment or request.experiment,
         ))
     return tuple(lanes)
 

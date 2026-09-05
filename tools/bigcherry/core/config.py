@@ -140,6 +140,15 @@ class CampaignLaneSelector:
     source: str
     build: str
     platform: str
+    #: Optional per-lane experiment (a [experiment.<name>] entry). Needed
+    #: because a patch-qualification profile must hold arms that DO carry the
+    #: patch and arms that must NOT: llama-native and bigcherry-native are the
+    #: baselines the patched arms are measured against, so a single
+    #: request-level --experiment (which applies to every lane) cannot express
+    #: that profile at all. Request-level --experiment remains the right tool
+    #: for "isolate one patch across the standard lane set"; this is for a
+    #: profile whose whole point is that its lanes differ in composition.
+    experiment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -495,9 +504,22 @@ def load(path: str | Path) -> Config:
                 raise ConfigError(
                     f"campaign.{name}.lanes[{index}] references unknown platform {lane_platform!r}"
                 )
+            lane_experiment = lane_data.get("experiment")
+            if lane_experiment is not None:
+                if not isinstance(lane_experiment, str) or not lane_experiment:
+                    raise ConfigError(
+                        f"campaign.{name}.lanes[{index}].experiment must be a "
+                        f"non-empty string when present"
+                    )
+                if lane_experiment not in experiments:
+                    raise ConfigError(
+                        f"campaign.{name}.lanes[{index}] references unknown "
+                        f"experiment {lane_experiment!r}"
+                    )
             lanes.append(
                 CampaignLaneSelector(
-                    source=lane_source, build=lane_build, platform=lane_platform
+                    source=lane_source, build=lane_build, platform=lane_platform,
+                    experiment=lane_experiment,
                 )
             )
         campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
