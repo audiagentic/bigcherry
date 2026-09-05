@@ -103,12 +103,49 @@ large enough to have produced the original result on its own -- but it is the
 same order as the effect being measured, which is why balancing stays
 mandatory.
 
-### Still confounded: winners vs build variant
+`ARMS="llamanative:a55fa53d6c9c63e01115aa09847f77eb:no
+control:df75a6d33c4d2d5342e567ca2a6b01ba:no
+replay:e59994bc49764809b1b4b957d71e934d:yes" ROUNDS=6`
 
-`replay` and `control` are different binaries -- replay is built with
-`GGML_HIP_DISPATCH_REPLAY=ON`. So "the 19 winners are harmful" and "the replay
-build variant is slower" both fit the table above. `isolate-winners.sh` runs
-the SAME replay binary with the winner cache on and off, holding build variant
-constant, and also records MTP draft acceptance so a work-rate difference
-cannot masquerade as a throughput difference. Launched 2026-09-06T03:07,
-8 rounds / 16 cells.
+### Winner isolation, 8 rounds / 16 cells, 2026-09-06 -- THE WINNERS ARE NOT THE CAUSE
+
+Same replay binary throughout, cache on vs off, so build variant is held
+constant and only the 19 winners vary.
+
+`ARMS="nocache:e59994bc49764809b1b4b957d71e934d:no
+winners:e59994bc49764809b1b4b957d71e934d:yes" ROUNDS=8`
+
+| metric | nocache | winners | delta | ranges |
+|---|---|---|---|---|
+| tg128 | 100.08 | 99.96 | -0.12% | overlap |
+| tg512 | 99.05 | 98.97 | -0.08% | overlap |
+| tg2048 | 106.32 | 106.31 | -0.01% | overlap |
+| pp1024 | 979.48 | 984.41 | +0.50% | overlap |
+| pp4096 | 1230.83 | 1231.44 | +0.05% | overlap |
+
+MTP draft acceptance identical to five decimal places (0.94734 both arms,
+n=8 each), so the two arms did the same work and the comparison is valid.
+
+**The 19 winners have no effect at all.** Every metric overlaps; the largest
+movement is +0.50% on pp1024, in the arm's favour.
+
+**The regression belongs to the replay BUILD VARIANT.** The nocache arm --
+the replay binary with no winners whatsoever -- already sits at tg128 100.08
+against control's 102.08, a 1.96% deficit that accounts for essentially the
+whole 2.06% originally attributed to the winners. Something about compiling
+with `GGML_HIP_DISPATCH_REPLAY=ON` costs ~2% on tg128 even when the cache is
+empty.
+
+This retracts the earlier attribution. dev-gpt-agent's "microbenchmark-driven
+promotion is unsound" verdict was answering a question whose premise did not
+hold: the promoted winners are neutral here, not harmful. Its architectural
+advice -- discovery separate from promotion, full-set E2E gate before
+activation -- remains sound as policy, but this run is not evidence for it.
+
+Caveat: that comparison is across two runs, and between-session drift on this
+host is sd 0.5-0.6%. The 1.96% gap is well outside that, but the direct test
+is control vs replay-nocache in ONE balanced run. Launched 2026-09-06T04:03,
+8 rounds / 16 cells:
+
+`ARMS="control:df75a6d33c4d2d5342e567ca2a6b01ba:no
+replaynocache:e59994bc49764809b1b4b957d71e934d:no" ROUNDS=8`
