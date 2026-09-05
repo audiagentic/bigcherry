@@ -1,12 +1,12 @@
 # 1244: N-way fused-root internal allreduce
 
-**Status:** untested
+**Status:** landed; qualification pending
 **Group:** gpu-collectives
 **Plan item:** GP11
 
-> DO NOT PROMOTE. A real completion request produces GARBAGE TEXT — an open
-> correctness bug in the llama.cpp integration (see "Known defect" below).
-> The throughput number recorded during the smoke test is not a result.
+> Do not promote yet. The production integration correctness bugs found during
+> initial smoke testing were fixed and later harness/full-stack evidence is
+> positive. GP11 still requires the remaining qualification gates below.
 
 ## What it does
 
@@ -27,16 +27,19 @@ so any 3+ GPU configuration fell back to the host-staged path. The
 `gp10-collective-harness` validated the fused-root design against synthetic
 buffers before it was wired into production here.
 
-## Known defect (blocking)
+## Qualification status
 
-Real-hardware smoke test on 3 GPUs: no crash, the pipeline correctly reports
-3 devices, and tg32 rose from 20.4 to 38.3 t/s. **But a real completion
-request returns garbage text.** The harness's synthetic-buffer validation did
-not catch this, which is itself the finding: buffer-level numeric agreement is
-not sufficient evidence that a collective is correct inside real inference.
+The initial real-inference garbage-output result was traced to two integration
+bugs: a missing per-block arrival offset and cross-device mapped-pointer alias
+reuse. Both were fixed and verified. Subsequent evidence includes clean
+high-repetition harness validation, real full-stack MTP correctness, alternate
+root validation, and a positive N=3 decode result.
 
-Until that is resolved, the throughput figure above must not be cited as a
-measured gain — it is throughput from a run that produced wrong output.
+Patch metadata remains `state = "untested"` until GP11 completes its declared
+qualification. Remaining gates are a controlled long soak, supported root /
+topology / size coverage, provider and threshold telemetry, and controlled
+comparison against RCCL and an unmodified baseline. Do not cite an unconditional
+promotion or generalize the measured result outside the qualified envelope.
 
 ## Requires
 
