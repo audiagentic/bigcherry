@@ -214,6 +214,75 @@ not met, collect further deterministic pairs up to `N_max` and estimate over
 interval *width*, never `ci95_low` relative to the threshold. A run found
 genuinely invalid may be repeated, but its invalid evidence stays recorded.
 
+This is implemented, not just doctrine, by
+`session_ci95_threshold_bound_v1` (`min_sessions` / `max_sessions` /
+`max_ci95_width_pct`). `_session_stopping_rule_met()` is direction-blind *by
+construction*: it is never passed the acceptance threshold, so it cannot stop
+early because the answer looks good.
+
+RD73 is the worked example, and it earned the rule. The stopping rule twice
+refused evidence that a plain `ci95_low >= threshold` gate would have passed:
+
+| sessions | `ci95_low` (bar 1.0) | width (target 1.0) | verdict |
+|---|---|---|---|
+| 4 | 1.2929 | 1.111 | INCONCLUSIVE |
+| 5 | 1.4289 | **1.0101** | INCONCLUSIVE |
+| 6 | 1.4754 | 0.8769 | **PASS** |
+
+The five-session refusal missed the target by 0.0101 -- the exact moment a
+movable threshold would have been moved. Because the criterion had been
+committed before the evidence, it was not. Note also that the loop stopped the
+instant the rule decided: **continuing past a decision is optional stopping in
+the other direction.**
+
+### Sessions, not just pairs
+
+A paired interval from one run covers only within-session variation.
+Measured on real hardware, six sessions of the same unchanged RD73 build gave
+a between-session sd of ~0.52 -- larger than the standard error any single run
+reported, with one session's point estimate below another's `ci95_low`.
+
+So where a claim must hold across occasions, the session is the unit:
+`bootstrap_session_effect()` resamples whole sessions (a cluster bootstrap,
+minimum `MIN_BOOTSTRAP_SESSIONS = 4`) and `aggregate_session_effects()`
+rebuilds the interval from the `lane_effects` persisted in each validation
+record.
+
+Resampling *session* identity is correct precisely where resampling *lane*
+identity is not: lanes are fixed components a contract names by hand (decode,
+prefill), so "sampling a lane" is meaningless; sessions are exchangeable draws
+from the occasions a measurement could have been taken on, which is what a
+claim generalises over.
+
+### Regression and improvement are not symmetric
+
+`improvement_no_regression_v1` drops the materiality bar entirely: an
+improvement must be **established** (`ci95_low` above `min_evidence_effect_pct`)
+but need not reach any size, while the regression budget stays strictly
+interval-bounded. Declaring a gain bar under it is rejected at parse time.
+
+The rationale is a deliberate asymmetry of costs, not leniency: shipping a
+regression costs real throughput, whereas adopting a genuine small improvement
+costs little beyond the patch's own maintenance. The earlier policies conflate
+"is the effect real" (evidence) with "is it worth carrying" (a value
+judgement); this one keeps only the first.
+
+Two things it does **not** relax:
+
+- **Established means the interval.** `+1.95%` with CI `[-0.10, 4.0]` fails.
+  A positive point estimate whose interval reaches the floor is not a win.
+- **`min_sessions` still applies.** Drift does not stop being real because
+  the decision rule changed.
+
+`min_evidence_effect_pct` is where a *measured harness bias floor* belongs. It
+defaults to 0.0, but if the rig systematically reads +0.2% for reasons
+unrelated to any patch, a 0.0 floor would admit an unbounded stream of
+"established" wins that are measurement artifacts -- and they would look more
+significant the more sessions were collected. That constant should come from
+an A-A null run (control vs control, identical builds). **No such run exists
+yet**, so 0.0 is a placeholder, and adopting sub-1% gains under this policy is
+only as sound as that assumption.
+
 ### Governing a change to this policy
 
 If validity exclusion, trimming, or a dual-estimator gate is ever added:

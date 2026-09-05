@@ -131,15 +131,36 @@ Three prerequisites that are easy to miss and each cost a failed run:
 
 **Do not substitute an ad-hoc A/B for the contract.** A hand-run
 control-vs-subject comparison with one completion per arm cannot resolve a
-low-single-digit effect against this project's measured 0.5-0.9% repetition
-noise floor. RD73 is the worked example: an ad-hoc single-sample run was read
-as "null, mechanism inert", while the contract's 10 paired rounds with 10,000
-bootstrap resamples measured **+1.855%, 95% CI [1.482%, 2.169%]**. That is a
-historical measurement, not a current acceptance decision. Resolve the live
-RD73 threshold and evidence policy from
+low-single-digit effect against this project's measured repetition noise.
+RD73 is the worked example: an ad-hoc single-sample run was read as "null,
+mechanism inert", and that conclusion was wrong -- the contract path later
+measured a real, repeatable gain. Use the contract path for any claim,
+positive or negative.
+
+**One run's confidence interval is not the uncertainty of the result.**
+RD73 again, on real hardware: six sessions of the SAME unchanged build, same
+corpus, same host, measured
+
+    1.326  2.356  1.373  1.922  2.626  1.730   (% end-to-end)
+
+a between-session sd of ~0.52 -- LARGER than the standard error any single
+run reported -- with one session's point estimate falling below another's
+`ci95_low`. Every one of those runs was honest. `block_bootstrap_effect()`
+resamples pairs WITHIN a run, so its interval covers only within-session
+variation and is blind to drift between occasions. Quoting one run's interval
+therefore overstates precision.
+
+Where a claim has to hold across occasions, measure across sessions:
+`bootstrap_session_effect()` (a two-level bootstrap that resamples whole
+sessions, minimum four) and `aggregate_session_effects()`, which rebuilds the
+interval from the `lane_effects` persisted in each record. RD73's promotion
+used exactly this: 6 sessions, **+1.889%, 95% CI [1.475, 2.352]**, 0.0%
+control regression.
+
+Those numbers are a historical measurement, not a current acceptance
+decision. Resolve live thresholds and evidence policy from
 [`config/experiment-contracts.toml`](../../../config/experiment-contracts.toml);
-do not copy scientific thresholds into this guide or a patch README. Use the
-contract path for any claim, positive or negative.
+do not copy scientific thresholds into this guide or a patch README.
 
 ## Correctness
 
