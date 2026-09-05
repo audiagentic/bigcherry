@@ -222,18 +222,66 @@ ggml_hip_native_selection ggml_hip_native_select(
     ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
     const ggml_tensor * src1, const ggml_tensor * ids, const ggml_tensor * dst);
 
+// HI158: the native selection, computed ON DEMAND rather than up front.
+//
+// ggml_hip_native_select() costs ~193.6ns and the L1 warm-cache lookup it
+// feeds costs ~52.6ns (real gfx1100, 110,020-dispatch sweep, 99.8% L1 hit
+// rate). On a hit the resolver overwrites the native seed immediately, so
+// that ~194ns was spent producing a value nothing read -- on 99.8% of
+// dispatches.
+//
+// This holds the inputs instead of the answer and computes at most once, when
+// something actually needs it. Deliberately a plain struct with no
+// std::function and no allocation: it sits on the hottest path in the system.
+//
+// Semantics are IDENTICAL to eager evaluation -- same function, same inputs,
+// same result -- which is why this was chosen over caching native selections
+// keyed by signature. That alternative would need proof that the signature
+// captures every input native_select reads (cc/warp_size, shapes incl.
+// ne11/ne12/dst->ne[2], contiguity, a padding condition); if it missed one,
+// two different selections would collide on a key and the cache would return
+// the WRONG kernel. Deferral needs no such proof.
+struct ggml_hip_native_provider {
+    ggml_backend_cuda_context * ctx;
+    const ggml_tensor *         src0;
+    const ggml_tensor *         src1;
+    const ggml_tensor *         ids;
+    const ggml_tensor *         dst;
+    mutable ggml_hip_native_selection cached;
+    mutable bool                      computed;
+};
+
+ggml_hip_native_provider ggml_hip_make_native_provider(
+    ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+    const ggml_tensor * src1, const ggml_tensor * ids, const ggml_tensor * dst);
+
+// A provider that already has its answer and will never call native_select.
+// The family collection points need this: standards 11.1 says the family is
+// already decided there, so native selection is deliberately NOT consulted --
+// a fused MMVQ must never be re-selected into MMQ. Expressing that as a
+// pre-resolved provider keeps "the resolver takes a provider" true everywhere
+// instead of carving out a second resolver entry point.
+ggml_hip_native_provider ggml_hip_make_native_provider_resolved(
+    const ggml_hip_native_selection & selection);
+
+// Force the selection, computing it at most once. Every caller that genuinely
+// needs the native answer goes through this; the L1-hit path must not.
+const ggml_hip_native_selection & ggml_hip_native_force(
+    const ggml_hip_native_provider & provider);
+
 // Resolve a signature to the candidate that should run.
 //
 // Cold path on first sight of a dispatch key: hash, look up, cache. Warm path
 // is a dictionary hit on the digest with no hashing at all (standards 15.2).
-// In native mode, and on any miss, this returns `native` unchanged.
+// In native mode, and on any miss, this returns the native selection
+// unchanged -- forcing the provider at that point, not before.
 // `lc` is needed because tune mode measures candidates from inside the
 // resolver, and a measurement has to launch the real operation with real
 // arguments. In every other mode it is unused.
 ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     ggml_backend_cuda_context & ctx,
     const ggml_hip_dispatch_signature_v1 & sig,
-    const ggml_hip_native_selection & native,
+    const ggml_hip_native_provider & native,
     const ggml_hip_launch_context & lc);
 
 // Execute the resolved candidate's complete path.

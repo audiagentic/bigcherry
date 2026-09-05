@@ -169,6 +169,18 @@ struct DispatchCounters {
     std::atomic<uint64_t> l2_misses{0};
     std::atomic<uint64_t> l3_lookups{0};
     std::atomic<uint64_t> l3_hits{0};
+    // HI158: which site actually forced the deferred native selection. The
+    // point of splitting these out is that "how many times did we compute
+    // native" is useless on its own -- what matters is WHICH path demanded
+    // it, because that says whether deferral can ever pay. While the
+    // !native.valid guard stays where it is (HI158 step 4), entry dominates
+    // and native_select_calls stays ~= dispatch_entries; that is the
+    // expected, correct reading of this patch, not a bug.
+    std::atomic<uint64_t> native_forced_entry_guard{0};
+    std::atomic<uint64_t> native_forced_native_mode{0};
+    std::atomic<uint64_t> native_forced_tune{0};
+    std::atomic<uint64_t> native_forced_record{0};
+    std::atomic<uint64_t> native_forced_miss{0};
 };
 
 static DispatchCounters g_dispatch_counters;
@@ -196,6 +208,14 @@ static void report_dispatch_counters() {
         (l2h + l2m) ? 100.0 * (double) l2h / (double) (l2h + l2m) : 0.0,
         (unsigned long long) l3l, (unsigned long long) l3h,
         l3l ? 100.0 * (double) l3h / (double) l3l : 0.0);
+    GGML_LOG_INFO(
+        "bigcherry: native-force sites -- entry_guard=%llu native_mode=%llu "
+        "tune=%llu record=%llu miss=%llu\n",
+        (unsigned long long) g_dispatch_counters.native_forced_entry_guard.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_forced_native_mode.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_forced_tune.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_forced_record.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.native_forced_miss.load(std::memory_order_relaxed));
 }
 
 static bool dispatch_counters_enabled() {
@@ -396,6 +416,56 @@ ggml_hip_native_selection ggml_hip_native_select(
     memset(&selection.variant, 0, sizeof(selection.variant));
     selection.valid = selection.candidate != nullptr;
     return selection;
+}
+
+// HI158: hold the inputs, not the answer. See hip-autotune-dispatch.cuh for
+// why deferral was chosen over caching native selections by signature.
+ggml_hip_native_provider ggml_hip_make_native_provider(
+        ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
+        const ggml_tensor * src1, const ggml_tensor * ids,
+        const ggml_tensor * dst) {
+    ggml_hip_native_provider provider = {};
+    provider.ctx      = &ctx;
+    provider.src0     = src0;
+    provider.src1     = src1;
+    provider.ids      = ids;
+    provider.dst      = dst;
+    provider.computed = false;
+    return provider;
+}
+
+ggml_hip_native_provider ggml_hip_make_native_provider_resolved(
+        const ggml_hip_native_selection & selection) {
+    ggml_hip_native_provider provider = {};
+    // Tensor/ctx pointers stay null on purpose: forcing must be impossible to
+    // route back into native_select from here, so a future edit that tried
+    // would fault immediately rather than silently re-select a family.
+    provider.cached   = selection;
+    provider.computed = true;
+    return provider;
+}
+
+const ggml_hip_native_selection & ggml_hip_native_force(
+        const ggml_hip_native_provider & provider) {
+    if (!provider.computed) {
+        // The sample timer lives here rather than at the (now several) call
+        // sites so it keeps measuring the same thing it measured before:
+        // one real native_select, wherever it was demanded from.
+        const bool sample = native_select_timing_enabled()
+                             && native_select_timing_should_sample_native_select();
+        const auto t0 = sample ? std::chrono::steady_clock::now()
+                               : std::chrono::steady_clock::time_point{};
+        provider.cached = ggml_hip_native_select(
+            *provider.ctx, provider.src0, provider.src1, provider.ids, provider.dst);
+        if (sample) {
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            g_native_select_timing.native_select_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
+            g_native_select_timing.native_select_samples.fetch_add(1, std::memory_order_relaxed);
+        }
+        provider.computed = true;
+    }
+    return provider.cached;
 }
 
 // ------------------------------------------------------------ process cache
@@ -650,19 +720,33 @@ static bool transformed_candidate_still_valid(
 ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         ggml_backend_cuda_context & ctx,
         const ggml_hip_dispatch_signature_v1 & sig,
-        const ggml_hip_native_selection & native,
+        const ggml_hip_native_provider & native_provider,
         const ggml_hip_launch_context & lc) {
     if (dispatch_counters_enabled()) {
         g_dispatch_counters.dispatch_entries.fetch_add(1, std::memory_order_relaxed);
     }
     ggml_hip_resolved_dispatch resolved = {};
-    resolved.candidate      = native.candidate;
-    resolved.variant        = native.variant;
     resolved.prepared_state = nullptr;
     resolved.from_cache     = false;
 
     const int mode = ggml_hip_dispatch_mode();
+    // HI158 step 4: the !native.valid guard deliberately stays HERE, which
+    // means the selection is still forced on every dispatch and this patch
+    // saves nothing by itself. That is the intended shape. Moving the guard
+    // below the L1 lookup is what actually pays, and it needs proof that an
+    // L1 hit implies native validity -- a claim that was asserted, challenged,
+    // and is not yet established (see HI158). The shadow counter on the L1-hit
+    // path below is gathering evidence toward exactly that.
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.native_forced_entry_guard.fetch_add(1, std::memory_order_relaxed);
+    }
+    const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
+    resolved.candidate = native.candidate;
+    resolved.variant   = native.variant;
     if (mode == GGML_HIP_DISPATCH_MODE_NATIVE || !native.valid) {
+        if (dispatch_counters_enabled() && mode == GGML_HIP_DISPATCH_MODE_NATIVE) {
+            g_dispatch_counters.native_forced_native_mode.fetch_add(1, std::memory_order_relaxed);
+        }
         return resolved;
     }
 
@@ -683,6 +767,15 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         if (dispatch_counters_enabled()) {
             g_dispatch_counters.l1_hits.fetch_add(1, std::memory_order_relaxed);
         }
+        // HI158 step 6 (the L1-hit shadow assertion) is NOT implemented here,
+        // deliberately. It cannot produce evidence while step 4 keeps the
+        // !native.valid guard above: the guard already returned for every
+        // invalid selection, so native.valid is unconditionally true by the
+        // time control reaches this branch, and a recompute on the same
+        // inputs of a deterministic function must agree. The counter would
+        // report "0 invalid out of N" no matter what the truth is, which is
+        // worse than no counter -- it reads as evidence and is not.
+        // See the HI158 review filed against this contradiction.
         resolved.candidate  = thread_binding.candidate;
         resolved.variant    = thread_binding.variant;
         resolved.from_cache = thread_binding.from_cache;
@@ -1105,19 +1198,15 @@ bool ggml_hip_dispatch_mul_mat(
         return false;
     }
 
-    const bool sample_native_select = native_select_timing_enabled()
-                                       && native_select_timing_should_sample_native_select();
-    const auto native_select_sample_t0 = sample_native_select ? std::chrono::steady_clock::now()
-                                                                : std::chrono::steady_clock::time_point{};
-    const ggml_hip_native_selection native =
-        ggml_hip_native_select(ctx, src0, src1, ids, dst);
-    if (sample_native_select) {
-        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - native_select_sample_t0).count();
-        g_native_select_timing.native_select_ns_sum.fetch_add((uint64_t) ns, std::memory_order_relaxed);
-        g_native_select_timing.native_select_samples.fetch_add(1, std::memory_order_relaxed);
-    }
-    if (!native.valid) {
+    // HI158: deferred. The sample timer moved inside ggml_hip_native_force so
+    // it still measures one real native_select wherever it is demanded from.
+    ggml_hip_native_provider native_provider =
+        ggml_hip_make_native_provider(ctx, src0, src1, ids, dst);
+    // ...and then forced immediately, because this early-out needs the answer
+    // before the signature is even built. This is the OTHER half of the guard
+    // HI158 step 4 leaves in place; until both move, the provider changes the
+    // shape of the code without yet changing when the work happens.
+    if (!ggml_hip_native_force(native_provider).valid) {
         return false;
     }
 
@@ -1141,7 +1230,7 @@ bool ggml_hip_dispatch_mul_mat(
     lc.stream = ctx.stream();
 
     const ggml_hip_resolved_dispatch bound =
-        ggml_hip_dispatch_resolve(ctx, sig, native, lc);
+        ggml_hip_dispatch_resolve(ctx, sig, native_provider, lc);
 
     // Both counters fire here, because this is the outermost point at which
     // this operation is visible. The family entry will see the same launch
@@ -1209,6 +1298,8 @@ bool ggml_hip_dispatch_family(
     native.candidate = native_candidate;
     memset(&native.variant, 0, sizeof(native.variant));
     native.valid = true;
+    const ggml_hip_native_provider native_provider =
+        ggml_hip_make_native_provider_resolved(native);
 
     const ggml_hip_dispatch_signature_v1 sig =
         ggml_hip_make_signature(src0, src1, ids, dst, fusion);
@@ -1226,7 +1317,7 @@ bool ggml_hip_dispatch_family(
     lc.stream = ctx.stream();
 
     const ggml_hip_resolved_dispatch bound =
-        ggml_hip_dispatch_resolve(ctx, sig, native, lc);
+        ggml_hip_dispatch_resolve(ctx, sig, native_provider, lc);
 
     // A stored winner from another family would be a graph-level decision
     // arriving through a matmul-level door. Refuse it and run native.
