@@ -28,6 +28,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable
 
+from . import attestation
 from . import contract as experiment_contract
 from ..campaign.benchmark import block_bootstrap_effect, extract_metrics
 
@@ -112,6 +113,7 @@ def run_paired_lane(
     *, metric: str, control_command: list[str], subject_command: list[str],
     pattern: re.Pattern[str], pairs: int = 3, runner: Runner | None = None,
     lower_is_better: bool = False, seed: int = 0, resamples: int = 10_000,
+    execution_identity: "attestation.ExecutionIdentity | None" = None,
 ) -> PairedLaneRun:
     """Run ``pairs`` alternating control/subject rounds of the SAME
     command shape (only the binary differs -- control vs. subject build),
@@ -137,6 +139,19 @@ def run_paired_lane(
                 raise LaneExecutionError(
                     f"{mode} arm exited {result.returncode} (pair {pair}): "
                     f"command={command!r}; stderr={result.stderr[-500:]!r}"
+                )
+            # VA25: attest EVERY measured process, before its metrics are
+            # accepted. Not a single preflight -- each arm is a separate
+            # process, and one preflight cannot prove the ones that follow.
+            # A ROCm init failure does not stop llama.cpp; it falls back to
+            # CPU and still prints a well-formed table labelled "ROCm", so a
+            # clean exit code and a parseable metric are not evidence that
+            # anything ran on a GPU.
+            if execution_identity is not None:
+                attestation.require_execution_identity(
+                    execution_identity,
+                    attestation.parse_rocm_attestation(result.combined),
+                    context=f"{mode} arm, pair {pair}",
                 )
             metrics = extract_metrics(result.combined, {metric: pattern})
             runs.append({"pair": pair, "mode": mode, "metrics": metrics})
