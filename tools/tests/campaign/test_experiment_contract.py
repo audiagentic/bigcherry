@@ -815,6 +815,132 @@ class BootstrapSessionEffectTests(unittest.TestCase):
         self.assertEqual(result["paired_rounds_total"], 40)
 
 
+def _asymmetric_contract(**acceptance_overrides):
+    acceptance = {
+        "end_to_end_gain_pct": 0.0,
+        "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "improvement_no_regression_v1",
+        "min_paired_rounds": 10,
+        "min_sessions": 4,
+    }
+    acceptance.update(acceptance_overrides)
+    return _minimal_contract(acceptance=acceptance)
+
+
+class ImprovementNoRegressionPolicyTests(unittest.TestCase):
+    """The asymmetric rule: an improvement need only be ESTABLISHED, never
+    large; a regression stays strictly bounded by its interval.
+
+    The two errors are not symmetric -- shipping a regression costs real
+    throughput, adopting a genuine small improvement costs almost nothing --
+    so the decision rule is not symmetric either. The earlier policies mixed
+    "is the effect real" (evidence) with "is it big enough to be worth
+    carrying" (a value judgement) into one threshold; this one keeps only the
+    first."""
+
+    CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+
+    def _gate(self, *, low, high, sessions=5, regression=0.0, regression_high=0.0,
+              contract=None):
+        return ec.evaluate_promotion_gate(
+            contract or _asymmetric_contract(),
+            correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": (low + high) / 2,
+                "end_to_end_gain_pct_ci95_low": low,
+                "end_to_end_gain_pct_ci95_high": high,
+                "end_to_end_gain_pct_sessions": sessions,
+                "end_to_end_gain_pct_paired_rounds": 10 * sessions,
+                "max_control_regression_pct": regression,
+                "max_control_regression_pct_ci95_high": regression_high,
+                "max_control_regression_pct_paired_rounds": 10 * sessions,
+            },
+        )
+
+    def test_a_tiny_established_improvement_passes(self):
+        # The point of the policy: +0.31% with CI [0.12, 0.50] is a real win
+        # and is accepted, where a materiality bar would have refused it.
+        self.assertEqual(self._gate(low=0.12, high=0.50)["status"], "pass")
+
+    def test_interval_width_does_not_matter(self):
+        # No bound has to be resolved, so a wide interval that still excludes
+        # the floor is perfectly decidable -- unlike the session policy, which
+        # would call this inconclusive.
+        self.assertEqual(self._gate(low=0.05, high=9.0)["status"], "pass")
+
+    def test_a_positive_point_estimate_whose_interval_reaches_zero_fails(self):
+        # "Established" means the interval, not the point estimate. This is
+        # the safeguard that stops noise being adopted as an accumulating win.
+        result = self._gate(low=-0.10, high=4.0)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("does not establish an improvement", str(result["reasons"]))
+
+    def test_exactly_at_the_floor_is_not_established(self):
+        self.assertEqual(self._gate(low=0.0, high=2.0)["status"], "fail")
+
+    def test_evidence_floor_can_be_raised_to_a_measured_harness_bias(self):
+        # If the rig systematically reads +0.4%, a +0.3% "win" is an artifact.
+        contract = _asymmetric_contract(min_evidence_effect_pct=0.4)
+        self.assertEqual(
+            self._gate(low=0.3, high=0.9, contract=contract)["status"], "fail")
+        self.assertEqual(
+            self._gate(low=0.5, high=1.1, contract=contract)["status"], "pass")
+
+    def test_regression_over_budget_fails_however_good_the_gain(self):
+        self.assertEqual(
+            self._gate(low=3.0, high=4.0, regression=2.0, regression_high=2.0)["status"],
+            "fail",
+        )
+
+    def test_regression_budget_is_established_by_the_interval_not_the_estimate(self):
+        # The strict side stays strict: a small point estimate whose upper
+        # bound breaches the budget still fails.
+        result = self._gate(low=1.5, high=2.0, regression=0.2, regression_high=1.4)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("ci95_high", str(result["reasons"]))
+
+    def test_too_few_sessions_is_inconclusive(self):
+        # Drift does not stop being real because the decision rule changed.
+        self.assertEqual(self._gate(low=1.5, high=2.0, sessions=3)["status"], "invalid")
+
+    def test_missing_session_count_is_invalid(self):
+        result = ec.evaluate_promotion_gate(
+            _asymmetric_contract(), correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": 1.5,
+                "end_to_end_gain_pct_ci95_low": 1.2,
+                "end_to_end_gain_pct_ci95_high": 1.8,
+                "end_to_end_gain_pct_paired_rounds": 40,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 40,
+            },
+        )
+        self.assertEqual(result["status"], "invalid")
+
+    def test_declaring_a_materiality_bar_is_rejected(self):
+        # Keeping a gain bar under this policy would silently reintroduce the
+        # conflation the policy exists to remove.
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _asymmetric_contract(end_to_end_gain_pct=1.0)
+        self.assertIn("MATERIALITY", str(caught.exception))
+
+    def test_declaring_no_gain_field_at_all_is_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _asymmetric_contract(end_to_end_gain_pct=None)
+        self.assertIn("must name WHICH", str(caught.exception).replace("\n", " "))
+
+    def test_width_target_is_rejected_as_meaningless(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(max_ci95_width_pct=1.0)
+
+    def test_min_sessions_is_required_and_floored(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(min_sessions=None)
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(min_sessions=ec.MIN_BOOTSTRAP_SESSIONS - 1)
+
+
 class AggregateSessionEffectsTests(unittest.TestCase):
     """RV99: rebuild a session-level interval from committed records alone.
     Before lane_effects were persisted, pair_ratios existed only under
