@@ -4,7 +4,7 @@ Diagnostic tooling only -- drives rccl_qualify.run_case (crash-isolated,
 one case per process) against a real all_reduce_perf binary. Does not touch
 BigCherry's production reduction-provider selection or patch 1225 in any
 way. See docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md P2.4-P2.5,
-HI142, and GP07 (docs/planning/active/gpu-collectives/GP07.md) for the
+HI142, and GP07 (docs/planning/completed/gpu-collectives/GP07.md) for the
 governing procedure.
 
 GP07 rewrite (2026-09-02, gpt-dev-agent-reviewed): the prior version of
@@ -291,3 +291,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

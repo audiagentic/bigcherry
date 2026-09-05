@@ -90,7 +90,7 @@ Do not collapse these layers:
 | Source tracking | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, etc. | `external-sources.toml` status; tracks porting/proof progress |
 | Individual check | `pass`, `fail`, `blocked`, `error`, `not_applicable` | Result of that named check only |
 | Contract gate | Contract-specific gate results and promotion verdict | Whether scientific obligations passed |
-| Persisted eligibility | `eligible_for_validated_state` | Whether evidence can support `ported-validated` |
+| Persisted eligibility | `eligible_for_validated_state` | Whether evidence supports a deliberate package-state `validated` transition |
 
 Diagnostic PASS, adapter PASS, partial campaign, or single-contract evidence
 does not authorize a lifecycle transition. `BLOCKED` means an external

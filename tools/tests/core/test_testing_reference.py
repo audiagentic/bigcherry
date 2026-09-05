@@ -139,7 +139,15 @@ class TestingReferenceTests(unittest.TestCase):
             for raw_target in link_pattern.findall(document):
                 clean_target = raw_target.strip().strip("<>")
                 target, _, anchor = clean_target.partition("#")
-                if not target or target.startswith(("http:", "https:", "mailto:")):
+                if not target:
+                    if anchor:
+                        self.assertIn(
+                            anchor,
+                            heading_anchors(document),
+                            f"{source.relative_to(REPO_ROOT)} -> #{anchor}",
+                        )
+                    continue
+                if target.startswith(("http:", "https:", "mailto:")):
                     continue
                 resolved = (source.parent / target).resolve()
                 self.assertTrue(
