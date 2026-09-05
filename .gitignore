@@ -74,7 +74,7 @@ artifacts/
 # -- IDE / Harness config (user-specific, keep locally but not in git) --
 .vscode/
 .idea/
-.claude/
+.claude/*
 .codex/
 .gemini/
 .opencode/
@@ -108,3 +108,11 @@ vendor/
 prodtest_loop.sh
 vendor/llama.cpp-stock-b10257-linux
 vendor/llama.cpp-stock-b10327-linux
+
+# -- Shared project procedure (re-included from the .claude/* rule above) --
+# Skills are not user-specific harness config: they encode how to run this
+# project's tooling correctly, and exist because getting it wrong produced
+# retracted results. They must be reviewable, shared, and versioned with the
+# code whose behaviour they describe. Everything else under .claude/ stays
+# local, which is why the rule above is .claude/* rather than .claude/.
+!.claude/skills/
