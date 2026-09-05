@@ -101,3 +101,59 @@ not worked around.
 **Disposition:** stays `untested`/unpromoted — but because it **misses the 3%
 bar at a measured +1.86%**, not because it does nothing. Worth re-evaluating if
 the bar is revisited or if it is combined with other gains.
+
+## THREE-RUN CONTRACT RESULT (2026-09-05): real effect, sits ON the bar
+
+Two further real dual-gfx1100 contract runs were executed against the frozen
+1.0% bar (contract hash `de6e54ff`, 10 paired rounds each, isolated clone,
+`--run-rd73-contract`). With the earlier run, three independent contract-path
+measurements now exist:
+
+| run | point estimate | ci95_low | gate |
+|---|---|---|---|
+| 1 (2026-09-04) | +1.855% | +1.482% | (pre-registration evidence only) |
+| 2 (2026-09-05) | +1.717% | +1.385% | PASS |
+| 3 (2026-09-05) | **+1.249%** | **+0.576%** | **FAIL** |
+
+Every run: control regression 0.0%, correctness `bit_identical` PASS, resource
+`graph_cache_entries` PASS, trigger proof PASS. Run 3's sole failure reason is
+`end_to_end_gain_pct ci95_low 0.576 below required 1.0`.
+
+**The effect is real; its magnitude straddles the materiality bar.** All three
+runs are positive and all three intervals exclude zero. What they do not agree
+on is whether the true effect clears 1.0%.
+
+### Between-run drift exceeds the within-run interval
+
+Per-pair effects, same build, same corpus, same hardware, hours apart:
+
+    run 2   sd 0.551   [2.55 1.87 1.95 2.37 1.33 0.73 1.14 1.53 1.79 1.93]
+    run 3   sd 1.144   [3.22 -0.20 1.63 0.37 1.72 0.17 1.69 1.30 2.62 0.04]
+
+Run 3 is twice as noisy and contains a negative pair. Its point estimate
+(+1.249%) falls BELOW run 2's ci95_low (+1.385%). The paired block bootstrap
+resamples only within a run, so it cannot see session-to-session drift and its
+interval is correspondingly optimistic. This is a measured instance of the
+systematic-bias failure mode: a CI only quantifies the uncertainty its sampling
+model represents.
+
+Pooled over all 20 valid pairs the estimate is **+1.483%, CI [1.084, 1.861]**.
+
+**That pooled number is NOT used to promote this patch, deliberately.** The
+frozen re-run policy (EXPERIMENT_CONTRACT.md, "Re-running") permits extending a
+run to a pre-declared `N_max` and estimating over all valid pairs -- but
+`N_min`/`N_max` must be pre-declared, and this contract declares only
+`min_paired_rounds = 10`. Pooling after seeing run 3 miss the bar would be
+choosing the estimator that gives the wanted answer, which is the precise
+failure the policy exists to prevent. It is recorded here as the best current
+estimate of the effect, not as qualifying evidence.
+
+**Disposition: stays `untested`/unpromoted.** Not because it does nothing --
+it demonstrably does something -- but because three runs cannot agree that it
+clears the bar it must clear. Settling it requires a pre-registered extension
+rule (direction-blind precision criterion, declared `N_min`/`N_max`) committed
+BEFORE the next run.
+
+Superseded above: the "misses the 3% bar" disposition (the bar is now 1.0) and
+the "adapter gap" evidence status (fixed -- see RV95; run 3 produced
+`verdict: activation-verified` and `correctness.disposition: passed`).
