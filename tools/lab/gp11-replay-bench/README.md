@@ -71,5 +71,44 @@ made it look non-random is precisely the pattern the confound predicts.
 `replay-bench-balanced.sh` supersedes it: each round runs the three arms in a
 rotated order, so over any multiple of 3 rounds every arm occupies every
 position equally and monotone drift cancels. Position is recorded per row so
-the drift can be tested rather than assumed away. First balanced run
-(6 rounds, 18 cells) launched 2026-09-06T02:02.
+the drift can be tested rather than assumed away.
+
+### Balanced run, 6 rounds / 18 cells, 2026-09-06 (`analyse.py`)
+
+| metric | control | native | replay | native vs ctl | replay vs ctl | ranges |
+|---|---|---|---|---|---|---|
+| tg128 | 102.08 | 102.11 | 99.97 | +0.02% | **-2.06%** | separated |
+| tg512 | 100.25 | 100.26 | 99.04 | +0.01% | **-1.21%** | separated |
+| tg2048 | 106.96 | 106.98 | 106.30 | +0.02% | **-0.61%** | separated |
+| pp1024 | 985.70 | 987.62 | 980.36 | +0.19% | **-0.54%** | separated |
+| pp4096 | 1238.86 | 1237.59 | 1231.41 | -0.10% | **-0.60%** | separated |
+| pp256 | 699.66 | 698.00 | 686.33 | -0.24% | -1.91% | overlap |
+
+Two findings.
+
+**The dispatch framework itself is free.** control vs native is +0.02%, +0.01%,
++0.02%, +0.19%, -0.10% across the five clean metrics -- indistinguishable from
+zero, which is the target.
+
+**The replay regression is real.** Five metrics show *complete separation*:
+every replay sample is worse than every control sample. With n=6 per arm that
+is a Mann-Whitney U result at p = 2/C(12,6) ~= 0.0022 per metric. The
+confounded first run reached this conclusion by luck; it now stands on a
+design that can support it.
+
+pp256 overlaps and carries a 624.57 outlier against a 697.60 median -- it is
+startup-sensitive, and per dev-gpt-agent's review must not drive diagnosis.
+Position means span only 0.35% (tg128) and 0.19% (pp4096), so drift was not
+large enough to have produced the original result on its own -- but it is the
+same order as the effect being measured, which is why balancing stays
+mandatory.
+
+### Still confounded: winners vs build variant
+
+`replay` and `control` are different binaries -- replay is built with
+`GGML_HIP_DISPATCH_REPLAY=ON`. So "the 19 winners are harmful" and "the replay
+build variant is slower" both fit the table above. `isolate-winners.sh` runs
+the SAME replay binary with the winner cache on and off, holding build variant
+constant, and also records MTP draft acceptance so a work-rate difference
+cannot masquerade as a throughput difference. Launched 2026-09-06T03:07,
+8 rounds / 16 cells.
