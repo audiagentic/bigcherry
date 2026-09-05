@@ -241,9 +241,25 @@ comparing two numbers, which is where every real mistake has happened. Each
 rule below exists because it was broken, and each time the result was reported
 before the defect was found. Treat them as required, not advisory.
 
-Use `tools/lab/gp11-replay-bench/ab-balanced.sh`, which implements all of this,
-rather than writing a new script. If you write your own, it must satisfy every
-rule here.
+**Use `bigcherry ab-benchmark`.** It is paired and interleaved, takes
+`--pairs`, `--schedule-seed`, `--settle-seconds`, `--practical-threshold-pct`
+and `--decision-grade`, and verifies build composition through
+`--stock-cmake-cache`/`--patched-cmake-cache`. It already implements every rule
+below.
+
+Do not write a new harness. `tools/lab/gp11-replay-bench/ab-balanced.sh` was
+written from scratch in ignorance of `ab-benchmark`, reimplemented order
+balancing badly, and produced a result that had to be retracted for a confound
+`ab-benchmark` already handles. It survives only as a record of that.
+
+For the questions a throughput A/B cannot answer:
+
+| question | command |
+|---|---|
+| what fraction of time does each kernel take | `bigcherry kernel-fraction` over rocprofv3 kernel-trace CSVs |
+| what saving should tuning predict | `bigcherry impact --observations <record jsonl> --measurements <promoted.jsonl>` |
+| repeatable deep profiling | `bigcherry profile-campaign` (docs/reference/tooling/PROFILING.md) |
+| which candidate served which dispatch | `[build.replay-diagnostic]` + `GGML_HIP_DISPATCH_HIT_LOG` |
 
 ### 1. Never run arms in a fixed order
 
