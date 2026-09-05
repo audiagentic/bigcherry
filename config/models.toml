@@ -77,3 +77,13 @@ parameters = "35B-A3B"
 size-bytes = 17329854048
 mtp = true
 notes = "MIXTURE-OF-EXPERTS lane, added 2026-09-05 to break a specific hypothesis rather than to add coverage for its own sake. Every other model here is dense, so a graph-cache or shape-recurrence claim measured only on them is measured on one kind of recurring-shape population; MoE expert routing produces a different one. RD73 is the immediate motivation -- it ships on the strength of dense-model evidence. 17.3GB fits comfortably on the single 34.2GB gfx1201 card with room for KV, unlike this family's 30.0GB UD-Q6_K, which would leave ~4GB and risk OOM. Caveat worth stating: APEX-MTP-I-Compact is a derived quantisation, not a stock one. That does not confound an A/B (both arms load the same file) but it does mean results here describe this checkpoint, not Q6_K/Q8_0 behaviour generally."
+
+[[models]]
+id = "tierB-qwen9b-q6k"
+family = "qwen3.5-9B"
+path = "qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf"
+quantisation = "Q6_K"
+parameters = "9B"
+size-bytes = 7684551008
+mtp = true
+notes = "CROSS-ARCHITECTURE REFERENCE lane, added 2026-09-05. Its job is to be the model held CONSTANT while architecture varies, so an architecture-transfer result is not confounded by also changing the model. That requires fitting the SMALLEST supported card: gfx1030 (RX 6900 XT) has 16GiB, so tierL-qwen27b-q8 at 29GB is impossible there and cannot serve this role. At 7.7GB this fits gfx1030, gfx1100 and gfx1201 with real headroom for KV. Dense and MTP-capable, so it exercises the same speculative-verify workload the existing lanes use. Stock Q6_K deliberately -- not a UD/APEX derived quant -- because a reference lane should not carry an unusual quantisation as a hidden variable."
