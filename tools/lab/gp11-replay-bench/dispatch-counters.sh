@@ -49,6 +49,14 @@ export GGML_HIP_DISPATCH_COUNTERS=1
 # exactly like a working replay arm. Every bench in this session before this
 # line was added measured a switched-off dispatch layer.
 export GGML_HIP_DISPATCH_MODE=${DISPATCH_MODE:-replay}
+# THE evidence channel. llama-server installs a log callback that swallows the
+# library's GGML_LOG_INFO lines, so the startup cache-load line and the
+# shutdown counter/coverage reports NEVER appear on stdout or stderr -- which
+# is why runs that looked silent were in fact working. The JSON coverage file
+# is written from the same flush hook (anchored at ggml_backend_cuda_free) and
+# is the only reliable way to see what the dispatch layer did.
+export GGML_HIP_DISPATCH_COVERAGE=${COVERAGE_JSON:-/tmp/coverage.json}
+rm -f "$GGML_HIP_DISPATCH_COVERAGE"
 # Without this the /shutdown route is never registered and the counter report
 # -- which is emitted at shutdown -- is lost to kill -9. See TEST.md.
 export LLAMA_SERVER_ENABLE_SHUTDOWN=1
@@ -75,6 +83,8 @@ fi
 for i in $(seq 1 60); do kill -0 $P 2>/dev/null || break; sleep 1; done
 kill -9 $P 2>/dev/null
 
-echo "--- counters ---" >> "$OUT"
+echo "--- counters (log channel, usually empty: see note above) ---" >> "$OUT"
 grep -aE "dispatch counters|native-force sites|dispatch coverage|replay v2|native-select timing" /tmp/counters.log >> "$OUT"
+echo "--- coverage json (the real evidence) ---" >> "$OUT"
+cat "$GGML_HIP_DISPATCH_COVERAGE" >> "$OUT" 2>/dev/null || echo "NO COVERAGE FILE -- backend teardown did not run" >> "$OUT"
 echo "DISPATCH_COUNTERS_DONE" >> "$OUT"

@@ -38,4 +38,18 @@ void ggml_hip_coverage_count_dispatched(ggml_hip_kernel_family family);
 // GGML_HIP_DISPATCH_COVERAGE if set, otherwise logs a summary.
 void ggml_hip_coverage_report();
 
+// Defined in hip-autotune-dispatch.cu. Appends the hot-path counters to the
+// coverage JSON as a "dispatch" object, or writes nothing when they are
+// disabled.
+//
+// This exists because the log channel is unusable under llama-server: it
+// installs a log callback that swallows the library's GGML_LOG_INFO lines
+// entirely, so the counter report, the native-force report and the startup
+// replay cache-load line NEVER reach stdout or stderr. Runs that looked
+// completely silent -- and were read as "the dispatch layer never ran" --
+// were in fact working the whole time. The JSON file is the only channel
+// that survives, so anything needed to interpret a benchmark has to go here
+// rather than into a log line.
+void ggml_hip_dispatch_counters_write_json(void * out_file);
+
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

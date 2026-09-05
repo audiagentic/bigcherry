@@ -313,6 +313,49 @@ struct NativeSelectTiming {
 static NativeSelectTiming g_native_select_timing;
 
 // HI159: same fix as dispatch_counters_enabled -- see the comment there.
+// The counters, into the coverage JSON. See hip-autotune-coverage.h for why
+// the log channel cannot be used. `out_file` is a FILE* passed as void* so the
+// header does not have to pull in <stdio.h> for every includer.
+void ggml_hip_dispatch_counters_write_json(void * out_file) {
+    if (!dispatch_counters_enabled() || out_file == nullptr) {
+        return;
+    }
+    FILE * out = (FILE *) out_file;
+    const DispatchCounters & c = g_dispatch_counters;
+    const uint64_t l1h = c.l1_hits.load(std::memory_order_relaxed);
+    const uint64_t l1m = c.l1_misses.load(std::memory_order_relaxed);
+    fprintf(out,
+            ",\n  \"dispatch\": {"
+            "\"entries\": %llu, \"native_select_calls\": %llu, "
+            "\"l1_hits\": %llu, \"l1_misses\": %llu, "
+            "\"l1_hit_rate_pct\": %.3f, "
+            "\"l2_hits\": %llu, \"l2_misses\": %llu, "
+            "\"l3_lookups\": %llu, \"l3_hits\": %llu, "
+            "\"hw_key_builds\": %llu, \"sig_digest_builds\": %llu, "
+            "\"native_forced_entry_guard\": %llu, "
+            "\"native_forced_native_mode\": %llu, "
+            "\"native_invalid_probed\": %llu, "
+            "\"native_invalid_with_l1_hit\": %llu, "
+            "\"final_tuned_launches\": %llu, "
+            "\"final_native_launches\": %llu}",
+            (unsigned long long) c.dispatch_entries.load(std::memory_order_relaxed),
+            (unsigned long long) c.native_select_calls.load(std::memory_order_relaxed),
+            (unsigned long long) l1h, (unsigned long long) l1m,
+            (l1h + l1m) ? 100.0 * (double) l1h / (double) (l1h + l1m) : 0.0,
+            (unsigned long long) c.l2_hits.load(std::memory_order_relaxed),
+            (unsigned long long) c.l2_misses.load(std::memory_order_relaxed),
+            (unsigned long long) c.l3_lookups.load(std::memory_order_relaxed),
+            (unsigned long long) c.l3_hits.load(std::memory_order_relaxed),
+            (unsigned long long) c.hardware_key_builds.load(std::memory_order_relaxed),
+            (unsigned long long) c.signature_digest_builds.load(std::memory_order_relaxed),
+            (unsigned long long) c.native_forced_entry_guard.load(std::memory_order_relaxed),
+            (unsigned long long) c.native_forced_native_mode.load(std::memory_order_relaxed),
+            (unsigned long long) c.native_invalid_probed.load(std::memory_order_relaxed),
+            (unsigned long long) c.native_invalid_with_l1_hit.load(std::memory_order_relaxed),
+            (unsigned long long) c.final_tuned_launches.load(std::memory_order_relaxed),
+            (unsigned long long) c.final_native_launches.load(std::memory_order_relaxed));
+}
+
 static bool native_select_timing_enabled() {
     static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_NATIVE_SELECT_TIMING");
