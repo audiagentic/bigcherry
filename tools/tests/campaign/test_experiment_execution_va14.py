@@ -139,6 +139,53 @@ class RunPairedLaneTests(unittest.TestCase):
         self.assertEqual(effect.metric, "tg128")
         self.assertGreater(effect.geometric_effect_pct, 0)
 
+    def test_lane_effect_carries_the_ratio_vector_through(self):
+        # RV99, and a REAL escape: this converter is the only thing that turns
+        # a paired run into a LaneEffect, and it silently dropped pair_ratios.
+        # block_bootstrap_effect() produced them and LaneEffect had the field,
+        # so both ends looked correct while nothing joined them. Every lane
+        # effect the campaign produced therefore arrived with pair_ratios=(),
+        # and session aggregation over them counted ZERO sessions while
+        # reporting a healthy-looking record. Caught only on hardware, after a
+        # governed run wrote lane_effects with pairs=0.
+        runner = _fake_runner({"control_bin": 100.0, "subject_bin": 110.0})
+        result = ex.run_paired_lane(
+            metric="tg128", control_command=["control_bin"],
+            subject_command=["subject_bin"], pattern=METRIC_PATTERN, pairs=3, runner=runner,
+        )
+        effect = ex.lane_effect_from_run("positive", "tg128", result)
+        self.assertEqual(len(effect.pair_ratios), 3)
+        self.assertEqual(effect.pair_ratios, tuple(result.stats["pair_ratios"]))
+        self.assertEqual(len(effect.pair_ratios), effect.paired_rounds)
+        # A vector of the right length is not enough -- it must be the real
+        # per-pair ratios, i.e. consistent with the effect they produced.
+        self.assertTrue(all(ratio > 1.0 for ratio in effect.pair_ratios))
+
+    def test_a_lane_effect_actually_yields_a_countable_session(self):
+        # The end the failure was noticed at: a LaneEffect must survive the
+        # whole path into a session the aggregator can count. Asserting the
+        # field alone would not have caught an empty vector reaching this far.
+        runner = _fake_runner({"control_bin": 100.0, "subject_bin": 110.0})
+        effects = [
+            ex.lane_effect_from_run("positive", "tg128", ex.run_paired_lane(
+                metric="tg128", control_command=["control_bin"],
+                subject_command=["subject_bin"], pattern=METRIC_PATTERN,
+                pairs=3, runner=runner,
+            ))
+            for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)
+        ]
+        records = [
+            {"lane_effects": [{
+                "role": effect.role, "metric": effect.metric,
+                "pair_ratios": list(effect.pair_ratios),
+            }]}
+            for effect in effects
+        ]
+        aggregated = ec.aggregate_session_effects(
+            records, field="gain", role="positive", metric="tg128")
+        self.assertEqual(aggregated["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertIn("gain_ci95_low", aggregated)
+
 
 class TriggerEvidenceFromMarkerProbeTests(unittest.TestCase):
     def test_positive_hit_records_launch_observed(self):

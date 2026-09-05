@@ -181,6 +181,16 @@ def lane_effect_from_run(role: str, metric: str, run: PairedLaneRun) -> experime
         ci95_low_pct=run.stats.get("ci95_low_pct"),
         ci95_high_pct=run.stats.get("ci95_high_pct"),
         paired_rounds=paired_rounds,
+        # RV99: carry the ratio vector through. block_bootstrap_effect()
+        # returns it and LaneEffect has always had the field, but this
+        # converter -- the only thing that turns a real paired run into a
+        # LaneEffect -- silently dropped it, so every lane effect the campaign
+        # produced arrived with pair_ratios=() and any session aggregation
+        # over them counted ZERO sessions while looking perfectly healthy.
+        # Caught on hardware: a governed session wrote lane_effects with
+        # pairs=0, which would have made the session policy demand more
+        # evidence for ever, one 13-minute run at a time.
+        pair_ratios=tuple(run.stats.get("pair_ratios") or ()),
     )
 
 
