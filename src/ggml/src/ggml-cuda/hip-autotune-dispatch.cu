@@ -154,8 +154,14 @@ int ggml_hip_dispatch_mode() {
 // L2 (process-global)/L3 (replay-DB) cache hit rates, native-selector and
 // hardware-key/signature-digest construction counts. Zero cost when disabled:
 // every increment site below is guarded by dispatch_counters_enabled(), never
-// unconditional, matching the check-once/atomic-bool pattern
-// GGML_HIP_TUNE_TRACE_ATTEMPTS already established (hip-autotune-tuner.cu).
+// unconditional.
+//
+// HI159: "zero cost when disabled" was previously asserted here and was NOT
+// true. The guard itself did an atomic exchange on every call, so the disabled
+// path still wrote to a shared cache line several times per dispatch. It is
+// true now, because the guard is a function-local static; do not reintroduce
+// the checked/enabled atomic-pair idiom that hip-autotune-tuner.cu's
+// GGML_HIP_TUNE_TRACE_ATTEMPTS established -- audit that one too.
 // Pure diagnostic -- no behavior this file's callers observe changes whether
 // this is on or off.
 struct DispatchCounters {
@@ -188,6 +194,19 @@ struct DispatchCounters {
     // it. Named for what it observes, not for the conclusion it might reach.
     std::atomic<uint64_t> native_invalid_probed{0};
     std::atomic<uint64_t> native_invalid_with_l1_hit{0};
+    // HI160: the only counters that answer "did a tuned kernel actually run?".
+    //
+    // An exact replay hit is NOT sufficient evidence. After an exact hit the
+    // resolver still revalidates the cached candidate -- can_execute, arch
+    // support, blacklist, transform applicability -- and can replace the
+    // binding with native. So a run can report exact hits and still launch
+    // native for every one of them, and every replay benchmark to date could
+    // not tell those cases apart.
+    //
+    // These increment at the real launch point, after every validation, which
+    // is the only place the question is actually decided.
+    std::atomic<uint64_t> final_tuned_launches{0};
+    std::atomic<uint64_t> final_native_launches{0};
 };
 
 static DispatchCounters g_dispatch_counters;
@@ -218,24 +237,39 @@ static void report_dispatch_counters() {
     GGML_LOG_INFO(
         "bigcherry: native-force sites -- entry_guard=%llu native_mode=%llu "
         "tune=%llu record=%llu miss=%llu | native-invalid probed=%llu "
-        "with-L1-hit=%llu (any nonzero refutes the guard-move premise)\n",
+        "with-L1-hit=%llu (any nonzero refutes the guard-move premise) | "
+        "FINAL launches tuned=%llu native=%llu "
+        "(tuned==0 with a loaded cache means nothing was actually tuned, "
+        "however many exact hits were reported)\n",
         (unsigned long long) g_dispatch_counters.native_forced_entry_guard.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_native_mode.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_tune.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_record.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_forced_miss.load(std::memory_order_relaxed),
         (unsigned long long) g_dispatch_counters.native_invalid_probed.load(std::memory_order_relaxed),
-        (unsigned long long) g_dispatch_counters.native_invalid_with_l1_hit.load(std::memory_order_relaxed));
+        (unsigned long long) g_dispatch_counters.native_invalid_with_l1_hit.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.final_tuned_launches.load(std::memory_order_relaxed),
+        (unsigned long long) g_dispatch_counters.final_native_launches.load(std::memory_order_relaxed));
 }
 
+// HI159: a function-local static, NOT a checked/enabled atomic pair.
+//
+// The previous form called `checked.exchange(true)` on every invocation, not
+// just the first. exchange is an unconditional read-modify-WRITE, so every
+// call from every thread took exclusive ownership of that cache line purely
+// to discover that diagnostics are off -- and this is called several times
+// per dispatch. A contended write is considerably worse than the relaxed
+// per-family fetch_adds elsewhere in this file, which at least touch
+// different lines per family.
+//
+// A magic static is initialised exactly once, thread-safely, by the standard;
+// after initialisation the cost is a guard load, not an RMW.
 static bool dispatch_counters_enabled() {
-    static std::atomic<bool> enabled{false};
-    static std::atomic<bool> checked{false};
-    if (!checked.exchange(true)) {
+    static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_DISPATCH_COUNTERS");
-        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
-    }
-    return enabled.load(std::memory_order_relaxed);
+        return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
+    }();
+    return enabled;
 }
 
 // ------------------------------------------- native-select sampled-cost timing
@@ -278,14 +312,13 @@ struct NativeSelectTiming {
 };
 static NativeSelectTiming g_native_select_timing;
 
+// HI159: same fix as dispatch_counters_enabled -- see the comment there.
 static bool native_select_timing_enabled() {
-    static std::atomic<bool> enabled{false};
-    static std::atomic<bool> checked{false};
-    if (!checked.exchange(true)) {
+    static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_NATIVE_SELECT_TIMING");
-        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
-    }
-    return enabled.load(std::memory_order_relaxed);
+        return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
+    }();
+    return enabled;
 }
 
 static bool native_select_timing_should_sample_native_select() {
@@ -1170,6 +1203,18 @@ void ggml_hip_dispatch_launch(const ggml_hip_resolved_dispatch & bound,
                               const ggml_hip_launch_context & lc) {
     GGML_ASSERT(bound.candidate != nullptr);
     GGML_ASSERT(bound.candidate->launch != nullptr);
+
+    // HI160: counted HERE, at the executor, because this is the first point
+    // at which the question "did a tuned kernel run?" has a final answer.
+    // `from_cache` is false for a native fallback, including one substituted
+    // after an exact cache hit failed revalidation.
+    if (dispatch_counters_enabled()) {
+        if (bound.from_cache) {
+            g_dispatch_counters.final_tuned_launches.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            g_dispatch_counters.final_native_launches.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
 
 #ifdef GGML_HIP_ROUTING_TRANSFORM
     // HI31: nullptr is the fast path -- no allocation, no signature rebuild,
