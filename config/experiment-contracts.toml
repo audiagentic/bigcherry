@@ -704,13 +704,46 @@ bit_identical = "required"
 #    regressions", so the regression side should be the strict side.
 #
 # Net: this is a more consistent and, on the regression axis, a stricter gate.
-# It is NOT a licence to promote noise -- see VA24, which adds the statistical
-# significance requirement (effect CI must exclude zero) that this point-
-# estimate comparison cannot express today. Until VA24 lands, a result at or
-# just above 1.0 with a CI straddling zero must not be treated as a pass by a
-# human reader merely because the arithmetic gate allows it.
+#
+# WHAT 1.0% MEANS, and its honest provenance (VA24 migration, 2026-09-05).
+#
+# 1.0% is an ENGINEERING MATERIALITY floor, not a measured noise-floor estimate
+# and not a mathematically derived number. RD73 introduces persistent
+# fork-local graph-cache identity behaviour with ongoing correctness,
+# resource-usage, compatibility and rebase maintenance cost, and it trades a
+# measured ~68.7% increase in peak graph_cache_entries (386 -> 651) for its
+# timing effect. A smaller end-to-end benefit is not considered sufficient to
+# justify carrying that complexity, even though the mechanism demonstrably
+# works. Note the separation:
+#
+#     recapture rate 49.6% -> 38.9%   = evidence the MECHANISM works
+#     >= +1.0% end-to-end             = evidence it is WORTH RETAINING
+#
+# The recapture-rate reduction is mechanism evidence, not the performance
+# acceptance criterion.
+#
+# PROVENANCE, recorded rather than rewritten: this threshold was set at 1.0
+# AFTER observing that a real run measured +1.855% against the previous 3.0
+# bar. It is therefore a post-observation engineering threshold, and is
+# unavoidably anchored to that extent. It is frozen here deliberately so the
+# NEXT qualification is the first evidence weighed against it; the earlier
+# 1.855% / CI [1.482, 2.169] result counts as pre-registration evidence only
+# and must not be cited as satisfying this contract.
+#
+# Per review it was deliberately NOT raised to ~1.4-1.5 to "safely clear" the
+# observed result -- that would have been visibly tuning the threshold to the
+# data (dev-gpt-agent, req_cd86e5fd4a3b4328 / req_875d13b29a204075).
 end_to_end_gain_pct = 1.0
 max_control_regression_pct = 1.0
+# VA24: the bound must be established by the interval, not the point estimate.
+# min_paired_rounds is required with this policy: run_paired_lane() accepts
+# pairs=1, whose bootstrap yields a degenerate interval that can look
+# arbitrarily significant. 10 matches this contract's own planned measurement
+# depth for its primary effect; it is an engineering/statistical floor, not a
+# derived constant, and a different number should come from calibration
+# against historical paired-round variance rather than from lane role.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [[contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance.resource_limits]]
 metric = "graph_cache_entries"

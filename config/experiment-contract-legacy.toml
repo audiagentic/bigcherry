@@ -99,7 +99,7 @@ waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "7fc8bff85135614657aac3d4e6c616b7"
 migration = "VA24"
 
-[legacy.RD73-STABLE-GRAPH-CACHE-KEY]
-waiver_class = "pre_va24_point_estimate"
-baseline_contract_hash = "4026ac5fc4c6fdcae2b312c3b6e2957b"
-migration = "VA24"
+# RD73-STABLE-GRAPH-CACHE-KEY was REMOVED on 2026-09-05: it migrated to
+# effect_evidence_policy = "ci95_threshold_bound_v1" with min_paired_rounds = 10.
+# Entries are only ever removed, never added -- this is what migration looks
+# like in this file.
