@@ -34,7 +34,47 @@ def parse(path):
     return rows
 
 
+def check_activation(path):
+    """HI160: refuse to summarise a cache arm that cannot prove it was tuned.
+
+    An exact replay hit is NOT evidence a tuned kernel ran: after an exact hit
+    the resolver revalidates the cached candidate (can_execute, arch support,
+    blacklist, transform applicability) and can substitute native. So the only
+    trustworthy signal is a launch-point count. Printing a tidy table for a run
+    that never dispatched a winner is how the last three conclusions got
+    retracted, so this fails loudly instead.
+    """
+    text = open(path).read()
+    arms_with_cache = set(re.findall(r"arm=(\S+) cacheload: (?!none)", text))
+    problems = []
+    if "WARN shutdown-endpoint-unavailable" in text:
+        problems.append(
+            "a server did not shut down through /shutdown, so the replay and "
+            "coverage reports were destroyed (LLAMA_SERVER_ENABLE_SHUTDOWN unset, "
+            "or patch 0800 absent from that build)"
+        )
+    for arm in sorted(arms_with_cache):
+        tuned = re.findall(rf"arm={re.escape(arm)}.*?tuned=(\d+)", text)
+        if not tuned:
+            problems.append(
+                f"arm {arm} loaded a cache but reported no final launch counts "
+                f"-- cannot distinguish 'winners are neutral' from 'cache never hit'"
+            )
+        elif all(int(t) == 0 for t in tuned):
+            problems.append(
+                f"arm {arm} loaded a cache and launched ZERO tuned kernels "
+                f"-- every exact hit was replaced by native at revalidation"
+            )
+    if problems:
+        print("ACTIVATION EVIDENCE FAILED -- this run cannot support a result:\n")
+        for p in problems:
+            print(f"  * {p}")
+        print("\nSee docs/reference/testing/TEST.md, 'Comparative A/B benchmarking'.\n")
+    return not problems
+
+
 def main(path):
+    check_activation(path)
     rows = parse(path)
     arms = sorted({a for _, _, a, _ in rows})
     base = "control" if "control" in arms else arms[0]
