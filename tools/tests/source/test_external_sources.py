@@ -125,7 +125,11 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # establishing that its evidence holds. Collapsing the two would force
     # every validated patch to ship the moment it qualified.
     VALIDATED_RDNA_PATCHES = frozenset({"1233_rd73_stable_graph_cache_key"})
-    SHIPPED_RDNA_PATCHES = frozenset()
+    # Added to patch-set.validated-enhancements on 2026-09-05, which
+    # [source.bigcherry] composes on top of framework -- so the release build
+    # genuinely runs it. Shipping is the second axis, taken deliberately after
+    # the evidence axis was satisfied, not automatically with it.
+    SHIPPED_RDNA_PATCHES = frozenset({"1233_rd73_stable_graph_cache_key"})
 
     # Patches retired from the first-sweep pool because upstream shipped the
     # same fix independently (STATE = "superseded", not "rejected" -- the

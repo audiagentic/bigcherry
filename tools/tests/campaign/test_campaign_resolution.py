@@ -67,13 +67,56 @@ class CampaignResolutionTests(unittest.TestCase):
                 if module.state == "validated" and module.patch_id in framework_patch_ids),
             14,
         )
-        # RD19 was promoted to validated-enhancements on 2026-08-24, but
-        # that promotion post-dated the HI83 evidence contract with no
-        # qualifying evidence produced (see
-        # docs/planning/active/patch-system/PA05.md). Owner disposition
-        # (2026-08-25): deliberately demoted back to untested pending real
-        # HI83 evidence, so validated-enhancements is empty again.
+        # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
+        # a promoted enhancement. That separation is what makes it usable as
+        # the control arm of a validation campaign: if enhancements leaked in
+        # here, every A/B would be measured against a moving baseline.
+        #
+        # This assertion caught a real defect the moment validated-enhancements
+        # stopped being empty (2026-09-05, RD73): promoted_enhancements
+        # returned the whole global set for EVERY source, so the
+        # framework-only control source reported an enhancement it does not
+        # build. Selection itself was always correct; the report was not.
+        #
+        # (RD19 was briefly in validated-enhancements on 2026-08-24; that
+        # promotion post-dated the HI83 evidence contract with no qualifying
+        # evidence, and was deliberately reverted -- see
+        # docs/planning/active/patch-system/PA05.md.)
         self.assertEqual(lane.promoted_enhancements, ())
+        # ...and belt-and-braces on the thing that actually gets built.
+        non_empty = self.cfg.patch_sets["validated-enhancements"].patches
+        for patch_id in non_empty:
+            self.assertNotIn(
+                patch_id, lane.patch_set.module_ids,
+                f"{patch_id} leaked into the framework-only control source",
+            )
+
+    def test_release_source_is_framework_plus_validated_enhancements(self):
+        """[source.bigcherry] is the release build: framework + whatever has
+        actually qualified. This pins the STRUCTURE rather than a count, so
+        promoting a patch does not break the test -- only breaking the
+        composition does."""
+        native = campaign_resolution.resolve_lane(
+            "bigcherry-native", self.cfg, self.catalog)
+        release = campaign_resolution.resolve_lane(
+            "bigcherry", self.cfg, self.catalog)
+
+        native_ids = set(native.patch_set.module_ids)
+        release_ids = set(release.patch_set.module_ids)
+
+        # The release build is a strict superset of the native baseline...
+        self.assertTrue(native_ids <= release_ids)
+        # ...and everything extra is exactly the promoted enhancements.
+        self.assertEqual(release_ids - native_ids, set(release.promoted_enhancements))
+        # Every promoted enhancement must really be STATE="validated" --
+        # required-state on the patch-set is what enforces this, and a
+        # release build must never ship an unvalidated patch.
+        by_id = {module.patch_id: module for module in self.catalog}
+        for patch_id in release.promoted_enhancements:
+            self.assertEqual(
+                by_id[patch_id].state, "validated",
+                f"{patch_id} is in a release patch-set but is not validated",
+            )
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(

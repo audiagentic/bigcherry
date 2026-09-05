@@ -24,7 +24,36 @@ patches = [
 required-state = "validated"
 
 [patch-set.validated-enhancements]
-patches = []
+# The production/release enhancement set: performance patches that have
+# ACTUALLY qualified, composed on top of `framework` by [source.bigcherry].
+# This is what separates a release build from bigcherry-native.
+#
+# Entry bar is deliberately higher than `required-state = "validated"` alone.
+# STATE is a durable lifecycle label; it does NOT mean current qualifying
+# evidence exists. Of the 17 patches currently marked validated, 14 hold only
+# the one-time HI83 legacy grandfather waiver and 2 report missing-or-stale.
+# A patch belongs here when `patch-verify-evidence` reports
+# validated-evidence against the ACTIVE pin -- otherwise a release build
+# would ship on the strength of a label rather than a measurement.
+#
+# Adding one is a deliberate act with a real consequence: production runs it.
+# Record what qualified it and what the evidence does NOT cover.
+patches = [
+  # +1.8886% end-to-end, 95% CI [1.4754, 2.3523] over 6 pre-registered
+  # sessions; 0.0% control regression; bit-identical output; peak
+  # graph_cache_entries 386 -> 651, inside its declared 800 budget.
+  # Contract RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d, promoted 2026-09-05.
+  #
+  # SCOPE OF THE EVIDENCE, which is narrower than where this now runs: it was
+  # measured on the MTP speculative-verify workload, model tierL-qwen27b-q8,
+  # on gfx1100 (its only validation-architecture). Shipping applies it to
+  # every workload, model and architecture. The mechanism -- a shape
+  # fingerprint replacing an allocation-dependent graph-cache key -- is
+  # workload-agnostic, output is bit-identical, and a fingerprint collision
+  # costs only an extra recapture (the per-node memcmp check is unchanged),
+  # so the risk is low. It is not zero, and it is not what was measured.
+  "1233_rd73_stable_graph_cache_key",
+]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
