@@ -52,6 +52,12 @@ cell () {
   export ROCR_VISIBLE_DEVICES=$DEVICES HIP_VISIBLE_DEVICES=$DEVICES LD_LIBRARY_PATH=$(dirname "$bin")
   if [ "$usecache" = "yes" ]; then export GGML_HIP_DISPATCH_CACHE=$CACHE_PATH; else unset GGML_HIP_DISPATCH_CACHE; fi
   rm -f /tmp/r.log
+  # Patch 0800_server_shutdown_endpoint only REGISTERS the /shutdown route when
+  # this is set -- without it the POST 404s and teardown falls back to kill -9,
+  # which is what silently destroyed the replay hit/miss report on every run
+  # before this. Setting the variable is not optional decoration; it is what
+  # makes graceful shutdown exist at all.
+  export LLAMA_SERVER_ENABLE_SHUTDOWN=1
   nohup "$bin" -m "$M" --port $PORT --host 127.0.0.1 --parallel 1 --metrics \
     -sm tensor --fit off --spec-type draft-mtp --spec-draft-n-max 4 > /tmp/r.log 2>&1 &
   local P=$!
@@ -70,9 +76,30 @@ cell () {
   # clean the numbers look.
   local ACC=$(grep -aoE "draft acceptance = [0-9.]+" /tmp/r.log | tail -1)
   echo "round=$round pos=$pos arm=$name mtp: ${ACC:-none}" >> "$OUT"
-  # kill -9 is safe only because no arm here records tune measurements; a tune
-  # run must shut down via /shutdown or its buffered measurements are lost.
-  kill -9 $P 2>/dev/null; sleep 6
+  # Did the cache actually LOAD? Logged at startup, so it survives any teardown.
+  local LOADED=$(grep -a "replay cache .* loaded" /tmp/r.log | tail -1)
+  echo "round=$round pos=$pos arm=$name cacheload: ${LOADED:-none}" >> "$OUT"
+  # Shut down through /shutdown, NOT kill -9.
+  #
+  # An earlier version of this harness used kill -9 on the grounds that no arm
+  # records tune measurements, so nothing buffered would be lost. That reasoning
+  # was incomplete: the replay hit/miss report ("replay v2 N winner(s);
+  # exact=.. miss=..") is emitted by the coverage reporter at SHUTDOWN, and
+  # kill -9 destroys it. So every run to date measured a cache arm without ever
+  # confirming the cache was consulted, let alone hit -- which makes "the
+  # winners are neutral" and "the cache never resolved" indistinguishable.
+  # That is the difference between a result and no result.
+  if ! curl -sf -X POST -o /dev/null "http://127.0.0.1:$PORT/shutdown" 2>/dev/null; then
+    # Loud, not silent: a 404 here means LLAMA_SERVER_ENABLE_SHUTDOWN did not
+    # reach the server or 0800 is not in this build, and the run is about to
+    # lose exactly the evidence it exists to collect.
+    echo "round=$round pos=$pos arm=$name WARN shutdown-endpoint-unavailable" >> "$OUT"
+  fi
+  for i in $(seq 1 30); do kill -0 $P 2>/dev/null || break; sleep 1; done
+  kill -9 $P 2>/dev/null
+  local REPLAYSTAT=$(grep -aE "replay v2 .* winner|dispatch coverage" /tmp/r.log | tail -2 | tr '\n' ' ')
+  echo "round=$round pos=$pos arm=$name replaystat: ${REPLAYSTAT:-none}" >> "$OUT"
+  sleep 6
 }
 
 : > "$OUT"
