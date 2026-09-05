@@ -171,7 +171,10 @@ plan item. They are not a license to alter another actor's in-progress work.
 
 Keep ownership distinct:
 
-- `docs/planning/` owns current scope, decisions, status, and acceptance;
+- `docs/planning/` owns current scope, decisions, status, and plan-level
+  acceptance criteria;
+- `config/experiment-contracts.toml` owns scientific Experiment Contract
+  obligations, thresholds, and acceptance policy;
 - `docs/evidence/<run-id>/` owns compact, tracked proof of a particular run;
 - `artifacts/<run-id>/` owns large or machine-local outputs and raw traces;
 - `patches/<patch-id>/` owns patch contracts, fixtures, and patch evidence; and
@@ -201,3 +204,4 @@ stage another actor's work.
 For generated agent surfaces, edit the owning component/configuration and
 re-apply it. Do not edit managed blocks in `AGENTS.md` or `CLAUDE.md`
 directly.
+

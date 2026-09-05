@@ -1,7 +1,10 @@
 # Family model — verified against upstream
 
 Assessment of the expanded family taxonomy, checked against the vendored
-`llama.cpp` tree rather than accepted on description. See [COVERAGE_AUDIT.md](../testing/COVERAGE_AUDIT.md) for what the tuner can and cannot choose between at runtime.
+`llama.cpp` tree rather than accepted on description. See the historical
+[COVERAGE_AUDIT.md](../../archive/COVERAGE_AUDIT.md) snapshot for what the
+tuner could choose between in the cited HI34 work; verify current selectors
+against the code and configuration before acting.
 
 ---
 
@@ -281,3 +284,4 @@ not.
 | MMF | `(kernel_type, width, nwarps)` | type, shape, architecture | implemented |
 | BLAS *(incl. DQ)* | `(conversion_route, compute_type, output_conversion_route, provider, api_strategy, provider_policy)` | src0/src1/dst types, layout, batch structure, `prec` | **new — HI17** |
 | SPLIT_REDUCE | `(preferred_algorithm, fallback_policy)` | devices, topology, reduction shape/type, peer access | **new — HI18** |
+

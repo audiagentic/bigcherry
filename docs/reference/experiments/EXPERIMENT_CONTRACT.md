@@ -12,7 +12,7 @@ family, dispatch key, benchmark framework, or runtime model dispatcher.
   `tools/bigcherry/experiment/contract.py`
 - Real per-lane paired execution: `tools/bigcherry/experiment/execution.py`
   (VA14 — see
-  [PATCH_VALIDATION.md's "Real contract-execution architecture"](../testing/PATCH_VALIDATION.md#real-contract-execution-architecture-va14)
+  [PATCH_VALIDATION.md's "Real contract-execution architecture"](../testing/PATCH_VALIDATION.md#real-contract-execution-architecture)
   for the full picture, including `patch/validation_campaign.py`'s
   validation-domain build/lane wiring). `tools/bigcherry/campaign/` provides
   shared statistics/environment primitives (`block_bootstrap_effect()`,
@@ -277,3 +277,4 @@ evidence document and returns failure when the promotion gate fails.
 When adding a contract, update its owning plan item and add schema/identity,
 negative-case, lane-expansion, evidence, and promotion-gate tests. Keep
 historical design discussions in `docs/archive/`, not in this reference.
+

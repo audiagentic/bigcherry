@@ -103,8 +103,9 @@ canonical contract/evidence record.
 
 ## Summary checklist for a new large multi-GPU model validation lane
 
-- [ ] `-sm tensor` on every `llama-server`/`llama-bench` invocation
-- [ ] `--fit off` on `llama-server` invocations only -- never on
+- [ ] `-sm tensor` on every `llama-server`/`llama-bench` invocation in this
+      Brutus RD73 multi-GPU lane
+- [ ] `--fit off` on `llama-server` invocations in this lane only -- never on
       `llama-bench`
 - [ ] Never launch two servers needing a large fraction of VRAM each at
       the same time; check the real math (`model_size / gpu_count` vs.
@@ -114,3 +115,4 @@ canonical contract/evidence record.
       own long-lived, non-concurrent session
 - [ ] If using the Brutus bench runner, parse both "Aggregated Results"
       and "Extracted Results" headers
+

@@ -28,7 +28,6 @@ at the top level.
 | [testing/PATCH_VALIDATION.md](testing/PATCH_VALIDATION.md) | Patch evidence, contract gates, campaign capabilities, and lifecycle semantics | Creating, testing, validating, promoting, or demoting a patch |
 | [testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md](testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped Brutus findings for large multi-GPU validation lanes | Designing a large-model server/benchmark lane |
 | [testing/RCCL_HETEROGENEOUS_RUNBOOK.md](testing/RCCL_HETEROGENEOUS_RUNBOOK.md) | RCCL heterogeneous source viability, correctness, qualification, and replay runbook | Investigating or qualifying heterogeneous RCCL |
-| [testing/COVERAGE_AUDIT.md](testing/COVERAGE_AUDIT.md) | Historical HI34 tuner option snapshot and gaps | Understanding the cited historical coverage audit |
 
 ## Tooling
 
@@ -45,7 +44,7 @@ at the top level.
 | --- | --- | --- |
 | [patches/PATCH_SYSTEM.md](patches/PATCH_SYSTEM.md) | Patch catalog, states, groups, composition | Understanding how patches apply and compose |
 | [patches/PATCH_AUTHORING.md](patches/PATCH_AUTHORING.md) | Writing a new patch | Authoring a patch |
-| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Validation states and evidence requirements | Promoting a patch toward validated |
+| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Patch-validation navigation pointer; policy lives under testing | Finding the correct validation authority |
 | [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
 
 Patch-specific documentation, fixtures, validators, and validation evidence
@@ -85,3 +84,4 @@ improvements, and coverage numbers.
 
 Historical originals are in [`docs/archive/`](../archive/) for provenance only;
 they are not current implementation or status guidance.
+
