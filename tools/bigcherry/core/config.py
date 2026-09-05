@@ -149,6 +149,13 @@ class CampaignLaneSelector:
     #: for "isolate one patch across the standard lane set"; this is for a
     #: profile whose whole point is that its lanes differ in composition.
     experiment: str | None = None
+    #: Which binary this lane publishes -- and therefore which cmake target
+    #: gets BUILT, since cmake_targets is derived from this name. The default
+    #: (bin/llama-bench) is why a lane that needs llama-server produces no
+    #: server at all: the build only builds the target it is told to publish.
+    #: Declared per lane so a profile is self-contained; a caller should not
+    #: have to remember a flag for the profile to produce measurable binaries.
+    binary: str | None = None
 
 
 @dataclass(frozen=True)
@@ -516,10 +523,18 @@ def load(path: str | Path) -> Config:
                         f"campaign.{name}.lanes[{index}] references unknown "
                         f"experiment {lane_experiment!r}"
                     )
+            lane_binary = lane_data.get("binary")
+            if lane_binary is not None and (
+                not isinstance(lane_binary, str) or not lane_binary
+            ):
+                raise ConfigError(
+                    f"campaign.{name}.lanes[{index}].binary must be a non-empty "
+                    f"string when present"
+                )
             lanes.append(
                 CampaignLaneSelector(
                     source=lane_source, build=lane_build, platform=lane_platform,
-                    experiment=lane_experiment,
+                    experiment=lane_experiment, binary=lane_binary,
                 )
             )
         campaigns[name] = CampaignProfile(name=name, lanes=tuple(lanes))
