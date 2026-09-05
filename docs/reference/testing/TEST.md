@@ -234,6 +234,115 @@ ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_ben
   must be idle, and a short single-repetition run is a liveness check, not a
   performance conclusion.
 
+## Comparative A/B benchmarking — mandatory procedure
+
+Everything above tells you how to get a number. This section is about
+comparing two numbers, which is where every real mistake has happened. Each
+rule below exists because it was broken, and each time the result was reported
+before the defect was found. Treat them as required, not advisory.
+
+Use `tools/lab/gp11-replay-bench/ab-balanced.sh`, which implements all of this,
+rather than writing a new script. If you write your own, it must satisfy every
+rule here.
+
+### 1. Never run arms in a fixed order
+
+Running arm A then B then C, one sample each, confounds arm with position:
+thermal drift over a ~10-minute run produces a clean-looking monotone result
+that has nothing to do with the arms. Measured position spread on Brutus is
+0.19–0.35%, which is the same order as the effects being chased.
+
+Rotate the arm order every round, use a round count that is a multiple of the
+arm count, and **record the position on every result row** so drift can be
+tested rather than assumed away.
+
+### 2. Verify what is actually IN each binary before interpreting anything
+
+Never trust a build digest you noted earlier, or a label like "control". Read
+the composition out of the build itself:
+
+```bash
+# which source tree did this build compile?
+python3 -c "
+import json; cc=json.load(open('<build>/compile_commands.json'))
+print([e['file'] for e in cc if 'ggml-cuda' in e['file']][0].split('/ggml/')[0])"
+
+# what is in that tree, and what flags were set?
+grep -rlq '<marker for the patch>' <src>/ggml/src/
+grep -a 'GGML_HIP_DISPATCH_REPLAY:BOOL=' <build>/CMakeCache.txt
+```
+
+Two arms intended to differ by one build flag must have **byte-identical
+source trees**; hash them and check:
+
+```bash
+find <src>/ggml/src -name '*.cu' -o -name '*.cuh' -o -name '*.cpp' \
+  | sort | xargs cat | sha256sum
+```
+
+A comparison whose arms differ in more than one way cannot attribute its own
+result, no matter how clean the numbers are.
+
+### 3. Shut the server down gracefully — never `kill -9`
+
+`kill -9` skips backend teardown. That discards buffered HIP autotune
+measurements, **and** it destroys the replay hit/miss report and the coverage
+report, which are emitted at shutdown.
+
+The `/shutdown` route comes from patch `0800_server_shutdown_endpoint`, and it
+is **registered only when `LLAMA_SERVER_ENABLE_SHUTDOWN` is set in the
+server's environment**. Without that variable the POST 404s and you are back
+to `kill -9` without noticing. Set it at launch, and treat a failed POST as a
+loud error, not a fallback.
+
+Prefer `tools/bigcherry/tuning/server_runner.py` (`ServerRunner`) over hand-
+rolled bash: it already handles launch, health-check, env hygiene
+(`env_unset`), free-port selection, and graceful teardown. Every divergence
+from it in an ad-hoc harness has so far reintroduced a bug it had already
+fixed.
+
+### 4. Prove the mechanism under test was actually active
+
+A cache arm is not a cache arm because you set the variable. Capture both:
+
+- startup: `bigcherry: replay cache '<path>' loaded, N winner(s)`
+- shutdown: `bigcherry:   replay v2 N winner(s); exact=.. miss=..`
+
+Without these, "the winners made no difference" and "the cache never resolved
+a lookup" are the same measurement. Note also that coverage
+`dispatched == executed` does **not** prove tuning was applied — a miss is
+still a dispatch, to native, so a fully-covered run can be entirely untuned.
+
+The same principle generalises: for any patch or feature under test, record
+the evidence that its code path executed, in the same run that produced the
+numbers.
+
+### 5. Confirm both arms did the same work
+
+For MTP speculative decode, record **draft acceptance** per cell. If
+acceptance differs between arms they generated different amounts of work and
+a throughput comparison between them is meaningless regardless of how tight
+the intervals look. Identical acceptance is what makes the comparison legal.
+
+### 6. Statistics
+
+- Complete separation (every sample of one arm beyond every sample of the
+  other) at n=6 per arm is Mann-Whitney p ≈ 0.0022. Prefer it to a t-test:
+  samples are small and between-session drift is not obviously normal.
+- **Do not treat "all N metrics moved the same way" as significance.** The
+  metrics are strongly correlated; 6/6 is not p = 1/64.
+- Between-session drift on this host is sd 0.5–0.6%, larger than any single
+  run's standard error. Comparisons across runs need that margin; comparisons
+  within one balanced run do not.
+- `pp256` is startup-sensitive and routinely throws outliers ~10% low. Exclude
+  it from diagnosis; `tg512`/`tg2048` are the stable signals.
+
+### 7. Use the documented harness
+
+`bench/run_bench.py --bench-type server-bench` as described above. Not
+`llama-bench` — it cannot see MTP speculative decode at all, so it silently
+measures a different thing than production runs.
+
 ## Heterogeneous RCCL source qualification
 
 For heterogeneous-architecture RCCL source diagnosis, repair qualification, crash-isolated candidate testing, topology identity, and eventual collective replay/tuning, use [RCCL_HETEROGENEOUS_RUNBOOK.md](RCCL_HETEROGENEOUS_RUNBOOK.md).
