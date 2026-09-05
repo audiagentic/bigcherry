@@ -73,6 +73,7 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
 ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
     "resource_limits", "effect_evidence_policy", "min_paired_rounds",
+    "min_sessions", "max_sessions", "max_ci95_width_pct",
 )
 
 # VA24: how a declared acceptance bound must be evidenced.
@@ -91,9 +92,37 @@ ACCEPTANCE_FIELDS: tuple[str, ...] = (
 # "probably positive"; +1.1% with CI [0.1, 2.1] would clear a 1.0 bound
 # without ever establishing a 1.0% gain. Requiring the lower bound to reach
 # the threshold establishes the claim the contract actually makes.
+#   session_ci95_threshold_bound_v1
+#                          -- as ci95_threshold_bound_v1, but the interval
+#                            must come from bootstrap_session_effect() over
+#                            REPEATED SESSIONS rather than from pairs inside
+#                            one run, and the run length is governed by a
+#                            pre-declared, direction-blind stopping rule.
+#
+# Why the session policy exists. ci95_threshold_bound_v1's interval is
+# computed by resampling pairs WITHIN a single run, so it represents only
+# within-session variation. RD73 measured one unchanged build four times and
+# got +1.855%, +1.717%, +1.249% and +2.244%: a between-session sd of 0.411,
+# larger than the standard error any individual run reported, with session 3's
+# point estimate falling below session 2's ci95_low. Every one of those runs
+# was honest; the drift between occasions is simply variance that a within-run
+# interval structurally cannot see. A single run's interval therefore
+# overstates precision, and a bound established from one is weaker than it
+# looks.
+#
+# The stopping rule is the other half, and it is what stops "collect until it
+# passes". Declare min_sessions/max_sessions and a max_ci95_width_pct
+# precision target. Collect at least min_sessions; while the interval is wider
+# than the target and fewer than max_sessions have been collected, the result
+# is INCONCLUSIVE (invalid), not a fail -- collect another session and
+# re-estimate over ALL of them. The criterion consults interval WIDTH and
+# session count ONLY. It never looks at where ci95_low sits relative to the
+# threshold, because a stopping rule that can see the answer is a rule that
+# stops when it likes the answer.
 EFFECT_EVIDENCE_POLICIES: tuple[str, ...] = (
     "point_estimate_v1",
     "ci95_threshold_bound_v1",
+    "session_ci95_threshold_bound_v1",
 )
 DEFAULT_EFFECT_EVIDENCE_POLICY = "point_estimate_v1"
 
@@ -216,6 +245,29 @@ def _min_paired_rounds(raw: object, where: str) -> int | None:
             f"{where} must be >= 1 ({raw!r} given)"
         )
     return raw
+
+
+def _session_count(raw: object, where: str) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ExperimentContractError(f"{where} must be an integer")
+    if raw < 1:
+        raise ExperimentContractError(f"{where} must be >= 1 ({raw!r} given)")
+    return raw
+
+
+def _max_ci95_width(raw: object, where: str) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ExperimentContractError(f"{where} must be a number")
+    value = float(raw)
+    if not _finite_number(value) or value <= 0.0:
+        raise ExperimentContractError(
+            f"{where} must be a finite positive percentage ({raw!r} given)"
+        )
+    return value
 
 
 def _non_negative_int(raw: object, where: str) -> int:
@@ -573,6 +625,18 @@ class Acceptance:
     # interval-based policy without a rounds floor is not actually stronger
     # than the point estimate it replaces.
     min_paired_rounds: int | None = None
+    # session_ci95_threshold_bound_v1's pre-declared stopping rule. Required
+    # by that policy, meaningless without it. min_sessions may not fall below
+    # MIN_BOOTSTRAP_SESSIONS -- the cluster bootstrap cannot produce an
+    # honest interval from fewer. max_sessions bounds the cost of a run that
+    # never reaches the precision target.
+    min_sessions: int | None = None
+    max_sessions: int | None = None
+    # DIRECTION-BLIND precision target: the ci95 WIDTH below which the
+    # measurement is precise enough to decide. Never a comparison of ci95_low
+    # against the acceptance threshold -- that would let the rule stop as soon
+    # as the answer looked good.
+    max_ci95_width_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -686,6 +750,23 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             **(
                 {"min_paired_rounds": contract.acceptance.min_paired_rounds}
                 if contract.acceptance.min_paired_rounds is not None else {}
+            ),
+            # Same conditional treatment: a contract that does not declare a
+            # session stopping rule keeps its exact existing hash. One that
+            # does gets a new hash, which is correct -- the stopping rule is
+            # part of what it demands of evidence, so evidence gathered under
+            # a different rule must not silently continue to satisfy it.
+            **(
+                {"min_sessions": contract.acceptance.min_sessions}
+                if contract.acceptance.min_sessions is not None else {}
+            ),
+            **(
+                {"max_sessions": contract.acceptance.max_sessions}
+                if contract.acceptance.max_sessions is not None else {}
+            ),
+            **(
+                {"max_ci95_width_pct": contract.acceptance.max_ci95_width_pct}
+                if contract.acceptance.max_ci95_width_pct is not None else {}
             ),
         },
         "source_evidence": (
@@ -940,7 +1021,52 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         min_paired_rounds=_min_paired_rounds(
             acceptance_data.get("min_paired_rounds"),
             f"{where}.acceptance.min_paired_rounds"),
+        min_sessions=_session_count(
+            acceptance_data.get("min_sessions"), f"{where}.acceptance.min_sessions"),
+        max_sessions=_session_count(
+            acceptance_data.get("max_sessions"), f"{where}.acceptance.max_sessions"),
+        max_ci95_width_pct=_max_ci95_width(
+            acceptance_data.get("max_ci95_width_pct"),
+            f"{where}.acceptance.max_ci95_width_pct"),
     )
+    session_policy = (
+        acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
+    )
+    session_fields = {
+        "min_sessions": acceptance.min_sessions,
+        "max_sessions": acceptance.max_sessions,
+        "max_ci95_width_pct": acceptance.max_ci95_width_pct,
+    }
+    if session_policy:
+        missing = sorted(name for name, value in session_fields.items() if value is None)
+        if missing:
+            raise ExperimentContractError(
+                f"{where}.acceptance: effect_evidence_policy="
+                f"'session_ci95_threshold_bound_v1' requires {', '.join(missing)} -- "
+                f"the stopping rule must be pre-declared IN FULL before evidence is "
+                f"collected, otherwise 'how many sessions' is decided after seeing "
+                f"the sessions"
+            )
+        if acceptance.min_sessions < MIN_BOOTSTRAP_SESSIONS:
+            raise ExperimentContractError(
+                f"{where}.acceptance.min_sessions must be >= {MIN_BOOTSTRAP_SESSIONS} "
+                f"({acceptance.min_sessions} given) -- a cluster bootstrap over fewer "
+                f"sessions has too small a resample space to give an honest interval"
+            )
+        if acceptance.max_sessions < acceptance.min_sessions:
+            raise ExperimentContractError(
+                f"{where}.acceptance.max_sessions ({acceptance.max_sessions}) must be "
+                f">= min_sessions ({acceptance.min_sessions})"
+            )
+    else:
+        declared = sorted(name for name, value in session_fields.items() if value is not None)
+        if declared:
+            raise ExperimentContractError(
+                f"{where}.acceptance: {', '.join(declared)} is meaningless without "
+                f"effect_evidence_policy = 'session_ci95_threshold_bound_v1' -- a "
+                f"stopping rule no gate consults is worse than none, because it reads "
+                f"as though the run was governed when it was not"
+            )
     # VA24 P0 (dev-gpt-agent, req_d563bd481bcf4324): an interval policy
     # without a rounds floor is not actually stronger than the point estimate
     # it replaces -- run_paired_lane() accepts pairs=1, whose bootstrap yields
@@ -2020,6 +2146,57 @@ def _finite_number(value: object) -> bool:
     )
 
 
+def _session_stopping_rule_met(
+    field: str, acceptance: Acceptance, aggregated_effects: Mapping[str, object],
+    invalid_reasons: list[str],
+) -> bool:
+    """session_ci95_threshold_bound_v1's pre-declared stopping rule.
+
+    Returns True when the evidence is precise enough to decide. Otherwise
+    appends an INVALID reason (not a fail -- an under-collected run is
+    inconclusive, not a measured negative) and returns False.
+
+    DIRECTION-BLIND BY CONSTRUCTION. This function reads only the session
+    count and the interval WIDTH. It is never passed the acceptance threshold
+    and never sees where ci95_low falls relative to it, so it cannot stop
+    early because the answer looks good, or keep going because it does not.
+    That property is the whole point of the rule and is asserted by its tests.
+    """
+    sessions = aggregated_effects.get(f"{field}_sessions")
+    low = aggregated_effects.get(f"{field}_ci95_low")
+    high = aggregated_effects.get(f"{field}_ci95_high")
+    if not isinstance(sessions, int) or isinstance(sessions, bool):
+        invalid_reasons.append(
+            f"{field}: session_ci95_threshold_bound_v1 requires a "
+            f"{field}_sessions count from bootstrap_session_effect() "
+            f"(got {sessions!r})"
+        )
+        return False
+    if sessions < acceptance.min_sessions:
+        invalid_reasons.append(
+            f"{field}: {sessions} session(s) is below the pre-declared minimum "
+            f"{acceptance.min_sessions} -- collect more; a within-run interval "
+            f"cannot represent between-session drift"
+        )
+        return False
+    if not _finite_number(low) or not _finite_number(high):
+        invalid_reasons.append(
+            f"{field}: session policy requires finite ci95 bounds "
+            f"(got {low!r} / {high!r})"
+        )
+        return False
+    width = high - low
+    if width > acceptance.max_ci95_width_pct and sessions < acceptance.max_sessions:
+        invalid_reasons.append(
+            f"{field}: ci95 width {width:.3f} exceeds the pre-declared precision "
+            f"target {acceptance.max_ci95_width_pct} after {sessions} of at most "
+            f"{acceptance.max_sessions} sessions -- INCONCLUSIVE, collect another "
+            f"session and re-estimate over all of them (never discard one)"
+        )
+        return False
+    return True
+
+
 def evaluate_promotion_gate(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
@@ -2075,7 +2252,12 @@ def evaluate_promotion_gate(
         )
 
     acceptance = contract.acceptance
-    interval_policy = acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+    session_policy = (
+        acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
+    )
+    interval_policy = (
+        acceptance.effect_evidence_policy == "ci95_threshold_bound_v1" or session_policy
+    )
     # VA24: evidence that is missing or malformed under an interval policy is
     # neither a pass nor a measured negative -- it is unevaluable, and must
     # surface as "invalid" exactly like an unproven trigger_proof does. These
@@ -2111,6 +2293,10 @@ def evaluate_promotion_gate(
                     f"minimum {required_rounds} -- the interval is not trustworthy"
                 )
                 return
+        if session_policy and not _session_stopping_rule_met(
+            field, acceptance, aggregated_effects, invalid_reasons,
+        ):
+            return
         # The BOUND, not merely positivity, must be established by the
         # interval. "CI excludes zero" would only show "probably positive".
         if ci_low < threshold:

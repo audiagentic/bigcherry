@@ -815,6 +815,142 @@ class BootstrapSessionEffectTests(unittest.TestCase):
         self.assertEqual(result["paired_rounds_total"], 40)
 
 
+def _session_contract(**acceptance_overrides):
+    acceptance = {
+        "end_to_end_gain_pct": 1.0,
+        "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "session_ci95_threshold_bound_v1",
+        "min_paired_rounds": 10,
+        "min_sessions": 4,
+        "max_sessions": 8,
+        "max_ci95_width_pct": 1.0,
+    }
+    acceptance.update(acceptance_overrides)
+    return _minimal_contract(acceptance=acceptance)
+
+
+class SessionEvidencePolicyParsingTests(unittest.TestCase):
+    def test_policy_requires_the_whole_stopping_rule(self):
+        for missing in ("min_sessions", "max_sessions", "max_ci95_width_pct"):
+            with self.subTest(missing=missing):
+                acceptance = {
+                    "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                    "effect_evidence_policy": "session_ci95_threshold_bound_v1",
+                    "min_paired_rounds": 10, "min_sessions": 4, "max_sessions": 8,
+                    "max_ci95_width_pct": 1.0,
+                }
+                del acceptance[missing]
+                with self.assertRaises(ec.ExperimentContractError) as caught:
+                    _minimal_contract(acceptance=acceptance)
+                self.assertIn(missing, str(caught.exception))
+
+    def test_min_sessions_below_the_bootstrap_floor_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _session_contract(min_sessions=ec.MIN_BOOTSTRAP_SESSIONS - 1)
+        self.assertIn("min_sessions", str(caught.exception))
+
+    def test_max_sessions_below_min_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _session_contract(min_sessions=6, max_sessions=5)
+
+    def test_stopping_rule_without_the_policy_rejected(self):
+        # A declared-but-unconsulted stopping rule is worse than none: it
+        # reads as though the run was governed when nothing enforced it.
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _minimal_contract(acceptance={
+                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                "min_sessions": 4,
+            })
+        self.assertIn("min_sessions", str(caught.exception))
+
+    def test_valid_session_contract_parses(self):
+        contract = _session_contract()
+        self.assertEqual(contract.acceptance.min_sessions, 4)
+        self.assertEqual(contract.acceptance.max_sessions, 8)
+        self.assertEqual(contract.acceptance.max_ci95_width_pct, 1.0)
+
+
+class SessionStoppingRuleGateTests(unittest.TestCase):
+    """The stopping rule must consult session count and interval WIDTH only.
+    A rule that can see where ci95_low sits relative to the threshold is a
+    rule that stops when it likes the answer."""
+
+    CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+
+    def _gate(self, *, sessions, low, high, contract=None):
+        return ec.evaluate_promotion_gate(
+            contract or _session_contract(),
+            correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": (low + high) / 2,
+                "end_to_end_gain_pct_ci95_low": low,
+                "end_to_end_gain_pct_ci95_high": high,
+                "end_to_end_gain_pct_sessions": sessions,
+                "end_to_end_gain_pct_paired_rounds": 10 * sessions,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 10 * sessions,
+            },
+        )
+
+    def test_too_few_sessions_is_inconclusive_not_a_fail(self):
+        result = self._gate(sessions=3, low=1.5, high=1.9)
+        self.assertEqual(result["status"], "invalid")
+
+    def test_wide_interval_below_max_sessions_is_inconclusive(self):
+        # Width 1.4 > target 1.0, and 5 < max 8 -> collect another session.
+        result = self._gate(sessions=5, low=1.1, high=2.5)
+        self.assertEqual(result["status"], "invalid")
+        self.assertTrue(
+            any("INCONCLUSIVE" in str(r) for r in result.get("reasons", []))
+        )
+
+    def test_wide_interval_at_max_sessions_is_decided_not_deferred(self):
+        # At max_sessions the rule must stop deferring and decide on what it
+        # has, otherwise a noisy patch defers for ever.
+        result = self._gate(sessions=8, low=1.1, high=2.5)
+        self.assertEqual(result["status"], "pass")
+
+    def test_precise_enough_and_above_threshold_passes(self):
+        self.assertEqual(self._gate(sessions=5, low=1.2, high=1.9)["status"], "pass")
+
+    def test_precise_enough_and_below_threshold_is_a_real_fail(self):
+        # Precision satisfied, bound not met -> an ordinary FAIL, never
+        # "collect more until it passes".
+        result = self._gate(sessions=5, low=0.4, high=1.1)
+        self.assertEqual(result["status"], "fail")
+
+    def test_stopping_decision_ignores_which_side_of_the_bar_it_lands(self):
+        # THE direction-blindness property. Two runs with the SAME session
+        # count and the SAME interval width, one comfortably above the bar and
+        # one below it, must reach the same STOPPING decision -- both decided,
+        # differing only in pass/fail.
+        width = 0.8
+        above = self._gate(sessions=5, low=1.6, high=1.6 + width)
+        below = self._gate(sessions=5, low=0.2, high=0.2 + width)
+        self.assertEqual(above["status"], "pass")
+        self.assertEqual(below["status"], "fail")
+        for result in (above, below):
+            self.assertNotIn(
+                "INCONCLUSIVE", " ".join(str(r) for r in result.get("reasons", []))
+            )
+
+    def test_missing_session_count_is_invalid(self):
+        result = ec.evaluate_promotion_gate(
+            _session_contract(), correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": 1.5,
+                "end_to_end_gain_pct_ci95_low": 1.2,
+                "end_to_end_gain_pct_ci95_high": 1.8,
+                "end_to_end_gain_pct_paired_rounds": 40,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 40,
+            },
+        )
+        self.assertEqual(result["status"], "invalid")
+
+
 if __name__ == "__main__":
     unittest.main()
 
