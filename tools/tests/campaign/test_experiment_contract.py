@@ -730,6 +730,91 @@ mtp = false
                 self.assertIn(model, known)
 
 
+def _ratios(*percents: float) -> tuple[float, ...]:
+    return tuple(1.0 + pct / 100.0 for pct in percents)
+
+
+class BootstrapSessionEffectTests(unittest.TestCase):
+    """The estimator exists because a within-run interval structurally cannot
+    see drift BETWEEN runs. RD73 measured one build three times -- +1.855%,
+    +1.717%, +1.249% -- and the third run's point estimate fell below the
+    second run's ci95_low, so its single-run interval overstated precision."""
+
+    # Two sessions that disagree, in the way RD73's runs 2 and 3 disagreed.
+    DRIFTED = [
+        _ratios(2.55, 1.87, 1.95, 2.37, 1.33, 0.73, 1.14, 1.53, 1.79, 1.93),
+        _ratios(3.22, -0.20, 1.63, 0.37, 1.72, 0.17, 1.69, 1.30, 2.62, 0.04),
+    ]
+
+    def test_too_few_sessions_returns_none_rather_than_a_narrow_guess(self):
+        for count in range(1, ec.MIN_BOOTSTRAP_SESSIONS):
+            with self.subTest(sessions=count):
+                self.assertIsNone(
+                    ec.bootstrap_session_effect([self.DRIFTED[0]] * count)
+                )
+
+    def test_at_the_threshold_it_estimates(self):
+        result = ec.bootstrap_session_effect(
+            [self.DRIFTED[0]] * ec.MIN_BOOTSTRAP_SESSIONS
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result["sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_empty_or_nonfinite_session_returns_none(self):
+        base = [self.DRIFTED[0]] * ec.MIN_BOOTSTRAP_SESSIONS
+        self.assertIsNone(ec.bootstrap_session_effect(base[:-1] + [()]))
+        self.assertIsNone(ec.bootstrap_session_effect(base[:-1] + [(1.0, -0.5)]))
+        self.assertIsNone(
+            ec.bootstrap_session_effect(base[:-1] + [(1.0, float("nan"))])
+        )
+
+    def test_drift_widens_the_interval_beyond_a_single_run(self):
+        # THE reason this estimator exists. Sessions that disagree must yield
+        # a wider interval than the same number of identical sessions, whose
+        # only variation is within-run.
+        drifted = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        steady = ec.bootstrap_session_effect([self.DRIFTED[0]] * 4)
+        drifted_width = drifted["ci95_high_pct"] - drifted["ci95_low_pct"]
+        steady_width = steady["ci95_high_pct"] - steady["ci95_low_pct"]
+        self.assertGreater(drifted_width, steady_width)
+        self.assertGreater(drifted["between_session_sd_pct"], 0.0)
+        self.assertAlmostEqual(steady["between_session_sd_pct"], 0.0, places=9)
+
+    def test_sessions_are_weighted_equally_not_by_pair_count(self):
+        # A session that happened to collect more pairs must not speak louder
+        # about where the true effect lies -- the session is the unit.
+        few = _ratios(4.0, 4.0)
+        many = _ratios(*([0.0] * 40))
+        result = ec.bootstrap_session_effect([few, many, few, many])
+        # Equal weighting puts the point estimate midway between the two
+        # session effects (~4% and ~0%); pair weighting would drag it to ~0.4%.
+        self.assertAlmostEqual(result["geometric_effect_pct"], 2.0, delta=0.05)
+
+    def test_point_estimate_is_the_mean_of_per_session_effects(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        per_session = result["per_session_effect_pct"]
+        self.assertEqual(len(per_session), 4)
+        self.assertAlmostEqual(
+            result["geometric_effect_pct"], sum(per_session) / 4, places=9
+        )
+
+    def test_is_deterministic_for_a_given_seed(self):
+        first = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=7)
+        second = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=7)
+        self.assertEqual(first, second)
+        other = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=8)
+        self.assertNotEqual(first["ci95_low_pct"], other["ci95_low_pct"])
+
+    def test_interval_brackets_the_point_estimate(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        self.assertLessEqual(result["ci95_low_pct"], result["geometric_effect_pct"])
+        self.assertLessEqual(result["geometric_effect_pct"], result["ci95_high_pct"])
+
+    def test_reports_total_pairs_across_sessions(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        self.assertEqual(result["paired_rounds_total"], 40)
+
+
 if __name__ == "__main__":
     unittest.main()
 
