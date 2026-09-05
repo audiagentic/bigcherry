@@ -1,8 +1,12 @@
 # 1245: Widen the MMVQ MUL_MAT+GLU fusion gate beyond ncols_dst==1
 
-**Status:** untested — measured NEGATIVE on real hardware, do not promote
+**Status:** untested
 **Group:** gpu-collectives
 **Plan item:** GP11
+
+> DO NOT PROMOTE. `untested` here means "not contract-qualified", not
+> "unmeasured": an ad-hoc benchmark measured this NEGATIVE (-9.4%) on real
+> hardware. It is retained as a recorded negative result, not a candidate.
 
 Origin is local (bigcherry-original): this relaxes an upstream restriction, it
 is not a port of any upstream commit, so there is no external commit to cite as

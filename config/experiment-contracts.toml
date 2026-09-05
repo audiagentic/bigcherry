@@ -152,7 +152,10 @@ workloads = ["decode"]
 
 [contract.RD21-GFX1151-MMVQ-NWARPS.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["decode"]
+# Not `decode` -- that is this contract's own positive lane. The new nwarps=2
+# table is selected only by MMVQ (decode-shaped matmuls); prefill dispatches
+# through MMQ and must be unaffected, which is what a control is for.
+workloads = ["prefill"]
 
 [contract.RD21-GFX1151-MMVQ-NWARPS.correctness]
 backend_reference = "required"
@@ -166,6 +169,9 @@ workload = "Q8_0 decode (fork sweep)"
 [contract.RD21-GFX1151-MMVQ-NWARPS.acceptance]
 target_kernel_gain_pct = 0.6
 max_control_regression_pct = 1
+# See RD06: control-lane fix changed the hash, so the legacy waiver is void.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD07-Q6K-MMQ-PREFILL-FOLD]
 title = "RD07: Q6_K MMQ prefill fold/hoist (from the RD05/RD06/RD07 combined patch)"
@@ -369,7 +375,11 @@ models = ["tierA-qwen4b-q6k"]
 workloads = ["decode", "prefill"]
 
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.controls]
-models = ["tierA-qwen4b-q6k"]
+# Not tierA-qwen4b-q6k -- this contract claims BOTH decode and prefill on that
+# model, so every one of its lanes is a positive. The FA configuration table is
+# per-shape/head-dimension, so a model with different attention geometry is the
+# control that can actually detect a mis-selected config.
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["decode"]
 
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.correctness]
@@ -378,6 +388,13 @@ backend_reference = "required"
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.acceptance]
 target_kernel_gain_pct = 0.5
 max_control_regression_pct = 1
+# Migrated off the pre-VA24 point-estimate waiver: fixing the self-referential
+# control lane changed this contract's hash, so its recorded baseline can no
+# longer honour legacy evidence (experiment-contract-legacy.toml rule 2).
+# Re-hashing the waiver would be exactly the rescue that file exists to
+# prevent, so it migrates up instead.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION]
 title = "RD13: fuse mul_mat + add through a view (reshape) node"
@@ -574,7 +591,11 @@ workloads = ["decode"]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["decode"]
+# Not `decode` -- that is this contract's own positive lane. The default flip
+# turns the graph-optimization pass on for the WHOLE graph, so prefill is the
+# lane that is touched without being claimed, i.e. exactly the collateral a
+# regression budget exists to bound.
+workloads = ["prefill"]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.correctness]
 backend_reference = "required"
@@ -582,6 +603,9 @@ backend_reference = "required"
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.acceptance]
 target_kernel_gain_pct = 7.3
 max_control_regression_pct = 1
+# See RD06: control-lane fix changed the hash, so the legacy waiver is void.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD50-GDN-CHUNKED-RECURRENCE]
 title = "RD50: chunked fused GatedDeltaNet recurrence for RDNA3.5"
@@ -646,7 +670,10 @@ workloads = ["state_restore"]
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["state_restore"]
+# Not `state_restore` -- that is this contract's own positive lane. Pinning the
+# state buffer changes the host allocation path, so steady-state decode is the
+# lane that could pay for the fix without being claimed by it.
+workloads = ["decode"]
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.correctness]
 state_restore_integrity = "required"

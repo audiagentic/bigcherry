@@ -119,6 +119,41 @@ class ParseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ec.ExperimentContractError, "duplicates"):
             ec.parse_contract(doc, contract_id="X")
 
+    def test_lane_in_both_positive_and_controls_rejected(self):
+        """A lane is (model, workload). Naming the same lane in both roles asks
+        one measurement to satisfy two contradictory requirements, and makes the
+        regression budget self-referential: the 'control' IS the treatment, so
+        it can never detect the collateral damage a control exists to catch."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["shared-model"], "workloads": ["decode"]}
+        doc["controls"] = {"models": ["shared-model"], "workloads": ["decode"]}
+        with self.assertRaisesRegex(ec.ExperimentContractError,
+                                    r"shared-model/decode.*BOTH positive and controls"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_partial_lane_overlap_rejected_naming_only_the_shared_lanes(self):
+        """Overlap is per-LANE, not per-set: sharing a model is fine so long as
+        no (model, workload) pair is claimed by both roles. Here decode overlaps
+        and prefill does not, so only decode may be reported."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["m"], "workloads": ["decode", "small_m"]}
+        doc["controls"] = {"models": ["m"], "workloads": ["decode", "prefill"]}
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.parse_contract(doc, contract_id="X")
+        message = str(caught.exception)
+        self.assertIn("m/decode", message)
+        self.assertNotIn("m/prefill", message)
+        self.assertNotIn("m/small_m", message)
+
+    def test_same_workload_on_a_different_model_is_a_valid_control(self):
+        """The rule must not over-reach into the common, correct pattern of
+        controlling a workload on a model the hypothesis does not claim."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["claimed"], "workloads": ["decode"]}
+        doc["controls"] = {"models": ["unclaimed"], "workloads": ["decode"]}
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertEqual(contract.controls.models, ("unclaimed",))
+
     def test_negative_gain_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=-5)
@@ -502,7 +537,7 @@ workloads = ["decode"]
 
 [contract.A.controls]
 models = ["m"]
-workloads = ["decode"]
+workloads = ["prefill"]
 
 [contract.A.acceptance]
 max_control_regression_pct = 1
@@ -531,7 +566,7 @@ workloads = ["decode"]
 
 [contract.B.controls]
 models = ["m"]
-workloads = ["decode"]
+workloads = ["prefill"]
 
 [contract.B.acceptance]
 max_control_regression_pct = 1
@@ -607,7 +642,10 @@ def _minimal_contract(**overrides) -> ec.ExperimentContract:
         "hypothesis": {"family": "mmq", "expected_effect": "performance", "rationale": "r"},
         "scope": {"backend": "hip", "architectures": ["gfx1100"]},
         "positive": {"models": ["m"], "workloads": ["decode"]},
-        "controls": {"models": ["m"], "workloads": ["decode"]},
+        # Deliberately a different workload from the positive lane: a lane
+        # cannot be both the thing that must improve and the thing that must
+        # hold constant (parse_contract rejects the overlap).
+        "controls": {"models": ["m"], "workloads": ["prefill"]},
         "acceptance": {"max_control_regression_pct": 1},
     }
     doc.update(overrides)
