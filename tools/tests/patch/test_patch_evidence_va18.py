@@ -67,7 +67,7 @@ class MakeRecordV4ContractTests(unittest.TestCase):
             build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
                                "stock": _build_identity("3")},
             validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
-            campaign_workdir=self.workdir, **kwargs,
+            campaign_workdir=self.workdir, lane_effects=(), **kwargs,
         )
 
     def test_contract_ordering_is_canonical_regardless_of_input_order(self) -> None:
