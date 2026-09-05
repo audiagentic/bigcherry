@@ -1,4 +1,15 @@
 {
+  "carry-forwards": [
+    {
+      "authority": "owner directive 2026-09-05: do not force retesting for small changes that do not matter, but be consistent; design review dev-gpt-agent (recommended an explicit audited carry-forward for this incident rather than inventing general comment equivalence)",
+      "current_digest": "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb",
+      "date": "2026-09-05",
+      "patch_id": "1100_hi70_direct_op_evidence",
+      "previous_digest": "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd",
+      "reason": "The waiver was voided by commit 9c19f97a ('document and folder cleanup'), which MOVED patches/1100_hi70_direct_op_evidence.py to patches/1100_hi70_direct_op_evidence/patch.py and, in the same commit, updated one comment line inside the emitted payload that names the file's own path -- while recording the PRE-move hash here. The entire diff is:\n  -    // See patches/1100_hi70_direct_op_evidence.py for the full rationale.\n  +    // See patches/1100_hi70_direct_op_evidence/patch.py for the full rationale.\n6 bytes, a C++ line comment, in a self-referential path. No anchor, no edit, no emitted code changed. The waiver has been void since 2026-08-28 but was unenforced because the production admission gate stays dormant until the repo holds its first non-grandfathered eligible record. RD73's promotion (2026-09-05) supplied that record, arming the gate and blocking ALL production builds on this one comment.",
+      "scope": "This carry-forward covers EXACTLY this digest transition for this patch. It is not a precedent that comments are generally irrelevant: the emitted source did change, so an applied-effect identity would still invalidate it. The general fix is effect_digest_v1 = H(control_tree, subject_tree), which makes evidence survive patch.py refactors that materialize the same tested source transition. Until that lands, any further digest change to this patch requires real evidence."
+    }
+  ],
   "contract": "hi83-legacy-grandfather-v1",
   "patches": {
     "0100_cmake_options": "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae",
@@ -15,7 +26,7 @@
     "0830_split_reduce_telemetry": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
     "0900_pool_workspace_metrics": "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146",
     "1000_rdna4_mmq_q2k_q6k_fix": "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c",
-    "1100_hi70_direct_op_evidence": "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd"
+    "1100_hi70_direct_op_evidence": "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb"
   },
   "schema_version": 1
 }
