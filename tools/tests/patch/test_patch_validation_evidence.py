@@ -202,13 +202,61 @@ class WriteLoadRecordTests(unittest.TestCase):
         pve.write_record(record, root=self.root)
         self.assertEqual(len(pve.load_records("9999_example", root=self.root)), 1)
 
-    def test_same_digest_different_evidence_fails_closed(self):
+    def test_same_build_measured_twice_records_both(self):
+        # RV96, deliberately REPLACING an earlier test that asserted this
+        # raised. campaign_identity_digest is a BUILD identity -- Campaign
+        # derives it from built-binary content plus patch identity -- so two
+        # independent measurements of the same binaries necessarily share it.
+        # Rejecting the second made replication impossible, left the frozen
+        # N_min/N_max extension policy unimplementable, and meant whichever
+        # run was written first owned the digest for good.
         record = self._record()
         pve.write_record(record, root=self.root)
-        changed = dict(record)
-        changed["some_field"] = "different"
-        with self.assertRaises(pve.ValidationEvidenceError):
-            pve.write_record(changed, root=self.root)
+        second = dict(record)
+        second["some_field"] = "different"
+        pve.write_record(second, root=self.root)
+        loaded = pve.load_records("9999_example", root=self.root)
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(
+            {row["some_field"] for row in loaded}, {"value", "different"}
+        )
+
+    def test_first_measurement_is_never_replaced_by_a_later_one(self):
+        # The property that must survive: evidence is append-only. A second
+        # measurement must not be able to overwrite or remove the first --
+        # notably not a later PASS quietly displacing an earlier FAIL.
+        pve.write_record(self._record(), root=self.root)
+        second = dict(self._record())
+        second["some_field"] = "different"
+        pve.write_record(second, root=self.root)
+        loaded = pve.load_records("9999_example", root=self.root)
+        self.assertIn("value", {row["some_field"] for row in loaded})
+
+    def test_records_disagreeing_on_patch_identity_still_fail_closed(self):
+        # Replication is same build, different measurement. Records sharing a
+        # campaign digest but disagreeing about WHAT was built mean the digest
+        # is not identifying what it claims to -- corruption, not replication.
+        record = dict(self._record())
+        record["patch_implementation_digest"] = "a" * 64
+        pve.write_record(record, root=self.root)
+        contradictory = dict(record)
+        contradictory["patch_implementation_digest"] = "b" * 64
+        with self.assertRaises(pve.ValidationEvidenceError) as caught:
+            pve.write_record(contradictory, root=self.root)
+        self.assertIn("patch_implementation_digest", str(caught.exception))
+
+    def test_multiple_measurements_are_ordered_deterministically(self):
+        # A build may now hold several records; ordering must not depend on
+        # write order, or the file churns on every re-write.
+        for tag, value in (("1", "b"), ("1", "a"), ("1", "c")):
+            row = self._record(tag)
+            row["record_digest"] = value * 64
+            pve.write_record(row, root=self.root)
+        loaded = pve.load_records("9999_example", root=self.root)
+        self.assertEqual(
+            [row["record_digest"] for row in loaded],
+            ["a" * 64, "b" * 64, "c" * 64],
+        )
 
     def test_load_missing_returns_empty(self):
         self.assertEqual(pve.load_records("nonexistent", root=self.root), ())
