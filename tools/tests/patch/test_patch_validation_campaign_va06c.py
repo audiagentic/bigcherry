@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
+from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 
@@ -104,7 +105,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
         self.assertNotIn("tg128_stddev", metrics)
 
     def test_missing_runner_script_fails_closed(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=Path("/nonexistent"),
@@ -119,7 +120,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,
@@ -134,7 +135,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,

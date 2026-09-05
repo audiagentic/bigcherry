@@ -45,6 +45,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from bigcherry.build.builds import capture_completed_build_evidence
+from bigcherry.campaign.bench_runner import (  # noqa: F401
+    BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
+)
 from bigcherry.patch.activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -1665,68 +1668,10 @@ def run_rd73_mtp_server_lane(
     }
 
 
-_RD73_BENCH_RUNNER_ROOT = Path("/mnt/vault/development/llmhosts/llamacpp")
-_BENCH_RUNNER_AGGREGATED_RESULT_PATTERN = re.compile(r"^\s*(\w+_tps):\s+([0-9.]+)\s*$")
-
-
-def run_bench_runner_server_bench(
-    *, server_url: str, bench_configs: str, repetitions: int = 1, timeout_s: int = 300,
-    runner_root: Path = _RD73_BENCH_RUNNER_ROOT,
-) -> dict[str, float]:
-    """VA06 (user redirect, 2026-09-01): drive an already-running
-    llama-server via the documented Brutus bench harness
-    (docs/reference/testing/TEST.md's "Server benchmark (Brutus bench
-    runner)" section: `cd .../llamacpp && python3 bench/run_bench.py
-    --bench-type server-bench --server-url ... --bench-configs ...`) --
-    NOT a raw llama-bench subprocess. llama-bench itself has proven
-    unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on real
-    Brutus hardware (repeated real crashes this session: OOM under
-    resource contention with production traffic, and a hard
-    argument-parse error for --fit, which llama-bench does not even
-    register). Parses the real "Extracted Results"/"Aggregated Results"
-    stdout blocks (bench/runners/server_base.py and
-    bench/lib/bench_orchestrator.py print one or the other depending on
-    bench type -- server-bench mode, used here, prints "Extracted
-    Results"; both share the same "  <name>_tps: <value>" per-config
-    line format, confirmed directly against a real Brutus run) for every
-    <name>_tps metric. Fails closed on a missing runner script, nonzero
-    exit, or no parseable metric at all."""
-    runner_path = runner_root / "bench" / "run_bench.py"
-    if not runner_path.is_file():
-        raise PatchCampaignError(f"rd73 bench runner not found at {runner_path}")
-    command = [
-        sys.executable, str(runner_path),
-        "--bench-type", "server-bench", "--server-url", server_url,
-        "--model", "rd73-va06", "--bench-configs", bench_configs,
-        "--toggles", json.dumps({"repetitions": repetitions}),
-    ]
-    completed = subprocess.run(
-        command, cwd=str(runner_root), capture_output=True, text=True,
-        check=False, timeout=timeout_s,
-    )
-    if completed.returncode != 0:
-        raise PatchCampaignError(
-            f"rd73 bench runner failed (exit {completed.returncode}) against {server_url}: "
-            f"{completed.stdout[-2000:]}\n{completed.stderr[-2000:]}"
-        )
-    metrics: dict[str, float] = {}
-    in_block = False
-    for line in completed.stdout.splitlines():
-        if "Aggregated Results" in line or "Extracted Results" in line:
-            in_block = True
-            continue
-        if in_block:
-            match = _BENCH_RUNNER_AGGREGATED_RESULT_PATTERN.match(line)
-            if match:
-                metrics[match.group(1)] = float(match.group(2))
-    if not metrics:
-        raise PatchCampaignError(
-            f"rd73 bench runner produced no parseable <name>_tps metric against {server_url}; "
-            f"stdout tail:\n{completed.stdout[-2000:]}"
-        )
-    return metrics
-
-
+# VA26: run_bench_runner_server_bench() and its constants moved to
+# campaign/bench_runner.py -- the documented server-bench harness is not
+# patch-specific, and the qualification matrix needs it without importing
+# patch internals. Imported below; no alias is kept here.
 def run_rd73_decode_control_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, run_dir: Path,
     host: str = "127.0.0.1", control_port: int = 18082, subject_port: int = 18083,
