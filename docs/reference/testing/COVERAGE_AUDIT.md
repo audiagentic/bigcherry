@@ -2,6 +2,12 @@
 
 What the tuner can actually choose between, what it cannot, and why. See [FAMILY_MODEL.md](../architecture/FAMILY_MODEL.md) for why these families exist, their identity rules, and what was rejected.
 
+> **Historical coverage snapshot.** This document records the tuner surface
+> observed for the cited HI34/2026-08-17 work. It is not current acceptance
+> policy or a canonical selector inventory. Before acting, verify current
+> candidates and selectors against repository code, patch metadata, and
+> configuration.
+
 ---
 
 ## Collected — the tuner can choose between these

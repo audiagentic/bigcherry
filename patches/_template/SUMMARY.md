@@ -1,23 +1,18 @@
-# <patch id>: <one-line title>
+# <numeric-order>_<patch-name>
 
-**Status:** validated | untested | rejected | superseded
-**Group:** core | upstream-fixes | rdna-boosts
-**Plan item:** <RDxx / HIxx, or "none">
+**Status:** untested
+**Group:** <group>
+**Plan item:** none
 
 ## What it does
 
-<1-3 sentences: the concrete behavior/code change, not the motivation.>
+Describe the anchored source change in one or two sentences.
 
 ## Why
 
-<1-3 sentences: the problem this fixes or the gain it targets. If STATE is
-"rejected" or "superseded", state that here instead (what superseded it,
-or why it failed validation) -- see the STATE constant's own comment in
-patch.py/patch.toml for the authoritative, fuller trail.>
+State the engineering reason without claiming unmeasured correctness or
+performance.
 
-## Upstream / provenance
+## Upstream
 
-<Where this came from (local design / upstream commit or PR / external
-fork) and its current relationship to mainline llama.cpp, if relevant.
-One line is enough; full detail belongs in patch.py's PROVENANCE dict or
-docstring, not duplicated here.>
+Record the upstream commit, fork, or local ownership and any adaptation note.

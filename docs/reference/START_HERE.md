@@ -83,7 +83,7 @@ substantive implementation work.
 | Tests, tuning, coverage, or replay | [`testing/TEST.md`](testing/TEST.md) |
 | A patch | [`patches/PATCH_SYSTEM.md`](patches/PATCH_SYSTEM.md), then the owning `patches/<patch-id>/` package |
 | A new or changed patch | [`patches/PATCH_AUTHORING.md`](patches/PATCH_AUTHORING.md) and [`patches/PATCH_VALIDATION.md`](patches/PATCH_VALIDATION.md) |
-| Python tooling | [`tooling/TOOLING.md`](tooling/TOOLING.md) |
+| Python tooling or a tooling move/retirement | [`tooling/TOOLING.md`](tooling/TOOLING.md), then [`tooling/TOOL_DISPOSITION.md`](tooling/TOOL_DISPOSITION.md) |
 | A full tune or profiling run | [`tooling/TUNE_CAMPAIGN.md`](tooling/TUNE_CAMPAIGN.md) or [`tooling/PROFILING.md`](tooling/PROFILING.md) |
 | An experiment contract | [`experiments/EXPERIMENT_CONTRACT.md`](experiments/EXPERIMENT_CONTRACT.md) |
 | Current or proposed work | The matching item returned by the `ag-planning` MCP tools |

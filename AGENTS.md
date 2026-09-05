@@ -8,7 +8,7 @@ aside, split it into its own deliberate check-in group or leave it uncommitted.
 ## Tooling architecture and governance
 
 Before adding, moving, or retiring any `tools/bigcherry` module, script, lab
-experiment, or compatibility shim, read [`docs/reference/TOOLING.md`](docs/reference/TOOLING.md) —
+experiment, or compatibility shim, read [`docs/reference/tooling/TOOLING.md`](docs/reference/tooling/TOOLING.md) —
 it is the normative source for domain ownership, the compatibility-shim
 policy, lab/non-package boundaries, hygiene checks, and evidence/acceptance
 rules produced by the tooling-rationalisation program (TR00–TR18,

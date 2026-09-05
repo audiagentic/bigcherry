@@ -4,19 +4,42 @@ Testing procedures, tuning workflows, dispatch modes, and coverage audits.
 
 See also: [BUILD.md](../build/BUILD.md) — build commands and recipe configuration.
 
-## Offline tests (no GPU)
+## Scope and authority
+
+Use this document to choose the right kind of test, not to infer a promotion
+verdict from a convenient command. The repository gate and static patch checks
+are hardware-free. The correctness, timing, profiling, and RCCL sections are
+diagnostics unless they feed the patch's declared Experiment Contract through
+the validation/evidence writer. Full contract qualification is opt-in and
+hardware-bound; see [PATCH_VALIDATION.md](PATCH_VALIDATION.md).
+
+## Hardware-free repository gate
 
 ```bash
 cd $BC
 PYTHONPATH=tools python -m unittest discover -s tools/tests
+PYTHONPATH=tools python -m bigcherry check
 PYTHONPATH=tools python -m bigcherry audit
-PYTHONPATH=tools python -m bigcherry apply --dry-run
-PYTHONPATH=tools python -m bigcherry apply
+PYTHONPATH=tools python -m bigcherry patch-validate <patch-id>
+```
+
+Run this gate after touching `src/`, `patches/`, or `tools/`. It checks the
+repository and patch package without requiring a GPU. `patch-validate` checks
+the named package's static/evidence state; it does not run hardware
+qualification.
+
+For task-specific, hardware-free diagnostics, use an explicit scope:
+
+```bash
+cd $BC
+PYTHONPATH=tools python -m bigcherry apply --source <source-tree> --dry-run [selection]
 PYTHONPATH=tools python -m bigcherry generate --variant-set workload-max \
         --inventory $BC/artifacts/mtp-inventory.json
 ```
 
-Run all five after touching `src/`, `patches/` or `tools/`.
+Do not use an unscoped `bigcherry apply` as a generic test. A non-dry apply
+mutates a source tree and is an explicitly scoped operation, not an offline
+repository gate.
 
 **Never reset or edit the shared vendor tree to retest a patch.** The
 idempotence guard correctly skips output it already owns. Inspect existing
@@ -47,10 +70,10 @@ cd ~/<isolated-bigcherry-clone>
 export PYTHONPATH=tools
 export HIP_VISIBLE_DEVICES=0,1        # REQUIRED - see (1)
 export ROCR_VISIBLE_DEVICES=0,1
-python3 -m bigcherry.patch.validation_campaign \
+python -m bigcherry.patch.validation_campaign \
   --patch 1233_rd73_stable_graph_cache_key \
   --model /mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf \
-  --hip-path /home/audumla/rocm-shim \    # NOT /opt/rocm - see (2)
+  --hip-path /home/audumla/rocm-shim \
   --amdgpu-targets gfx1100 \
   --manifest /home/audumla/bigcherry/artifacts/2578138397d7/hip-autotune-manifest.json \
   --workdir  ~/rd73-contract-run \
@@ -59,6 +82,13 @@ python3 -m bigcherry.patch.validation_campaign \
   --run-rd73-contract \
   --rd73-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl
 ```
+
+The command above is Brutus-specific qualification infrastructure, not a
+portable repository interface. `/home/audumla`, `/mnt/vault`, the model path,
+and the work directories must be replaced on another host. A run contributes
+qualification evidence only when the campaign persists the required contract
+identity, measurements, provenance, and verdict through the canonical evidence
+path.
 
 Three prerequisites that are easy to miss and each cost a failed run:
 
@@ -104,9 +134,13 @@ control-vs-subject comparison with one completion per arm cannot resolve a
 low-single-digit effect against this project's measured 0.5-0.9% repetition
 noise floor. RD73 is the worked example: an ad-hoc single-sample run was read
 as "null, mechanism inert", while the contract's 10 paired rounds with 10,000
-bootstrap resamples measured **+1.855%, 95% CI [1.482%, 2.169%]** — a real
-effect that merely missed the contract's 3.0% promotion bar. Use the contract
-path for any claim, positive or negative.
+bootstrap resamples measured **+1.855%, 95% CI [1.482%, 2.169%]**. That is a
+historical measurement, not the current acceptance decision: the live RD73
+contract requires the 95% CI lower bound for gain to be at least 1.0%, the
+95% CI upper bound for control regression to be at most 1.0%, and at least 10
+paired rounds under `ci95_threshold_bound_v1`. Resolve thresholds from
+`config/experiment-contracts.toml`; do not copy them into a patch README.
+Use the contract path for any claim, positive or negative.
 
 ## Correctness
 
@@ -184,7 +218,7 @@ ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_ben
 
 For heterogeneous-architecture RCCL source diagnosis, repair qualification, crash-isolated candidate testing, topology identity, and eventual collective replay/tuning, use [RCCL_HETEROGENEOUS_RUNBOOK.md](RCCL_HETEROGENEOUS_RUNBOOK.md).
 
-Do not use ordinary tuning sweeps to rediscover HI85's established heterogeneous RCCL crash behavior. The runbook treats the existing crash evidence and patch-1225 guard as prerequisite truth: source-level viability must be established before heterogeneous RCCL performance tuning or replay is eligible.
+Do not use ordinary tuning sweeps to rediscover HI85's established heterogeneous RCCL crash behavior. Historical failures are immutable evidence for their exact tested topology, device set, build, and runtime. They do not establish a universal heterogeneous-architecture prohibition, and patch 1225 is an earlier, scoped guard design—not proof of complete or current protection. Verify the actual patch composition and shared-admission implementation before treating source-level viability as established; only then is heterogeneous RCCL performance tuning or replay eligible.
 
 ## Real GPU profiling (rocprofv3)
 
