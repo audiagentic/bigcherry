@@ -236,6 +236,107 @@ _ROCM_FAILURES: tuple[re.Pattern[str], ...] = (
 _VRAM = re.compile(r"VRAM:\s*(\d+)\s*MiB")
 
 
+# ---------------------------------------------------------------------------
+# llama-server attestor
+# ---------------------------------------------------------------------------
+#
+# llama-server does NOT route ggml's init logs to its own stream. Measured on
+# real hardware 2026-09-05: running with -v (verbosity threshold INT_MAX)
+# produced 2684 log lines and ZERO "ggml_cuda_init" lines. So the llama-bench
+# attestor above cannot be reused here, and no verbosity flag fixes it.
+#
+# What llama-server DOES emit is better for our purposes, because it carries
+# the PCI locator that distinguishes this host's two gfx1100 cards:
+#
+#   I llama_prepare_model_devices: using device ROCm0 (AMD Radeon RX 7900 XTX)
+#         (0000:03:00.0) - 24520 MiB free
+#   D load_tensors: layer 0 assigned to device ROCm0, is_swa = 0
+#
+# The second is stronger evidence than device DETECTION: it proves tensors were
+# actually assigned to the device, which is what a CPU fallback would not do.
+#
+# CAVEAT, found the hard way and the reason this is not yet wired into RD73's
+# lanes: the "using device" line comes from the device-memory-FITTING path, and
+# RD73's servers must pass "--fit off" (required alongside -sm tensor, else
+# llama.cpp aborts with "llama_params_fit is not implemented for
+# SPLIT_MODE_TENSOR"). With --fit off that path is skipped, so the line never
+# appears -- RD73's archived logs contain I and W lines but no ROCm device
+# mention whatsoever. The "layer N assigned" line is DEBUG level and so is
+# filtered at the verbosity those lanes ran at.
+#
+# Consequence: a validation server lane must run at a verbosity that emits the
+# layer-assignment lines, and must not rely on the fitting path. Until that is
+# done, server lanes cannot attest, which is recorded in VA25 rather than
+# worked around.
+
+_SERVER_USING_DEVICE = re.compile(
+    r"using device (?P<backend>[A-Za-z]+)(?P<index>\d+)\s*"
+    r"\((?P<name>[^)]*)\)\s*"
+    r"\((?P<locator>[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.\d)\)"
+)
+
+_SERVER_LAYER_ASSIGNED = re.compile(
+    r"assigned to device (?P<backend>[A-Za-z]+)(?P<index>\d+)"
+)
+
+
+def parse_llama_server_attestation(
+    output: str, *, architecture_by_locator: Mapping[str, str] | None = None,
+) -> ExecutionAttestation | None:
+    """Attest a llama-server process from its own log stream.
+
+    Returns None when the output carries no device evidence at all -- which
+    the comparator treats as ATTESTATION_MISSING, never as a pass.
+
+    ``architecture_by_locator`` maps PCI BDF -> gfx arch, because the server's
+    device line reports a marketing name and locator but not the ISA. The
+    mapping is host configuration, so it is supplied rather than guessed; a
+    locator absent from it yields an unknown architecture, which then fails
+    ARCH_MISMATCH rather than silently matching.
+    """
+    if not output:
+        return None
+
+    for pattern in _ROCM_FAILURES:
+        match = pattern.search(output)
+        if match is not None:
+            return ExecutionAttestation(
+                backend=None, devices=(), failure_signature=match.group(0),
+            )
+
+    lookup = dict(architecture_by_locator or {})
+    by_index: dict[int, ObservedDevice] = {}
+    backend: str | None = None
+
+    for match in _SERVER_USING_DEVICE.finditer(output):
+        backend = match.group("backend")
+        locator = match.group("locator").lower()
+        by_index[int(match.group("index"))] = ObservedDevice(
+            architecture=lookup.get(locator, "<unknown>"), locator=locator,
+        )
+
+    # Layer assignment proves tensors really went to the device. It cannot
+    # supply a locator, so it only contributes devices the "using device"
+    # lines did not already report.
+    assigned_indices: set[int] = set()
+    for match in _SERVER_LAYER_ASSIGNED.finditer(output):
+        backend = backend or match.group("backend")
+        assigned_indices.add(int(match.group("index")))
+    for index in assigned_indices:
+        by_index.setdefault(index, ObservedDevice(architecture="<unknown>", locator=None))
+
+    if not by_index:
+        return None
+
+    devices = tuple(by_index[i] for i in sorted(by_index))
+    telemetry: dict[str, object] = {
+        "layers_assigned_to_devices": sorted(assigned_indices),
+    }
+    return ExecutionAttestation(
+        backend=backend, devices=devices, telemetry=telemetry,
+    )
+
+
 def parse_rocm_attestation(output: str) -> ExecutionAttestation | None:
     """Parse ROCm backend-init evidence out of a measured process's output.
 

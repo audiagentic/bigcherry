@@ -83,6 +83,73 @@ class ParseRocmAttestationTests(unittest.TestCase):
         self.assertIn("device line", obs.failure_signature)
 
 
+# Real llama-server output, captured on Brutus 2026-09-05. Note it carries the
+# PCI locator, which ggml_cuda_init's line does NOT.
+_REAL_SERVER = """
+0.00.025.981 I cmn  common_param:   - ROCm0   : AMD Radeon RX 7900 XTX (24560 MiB, 24520 MiB free)
+0.00.109.723 I llama_prepare_model_devices: using device ROCm0 (AMD Radeon RX 7900 XTX) (0000:03:00.0) - 24520 MiB free
+0.00.256.263 D load_tensors: layer   0 assigned to device ROCm0, is_swa = 0
+0.00.256.264 D load_tensors: layer   1 assigned to device ROCm0, is_swa = 0
+"""
+
+# RD73's actual archived log shape: I and W levels present, no ROCm device
+# line at all, because --fit off skips the device-fitting path that prints it.
+_RD73_SHAPED_SERVER = """
+0.00.025.217 I cmn  common_param: common_params_print_info: verbosity = 3
+0.04.974.632 W internal AllReduce init failed (n_devices != 2?); falling back
+0.05.393.687 W set_sampler: backend sampling not supported with SPLIT_MODE_TENSOR
+"""
+
+_LOCATOR_MAP = {"0000:03:00.0": "gfx1100", "0000:0c:00.0": "gfx1100"}
+
+
+class ParseLlamaServerAttestationTests(unittest.TestCase):
+    def test_real_server_output_yields_locator_backed_device(self):
+        obs = att.parse_llama_server_attestation(
+            _REAL_SERVER, architecture_by_locator=_LOCATOR_MAP)
+        self.assertEqual(obs.backend, "ROCm")
+        self.assertEqual(obs.device_count, 1)
+        self.assertEqual(obs.devices[0].architecture, "gfx1100")
+        self.assertEqual(obs.devices[0].locator, "0000:03:00.0")
+        # Layer assignment is stronger than detection: it proves tensors
+        # actually went to the device.
+        self.assertEqual(obs.telemetry["layers_assigned_to_devices"], [0])
+
+    def test_rd73_shaped_log_carries_no_attestation(self):
+        # This is why RD73's six promoted sessions are unattested: --fit off
+        # (required for -sm tensor) skips the path that prints the device line.
+        self.assertIsNone(
+            att.parse_llama_server_attestation(
+                _RD73_SHAPED_SERVER, architecture_by_locator=_LOCATOR_MAP)
+        )
+
+    def test_unknown_locator_does_not_silently_match(self):
+        obs = att.parse_llama_server_attestation(_REAL_SERVER, architecture_by_locator={})
+        self.assertEqual(obs.devices[0].architecture, "<unknown>")
+        expected = att.ExecutionIdentity(backend="ROCm", architectures=("gfx1100",))
+        self.assertEqual(
+            att.compare_execution_identity(expected, obs), (att.ARCH_MISMATCH,)
+        )
+
+    def test_server_cpu_fallback_is_a_positive_failure(self):
+        obs = att.parse_llama_server_attestation(
+            "some log\nfailed to initialize ROCm: no ROCm-capable device is detected\n")
+        self.assertIsNone(obs.backend)
+        self.assertIsNotNone(obs.failure_signature)
+
+    def test_locator_distinguishes_the_two_gfx1100_cards(self):
+        # The concrete reason locator is identity rather than telemetry.
+        obs = att.parse_llama_server_attestation(
+            _REAL_SERVER, architecture_by_locator=_LOCATOR_MAP)
+        pinned_to_other_card = att.ExecutionIdentity(
+            backend="ROCm", architectures=("gfx1100",), locators=("0000:0c:00.0",),
+        )
+        self.assertEqual(
+            att.compare_execution_identity(pinned_to_other_card, obs),
+            (att.DEVICE_ID_MISMATCH,),
+        )
+
+
 class CompareExecutionIdentityTests(unittest.TestCase):
     ONE_GFX1201 = att.ExecutionIdentity(backend="ROCm", architectures=("gfx1201",))
     TWO_GFX1100 = att.ExecutionIdentity(
