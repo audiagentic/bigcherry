@@ -375,6 +375,22 @@ lanes = [
 # (Brutus bench runner)") drives a running llama-server via
 # bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
 #
+# ARM 4 AND ALREADY-SHIPPED PATCHES. Arm 4 is the release composition WITH the
+# patch. How it is written depends on whether the patch has already shipped:
+#
+#   not yet shipped -> source = "bigcherry", experiment = "<patch>-only"
+#   already shipped -> source = "bigcherry" alone; the release set already
+#                      contains it, and adding the experiment is rejected with
+#                      "experiment repeats a base patch module" (correctly).
+#
+# RD73 is already in validated-enhancements, so arm 4 carries no experiment
+# here. Note the consequence honestly: RD73 is currently the ONLY promoted
+# enhancement, so arm 4's composition is IDENTICAL to arm 3's (framework +
+# RD73). That makes arm 4 a consistency check -- it proves the release set
+# really does contain the patch -- rather than an independent data point. Once
+# a second enhancement ships, the two diverge and arm 4 starts measuring
+# genuine composition effects.
+#
 # `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
 # it, so a lane left at the default publishes -- and therefore builds -- only
 # llama-bench, and produces no server to measure at all.
@@ -383,7 +399,7 @@ lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # HI130: named server-args + tuner-context bundles for `bigcherry
