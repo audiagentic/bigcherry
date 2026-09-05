@@ -40,6 +40,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 
@@ -1248,7 +1249,8 @@ def run_rd58_state_restore_evidence(
 
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
-    contract_promotions: "dict[str, dict[str, object]] | None" = None,
+    contract_promotions: "dict[str, dict[str, object]] | None",
+    *, activation_disposition: str | None, correctness: "dict[str, object] | None",
 ) -> bool | None:
     """VA14 final slice (GPT req_75c09f14757640af): a bound-contract patch
     is eligible_for_validated_state only when BOTH the adapter verdict
@@ -1259,12 +1261,33 @@ def compute_persisted_validation_eligible(
     never the singular ``.experiment_contract`` compatibility property,
     which raises for a multi-contract patch. A patch with NO bound contract
     is unaffected -- the adapter verdict alone is the only qualification
-    such a patch ever claims, exactly as before."""
+    such a patch ever claims, exactly as before.
+
+    RV95: this predicate must also require what evidence.py's
+    ``_record_qualifies()`` requires of the record's OWN top-level
+    activation/correctness fields, because the two are read as answering the
+    same question and previously did not. --run-rd73-contract populated the
+    adapter verdict and the contract promotion but left activation/
+    correctness at disposition="unknown", so this returned True while
+    verify_validated_patch() rejected the very same record with "activation
+    is not executed+activation-verified; correctness did not pass". The
+    campaign then printed "STATE='validated' eligible: yes" for a record no
+    verifier would accept -- a fail-OPEN disagreement in a system whose
+    whole contract is to fail closed.
+
+    Keeping the two predicates in sync structurally (rather than by
+    convention) is the point: a producer that cannot populate these fields
+    now reports ineligible, which is the safe direction. The literals below
+    are deliberately the same ones evidence.py:745-754 tests."""
     if not descriptor.experiment_contracts:
         if validation_verdict is None:
             return None
         return validation_verdict.eligible
     if validation_verdict is None or not validation_verdict.eligible:
+        return False
+    if activation_disposition != "activation-verified":
+        return False
+    if not isinstance(correctness, Mapping) or correctness.get("disposition") != "passed":
         return False
     promotions = contract_promotions or {}
     return all(
@@ -2974,16 +2997,18 @@ def run(args: argparse.Namespace) -> int:
     # VA06: RD73 execution, opt-in and scoped to RD73 only. Mirrors RD08's
     # --run-rd08-contract dispatch (mutual exclusion, descriptor check,
     # single orchestrator call, contract_promotions population, pass/fail
-    # print) -- but deliberately does NOT also rebind the generic
-    # adapter's correctness/performance/trace evidence the way the RD08
-    # block above does (validation.toml's own generic checks are outside
-    # this slice's scope). eligible_for_validated_state therefore cannot
-    # become True from --run-rd73-contract alone yet --
-    # compute_persisted_validation_eligible() requires BOTH the adapter
-    # verdict AND every bound contract's promotion; rebinding the generic
-    # adapter evidence for RD73 is separate, deferred work. The real,
-    # auditable per-contract PASS/FAIL/INVALID verdict is still produced
-    # and printed here.
+    # print).
+    #
+    # RV95: this block now ALSO rebinds the generic adapter evidence, the
+    # way the RD08 block above does. It previously bound none of it, and
+    # then bound only part of it (performance/correctness/trace, VA23) --
+    # leaving the record's own top-level activation/correctness fields at
+    # disposition="unknown". That produced a FAIL-OPEN disagreement: the
+    # campaign printed "STATE='validated' eligible: yes" for records that
+    # verify_validated_patch() rejected. Both halves are bound here now, so
+    # a passing RD73 record satisfies the evidence verifier as well as the
+    # eligibility flag. The real, auditable per-contract PASS/FAIL/INVALID
+    # verdict is produced and printed here as before.
     rd73_qualification: dict[str, object] | None = None
     if args.run_rd73_contract:
         if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore:
@@ -3039,6 +3064,60 @@ def run(args: argparse.Namespace) -> int:
             "positive": rd73_qualification["activation"]["positive"],
             "negative": rd73_qualification["activation"]["negative"],
         }
+        # RV95: the three bindings above satisfy validation.toml's DECLARED
+        # checks, but not the record's own top-level activation/correctness
+        # fields -- make_record() reads those from activation_evidence and
+        # correctness_summary, which the RD73 branch never set. They stayed
+        # at disposition="unknown", so verify_validated_patch() rejected an
+        # otherwise-passing record with "activation is not executed+
+        # activation-verified; correctness did not pass" even while
+        # check_results._contract_correctness_gate.passed was true. Bind them
+        # from the SAME real evidence RD08/RD58 use, in the same shape.
+        activation_evidence = ActivationEvidence(
+            status=(
+                "executed"
+                if rd73_qualification["activation"]["subject_hit"]
+                and not rd73_qualification["activation"]["control_hit"]
+                else "not_executed"
+            ),
+            mechanism="rd73-trigger-marker", detail=f"marker={trace_marker_regex!r}",
+        )
+        activation_verdict = verdict(activation_evidence, correctness_passed=None)
+        write_activation_json(
+            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+            extra={
+                "campaign_identity_digest": campaign.campaign_identity_digest,
+                "rd73_trigger": {
+                    "subject_hit": rd73_qualification["activation"]["subject_hit"],
+                    "control_hit": rd73_qualification["activation"]["control_hit"],
+                    "artifact": rd73_qualification["activation"]["artifact"],
+                },
+            },
+        )
+        # Disposition comes from the contract's own correctness gate, which
+        # is already fail-closed: an Rd73CorrectnessError leaves the artifact
+        # None and records passed=False, so a correctness check that could
+        # not be evaluated reports "failed" here rather than silently passing.
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": (
+                "passed" if rd73_qualification["correctness_gate"].get("passed") else "failed"
+            ),
+            "mechanism": "rd73-mtp-bit-identical",
+            "detail": (
+                "paired MTP control/subject completions compared byte-for-byte; "
+                f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
+            ),
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
 
         _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
         _print(
@@ -3175,13 +3254,17 @@ def run(args: argparse.Namespace) -> int:
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
         # VA14 final slice: eligible_for_validated_state for a bound-contract
-        # patch now requires BOTH the adapter verdict AND every bound
-        # contract's own evaluate_promotion_gate() PASS (contract_promotions,
-        # populated only by --run-rd08-contract today). A bound contract with
-        # no promotion result at all still forces False -- see
-        # compute_persisted_validation_eligible()'s docstring.
+        # patch requires BOTH the adapter verdict AND every bound contract's
+        # own evaluate_promotion_gate() PASS (contract_promotions). A bound
+        # contract with no promotion result at all still forces False.
+        # RV95: it additionally requires the record's own activation/
+        # correctness dispositions -- the same values make_record() persists
+        # just below and verify_validated_patch() later reads -- so this flag
+        # can no longer report eligible for a record the evidence verifier
+        # rejects. See compute_persisted_validation_eligible()'s docstring.
         validation_eligible=compute_persisted_validation_eligible(
-            _descriptor, validation_verdict, contract_promotions
+            _descriptor, validation_verdict, contract_promotions,
+            activation_disposition=activation_verdict, correctness=correctness_summary,
         ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
@@ -3283,9 +3366,10 @@ def main(argv: list[str] | None = None) -> int:
              "evidence + real paired MTP-verify performance (server harness) + decode "
              "control + bit-identical correctness, composed via evaluate_promotion_gate(). "
              "Populates contract_promotions for RD73 (a real PASS/FAIL/INVALID verdict is "
-             "printed), but does NOT rebind the generic adapter's own checks -- "
-             "eligible_for_validated_state cannot become True from this flag alone yet. "
-             "RD73-only; an error for any other patch. Mutually exclusive with the "
+             "printed) and rebinds the generic adapter's performance/correctness/trace "
+             "evidence plus the record's own activation/correctness dispositions, so a "
+             "passing run satisfies verify_validated_patch() as well as the eligibility "
+             "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
              "RD04/RD08/RD58 execution modes. Requires --rd73-corpus.",
     )
     parser.add_argument(
