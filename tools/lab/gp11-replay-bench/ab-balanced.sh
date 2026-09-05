@@ -16,7 +16,8 @@
 # away. Measured position spread on this host is 0.19-0.35% -- the same order
 # as the effects being chased, which is why this is not optional.
 #
-# ARMS: space-separated NAME:BUILD_DIGEST:CACHE triples, CACHE = yes|no.
+# ARMS: space-separated NAME:BUILD_DIGEST:CACHE[:MODE] entries, CACHE = yes|no,
+# MODE = native|record|tune|replay or omitted/"-" to leave the layer OFF.
 #   yes  -> GGML_HIP_DISPATCH_CACHE points at $CACHE_PATH (winners active)
 #   no   -> the variable is unset (no winners)
 # Holding the digest constant across two arms and varying only CACHE isolates
@@ -40,16 +41,27 @@ resolve () {  # digest -> binary path
   find ~/.cache/bigcherry/builds -path "*/$1/bin/llama-server" | head -1
 }
 for spec in "${ARM_LIST[@]}"; do
-  IFS=: read -r name digest usecache <<< "$spec"
+  IFS=: read -r name digest usecache mode <<< "$spec"
   b=$(resolve "$digest")
   [ -x "$b" ] || { echo "arm $name: no binary for digest $digest" >&2; exit 1; }
   [ "$usecache" = "yes" ] && { [ -f "$CACHE_PATH" ] || { echo "arm $name wants cache but $CACHE_PATH missing" >&2; exit 1; }; }
 done
 
 cell () {
-  local round=$1 pos=$2 name=$3 digest=$4 usecache=$5
+  local round=$1 pos=$2 name=$3 digest=$4 usecache=$5 mode=${6:-}
   local bin; bin=$(resolve "$digest")
   export ROCR_VISIBLE_DEVICES=$DEVICES HIP_VISIBLE_DEVICES=$DEVICES LD_LIBRARY_PATH=$(dirname "$bin")
+  # ARMS entries take a fourth field: the dispatch MODE. Setting a cache path
+  # is NOT enough to enable the dispatch layer -- ggml_hip_parse_mode() defaults
+  # to native when GGML_HIP_DISPATCH_MODE is unset, and native mode returns from
+  # ggml_hip_dispatch_mul_mat before any lookup. A "replay" arm without the mode
+  # set loads no cache, resolves nothing, counts nothing, and silently runs
+  # upstream code while looking like a working arm from the outside.
+  if [ -n "${mode:-}" ] && [ "$mode" != "-" ]; then
+    export GGML_HIP_DISPATCH_MODE=$mode
+  else
+    unset GGML_HIP_DISPATCH_MODE
+  fi
   if [ "$usecache" = "yes" ]; then export GGML_HIP_DISPATCH_CACHE=$CACHE_PATH; else unset GGML_HIP_DISPATCH_CACHE; fi
   rm -f /tmp/r.log
   # Patch 0800_server_shutdown_endpoint only REGISTERS the /shutdown route when
@@ -109,8 +121,8 @@ for r in $(seq 1 $ROUNDS); do
   pos=1
   for i in $(seq 0 $((NARMS - 1))); do
     spec=${ARM_LIST[$(( (i + shift_by) % NARMS ))]}
-    IFS=: read -r name digest usecache <<< "$spec"
-    cell $r $pos "$name" "$digest" "$usecache"
+    IFS=: read -r name digest usecache mode <<< "$spec"
+    cell $r $pos "$name" "$digest" "$usecache" "${mode:-}"
     pos=$((pos + 1))
   done
   echo "round $r done $(date -Is)" >> "$OUT"
