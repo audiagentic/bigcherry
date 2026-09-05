@@ -257,8 +257,24 @@ def resolve_lane(
         name=f"{source_name}+{experiment}" if experiment else source_name,
         source_name=source_name,
         patch_set=resolved,
+        # A view of the promoted enhancements THIS lane actually composes --
+        # not the global contents of validated-enhancements. patch/source.py
+        # already documents the intent ("a declared-config view of them, not
+        # an extra"), but the implementation returned the whole set for every
+        # source, including ones whose patch-sets do not include it.
+        #
+        # Latent while validated-enhancements was empty; populating it made
+        # bigcherry-native -- the framework-only CONTROL source -- report a
+        # promoted enhancement it does not build. Actual patch selection
+        # (patch_set.module_ids) was always correct, so no build shipped the
+        # wrong thing, but any consumer reading this field for a native lane
+        # would have been told the control arm carries an enhancement. That is
+        # precisely the baseline-contamination story a control exists to rule
+        # out, so it must not be merely conventionally true.
         promoted_enhancements=tuple(
-            cfg.patch_sets["validated-enhancements"].patches
+            patch_id
+            for patch_id in cfg.patch_sets["validated-enhancements"].patches
+            if patch_id in set(resolved.module_ids)
         ) if "validated-enhancements" in cfg.patch_sets else (),
     )
 
