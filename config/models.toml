@@ -67,3 +67,13 @@ parameters = "27B"
 size-bytes = 29047086048
 mtp = true
 notes = "Large tier, dual-GPU (-sm tensor) only: ~13GB/GPU, so control and subject servers cannot run concurrently on 24.5GB cards. RD73's lane. Q8_0 rather than a K-quant so quantisation error is not confounded with the effect under test."
+
+[[models]]
+id = "tierM-qwen35b-a3b-moe-mtp"
+family = "qwen3.6-35B-A3B"
+path = "qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf"
+quantisation = "APEX-MTP-I-Compact"
+parameters = "35B-A3B"
+size-bytes = 17329854048
+mtp = true
+notes = "MIXTURE-OF-EXPERTS lane, added 2026-09-05 to break a specific hypothesis rather than to add coverage for its own sake. Every other model here is dense, so a graph-cache or shape-recurrence claim measured only on them is measured on one kind of recurring-shape population; MoE expert routing produces a different one. RD73 is the immediate motivation -- it ships on the strength of dense-model evidence. 17.3GB fits comfortably on the single 34.2GB gfx1201 card with room for KV, unlike this family's 30.0GB UD-Q6_K, which would leave ~4GB and risk OOM. Caveat worth stating: APEX-MTP-I-Compact is a derived quantisation, not a stock one. That does not confound an A/B (both arms load the same file) but it does mean results here describe this checkpoint, not Q6_K/Q8_0 behaviour generally."

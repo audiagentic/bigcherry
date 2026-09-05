@@ -1965,6 +1965,9 @@ def run_rd73_contract_qualification(
     # reports "collect more" for ever. An empty tuple is the honest value for
     # a first session, and is meaningless under a non-session policy.
     prior_session_records: "Iterable[Mapping[str, object]]",
+    # Required: session aggregation must pool only same-hardware sessions,
+    # and this is the run's own architecture.
+    amdgpu_targets: str,
 ) -> dict[str, object]:
     """VA06 next slice: the authoritative RD73 full-qualification path
     (``--run-rd73-contract``), mirroring RD08's own
@@ -2045,10 +2048,16 @@ def run_rd73_contract_qualification(
     # per-run property (this build must not have broken the control lane in
     # THIS run), not a claim being established across occasions.
     if contract.acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1":
-        this_session = {"lane_effects": collect_lane_effect_records(
-            rd08_qualification=None,
-            rd73_qualification={"mtp": mtp, "decode_control": decode_control},
-        )}
+        # The stub must carry gpu_architectures like a real record does, or
+        # aggregate_session_effects' hardware filter would drop the very
+        # session just measured.
+        this_session = {
+            "gpu_architectures": [amdgpu_targets],
+            "lane_effects": collect_lane_effect_records(
+                rd08_qualification=None,
+                rd73_qualification={"mtp": mtp, "decode_control": decode_control},
+            ),
+        }
         gain_field = (
             "end_to_end_gain_pct" if contract.acceptance.end_to_end_gain_pct is not None
             else "target_kernel_gain_pct"
@@ -2057,6 +2066,8 @@ def run_rd73_contract_qualification(
         aggregated_effects.update(experiment_contract.aggregate_session_effects(
             [*prior_session_records, this_session],
             field=gain_field, role="positive", metric="mtp_wall_tps",
+            # Only sessions measured on THIS hardware may be pooled.
+            architectures=[amdgpu_targets],
         ))
     resource_gate = experiment_contract.evaluate_resource_gate(
         contract, {"graph_cache_entries": resource["result"]},
@@ -3135,6 +3146,7 @@ def run(args: argparse.Namespace) -> int:
             # there, and why RV96 had to make a build hold more than one
             # record before any of this could work.
             prior_session_records=patch_validation_evidence.load_records(args.patch),
+            amdgpu_targets=args.amdgpu_targets,
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
 

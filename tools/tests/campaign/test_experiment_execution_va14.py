@@ -175,14 +175,15 @@ class RunPairedLaneTests(unittest.TestCase):
             for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)
         ]
         records = [
-            {"lane_effects": [{
+            {"gpu_architectures": ["gfx1100"], "lane_effects": [{
                 "role": effect.role, "metric": effect.metric,
                 "pair_ratios": list(effect.pair_ratios),
             }]}
             for effect in effects
         ]
         aggregated = ec.aggregate_session_effects(
-            records, field="gain", role="positive", metric="tg128")
+            records, field="gain", role="positive", metric="tg128",
+            architectures=["gfx1100"])
         self.assertEqual(aggregated["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
         self.assertIn("gain_ci95_low", aggregated)
 
