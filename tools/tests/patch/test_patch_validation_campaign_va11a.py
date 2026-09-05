@@ -195,6 +195,73 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
         ))
 
 
+class CollectLaneEffectRecordsTests(unittest.TestCase):
+    """RV99: the campaign must hand make_record() the MEASUREMENTS, not only
+    the verdict. Both producing shapes carry the ratio vector already --
+    RD73 returns LaneEffect dataclasses, RD08's lanes carry
+    block_bootstrap_effect()'s own stats dict -- so this only normalises and
+    keeps them."""
+
+    def test_no_qualification_yields_no_lane_effects(self):
+        self.assertEqual(
+            vc.collect_lane_effect_records(
+                rd08_qualification=None, rd73_qualification=None),
+            [],
+        )
+
+    def test_rd73_dataclass_effects_are_normalised_with_their_ratios(self):
+        from bigcherry.experiment.contract import LaneEffect
+
+        qualification = {
+            "mtp": {"effect": LaneEffect(
+                role="positive", metric="mtp_wall_tps", geometric_effect_pct=1.7,
+                ci95_low_pct=1.3, ci95_high_pct=2.1, paired_rounds=2,
+                pair_ratios=(1.02, 1.012),
+            )},
+            "decode_control": {"effect": LaneEffect(
+                role="control", metric="decode_tps", geometric_effect_pct=0.0,
+                pair_ratios=(1.0, 1.0),
+            )},
+        }
+        records = vc.collect_lane_effect_records(
+            rd08_qualification=None, rd73_qualification=qualification)
+        self.assertEqual(len(records), 2)
+        positive = records[0]
+        self.assertEqual(positive["role"], "positive")
+        self.assertEqual(positive["metric"], "mtp_wall_tps")
+        self.assertEqual(positive["pair_ratios"], [1.02, 1.012])
+        self.assertEqual(positive["paired_rounds"], 2)
+        self.assertEqual(positive["ci95_low_pct"], 1.3)
+
+    def test_rd08_stats_dict_shape_is_accepted_too(self):
+        qualification = {"lanes": {
+            "positive": {"metric": "tg128", "stats": {
+                "geometric_effect_pct": 0.4, "pair_ratios": (1.004, 1.005),
+                "paired_rounds": 2,
+            }},
+        }}
+        records = vc.collect_lane_effect_records(
+            rd08_qualification=qualification, rd73_qualification=None)
+        self.assertEqual(records[0]["metric"], "tg128")
+        self.assertEqual(records[0]["pair_ratios"], [1.004, 1.005])
+
+    def test_ratios_are_lists_so_a_reread_record_digests_identically(self):
+        # JSON has no tuple: a stored record reads back with lists, so writing
+        # tuples would make record_digest depend on load/store round trips.
+        from bigcherry.experiment.contract import LaneEffect
+
+        records = vc.collect_lane_effect_records(
+            rd08_qualification=None,
+            rd73_qualification={
+                "mtp": {"effect": LaneEffect(
+                    role="positive", metric="m", geometric_effect_pct=1.0,
+                    pair_ratios=(1.01,))},
+                "decode_control": {"effect": None},
+            },
+        )
+        self.assertIsInstance(records[0]["pair_ratios"], list)
+
+
 class EligibilityAgreesWithTheEvidenceVerifierTests(unittest.TestCase):
     """RV95: this flag and evidence.py's verify_validated_patch() answer the
     same question and must not be able to disagree. The regression they pin

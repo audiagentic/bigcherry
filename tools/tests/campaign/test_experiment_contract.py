@@ -815,6 +815,87 @@ class BootstrapSessionEffectTests(unittest.TestCase):
         self.assertEqual(result["paired_rounds_total"], 40)
 
 
+class AggregateSessionEffectsTests(unittest.TestCase):
+    """RV99: rebuild a session-level interval from committed records alone.
+    Before lane_effects were persisted, pair_ratios existed only under
+    artifacts/ (gitignored), so no interval could be re-derived from evidence."""
+
+    METRIC = "mtp_wall_tps"
+
+    def _record(self, *percents, role="positive", metric=None):
+        return {"lane_effects": [{
+            "role": role, "metric": metric or self.METRIC,
+            "pair_ratios": [1.0 + pct / 100.0 for pct in percents],
+        }]}
+
+    def _aggregate(self, records):
+        return ec.aggregate_session_effects(
+            records, field="gain", role="positive", metric=self.METRIC)
+
+    def test_reports_session_count_even_when_it_cannot_estimate(self):
+        # The gate must be able to say how many were found and how many more
+        # are needed -- reporting nothing would be indistinguishable from
+        # having no evidence at all.
+        result = self._aggregate([self._record(1.0), self._record(2.0)])
+        self.assertEqual(result["gain_sessions"], 2)
+        self.assertNotIn("gain_ci95_low", result)
+
+    def test_aggregates_once_enough_sessions_exist(self):
+        result = self._aggregate([self._record(2.0, 1.0)] * ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertIn("gain_ci95_low", result)
+        self.assertIn("gain_between_session_sd_pct", result)
+        self.assertEqual(result["gain_paired_rounds"], 2 * ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_ignores_lanes_of_another_role_or_metric(self):
+        records = [self._record(2.0, 1.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        records.append(self._record(50.0, role="control"))
+        records.append(self._record(50.0, metric="other_tps"))
+        result = self._aggregate(records)
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_a_record_without_a_matching_lane_is_not_a_zero_session(self):
+        # Counting it as zero-effect would quietly drag the estimate toward
+        # zero while looking like more evidence.
+        records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        with_empty = records + [{"lane_effects": []}, {}]
+        self.assertEqual(
+            self._aggregate(with_empty)["gain_sessions"],
+            self._aggregate(records)["gain_sessions"],
+        )
+        self.assertAlmostEqual(
+            self._aggregate(with_empty)["gain"], self._aggregate(records)["gain"], places=9
+        )
+
+    def test_every_valid_session_contributes_regardless_of_order(self):
+        # Selecting or reordering sessions is exactly what the frozen re-run
+        # policy forbids, so the estimate must not depend on it.
+        records = [self._record(3.0, 2.0), self._record(0.5, 0.2),
+                   self._record(1.5, 1.0), self._record(2.5, 2.0)]
+        forward = self._aggregate(records)
+        backward = self._aggregate(list(reversed(records)))
+        self.assertEqual(forward["gain_sessions"], backward["gain_sessions"])
+        self.assertAlmostEqual(forward["gain"], backward["gain"], places=9)
+
+    def test_result_feeds_the_session_gate_directly(self):
+        # The aggregator's output keys must be exactly what the stopping rule
+        # reads -- otherwise the two halves never meet.
+        records = [self._record(2.0, 1.8) for _ in range(5)]
+        aggregated = ec.aggregate_session_effects(
+            records, field="end_to_end_gain_pct", role="positive", metric=self.METRIC)
+        aggregated.update({
+            "max_control_regression_pct": 0.0,
+            "max_control_regression_pct_ci95_high": 0.0,
+            "max_control_regression_pct_paired_rounds": 10,
+        })
+        result = ec.evaluate_promotion_gate(
+            _session_contract(end_to_end_gain_pct=0.5),
+            correctness_gate={"passed": True, "missing_checks": [], "failed_checks": []},
+            aggregated_effects=aggregated,
+        )
+        self.assertIn(result["status"], {"pass", "fail"})  # decided, not invalid
+
+
 def _session_contract(**acceptance_overrides):
     acceptance = {
         "end_to_end_gain_pct": 1.0,

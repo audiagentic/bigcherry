@@ -33,6 +33,7 @@ import random
 import math
 import statistics
 import tomllib
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -2144,6 +2145,53 @@ def _finite_number(value: object) -> bool:
         and isinstance(value, (int, float))
         and math.isfinite(value)
     )
+
+
+def aggregate_session_effects(
+    records: Iterable[Mapping[str, object]], *, field: str, role: str, metric: str,
+    seed: int = 0, resamples: int = 10_000,
+) -> dict[str, object]:
+    """RV99: build the ``aggregated_effects`` a session policy needs from
+    several validation records -- one per measurement SESSION.
+
+    Each record contributes the ``lane_effects`` entry matching ``role`` and
+    ``metric``; its ``pair_ratios`` is that session's observation. Records
+    lacking a matching lane, or carrying an empty ratio vector, contribute
+    nothing -- they are not treated as a zero-effect session, which would
+    quietly drag the estimate toward zero.
+
+    Returns ``{field: ..., field_ci95_low: ..., field_ci95_high: ...,
+    field_sessions: ...}``. When ``bootstrap_session_effect()`` declines (too
+    few sessions), the count is still reported so the gate can say how many
+    were found and how many more are needed, rather than reporting nothing.
+
+    Sessions are ORDER-INDEPENDENT here: every valid record contributes, and
+    none is dropped. Selecting which sessions to aggregate is exactly the
+    move the frozen re-run policy forbids.
+    """
+    sessions: list[tuple[float, ...]] = []
+    for record in records:
+        for lane in record.get("lane_effects") or ():
+            if not isinstance(lane, Mapping):
+                continue
+            if lane.get("role") != role or lane.get("metric") != metric:
+                continue
+            ratios = lane.get("pair_ratios") or ()
+            if ratios:
+                sessions.append(tuple(float(value) for value in ratios))
+            break
+    estimate = bootstrap_session_effect(sessions, seed=seed, resamples=resamples)
+    if estimate is None:
+        return {f"{field}_sessions": len(sessions)}
+    return {
+        field: estimate["geometric_effect_pct"],
+        f"{field}_ci95_low": estimate["ci95_low_pct"],
+        f"{field}_ci95_high": estimate["ci95_high_pct"],
+        f"{field}_sessions": estimate["sessions"],
+        f"{field}_paired_rounds": estimate["paired_rounds_total"],
+        f"{field}_between_session_sd_pct": estimate["between_session_sd_pct"],
+        f"{field}_per_session_effect_pct": list(estimate["per_session_effect_pct"]),
+    }
 
 
 def _session_stopping_rule_met(

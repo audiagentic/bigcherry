@@ -333,6 +333,7 @@ def make_record(
     stock_tree: str | None = None, blockers: Iterable[str] = (),
     check_results: Mapping[str, object] | None = None,
     validation_eligible: bool | None = None,
+    lane_effects: Iterable[Mapping[str, object]],
 ) -> dict[str, object]:
     """``build_identities`` is the campaign-build domain
     ({tune,replay,stock}); ``validation_build_identities`` is the
@@ -509,6 +510,27 @@ def make_record(
         "campaign_build_identities": builds,
         "validation_build_identities": validation_builds,
         "campaign_artifacts": _artifact_refs(campaign_workdir),
+        # RV99: the MEASUREMENTS, not just the verdict derived from them.
+        # Before this the record kept identity, provenance, check verdicts and
+        # artifact hashes, but the per-lane effects and their pair_ratios lived
+        # only in the campaign's own artifacts under artifacts/, which is
+        # gitignored. So from committed evidence alone an interval could not be
+        # re-derived, re-aggregated across sessions or lanes, re-analysed under
+        # a new estimator, or audited against the data that produced it -- the
+        # record asserted a number whose inputs were unavailable, and on any
+        # machine that had not run the campaign they were simply gone.
+        #
+        # block_bootstrap_effect() already names pair_ratios "the SUFFICIENT
+        # STATISTIC for recomputing an AGGREGATE interval ... without
+        # re-running the benchmark"; this is where that intent becomes real.
+        # The vector is one float per paired round (10 for RD73), so retaining
+        # it is a decision about what to keep, not new measurement.
+        #
+        # Required rather than defaulted: a campaign that measured lanes and
+        # recorded none of them should be a call-site error, not a silently
+        # thinner record. An empty tuple is legitimate for a campaign with no
+        # measured lanes at all.
+        "lane_effects": [dict(effect) for effect in lane_effects],
         "validation_disposition": "validated" if eligible else "incomplete",
         "eligible_for_validated_state": eligible,
     }

@@ -118,7 +118,7 @@ class MakeRecordTests(unittest.TestCase):
             build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
                                "stock": _build_identity("3")},
             validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
-            campaign_workdir=self.workdir, **record_kwargs,
+            campaign_workdir=self.workdir, lane_effects=(), **record_kwargs,
         )
 
     def test_fully_eligible_record(self):
@@ -171,7 +171,7 @@ class MakeRecordTests(unittest.TestCase):
                 campaign_identity_digest=_HEX64,
                 build_identities={"tune": _build_identity("1")},  # replay/stock missing
                 validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
-                campaign_workdir=self.workdir,
+                campaign_workdir=self.workdir, lane_effects=(),
             )
 
 

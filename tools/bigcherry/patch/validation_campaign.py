@@ -1247,6 +1247,62 @@ def run_rd58_state_restore_evidence(
     }
 
 
+_LANE_EFFECT_FIELDS = (
+    "geometric_effect_pct", "ci95_low_pct", "ci95_high_pct", "paired_rounds",
+)
+
+
+def collect_lane_effect_records(
+    *, rd08_qualification: "dict[str, object] | None",
+    rd73_qualification: "dict[str, object] | None",
+) -> list[dict[str, object]]:
+    """RV99: the per-lane measurements to persist in the validation record.
+
+    The record used to keep identity, provenance and verdicts but not the
+    numbers those verdicts came from -- per-lane effects and their
+    ``pair_ratios`` existed only under ``artifacts/``, which is gitignored. An
+    interval therefore could not be re-derived, re-aggregated across sessions,
+    re-analysed under a new estimator, or audited from committed evidence.
+
+    Normalises the two shapes that actually carry a paired-lane measurement
+    into one:
+
+      * RD73's contract qualification returns ``LaneEffect`` dataclasses;
+      * RD08's lanes carry ``block_bootstrap_effect()``'s own stats dict
+        (``PairedLaneRun.stats``).
+
+    Both already contain the ratio vector -- this only decides to KEEP it.
+    ``pair_ratios`` is normalised to a list so a re-read record serialises
+    identically to the one that was written (JSON has no tuple), keeping
+    ``record_digest`` stable across a load/store round trip.
+    """
+    records: list[dict[str, object]] = []
+
+    def _add(role: str, metric: str, source: object) -> None:
+        if source is None:
+            return
+        raw = dataclasses.asdict(source) if dataclasses.is_dataclass(source) else dict(source)
+        ratios = raw.get("pair_ratios") or ()
+        entry: dict[str, object] = {
+            "role": raw.get("role") or role,
+            "metric": raw.get("metric") or metric,
+            "pair_ratios": [float(value) for value in ratios],
+        }
+        for field in _LANE_EFFECT_FIELDS:
+            if raw.get(field) is not None:
+                entry[field] = raw[field]
+        records.append(entry)
+
+    if rd73_qualification is not None:
+        _add("positive", "mtp_wall_tps", rd73_qualification["mtp"].get("effect"))
+        _add("control", "decode_tps", rd73_qualification["decode_control"].get("effect"))
+    if rd08_qualification is not None:
+        for role, lane in (rd08_qualification.get("lanes") or {}).items():
+            if isinstance(lane, Mapping):
+                _add(role, str(lane.get("metric") or ""), lane.get("stats"))
+    return records
+
+
 def compute_persisted_validation_eligible(
     descriptor: object, validation_verdict: object | None,
     contract_promotions: "dict[str, dict[str, object]] | None",
@@ -3265,6 +3321,12 @@ def run(args: argparse.Namespace) -> int:
         validation_eligible=compute_persisted_validation_eligible(
             _descriptor, validation_verdict, contract_promotions,
             activation_disposition=activation_verdict, correctness=correctness_summary,
+        ),
+        # RV99: persist the measurements, not only the verdict derived from
+        # them, so an interval can be re-derived and sessions aggregated from
+        # committed evidence alone.
+        lane_effects=collect_lane_effect_records(
+            rd08_qualification=rd08_qualification, rd73_qualification=rd73_qualification,
         ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
