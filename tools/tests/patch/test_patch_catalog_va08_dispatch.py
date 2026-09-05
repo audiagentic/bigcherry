@@ -22,11 +22,19 @@ from bigcherry.patch import validation_policy  # noqa: E402
 
 class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
     def test_real_ported_benched_patch_dispatches_to_ported_benched_verifier(self) -> None:
-        # 1233_rd73_stable_graph_cache_key: real STATE="untested" patch with
-        # a real status="ported-benched" tracked entry.
+        # 1202_rd04_bf16_flash_attn_tile: real STATE="untested" patch with a
+        # real status="ported-benched" tracked entry.
+        #
+        # This fixture was 1233_rd73_stable_graph_cache_key until 2026-09-05,
+        # when RD73 was promoted to STATE="validated". Its tracked status is
+        # still "ported-benched", but the dispatcher keys on STATE, so RD73
+        # now routes to verify_validated_patch and can no longer demonstrate
+        # the ported-benched branch. Swapped for another real patch in that
+        # state rather than pinned to a synthetic one -- the point of this
+        # test is that dispatch works on the REAL catalog.
         self.assertIn(
             "ported-benched",
-            validation_policy.tracked_statuses_for_patch("1233_rd73_stable_graph_cache_key"),
+            validation_policy.tracked_statuses_for_patch("1202_rd04_bf16_flash_attn_tile"),
         )
         with mock.patch.object(
             pve, "verify_ported_benched_patch",
@@ -35,11 +43,11 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             pve, "verify_deferred_hardware_patch",
         ) as fake_deferred:
             result = patch_catalog.validation_evidence_statuses(
-                ["1233_rd73_stable_graph_cache_key"],
+                ["1202_rd04_bf16_flash_attn_tile"],
             )
         fake_benched.assert_called_once()
         fake_deferred.assert_not_called()
-        self.assertEqual(result["1233_rd73_stable_graph_cache_key"].status, "ported-benched-evidence")
+        self.assertEqual(result["1202_rd04_bf16_flash_attn_tile"].status, "ported-benched-evidence")
 
     def test_real_deferred_hardware_patch_dispatches_to_deferred_hardware_verifier(self) -> None:
         # 1217_rd44_graph_opt_default_rdna35: real STATE="untested" patch

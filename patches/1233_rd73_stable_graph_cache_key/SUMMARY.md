@@ -1,8 +1,14 @@
 # 1233_rd73_stable_graph_cache_key: Replace the HIP/CUDA graph-cache key with a stable FNV-1a shape fingerprint (RD73, re-scoped from FORK-MTP-003)
 
-**Status:** untested
+**Status:** validated
 **Group:** rdna-boosts
 **Plan item:** RD73
+
+> Promoted 2026-09-05 on 6 pre-registered measurement sessions:
+> **+1.889% end-to-end, 95% CI [1.475, 2.352], 0.0% control regression,
+> bit-identical output.** See "GOVERNED QUALIFICATION" below.
+> Not in any patch-set yet -- `validated` means the evidence stands, not
+> that production runs it.
 
 ## What it does
 
@@ -157,3 +163,78 @@ BEFORE the next run.
 Superseded above: the "misses the 3% bar" disposition (the bar is now 1.0) and
 the "adapter gap" evidence status (fixed -- see RV95; run 3 produced
 `verdict: activation-verified` and `correctness.disposition: passed`).
+
+## GOVERNED QUALIFICATION (2026-09-05): PASS -- promoted to `validated`
+
+Qualified under `session_ci95_threshold_bound_v1`, whose stopping rule was
+**pre-registered** in contract hash `8827bd6d` and committed BEFORE any of the
+sessions below were collected.
+
+| | |
+|---|---|
+| sessions | 6 of a pre-declared max 8 (60 paired rounds) |
+| per-session | 1.326  2.356  1.373  1.922  2.626  1.730 |
+| effect | **+1.8886%** end-to-end |
+| 95% CI | **[1.4754, 2.3523]**, width 0.8769 (target <= 1.0) |
+| between-session sd | 0.5238 |
+| control regression | **0.0%**, ci95_high 0.0 |
+| correctness | PASS (`bit_identical`) |
+| resource | PASS (`graph_cache_entries`) |
+| trigger proof | PASS |
+| promotion | **PASS**, no blocking reasons |
+
+`patch-verify-evidence` reports `validated-evidence` with zero problems, and
+holds under `--no-legacy-grandfather`.
+
+### Why this took six sessions, and why that matters
+
+The four earlier measurements (+1.855, +1.717, +1.249, +2.244) were honest but
+were collected under an older contract hash with no stopping rule, so they
+count for nothing here -- a new policy is prospective. They did their job as
+planning input: they exposed a between-session sd of ~0.4-0.6, LARGER than the
+standard error any single run reports, with one session's point estimate
+falling below another's ci95_low. A single run's interval therefore overstates
+precision, which is why this contract measures across sessions at all.
+
+The stopping rule refused a decision twice on evidence that would have passed
+a naive interval gate:
+
+- at 4 sessions, ci95_low 1.2929 (above the 1.0 bar) -- refused, width 1.111
+- at 5 sessions, ci95_low 1.4289 (well above it)     -- refused, width 1.0101
+
+The second refusal missed the precision target by **0.0101** and was the exact
+moment a movable threshold would have been moved. It was not. The criterion is
+direction-blind by construction -- it reads session count and interval WIDTH
+and is never passed the acceptance threshold -- so it could not stop early
+because the answer looked good. At session 6 the width reached 0.8769 and the
+rule decided; the run loop stopped immediately, because continuing past a
+decision is optional stopping in the other direction.
+
+Every session's own verdict is retained in `evidence/validation.json`
+(five `invalid`, then `pass`), so the full sequence is auditable rather than
+just the outcome.
+
+### Machinery this exposed
+
+Reaching a verdict required fixing four defects, each verified on hardware:
+
+- **RV95** -- the record lacked the activation/correctness dispositions the
+  evidence verifier reads, while `eligible_for_validated_state` reported True:
+  a fail-OPEN disagreement between the flag and the verifier.
+- **RV96** -- `campaign_identity_digest` is a BUILD identity, so a build could
+  only ever hold one record. A passing run was stored while a later confirming
+  run that FAILED could not be -- the direction that flatters a patch.
+- **RV99** -- the record persisted verdicts but not the measurements
+  (`pair_ratios` lived only in gitignored `artifacts/`), so no interval could
+  be re-derived or aggregated from committed evidence.
+- **`lane_effect_from_run` dropped `pair_ratios`** -- both ends had the field
+  and nothing joined them, so every lane effect carried an empty vector.
+  Sessions would have counted zero for ever while each record looked healthy.
+
+### Open
+
+Still not in any patch-set: capturing this gain in production is a separate,
+deliberate step. And per the contract's own resource limit, RD73 buys its
+timing with a measured ~68.7% increase in peak `graph_cache_entries`
+(386 -> 651), inside the declared 800 budget but worth watching if the cap is
+ever approached.

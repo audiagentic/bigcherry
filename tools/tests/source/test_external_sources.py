@@ -105,15 +105,27 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 f"{stem}: fork and original commit must differ (rebase)",
             )
 
-    # Patches promoted out of the first-sweep isolation contract after
-    # passing their isolated bench + review. RD19 (1200_rd19) was promoted
-    # here on 2026-08-24 but that promotion post-dated the HI83 evidence
-    # contract (5cd10ff, 2026-08-22) with no qualifying evidence produced --
-    # see docs/planning/active/patch-system/PA05.md. Owner disposition
-    # (2026-08-25): deliberately demoted back to untested pending real HI83
-    # evidence, not re-added here. Empty until a real post-HI83 promotion
-    # exists.
-    PROMOTED_RDNA_PATCHES = frozenset()
+    # Patches out of the first-sweep isolation contract. RD19 (1200_rd19) was
+    # promoted here on 2026-08-24 but that promotion post-dated the HI83
+    # evidence contract (5cd10ff, 2026-08-22) with no qualifying evidence
+    # produced -- see docs/planning/active/patch-system/PA05.md. Owner
+    # disposition (2026-08-25): deliberately demoted back to untested pending
+    # real HI83 evidence, and not listed below.
+    #
+    # Two INDEPENDENT axes, which a single allowlist previously conflated.
+    #
+    # VALIDATED_RDNA_PATCHES: the evidence stands (STATE="validated").
+    # SHIPPED_RDNA_PATCHES:   production actually runs it (in a patch-set).
+    #
+    # A patch can be the first without being the second, and RD73 is exactly
+    # that case: qualified on 6 pre-registered sessions (+1.889% end-to-end,
+    # 95% CI [1.475, 2.352], 0.0% control regression, bit-identical output,
+    # contract hash 8827bd6d) but deliberately not yet in any patch-set,
+    # because putting a patch into production is a separate decision from
+    # establishing that its evidence holds. Collapsing the two would force
+    # every validated patch to ship the moment it qualified.
+    VALIDATED_RDNA_PATCHES = frozenset({"1233_rd73_stable_graph_cache_key"})
+    SHIPPED_RDNA_PATCHES = frozenset()
 
     # Patches retired from the first-sweep pool because upstream shipped the
     # same fix independently (STATE = "superseded", not "rejected" -- the
@@ -134,7 +146,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                     info.state, ("rejected", "superseded"),
                     f"{info.name}: expected a retired state",
                 )
-            elif info.name in self.PROMOTED_RDNA_PATCHES:
+            elif info.name in self.VALIDATED_RDNA_PATCHES:
                 self.assertEqual(
                     info.state, "validated", f"{info.name}: expected validated"
                 )
@@ -159,11 +171,21 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 f"{patch_id} must not be in a production patch-set "
                 f"before isolated validation",
             )
-        for patch_id in self.PROMOTED_RDNA_PATCHES:
+        for patch_id in self.SHIPPED_RDNA_PATCHES:
             self.assertIn(
                 patch_id,
                 production,
-                f"{patch_id} was promoted and must be in a production patch-set",
+                f"{patch_id} is marked shipped and must be in a production patch-set",
+            )
+        # Validated-but-unshipped is a legitimate, deliberate state: the
+        # evidence holds, and putting it into production is a separate call.
+        for patch_id in self.VALIDATED_RDNA_PATCHES - self.SHIPPED_RDNA_PATCHES:
+            self.assertNotIn(
+                patch_id,
+                production,
+                f"{patch_id} is validated but not marked shipped, so it must not "
+                f"be in a production patch-set -- add it to SHIPPED_RDNA_PATCHES "
+                f"when production is genuinely meant to run it",
             )
 
     def test_cross_check_detects_provenance_mismatch(self):
