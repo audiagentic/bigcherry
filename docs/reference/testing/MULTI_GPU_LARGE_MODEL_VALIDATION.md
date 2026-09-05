@@ -8,10 +8,11 @@ against a model large enough to need multi-GPU tensor split should read
 this first; each item below cost a real, otherwise-avoidable hardware
 cycle to find.
 
-## `llama-bench` cannot reliably run this class of model
+## Brutus/RD73 observation: `llama-bench` was unsuitable for this validated configuration
 
-For a 27B model split across 2x 24.5GB gfx1100 cards, `llama-bench`
-crashed two different ways depending on flags:
+For the tested 27B model split across 2x 24.5GB gfx1100 cards, source pin,
+and Brutus command line, `llama-bench` crashed or rejected arguments in two
+different ways depending on flags:
 
 - **No `-sm tensor`**: fails to load the model at all -- a real
   `vector::_M_range_check` crash, not merely slower. `-sm tensor` (not
@@ -21,9 +22,21 @@ crashed two different ways depending on flags:
   argument-parse failure. `--fit` is a `llama-server`-only flag (see
   below); passing it to `llama-bench` is always wrong.
 
-Given both failure modes, prefer a real `llama-server` + HTTP-request
-harness (or the documented Brutus bench runner, below) over
-`llama-bench` for this class of model.
+Given both failure modes, the validated configuration used a real
+`llama-server` + HTTP-request harness (or the documented Brutus bench runner,
+below) instead of `llama-bench`. Re-check this observation after changing the
+llama.cpp source pin, model, split mode, hardware, or CLI surface; it is not a
+universal prohibition on `llama-bench`.
+
+## Scope labels for the rules below
+
+The `-sm tensor`/`--fit off` pairing is a current implementation requirement
+for the tested `llama-server` path. The non-concurrent-server and alternating
+order findings are Brutus empirical resource/measurement constraints for this
+configuration. Long-lived cache sessions are a diagnostic recommendation
+when the measured behavior depends on cross-request state. A rule becomes an
+acceptance requirement only when the applicable Experiment Contract and
+canonical qualification implementation record it as such.
 
 ## `llama-server` needs `-sm tensor` AND `--fit off` together
 
@@ -84,7 +97,9 @@ type:
 Both share the same `"  <name>_tps: <value>"` per-config line format
 underneath the header, but a parser that only recognizes one header
 will silently see a "successful" run with no results to extract. Match
-both.
+both. This external runner is diagnostic unless the applicable qualification
+implementation captures its result and required provenance into the
+canonical contract/evidence record.
 
 ## Summary checklist for a new large multi-GPU model validation lane
 

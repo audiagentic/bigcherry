@@ -1,7 +1,7 @@
 # End-to-end tuning: `bigcherry tune-campaign`
 
 A single-command orchestrator (HI130) for the full
-record → tune → correctness-evidence → promote → replay pipeline, driven
+record → tune → correctness-evidence → tuning-promotion → replay pipeline, driven
 against real hardware. Before this existed, running the full pipeline meant
 manually sequencing several separate `bigcherry build`/tuning invocations
 and hand-carrying artifacts (inventory, measurements, promoted winners)
@@ -11,7 +11,7 @@ reproducible receipt.
 ## Basic usage
 
 ```bash
-PYTHONPATH=tools python3 -m bigcherry tune-campaign \
+PYTHONPATH=tools python -m bigcherry tune-campaign \
     --platform linux-multi \
     --model /path/to/model.gguf \
     --devices 0,1 \
@@ -46,8 +46,10 @@ PYTHONPATH=tools python3 -m bigcherry tune-campaign \
    every recorded signature at production tolerances.
 3. **Correctness evidence** — validates promotion-eligible candidates
    against the configured seed count before they're allowed to promote.
-4. **Promote** — writes the promoted-winners JSONL from whatever passed
-   correctness evidence.
+4. **Tuning promotion** — writes the promoted-winners JSONL from whatever
+   passed correctness evidence. This promotes tuning winners inside this
+   campaign only; it is not patch, contract, plan, release, or production
+   policy acceptance.
 5. **Replay build** — builds the `replay` lane, which applies the promoted
    winners without re-measuring.
 6. **Replay export + verify** — exports the replay cache **against the
@@ -65,7 +67,8 @@ stage is a hard failure, not a warning).
 
 ## What this is not
 
-`tune-campaign` finds and promotes tuned candidates. It does not explain
+`tune-campaign` finds and promotes tuned candidates within its own replay
+workflow. That promotion is not a patch or release decision. It does not explain
 *why* the hardware spends time where it does — for real kernel-level
 profiling (rocprofv3 kernel/timing/resource data), see
 [PROFILING.md](PROFILING.md)'s `bigcherry profile-campaign`. The two are

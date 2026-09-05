@@ -5,11 +5,13 @@ kernel-level GPU measurement: kernel names, call counts, timing
 (mean/p95/total), and resource usage (VGPR/SGPR/scratch), plus real
 HIP/HSA/RCCL API and memory-copy traces. Complements the tuning workflow
 (`tune-campaign`, see [TUNE_CAMPAIGN.md](TUNE_CAMPAIGN.md)) — this is for
-*understanding why* a workload spends time where it does, not for finding
-or promoting tuned candidates.
+*understanding why* a workload spends time where it does, not for finding or
+promoting tuned candidates.
 
 There is no mock/simulation mode: this always drives a real `rocprofv3`
-subprocess against a real running `llama-server`, on real hardware.
+subprocess against a real running `llama-server`, on real hardware. A
+successful profile is diagnostic evidence only; it does not accept, promote,
+or validate a patch, candidate, experiment, or release.
 
 ## What it does
 
@@ -35,7 +37,7 @@ campaign:
 ## Basic usage
 
 ```bash
-PYTHONPATH=tools python3 -m bigcherry profile-campaign \
+PYTHONPATH=tools python -m bigcherry profile-campaign \
     --platform linux-multi \
     --model /path/to/model.gguf \
     --devices 0,1 \
@@ -80,8 +82,10 @@ subprocess exactly as they would be for a manual `llama-server` launch.
 - **`environment stable: False`** with a control-block spread — treat the
   kernel data as real and diagnostically useful, but do not draw a
   before/after performance conclusion from that run alone. Re-run, or pair
-  with a separate controlled A/B (see the HI35/RV19 "impact model" tooling
-  for that — `bigcherry impact`, `bigcherry kernel-fraction`).
+  with a separate controlled A/B. The valid artifact-consuming analysis
+  helpers `bigcherry impact` and `bigcherry kernel-fraction` can summarize
+  such inputs; neither helper replaces the controlled run or an acceptance
+  gate.
 - **CPU profile: unavailable** — `perf` is not currently usable in this
   environment (kernel/package mismatch on Brutus). Tracked as HI133,
   deliberately deferred; do not attempt to route around it by changing

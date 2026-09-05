@@ -37,11 +37,20 @@ HI85, HI84, HI88, HI18, and HI134 already establish the following facts for the 
 5. Device ordering did not establish a general remedy.
 6. `Ring`/`Tree` crossed with `Simple`/`LL`/`LL128` was already tested on a heterogeneous pair; all six combinations failed.
 7. Therefore algorithm/protocol tuning is not currently evidence of heterogeneous RCCL safety.
-8. Patch 1225 is the production safety boundary preventing unsafe heterogeneous RCCL entry.
+8. Patch 1225 records an earlier fail-closed guard design for unsafe
+   heterogeneous RCCL entry; it is not a universal architecture prohibition,
+   not proof of complete current coverage, and must not be assumed present in
+   the tested/default binaries. HI138 localized the Brutus hazard to a
+   physical device/path capability and demonstrated XTX+R9700 CPU-direct RCCL
+   success on qualified paths.
 9. META is the currently proven-correct heterogeneous reduction path on the target Brutus topologies.
 10. HI134's META work does not constitute an RCCL repair and must not be reopened as one.
 
-These are prerequisite truths.
+These are scoped prerequisites and immutable historical evidence for the exact
+tested topology, device set, source/build, and runtime. Before relying on a
+guard, verify the actual patch composition and the current shared-admission
+implementation; do not treat patch 1225 alone as protection for every
+`ncclCommInitAll()` entry point.
 
 Do not spend a new campaign rediscovering them.
 
@@ -195,14 +204,24 @@ $OUT/rccl-build-command.txt
 
 Do not continue if the resulting RCCL library lacks required architecture coverage.
 
-Where ROCm object inspection tooling is available:
+Where active ROCm object inspection tooling is available, prefer the
+non-deprecated inspection path:
 
 ```bash
-if command -v roc-obj-ls >/dev/null 2>&1; then
-    roc-obj-ls "$RCCL_PREFIX/lib/librccl.so" \
+if command -v clang-offload-bundler >/dev/null 2>&1; then
+    objcopy --only-section=.hip_fatbin \
+      "$RCCL_PREFIX/lib/librccl.so" "$OUT/rccl.hip_fatbin"
+    clang-offload-bundler --list --type=o \
+      -input="$OUT/rccl.hip_fatbin" \
       | tee "$OUT/rccl-code-objects.txt"
 fi
 ```
+
+`roc-obj-ls` is deprecated/non-functional on the validated ROCm 7.2.4
+installation, and `llvm-objdump --offloading` crashed on that bundle format.
+If the inspection tool or input format differs on another stack, record the
+tool/version and use an equivalent only when it produces the same architecture
+coverage evidence and provenance fields.
 
 Require evidence for both target architectures before classifying a later failure as a collective-dispatch problem.
 
@@ -525,7 +544,7 @@ After each candidate source repair:
 5. Require correctness on every run.
 6. Run the relevant production-sized reduction shapes.
 7. Re-run the original failing topology with RCCL Tests.
-8. Run a real llama.cpp/BigCherry integration qualification only in an isolated experimental source/build where patch 1225's production protection has not been weakened.
+8. Run a real llama.cpp/BigCherry integration qualification only in an isolated experimental source/build where the current shared fail-closed admission safety predicate remains active. If a guard bypass is the subject of the experiment, isolate it from production paths and record that fact explicitly.
 
 Phase 1 passes only when:
 
@@ -745,7 +764,9 @@ same placement identity where relevant
 
 Do not infer production benefit solely from isolated microbenchmark latency if the collective affects full inference scheduling.
 
-Use `bigcherry profile-campaign` or equivalent real-workload profiling for final integration evidence.
+Use `bigcherry profile-campaign` or an equivalent real-workload profiler for
+diagnostics. At an acceptance boundary, an alternative is valid only if it
+produces or imports the same canonical evidence and provenance fields.
 
 ## P2.8 Promotion
 
@@ -761,6 +782,12 @@ winner verification
 ```
 
 No candidate is promoted merely because it was the fastest measured row.
+
+The acceptance evidence must retain, at minimum: BigCherry commit and patch
+composition; RCCL source SHA and build options; ROCm/tool versions; GPU
+architecture and topology facts; algorithm/protocol; exact command and
+environment; collective and message size; run count and order; correctness;
+crash/timeout/device-loss outcome; and artifact references.
 
 ## P2.9 Runtime safety behavior
 
@@ -1047,8 +1074,9 @@ PCH root port lacks PCIe AtomicOps completion capability, a real hardware
 limitation not fixable via kernel parameters, BIOS settings, or `setpci`
 (forcing it has been reported elsewhere to hang the system). It does
 **not** establish that RCCL is broadly unusable across mismatched
-architectures. Patch 1225's fail-closed guard remains required for any
-topology including device 3.
+architectures. A shared fail-closed guard remains required for any topology
+including device 3; patch 1225 is neither proof that the guard is currently
+shipping nor sufficient protection for every entry point.
 
 **CONFIRMED (2026-08-29, same day)**: live hardware test, XTX+R9700
 (devices 0,2 -- gfx1100 + gfx1201, both CPU-direct root ports), Ring/Simple

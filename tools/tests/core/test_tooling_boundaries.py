@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 import unittest
@@ -31,6 +32,18 @@ CANONICAL_MOVED_FILES = (
     PRODUCT_ROOT / "analysis" / "candidate_report.py",
     PRODUCT_ROOT / "release" / "pin.py",
 )
+DISPOSITION_ROW = re.compile(
+    r"^\|\s*`(?P<path>[^`]+)`\s*\|\s*\*\*(?P<disposition>[A-Z-]+)\*\*\s*\|"
+)
+DISPOSITION_VALUES = {
+    "ARCHIVE",
+    "DELETE",
+    "GRADUATE",
+    "KEEP",
+    "MOVE",
+    "PACKAGE-LOCAL",
+    "TRANSITIONAL",
+}
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -122,6 +135,47 @@ class ToolingBoundaryTests(unittest.TestCase):
                     ):
                         violations.append(f"{path}: {imported}")
         self.assertEqual(violations, [])
+
+    def test_current_disposition_registry_is_parseable_and_unique(self) -> None:
+        registry = (
+            REPO_ROOT / "docs" / "reference" / "tooling" / "TOOL_DISPOSITION.md"
+        ).read_text(encoding="utf-8")
+        rows = [match.groupdict() for line in registry.splitlines() if (match := DISPOSITION_ROW.match(line))]
+
+        self.assertEqual(len(rows), 397)
+        paths = {row["path"] for row in rows}
+        self.assertEqual(len(paths), len(rows))
+        self.assertTrue(
+            {row["disposition"] for row in rows} <= DISPOSITION_VALUES
+        )
+        self.assertIn("current 397-row control-plane registry", registry)
+        self.assertIn("immutable 383-row implementation-start baseline", registry)
+
+        for path in (TOOLS_ROOT / "lab").rglob("*"):
+            relative_parts = path.relative_to(TOOLS_ROOT / "lab").parts
+            if (
+                path.is_file()
+                and path.name != "README.md"
+                and not any(
+                    part in {"__pycache__", ".ruff_cache", "_template"}
+                    or part.startswith(".")
+                    for part in relative_parts
+                )
+                and path.suffix != ".pyc"
+            ):
+                relative = path.relative_to(REPO_ROOT).as_posix()
+                self.assertIn(relative, paths)
+
+    def test_tooling_reference_states_stable_program_completion(self) -> None:
+        tooling_docs = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (REPO_ROOT / "docs" / "reference" / "tooling").glob("*.md")
+        )
+        self.assertIn("TR00–TR18 tooling-rationalisation program is complete", tooling_docs)
+        self.assertNotIn("RA37 remains in progress", tooling_docs)
+        self.assertNotIn("RA38 remains in progress", tooling_docs)
+        self.assertNotIn("RA39 remains in progress", tooling_docs)
+        self.assertNotIn("python3 -m bigcherry", tooling_docs)
 
 
 if __name__ == "__main__":

@@ -120,12 +120,33 @@ The contract determines every non-universal obligation:
   satisfy multiple distinct named checks** (e.g. a contract requiring both
   `backend_reference` and `ppl_equality` needs both to genuinely pass, not
   one arbitrary correctness producer standing in for both).
-- **Multi-contract patches are currently unsupported and must fail closed.**
-  A patch binding more than one Experiment Contract (e.g. one patch
-  representing several distinct hypotheses) cannot yet be validated by this
-  pipeline — `PatchDescriptor.experiment_contract` is singular today. Do
-  not attempt to validate such a patch against only one of its bound
-  contracts and call the result complete.
+- **Multi-contract patches are represented canonically by
+  `PatchDescriptor.experiment_contracts`, a tuple that may contain zero, one,
+  or many contract IDs.** The singular `.experiment_contract` property is a
+  compatibility convenience for zero/one-contract callers and fails closed
+  when more than one contract is bound. Final validation must account for
+  every bound contract and must not validate one contract while calling a
+  multi-contract patch complete. The generic executor does not imply that an
+  arbitrary N-contract composition is automatically qualified; each bound
+  contract still needs complete applicable evidence.
+
+## Status and verdict vocabulary
+
+Keep these four layers separate when recording or reviewing evidence:
+
+| Layer | Values or meaning | What it can change |
+| --- | --- | --- |
+| Patch lifecycle state | `untested`, `ported-benched`, `ported-validated`, `rejected`, `superseded`, and other catalog states | The tracked status of the patch package |
+| Individual check | `pass`, `fail`, `blocked`, `error`, `not_applicable` | Only that named check; a diagnostic PASS is not promotion |
+| Experiment Contract gate | Contract-specific gate results and final promotion verdict | Whether the contract's scientific obligations are satisfied |
+| Persisted eligibility | `eligible_for_validated_state` | Whether evidence is sufficient to support `ported-validated` |
+
+The invariant is fail-closed: a diagnostic PASS, adapter PASS, partial
+campaign, or single-contract result does not authorize a lifecycle transition.
+Promotion requires complete current evidence for every bound contract,
+including activation and correctness obligations. Demotion or rejection must
+preserve the evidence and reason. Re-promotion requires fresh complete
+evidence at the current source/contract pin.
 
 ## Authoring `README.md`
 
@@ -359,16 +380,17 @@ affirmative correctness claim — absence of an observed failure is not
 proof the underlying issue is fixed, especially where the fault was itself
 hard to reproduce in the first place.
 
-## Real contract-execution architecture (VA14)
+## Real contract-execution architecture
 
 The real per-lane executor that produces a contract's actual measured
 evidence (as opposed to `validation.toml`'s adapter checklist, which only
 proves an adapter-declared check ran, not that it satisfies the bound
 contract's own thresholds) lives in `tools/bigcherry/experiment/`, not in
-`tools/bigcherry/campaign/`. **This is a living section — check
-`docs/planning/active/validation-package-standard/VA14.md`'s change log
-for the authoritative, up-to-date status before relying on anything below
-as "done."**
+`tools/bigcherry/campaign/`. The implementation authority is the current
+source under `tools/bigcherry/experiment/`, the patch campaign in
+`tools/bigcherry/patch/validation_campaign.py`, the adapter/evidence logic in
+`tools/bigcherry/patch/validation.py`, and the contract definitions in
+`config/experiment-contracts.toml`.
 
 - `tools/bigcherry/experiment/execution.py` — the paired control/subject
   lane runner:
@@ -438,51 +460,39 @@ as "done."**
     stats, resolved model ref/path, and the actual control/subject build
     identities that ran) — bound into `evidence.py`'s `_artifact_refs()`
     so it is tracked in the validation record, not merely written.
-  - Gated behind an opt-in `--run-rd08-lanes` CLI flag, itself gated to
-    `descriptor.experiment_contract == "RD08-Q6K-MMVQ-VDR2"` — a no-op for
-    every other patch today. **This is deliberately RD08-only scaffolding,
-    not a general N-contract executor yet.**
+  - Gated behind an opt-in `--run-rd08-lanes` CLI flag. It is a diagnostic
+    lane producer and cannot by itself populate a promotion verdict.
 
-**VA14's final composition slice is now implemented for RD08.** The real
-RD08 bit-identical correctness producer at
-`patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py`
-(`materialize_rd08_variants()`, `require_rd08_correctness_evidence()` —
-runs all 5 RD08 shapes × 3 seeds, requires exact digest equality,
-fail-closed) is orchestrated (not reimplemented) by
-`run_rd08_contract_correctness()`; a real subject-hit/control-miss marker
-probe against the validation-domain binaries (distinct from the generic
-tune-binary/fusion-disabled activation probe, which is not a valid
-negative control for a specific patch marker) is produced by
-`run_rd08_contract_trigger()`; and `run_rd08_contract_qualification()`
-composes lane execution + correctness + trigger proof through
-`aggregate_contract_effects()` / `evaluate_trigger_proof()` /
-`evaluate_promotion_gate()` into one real promotion verdict. This whole
-path runs behind an opt-in `--run-rd08-contract` CLI flag (mutually
-exclusive with the diagnostic-only `--run-rd08-lanes` and with
-`--correctness-evidence`) — it is the **only** path allowed to populate
-`contract_promotions`, which `compute_persisted_validation_eligible()`
-now requires (alongside the adapter verdict) for every one of a patch's
-bound Experiment Contracts before `eligible_for_validated_state` can be
-`True`. `VALIDATION_FRAMEWORK_VERSION` was bumped `"1"` → `"2"` in this
-slice, invalidating prior evidence (intentionally — see
-[Current-pin freshness](#current-pin-freshness)).
+### Current campaign capabilities
 
-**This is RD08-only scaffolding, not a general N-contract executor.**
-Every other contract-bound patch still gets `compute_contract_correctness_gate()`
-reporting `blocked` (no per-named-check evidence producer exists for it
-yet) and `eligible_for_validated_state` forced `False` — that only changes
-once a patch gets its own real correctness/trigger orchestration, the same
-way RD08 did.
+These flags belong to `python -m bigcherry.patch.validation_campaign`, not to
+the top-level `bigcherry` command:
+
+| Mode | Purpose | Can populate final promotion evidence? |
+| --- | --- | --- |
+| `--run-rd08-lanes` | RD08 paired diagnostic lanes | No |
+| `--run-rd08-contract` | RD08 full contract qualification, including correctness and trigger proof | Yes, for RD08 |
+| `--run-rd04-benchmark` | RD04 benchmark diagnostic | No |
+| `--run-rd58-state-restore` | RD58 state-restore correctness/activation diagnostic | No |
+| `--run-rd73-contract` | RD73 full contract qualification, including activation/resource/paired performance/control/correctness gates | Yes, for RD73 |
+
+The RD08 and RD73 final paths compose their named evidence through the
+contract aggregation and promotion gates and populate `contract_promotions`.
+`compute_persisted_validation_eligible()` still requires complete applicable
+evidence for every bound Experiment Contract. A clean generic campaign,
+adapter verdict, RD04 benchmark, or RD58 diagnostic cannot make a patch
+eligible for `ported-validated`.
 
 ## Validation workflow
 
-**Current implementation note:** `patch-validation-campaign` must not be
-treated as final contract qualification for any contract-bound patch
-other than RD08. For RD08, `--run-rd08-contract` is now the real,
-authoritative full-qualification path (see above); for every other
-contract-bound patch, a clean campaign run alone is still not proof of a
-`ported-validated` claim — check VA14's plan item for which contracts have
-their own real correctness/trigger producer wired.
+**Current implementation note:** `patch-validation-campaign` is not a
+generic final qualifier for every contract. The authoritative full paths
+currently exposed here are `--run-rd08-contract` for RD08 and
+`--run-rd73-contract` for RD73. `--run-rd08-lanes`, `--run-rd04-benchmark`,
+and `--run-rd58-state-restore` are diagnostic-only. For any other bound
+contract, a clean campaign run alone is not proof of a `ported-validated`
+claim; inspect the current campaign implementation and contract-specific
+evidence producers.
 
 1. Bind (or, if none exists yet, first author) the patch's Experiment
    Contract.
@@ -493,7 +503,11 @@ their own real correctness/trigger producer wired.
    [TEST.md](TEST.md) for the concrete Brutus commands).
 5. Inspect the named check verdicts individually, not just an aggregate
    pass/fail.
-6. Write the compact evidence record.
+6. Let the validation campaign/evidence writer append the compact evidence
+   record to `patches/<patch-id>/evidence/validation.json`; do not hand-author
+   or edit a record to manufacture a PASS. If a custom execution path writes
+   evidence, it must use the same schema, identity bindings, artifact hashes,
+   and append-only writer contract.
 7. Run `patch-verify-evidence` — confirms the evidence is current-pin and
    sufficient for the status being claimed.
 8. Update the tracked status to **exactly** what the evidence actually
