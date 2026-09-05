@@ -13,10 +13,24 @@ from ..core import paths
 def _load_contract_registry(args: Namespace):
     from ..experiment import contract as ec
 
-    contracts_path = (
-        Path(args.contracts) if args.contracts else paths.EXPERIMENT_CONTRACTS
+    override = bool(args.contracts)
+    contracts_path = Path(args.contracts) if override else paths.EXPERIMENT_CONTRACTS
+    # The registry cross-checks are applied ONLY to the repo's own registry.
+    # Both are opt-in by design (see known_source_ids_from_external_sources'
+    # docstring): a caller pointing --contracts at their own file is working
+    # in isolation and is not forced to also maintain matching
+    # external-sources.toml / models.toml fixtures. Loading the real registry
+    # is the case where an unregistered source or model IS a defect, so this
+    # is where the check belongs -- before this, neither cross-check ran
+    # anywhere outside the unit tests, so a contract naming a model that had
+    # never existed validated clean.
+    if override:
+        return ec, ec.load_contracts(contracts_path)
+    return ec, ec.load_contracts(
+        contracts_path,
+        known_source_ids=ec.known_source_ids_from_external_sources(),
+        known_model_ids=ec.known_model_ids_from_models_registry(),
     )
-    return ec, ec.load_contracts(contracts_path)
 
 
 def cmd_experiment_validate(args: Namespace) -> int:

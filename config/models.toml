@@ -1,0 +1,69 @@
+# BigCherry evaluation-model registry.
+#
+# Every model reference used by an Experiment Contract's `positive.models` or
+# `controls.models` is declared here. Before this registry existed those refs
+# were unvalidated free text: `contract.py`'s `_evaluation_set()` constrained
+# `workloads` to WORKLOAD_TAGS but constrained `models` to nothing, so a typo
+# or a model that had never existed passed validation silently and failed only
+# at hardware time -- after a build and a model load had already been spent.
+#
+# Conventions (mirroring config/external-sources.toml):
+#   - `id` is the contract-facing reference and the only thing a contract
+#     names. It is a STABLE LABEL, not a path: re-quantising or moving a file
+#     changes `path`/`size-bytes` here, never the id a contract cites.
+#   - `path` is relative to the host's model root (on Brutus,
+#     /mnt/vault/llm-models). The root is host configuration and deliberately
+#     NOT recorded here -- this registry is about model identity, not about
+#     one machine's layout.
+#   - `size-bytes` (measured on Brutus, 2026-09-05) is a cheap, real
+#     identity check: it is enough to catch the
+#     common "pointed at the wrong quantisation" error without hashing tens of
+#     gigabytes on every validation. It is NOT a cryptographic binding and
+#     must not be treated as one.
+#   - `mtp = true` marks a checkpoint carrying multi-token-prediction weights
+#     (the `gguf/mtp/` variants). RD73's contract needs one; a contract
+#     declaring an mtp_verify workload against a non-MTP model is asking for
+#     a lane that cannot exist.
+#
+# Cross-checked by `load_contracts(known_model_ids=...)`; see
+# `known_model_ids_from_models_registry()`.
+#
+# COVERAGE NOTE, recorded honestly rather than left implicit: 19 contracts
+# currently reference only the three models below, and 12 of them reference
+# `tierA-qwen4b-q6k` alone. The host has 65 GGUFs across 18 families, so this
+# is a choice about validation breadth, not an availability limit. Adding a
+# model here does NOT by itself broaden any contract's evidence -- a contract
+# must name it in an evaluation set for it to be measured. The registry exists
+# so that naming one is checkable, not so that the list looks complete.
+
+version = 1
+
+[[models]]
+id = "tierA-qwen4b-q6k"
+family = "qwen3.5-4b"
+path = "qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf"
+quantisation = "Q6_K"
+parameters = "4B"
+size-bytes = 4261908800
+mtp = true
+notes = "Small dense tier. The default lane for most contracts (12 of 19) because it is the cheapest real model that still exercises the production kernel paths."
+
+[[models]]
+id = "tierM-gptoss20b-q6k"
+family = "gpt-oss-20b"
+path = "gpt-oss-20B/gguf/gpt-oss-20b-UD-Q6_K_XL.gguf"
+quantisation = "Q6_K"
+parameters = "20B"
+size-bytes = 12041000128
+mtp = false
+notes = "Mid tier, different model family from the qwen lanes -- its value is that it is NOT a qwen, so it can detect an effect that is really a property of one family's shapes."
+
+[[models]]
+id = "tierL-qwen27b-q8"
+family = "qwen3.8-27b"
+path = "qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf"
+quantisation = "Q8_0"
+parameters = "27B"
+size-bytes = 29047086048
+mtp = true
+notes = "Large tier, dual-GPU (-sm tensor) only: ~13GB/GPU, so control and subject servers cannot run concurrently on 24.5GB cards. RD73's lane. Q8_0 rather than a K-quant so quantisation error is not confounded with the effect under test."

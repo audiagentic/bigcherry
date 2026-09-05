@@ -631,6 +631,105 @@ active = true
             )
 
 
+_MODEL_CHECK_TOML = """
+[contract.A]
+title = "t"
+
+[contract.A.source]
+source_id = "s"
+commits = ["c"]
+atomic_part = "p"
+
+[contract.A.hypothesis]
+family = "mmq"
+expected_effect = "performance"
+rationale = "r"
+
+[contract.A.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.A.positive]
+models = ["{positive}"]
+workloads = ["decode"]
+
+[contract.A.controls]
+models = ["{controls}"]
+workloads = ["prefill"]
+
+[contract.A.acceptance]
+max_control_regression_pct = 1
+"""
+
+
+class KnownModelIdsFromModelsRegistryTests(unittest.TestCase):
+    """Model refs in an evaluation set were unvalidated free text: _evaluation_set()
+    constrained `workloads` to WORKLOAD_TAGS and `models` to nothing. A typo or a
+    model that never existed validated clean and failed only at hardware time --
+    or worse, did not fail at all, since the ref is a LABEL and the real gguf
+    arrives separately via --model, so evidence could claim a lane it never
+    measured."""
+
+    def test_real_registry_yields_known_ids(self):
+        ids = ec.known_model_ids_from_models_registry()
+        self.assertIn("tierA-qwen4b-q6k", ids)
+        self.assertIn("tierL-qwen27b-q8", ids)
+        self.assertIn("tierM-gptoss20b-q6k", ids)
+
+    def test_explicit_path_used_over_default(self):
+        path = _write("""
+version = 1
+
+[[models]]
+id = "only-one"
+family = "f"
+path = "f/x.gguf"
+quantisation = "Q8_0"
+parameters = "1B"
+size-bytes = 1
+mtp = false
+""")
+        self.assertEqual(
+            ec.known_model_ids_from_models_registry(path), frozenset({"only-one"})
+        )
+
+    def test_missing_file_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.known_model_ids_from_models_registry("/no/such/models.toml")
+
+    def test_unregistered_positive_model_rejected(self):
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="no-such-model", controls="tierA-qwen4b-q6k"))
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
+        self.assertIn("no-such-model", str(caught.exception))
+        self.assertIn("positive", str(caught.exception))
+
+    def test_unregistered_control_model_rejected(self):
+        # Controls matter as much as positives: an unresolvable control lane
+        # means the regression budget is measured against nothing.
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="tierA-qwen4b-q6k", controls="no-such-model"))
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
+        self.assertIn("controls", str(caught.exception))
+
+    def test_check_is_opt_in_and_skipped_when_not_requested(self):
+        # Callers building a contract in isolation must not be forced to
+        # maintain a models.toml fixture -- same contract as the source-id check.
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="anything-at-all", controls="tierA-qwen4b-q6k"))
+        self.assertEqual(len(ec.load_contracts(path)), 1)
+
+    def test_shipped_registry_cross_checks_clean(self):
+        from bigcherry.core import paths
+        known = ec.known_model_ids_from_models_registry()
+        registry = ec.load_contracts(paths.EXPERIMENT_CONTRACTS, known_model_ids=known)
+        for contract in registry:
+            for model in (*contract.positive.models, *contract.controls.models):
+                self.assertIn(model, known)
+
+
 if __name__ == "__main__":
     unittest.main()
 
