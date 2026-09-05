@@ -487,9 +487,10 @@ class PerLaneExperimentTests(unittest.TestCase):
             self.cfg,
         )
         ids = [lane_id(lane) for lane in lanes]
+        # Pin the PROPERTY (no collisions, and the patched/unpatched pair both
+        # survive), not a lane count -- the profile legitimately grows as
+        # build variants like tune/replay are added.
         self.assertEqual(len(ids), len(set(ids)), f"lane ids collided: {ids}")
-        self.assertEqual(len(ids), 4)
-
         native = [i for i in ids if i.startswith("bigcherry-native:control")]
         self.assertEqual(len(native), 2, "expected a patched and unpatched pair")
 

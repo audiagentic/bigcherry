@@ -400,6 +400,18 @@ lanes = [
   { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
   { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
+  # so comparing it against llama-native measures our instrumentation, not our
+  # optimisations. replay is "applies stored winners without measuring -- what
+  # ships", so replay-vs-llama-native is the contrast that actually answers
+  # "what does a user get". tune is included because replay's winners are
+  # meaningless without the run that produced them.
+  #
+  # These carry `needs` (tune: inventory; replay: inventory + promoted-winners),
+  # so a bare `build --profile patch-qualification` cannot satisfy them --
+  # supply --inventory/--winners, or select the control-only lanes explicitly.
+  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # HI130: named server-args + tuner-context bundles for `bigcherry
