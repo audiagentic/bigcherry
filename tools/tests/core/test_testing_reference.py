@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -57,6 +56,26 @@ class TestingReferenceTests(unittest.TestCase):
             "docs/planning/active/validation-package-standard/VA14.md", document
         )
 
+    def test_validation_policy_separates_lifecycle_axes(self) -> None:
+        document = (TESTING_ROOT / "PATCH_VALIDATION.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Package state", document)
+        self.assertIn("Source status", document)
+        self.assertIn("`validated`, `rejected`, `superseded`", document)
+        self.assertIn("`ported-benched`, `ported-validated`", document)
+        self.assertIn("does not mean `ported-validated` is a package state", document)
+
+    def test_rccl_runbook_matches_completed_gp07_tooling(self) -> None:
+        document = (TESTING_ROOT / "RCCL_HETEROGENEOUS_RUNBOOK.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GP07 is implemented", document)
+        self.assertIn("--repetitions", document)
+        self.assertIn("rechecks the homogeneous control", document)
+        self.assertNotIn("until GP07 lands", document)
+        self.assertNotIn("Current known gap", document)
+
     def test_patch_validation_pointer_does_not_duplicate_policy(self) -> None:
         document = (REPO_ROOT / "docs" / "reference" / "patches" / "PATCH_VALIDATION.md").read_text(
             encoding="utf-8"
@@ -68,20 +87,13 @@ class TestingReferenceTests(unittest.TestCase):
         self.assertNotIn("end_to_end_gain_pct", document)
         self.assertNotIn("experiment plan", document.lower())
 
-    def test_rd73_reference_tracks_live_contract_acceptance(self) -> None:
-        contract_data = tomllib.loads(
-            (REPO_ROOT / "config" / "experiment-contracts.toml").read_text(
-                encoding="utf-8"
-            )
-        )
-        acceptance = contract_data["contract"]["RD73-STABLE-GRAPH-CACHE-KEY"][
-            "acceptance"
-        ]
-        self.assertEqual(acceptance["end_to_end_gain_pct"], 1.0)
-        self.assertEqual(acceptance["max_control_regression_pct"], 1.0)
-        self.assertEqual(acceptance["min_paired_rounds"], 10)
+    def test_reference_defers_to_live_contract_acceptance(self) -> None:
         test_doc = (TESTING_ROOT / "TEST.md").read_text(encoding="utf-8")
+        policy_doc = (TESTING_ROOT / "PATCH_VALIDATION.md").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("experiment-contracts.toml", test_doc)
+        self.assertIn("experiment-contracts.toml", policy_doc)
         self.assertNotIn("at least 1.0%", test_doc)
         self.assertNotIn("at most 1.0%", test_doc)
         self.assertNotIn("at least 10", test_doc)
@@ -110,15 +122,23 @@ class TestingReferenceTests(unittest.TestCase):
             )
 
     def test_maintained_reference_links_resolve(self) -> None:
-        documents = [
-            REPO_ROOT / "docs" / "reference" / "README.md",
-            *TESTING_ROOT.glob("*.md"),
-        ]
+        documents = sorted((REPO_ROOT / "docs" / "reference").rglob("*.md"))
         link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+        heading_pattern = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+
+        def heading_anchors(document: str) -> set[str]:
+            anchors = set()
+            for heading in heading_pattern.findall(document):
+                slug = re.sub(r"<[^>]+>", "", heading.lower())
+                slug = re.sub(r"[^a-z0-9 _-]", "", slug)
+                anchors.add(re.sub(r"\s+", "-", slug).strip("-"))
+            return anchors
+
         for source in documents:
             document = source.read_text(encoding="utf-8")
             for raw_target in link_pattern.findall(document):
-                target = raw_target.strip().strip("<>").split("#", 1)[0]
+                clean_target = raw_target.strip().strip("<>")
+                target, _, anchor = clean_target.partition("#")
                 if not target or target.startswith(("http:", "https:", "mailto:")):
                     continue
                 resolved = (source.parent / target).resolve()
@@ -126,6 +146,13 @@ class TestingReferenceTests(unittest.TestCase):
                     resolved.exists(),
                     f"{source.relative_to(REPO_ROOT)} -> {target}",
                 )
+                if anchor and resolved.suffix.lower() == ".md":
+                    target_doc = resolved.read_text(encoding="utf-8")
+                    self.assertIn(
+                        anchor,
+                        heading_anchors(target_doc),
+                        f"{source.relative_to(REPO_ROOT)} -> {target}#{anchor}",
+                    )
 
 
 if __name__ == "__main__":

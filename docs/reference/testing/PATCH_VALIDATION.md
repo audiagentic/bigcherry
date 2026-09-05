@@ -9,11 +9,12 @@ the package.
 
 ## Authority and package shape
 
-Keep the four authorities separate:
+Keep the five authorities separate:
 
 | Authority | Owns |
 | --- | --- |
-| `patch.toml` + `SUMMARY.md` | Patch identity, composition, dependencies, and tracked lifecycle state |
+| `patch.toml` + `SUMMARY.md` | Patch identity, composition, dependencies, and package lifecycle state |
+| `config/external-sources.toml` | External-source tracking status and porting history |
 | `config/experiment-contracts.toml` | Scientific hypothesis, scope, required checks, thresholds, and acceptance policy |
 | `validation.toml` | Adapter wiring: how declared check producers are invoked |
 | `evidence/validation.json` | Append-only, identity-bound results and the exact claim supported |
@@ -36,21 +37,31 @@ Raw logs and generated measurement dumps belong under
 package. Patch-specific fixtures, validators, and evidence stay under the
 package so its validation identity remains self-contained.
 
-## When validation is required
+## Two lifecycle axes and validation readiness
 
-| Tracked state | Package | Current evidence | Contract | Hardware |
-| --- | --- | --- | --- | --- |
-| `planned` | No | No | No | No |
-| `ported-untested` | No, until touched | No | No | No |
-| `ported-benched` | Yes | Current pin | Yes | Yes |
-| `ported-validated` | Yes | Current pin; every required named check passes | Yes | Yes |
-| `deferred-hardware` | Yes | Fresh structured `BLOCKED` record | Yes | No; blocked and recorded |
-| `superseded` / `excluded` | No, but preserve supporting history | No | No | No |
+Do not write one axis' values into the other. Validation produces evidence;
+metadata promotion or demotion remains a separate deliberate change.
 
-A historical status may remain in the catalog after a pin bump; only fresh
-current-pin evidence makes it currently qualified. A stale pin, missing
-hardware, or harness error removes current qualification but is not by itself
-a rejection.
+| Axis | Authority | Valid values | Meaning |
+| --- | --- | --- | --- |
+| Package state | `patch.toml` | `untested`, `validated`, `rejected`, `superseded` | Whether the package is accepted for composition |
+| Source status | `config/external-sources.toml` | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, `superseded`, `excluded`, `evidence-only` | Progress and proof level of a tracked external change |
+| Run result | `evidence/validation.json` | `PASS`, `FAIL`, `BLOCKED`, `ERROR` plus named results | What this run established; it is not a metadata edit |
+
+Validation readiness is determined by the evidence and contract, not by a
+status string alone:
+
+- `ported-benched` requires a package, current-pin evidence, a bound contract,
+  and real hardware.
+- `ported-validated` additionally requires every named contract check to pass.
+- `deferred-hardware` records a fresh structured `BLOCKED` result and does not
+  claim hardware validation.
+- `eligible_for_validated_state` can support the package state `validated`;
+  it does not mean `ported-validated` is a package state.
+
+A historical source status may remain after a pin bump; only fresh current-pin
+evidence is currently qualified. A stale pin, missing hardware, or harness
+error removes qualification but is not by itself a rejection.
 
 ## Experiment Contract binding
 
@@ -75,7 +86,8 @@ Do not collapse these layers:
 
 | Layer | Values/meaning | Effect |
 | --- | --- | --- |
-| Patch lifecycle | `untested`, `ported-benched`, `ported-validated`, `rejected`, `superseded`, etc. | Tracked package state |
+| Package lifecycle | `untested`, `validated`, `rejected`, `superseded` | `patch.toml` state; controls composition |
+| Source tracking | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, etc. | `external-sources.toml` status; tracks porting/proof progress |
 | Individual check | `pass`, `fail`, `blocked`, `error`, `not_applicable` | Result of that named check only |
 | Contract gate | Contract-specific gate results and promotion verdict | Whether scientific obligations passed |
 | Persisted eligibility | `eligible_for_validated_state` | Whether evidence can support `ported-validated` |
