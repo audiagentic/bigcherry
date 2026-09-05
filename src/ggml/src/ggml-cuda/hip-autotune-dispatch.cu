@@ -292,12 +292,21 @@ static void report_dispatch_counters() {
 //
 // A magic static is initialised exactly once, thread-safely, by the standard;
 // after initialisation the cost is a guard load, not an RMW.
-static bool dispatch_counters_enabled() {
+static inline bool dispatch_counters_enabled() {
+#ifndef GGML_HIP_DISPATCH_DIAGNOSTICS
+    // Compile-time false in a production build, so every
+    // `if (dispatch_counters_enabled())` block below is dead code the
+    // optimiser deletes outright -- no branch, no counter, no atomic. A
+    // binary used for a final performance number must not carry
+    // instrumentation at all, not merely leave it switched off.
+    return false;
+#else
     static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_DISPATCH_COUNTERS");
         return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
     }();
     return enabled;
+#endif
 }
 
 // ------------------------------------------- native-select sampled-cost timing
@@ -384,12 +393,16 @@ void ggml_hip_dispatch_counters_write_json(void * out_file) {
             (unsigned long long) c.final_native_launches.load(std::memory_order_relaxed));
 }
 
-static bool native_select_timing_enabled() {
+static inline bool native_select_timing_enabled() {
+#ifndef GGML_HIP_DISPATCH_DIAGNOSTICS
+    return false;   // see dispatch_counters_enabled()
+#else
     static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_NATIVE_SELECT_TIMING");
         return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
     }();
     return enabled;
+#endif
 }
 
 static bool native_select_timing_should_sample_native_select() {
@@ -1548,8 +1561,13 @@ bool ggml_hip_dispatch_mul_mat(
     // route entirely and made dispatched exceed executed.
     const ggml_hip_kernel_family chosen =
         (ggml_hip_kernel_family) bound.candidate->family;
+#ifdef GGML_HIP_DISPATCH_DIAGNOSTICS
+    // Two atomic RMWs per dispatch, ~382,000 per bench run. Previously
+    // unconditional: GGML_HIP_DISPATCH_COVERAGE gated only whether a report
+    // was WRITTEN, never whether counting happened.
     ggml_hip_coverage_count_executed(chosen);
     ggml_hip_coverage_count_dispatched(chosen);
+#endif
 
     const DispatchScope scope;
     ggml_hip_dispatch_launch(bound, lc);
@@ -1624,7 +1642,9 @@ bool ggml_hip_dispatch_family(
         return false;
     }
 
+#ifdef GGML_HIP_DISPATCH_DIAGNOSTICS
     ggml_hip_coverage_count_dispatched(family);
+#endif
 
     const DispatchScope scope;
     ggml_hip_dispatch_launch(bound, lc);

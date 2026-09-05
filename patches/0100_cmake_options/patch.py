@@ -27,6 +27,13 @@ from bigcherry.patcher import Edit, FilePatch
 _OPTIONS = """
 option(GGML_HIP_AUTOTUNE                    "ggml: build the HIP dispatch autotuner"          OFF)
 option(GGML_HIP_DISPATCH_REPLAY             "ggml: build HIP replay dispatch (no tuner)"      OFF)
+# bigcherry: hot-path diagnostics. OFF is the PRODUCTION shape -- the dispatch
+# counters, the native-select sample timing and the per-launch coverage
+# counting are all compiled out, not merely runtime-disabled. Coverage counting
+# in particular was unconditional (two atomic RMWs per dispatch, ~382,000 per
+# bench run), with the env var controlling only whether a report was WRITTEN.
+# A build used for a final performance number must not carry any of it.
+option(GGML_HIP_DISPATCH_DIAGNOSTICS        "ggml: HIP dispatch hot-path diagnostics"         OFF)
 set   (GGML_HIP_AUTOTUNE_VARIANT_SET "inventory" CACHE STRING
                                             "ggml: HIP autotune candidate set")
 set_property(CACHE GGML_HIP_AUTOTUNE_VARIANT_SET PROPERTY STRINGS
@@ -120,6 +127,12 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     endif()
     if (GGML_HIP_DISPATCH_REPLAY)
         add_compile_definitions(GGML_HIP_DISPATCH_REPLAY)
+    endif()
+    # Tuning and recording builds need the counters to do their job, so they
+    # get diagnostics implicitly; a pure replay build does not and must be
+    # able to be built clean for benchmarking.
+    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)
+        add_compile_definitions(GGML_HIP_DISPATCH_DIAGNOSTICS)
     endif()
     # HI27. Global rather than per-source: the transform machinery is declared
     # in hip-autotune-types.h, which the tuner, the dispatcher and the replay
