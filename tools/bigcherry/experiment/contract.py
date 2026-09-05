@@ -1423,6 +1423,95 @@ def bootstrap_fixed_composite_mean(
     )
 
 
+#: Fewest measurement sessions ``bootstrap_session_effect()`` will estimate
+#: from. A cluster bootstrap draws whole sessions with replacement, so with
+#: very few clusters the resample space is tiny (S=2 admits 3 distinct
+#: multisets, S=3 admits 10) and the resulting interval is badly
+#: anticonservative -- it would report a narrow interval precisely when
+#: between-session drift is least well characterised. Below this the function
+#: returns None and the caller reports "not evaluable" rather than a number
+#: nobody should act on, matching this module's existing failure style.
+MIN_BOOTSTRAP_SESSIONS = 4
+
+
+def bootstrap_session_effect(
+    sessions: list[tuple[float, ...]], *, seed: int = 0, resamples: int = 10_000,
+) -> dict[str, object] | None:
+    """Effect and interval across repeated measurement SESSIONS of one lane.
+
+    ``sessions`` is one per-pair ratio vector per session (the same
+    ``pair_ratios`` sufficient statistic ``block_bootstrap_effect()`` already
+    records, one entry per independent run).
+
+    WHY THIS EXISTS. ``block_bootstrap_effect()`` resamples pairs within a
+    single run, so its interval covers only within-session variation. RD73
+    measured the same build three times and got +1.855%, +1.717% and +1.249%;
+    the third run's point estimate fell BELOW the second run's ci95_low. The
+    runs are not inconsistent measurements of different things -- they are
+    honest measurements taken on different occasions, and the drift between
+    occasions is real variance that a within-run interval structurally cannot
+    see. Quoting a single run's interval therefore overstates precision.
+
+    WHY RESAMPLING SESSION IDENTITY IS CORRECT HERE, where
+    ``bootstrap_fixed_composite_mean()`` deliberately refuses to resample LANE
+    identity: a contract's lanes are fixed components it names by hand
+    (decode, prefill) -- "sampling a lane" is meaningless. Sessions are the
+    opposite: they are exchangeable draws from the population of occasions on
+    which this measurement could have been taken, and that population is
+    exactly what a claim about the effect generalises over. Drawing sessions
+    with replacement is what propagates between-occasion variance into the
+    interval::
+
+        for replicate b:
+            draw S sessions with replacement from the S observed
+            for each drawn session: resample its own pairs with replacement
+            G[b] = mean of those sessions' geometric effects
+        CI(G) = percentiles(G)
+
+    Sessions are weighted EQUALLY rather than by pair count: the session is
+    the unit of replication, so a run that happened to collect more pairs
+    should not speak louder about where the true effect lies.
+
+    Returns None -- never a guess -- when fewer than MIN_BOOTSTRAP_SESSIONS
+    are supplied, or when any session's ratio vector is empty or non-finite.
+    """
+    if len(sessions) < MIN_BOOTSTRAP_SESSIONS:
+        return None
+    session_logs: list[list[float]] = []
+    for ratios in sessions:
+        if not ratios or any(not _finite_number(r) or r <= 0 for r in ratios):
+            return None
+        session_logs.append([math.log(r) for r in ratios])
+
+    def _effect_pct(logs: list[float]) -> float:
+        return 100.0 * (math.exp(statistics.mean(logs)) - 1.0)
+
+    point = statistics.mean(_effect_pct(logs) for logs in session_logs)
+    rng = random.Random(seed)
+    replicates: list[float] = []
+    for _ in range(resamples):
+        drawn = [rng.choice(session_logs) for _ in session_logs]
+        replicates.append(statistics.mean(
+            _effect_pct([rng.choice(logs) for _ in logs]) for logs in drawn
+        ))
+    replicates.sort()
+    per_session = [_effect_pct(logs) for logs in session_logs]
+    return {
+        "sessions": len(session_logs),
+        "paired_rounds_total": sum(len(logs) for logs in session_logs),
+        "geometric_effect_pct": point,
+        "ci95_low_pct": replicates[int(0.025 * resamples)],
+        "ci95_high_pct": replicates[min(resamples - 1, int(0.975 * resamples))],
+        "per_session_effect_pct": tuple(per_session),
+        # The variance component a within-run interval cannot see. Reported so
+        # a reader can compare it against the single-run intervals directly.
+        "between_session_sd_pct": (
+            statistics.stdev(per_session) if len(per_session) > 1 else 0.0
+        ),
+        "resamples": resamples, "seed": seed,
+    }
+
+
 def aggregate_contract_effects(
     contract: ExperimentContract, lane_effects: list[LaneEffect], *,
     target_metric: str, end_to_end_metric: str | None = None,
