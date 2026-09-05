@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import math
 import statistics
 import tomllib
@@ -1287,6 +1288,66 @@ class LaneEffect:
     ci95_low_pct: float | None = None
     ci95_high_pct: float | None = None
     paired_rounds: int | None = None
+    # VA24: the ordered per-pair ratio vector this lane's interval was
+    # bootstrapped from -- the sufficient statistic for recomputing an
+    # AGGREGATE interval across several lanes without re-running benchmarks.
+    pair_ratios: tuple[float, ...] = ()
+
+
+def bootstrap_fixed_composite_mean(
+    lanes: list[LaneEffect], *, seed: int = 0, resamples: int = 10_000,
+) -> tuple[float, float] | None:
+    """VA24: CI for the mean effect across a FIXED set of positive lanes.
+
+    The estimand is the existing point-estimate semantic -- mean of the
+    per-lane effects -- and this puts an interval on it without changing it.
+
+    Critically it resamples ONLY WITHIN each lane, never the lanes
+    themselves::
+
+        for replicate b:
+            E_j[b] = effect(resample lane j's own pair ratios)   for each lane j
+            G[b]   = mean_j E_j[b]
+        CI(G) = percentiles(G)
+
+    Bootstrapping lane identity would be wrong: decode and prefill are fixed
+    components the contract names, not IID draws from a population of
+    workloads, and with two heterogeneous lanes "sampling a lane" is
+    meaningless. What is uncertain is each lane's own measurement, so that is
+    what gets resampled (dev-gpt-agent, req_a667633429fa4c9e).
+
+    Mirrors block_bootstrap_effect()'s estimator exactly -- geometric mean of
+    per-pair ratios, expressed as a percentage -- so a single-lane call here
+    reproduces that function's own interval rather than a second, subtly
+    different statistic.
+
+    Returns None when any lane lacks its ratio vector, so the caller emits no
+    interval and the gate reports "invalid" rather than guessing.
+    """
+    if not lanes:
+        return None
+    lane_logs: list[list[float]] = []
+    for lane in lanes:
+        if not lane.pair_ratios or any(
+            not _finite_number(ratio) or ratio <= 0 for ratio in lane.pair_ratios
+        ):
+            return None
+        lane_logs.append([math.log(ratio) for ratio in lane.pair_ratios])
+
+    rng = random.Random(seed)
+    replicates: list[float] = []
+    for _ in range(resamples):
+        lane_effects_pct = []
+        for logs in lane_logs:
+            resampled = [rng.choice(logs) for _ in logs]
+            lane_effects_pct.append(
+                100.0 * (math.exp(statistics.mean(resampled)) - 1.0))
+        replicates.append(statistics.mean(lane_effects_pct))
+    replicates.sort()
+    return (
+        replicates[int(0.025 * resamples)],
+        replicates[min(resamples - 1, int(0.975 * resamples))],
+    )
 
 
 def aggregate_contract_effects(
@@ -1410,23 +1471,65 @@ def aggregate_contract_effects(
         ]
         return matching[0] if len(matching) == 1 else None
 
-    sole_target = _sole("positive", target_metric)
-    if sole_target is not None and _usable_interval(sole_target):
-        aggregated["target_kernel_gain_pct_ci95_low"] = sole_target.ci95_low_pct
-        aggregated["target_kernel_gain_pct_paired_rounds"] = sole_target.paired_rounds
+    def _gain_interval(field: str, metric: str) -> None:
+        """Attach the gain interval for one metric.
 
-    sole_e2e = _sole("positive", e2e_metric)
-    if sole_e2e is not None and _usable_interval(sole_e2e):
-        aggregated["end_to_end_gain_pct_ci95_low"] = sole_e2e.ci95_low_pct
-        aggregated["end_to_end_gain_pct_paired_rounds"] = sole_e2e.paired_rounds
+        One contributing lane: the aggregate IS that lane, so its own
+        interval transfers unchanged. Several lanes: bootstrap the mean
+        across the FIXED lane set, resampling only within each lane. The
+        reported paired_rounds is the MINIMUM across contributing lanes,
+        since the evidence floor must be met by the weakest contributor --
+        an aggregate is not made trustworthy by one well-sampled lane
+        carrying an under-sampled one.
+        """
+        lanes = [
+            effect for effect in lane_effects
+            if effect.role == "positive" and effect.metric == metric
+        ]
+        if not lanes:
+            return
+        if len(lanes) == 1:
+            if _usable_interval(lanes[0]):
+                aggregated[f"{field}_ci95_low"] = lanes[0].ci95_low_pct
+                aggregated[f"{field}_paired_rounds"] = lanes[0].paired_rounds
+            return
+        if not all(_usable_interval(lane) for lane in lanes):
+            return
+        interval = bootstrap_fixed_composite_mean(lanes)
+        if interval is None:
+            return
+        rounds = [lane.paired_rounds for lane in lanes]
+        aggregated[f"{field}_ci95_low"] = interval[0]
+        aggregated[f"{field}_paired_rounds"] = (
+            min(rounds) if all(isinstance(r, int) and not isinstance(r, bool) for r in rounds)
+            else None
+        )
+
+    _gain_interval("target_kernel_gain_pct", target_metric)
+    _gain_interval("end_to_end_gain_pct", e2e_metric)
 
     control_lanes = [effect for effect in lane_effects if effect.role == "control"]
     if len(control_lanes) == 1 and _usable_interval(control_lanes[0]):
-        # regression = max(0, -effect), so the UPPER bound on the regression
-        # comes from the LOWER bound on the effect (the most negative case).
+        # regression = max(0, -effect), so the interval ENDPOINTS REVERSE
+        # under the negation:
+        #     R_low  = max(0, -E_ci95_high)
+        #     R_high = max(0, -E_ci95_low)
+        # The interval does NOT transfer across unchanged. Taking the effect's
+        # ci95_high as the regression's upper bound would be a correctness
+        # bug -- it would report the most OPTIMISTIC case as the worst case.
+        # Flagged HIGH risk in review (dev-gpt-agent, req_a667633429fa4c9e)
+        # and pinned by test_regression_interval_endpoints_reverse.
         aggregated["max_control_regression_pct_ci95_high"] = max(
             0.0, -control_lanes[0].ci95_low_pct)
         aggregated["max_control_regression_pct_paired_rounds"] = control_lanes[0].paired_rounds
+    # len(control_lanes) > 1 deliberately attaches NO interval. Independent
+    # per-lane 95% bounds are not a 95% FAMILY guarantee, and the right
+    # simultaneous procedure (Bonferroni vs a direct bootstrap of the fixed
+    # max-regression statistic vs something else) depends on cross-lane
+    # dependence that no contract in this registry currently exercises --
+    # every one has exactly one control lane. Building an untested correction
+    # with no consumer is worse than failing closed, so the gate reports
+    # "invalid" until a real multi-control contract exists to design against.
 
     return aggregated
 

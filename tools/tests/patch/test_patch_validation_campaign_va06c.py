@@ -303,10 +303,18 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         control_requests, subject_requests = self._mtp_records(
             control_content, subject_content, control_tps, subject_tps,
         )
+        # RD73 migrated to effect_evidence_policy = "ci95_threshold_bound_v1"
+        # with min_paired_rounds = 10, so a fake lane must now carry a
+        # coherent interval and a sufficient round count or the gate correctly
+        # reports "invalid" (unevaluable) rather than pass/fail. The interval
+        # is deliberately degenerate (low == point == high) so these tests keep
+        # exercising THRESHOLD logic rather than interval width; dedicated
+        # interval tests live in tools/tests/campaign/test_experiment_contract.py.
+        _pct = (100.0 * (sum(subject_tps) / len(subject_tps) - sum(control_tps) / len(control_tps))
+                / (sum(control_tps) / len(control_tps)))
         effect = ec.LaneEffect(
-            role="positive", metric="mtp_wall_tps",
-            geometric_effect_pct=100.0 * (sum(subject_tps) / len(subject_tps) - sum(control_tps) / len(control_tps))
-            / (sum(control_tps) / len(control_tps)),
+            role="positive", metric="mtp_wall_tps", geometric_effect_pct=_pct,
+            ci95_low_pct=_pct, ci95_high_pct=_pct, paired_rounds=10,
         )
         logs_dir = self.run_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
@@ -323,9 +331,10 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         }
 
     def _fake_decode_control(self, *, control_tps, subject_tps):
+        _pct = 100.0 * (subject_tps - control_tps) / control_tps
         effect = ec.LaneEffect(
-            role="control", metric="tg128",
-            geometric_effect_pct=100.0 * (subject_tps - control_tps) / control_tps,
+            role="control", metric="tg128", geometric_effect_pct=_pct,
+            ci95_low_pct=_pct, ci95_high_pct=_pct, paired_rounds=10,
         )
         return {"effect": effect, "artifact": {"path": "artifacts/fake-decode.json", "sha256": "x"}, "stats": {}}
 
