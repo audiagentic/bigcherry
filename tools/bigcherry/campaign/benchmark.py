@@ -254,6 +254,17 @@ def block_bootstrap_effect(
         "ci95_low_pct": samples[int(0.025 * resamples)],
         "ci95_high_pct": samples[min(resamples - 1, int(0.975 * resamples))],
         "resamples": resamples, "seed": seed,
+        # VA24: the ordered per-pair ratio vector is the SUFFICIENT STATISTIC
+        # for re-running this estimator -- the bootstrap's input is defined to
+        # be these ratios, so retaining them allows an aggregate (multi-lane)
+        # interval to be computed later without re-running the benchmark, and
+        # without persisting 10,000 replicate values. Raw per-arm values are
+        # deliberately NOT carried: they are unnecessary for reproducing a
+        # ratio-based estimator. Note they WOULD be required for a future
+        # estimator using absolute differences or weighting, so this is
+        # sufficiency for the current estimator, not for all time
+        # (dev-gpt-agent, req_a667633429fa4c9e).
+        "pair_ratios": tuple(ratios),
     }
 
 
