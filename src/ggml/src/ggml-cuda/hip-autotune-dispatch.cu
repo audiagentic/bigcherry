@@ -432,22 +432,31 @@ struct HardwareIdentity {
     ggml_hip_digest digest;
 };
 
-std::mutex g_hardware_identity_mutex;
-std::unordered_map<int, HardwareIdentity> g_hardware_identity_by_device;
-
+// Per-device and immutable once built, so it does not need a mutex -- and it
+// certainly does not need to take a GLOBAL one on every call for a device
+// that is already cached.
+//
+// That is what the previous std::mutex + unordered_map form did, on the L1
+// MISS path. With two GPU submission threads, a lock taken purely to read an
+// immutable value serialises devices that have nothing to do with each other.
+// Found by dev-gpt-agent (req_7bd85f40), which counted two global mutexes on
+// the miss path where I had described one.
+//
+// std::call_once per device: the fast path after initialisation is an atomic
+// load, not a lock acquisition, and initialisation still happens exactly once
+// even under concurrent first use.
 static const HardwareIdentity & cached_hardware_identity(int device) {
-    std::lock_guard<std::mutex> lock(g_hardware_identity_mutex);
-    const auto found = g_hardware_identity_by_device.find(device);
-    if (found != g_hardware_identity_by_device.end()) {
-        return found->second;
-    }
-    if (dispatch_counters_enabled()) {
-        g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
-    }
-    HardwareIdentity identity;
-    identity.key    = ggml_hip_make_hardware_key(device);
-    identity.digest = ggml_hip_hardware_digest(identity.key);
-    return g_hardware_identity_by_device.emplace(device, identity).first->second;
+    static HardwareIdentity identities[GGML_CUDA_MAX_DEVICES];
+    static std::once_flag    built[GGML_CUDA_MAX_DEVICES];
+    GGML_ASSERT(device >= 0 && device < GGML_CUDA_MAX_DEVICES);
+    std::call_once(built[device], [device]() {
+        if (dispatch_counters_enabled()) {
+            g_dispatch_counters.hardware_key_builds.fetch_add(1, std::memory_order_relaxed);
+        }
+        identities[device].key    = ggml_hip_make_hardware_key(device);
+        identities[device].digest = ggml_hip_hardware_digest(identities[device].key);
+    });
+    return identities[device];
 }
 
 // -------------------------------------------------------------- native select
