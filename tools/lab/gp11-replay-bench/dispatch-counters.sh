@@ -39,6 +39,16 @@ bin=$(find ~/.cache/bigcherry/builds -path "*/$DIGEST/bin/llama-server" | head -
 export ROCR_VISIBLE_DEVICES=$DEVICES HIP_VISIBLE_DEVICES=$DEVICES
 export LD_LIBRARY_PATH=$(dirname "$bin")
 export GGML_HIP_DISPATCH_COUNTERS=1
+# WITHOUT THIS THE WHOLE DISPATCH LAYER IS OFF.
+#
+# ggml_hip_parse_mode() returns GGML_HIP_DISPATCH_MODE_NATIVE when
+# GGML_HIP_DISPATCH_MODE is unset, and ggml_hip_dispatch_mul_mat returns false
+# immediately in native mode. So a "replay" build with a cache path set but no
+# mode set never loads the cache, never resolves a signature, never counts
+# anything, and runs pure upstream code -- while looking, from the outside,
+# exactly like a working replay arm. Every bench in this session before this
+# line was added measured a switched-off dispatch layer.
+export GGML_HIP_DISPATCH_MODE=${DISPATCH_MODE:-replay}
 # Without this the /shutdown route is never registered and the counter report
 # -- which is emitted at shutdown -- is lost to kill -9. See TEST.md.
 export LLAMA_SERVER_ENABLE_SHUTDOWN=1
