@@ -1869,7 +1869,17 @@ def evaluate_rd73_mtp_correctness(
 def run_rd73_contract_qualification(
     *, contract: object, control_server_binary: Path, subject_server_binary: Path, model: Path,
     marker_regex: str, corpus_path: Path, run_dir: Path,
-    decode_pairs: int = 3, warmup_pairs: int = 2, measured_pairs: int = 10,
+    # VA24: decode_pairs raised 3 -> 10 to match measured_pairs. min_paired_rounds
+    # is a minimum VALIDITY requirement for every interval used to establish an
+    # acceptance bound, so a control decision taken on 3 rounds violates exactly
+    # what a contract declaring 10 claims. The previous asymmetry meant RD73
+    # demanded 10 rounds to prove its own gain while accepting 3 to prove it had
+    # broken nothing. "Controls need less evidence" is not defensible as a
+    # general rule: required sample size depends on variance, distance from the
+    # acceptance boundary, and the estimator -- not on lane role (dev-gpt-agent,
+    # req_875d13b29a204075). Costs ~5 extra minutes on a ~15-minute
+    # qualification, measured.
+    decode_pairs: int = 10, warmup_pairs: int = 2, measured_pairs: int = 10,
 ) -> dict[str, object]:
     """VA06 next slice: the authoritative RD73 full-qualification path
     (``--run-rd73-contract``), mirroring RD08's own
