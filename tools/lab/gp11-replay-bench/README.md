@@ -126,8 +126,23 @@ winners:e59994bc49764809b1b4b957d71e934d:yes" ROUNDS=8`
 MTP draft acceptance identical to five decimal places (0.94734 both arms,
 n=8 each), so the two arms did the same work and the comparison is valid.
 
-**The 19 winners have no effect at all.** Every metric overlaps; the largest
-movement is +0.50% on pp1024, in the arm's favour.
+**WITHDRAWN -- this run proves nothing about the winners.** Both arms were
+torn down with `kill -9`, which destroys the replay hit/miss report emitted at
+shutdown, so there is no evidence the cache ever resolved a single lookup.
+"The winners are neutral" and "the cache never hit" are indistinguishable in
+this data. Re-run required with graceful shutdown and the cache-load and
+hit/miss lines captured per cell. See the mandatory procedure in
+`docs/reference/testing/TEST.md` ("Comparative A/B benchmarking").
+
+Separately, the host-side half of any neutral result is structurally
+explained: both `!native.valid` guards sit ABOVE the L1 lookup, so
+`ggml_hip_native_select()` (~193.6ns) runs on 100% of dispatches even when the
+cache hits. The cache can only change which kernel launches; it cannot save
+host work. Until HI158's guard move lands, replay cannot beat control on
+dispatch overhead by construction.
+
+What the numbers said, for the record: every metric overlapped, largest
+movement +0.50% on pp1024.
 
 **The regression belongs to the replay BUILD VARIANT.** The nocache arm --
 the replay binary with no winners whatsoever -- already sits at tg128 100.08
