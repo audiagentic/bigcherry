@@ -542,6 +542,31 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
     assert isinstance(records, list)
     new_record = dict(record)
 
+    # RV96: campaign_identity_digest is a BUILD identity, not a run identity.
+    # e2e_smoke_campaign.Campaign derives it (_make_campaign_identity ->
+    # _stable_json_sha256) from the content identities of the built
+    # executables plus patch identity -- so two independent measurements of
+    # the same binaries necessarily share it.
+    #
+    # This function used to reject the second such record ("campaign digest X
+    # already has different evidence"), which made the digest behave as though
+    # a build could only ever be measured once. Three consequences, all real:
+    #
+    #   * the frozen re-run policy (EXPERIMENT_CONTRACT.md, "Re-running")
+    #     requires extending a run to a pre-declared N_max and estimating over
+    #     all valid pairs -- i.e. producing further measurements of the SAME
+    #     build. Its output was unstorable, so the policy was doctrine only.
+    #   * independent replication on unchanged code was impossible.
+    #   * whichever run was written FIRST owned the digest permanently, so the
+    #     record silently favoured first measurements. RD73 hit exactly this:
+    #     a passing run (+1.717%) was stored and a later confirming run that
+    #     failed the gate (+1.249%) could not be -- the direction that
+    #     flatters a patch.
+    #
+    # Evidence stays append-only: an existing record is never mutated or
+    # replaced here. Re-writing an identical record is still idempotent, and
+    # tampering with a stored record is still caught at READ time by the
+    # record_digest checks in _record_qualifies()/_record_qualifies_for_benched().
     for old in records:
         if not isinstance(old, dict):
             raise ValidationEvidenceError(f"{path}: non-object record")
@@ -549,12 +574,26 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
             continue
         if old == new_record:
             return path
-        raise ValidationEvidenceError(
-            f"{path}: campaign digest {campaign_digest} already has different evidence"
-        )
+        # Same build, different measurement -- but the fields the campaign
+        # identity provably determines must still agree. If they do not, the
+        # digest is not identifying what it claims to, which is corruption
+        # rather than replication.
+        for field in ("patch_id", "patch_implementation_digest", "patched_source_tree"):
+            if field in old and field in new_record and old[field] != new_record[field]:
+                raise ValidationEvidenceError(
+                    f"{path}: campaign digest {campaign_digest} has records disagreeing "
+                    f"on {field} ({old[field]!r} vs {new_record[field]!r}) -- the campaign "
+                    f"identity is derived from built-binary and patch identity, so records "
+                    f"sharing it cannot have come from different sources"
+                )
 
     records.append(new_record)
-    records.sort(key=lambda row: str(row.get("campaign_identity_digest", "")))
+    # Sort by campaign identity first (grouping a build's measurements
+    # together), then by record_digest so ordering stays deterministic across
+    # the multiple records a single build may now legitimately have.
+    records.sort(key=lambda row: (
+        str(row.get("campaign_identity_digest", "")), str(row.get("record_digest", "")),
+    ))
     _atomic_json(path, document)
     return path
 
@@ -1066,8 +1105,11 @@ def verify_validated_patch(
     if qualifying and not missing_architectures:
         return EvidenceCheck(
             "validated-evidence",
+            # RV96: a build may now legitimately have several qualifying
+            # measurement records, so de-duplicate -- this reports which
+            # BUILDS are qualified, not how many records exist.
             campaign_digests=tuple(
-                sorted(str(record["campaign_identity_digest"]) for record in qualifying)
+                sorted({str(record["campaign_identity_digest"]) for record in qualifying})
             ),
         )
 
@@ -1115,7 +1157,7 @@ def verify_ported_benched_patch(
     if qualifying:
         return EvidenceCheck(
             "ported-benched-evidence",
-            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+            campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
         )
     problems = ["no current qualifying ported-benched evidence"]
     if stale:
@@ -1149,7 +1191,7 @@ def verify_deferred_hardware_patch(
     if qualifying:
         return EvidenceCheck(
             "deferred-hardware-evidence",
-            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+            campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
         )
     problems = ["no current qualifying deferred-hardware (BLOCKED) evidence"]
     if stale:
