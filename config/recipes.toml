@@ -340,6 +340,41 @@ lanes = [
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
+# VA26: the repeatable patch-qualification matrix. `standard` above varies the
+# BUILD variant (the autotune record/tune/replay pipeline); this one varies the
+# patch COMPOSITION, which is the axis a patch is judged on.
+#
+# Four arms, and each answers a question the others cannot:
+#
+#   llama-native        upstream, unpatched -- what everything is ultimately
+#                       measured against
+#   bc-native           framework only -- the control for the isolated
+#                       comparison, and (vs llama-native) the cost of our own
+#                       instrumentation
+#   bc-native + patch   the patch's ISOLATED effect
+#   bc-release + patch  the patch IN SITU, on top of everything already
+#                       shipped -- because a patch worth +2% alone can be
+#                       neutral or negative once composed with the rest
+#
+# Run it across architectures with --arch, e.g.
+#
+#   python -m bigcherry build --profile patch-qualification --arch gfx1100
+#
+# Note lanes 2 and 3 share one source/build/platform and differ ONLY by the
+# experiment. That is the point of the pair, and it is why CampaignLaneSelector
+# carries a per-lane experiment: a request-level --experiment applies to every
+# lane and so cannot express a profile whose baselines must stay unpatched.
+#
+# The experiment named here is the patch under test. Swap it per patch; the
+# rest of the profile is invariant.
+[campaign.patch-qualification]
+lanes = [
+  { source = "llama-native", build = "stock", platform = "linux-multi" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+]
+
 # HI130: named server-args + tuner-context bundles for `bigcherry
 # tune-campaign --runtime-profile <name>`, so a real production launch
 # profile (matching the dual-xtx-27b bench-harness baseline) is

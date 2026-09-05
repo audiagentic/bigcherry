@@ -452,3 +452,72 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerLaneExperimentTests(unittest.TestCase):
+    """VA26: a patch-qualification profile holds arms that carry the patch and
+    arms that deliberately do not. A request-level --experiment applies to
+    every lane and so cannot express it."""
+
+    def setUp(self):
+        from bigcherry.core import config, paths
+        self.cfg = config.load(paths.RECIPES)
+
+    def test_profile_declares_patched_and_unpatched_arms(self):
+        lanes = self.cfg.campaigns["patch-qualification"].lanes
+        experiments = [lane.experiment for lane in lanes]
+        self.assertIn(None, experiments, "baseline arms must carry no experiment")
+        self.assertTrue(
+            any(e is not None for e in experiments),
+            "at least one arm must carry the patch under test",
+        )
+
+    def test_same_source_appears_patched_and_unpatched_without_colliding(self):
+        # The pair that gives the isolated comparison its meaning: identical
+        # source/build/platform, differing only by the experiment. Before
+        # lane_id folded in the experiment these collided and the duplicate
+        # check dropped one.
+        from bigcherry.campaign.planner import CampaignRequest, lane_id, plan
+
+        lanes = plan(
+            CampaignRequest(
+                selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
+                architectures=("gfx1100",),
+            ),
+            self.cfg,
+        )
+        ids = [lane_id(lane) for lane in lanes]
+        self.assertEqual(len(ids), len(set(ids)), f"lane ids collided: {ids}")
+        self.assertEqual(len(ids), 4)
+
+        native = [i for i in ids if i.startswith("bigcherry-native:control")]
+        self.assertEqual(len(native), 2, "expected a patched and unpatched pair")
+
+    def test_lane_experiment_overrides_request_level(self):
+        from bigcherry.campaign.planner import CampaignRequest, plan
+
+        lanes = plan(
+            CampaignRequest(
+                selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
+                architectures=("gfx1100",), experiment="rd73-only",
+            ),
+            self.cfg,
+        )
+        # Request-level fills the baselines that declare none; a lane that
+        # declares its own keeps it.
+        by_source = {(l.source_name, l.experiment) for l in lanes}
+        self.assertIn(("bigcherry", "rd73-only"), by_source)
+
+    def test_unknown_lane_experiment_is_rejected(self):
+        # A profile naming an experiment that does not exist must fail at load
+        # time, not silently plan an arm that is identical to its baseline --
+        # which would make the comparison quietly meaningless.
+        text = paths.RECIPES.read_text(encoding="utf-8").replace(
+            'experiment = "rd73-only"', 'experiment = "no-such-experiment"', 1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            recipes = Path(tmp) / "recipes.toml"
+            recipes.write_text(text, encoding="utf-8")
+            with self.assertRaises(config.ConfigError) as caught:
+                config.load(recipes)
+        self.assertIn("no-such-experiment", str(caught.exception))
