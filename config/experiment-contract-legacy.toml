@@ -49,11 +49,6 @@ waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "e09ec00e8c67f23c1a3a99ba0eb102ee"
 migration = "VA24"
 
-[legacy.RD06-RDNA4-WMMA-FA-CONFIG]
-waiver_class = "pre_va24_point_estimate"
-baseline_contract_hash = "7ddf2f641565fbe35ceaec47f8f2859b"
-migration = "VA24"
-
 [legacy.RD08-Q6K-MMVQ-VDR2]
 waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "22de05510510abd0cb3b07dbb27870e8"
@@ -79,19 +74,9 @@ waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "049f71615b24403ac026970204bfd6b0"
 migration = "VA24"
 
-[legacy.RD21-GFX1151-MMVQ-NWARPS]
-waiver_class = "pre_va24_point_estimate"
-baseline_contract_hash = "0ffdefe0237b7b9d231510690cd1ce25"
-migration = "VA24"
-
 [legacy.RD39-42-STREAM-MOE-OVERLAP]
 waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "cd609b50e0368eb0c3dcaccb0186ab07"
-migration = "VA24"
-
-[legacy.RD44-GRAPH-OPT-DEFAULT-RDNA35]
-waiver_class = "pre_va24_point_estimate"
-baseline_contract_hash = "58d3448fd7a7e1d8c7075d67590c70a4"
 migration = "VA24"
 
 [legacy.RD50-GDN-CHUNKED-RECURRENCE]

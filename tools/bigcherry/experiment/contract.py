@@ -822,6 +822,28 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     positive = _evaluation_set("positive")
     controls = _evaluation_set("controls")
 
+    # A lane is identified by (model, workload) -- EvaluationSet carries no
+    # further axis, so a lane named by BOTH roles is one measurement asked to
+    # satisfy two contradictory requirements at once: gain at least
+    # target_kernel_gain_pct AND change by no more than
+    # max_control_regression_pct. Worse, it makes the regression budget
+    # self-referential: the "control" is the treatment, so it can never
+    # detect the collateral damage a control exists to catch.
+    shared_lanes = sorted(
+        (model, workload)
+        for model in set(positive.models) & set(controls.models)
+        for workload in set(positive.workloads) & set(controls.workloads)
+    )
+    if shared_lanes:
+        rendered = ", ".join(f"{model}/{workload}" for model, workload in shared_lanes)
+        raise ExperimentContractError(
+            f"{where}: lane(s) {rendered} appear in BOTH positive and controls -- "
+            f"a lane cannot be both the thing that must improve and the thing that "
+            f"must hold constant. A control must name a model/workload the "
+            f"hypothesis does NOT claim to speed up, otherwise the regression "
+            f"budget is measured against the treatment itself and is vacuous"
+        )
+
     boundary_data = _table(data.get("boundary"), f"{where}.boundary")
     dims_data = _table(boundary_data.get("dimensions"), f"{where}.boundary.dimensions")
     dimensions: list[tuple[str, tuple[object, ...]]] = []
