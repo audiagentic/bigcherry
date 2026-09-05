@@ -975,21 +975,18 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         g_dispatch_counters.l1_misses.fetch_add(1, std::memory_order_relaxed);
     }
 
-    // HI158: THE force point. Everything below needs the native selection --
-    // it seeds the binding, supplies the BLAS workspace family check, and is
-    // what a miss falls back to. This is now the only place the ~193.6ns
-    // selection is paid on a cache-resolving dispatch, instead of on all of
-    // them. The `native` name below is a reference to the memoized value, so
-    // every later use in this function is free.
-    if (dispatch_counters_enabled()) {
-        g_dispatch_counters.native_forced_miss.fetch_add(1, std::memory_order_relaxed);
-    }
-    const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
-    resolved.candidate = native.candidate;
-    resolved.variant   = native.variant;
-    if (!native.valid) {
-        return resolved;
-    }
+    // HI158: the selection is deliberately NOT forced here.
+    //
+    // Forcing on an L1 miss was still far too eager. Measured on 27B/MTP:
+    // 130,107 L1 misses, of which 130,021 were L2 HITS -- so forcing here
+    // paid for the selection on 68% of all dispatches and then discarded it,
+    // exactly the waste the L1-hit case was supposed to fix. An L2 hit
+    // resolves entirely from the stored binding and never reads `native`.
+    //
+    // The force now happens only where the answer is genuinely required: the
+    // record-mode observation below, and the true cold miss where the binding
+    // has to be seeded from the native choice. That is ~86 times per run
+    // instead of 129,695.
 
     // HI22: force-candidate bypass — use a specific candidate for manual testing.
     // Record mode deliberately continues through the recorder below so the
@@ -1070,6 +1067,10 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             ? "ggml_cuda_mul_mat_cublas" : nullptr;
         const size_t workspace_bytes = is_blas
             ? ggml_hip_blas_workspace(resolved.candidate, sig) : 0;
+        // Record mode genuinely needs the native selection -- it is part of
+        // the observation being recorded. Not a hot path: record mode exists
+        // to build the tuning corpus, not to serve.
+        const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
         ggml_hip_record_observation(ctx, sig, hw, signature_digest,
                                     hardware_digest, native,
                                     resolved.candidate, "forced",
@@ -1109,6 +1110,20 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             g_dispatch_counters.l2_misses.fetch_add(1, std::memory_order_relaxed);
         }
     }
+
+    // HI158: the cold-miss force point. Both caches missed, so there is no
+    // stored binding and the native choice is what seeds one.
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.native_forced_miss.fetch_add(1, std::memory_order_relaxed);
+    }
+    const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
+    if (!native.valid) {
+        resolved.candidate = native.candidate;
+        resolved.variant   = native.variant;
+        return resolved;
+    }
+    resolved.candidate = native.candidate;
+    resolved.variant   = native.variant;
 
     Binding binding = { native.candidate, native.variant, false };
 
