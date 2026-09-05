@@ -96,6 +96,14 @@ class _FakeVerdict:
     eligible: bool
 
 
+# RV95: compute_persisted_validation_eligible() now also requires the record's
+# own activation/correctness dispositions, matching evidence.py's
+# _record_qualifies(). These are the passing values; the tests below isolate
+# the adapter/contract axis, so they hold this axis good on purpose.
+_ACT_OK = "activation-verified"
+_CORR_OK = {"disposition": "passed"}
+
+
 class ComputePersistedValidationEligibleTests(unittest.TestCase):
     """VA14 final slice: a bound-contract patch is eligible only when BOTH
     the adapter verdict AND every bound contract's own promotion result
@@ -106,19 +114,23 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
     def test_bound_contract_with_no_promotion_at_all_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=True), None
+            descriptor, _FakeVerdict(eligible=True), None,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertFalse(result)
 
     def test_bound_contract_with_no_verdict_at_all_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
-        self.assertFalse(vc.compute_persisted_validation_eligible(descriptor, None, {}))
+        self.assertFalse(vc.compute_persisted_validation_eligible(
+            descriptor, None, {}, activation_disposition=_ACT_OK, correctness=_CORR_OK,
+        ))
 
     def test_bound_contract_adapter_pass_and_promotion_pass_is_true(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=True), promotions
+            descriptor, _FakeVerdict(eligible=True), promotions,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertTrue(result)
 
@@ -126,7 +138,8 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": False}}
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=True), promotions
+            descriptor, _FakeVerdict(eligible=True), promotions,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertFalse(result)
 
@@ -134,7 +147,8 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=False), promotions
+            descriptor, _FakeVerdict(eligible=False), promotions,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertFalse(result)
 
@@ -142,7 +156,8 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2", "RD04-BF16-FLASH-ATTN-TILE"))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=True), promotions
+            descriptor, _FakeVerdict(eligible=True), promotions,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertFalse(result)
 
@@ -153,22 +168,92 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
             "RD04-BF16-FLASH-ATTN-TILE": {"passed": True},
         }
         result = vc.compute_persisted_validation_eligible(
-            descriptor, _FakeVerdict(eligible=True), promotions
+            descriptor, _FakeVerdict(eligible=True), promotions,
+            activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
         self.assertTrue(result)
 
     def test_no_contract_passes_through_the_real_adapter_verdict_unaffected(self) -> None:
         descriptor = _FakeDescriptor(())
         self.assertTrue(
-            vc.compute_persisted_validation_eligible(descriptor, _FakeVerdict(eligible=True), {})
+            vc.compute_persisted_validation_eligible(
+                descriptor, _FakeVerdict(eligible=True), {},
+                activation_disposition=_ACT_OK, correctness=_CORR_OK,
+            )
         )
         self.assertFalse(
-            vc.compute_persisted_validation_eligible(descriptor, _FakeVerdict(eligible=False), {})
+            vc.compute_persisted_validation_eligible(
+                descriptor, _FakeVerdict(eligible=False), {},
+                activation_disposition=_ACT_OK, correctness=_CORR_OK,
+            )
         )
 
     def test_no_contract_no_verdict_returns_none(self) -> None:
         descriptor = _FakeDescriptor(())
-        self.assertIsNone(vc.compute_persisted_validation_eligible(descriptor, None, {}))
+        self.assertIsNone(vc.compute_persisted_validation_eligible(
+            descriptor, None, {}, activation_disposition=_ACT_OK, correctness=_CORR_OK,
+        ))
+
+
+class EligibilityAgreesWithTheEvidenceVerifierTests(unittest.TestCase):
+    """RV95: this flag and evidence.py's verify_validated_patch() answer the
+    same question and must not be able to disagree. The regression they pin
+    is REAL and was observed on hardware: --run-rd73-contract produced a
+    record with a passing adapter verdict and a passing contract promotion,
+    but left the record's own activation/correctness at
+    disposition="unknown". The campaign printed "STATE='validated' eligible:
+    yes" for a record verify_validated_patch() rejected with "activation is
+    not executed+activation-verified; correctness did not pass".
+
+    Fail-OPEN is the specific direction that matters here: an over-strict
+    flag merely blocks a promotion a human can re-run, whereas an
+    over-permissive one advertises a qualification the verifier will not
+    honour."""
+
+    def _eligible(self, **overrides):
+        kwargs = {
+            "activation_disposition": _ACT_OK,
+            "correctness": _CORR_OK,
+        }
+        kwargs.update(overrides)
+        return vc.compute_persisted_validation_eligible(
+            _FakeDescriptor(("RD73-STABLE-GRAPH-CACHE-KEY",)),
+            _FakeVerdict(eligible=True),
+            {"RD73-STABLE-GRAPH-CACHE-KEY": {"passed": True}},
+            **kwargs,
+        )
+
+    def test_unknown_activation_disposition_is_not_eligible(self) -> None:
+        # The exact RD73 record shape: everything else passes.
+        self.assertFalse(self._eligible(activation_disposition="unknown"))
+
+    def test_unknown_correctness_disposition_is_not_eligible(self) -> None:
+        self.assertFalse(self._eligible(correctness={"disposition": "unknown"}))
+
+    def test_missing_correctness_entirely_is_not_eligible(self) -> None:
+        # correctness_summary stays None when a producer never writes it.
+        self.assertFalse(self._eligible(correctness=None))
+
+    def test_failed_correctness_is_not_eligible(self) -> None:
+        self.assertFalse(self._eligible(correctness={"disposition": "failed"}))
+
+    def test_failed_activation_is_not_eligible(self) -> None:
+        self.assertFalse(self._eligible(activation_disposition="failed-activation"))
+
+    def test_all_axes_passing_is_eligible(self) -> None:
+        self.assertTrue(self._eligible())
+
+    def test_required_literals_match_the_evidence_verifier_exactly(self) -> None:
+        # If evidence.py ever renames these dispositions, the two predicates
+        # would silently diverge again -- which is the whole defect. Assert
+        # the accepted values against the verifier's own source of truth.
+        import inspect
+
+        from bigcherry.patch import evidence
+
+        source = inspect.getsource(evidence._record_qualifies)
+        self.assertIn('!= "activation-verified"', source)
+        self.assertIn('!= "passed"', source)
 
 
 class BoundArtifactShapesActuallyPassTests(unittest.TestCase):
