@@ -1021,7 +1021,7 @@ carry into a new qualification:
 | [HI138](../../planning/completed/hip-collectives/HI138.md) | The Brutus device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
 | [GP03](../../planning/completed/gpu-collectives/GP03.md) | Production dispatch reproduced the device-3 boundary; communicator-init success alone is not runtime admissibility. |
 | [GP06](../../planning/completed/gpu-collectives/GP06.md) | RCCL 2.30.4 regressed previously passing `{0,2}`/`{1,2}` cases; every result must bind to the exact RCCL source/build revision. |
-| [GP07](../../planning/completed/gpu-collectives/GP07.md) | The checked-in qualification wrapper has known identity/repetition gaps; do not treat its output as durable qualification until those gaps are handled. |
+| [GP07](../../planning/completed/gpu-collectives/GP07.md) | The checked-in qualification wrapper now records compatibility identity and distinct attempts; its output is durable only when the run also preserves the required build, topology, correctness, and fault evidence below. |
 
 These records are historical evidence, not a universal current verdict. A
 new run must re-check the actual patch composition, shared admission guard,
@@ -1047,16 +1047,11 @@ library API; the 10-state classification (`pass` / `wrong_result` /
 `device_lost` / `signal` / `timeout` / `harness_failure`) matches this
 runbook's P1.6/P2.4 required classifications exactly.
 
-**Current known gap (tracked as
-[GP07](../../planning/completed/gpu-collectives/GP07.md)):** case/result identity
-does not yet carry an `RCCLCompatibilityRevision` (see P2.1 above), and
-repeated-rep artifacts are not yet uniquely named -- a 20-rep qualification
-run currently overwrites its own per-attempt stdout/stderr/rccl.json. Do
-not treat a `rccl_qualify.py` result as durable qualification evidence
-across RCCL versions until GP07 lands; always record which exact RCCL
-build produced a result by hand until then (see GP06's addendum above for
-why this matters -- RCCL 2.30.4 silently regresses a topology 1.0.70204
-qualifies cleanly).
+GP07 is implemented: `run_case()` requires an `RCCLCompatibilityRevision`
+and an attempt number, namespaces output by compatibility revision, and gives
+each attempt distinct stdout/stderr/RCCL JSON paths. The result is still
+diagnostic evidence, not an automatic production admission; retain the exact
+RCCL build, topology, correctness, and fault evidence required by this runbook.
 
 ## `tools/bigcherry/profiling/rccl_qualify_campaign.py`
 
@@ -1069,24 +1064,21 @@ python -m bigcherry.profiling.rccl_qualify_campaign \
     --output-dir artifacts/rccl-heterogeneous/<run-id>
 ```
 
-Runs the six-cell Ring/Tree x Simple/LL/LL128 matrix at a fixed 512KiB
-size against a hardcoded topology list (`{0,2}`, `{1,2}`, `{0,1,2}` --
-XTX+R9700 pairs/triple only). Writes `cases.jsonl` plus per-case
-stdout/stderr/rccl.json under `--output-dir`.
-
-**Current known gap (also GP07):** no `{0,1}` positive control, no `{0,3}`
-device-3 negative control, no repetitions, no RCCL-compatibility argument,
-no post-fault control-recheck, and no way to vary element count or
-topology from the CLI -- every qualification campaign broader than the
-committed six-cell matrix (e.g. GP06's real 3-way RCCL-version comparison)
-has so far been run through an uncommitted, ad-hoc variant of this script
-rather than the checked-in one. GP07 exists specifically to close that gap
-so future campaigns don't repeat it -- extend this file in place rather
-than writing another one-off driver.
+The checked-in driver defaults to GP06's two element counts, Ring/Tree x
+Simple/LL/LL128, 20 repetitions, and four topologies: `{0,1}` positive
+control, `{0,2}` and `{1,2}` heterogeneous pairs, and `{0,3}` device-3
+negative control. Repeatable `--element-count`, `--algorithm`, `--protocol`,
+`--repetitions`, and `--topology` options define a different matrix; required
+`--rccl-version` plus optional source/build/ROCm identity fields bind it to the
+exact RCCL compatibility revision. Each attempt is recorded in `cases.jsonl`
+and in revision-namespaced, attempt-specific stdout/stderr/RCCL JSON files.
+The campaign rechecks the homogeneous control after fault-triggering cases
+and stops if that control cannot be restored.
 
 ## Planned: validate vs. optimize diagnostics package (GP08)
 
-Two separate tools, sharing one identity model, once GP07/GP08 land:
+GP07's validation tooling is implemented; GP08 remains the planned separation
+between validation and end-to-end optimization:
 
 - **VALIDATE** (`tools/bigcherry/profiling/`, this section): crash-safety
   and correctness qualification for one exact (RCCL revision, topology,
