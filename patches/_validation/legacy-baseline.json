@@ -8,11 +8,19 @@
       "previous_digest": "160cc9b1804664902ca5a9dc18b2973d7add9bfb6977baca939d678863e752fd",
       "reason": "The waiver was voided by commit 9c19f97a ('document and folder cleanup'), which MOVED patches/1100_hi70_direct_op_evidence.py to patches/1100_hi70_direct_op_evidence/patch.py and, in the same commit, updated one comment line inside the emitted payload that names the file's own path -- while recording the PRE-move hash here. The entire diff is:\n  -    // See patches/1100_hi70_direct_op_evidence.py for the full rationale.\n  +    // See patches/1100_hi70_direct_op_evidence/patch.py for the full rationale.\n6 bytes, a C++ line comment, in a self-referential path. No anchor, no edit, no emitted code changed. The waiver has been void since 2026-08-28 but was unenforced because the production admission gate stays dormant until the repo holds its first non-grandfathered eligible record. RD73's promotion (2026-09-05) supplied that record, arming the gate and blocking ALL production builds on this one comment.",
       "scope": "This carry-forward covers EXACTLY this digest transition for this patch. It is not a precedent that comments are generally irrelevant: the emitted source did change, so an applied-effect identity would still invalidate it. The general fix is effect_digest_v1 = H(control_tree, subject_tree), which makes evidence survive patch.py refactors that materialize the same tested source transition. Until that lands, any further digest change to this patch requires real evidence."
+    },
+    {
+      "authority": "owner directive 2026-09-06: production build must be stripped to the minimum, with diagnostics only in pre-run/recording/tuning builds. Carry-forward form follows the precedent set by the 1100_hi70 entry on advice of dev-gpt-agent (an explicit audited carry-forward per incident, never a general equivalence rule).",
+      "current_digest": "2f92de4ccd5f3af33ca5d4a0873ef3e4139be07d9390908d72bceaf999a2456b",
+      "date": "2026-09-06",
+      "patch_id": "0100_cmake_options",
+      "previous_digest": "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae",
+      "reason": "Adds one cmake option, GGML_HIP_DISPATCH_DIAGNOSTICS (default OFF), and one guarded add_compile_definitions that turns it on when it, GGML_HIP_AUTOTUNE or GGML_HIP_AUTOTUNE_RECORD is set. It declares a NEW option that defaults OFF and changes no existing option, no default, no source selection and no compile definition that any previously validated configuration produced: with the new option unset and autotune/record unset, the emitted cmake is byte-identical in effect to the validated baseline. The tune, record and control variants set GGML_HIP_AUTOTUNE or GGML_HIP_AUTOTUNE_RECORD and therefore keep the diagnostics they already had. The motivation is that ggml_hip_coverage_count_executed/dispatched were UNCONDITIONAL -- two atomic RMWs per dispatch, ~382,000 per bench run -- so a shipping binary carried instrumentation it never reported, and no performance number taken from it described the code that ships."
     }
   ],
   "contract": "hi83-legacy-grandfather-v1",
   "patches": {
-    "0100_cmake_options": "ca4c42df78d5e622ce959cd8404a1e51d903624a45397fb6fb19894f1e6d1cae",
+    "0100_cmake_options": "2f92de4ccd5f3af33ca5d4a0873ef3e4139be07d9390908d72bceaf999a2456b",
     "0200_dispatch_hook": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
     "0300_mmq_forced_j": "9f244037a453ff388f5ef9443306a121345fa6cca5367ad1206327c07123afee",
     "0400_mmvf_forced_block": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
