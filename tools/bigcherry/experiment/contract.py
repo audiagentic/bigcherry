@@ -1120,8 +1120,45 @@ def known_source_ids_from_external_sources(
     )
 
 
+def known_model_ids_from_models_registry(
+    path: str | Path | None = None,
+) -> frozenset[str]:
+    """Real cross-check input for ``load_contracts(known_model_ids=...)``:
+    every ``[[models]] id`` registered in ``config/models.toml``
+    (``paths.MODELS`` by default).
+
+    Exists because ``_evaluation_set()`` constrains ``workloads`` to
+    WORKLOAD_TAGS but constrained ``models`` to nothing -- an evaluation set
+    could name a model that had never existed and validation would pass,
+    deferring the failure to hardware time after a build and a model load had
+    been spent. Worse, a silently-wrong model ref means recorded evidence
+    CLAIMS a lane it did not measure, since the ref is a label and the actual
+    gguf arrives separately via ``--model``.
+
+    Kept as an explicit opt-in call for the same reason the source-id
+    equivalent is: a caller wanting the real registry cross-check asks for
+    it; a unit test building a contract in isolation is not forced to
+    maintain a models.toml fixture."""
+    import tomllib as _tomllib
+
+    resolved = Path(path) if path is not None else None
+    if resolved is None:
+        from ..core import paths
+        resolved = paths.MODELS
+    try:
+        raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ExperimentContractError(f"no models registry at {resolved}") from None
+    except _tomllib.TOMLDecodeError as exc:
+        raise ExperimentContractError(f"{resolved}: {exc}") from None
+    return frozenset(
+        entry["id"] for entry in raw.get("models", []) if isinstance(entry, dict) and entry.get("id")
+    )
+
+
 def load_contracts(path: str | Path, *,
-                    known_source_ids: frozenset[str] | None = None) -> ContractRegistry:
+                    known_source_ids: frozenset[str] | None = None,
+                    known_model_ids: frozenset[str] | None = None) -> ContractRegistry:
     """Load every ``[contract.<id>]`` table in ``path`` (default
     ``experiment-contracts.toml`` at the repo root -- see
     ``paths.EXPERIMENT_CONTRACTS``) deterministically. Rejects duplicate IDs
@@ -1158,6 +1195,20 @@ def load_contracts(path: str | Path, *,
                     f"{contract.source.source_id!r} is not a known "
                     f"external-sources.toml entry"
                 )
+
+    if known_model_ids is not None:
+        for contract in contracts.values():
+            for role, evaluation_set in (
+                ("positive", contract.positive), ("controls", contract.controls),
+            ):
+                for model in evaluation_set.models:
+                    if model not in known_model_ids:
+                        raise ExperimentContractError(
+                            f"contract.{contract.id}.{role}.models: {model!r} is not "
+                            f"a known models.toml entry -- an evaluation set may only "
+                            f"name a registered model, otherwise the recorded lane "
+                            f"identifies a measurement nothing can resolve"
+                        )
 
     unknown_prerequisites: dict[str, tuple[str, ...]] = {}
     for contract in contracts.values():
