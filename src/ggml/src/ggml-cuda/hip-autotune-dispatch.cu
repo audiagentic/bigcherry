@@ -681,15 +681,56 @@ static inline uint64_t signature_fingerprint(
     return h;
 }
 
+// Set-associative, because 8 fully-associative slots measured at a 31.9% hit
+// rate on a real 27B/MTP run -- 60,843 hits against 130,107 misses, with 86
+// distinct signatures competing for 8 places. That was not a tuning
+// shortfall; it is 10:1 over-subscription, and round-robin eviction over a
+// working set larger than capacity is the classic pathological case.
+//
+// Every one of those misses then built a canonical JSON string, BLAKE2b-
+// hashed it, and took a global mutex, so L1 capacity is not a local concern:
+// it is the multiplier on the most expensive path in the dispatcher.
+//
+// Indexing by tag instead of scanning everything keeps lookup cost constant
+// as capacity grows -- WAYS tag compares regardless of total size, rather
+// than a linear scan that would get slower with every slot added. Equality is
+// still decided by the full memcmp, so nothing here can return a wrong
+// binding; the tag only chooses where to look.
 struct ThreadBindingCache {
-    static constexpr size_t slot_count = 8;
-    ThreadBinding slots[slot_count] = {};
-    size_t next_slot = 0;
+    static constexpr size_t ways      = 4;
+    static constexpr size_t max_slots = 512;
+
+    ThreadBinding slots[max_slots] = {};
+    size_t set_mask  = 0;   // sets - 1; sets is a power of two
+    size_t next_way[max_slots / ways] = {};
+    bool   configured = false;
+
+    // Capacity is settable so the hit rate can be measured across
+    // configurations on the real workload rather than argued about. Default
+    // 128 entries: comfortably above the 86 distinct signatures observed,
+    // while staying small enough that the tag array remains cache-resident.
+    void configure() {
+        size_t slots_wanted = 128;
+        if (const char * env = getenv("GGML_HIP_DISPATCH_L1_SLOTS")) {
+            const long v = strtol(env, nullptr, 10);
+            if (v >= (long) ways && v <= (long) max_slots) {
+                slots_wanted = (size_t) v;
+            }
+        }
+        size_t sets = slots_wanted / ways;
+        size_t pow2 = 1;
+        while (pow2 * 2 <= sets) pow2 *= 2;   // round down to a power of two
+        set_mask   = pow2 - 1;
+        configured = true;
+    }
 
     bool find(int device, const ggml_hip_dispatch_signature_v1 & signature,
-              Binding * binding) const {
-        const uint64_t fp = signature_fingerprint(signature);
-        for (const auto & slot : slots) {
+              Binding * binding) {
+        if (!configured) configure();
+        const uint64_t fp   = signature_fingerprint(signature);
+        const size_t   base = ((size_t) (fp >> 32) & set_mask) * ways;
+        for (size_t w = 0; w < ways; ++w) {
+            const ThreadBinding & slot = slots[base + w];
             if (slot.valid && slot.fingerprint == fp && slot.device == device &&
                     memcmp(&slot.signature, &signature, sizeof(signature)) == 0) {
                 *binding = slot.binding;
@@ -701,12 +742,21 @@ struct ThreadBindingCache {
 
     void insert(int device, const ggml_hip_dispatch_signature_v1 & signature,
                 const Binding & binding) {
-        ThreadBinding & slot = slots[next_slot++ % slot_count];
-        slot.valid = true;
-        slot.device = device;
-        slot.fingerprint = signature_fingerprint(signature);
-        slot.signature = signature;
-        slot.binding = binding;
+        if (!configured) configure();
+        const uint64_t fp   = signature_fingerprint(signature);
+        const size_t   set  = (size_t) (fp >> 32) & set_mask;
+        const size_t   base = set * ways;
+        // Round-robin WITHIN the set only. A full-LRU is not built here on
+        // purpose: capacity and reuse distance dominate replacement policy,
+        // and with the working set now inside capacity the policy stops
+        // mattering. If a measured miss-ratio curve later shows otherwise,
+        // that is the evidence to revisit it -- not intuition.
+        ThreadBinding & slot = slots[base + (next_way[set]++ % ways)];
+        slot.valid       = true;
+        slot.device      = device;
+        slot.fingerprint = fp;
+        slot.signature   = signature;
+        slot.binding     = binding;
     }
 };
 
