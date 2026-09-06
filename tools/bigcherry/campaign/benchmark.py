@@ -16,6 +16,7 @@ Example::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -637,6 +638,27 @@ def run_server_comparison_capture(
             raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
         metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        # Every managed comparison must record its canonical source worktree;
+        # source identity is never optional for an admitted server arm.
+        source_root = None
+        for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("CMAKE_HOME_DIRECTORY:") and "=" in line:
+                source_root = Path(line.split("=", 1)[1].strip())
+                break
+        source_attestation = None
+        if source_root is None:
+            raise ValueError(f"{arm['name']}: CMAKE_HOME_DIRECTORY is required for source attestation")
+        from bigcherry.campaign.workers import _source_attestation, _source_metadata_path, _verify_source
+        metadata_sidecar = _source_metadata_path(source_root)
+        if not metadata_sidecar.is_file() or not metadata.get("source_slice_id"):
+            raise ValueError(f"{arm['name']}: source attestation metadata is incomplete")
+        source_attestation = _source_attestation(
+            source_root,
+            source_slice_id=str(metadata["source_slice_id"]),
+        )
+        if source_attestation is None:
+            raise ValueError(f"{arm['name']}: source attestation is unavailable")
+        _verify_source(source_root, source_attestation)
         runtime = {path.name: binary_hash(path) for path in resolve_runtime_artifacts(binary)}
         if metadata.get("binary_hash") != binary_hash(binary) or any(
                 metadata.get("runtime_artifacts", {}).get(name) != digest for name, digest in runtime.items()):
@@ -658,8 +680,14 @@ def run_server_comparison_capture(
             raise ValueError("replay arm requires an existing explicit cache")
         prepared[arm["name"]] = {
             "binary": binary, "env": env, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
-                           "compiler_observation": observation},
+                           "compiler_observation": observation,
+                           "source_attestation": (
+                               {**dataclasses.asdict(source_attestation),
+                                "allowed_untracked": sorted(source_attestation.allowed_untracked)}
+                               if source_attestation is not None else None
+                           )},
         }
     if "stock" in names and "native" in names:
         validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
@@ -683,6 +711,16 @@ def run_server_comparison_capture(
     for pair, order in enumerate(run_schedule):
         for position, name in enumerate(order):
             arm = prepared[name]
+            if arm["source_attestation"] is not None:
+                try:
+                    from bigcherry.campaign.workers import _verify_source
+                    _verify_source(arm["source_root"], arm["source_attestation"])
+                except Exception as exc:
+                    summary["runs"].append({"pair": pair + 1, "mode": name,
+                                            "position": position, "returncode": 1,
+                                            "source_attestation_error": str(exc)})
+                    persist()
+                    return 1
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
             result = run_server_arm_capture(
                 binary=arm["binary"], model=model, extra_args=extra_args, output=output,
