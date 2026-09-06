@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from . import behavioral_corpus as behavioral_corpus_mod
 from . import behavioral_gate as behavioral_gate_mod
+from . import catalog as catalog_mod
 from . import inventory as inv_mod
 from . import recovery as recovery_mod
 from . import replay as replay_mod
@@ -79,6 +80,7 @@ class WorkflowReceipt:
     replay_coverage: dict | None
     started_at: str
     finished_at: str
+    replay_validation: StageIdentity | None = None
 
 
 def _stage_identity(result: CampaignLaneResult) -> StageIdentity:
@@ -430,15 +432,64 @@ def _stage_replay_export(
 def _stage_replay_build(
     *, context, cfg, store, run_id, platform_name, source_name,
     inventory_path: Path, winners_path: Path,
+    build_name: str = "replay",
 ) -> CampaignLaneResult:
+    if build_name not in ("replay", "replay-diagnostic"):
+        raise TuneCampaignError("replay stage requires replay or replay-diagnostic build")
     return _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
-        build_name="replay", platform_name=platform_name, run_id=run_id,
+        build_name=build_name, platform_name=platform_name, run_id=run_id,
         binary_relative_path="bin/llama-server",
         inputs_by_build={
-            "replay": (("inventory", inventory_path), ("promoted-winners", winners_path)),
+            build_name: (("inventory", inventory_path), ("promoted-winners", winners_path)),
         },
     )
+
+
+def _verify_replay_companion(production: CampaignLaneResult, diagnostic: CampaignLaneResult) -> None:
+    """Fail closed before validating a production cache with another binary.
+
+    Use existing source/catalog/generated-input identities, not a second
+    compatibility scheme. The differing diagnostics flags are deliberate;
+    generated registry and candidate compile inputs must remain identical.
+    """
+    if production.source_slice_id != diagnostic.source_slice_id:
+        raise TuneCampaignError("replay companion source composition differs")
+    manifests = []
+    generated_inputs = []
+    common_options = []
+    for result, require_diagnostics in ((production, False), (diagnostic, True)):
+        options = dict(result.build_plan.cmake_options)
+        common_options.append({key: value for key, value in options.items() if key not in {
+            "GGML_HIP_DISPATCH_DIAGNOSTICS", "GGML_HIP_REPLAY_DIAGNOSTICS",
+        }})
+        enabled = lambda name: str(options.get(name, "OFF")).upper() in ("ON", "TRUE", "1", "YES")
+        if (not enabled("GGML_HIP_DISPATCH_REPLAY") or enabled("GGML_HIP_AUTOTUNE")
+                or enabled("GGML_HIP_AUTOTUNE_RECORD")
+                or enabled("GGML_HIP_DISPATCH_DIAGNOSTICS") != require_diagnostics
+                or enabled("GGML_HIP_REPLAY_DIAGNOSTICS") != require_diagnostics):
+            raise TuneCampaignError("replay companion build roles/configuration are invalid")
+        if result.manifest_ref is None or result.generated_tree_ref is None:
+            raise TuneCampaignError("replay companion lacks manifest/generated-tree evidence")
+        try:
+            manifest = json.loads(result.manifest_ref.path.read_text(encoding="utf-8"))
+            if manifest["manifest_hash"] != catalog_mod.manifest_hash(manifest):
+                raise TuneCampaignError("replay companion manifest hash does not recompute")
+            descriptor = catalog_mod.build_descriptor(manifest)
+            if descriptor != manifest["build_descriptor"]:
+                raise TuneCampaignError("replay companion descriptor does not recompute")
+            manifests.append(descriptor)
+            tree = json.loads(result.generated_tree_ref.path.read_text(encoding="utf-8"))
+            inputs = {name: tree["files"][name] for name in tree["compile_inputs"]}
+            if not inputs or "hip-autotune-registry.inc" not in inputs:
+                raise TuneCampaignError("replay companion lacks generated registry evidence")
+            generated_inputs.append(inputs)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise TuneCampaignError(f"invalid replay companion evidence: {exc}") from exc
+    if common_options[0] != common_options[1]:
+        raise TuneCampaignError("replay companion non-diagnostic compiler options differ")
+    if manifests[0] != manifests[1] or generated_inputs[0] != generated_inputs[1]:
+        raise TuneCampaignError("replay companion catalog/registry compile inputs differ")
 
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -936,6 +987,7 @@ def run_tune_campaign(
         _final_promote_result = _promote_result2
 
     replay_result: CampaignLaneResult | None = None
+    replay_validation_result: CampaignLaneResult | None = None
     replay_coverage: dict | None = None
     dispatch_cache_path: Path | None = None
     if promoted_after > 0:
@@ -953,6 +1005,13 @@ def run_tune_campaign(
         )
         if replay_result.manifest_ref is None:
             raise TuneCampaignError("replay build produced no manifest_ref -- cannot export cache")
+        replay_validation_result = _stage_replay_build(
+            context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-replay-diagnostic",
+            platform_name=platform_name, source_name=source_name,
+            inventory_path=inventory_path, winners_path=workdir / "promoted.jsonl",
+            build_name="replay-diagnostic",
+        )
+        _verify_replay_companion(replay_result, replay_validation_result)
         provisional_cache_path = _stage_replay_export(
             promoted_path=workdir / "promoted.jsonl",
             target_manifest_path=Path(replay_result.manifest_ref.path),
@@ -965,7 +1024,7 @@ def run_tune_campaign(
         # the provisional cache get atomically renamed to dispatch.cache,
         # which is the path this receipt records below.
         replay_coverage = _stage_replay_validate(
-            lane_result=replay_result, model_path=model_path, devices=devices,
+            lane_result=replay_validation_result, model_path=model_path, devices=devices,
             runtime_profile=profile, provisional_cache=provisional_cache_path, workdir=workdir,
             promoted_path=workdir / "promoted.jsonl",
             manifest_path=Path(replay_result.manifest_ref.path),
@@ -985,11 +1044,14 @@ def run_tune_campaign(
             ),
             correctness_seeds=correctness_seeds, campaign_run_id=campaign_run_id,
         )
+        replay_coverage["observation_role"] = "diagnostic-companion"
+        replay_coverage["validation_build_plan_id"] = replay_validation_result.build_plan_id
+        replay_coverage["production_build_plan_id"] = replay_result.build_plan_id
         dispatch_cache_path = workdir / "dispatch.cache"
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(
-        schema_version=3,
+        schema_version=4,
         campaign_run_id=campaign_run_id,
         model_path=str(model_path),
         platform_name=platform_name,
@@ -1006,6 +1068,10 @@ def run_tune_campaign(
         replay=(
             _stage_identity(replay_result)
             if replay_result is not None else None
+        ),
+        replay_validation=(
+            _stage_identity(replay_validation_result)
+            if replay_validation_result is not None else None
         ),
         promoted_before_evidence=promoted_before,
         promoted_after_evidence=promoted_after,

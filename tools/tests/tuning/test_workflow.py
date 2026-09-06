@@ -66,6 +66,18 @@ class CountMissingCorrectnessEvidenceTests(unittest.TestCase):
 
 
 class StageReplayExportTests(unittest.TestCase):
+    def test_diagnostic_build_uses_its_own_campaign_input_key(self):
+        from unittest.mock import patch
+        with patch.object(workflow, "_plan_and_run_one_lane") as run:
+            workflow._stage_replay_build(
+                context=None, cfg=None, store=None, run_id="diagnostic",
+                platform_name="platform", source_name="bigcherry",
+                inventory_path=Path("inventory"), winners_path=Path("winners"),
+                build_name="replay-diagnostic",
+            )
+        self.assertEqual(run.call_args.kwargs["build_name"], "replay-diagnostic")
+        self.assertEqual(set(run.call_args.kwargs["inputs_by_build"]), {"replay-diagnostic"})
+
     def test_exports_against_the_supplied_target_manifest_not_some_other_one(self):
         # HI130 regression (req_ec659ded425c4335): _stage_replay_export must
         # bind the cache to whatever manifest/source_root it is GIVEN -- the
@@ -361,6 +373,85 @@ class StageReplayValidateTests(unittest.TestCase):
             self.assertFalse((workdir / "coverage.json").exists())
 
 
+class ReplayCompanionParityTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from types import SimpleNamespace
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        catalog = workflow.catalog_mod
+        self.manifest = {
+            "artifact_version": 1, "variant_set": "replay-full",
+            "architectures": ["gfx1100"], "source_revision": "a" * 40,
+            "signature_schema_version": 1, "hardware_schema_version": 1,
+            "producer_capabilities": "0" * 32,
+            "candidates": [{"id": i} for i in range(6)],
+            "summary": {"total": 6, "by_family": {name: 1 for name in catalog.schema.FAMILIES},
+                        "by_source_class": {"native_wrapper": 5, "existing_alternative": 1}},
+        }
+        self.manifest["manifest_hash"] = catalog.manifest_hash(self.manifest)
+        self.manifest["build_descriptor"] = catalog.build_descriptor(self.manifest)
+        self.lanes = []
+        for name, diag in (("production", "OFF"), ("diagnostic", "ON")):
+            root = self.root / name
+            root.mkdir()
+            manifest_path, tree_path = root / "manifest.json", root / "tree.json"
+            manifest_path.write_text(json.dumps(self.manifest), encoding="utf-8")
+            tree_path.write_text(json.dumps({
+                "files": {"hip-autotune-registry.inc": "1" * 64},
+                "compile_inputs": ["hip-autotune-registry.inc"],
+            }), encoding="utf-8")
+            self.lanes.append(SimpleNamespace(
+                source_slice_id="slice", manifest_ref=SimpleNamespace(path=manifest_path),
+                generated_tree_ref=SimpleNamespace(path=tree_path),
+                build_plan=SimpleNamespace(cmake_options=(
+                    ("GGML_HIP_DISPATCH_REPLAY", "ON"),
+                    ("GGML_HIP_DISPATCH_DIAGNOSTICS", diag),
+                    ("GGML_HIP_REPLAY_DIAGNOSTICS", diag),
+                )),
+            ))
+
+    def test_matching_source_catalog_and_registry_are_accepted(self):
+        workflow._verify_replay_companion(*self.lanes)
+
+    def test_wrong_source_or_diagnostic_role_is_rejected(self):
+        self.lanes[1].source_slice_id = "another"
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "source composition"):
+            workflow._verify_replay_companion(*self.lanes)
+        self.lanes[1].source_slice_id = "slice"
+        self.lanes[1].build_plan = self.lanes[0].build_plan
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "roles/configuration"):
+            workflow._verify_replay_companion(*self.lanes)
+
+    def test_forged_manifest_hash_is_rejected(self):
+        self.manifest["candidates"][0]["id"] = "changed"
+        self.lanes[1].manifest_ref.path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "hash does not recompute"):
+            workflow._verify_replay_companion(*self.lanes)
+
+    def test_different_valid_candidate_registry_is_rejected(self):
+        self.manifest["candidates"][0]["id"] = "changed"
+        self.manifest["manifest_hash"] = workflow.catalog_mod.manifest_hash(self.manifest)
+        self.manifest["build_descriptor"] = workflow.catalog_mod.build_descriptor(self.manifest)
+        self.lanes[1].manifest_ref.path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "compile inputs differ"):
+            workflow._verify_replay_companion(*self.lanes)
+
+    def test_generated_registry_change_is_rejected(self):
+        path = self.lanes[1].generated_tree_ref.path
+        tree = json.loads(path.read_text(encoding="utf-8"))
+        tree["files"]["hip-autotune-registry.inc"] = "2" * 64
+        path.write_text(json.dumps(tree), encoding="utf-8")
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "compile inputs differ"):
+            workflow._verify_replay_companion(*self.lanes)
+
+    def test_non_diagnostic_compiler_change_is_rejected(self):
+        self.lanes[1].build_plan.cmake_options += (("CMAKE_HIP_FLAGS", "-ffast-math"),)
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "compiler options differ"):
+            workflow._verify_replay_companion(*self.lanes)
+
+
 class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
     def test_replay_is_built_before_export_and_export_targets_replays_own_manifest(self):
         # HI130's actual root-cause bug: the cache used to be exported
@@ -386,6 +477,8 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
 
         def fake_stage_replay_build(**kwargs):
             calls.append(("build", kwargs))
+            if kwargs.get("build_name") == "replay-diagnostic":
+                return fake_lane_result("diagnostic-run", "/diagnostic/manifest.json", "/replay/own-source-root")
             return fake_lane_result("replay-run", "/replay/own-manifest.json", "/replay/own-source-root")
 
         def fake_stage_replay_export(**kwargs):
@@ -419,6 +512,7 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                 patch.object(workflow, "_stage_load_and_promote",
                              return_value=(workdir / "tune.sqlite", {}, 19, 0)),
                 patch.object(workflow, "_stage_replay_build", side_effect=fake_stage_replay_build),
+                patch.object(workflow, "_verify_replay_companion") as parity,
                 patch.object(workflow, "_stage_replay_export", side_effect=fake_stage_replay_export),
                 patch.object(workflow, "_stage_replay_validate", side_effect=fake_stage_replay_verify),
                 patch.object(workflow.gpu_mod, "preflight_context"),
@@ -434,7 +528,7 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                 fake_context = MagicMock()
                 fake_context.work_root = workdir
 
-                workflow.run_tune_campaign(
+                receipt = workflow.run_tune_campaign(
                     context=fake_context, cfg=fake_cfg, store=MagicMock(),
                     model_path=Path("/fake/model.gguf"), platform_name="linux-multi",
                     devices="0,1", runtime_profile_name="production-dual-xtx",
@@ -442,9 +536,15 @@ class RunTuneCampaignReplayOrderingTests(unittest.TestCase):
                 )
 
         stage_order = [name for name, _ in calls]
-        self.assertEqual(stage_order, ["build", "export", "verify"])
+        self.assertEqual(stage_order, ["build", "build", "export", "verify"])
+        self.assertEqual(calls[1][1]["build_name"], "replay-diagnostic")
+        self.assertEqual(calls[3][1]["lane_result"].run_id, "diagnostic-run")
+        self.assertEqual(receipt.replay.run_id, "replay-run")
+        self.assertEqual(receipt.replay_validation.run_id, "diagnostic-run")
+        self.assertEqual(receipt.schema_version, 4)
+        parity.assert_called_once()
 
-        export_kwargs = dict(calls[1][1])
+        export_kwargs = dict(calls[2][1])
         self.assertEqual(export_kwargs["target_manifest_path"], Path("/replay/own-manifest.json"))
         self.assertEqual(export_kwargs["target_source_root"], Path("/replay/own-source-root"))
         # The tune manifest must NOT leak into the export call.
@@ -517,6 +617,7 @@ class ReceiptCountsReflectFinalIngestTests(unittest.TestCase):
                              return_value=fake_lane_result("correctness-run", None, "/correctness/source-root")),
                 patch.object(workflow, "_stage_replay_build",
                              return_value=fake_lane_result("replay-run", "/replay/manifest.json", "/replay/source-root")),
+                patch.object(workflow, "_verify_replay_companion"),
                 patch.object(workflow, "_stage_replay_export",
                              return_value=Path("/fake/dispatch.cache.provisional")),
                 patch.object(workflow, "_stage_replay_validate",
