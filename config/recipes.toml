@@ -510,6 +510,21 @@ server-args = ["--flash-attn", "on"]
 tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 1073741824  # 1GiB headroom
+# GP11 2026-09-06: this profile had NO behavioural gate. Three campaigns on
+# 2026-09-06 promoted 12, 11 and 8 winners on gfx1201/gfx1030 through it with
+# no output-divergence check at all -- while the one profile that did declare
+# a gate was the single Q8_0 lane, not the Q6_K lanes that carry most
+# contracts (models.toml: tierA-qwen4b-q6k is "the default lane for most
+# contracts (12 of 19)").
+#
+# "dense-decode" rather than "mtp-speculative" because this profile's
+# server-args carry no --spec-type, so no drafts are generated. The gate then
+# compares generated token IDs alone, which is the correct check here: its
+# HARD FAIL state -- model-visible output changed -- applies whether or not
+# speculation is involved. Only the acceptance-trace comparison is absent,
+# and that has no meaning without drafts.
+behavioral-classes = ["dense-decode"]
+behavioral-corpus-edition = "single-card-dense-v1"
 
 # --- RE48: tree registry (pin-status --all-remotes / --complete) ----------------
 # local is implicit (the tree running the command); it is listed so the
