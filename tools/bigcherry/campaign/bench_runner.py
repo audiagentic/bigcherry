@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import hashlib
 import math
+import os
 import re
 import subprocess
 import sys
@@ -32,13 +33,30 @@ class BenchRunnerError(RuntimeError):
     """The documented bench harness did not produce a usable measurement."""
 
 
-BENCH_RUNNER_ROOT = Path("/mnt/vault/development/llmhosts/llamacpp")
+# Compatibility export retained for callers that import the old name.  The
+# default is resolved at call time so importing this module does not require a
+# machine-local environment document to exist.
+BENCH_RUNNER_ROOT: Path | None = None
 _BENCH_RUNNER_AGGREGATED_RESULT_PATTERN = re.compile(r"^\s*(\w+_tps):\s+([0-9.]+)\s*$")
+
+
+def _resolve_runner_root(runner_root: Path | None) -> Path:
+    if runner_root is not None:
+        return Path(runner_root)
+    harness = os.environ.get("BC_BENCH_HARNESS", "").strip()
+    if harness:
+        # BC_BENCH_HARNESS points at bench/, while the runner's cwd is the
+        # harness repository root containing bench/run_bench.py.
+        return Path(harness).expanduser().parent
+    # Delayed import/load is intentional: missing config/environment.toml is
+    # reported when a benchmark is requested, not while importing the module.
+    from bigcherry.core.environment import load_default
+    return Path(load_default().host().bench_harness).expanduser().parent
 
 
 def run_bench_runner_server_bench(
     *, server_url: str, bench_configs: str, repetitions: int = 1, timeout_s: int = 300,
-    runner_root: Path = BENCH_RUNNER_ROOT,
+    runner_root: Path | None = None,
     model_label: str = "rd73-va06", evidence_dir: Path | None = None,
     required_metrics: tuple[str, ...] = (),
 ) -> dict[str, float]:
@@ -62,6 +80,7 @@ def run_bench_runner_server_bench(
     exit, or no parseable metric at all."""
     if repetitions < 1 or timeout_s <= 0 or not model_label.strip():
         raise BenchRunnerError("positive repetitions/timeout and a nonempty model label are required")
+    runner_root = _resolve_runner_root(runner_root)
     runner_path = runner_root / "bench" / "run_bench.py"
     if not runner_path.is_file():
         raise BenchRunnerError(f"bench runner not found at {runner_path}")
@@ -128,4 +147,3 @@ def run_bench_runner_server_bench(
     if any(not math.isfinite(value) or value <= 0 for value in metrics.values()):
         raise BenchRunnerError("bench runner returned non-positive or non-finite throughput")
     return metrics
-

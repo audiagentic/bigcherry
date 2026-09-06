@@ -2137,21 +2137,23 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     if not targets or any(not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets):
         raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
     args.amdgpu_targets = ";".join(targets)
+    from bigcherry.core.context import ProjectContext
+    base_repo = ProjectContext.resolve(work_root=os.environ.get("BC_CACHE")).upstream_repo
     baseline_source = "bigcherry-native"
     base_revision, composition = psi.resolve_source_composition(
-        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=base_repo,
     )
     if (descriptor.patch_id, descriptor.implementation_digest) not in composition:
         raise PatchCampaignError(
             f"framework source {baseline_source!r} does not contain focal patch {descriptor.patch_id!r}"
         )
     source = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "framework",
+        base_repo=base_repo, worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision, composition=composition,
         overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
     idempotent = psi.verify_composition_idempotent(
-        base_repo=LLAMA_CPP_SRC, source=source, worktree_root=args.worktree_root / "framework",
+        base_repo=base_repo, source=source, worktree_root=args.worktree_root / "framework",
         resolved_revision=base_revision, composition=composition,
         overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
     )
