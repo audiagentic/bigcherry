@@ -27,6 +27,9 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
             "runtime_bundle_hash": "c" * 64, "runtime_artifacts": {"llama-server": "d" * 64},
         }
         completed = SimpleNamespace(campaign_identity=lambda: identity, to_dict=lambda: identity)
+        source_identity = source._make_source_identity_v2(
+            resolved_revision="b" * 40, composition=composition, overlay_root=root / "src")
+        source_identity["materialization_plan_id"] = source_identity["source_key"]
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             src = work / "source"
@@ -55,12 +58,17 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
                  mock.patch.object(source, "materialize_composition", return_value=src), \
                  mock.patch.object(source, "verify_composition_idempotent", return_value=True), \
                  mock.patch.object(source, "git_worktree_tree", return_value="c" * 40), \
-                 mock.patch.object(source, "_read_manifest", return_value={"source_tree_oid": "c" * 40, "source_slice_id": "e" * 32}), \
+                 mock.patch.object(source, "_read_manifest", return_value={**source_identity, "source_tree_oid": "c" * 40, "source_slice_id": "e" * 32}), \
                  mock.patch.object(vc, "generate_registry", side_effect=generate), \
                  mock.patch.object(vc, "build_tree", side_effect=build), \
                  mock.patch.object(vc, "capture_completed_build_evidence", return_value=completed), \
                  mock.patch("bigcherry.build.builds.inspect_dispatch_build", side_effect=lambda directory: {
-                     "issues": [], "compiled_definition_counts": {"GGML_HIP_DISPATCH_DIAGNOSTICS": int(directory.name.endswith("diagnostic"))}}), \
+                     "issues": [], "hip_compile_command_count": 1,
+                     "coverage_translation_unit": directory.name.endswith("diagnostic"),
+                     "compiled_definition_counts": {
+                         "GGML_HIP_DISPATCH_DIAGNOSTICS": int(directory.name.endswith("diagnostic")),
+                         "GGML_HIP_AUTOTUNE": 0, "GGML_HIP_AUTOTUNE_RECORD": 0,
+                         "GGML_HIP_REPLAY_DIAGNOSTICS": 0, "GGML_HIP_WORKSPACE_METRICS": 0}}), \
                  mock.patch.object(evidence, "write_record", side_effect=lambda record: records.append(record) or work / "record.json"):
                 result = vc._run_framework_configuration(args, descriptor, SimpleNamespace(pinned="pin"))
             self.assertEqual(result, 0)

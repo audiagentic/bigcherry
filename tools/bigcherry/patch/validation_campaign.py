@@ -2163,6 +2163,12 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     source_manifest = psi._read_manifest(source)
     if not source_manifest or source_manifest.get("source_tree_oid") != source_tree:
         raise PatchCampaignError("framework source attestation is missing or stale")
+    source_identity = psi._make_source_identity_v2(
+        resolved_revision=base_revision, composition=composition, overlay_root=psi.REPO_ROOT / "src",
+    )
+    source_identity["materialization_plan_id"] = source_identity["source_key"]
+    if any(source_manifest.get(key) != value for key, value in source_identity.items()):
+        raise PatchCampaignError("framework materialization identity is stale")
     build_root = (args.build_root or args.workdir) / source.name
     # Qualification owns fresh directories, never retroactively attests a
     # historical build whose inputs were not observed during compilation.
@@ -2232,16 +2238,22 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         requested_cmake_args=_full_requested_cmake_args(hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=diagnostic_args), build_env=env,
     )
     from bigcherry.build.builds import inspect_dispatch_build
+    compiler_observations = {}
     for role, diagnostic_on in (("production", False), ("diagnostic", True)):
         observed = inspect_dispatch_build(build_root / f"framework-{role}")
         counts = observed["compiled_definition_counts"]
         if observed["issues"] or bool(counts["GGML_HIP_DISPATCH_DIAGNOSTICS"]) != diagnostic_on:
             raise PatchCampaignError(f"{role} diagnostic compiler state disagrees with qualification role")
+        compiler_observations[role] = {key: observed[key] for key in (
+            "hip_compile_command_count", "compiled_definition_counts", "coverage_translation_unit", "issues",
+        )}
     run_dir = args.workdir / "framework" / descriptor.patch_id
     run_dir.mkdir(parents=True, exist_ok=False)
     generated_artifact = _write_bound_artifact(run_dir, "generated-tree.json", generated_manifest)
     source_artifact = _write_bound_artifact(run_dir, "source-tree.json", source_manifest)
     builds = {"production": production.campaign_identity(), "diagnostic": diagnostic.campaign_identity()}
+    for role in builds:
+        compiler_observations[role]["build_identity"] = builds[role]
     build_artifacts = {role: _write_bound_artifact(run_dir, f"{role}-build.json", {
         **completed.to_dict(), "generated_inputs_verification": "compiled-copy-v1",
         "generated_inputs": proof[f"framework-{role}"],
@@ -2276,6 +2288,7 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
             target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip()
         ),
         builds=builds,
+        source_identity=source_identity, compiler_observations=compiler_observations,
         generated_inputs={role: {"proof": "compiled-copy-v1",
             "compile_inputs_hash": proof[f"framework-{role}"]["compile_inputs_hash"],
             "tree_manifest": proof[f"framework-{role}"], "build_identity": builds[role],

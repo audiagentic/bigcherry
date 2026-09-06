@@ -326,7 +326,7 @@ def make_framework_configuration_record(
     *, descriptor, patch_path: Path, base_ref: str, base_revision: str,
     source_name: str, source_composition, source_tree: str, source_slice_id: str,
     compiled_targets, builds, generated_inputs, check_results, artifact_hashes,
-    campaign_workdir: Path,
+    campaign_workdir: Path, source_identity, compiler_observations,
 ) -> dict[str, object]:
     """Construct the schema-5, configuration-only evidence record.
 
@@ -336,6 +336,7 @@ def make_framework_configuration_record(
     patch_path = Path(patch_path)
     patch_digest = _sha256_file(patch_path)
     subject_digest = patch_validation_subject_digest(patch_path)
+    source_composition = tuple(source_composition)
     composition = [{"id": str(pair[0]), "digest": str(pair[1])} for pair in source_composition]
     targets = [str(target) for target in compiled_targets]
     if not targets:
@@ -352,22 +353,6 @@ def make_framework_configuration_record(
     normalized_checks = json.loads(json.dumps(check_results, sort_keys=True))
     normalized_artifacts = {str(path): _require_hex(value, f"artifact_hashes.{path}", (64,))
                             for path, value in artifact_hashes.items()}
-    required_ids: set[str] = set()
-    manifest = patch_path.parent / "validation.toml"
-    if manifest.is_file():
-        try:
-            from . import validation as _validation
-            required_ids = {spec.check_id for spec in _validation.parse_validation_toml(manifest)
-                            if spec.required}
-        except Exception as exc:
-            raise ValidationEvidenceError(f"cannot read validation manifest: {exc}") from exc
-    eligible = bool(required_ids) and required_ids.issubset(normalized_checks) and all(
-        isinstance(value, dict) and value.get("status") == "pass" and
-        all(isinstance(artifact, dict) and artifact.get("path") in normalized_artifacts and
-            artifact.get("sha256") == normalized_artifacts[artifact["path"]]
-            for artifact in value.get("artifacts", ()))
-        for value in normalized_checks.values()
-    )
     descriptor_id = getattr(descriptor, "patch_id", getattr(descriptor, "id", ""))
     implementation_digest = getattr(descriptor, "implementation_digest", patch_digest)
     record: dict[str, object] = {
@@ -380,22 +365,23 @@ def make_framework_configuration_record(
         "base_ref": _require_string(base_ref, "base_ref"), "base_revision": _require_string(base_revision, "base_revision"),
         "source_name": _require_string(source_name, "source_name"), "source_composition": composition,
         "source_tree": _require_string(source_tree, "source_tree"), "source_slice_id": _require_string(source_slice_id, "source_slice_id"),
+        "source_identity": json.loads(json.dumps(source_identity)),
+        "compiler_observations": json.loads(json.dumps(compiler_observations)),
         "compiled_targets": targets, "builds": normalized_builds, "generated_inputs": normalized_inputs,
         "check_results": normalized_checks, "artifact_hashes": normalized_artifacts,
         "claim_scope": "configuration-only", "runtime_performance_qualified": False,
-        "hardware_execution_qualified": False, "eligible_for_validated_state": eligible,
+        "hardware_execution_qualified": False, "eligible_for_validated_state": True,
         "campaign_identity": _canonical_digest({"builds": normalized_builds, "source_tree": source_tree, "targets": targets}),
         "campaign_workdir": str(Path(campaign_workdir)),
     }
     record["campaign_identity_digest"] = record["campaign_identity"]
-    record["record_digest"] = _record_digest(record)
     # The producer and offline admission share the same complete predicate.
-    record["eligible_for_validated_state"] = True
     record["record_digest"] = _record_digest(record)
     eligible, _ = verify_framework_configuration_record(
         record, descriptor=descriptor, patch_path=patch_path, pinned_ref=base_ref,
         required_compiled_targets=targets, resolved_base_revision=base_revision,
         source_composition=source_composition,
+        source_identity=source_identity,
     )
     record["eligible_for_validated_state"] = eligible
     record["record_digest"] = _record_digest(record)
@@ -405,7 +391,7 @@ def make_framework_configuration_record(
 def verify_framework_configuration_record(
     record: Mapping[str, object], *, descriptor, patch_path: Path, pinned_ref: str,
     required_compiled_targets=(), resolved_base_revision: str | None = None,
-    source_composition=None,
+    source_composition=None, source_identity=None,
 ) -> tuple[bool, tuple[str, ...]]:
     """Strict offline verifier for schema-5 framework configuration proof."""
     problems: list[str] = []
@@ -423,6 +409,13 @@ def verify_framework_configuration_record(
         problems.append("forbidden runtime or hardware claim")
     if record.get("record_digest") != _record_digest(record): problems.append("record_digest mismatch")
     if record.get("base_ref") != pinned_ref: problems.append("stale base_ref")
+    if source_identity is None or record.get("source_identity") != source_identity:
+        problems.append("source materialization identity mismatch")
+    if isinstance(source_identity, Mapping):
+        if (source_identity.get("resolved_revision") != record.get("base_revision")
+                or source_identity.get("materialization_plan_id") != source_identity.get("source_key")
+                or not source_identity.get("source_key")):
+            problems.append("invalid source materialization identity")
     if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision: problems.append("stale base_revision")
     if record.get("patch_id") != getattr(descriptor, "patch_id", None): problems.append("patch identity mismatch")
     expected_validation_digest = getattr(descriptor, "validation_digest", None)
@@ -444,6 +437,25 @@ def verify_framework_configuration_record(
             try: _validate_build_identity(value, field=f"builds.{role}")
             except ValidationEvidenceError as exc: problems.append(str(exc))
     inputs = record.get("generated_inputs")
+    observations = record.get("compiler_observations")
+    for role, enabled in (("production", False), ("diagnostic", True)):
+        observation = observations.get(role) if isinstance(observations, Mapping) else None
+        if not isinstance(observation, Mapping):
+            problems.append(f"compiler observation missing: {role}")
+            continue
+        counts = observation.get("compiled_definition_counts")
+        total = observation.get("hip_compile_command_count")
+        if (not isinstance(builds, Mapping) or observation.get("build_identity") != builds.get(role)
+                or not isinstance(total, int) or isinstance(total, bool) or total <= 0
+                or not isinstance(counts, Mapping)
+                or any(not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= total for v in counts.values())
+                or counts.get("GGML_HIP_DISPATCH_DIAGNOSTICS") != (total if enabled else 0)
+                or any(counts.get(flag) != 0 for flag in (
+                    "GGML_HIP_AUTOTUNE", "GGML_HIP_AUTOTUNE_RECORD",
+                    "GGML_HIP_REPLAY_DIAGNOSTICS", "GGML_HIP_WORKSPACE_METRICS"))
+                or observation.get("coverage_translation_unit") is not enabled
+                or observation.get("issues") != []):
+            problems.append(f"compiler observation invalid: {role}")
     if not isinstance(inputs, Mapping): problems.append("generated_inputs missing")
     else:
         for role in ("production", "diagnostic"):
@@ -452,7 +464,7 @@ def verify_framework_configuration_record(
                 problems.append(f"generated_inputs.{role} invalid")
             elif not isinstance(entry.get("compile_inputs_hash"), str) or len(entry["compile_inputs_hash"]) != 64:
                 problems.append(f"generated_inputs.{role} compile_inputs_hash missing")
-            elif entry.get("compile_inputs_hash") != inputs.get("production", {}).get("compile_inputs_hash"):
+            elif not isinstance(inputs.get("production"), Mapping) or entry.get("compile_inputs_hash") != inputs["production"].get("compile_inputs_hash"):
                 problems.append("generated input hashes disagree")
             else:
                 from bigcherry.build import generated_tree
@@ -535,6 +547,14 @@ def verify_framework_configuration_patch(
         registry = patch_registry.load_registry(catalog_root)
         composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
                             for member in resolved.modules)
+        from . import source as patch_source
+        if resolved_base_revision is None:
+            raise ValidationEvidenceError("resolved base revision required for source identity")
+        identity = patch_source._make_source_identity_v2(
+            resolved_revision=resolved_base_revision, composition=composition,
+            overlay_root=patch_source.REPO_ROOT / "src" if cfg.sources["bigcherry-native"].overlay else None,
+        )
+        identity["materialization_plan_id"] = identity["source_key"]
     except Exception as exc:
         return EvidenceCheck("missing-or-stale", (f"cannot resolve canonical framework composition: {exc}",))
     for record in records:
@@ -545,6 +565,7 @@ def verify_framework_configuration_patch(
             required_compiled_targets=required_compiled_targets,
             resolved_base_revision=resolved_base_revision,
             source_composition=composition,
+            source_identity=identity,
         )
         if ok:
             qualifying.append(record)
