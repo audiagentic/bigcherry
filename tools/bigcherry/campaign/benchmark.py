@@ -510,6 +510,7 @@ def run_server_arm_capture(
     env: dict[str, str], bench_configs: str, runner_root: Path,
     required_metrics: tuple[str, ...], repetitions: int = 1,
     shutdown_method: str = "http",
+    expected_execution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Capture one server-bench cell using the maintained process lifecycle.
 
@@ -542,6 +543,21 @@ def run_server_arm_capture(
     started = time.monotonic()
     try:
         with server:
+            if expected_execution is not None:
+                from bigcherry.experiment.attestation import (
+                    ExecutionIdentity, parse_llama_server_attestation, require_execution_identity,
+                )
+                expected = ExecutionIdentity(
+                    backend=expected_execution["backend"],
+                    architectures=tuple(expected_execution["architectures"]),
+                    locators=tuple(expected_execution["locators"]),
+                )
+                observed = parse_llama_server_attestation(
+                    (cell / "server.log").read_text(encoding="utf-8", errors="replace"),
+                    architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+                )
+                run["execution_attestation"] = observed.document() if observed else None
+                require_execution_identity(expected, observed, context=f"server cell {side}")
             run["metrics"] = run_bench_runner_server_bench(
                 server_url=f"http://{server.host}:{server.port}",
                 bench_configs=bench_configs, repetitions=repetitions,
@@ -601,6 +617,11 @@ def run_server_comparison_capture(
     if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
         raise ValueError("repetitions must be a positive integer")
     supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
+    expected_execution = config.get("expected_execution")
+    if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
+        raise ValueError("server comparison requires expected_execution backend, architectures and physical device locators")
+    from bigcherry.experiment.attestation import ExecutionIdentity
+    ExecutionIdentity(expected_execution["backend"], tuple(expected_execution["architectures"]), tuple(expected_execution["locators"]))
     if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
         raise ValueError("both explicit device selectors are required")
     runner_root = _resolve_runner_root(Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
@@ -648,7 +669,7 @@ def run_server_comparison_capture(
     summary = {
         "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,
         "performance_admitted": False, "admission_blockers": [
-            "execution identity and work equivalence require verification",
+            "full source provenance and work equivalence require verification",
             "replay activation, if applicable, requires separate admission",
         ],
         "configuration": config, "model_sha256": binary_hash(model),
@@ -668,6 +689,7 @@ def run_server_comparison_capture(
                 pair=pair, side=name, position=position, env=arm["env"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
+                expected_execution=expected_execution,
             )
             summary["runs"].append(result)
             persist()
