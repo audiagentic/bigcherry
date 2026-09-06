@@ -563,12 +563,135 @@ def run_server_arm_capture(
     return run
 
 
+def run_server_comparison_capture(
+    config_path: Path, output: Path, *, rounds: int, seed: int, settle_seconds: float,
+) -> int:
+    """Thin server lifecycle integration over the existing balanced A/B engine.
+
+    Captures are explicitly unadmitted: build configuration observations and
+    paired estimates do not establish execution, work equivalence or tuning
+    activation. Keep those missing gates visible rather than implying that a
+    successful subprocess constitutes a production performance result.
+    """
+    from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts
+    from bigcherry.campaign.bench_runner import _resolve_runner_root
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("schema_version") != 1:
+        raise ValueError("server capture configuration requires schema_version 1")
+    arms = config.get("arms", [])
+    if not isinstance(arms, list) or not 2 <= len(arms) <= 3:
+        raise ValueError("server comparisons require two or three arms; use separate balanced contrasts for larger matrices")
+    if rounds < 2 or rounds % math.factorial(len(arms)) or not math.isfinite(settle_seconds) or settle_seconds < 0:
+        raise ValueError("server captures require complete permutation blocks and nonnegative finite settling")
+    names = [arm["name"] for arm in arms]
+    if len(set(names)) != len(names) or any(not re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in names):
+        raise ValueError("arm names must be unique simple identifiers")
+    role = config.get("evidence_role")
+    if role not in ("production", "diagnostic"):
+        raise ValueError("explicit production or diagnostic evidence_role required")
+    model = Path(os.path.expandvars(config["model"])).expanduser().resolve()
+    extra_args = tuple(os.path.expandvars(value) for value in config["server_args"])
+    if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
+        raise ValueError("server_args cannot override the managed model or endpoint")
+    metrics = tuple(config["required_metrics"])
+    if not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics):
+        raise ValueError("explicit server-bench throughput metrics required")
+    repetitions = config.get("repetitions", 1)
+    if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
+        raise ValueError("repetitions must be a positive integer")
+    supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
+    if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
+        raise ValueError("both explicit device selectors are required")
+    runner_root = _resolve_runner_root(Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
+    prepared = {}
+    for arm in arms:
+        binary = Path(os.path.expandvars(arm["binary"])).expanduser().resolve()
+        mode = arm["mode"]
+        if mode not in ("stock", "native", "record", "tune", "replay"):
+            raise ValueError(f"unsupported dispatch mode: {mode}")
+        build_dir = binary.parent.parent
+        observation = inspect_dispatch_build(build_dir)
+        if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
+            raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        runtime = {path.name: binary_hash(path) for path in resolve_runtime_artifacts(binary)}
+        if metadata.get("binary_hash") != binary_hash(binary) or any(
+                metadata.get("runtime_artifacts", {}).get(name) != digest for name, digest in runtime.items()):
+            raise ValueError(f"{arm['name']}: runtime bytes disagree with campaign metadata")
+        env = sanitize_environment({**os.environ, **supplied_env}, "stock" if mode == "stock" else "native")
+        for key in tuple(env):
+            if key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_AUTOTUNE_", "GGML_HIP_TUNE_", "GGML_HIP_FORCE_")):
+                env.pop(key)
+        if mode != "stock":
+            env["GGML_HIP_DISPATCH_MODE"] = mode
+        # Only explicitly supplied arm controls survive ambient sanitization.
+        controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
+        if any(not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_")) for key in controls):
+            raise ValueError("arm-specific environment is limited to dispatch/tuning controls; topology belongs to the shared environment")
+        if "GGML_HIP_DISPATCH_MODE" in controls:
+            raise ValueError("arm environment cannot override the declared dispatch mode")
+        env.update(controls)
+        if mode == "replay" and not Path(env.get("GGML_HIP_DISPATCH_CACHE", "")).is_file():
+            raise ValueError("replay arm requires an existing explicit cache")
+        prepared[arm["name"]] = {
+            "binary": binary, "env": env, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
+                           "compiler_observation": observation},
+        }
+    if "stock" in names and "native" in names:
+        validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
+                              prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
+    output.mkdir(parents=True, exist_ok=False)
+    run_schedule = schedule_named_arms(rounds, names, seed)
+    summary = {
+        "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,
+        "performance_admitted": False, "admission_blockers": [
+            "execution identity and work equivalence require verification",
+            "replay activation, if applicable, requires separate admission",
+        ],
+        "configuration": config, "model_sha256": binary_hash(model),
+        "arm_provenance": {name: value["provenance"] for name, value in prepared.items()},
+        "schedule": run_schedule, "schedule_seed": seed, "settle_seconds": settle_seconds,
+        "runs": [],
+    }
+    def persist():
+        (output / "run.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    persist()
+    for pair, order in enumerate(run_schedule):
+        for position, name in enumerate(order):
+            arm = prepared[name]
+            print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
+            result = run_server_arm_capture(
+                binary=arm["binary"], model=model, extra_args=extra_args, output=output,
+                pair=pair, side=name, position=position, env=arm["env"],
+                bench_configs=config["bench_configs"], runner_root=runner_root,
+                required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
+            )
+            summary["runs"].append(result)
+            persist()
+            if result["returncode"]:
+                return 1
+            if (pair, position) != (rounds - 1, len(order) - 1) and settle_seconds:
+                time.sleep(settle_seconds)
+    summary["exploratory_comparisons"] = {
+        f"{candidate}_vs_{names[0]}": {metric: block_bootstrap_effect(summary["runs"], candidate, names[0], metric)
+                                      for metric in metrics}
+        for candidate in names[1:]
+    }
+    persist()
+    print("Capture complete; performance admission remains false.", flush=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="bigcherry ab-benchmark",
         description="Run paired, interleaved native-versus-replay end-to-end benchmarks.",
     )
     parser.add_argument("--inspect-build", type=Path, help="read-only dispatch/diagnostic compiler inventory; no benchmark is launched")
+    parser.add_argument("--server-config", type=Path, help="capture balanced server-bench arms from a local JSON run configuration; not performance admission")
     parser.add_argument("--cache", help="replay cache exported from this tune")
     parser.add_argument("--output", help="new artifacts/tuning-runs/<run> directory")
     parser.add_argument("--pairs", type=int, default=3, help="interleaved rounds per arm (default: 3; use power for a decision-grade count)")
@@ -591,6 +714,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--patched-cmake-cache", default=None, help="patched build's CMakeCache.txt; required with --stock-binary")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="benchmark command, after --")
     args = parser.parse_args(argv)
+
+    if args.server_config is not None:
+        if (not args.output or args.command or args.cache or args.stock_binary
+                or args.inspect_build or args.decision_grade or args.structured or args.metric):
+            parser.error("--server-config requires --output and cannot use command-mode arms or decision-grade admission")
+        try:
+            return run_server_comparison_capture(
+                args.server_config, Path(args.output), rounds=args.pairs,
+                seed=args.schedule_seed, settle_seconds=args.settle_seconds,
+            )
+        except (ValueError, OSError, KeyError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
 
     if args.inspect_build is not None:
         if args.command or args.cache or args.output or args.stock_binary:

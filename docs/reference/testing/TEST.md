@@ -248,8 +248,8 @@ before the defect was found. Treat them as required, not advisory.
 and `--decision-grade`, and checks common CMake settings through
 `--stock-cmake-cache`/`--patched-cmake-cache`. This is not complete build or
 measurement admission: the caller must still prove source/binary identity,
-activation, work equivalence, and clean teardown. Its command-mode CLI does
-not yet orchestrate a server per arm.
+activation and work equivalence. For server lifecycle capture use
+`--server-config` below; command mode does not manage server processes.
 
 Do not write a new harness. `tools/lab/gp11-replay-bench/ab-balanced.sh` was
 written from scratch in ignorance of `ab-benchmark`, reimplemented order
@@ -317,8 +317,55 @@ bench-config content, cache digest, per-cell order and metrics, work-equivalence
 evidence, and shutdown result. Production timing and diagnostic observations
 must be stored with explicit roles; never transfer a companion's throughput
 to a production claim or treat companion activation as same-cell proof.
-The server-per-arm integration and production activation admission remain
-HI168 work; this profile alone is not an executable benchmark campaign.
+Production activation admission remains HI168 work; this profile alone is
+not an executable benchmark campaign.
+
+#### Balanced server capture
+
+The existing A/B command can now manage one server per arm and invoke the
+maintained endpoint runner. Keep machine-local run configuration under
+`artifacts/`, not in committed procedure docs. Environment placeholders are
+expanded at execution. For example:
+
+```json
+{
+  "schema_version": 1,
+  "evidence_role": "production",
+  "model": "$BC_MODEL_ROOT/<model>/<model>.gguf",
+  "server_args": ["-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096", "-np", "1"],
+  "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+  "bench_configs": "default",
+  "required_metrics": ["pp512_tps", "tg128_tps"],
+  "repetitions": 1,
+  "arms": [
+    {"name": "stock", "mode": "stock", "binary": "$BC_CACHE/<stock-build>/bin/llama-server"},
+    {"name": "native", "mode": "native", "binary": "$BC_CACHE/<native-build>/bin/llama-server"}
+  ]
+}
+```
+
+Use the model/topology's actual runtime arguments and harness metric names;
+the example does not enable speculative decoding. Then run:
+
+```bash
+source tools/env/bigcherry-env.sh
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark \
+  --server-config artifacts/<run-config>.json --output artifacts/<new-run> \
+  --pairs 2 --schedule-seed 0 --settle-seconds 20
+```
+
+Two arms require complete two-order blocks; three require six-order blocks.
+Use separate contrasts for larger build matrices. Capture validates the
+instrumentation role against compiler observations, checks runtime bytes
+against campaign metadata, retains the full bench-config content and cell
+streams, and rejects unclean shutdown. Diagnostic builds require a separate
+`evidence_role: diagnostic` capture. Stock uses upstream SIGINT shutdown;
+BC defaults to its HTTP endpoint.
+
+`run.json` deliberately retains `performance_admitted: false`. Exploratory
+paired estimates are not a parity verdict: execution identity, full source
+provenance, work equivalence and applicable replay activation still need
+admission. `--decision-grade` cannot be combined with this capture mode.
 
 ### 1. Never run arms in a fixed order
 

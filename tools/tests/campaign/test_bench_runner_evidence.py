@@ -1,4 +1,5 @@
 """Offline tests for retained server-bench invocation evidence."""
+import hashlib
 import json
 import os
 import subprocess
@@ -17,6 +18,8 @@ class BenchRunnerEvidenceTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         (self.root / "bench").mkdir()
         (self.root / "bench/run_bench.py").write_text("# fixture", encoding="utf-8")
+        (self.root / "bench/config").mkdir()
+        (self.root / "bench/config/bench-configs.json").write_bytes(b'{"server-bench": {}}\n')
         self.output = self.root / "cell"
 
     def test_environment_harness_points_to_bench_directory(self):
@@ -54,6 +57,20 @@ class BenchRunnerEvidenceTests(unittest.TestCase):
         self.assertIn("server-bench", request["command"])
         self.assertEqual((self.output / "stderr.log").read_text(), "notice")
         self.assertEqual(len(request["runner_sha256"]), 64)
+        config = self.root / "bench/config/bench-configs.json"
+        self.assertEqual((self.output / "bench-configs.json").read_bytes(), config.read_bytes())
+        self.assertEqual(
+            request["bench_config_sha256"],
+            hashlib.sha256(config.read_bytes()).hexdigest(),
+        )
+
+    def test_missing_config_refuses_evidence_capture(self):
+        (self.root / "bench/config/bench-configs.json").unlink()
+        with patch("bigcherry.campaign.bench_runner.subprocess.run") as run:
+            with self.assertRaisesRegex(BenchRunnerError, "evidence capture requires"):
+                self.run_cell()
+        run.assert_not_called()
+        self.assertFalse(self.output.exists())
 
     def test_missing_metric_fails_after_retaining_output(self):
         result = subprocess.CompletedProcess([], 0, "Extracted Results:\n pp512_tps: 300\n", "")
