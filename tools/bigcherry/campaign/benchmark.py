@@ -509,8 +509,9 @@ def main(argv: list[str] | None = None) -> int:
         prog="bigcherry ab-benchmark",
         description="Run paired, interleaved native-versus-replay end-to-end benchmarks.",
     )
-    parser.add_argument("--cache", required=True, help="replay cache exported from this tune")
-    parser.add_argument("--output", required=True, help="new artifacts/tuning-runs/<run> directory")
+    parser.add_argument("--inspect-build", type=Path, help="read-only dispatch/diagnostic compiler inventory; no benchmark is launched")
+    parser.add_argument("--cache", help="replay cache exported from this tune")
+    parser.add_argument("--output", help="new artifacts/tuning-runs/<run> directory")
     parser.add_argument("--pairs", type=int, default=3, help="interleaved rounds per arm (default: 3; use power for a decision-grade count)")
     parser.add_argument("--schedule-seed", type=int, default=0)
     parser.add_argument("--structured", action="store_true", help="require current benchmark_result JSONL and retain all repetitions")
@@ -531,6 +532,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--patched-cmake-cache", default=None, help="patched build's CMakeCache.txt; required with --stock-binary")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="benchmark command, after --")
     args = parser.parse_args(argv)
+
+    if args.inspect_build is not None:
+        if args.command or args.cache or args.output or args.stock_binary:
+            parser.error("--inspect-build cannot be combined with a benchmark command or arms")
+        from bigcherry.build.builds import BuildIdentityError, inspect_dispatch_build
+        try:
+            observation = inspect_dispatch_build(args.inspect_build)
+        except (BuildIdentityError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(observation, indent=2))
+        return 1 if observation["issues"] else 0
+    if not args.cache or not args.output:
+        parser.error("benchmark execution requires --cache and --output")
 
     if args.pairs < 1 or args.settle_seconds < 0:
         print("error: --pairs must be >= 1 and --settle-seconds must be >= 0", file=sys.stderr)

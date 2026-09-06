@@ -99,3 +99,19 @@ The already-running `/home/audumla/tuned-nospec.log` eight-round comparison
 does not retain per-cell activation or exit evidence. Preserve it as diagnostic
 timing history, not an admitted winner-effect result. No new GPU run or build
 was started alongside it.
+
+## Reusable build inspection
+
+The owner's follow-up requests all BigCherry build types, standardized for
+future models/topologies. The maintained campaign configuration now defines
+`e2e-build-matrix`; TEST.md documents each arm's distinct role and remaining
+server/activation admission gaps. Historical control remains instrumented;
+the new native build is explicit instead of silently redefining control.
+
+The new read-only `ab-benchmark --inspect-build` was exercised locally against
+copied CMakeCache.txt and compile_commands.json from the production build above
+(artifacts/hi168-production-build-inspection). It observed 149 HIP compiler
+commands, all defining DISPATCH/REPLAY and none defining dispatch diagnostics,
+while coverage.cpp was still compiled. It returned 1 with the expected
+coverage-without-diagnostics finding. This corroborates the prior actual ELF
+inspection; it is not a new patched HIP build or a throughput result.

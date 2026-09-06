@@ -243,9 +243,11 @@ before the defect was found. Treat them as required, not advisory.
 
 **Use `bigcherry ab-benchmark`.** It is paired and interleaved, takes
 `--pairs`, `--schedule-seed`, `--settle-seconds`, `--practical-threshold-pct`
-and `--decision-grade`, and verifies build composition through
-`--stock-cmake-cache`/`--patched-cmake-cache`. It already implements every rule
-below.
+and `--decision-grade`, and checks common CMake settings through
+`--stock-cmake-cache`/`--patched-cmake-cache`. This is not complete build or
+measurement admission: the caller must still prove source/binary identity,
+activation, work equivalence, and clean teardown. Its command-mode CLI does
+not yet orchestrate a server per arm.
 
 Do not write a new harness. `tools/lab/gp11-replay-bench/ab-balanced.sh` was
 written from scratch in ignorance of `ab-benchmark`, reimplemented order
@@ -260,6 +262,61 @@ For the questions a throughput A/B cannot answer:
 | what saving should tuning predict | `bigcherry impact --observations <record jsonl> --measurements <promoted.jsonl>` |
 | repeatable deep profiling | `bigcherry profile-campaign` (docs/reference/tooling/PROFILING.md) |
 | which candidate served which dispatch | `[build.replay-diagnostic]` + `GGML_HIP_DISPATCH_HIT_LOG` |
+
+### Reusable campaign build matrix (HI168)
+
+Build via the existing campaign engine, selecting the model/topology's own
+inventory and promoted winners. The profile builds servers, not llama-bench:
+
+```bash
+PYTHONPATH=tools python3 -m bigcherry build --profile e2e-build-matrix \
+  --arch gfx1100 --inventory <campaign>/inventory.json \
+  --winners <campaign>/promoted.jsonl
+```
+
+`--arch` must match the topology; it is not a device-visibility selector.
+Do not build alongside measurement. Existing compatible content-addressed
+builds may be reused; never alter those build trees by hand.
+
+| Build | Runtime role | Diagnostic content | Interpretation |
+| --- | --- | --- | --- |
+| stock, llama-native source | native | no BC dispatch | genuine upstream baseline |
+| native, bigcherry-native source | native | tuner/dispatch diagnostics OFF | framework-only production-shaped baseline |
+| control | native | AUTOTUNE implies diagnostics | instrumented control, not production native |
+| record | record | tuner and recording/diagnostics | signature observation, not production timing |
+| tune | tune | tuner, diagnostics, workspace metrics | tuning observations, not production timing |
+| replay | native and replay | diagnostics OFF | same-binary winner-effect pair |
+| replay-diagnostic | native and replay | dispatch counters and hit-log attribution | diagnostic companion, not production timing |
+| audit (opt-in, outside profile) | compile audit | all candidates, tuner/diagnostics | unnecessary for ordinary workload-specific E2E |
+
+The new `native` build has an inventory-only native catalog. Do not substitute
+it for the native arm of a same-binary replay comparison. Source composition
+(`bigcherry-native` framework vs `bigcherry` release) remains separate from
+build type and runtime mode. Differences against stock describe the whole
+composition; they do not isolate one patch.
+
+Inspect every candidate build without starting hardware:
+
+```bash
+PYTHONPATH=tools python3 -m bigcherry ab-benchmark --inspect-build <build-directory>
+```
+
+This reports declared CMake flags alongside actual compiler definition counts
+and coverage-TU presence. A cache value of diagnostics OFF is insufficient:
+AUTOTUNE enables that compiler definition implicitly. The command returns 1
+for detected coverage/diagnostic disagreement and 2 for unreadable inputs.
+An exit 0 establishes only this limited compiler-configuration observation,
+not binary integrity, full production eligibility, or runtime activation.
+Use campaign completed-build identities and inspect the actual library too.
+
+For every future model/topology run retain its model identity, effective
+runtime profile, both device selectors, source/build/runtime-bundle identities,
+bench-config content, cache digest, per-cell order and metrics, work-equivalence
+evidence, and shutdown result. Production timing and diagnostic observations
+must be stored with explicit roles; never transfer a companion's throughput
+to a production claim or treat companion activation as same-cell proof.
+The server-per-arm integration and production activation admission remain
+HI168 work; this profile alone is not an executable benchmark campaign.
 
 ### 1. Never run arms in a fixed order
 
@@ -316,6 +373,14 @@ rolled bash: it already handles launch, health-check, env hygiene
 (`env_unset`), free-port selection, and graceful teardown. Every divergence
 from it in an ad-hoc harness has so far reintroduced a bug it had already
 fixed.
+
+`ServerRunner.shutdown()` returns a `ShutdownResult` (also retained as
+`last_shutdown`): method, request success, forced-kill flag, exit code and any
+request error. Require `clean` before admitting a cell; existing callers that
+ignore this result do not gain that gate automatically. For genuine unpatched
+stock on POSIX use `shutdown_method="sigint"`, which invokes upstream's normal
+signal handler. This mode rejects process wrappers and Windows rather than
+pretending a signal reached the intended server. BigCherry defaults to HTTP.
 
 ### 4. Prove the mechanism under test was actually active
 
@@ -472,4 +537,3 @@ PYTHONPATH=tools python -m bigcherry.analysis.candidate_report  # -> docs/refere
 ```
 
 Reads the newest manifest plus every log in `artifacts/tuning-logs/`.
-

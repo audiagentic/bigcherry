@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import http.server
 import json
+import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -110,6 +112,64 @@ class ServerRunnerHttpTests(unittest.TestCase):
 
 
 class ServerRunnerFailureTests(unittest.TestCase):
+    def test_shutdown_preserves_forced_exit_instead_of_implying_success(self):
+        runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+        proc = MagicMock()
+        proc.wait.side_effect = [subprocess.TimeoutExpired("server", 1), -9]
+        runner._proc = proc
+        with patch.object(runner, "post_json", return_value={}):
+            result = runner.shutdown(timeout_s=1)
+        self.assertTrue(result.requested)
+        self.assertTrue(result.forced)
+        self.assertFalse(result.clean)
+        self.assertEqual(result.returncode, -9)
+        self.assertIs(runner.shutdown(), result)
+        proc.kill.assert_called_once()
+
+    def test_http_failure_and_nonzero_exit_are_not_clean(self):
+        for returncode in (0, 1):
+            with self.subTest(returncode=returncode):
+                runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+                runner._proc = MagicMock()
+                runner._proc.wait.return_value = returncode
+                with patch.object(runner, "post_json", side_effect=ServerError("404")):
+                    result = runner.shutdown(timeout_s=1)
+                self.assertFalse(result.clean)
+                self.assertFalse(result.requested)
+                self.assertEqual(result.error, "404")
+
+    def test_successful_http_exit_is_recorded(self):
+        runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1)
+        runner._proc = MagicMock()
+        runner._proc.wait.return_value = 0
+        with patch.object(runner, "post_json", return_value={}):
+            result = runner.shutdown(timeout_s=1)
+        self.assertTrue(result.clean)
+        self.assertFalse(result.forced)
+
+    def test_stock_sigint_uses_upstream_signal_handler(self):
+        with patch("bigcherry.tuning.server_runner.os.name", "posix"):
+            runner = ServerRunner(binary=Path("x"), model=Path("m"), port=1,
+                                  shutdown_method="sigint")
+        proc = MagicMock()
+        proc.wait.return_value = 0
+        runner._proc = proc
+        with patch.object(runner, "post_json") as post:
+            result = runner.shutdown(timeout_s=1)
+        post.assert_not_called()
+        proc.send_signal.assert_called_once_with(signal.SIGINT)
+        self.assertTrue(result.clean)
+
+    def test_signal_shutdown_rejects_wrappers_and_windows(self):
+        binary, model = Path("x"), Path("m")
+        with patch("bigcherry.tuning.server_runner.os.name", "nt"):
+            with self.assertRaisesRegex(ValueError, "unwrapped POSIX"):
+                ServerRunner(binary=binary, model=model, shutdown_method="sigint")
+        with patch("bigcherry.tuning.server_runner.os.name", "posix"):
+            with self.assertRaisesRegex(ValueError, "unwrapped POSIX"):
+                ServerRunner(binary=binary, model=model, shutdown_method="sigint",
+                             command_prefix=("profiler",))
+
     def test_wait_healthy_raises_when_process_exits_early(self):
         runner = ServerRunner(binary=Path("x"), model=Path("m.gguf"), port=1)
         mock_proc = MagicMock()
