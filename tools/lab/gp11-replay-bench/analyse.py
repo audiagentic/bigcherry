@@ -44,9 +44,21 @@ def check_activation(path):
     that never dispatched a winner is how the last three conclusions got
     retracted, so this fails loudly instead.
     """
-    text = open(path).read()
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
     arms_with_cache = set(re.findall(r"arm=(\S+) cacheload: (?!none)", text))
     problems = []
+    # Discover intended cache arms even when llama-server swallows cache logs.
+    header = re.search(r"\barms=(.*?)\s+model=", text)
+    if header is None:
+        problems.append("missing arm declaration; cache activation cannot be checked")
+    else:
+        for spec in header.group(1).split():
+            fields = spec.split(":")
+            if len(fields) not in (3, 4) or fields[2] not in ("yes", "no"):
+                problems.append(f"invalid arm declaration: {spec}")
+            elif fields[2] == "yes":
+                arms_with_cache.add(fields[0])
     if "WARN shutdown-endpoint-unavailable" in text:
         problems.append(
             "a server did not shut down through /shutdown, so the replay and "
@@ -54,17 +66,19 @@ def check_activation(path):
             "or patch 0800 absent from that build)"
         )
     for arm in sorted(arms_with_cache):
-        tuned = re.findall(rf"arm={re.escape(arm)}.*?tuned=(\d+)", text)
-        if not tuned:
-            problems.append(
-                f"arm {arm} loaded a cache but reported no final launch counts "
-                f"-- cannot distinguish 'winners are neutral' from 'cache never hit'"
+        cells = {(r, p) for r, p, a, _ in parse(path) if a == arm}
+        if not cells:
+            problems.append(f"arm {arm} has no measured cells")
+        for round_, pos in sorted(cells):
+            prefix = rf"^round={round_} pos={pos} arm={re.escape(arm)}\s+"
+            tuned = re.findall(
+                prefix + r"[^\n]*?\btuned=(\d+)\b", text, re.MULTILINE
             )
-        elif all(int(t) == 0 for t in tuned):
-            problems.append(
-                f"arm {arm} loaded a cache and launched ZERO tuned kernels "
-                f"-- every exact hit was replaced by native at revalidation"
-            )
+            if not tuned or any(int(t) == 0 for t in tuned):
+                problems.append(
+                    f"round={round_} pos={pos} arm={arm}: missing or zero final "
+                    "tuned launch count; exact cache hits alone are insufficient"
+                )
     if problems:
         print("ACTIVATION EVIDENCE FAILED -- this run cannot support a result:\n")
         for p in problems:
@@ -74,7 +88,8 @@ def check_activation(path):
 
 
 def main(path):
-    check_activation(path)
+    if not check_activation(path):
+        return 2
     rows = parse(path)
     arms = sorted({a for _, _, a, _ in rows})
     base = "control" if "control" in arms else arms[0]
@@ -124,7 +139,8 @@ def main(path):
                     found = True
     if not found:
         print("  none")
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "replay-balanced.log")
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "replay-balanced.log"))
