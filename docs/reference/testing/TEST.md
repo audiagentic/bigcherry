@@ -368,6 +368,14 @@ streams, and rejects unclean shutdown. Diagnostic builds require a separate
 `evidence_role: diagnostic` capture. Stock uses upstream SIGINT shutdown;
 BC defaults to its HTTP endpoint.
 
+Current limitation: tensor split with `--fit off` can report only the virtual
+`Meta()` backend, and normal production logging may omit device details.
+Such a cell currently fails device attestation before the endpoint benchmark
+starts. Do not bypass this gate or infer physical-device execution from the
+visibility variables, build targets, or a successful model load. Increasing
+verbosity alone does not supply the missing physical membership for this path;
+any diagnostic logging run must remain separate from default-logging timing.
+
 `run.json` deliberately retains `performance_admitted: false`. Exploratory
 paired estimates are not a parity verdict: full source provenance, work
 equivalence and applicable replay activation still need
