@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, Mapping
 
 #: Stable reason codes. Callers branch on these rather than on message text.
@@ -75,6 +76,153 @@ class AttestationError(RuntimeError):
     def __init__(self, message: str, *, reasons: Iterable[str] = ()) -> None:
         super().__init__(message)
         self.reasons: tuple[str, ...] = tuple(reasons)
+
+
+def _linux_kfd_int(path: Path, *, label: str) -> int:
+    """Read one non-negative integer from a Linux sysfs/procfs file."""
+    try:
+        text = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError) as exc:
+        raise AttestationError(f"KFD evidence cannot read {label}: {path}") from exc
+    if not re.fullmatch(r"[0-9]+", text):
+        raise AttestationError(f"KFD evidence has unsupported value for {label}: {path}")
+    return int(text)
+
+
+def _linux_kfd_starttime(path: Path) -> int:
+    try:
+        text = path.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as exc:
+        raise AttestationError(f"KFD evidence cannot read process stat: {path}") from exc
+    # comm may contain spaces and parentheses; the final ')' is the stable
+    # delimiter before field 3.  Field 22 is therefore offset 19 here.
+    try:
+        fields = text.rsplit(")", 1)[1].split()
+        if fields[0] == "Z":
+            raise AttestationError(f"KFD evidence process is zombie: {path}")
+        value = fields[19]
+    except (IndexError, ValueError) as exc:
+        raise AttestationError(f"KFD evidence has unsupported process stat: {path}") from exc
+    if not re.fullmatch(r"[0-9]+", value):
+        raise AttestationError(f"KFD evidence has unsupported process starttime: {path}")
+    return int(value)
+
+
+def _linux_kfd_locator(path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise AttestationError(f"KFD evidence cannot resolve DRM device: {path}") from exc
+    # Only the resolved device entry itself is authoritative; a parent path
+    # component may name an upstream bridge with a different BDF.
+    match = re.fullmatch(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}[.][0-9]", resolved.name)
+    if match is None:
+        raise AttestationError(f"KFD evidence DRM device has no PCI locator: {resolved}")
+    return resolved.name.lower()
+
+
+def capture_linux_kfd_process_evidence(
+    pid: int, binary: Path, *, proc_root: Path = Path("/proc"),
+    kfd_root: Path = Path("/sys/class/kfd/kfd"),
+    drm_root: Path = Path("/sys/class/drm"),
+) -> dict[str, object]:
+    """Capture raw, fail-closed Linux KFD evidence for one live process.
+
+    This is an observation producer only.  It does not become an
+    ``ExecutionAttestation`` and makes no claim that a queue launched work or
+    that a GPU executed a particular operation.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        raise AttestationError("KFD evidence requires a positive PID")
+    proc = Path(proc_root) / str(pid)
+    exe_link = proc / "exe"
+    try:
+        executable = exe_link.resolve(strict=True)
+        expected_binary = Path(binary).expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise AttestationError(f"KFD evidence cannot resolve executable for PID {pid}") from exc
+    if executable != expected_binary:
+        raise AttestationError(
+            f"KFD evidence executable mismatch for PID {pid}: {executable} != {expected_binary}"
+        )
+    stat_path = proc / "stat"
+    start_before = _linux_kfd_starttime(stat_path)
+
+    topology = Path(kfd_root) / "topology" / "nodes"
+    try:
+        node_dirs = sorted((p for p in topology.iterdir() if p.is_dir() and p.name.isdigit()), key=lambda p: int(p.name))
+    except OSError as exc:
+        raise AttestationError(f"KFD evidence cannot read topology: {topology}") from exc
+    if not node_dirs:
+        raise AttestationError("KFD evidence topology has no GPU nodes")
+
+    devices: dict[int, dict[str, object]] = {}
+    for node in node_dirs:
+        gpu_id = _linux_kfd_int(node / "gpu_id", label="gpu_id")
+        # Linux KFD node 0 is the CPU node; it has no GPU VRAM/DRM
+        # properties and must be skipped before reading GPU-specific files.
+        if gpu_id == 0:
+            continue
+        if gpu_id in devices:
+            raise AttestationError(f"KFD evidence duplicates gpu_id {gpu_id}")
+        props: dict[str, int] = {}
+        try:
+            lines = (node / "properties").read_text(encoding="ascii").splitlines()
+        except (OSError, UnicodeError) as exc:
+            raise AttestationError(f"KFD evidence cannot read node properties: {node}") from exc
+        for line in lines:
+            if not line.strip():
+                continue
+            fields = line.split()
+            if len(fields) != 2 or not re.fullmatch(r"[A-Za-z0-9_]+", fields[0]) or not re.fullmatch(r"[0-9]+", fields[1]):
+                raise AttestationError(f"KFD evidence has unsupported node property: {node / 'properties'}")
+            props[fields[0]] = int(fields[1])
+        required = ("drm_render_minor", "gfx_target_version")
+        if any(name not in props for name in required):
+            raise AttestationError(f"KFD evidence node properties are incomplete: {node / 'properties'}")
+        vram = _linux_kfd_int(Path(kfd_root) / "proc" / str(pid) / f"vram_{gpu_id}", label="vram bytes")
+        minor = props["drm_render_minor"]
+        locator = _linux_kfd_locator(Path(drm_root) / f"renderD{minor}" / "device")
+        devices[gpu_id] = {
+            "gpu_id": gpu_id, "bdf": locator,
+            "gfx_target_version": props["gfx_target_version"],
+            "vram_bytes": vram, "queues": [],
+        }
+    if not devices:
+        raise AttestationError("KFD evidence topology has no GPU nodes")
+
+    queues_root = Path(kfd_root) / "proc" / str(pid) / "queues"
+    try:
+        queue_dirs = sorted((p for p in queues_root.iterdir() if p.is_dir() and p.name.isdigit()), key=lambda p: int(p.name))
+    except OSError as exc:
+        raise AttestationError(f"KFD evidence cannot read process queues: {queues_root}") from exc
+    for queue in queue_dirs:
+        gpu_id = _linux_kfd_int(queue / "gpuid", label="queue gpu id")
+        if gpu_id not in devices:
+            raise AttestationError(f"KFD evidence queue names unknown gpu_id {gpu_id}")
+        queue_id = int(queue.name)
+        size = _linux_kfd_int(queue / "size", label="queue size")
+        queue_type = _linux_kfd_int(queue / "type", label="queue type")
+        devices[gpu_id]["queues"].append({"id": queue_id, "size": size, "type": queue_type})
+
+    start_after = _linux_kfd_starttime(stat_path)
+    if start_before != start_after:
+        raise AttestationError(f"KFD evidence detected PID reuse during capture for PID {pid}")
+    try:
+        executable_after = exe_link.resolve(strict=True)
+    except OSError as exc:
+        raise AttestationError(f"KFD evidence process disappeared for PID {pid}") from exc
+    if executable_after != expected_binary:
+        raise AttestationError(
+            f"KFD evidence executable changed during capture for PID {pid}: "
+            f"{executable_after} != {expected_binary}"
+        )
+    return {
+        "schema_version": 1, "kind": "linux-kfd-process-v1", "pid": pid,
+        "executable": str(executable), "starttime_ticks": start_before,
+        "devices": [devices[gpu_id] for gpu_id in sorted(devices)],
+        "device_order_observed": False,
+    }
 
 
 @dataclass(frozen=True)
