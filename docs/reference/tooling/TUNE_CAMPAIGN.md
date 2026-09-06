@@ -50,11 +50,18 @@ PYTHONPATH=tools python -m bigcherry tune-campaign \
    passed correctness evidence. This promotes tuning winners inside this
    campaign only; it is not patch, contract, plan, release, or production
    policy acceptance.
-5. **Replay build** — builds the `replay` lane, which applies the promoted
-   winners without re-measuring.
+5. **Replay builds** — builds the production `replay` lane and the validation-only
+   `replay-diagnostic` companion. Production excludes diagnostics. The companion
+   enables dispatch coverage and replay-hit diagnostics. Before exporting,
+   require matching source composition, recomputed catalog descriptors,
+   generated registry/compile inputs, and all non-diagnostic CMake options.
 6. **Replay export + verify** — exports the replay cache **against the
-   replay build's own manifest** (not the tune build's), then verifies
-   coverage. This ordering is load-bearing: an earlier version of this
+   production replay build's own manifest** (not the tune build's), then runs
+   behavioral/coverage/recovery validation on the matched diagnostic companion.
+   Receipt schema 4 retains `replay` as the production artifact and adds
+   `replay_validation` for the observer; coverage records both build-plan IDs
+   and `observation_role=diagnostic-companion`. This is not same-cell production
+   performance activation proof. This ordering is load-bearing: an earlier version of this
    workflow exported against the tune stage's manifest, which produced a
    manifest-hash mismatch and silently invalidated every cache entry the
    moment a real replay server started — fixed by reordering to

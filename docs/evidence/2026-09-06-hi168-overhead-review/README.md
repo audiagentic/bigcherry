@@ -115,3 +115,16 @@ commands, all defining DISPATCH/REPLAY and none defining dispatch diagnostics,
 while coverage.cpp was still compiled. It returned 1 with the expected
 coverage-without-diagnostics finding. This corroborates the prior actual ELF
 inspection; it is not a new patched HIP build or a throughput result.
+
+## Post-push integration review
+
+dev-gpt-agent `req_2bae11dae74b4b01` reviewed `f1fba35c` and confirmed the
+four implementation changes, but correctly required consumer corrections:
+tune-campaign and ab-benchmark still expected coverage from production replay.
+RV138 records this. Tune-campaign now builds the diagnostic companion, checks
+source/catalog/generated-registry and non-diagnostic-option parity, validates
+on that companion, and records both roles in schema-4 receipts. Production
+replay remains stripped. The ab-benchmark production activation/server path is
+still unfinished and must not be bypassed with diagnostic throughput or by
+skipping its coverage check. Remaining dispatcher diagnostic globals/report
+bodies also need actual ELF review before literal all-diagnostics-stripped claims.
