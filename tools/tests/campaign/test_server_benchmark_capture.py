@@ -107,9 +107,10 @@ class ServerComparisonCaptureTests(unittest.TestCase):
 
     def test_cli_server_config_routes_to_server_capture(self):
         self.write_config()
+        from bigcherry.cli.main import main as public_main
         with patch("bigcherry.campaign.benchmark.run_server_comparison_capture", return_value=0) as capture, \
              patch("bigcherry.campaign.benchmark._run_arm") as generic:
-            result = benchmark.main([
+            result = public_main(["ab-benchmark",
                 "--server-config", str(self.config), "--output", str(self.output),
                 "--pairs", "2", "--settle-seconds", "0",
             ])

@@ -925,6 +925,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="paired, interleaved native-versus-replay end-to-end benchmark",
     )
     ab.add_argument("--inspect-build", help="read-only compiler/diagnostic inventory; no hardware execution")
+    ab.add_argument("--server-config", help="local JSON configuration for balanced server-bench capture; no performance admission")
     ab.add_argument("--cache")
     ab.add_argument("--output")
     ab.add_argument("--pairs", type=int, default=3)
@@ -967,6 +968,7 @@ def build_parser() -> argparse.ArgumentParser:
         func=lambda args: _ab_benchmark_main(
             [
                 *(["--inspect-build", args.inspect_build] if args.inspect_build else []),
+                *(["--server-config", args.server_config] if args.server_config else []),
                 *(["--cache", args.cache] if args.cache else []),
                 *(["--output", args.output] if args.output else []),
                 "--pairs",
