@@ -54,7 +54,12 @@ PYTHONPATH=tools python -m bigcherry tune-campaign \
    `replay-diagnostic` companion. Production excludes diagnostics. The companion
    enables dispatch coverage and replay-hit diagnostics. Before exporting,
    require matching source composition, recomputed catalog descriptors,
-   generated registry/compile inputs, and all non-diagnostic CMake options.
+   generated registry/compile inputs, and all non-diagnostic requested CMake
+   options. Requested-option parity is not observed compiler-option parity.
+   The runtime bundle must carry `generated_inputs_verification=compiled-copy-v1`
+   and the matching recomputed input digest: the worker verifies the actual
+   `build_dir/generated-inputs` copy before configure, before compile and after
+   compile. Historical builds without this proof cannot be attested retroactively.
 6. **Replay export + verify** — exports the replay cache **against the
    production replay build's own manifest** (not the tune build's), then runs
    behavioral/coverage/recovery validation on the matched diagnostic companion.

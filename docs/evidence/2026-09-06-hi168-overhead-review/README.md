@@ -128,3 +128,20 @@ replay remains stripped. The ab-benchmark production activation/server path is
 still unfinished and must not be bypassed with diagnostic throughput or by
 skipping its coverage check. Remaining dispatcher diagnostic globals/report
 bodies also need actual ELF review before literal all-diagnostics-stripped claims.
+
+Follow-up review `req_7b59ce770e694578` found a pre-existing generated-input
+verification gap: the worker verified the original run tree, not the copy
+CMake compiled. RV139 addresses this with checks around configure/compile on
+the actual copy, an independently recomputed input digest, and a versioned
+compiled-copy attestation in build metadata and the runtime bundle. Companion
+validation now requires that build-bound digest; old unverified builds fail
+closed on reuse. Tests inject copy mutations before configure, during configure
+and during compile. The option comparison is requested CMake-option parity,
+not a claim about observed compiler state. Broader checks passed 687 tests and
+21 subtests (three skips) before the additional pre-configure mutation test.
+
+Owner reported a competing XTX run during the old eight-round comparison;
+that adds contention to its existing evidence defects. No performance result
+is admitted from it. After the owner released Brutus, read-only ROCm inspection
+at 2026-09-06 04:33 UTC showed all GPUs idle, zero allocated VRAM and no KFD
+processes. This is a point-in-time check, not a reservation or proof for a future run.
