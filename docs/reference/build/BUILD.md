@@ -199,6 +199,32 @@ comparison meaningless, because KV quantisation changes the work being
 measured. Fix one setting that fits the smallest card and use it on all of
 them.
 
+### Which build to measure on: the diagnostics split
+
+A performance number and an activation proof must come from **two different
+builds of the same revision**. Do not mix them.
+
+| build | `GGML_HIP_DISPATCH_DIAGNOSTICS` | use it for |
+|---|---|---|
+| `replay` (what ships) | `OFF` (default) | **all performance numbers** |
+| `replay-diagnostic`, or any `DIAGNOSTICS=ON` build | `ON` | activation evidence, hit rates, counters |
+
+`GGML_HIP_DISPATCH_DIAGNOSTICS=OFF` is not "diagnostics quiet" -- the code is
+not compiled at all. `dispatch_counters_enabled()` and
+`native_select_timing_enabled()` return compile-time `false`, so every guarded
+block is dead code the optimiser deletes, and the per-launch coverage counters
+(two atomic RMWs per dispatch, ~382,000 in one measured bench run) are
+`#ifdef`-ed out of their call sites. Setting a report path cannot switch them
+back on.
+
+`GGML_HIP_AUTOTUNE` or `GGML_HIP_AUTOTUNE_RECORD` imply diagnostics ON, because
+tuning and recording need the counters to function. So a `tune` or `record`
+lane is never a performance-measurement build.
+
+Never take a timing from the diagnostics build and never take activation
+evidence from the production build -- the first is not what ships, and the
+second cannot report anything.
+
 ### Device selection: the two-selector trap
 
 `ROCR_VISIBLE_DEVICES` filters the device list FIRST, then

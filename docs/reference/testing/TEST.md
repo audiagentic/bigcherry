@@ -479,6 +479,43 @@ now emit provenance:
 it the count is always zero. `stale` means winners were measured against a
 different candidate set: still valid, possibly no longer best.
 
+### The log channel does not work under llama-server
+
+**llama-server installs a log callback that swallows the library's
+`GGML_LOG_INFO` lines entirely.** The startup `replay cache '<path>' loaded, N
+winner(s)` line, the shutdown counter report and the coverage summary never
+reach stdout or stderr. A run that looks completely silent may be working
+perfectly — this cost hours once, and the silence was misread as "the dispatch
+layer never ran".
+
+`GGML_HIP_DISPATCH_COVERAGE=<path>` is the only reliable channel. It is written
+from the same flush hook (anchored at `ggml_backend_cuda_free`, so the server
+must shut down gracefully) and carries the replay provenance plus, in a
+diagnostics build, a `dispatch` object with the hot-path counters.
+
+### `exact > 0` is not proof a tuned kernel ran
+
+After an exact cache hit the resolver still revalidates the candidate —
+`can_execute`, architecture support, blacklist, transform applicability — and
+can substitute native. A run can therefore report exact hits and launch native
+for every one of them.
+
+The only sufficient evidence is `final_tuned_launches > 0`, counted at the
+executor after every validation:
+
+```json
+"dispatch": { "final_tuned_launches": 0, "final_native_launches": 190950 }
+```
+
+That example is real: a valid, non-stale cache with 18 promoted winners, and
+**not one tuned kernel executed**. Reading `exact` alone would have called it a
+working replay arm.
+
+Requires a `GGML_HIP_DISPATCH_DIAGNOSTICS=ON` build — see
+[BUILD.md](../build/BUILD.md), "Which build to measure on". Take the timings
+from the production build and this evidence from a diagnostics build of the
+same revision; never mix.
+
 ## Dispatch modes
 
 Set via `GGML_HIP_DISPATCH_MODE`:
