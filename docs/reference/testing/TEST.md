@@ -60,7 +60,7 @@ validation.toml + evidence/validation.json, Experiment Contract binding,
 tracked-status semantics), see
 [PATCH_VALIDATION.md](PATCH_VALIDATION.md).
 
-### Running a validation campaign on Brutus — working recipe and prerequisites
+### Running a validation campaign on the build server — working recipe and prerequisites
 
 A real, working invocation (RD73, 2026-09-04). Adapt patch/model/contract
 flags; the surrounding setup is what matters:
@@ -72,10 +72,10 @@ export HIP_VISIBLE_DEVICES=0,1        # REQUIRED - see (1)
 export ROCR_VISIBLE_DEVICES=0,1
 python -m bigcherry.patch.validation_campaign \
   --patch 1233_rd73_stable_graph_cache_key \
-  --model /mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf \
-  --hip-path /home/audumla/rocm-shim \
+  --model $BC_MODEL_ROOT/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf \
+  --hip-path $BC_ROCM_SHIM \
   --amdgpu-targets gfx1100 \
-  --manifest /home/audumla/bigcherry/artifacts/2578138397d7/hip-autotune-manifest.json \
+  --manifest $BC_REPO/artifacts/2578138397d7/hip-autotune-manifest.json \
   --workdir  ~/rd73-contract-run \
   --build-root ~/rd73-contract-builds \
   --worktree-root ~/rd73-contract-worktrees \
@@ -83,9 +83,10 @@ python -m bigcherry.patch.validation_campaign \
   --rd73-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl
 ```
 
-The command above is Brutus-specific qualification infrastructure, not a
-portable repository interface. `/home/audumla`, `/mnt/vault`, the model path,
-and the work directories must be replaced on another host. A run contributes
+The command above is build-server qualification infrastructure, not a
+portable repository interface. Resolve the paths with
+`source tools/bigcherry-env.sh` (see [ENVIRONMENT.md](../ENVIRONMENT.md));
+on another host, change `config/environment.toml` rather than this command. A run contributes
 qualification evidence only when the campaign persists the required contract
 identity, measurements, provenance, and verdict through the canonical evidence
 path.
@@ -197,22 +198,23 @@ medians is measurement error, and the pair calibrates the harness with no extern
 reference. Every result records `canary_pct`, `canary_retries` and `canary_pair`
 in the measurements JSONL. Check it before believing a narrow margin.
 
-## Server benchmark (Brutus bench runner)
+## Server benchmark (build-server bench runner)
 
 End-to-end pp/tg numbers for a **running** llama-server instance come from the
-bench harness on Brutus (`ssh brutus` / `10.10.100.10`, key auth, no password).
-Harness root: `/mnt/vault/development/llmhosts/llamacpp/bench`. For bigcherry
+bench harness on the build server (`ssh $BC_HOST`, key auth, no password).
+Harness root: `$BC_BENCH_HARNESS`. For bigcherry
 tests we use **server-bench endpoint mode only** — point it at a server we
 started ourselves (tune/replay/native build of our choice); the harness's own
 build lanes and spawn mode are not used.
 
 ```bash
-ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_bench.py \
+source tools/bigcherry-env.sh
+ssh "$BC_HOST" "cd $BC_BENCH_HARNESS/.. && python3 bench/run_bench.py \
   --bench-type server-bench \
-  --server-url http://127.0.0.1:42007 \
+  --server-url http://127.0.0.1:$BC_BENCH_PORT \
   --model <label> \
   [--bench-configs default] \
-  [--toggles "{\"repetitions\":1}"]'
+  [--toggles '{\"repetitions\":1}']"
 ```
 
 - **`--server-url`** — the running instance. In endpoint mode `--model` is only a
@@ -322,7 +324,7 @@ HI168 work; this profile alone is not an executable benchmark campaign.
 
 Running arm A then B then C, one sample each, confounds arm with position:
 thermal drift over a ~10-minute run produces a clean-looking monotone result
-that has nothing to do with the arms. Measured position spread on Brutus is
+that has nothing to do with the arms. Measured position spread on the build server is
 0.19–0.35%, which is the same order as the effects being chased.
 
 Rotate the arm order every round, use a round count that is a multiple of the

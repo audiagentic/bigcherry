@@ -37,7 +37,7 @@ once the only rule — which is why the marker supersedes it.
 
 ## The procedure
 
-Work on ONE tree at a time. Do not bump H: and J: (Brutus) in the same
+Work on ONE tree at a time. Do not bump H: and J: (the build server) in the same
 window; bump one, record, then bump the other.
 
 1. **Move the pin, then commit — in that order, in the same minute.**

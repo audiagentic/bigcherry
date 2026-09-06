@@ -35,7 +35,7 @@ Performance tuning MUST NOT precede the source-level viability gate.
 
 ## Existing evidence that must not be re-litigated
 
-HI85, HI84, HI88, HI18, and HI134 already establish the following facts for the tested Brutus/ROCm/RCCL stack:
+HI85, HI84, HI88, HI18, and HI134 already establish the following facts for the tested build-server/ROCm/RCCL stack:
 
 1. Same-architecture dual RX 7900 XTX (`gfx1100 + gfx1100`) RCCL is a valid control topology.
 2. Heterogeneous-architecture RCCL participant groups can hard-abort inside `ncclGroupEnd()`.
@@ -47,10 +47,10 @@ HI85, HI84, HI88, HI18, and HI134 already establish the following facts for the 
 8. Patch 1225 records an earlier fail-closed guard design for unsafe
    heterogeneous RCCL entry; it is not a universal architecture prohibition,
    not proof of complete current coverage, and must not be assumed present in
-   the tested/default binaries. HI138 localized the Brutus hazard to a
+   the tested/default binaries. HI138 localized the build-server hazard to a
    physical device/path capability and demonstrated XTX+R9700 CPU-direct RCCL
    success on qualified paths.
-9. META is the currently proven-correct heterogeneous reduction path on the target Brutus topologies.
+9. META is the currently proven-correct heterogeneous reduction path on the target build-server topologies.
 10. HI134's META work does not constitute an RCCL repair and must not be reopened as one.
 
 These are scoped prerequisites and immutable historical evidence for the exact
@@ -1018,7 +1018,7 @@ carry into a new qualification:
 
 | Record | Scoped conclusion |
 | --- | --- |
-| [HI138](../../planning/completed/hip-collectives/HI138.md) | The Brutus device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
+| [HI138](../../planning/completed/hip-collectives/HI138.md) | The build-server device-3/PCH PCIe path fails RCCL hostcall dispatch; XTX+R9700 CPU-direct paths passed under the tested RCCL build. This does not prohibit heterogeneous RCCL generally. |
 | [GP03](../../planning/completed/gpu-collectives/GP03.md) | Production dispatch reproduced the device-3 boundary; communicator-init success alone is not runtime admissibility. |
 | [GP06](../../planning/completed/gpu-collectives/GP06.md) | RCCL 2.30.4 regressed previously passing `{0,2}`/`{1,2}` cases; every result must bind to the exact RCCL source/build revision. |
 | [GP07](../../planning/completed/gpu-collectives/GP07.md) | The checked-in qualification wrapper now records compatibility identity and distinct attempts; its output is durable only when the run also preserves the required build, topology, correctness, and fault evidence below. |

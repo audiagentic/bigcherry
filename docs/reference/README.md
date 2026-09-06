@@ -24,9 +24,9 @@ at the top level.
 | Document | What it is | When to read it |
 | --- | --- | --- |
 | [testing/README.md](testing/README.md) | Testing authority map, decision flow, and status boundaries | Choosing a hardware-free gate, diagnostic, or qualification path |
-| [testing/TEST.md](testing/TEST.md) | Repository checks, dispatch/correctness/timing procedures, and Brutus qualification recipe | Running tests or hardware procedures |
+| [testing/TEST.md](testing/TEST.md) | Repository checks, dispatch/correctness/timing procedures, and build-server qualification recipe | Running tests or hardware procedures |
 | [testing/PATCH_VALIDATION.md](testing/PATCH_VALIDATION.md) | Patch evidence, contract gates, campaign capabilities, and lifecycle semantics | Creating, testing, validating, promoting, or demoting a patch |
-| [testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md](testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped Brutus findings for large multi-GPU validation lanes | Designing a large-model server/benchmark lane |
+| [testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md](testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped build-server findings for large multi-GPU validation lanes | Designing a large-model server/benchmark lane |
 | [testing/RCCL_HETEROGENEOUS_RUNBOOK.md](testing/RCCL_HETEROGENEOUS_RUNBOOK.md) | RCCL heterogeneous source viability, correctness, qualification, and replay runbook | Investigating or qualifying heterogeneous RCCL |
 
 ## Tooling

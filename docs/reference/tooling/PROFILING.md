@@ -87,7 +87,7 @@ subprocess exactly as they would be for a manual `llama-server` launch.
   such inputs; neither helper replaces the controlled run or an acceptance
   gate.
 - **CPU profile: unavailable** — `perf` is not currently usable in this
-  environment (kernel/package mismatch on Brutus). Tracked as HI133,
+  environment (kernel/package mismatch on the build server). Tracked as HI133,
   deliberately deferred; do not attempt to route around it by changing
   `perf_event_paranoid` — that's not the actual blocker.
 - **Per-kernel table** — calls, total/mean/p95 microseconds, and
