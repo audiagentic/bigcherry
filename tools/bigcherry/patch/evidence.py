@@ -42,7 +42,7 @@ from . import patchset
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
-READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4)
+READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4, 5)
 CONTRACT_VERSION = "hi83-v1"
 FRAMEWORK_CONFIGURATION_SCHEMA_VERSION = 5
 FRAMEWORK_CONFIGURATION_KIND = "framework-configuration-v1"
@@ -93,6 +93,7 @@ class EvidenceCheck:
         return self.status in {
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
+            "framework-configuration-evidence",
         }
 
 
@@ -351,7 +352,16 @@ def make_framework_configuration_record(
     normalized_checks = json.loads(json.dumps(check_results, sort_keys=True))
     normalized_artifacts = {str(path): _require_hex(value, f"artifact_hashes.{path}", (64,))
                             for path, value in artifact_hashes.items()}
-    eligible = bool(normalized_checks) and all(
+    required_ids: set[str] = set()
+    manifest = patch_path.parent / "validation.toml"
+    if manifest.is_file():
+        try:
+            from . import validation as _validation
+            required_ids = {spec.check_id for spec in _validation.parse_validation_toml(manifest)
+                            if spec.required}
+        except Exception as exc:
+            raise ValidationEvidenceError(f"cannot read validation manifest: {exc}") from exc
+    eligible = bool(required_ids) and required_ids.issubset(normalized_checks) and all(
         isinstance(value, dict) and value.get("status") == "pass" and
         all(isinstance(artifact, dict) and artifact.get("path") in normalized_artifacts and
             artifact.get("sha256") == normalized_artifacts[artifact["path"]]
@@ -362,11 +372,11 @@ def make_framework_configuration_record(
     implementation_digest = getattr(descriptor, "implementation_digest", patch_digest)
     record: dict[str, object] = {
         "record_schema_version": FRAMEWORK_CONFIGURATION_SCHEMA_VERSION,
-        "kind": FRAMEWORK_CONFIGURATION_KIND,
+        "qualification_kind": FRAMEWORK_CONFIGURATION_KIND,
         "patch_id": _require_string(descriptor_id, "descriptor.patch_id"),
         "patch_implementation_digest": _require_hex(implementation_digest, "patch_implementation_digest", (64,)),
         "patch_validation_subject_digest": subject_digest,
-        "validation_digest": _validation_digest(patch_path),
+        "validation_digest": descriptor.validation_digest,
         "base_ref": _require_string(base_ref, "base_ref"), "base_revision": _require_string(base_revision, "base_revision"),
         "source_name": _require_string(source_name, "source_name"), "source_composition": composition,
         "source_tree": _require_string(source_tree, "source_tree"), "source_slice_id": _require_string(source_slice_id, "source_slice_id"),
@@ -377,6 +387,17 @@ def make_framework_configuration_record(
         "campaign_identity": _canonical_digest({"builds": normalized_builds, "source_tree": source_tree, "targets": targets}),
         "campaign_workdir": str(Path(campaign_workdir)),
     }
+    record["campaign_identity_digest"] = record["campaign_identity"]
+    record["record_digest"] = _record_digest(record)
+    # The producer and offline admission share the same complete predicate.
+    record["eligible_for_validated_state"] = True
+    record["record_digest"] = _record_digest(record)
+    eligible, _ = verify_framework_configuration_record(
+        record, descriptor=descriptor, patch_path=patch_path, pinned_ref=base_ref,
+        required_compiled_targets=targets, resolved_base_revision=base_revision,
+        source_composition=source_composition,
+    )
+    record["eligible_for_validated_state"] = eligible
     record["record_digest"] = _record_digest(record)
     return record
 
@@ -396,7 +417,7 @@ def verify_framework_configuration_record(
         problems.append(f"cannot classify descriptor: {exc}")
     if not isinstance(record, Mapping):
         return False, ("record must be an object",)
-    if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or record.get("kind") != FRAMEWORK_CONFIGURATION_KIND:
+    if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or record.get("qualification_kind") != FRAMEWORK_CONFIGURATION_KIND:
         problems.append("wrong schema or kind")
     if record.get("claim_scope") != "configuration-only" or record.get("runtime_performance_qualified") is not False or record.get("hardware_execution_qualified") is not False:
         problems.append("forbidden runtime or hardware claim")
@@ -404,12 +425,17 @@ def verify_framework_configuration_record(
     if record.get("base_ref") != pinned_ref: problems.append("stale base_ref")
     if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision: problems.append("stale base_revision")
     if record.get("patch_id") != getattr(descriptor, "patch_id", None): problems.append("patch identity mismatch")
+    expected_validation_digest = getattr(descriptor, "validation_digest", None)
+    if record.get("validation_digest") != expected_validation_digest: problems.append("validation digest is stale")
     try:
         if record.get("patch_implementation_digest") != getattr(descriptor, "implementation_digest", None): problems.append("implementation digest mismatch")
         if record.get("patch_validation_subject_digest") != patch_validation_subject_digest(Path(patch_path)): problems.append("subject digest mismatch")
     except Exception as exc: problems.append(f"cannot recompute patch digest: {exc}")
     targets = record.get("compiled_targets")
-    if not isinstance(targets, list) or not targets or not set(required_compiled_targets).issubset(targets): problems.append("compiled target coverage incomplete")
+    if (not isinstance(targets, list) or not targets
+            or any(not isinstance(target, str) or not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets)
+            or not set(required_compiled_targets).issubset(targets)):
+        problems.append("compiled target coverage incomplete")
     builds = record.get("builds")
     if not isinstance(builds, Mapping) or set(builds) != {"production", "diagnostic"}:
         problems.append("build role identity set is not production/diagnostic")
@@ -421,17 +447,116 @@ def verify_framework_configuration_record(
     if not isinstance(inputs, Mapping): problems.append("generated_inputs missing")
     else:
         for role in ("production", "diagnostic"):
-            if not isinstance(inputs.get(role), Mapping) or inputs[role].get("proof") != "compiled-copy-v1": problems.append(f"generated_inputs.{role} invalid")
+            entry = inputs.get(role)
+            if not isinstance(entry, Mapping) or entry.get("proof") != "compiled-copy-v1":
+                problems.append(f"generated_inputs.{role} invalid")
+            elif not isinstance(entry.get("compile_inputs_hash"), str) or len(entry["compile_inputs_hash"]) != 64:
+                problems.append(f"generated_inputs.{role} compile_inputs_hash missing")
+            elif entry.get("compile_inputs_hash") != inputs.get("production", {}).get("compile_inputs_hash"):
+                problems.append("generated input hashes disagree")
+            else:
+                from bigcherry.build import generated_tree
+                try:
+                    if generated_tree.compile_inputs_digest(entry.get("tree_manifest", {})) != entry["compile_inputs_hash"]:
+                        problems.append(f"generated_inputs.{role} compile_inputs_hash mismatch")
+                    if not entry["tree_manifest"].get("compile_inputs"):
+                        problems.append(f"generated_inputs.{role} compile inputs empty")
+                except (generated_tree.GeneratedTreeError, TypeError, AttributeError) as exc:
+                    problems.append(f"generated_inputs.{role} invalid manifest: {exc}")
+                if not isinstance(builds, Mapping) or entry.get("build_identity") != builds.get(role):
+                    problems.append(f"generated_inputs.{role} is not bound to completed build")
     checks, artifacts = record.get("check_results"), record.get("artifact_hashes")
+    required_ids: set[str] = set()
+    manifest = Path(patch_path).parent / "validation.toml"
+    try:
+        if manifest.is_file():
+            from . import validation as _validation
+            specs = _validation.parse_validation_toml(manifest)
+            required_ids = {spec.check_id for spec in specs if spec.required}
+            if isinstance(checks, Mapping):
+                for spec in specs:
+                    value = checks.get(spec.check_id)
+                    if spec.required and (not isinstance(value, Mapping)
+                            or value.get("check_id") != spec.check_id
+                            or value.get("capability") != spec.capability):
+                        problems.append(f"required check identity mismatch: {spec.check_id}")
+    except Exception as exc:
+        problems.append(f"cannot read validation manifest: {exc}")
     if not isinstance(checks, Mapping) or not checks: problems.append("check_results missing")
+    elif required_ids and not required_ids.issubset(checks): problems.append("required manifest check missing")
+    elif not required_ids: problems.append("validation manifest declares no required checks")
     elif not all(isinstance(v, Mapping) and v.get("status") == "pass" and v.get("artifacts") for v in checks.values()): problems.append("required check missing or not pass")
     if not isinstance(artifacts, Mapping) or not artifacts: problems.append("artifact_hashes missing")
     else:
         for value in checks.values() if isinstance(checks, Mapping) else ():
             for artifact in value.get("artifacts", ()) if isinstance(value, Mapping) else ():
                 if not isinstance(artifact, Mapping) or artifacts.get(artifact.get("path")) != artifact.get("sha256"): problems.append("check artifact missing or tampered")
-    if source_composition is not None and record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]: problems.append("source composition mismatch")
+    if record.get("eligible_for_validated_state") is not True:
+        problems.append("record is not eligible")
+    if source_composition is None or record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]:
+        problems.append("source composition mismatch")
+    if record.get("source_name") != "bigcherry-native":
+        problems.append("source is not canonical bigcherry-native framework")
+    if source_composition is not None and (descriptor.patch_id, descriptor.implementation_digest) not in source_composition:
+        problems.append("focal implementation absent from composition")
+    for field, lengths in (("base_revision", (40,64)), ("source_tree", (40,64)), ("source_slice_id", (32,))):
+        try:
+            _require_hex(record.get(field), field, lengths)
+        except ValidationEvidenceError as exc:
+            problems.append(str(exc))
+    forbidden = {"activation", "correctness", "gpu_architectures", "campaign_build_identities", "validation_build_identities", "lane_effects"}
+    if forbidden.intersection(record):
+        problems.append("configuration evidence contains runtime qualification fields")
     return not problems, tuple(dict.fromkeys(problems))
+
+
+def verify_framework_configuration_patch(
+    module: patchset.PatchModule, *, pinned_ref: str, required_compiled_targets=(),
+    root: Path | None = None, allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
+) -> EvidenceCheck:
+    """Catalog-facing adapter; framework records never use runtime gates."""
+    descriptor = None
+    try:
+        from . import registry as patch_registry
+        descriptor = patch_registry.load_registry(module.catalog_root or paths.PATCHES).get(module.patch_id)
+    except Exception as exc:
+        return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
+    records = load_records(module.patch_id, root=root)
+    qualifying: list[dict[str, object]] = []
+    stale: list[str] = []
+    try:
+        from bigcherry.core import config
+        from bigcherry.campaign import resolution
+        catalog_root = module.catalog_root or paths.PATCHES
+        cfg = config.load(paths.RECIPES)
+        lane = resolution.resolve_lane("bigcherry-native", cfg, patchset.catalog(directory=catalog_root))
+        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=catalog_root)
+        registry = patch_registry.load_registry(catalog_root)
+        composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
+                            for member in resolved.modules)
+    except Exception as exc:
+        return EvidenceCheck("missing-or-stale", (f"cannot resolve canonical framework composition: {exc}",))
+    for record in records:
+        if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION:
+            continue
+        ok, why = verify_framework_configuration_record(
+            record, descriptor=descriptor, patch_path=module.path, pinned_ref=pinned_ref,
+            required_compiled_targets=required_compiled_targets,
+            resolved_base_revision=resolved_base_revision,
+            source_composition=composition,
+        )
+        if ok:
+            qualifying.append(record)
+        else:
+            stale.append("; ".join(why))
+    if qualifying:
+        return EvidenceCheck("framework-configuration-evidence", campaign_digests=tuple(
+            sorted(str(r.get("campaign_identity_digest", "")) for r in qualifying)
+        ))
+    if allow_legacy_grandfather and _legacy_hashes(root).get(module.patch_id) == module.content_hash:
+        return EvidenceCheck("legacy-grandfathered")
+    return EvidenceCheck("missing-or-stale", tuple(stale or ("no current framework configuration evidence",)))
 
 
 def make_record(
@@ -680,6 +805,12 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
     else:
         document = {"schema_version": SCHEMA_VERSION, "patch_id": patch_id, "records": []}
 
+    if record.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or any(
+        entry.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION
+        for entry in document["records"] if isinstance(entry, dict)
+    ):
+        document["schema_version"] = FRAMEWORK_CONFIGURATION_SCHEMA_VERSION
+
     records = document["records"]
     assert isinstance(records, list)
     new_record = dict(record)
@@ -770,7 +901,7 @@ def _record_qualifies(
         "eligible_for_validated_state": True,
     }
     record_version = record.get("record_schema_version")
-    if record_version not in READABLE_SCHEMA_VERSIONS:
+    if record_version not in (1, 2, 3, 4):
         problems.append(f"record_schema_version={record_version!r} is unsupported")
 
     # VA18: a currently multi-contract patch can NEVER be qualified by a
@@ -1118,6 +1249,8 @@ def _record_qualifies_for_deferred_hardware(
     this status is that hardware was unavailable, so demanding hardware
     evidence to qualify it would be self-defeating."""
     problems: list[str] = []
+    if record.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION:
+        return False, ("framework configuration evidence cannot qualify deferred hardware",)
     if record.get("patch_id") != module.patch_id:
         problems.append(f"patch_id={record.get('patch_id')!r}, expected {module.patch_id!r}")
     if record.get("patch_validation_subject_digest") != subject_digest:

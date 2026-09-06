@@ -32,6 +32,44 @@ FAMILIES = ["MMQ", "MMVQ", "MMVF", "MMF", "BLAS"]
 SCOPE = "host compiled emitted-hook proof; not HIP artifact or GPU architecture/throughput qualification"
 
 
+def check_apply(ctx: Any) -> ValidationResult:
+    evidence = getattr(ctx, "configuration_evidence", None)
+    if not isinstance(evidence, dict):
+        return ValidationResult("apply", "apply", BLOCKED, "single-composition apply evidence is required")
+    apply = evidence.get("apply")
+    if not isinstance(apply, dict):
+        return ValidationResult("apply", "apply", BLOCKED, "single-composition apply evidence is missing")
+    if apply.get("single_composition") is not True:
+        return ValidationResult("apply", "apply", FAIL, "apply evidence is not for one framework composition")
+    if apply.get("verified") is not True or apply.get("idempotent") is not True:
+        return ValidationResult("apply", "apply", FAIL, "framework source apply/idempotence proof failed")
+    artifact = apply.get("artifact")
+    if not isinstance(artifact, dict) or not _artifact_is_bound(artifact, getattr(ctx, "run_dir", None)):
+        return ValidationResult("apply", "apply", BLOCKED, "bound single-composition apply artifact is required")
+    return ValidationResult("apply", "apply", PASS, "single framework composition apply and idempotence are verified",
+                            artifacts=(ArtifactRef("apply", str(artifact["path"]), str(artifact["sha256"])),))
+
+
+def check_build(ctx: Any) -> ValidationResult:
+    evidence = getattr(ctx, "configuration_evidence", None)
+    if not isinstance(evidence, dict):
+        return ValidationResult("build", "build", BLOCKED, "framework production/diagnostic build evidence is required")
+    builds = evidence.get("builds")
+    if not isinstance(builds, dict):
+        return ValidationResult("build", "build", BLOCKED, "production and diagnostic build evidence is missing")
+    artifacts: list[ArtifactRef] = []
+    for role in ("production", "diagnostic"):
+        item = builds.get(role)
+        if not isinstance(item, dict) or item.get("completed") is not True:
+            return ValidationResult("build", "build", FAIL, f"{role} framework build is not completed")
+        artifact = item.get("artifact")
+        if not isinstance(artifact, dict) or not _artifact_is_bound(artifact, getattr(ctx, "run_dir", None)):
+            return ValidationResult("build", "build", BLOCKED, f"bound {role} framework build artifact is required")
+        artifacts.append(ArtifactRef(role, str(artifact["path"]), str(artifact["sha256"])))
+    return ValidationResult("build", "build", PASS, "completed production and diagnostic framework builds are verified",
+                            artifacts=tuple(artifacts))
+
+
 def _result(status: str, summary: str, *, details: list[str] | None = None,
             artifacts: tuple[ArtifactRef, ...] = ()) -> ValidationResult:
     return ValidationResult(

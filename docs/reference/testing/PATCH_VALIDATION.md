@@ -166,6 +166,35 @@ automatically a `ported-validated` proof.
 
 ## What a qualification must prove
 
+### Local framework configuration (no runtime claim)
+
+For packaged local framework patches without RD or Experiment Contract
+bindings, use the explicit configuration mode. It builds the exact named
+`bigcherry-native` composition once per role; it does not pretend the focal
+framework patch can be removed to form a causal CONTROL.
+
+```bash
+source tools/env/bigcherry-env.sh
+PYTHONPATH=tools python3 -m bigcherry.patch.validation_campaign \
+  --patch <framework-patch-id> --framework-configuration \
+  --hip-path "$BC_ROCM_SHIM" --amdgpu-targets <gfx-target> \
+  --workdir <new-run-directory> --build-root <new-build-directory> \
+  --worktree-root <isolated-source-directory>
+```
+
+This mode does not require a model or input tuning manifest and never runs
+`llama-bench`. It compiles production and diagnostic `llama-server` targets,
+verifies the actual generated-input copies at each build boundary, captures
+completed-build identities, then runs every package adapter. Each attempt
+requires fresh build directories; previous evidence is preserved.
+
+Schema-5 `framework-configuration-v1` records cover **compiled targets**, not
+observed GPU execution. They cannot qualify runtime performance, external
+ported-benched status, or deferred-hardware evidence. Production end-to-end
+testing remains a separate campaign/server-bench operation. Failed adapters
+or stale implementation, validation, pin, or composition identities block
+configuration admission.
+
 For focal patch `X`, define and record:
 
 1. **Apply/build identity:** anchors, match counts, already-applied behavior,
