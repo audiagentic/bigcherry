@@ -94,6 +94,26 @@ class CoverageValidationAdapterTests(unittest.TestCase):
             self.assertNotIn("GPU", result.summary.upper())
             self.assertIn("host C++", " ".join(result.details))
 
+    def test_tampered_registered_artifact_is_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            real_register = _register(run_dir)
+
+            def tampering_register(name, path):
+                ref = real_register(name, path)
+                target = run_dir / ref.path
+                target.write_bytes(target.read_bytes() + b"tampered")
+                return ref
+
+            compiler = CHECKS.shutil.which("clang++") or CHECKS.shutil.which("g++")
+            if not compiler:
+                self.skipTest("C++ compiler unavailable")
+            result = CHECKS.check(SimpleNamespace(
+                run_dir=run_dir, package_root=PACKAGE_ROOT,
+                register_artifact=tampering_register,
+            ))
+            self.assertEqual(result.status, ERROR)
+
 
 if __name__ == "__main__":
     unittest.main()

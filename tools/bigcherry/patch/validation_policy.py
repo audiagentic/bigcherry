@@ -60,6 +60,13 @@ class PolicyError(ValueError):
     escape, a missing required producer, ...)."""
 
 
+def _local_framework_adapter(descriptor: patch_registry.PatchDescriptor) -> bool:
+    return (
+        descriptor.kind == "framework" and descriptor.origin == "local"
+        and not descriptor.external_source and not is_rd_validation_patch(descriptor)
+    )
+
+
 @dataclass(frozen=True)
 class PackagePolicyStatus:
     patch_id: str
@@ -251,9 +258,13 @@ def check_validation_packages(
         # is_rd_validation_patch() uses the authoritative RD plan-item
         # binding instead (handles compound bindings like RD05/RD06/RD07).
         is_rd_patch = is_rd_validation_patch(descriptor)
+        framework_adapter = (
+            _local_framework_adapter(descriptor) and descriptor.validation_path is not None
+            and not (tracked & PACKAGE_STATUSES)
+        )
         requires_package = bool(tracked & PACKAGE_STATUSES) or (
             is_rd_patch and descriptor.state == "validated"
-        )
+        ) or framework_adapter
         requires_architectures = ("ported-validated" in tracked) or (
             is_rd_patch and descriptor.state == "validated"
         )
@@ -273,13 +284,13 @@ def check_validation_packages(
         patch_problems: list[str] = []
         if not readme_exists:
             patch_problems.append(f"{descriptor.patch_id}: missing README.md")
-        if not has_contract:
+        if not has_contract and not framework_adapter:
             patch_problems.append(f"{descriptor.patch_id}: no experiment-contract bound in patch.toml")
         if not has_adapter:
             patch_problems.append(f"{descriptor.patch_id}: no validation.toml adapter")
 
         plan = None
-        if has_contract and has_adapter:
+        if (has_contract or framework_adapter) and has_adapter:
             try:
                 plan = patch_validation.build_plan_for_patch(descriptor, root=resolved_root)
             except patch_validation.ValidationError as exc:
@@ -346,15 +357,15 @@ def check_validation_packages(
                             f"does not match contract-required architectures {sorted(required)}"
                         )
 
-        shape_missing = not readme_exists or not has_contract or not has_adapter
+        shape_missing = not readme_exists or (not has_contract and not framework_adapter) or not has_adapter
         # Only the SHAPE-absence deficiencies above are grandfatherable.
         # A patch that HAS validation files but they're malformed (bad
         # contract id, missing producer, path escape, etc.) is never
         # exempt -- those problems already landed in patch_problems from
         # the ValidationError branch and stay fatal regardless.
-        malformed_present = plan is None and has_contract and has_adapter
+        malformed_present = plan is None and (has_contract or framework_adapter) and has_adapter
 
-        if shape_missing and not malformed_present and _is_grandfathered(
+        if shape_missing and not malformed_present and not framework_adapter and _is_grandfathered(
             descriptor, resolved_root, baseline, external_sources_path=external_sources_path
         ):
             grandfathered.append(descriptor.patch_id)
@@ -395,10 +406,7 @@ def require_execution_package(
     # VA17 policy slice: plural -- require_execution_package() must accept
     # a real multi-contract patch (e.g. 1203's RD05/RD06/RD07), not just
     # 0/1-contract patches.
-    local_framework = (
-        descriptor.kind == "framework" and descriptor.origin == "local"
-        and not descriptor.external_source and not is_rd_validation_patch(descriptor)
-    )
+    local_framework = _local_framework_adapter(descriptor)
     if not descriptor.experiment_contracts and not local_framework:
         raise PolicyError(
             f"{descriptor.patch_id}: cannot start a new validation run -- no experiment-contract bound"

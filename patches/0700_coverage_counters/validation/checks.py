@@ -12,6 +12,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from bigcherry.patch.validation import (
     PASS,
     ArtifactRef,
     ValidationResult,
+    _artifact_is_bound,
 )
 
 
@@ -140,10 +142,10 @@ def check(ctx: Any) -> ValidationResult:
                 report_path = work / "family-hook-isolation.json"
                 report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
                 source_ref = register("coverage-hooks.cpp", source)
-                if not isinstance(source_ref, ArtifactRef):
+                if not isinstance(source_ref, ArtifactRef) or not _artifact_is_bound(asdict(source_ref), run_dir):
                     return _result(ERROR, "register_artifact returned an invalid ArtifactRef")
                 report_ref = register("family-hook-isolation.json", report_path)
-                if not isinstance(report_ref, ArtifactRef):
+                if not isinstance(report_ref, ArtifactRef) or not _artifact_is_bound(asdict(report_ref), run_dir):
                     return _result(ERROR, "register_artifact returned an invalid ArtifactRef")
                 return _result(FAIL, "one or more emitted-hook transforms were wrong or non-idempotent",
                                artifacts=(source_ref, report_ref))
@@ -197,7 +199,8 @@ def check(ctx: Any) -> ValidationResult:
                     artifact_list.append(register(f"{label}-{stream}.txt", stream_file))
             artifact_list.append(register("family-hook-isolation.json", report_path))
             artifacts = tuple(artifact_list)
-            if not all(isinstance(ref, ArtifactRef) for ref in artifacts):
+            if not all(isinstance(ref, ArtifactRef) and
+                       _artifact_is_bound(asdict(ref), run_dir) for ref in artifacts):
                 return _result(ERROR, "register_artifact returned an invalid ArtifactRef")
             if report["outcome"] != PASS:
                 return _result(FAIL, "host compile or run failed", artifacts=artifacts)

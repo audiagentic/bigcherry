@@ -5,7 +5,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from bigcherry.patch.validation import ArtifactRef, BLOCKED, ERROR, FAIL, PASS
+from bigcherry.patch.validation import (
+    ArtifactRef,
+    BLOCKED,
+    ERROR,
+    FAIL,
+    PASS,
+    make_default_register_artifact,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -41,11 +48,9 @@ class CMakeValidationAdapterTests(unittest.TestCase):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
             bound = []
+            real_register = make_default_register_artifact(Path(directory))
             def register(name, path):
-                target = Path(directory) / "artifacts" / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(Path(path).read_bytes())
-                ref = ArtifactRef(name, target.relative_to(directory).as_posix(), "unused")
+                ref = real_register(name, path)
                 bound.append(ref)
                 return ref
             ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
@@ -61,7 +66,8 @@ class CMakeValidationAdapterTests(unittest.TestCase):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
             ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
-                                  run_dir=Path(directory), register_artifact=lambda *_: ArtifactRef("x", "x", "x"))
+                                  run_dir=Path(directory),
+                                  register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
             class Observed:
                 returncode = 0
@@ -95,7 +101,7 @@ class CMakeValidationAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
                                   run_dir=Path(directory),
-                                  register_artifact=lambda name, path: ArtifactRef(name, name, "sha"))
+                                  register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
             class Failed:
                 returncode = 1
@@ -108,6 +114,21 @@ class CMakeValidationAdapterTests(unittest.TestCase):
                 self.assertIn("version", result.summary)
             finally:
                 checks.subprocess.run = old_run
+
+    def test_altered_artifact_digest_is_error(self):
+        checks = _load_checks()
+        with tempfile.TemporaryDirectory() as directory:
+            real_register = make_default_register_artifact(Path(directory))
+            def register(name, path):
+                ref = real_register(name, path)
+                if name == "coverage-selection.json":
+                    return ArtifactRef(ref.name, ref.path, "0" * 64)
+                return ref
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+                                  run_dir=Path(directory), register_artifact=register)
+            result = checks.check(ctx)
+            self.assertEqual(result.status, ERROR)
+            self.assertIn("unbound", result.summary)
 
 
 if __name__ == "__main__":

@@ -76,6 +76,34 @@ def _write_external_sources(root: Path) -> Path:
     return path
 
 
+def _write_untracked_external_sources(root: Path) -> Path:
+    path = root / "external-sources.toml"
+    path.write_text(
+        'version = 1\n\n[[sources]]\nid = "example"\nrepo = "example/example"\n'
+        'locator = "example"\n\n[[sources.snapshots]]\nlabel = "head"\n'
+        f'head = "{SHA}"\nbase = "{SHA}"\nactive = true\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_local_framework_package(
+    root: Path, *, adapter: str, with_readme: bool = True
+) -> Path:
+    package = _write_patch_package(root, with_readme=with_readme)
+    metadata = PATCH_TOML.replace('kind = "enhancement"', 'kind = "framework"')
+    metadata = metadata.replace('origin = "external-fork"', 'origin = "local"')
+    (package / "patch.toml").write_text(metadata, encoding="utf-8")
+    (package / "validation.toml").write_text(adapter, encoding="utf-8")
+    return package
+
+
+FRAMEWORK_APPLY_BUILD = (
+    'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n'
+    '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n'
+)
+
+
 def _sha256(path: Path) -> str:
     import hashlib
 
@@ -227,6 +255,75 @@ class GrandfatherIdentityTests(unittest.TestCase):
                 any("validation.toml" in p or "experiment-contract" in p for p in report.problems)
                 or report.grandfathered == ("9999_example_patch",)
             )
+
+
+class LocalFrameworkStaticPolicyTests(unittest.TestCase):
+    def _report(self, root: Path, *, baseline: Path | None = None) -> vp.PackagePolicyReport:
+        return vp.check_validation_packages(
+            root=root,
+            external_sources_path=_write_untracked_external_sources(root),
+            baseline_path=baseline,
+        )
+
+    def _baseline(self, root: Path, package: Path) -> Path:
+        path = root / "baseline.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "policy_version": vp.VALIDATION_PACKAGE_POLICY_VERSION,
+                    "patches": {
+                        "9999_example_patch": {
+                            "implementation_digest": _sha256(package / "patch.py"),
+                            "patch_toml_digest": _sha256(package / "patch.toml"),
+                            "tracked_statuses": [],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_complete_zero_contract_framework_adapter_is_current(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _write_local_framework_package(root, adapter=FRAMEWORK_APPLY_BUILD)
+            report = self._report(root)
+            self.assertEqual(report.problems, ())
+            self.assertEqual(report.grandfathered, ())
+            self.assertEqual(report.statuses[0].status, "current")
+
+    def test_zero_contract_framework_missing_readme_fails_lint(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _write_local_framework_package(
+                root, adapter=FRAMEWORK_APPLY_BUILD, with_readme=False
+            )
+            report = self._report(root)
+            self.assertEqual(report.grandfathered, ())
+            self.assertTrue(any("missing README.md" in p for p in report.problems))
+
+    def test_zero_contract_framework_missing_custom_callable_fails_lint(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            adapter = FRAMEWORK_APPLY_BUILD + (
+                '[[check]]\nid = "custom"\ncapability = "smoke"\nvalidator = "custom"\n'
+            )
+            _write_local_framework_package(root, adapter=adapter)
+            report = self._report(root)
+            self.assertTrue(any("no 'callable' string" in p for p in report.problems))
+
+    def test_grandfather_cannot_mask_present_framework_adapter_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            package = _write_local_framework_package(
+                root, adapter="schema = 99\n", with_readme=False
+            )
+            baseline = self._baseline(root, package)
+            report = self._report(root, baseline=baseline)
+            self.assertEqual(report.grandfathered, ())
+            self.assertTrue(any("unsupported schema" in p for p in report.problems))
 
 
 class RequireExecutionPackageTests(unittest.TestCase):
