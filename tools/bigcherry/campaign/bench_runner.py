@@ -8,9 +8,9 @@ WHY NOT llama-bench. llama-bench cannot measure what production runs: it has
 no speculative/MTP flags at all, and on this project's real 27B/dual-GPU
 -sm tensor config it has repeatedly failed outright (OOM under contention, and
 a hard argument-parse error for --fit, which it does not register). The
-documented path is docs/reference/testing/TEST.md's "Server benchmark (Brutus
-bench runner)": start a server ourselves, then drive it with
-`bench/run_bench.py --bench-type server-bench`.
+documented path is docs/reference/testing/TEST.md's server-bench section:
+start a server ourselves, then drive it with
+`bench/run_bench.py --bench-type server-bench` on the configured build server.
 
 Bench configs live in the harness's own bench/config/bench-configs.json --
 `mtp-dual` is the MTP-speculative set matching the production dual-XTX
@@ -61,13 +61,13 @@ def run_bench_runner_server_bench(
     required_metrics: tuple[str, ...] = (),
 ) -> dict[str, float]:
     """VA06 (user redirect, 2026-09-01): drive an already-running
-    llama-server via the documented Brutus bench harness
-    (docs/reference/testing/TEST.md's "Server benchmark (Brutus bench
-    runner)" section: `cd .../llamacpp && python3 bench/run_bench.py
+    llama-server via the documented configured build server bench harness
+    (docs/reference/testing/TEST.md's server-bench section: `cd .../llamacpp
+    && python3 bench/run_bench.py
     --bench-type server-bench --server-url ... --bench-configs ...`) --
     NOT a raw llama-bench subprocess. llama-bench itself has proven
     unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on real
-    Brutus hardware (repeated real crashes this session: OOM under
+    configured build server hardware (repeated real crashes: OOM under
     resource contention with production traffic, and a hard
     argument-parse error for --fit, which llama-bench does not even
     register). Parses the real "Extracted Results"/"Aggregated Results"
@@ -75,7 +75,7 @@ def run_bench_runner_server_bench(
     bench/lib/bench_orchestrator.py print one or the other depending on
     bench type -- server-bench mode, used here, prints "Extracted
     Results"; both share the same "  <name>_tps: <value>" per-config
-    line format, confirmed directly against a real Brutus run) for every
+    line format, confirmed directly against a real configured build server run) for every
     <name>_tps metric. Fails closed on a missing runner script, nonzero
     exit, or no parseable metric at all."""
     if repetitions < 1 or timeout_s <= 0 or not model_label.strip():
@@ -91,6 +91,9 @@ def run_bench_runner_server_bench(
         "--toggles", json.dumps({"repetitions": repetitions}),
     ]
     if evidence_dir is not None:
+        # Evidence captures are exploratory and must not upload results.
+        # The maintained harness still appends its local result records.
+        command.append("--upload-dry-run")
         config_path = runner_root / "bench" / "config" / "bench-configs.json"
         if not config_path.is_file():
             raise BenchRunnerError(

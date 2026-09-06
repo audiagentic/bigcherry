@@ -2,12 +2,15 @@
 import json
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
+from unittest.mock import call
 from unittest.mock import patch
 
 from bigcherry.campaign import benchmark
 from bigcherry.campaign.benchmark import run_server_arm_capture
 from bigcherry.tuning.server_runner import ShutdownResult
+from bigcherry.source.identity import SourceAttestation
 
 
 class ServerCaptureTests(unittest.TestCase):
@@ -76,10 +79,11 @@ class ServerComparisonCaptureTests(unittest.TestCase):
                 "\n".join(f"{key}:STRING=value" for key in (
                     "CMAKE_BUILD_TYPE", "CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER",
                     "GGML_HIP", "GGML_HIP_RCCL", "AMDGPU_TARGETS",
-                )), encoding="utf-8",
+                )) + f"\nCMAKE_HOME_DIRECTORY:INTERNAL={self.root / 'live-source'}\n", encoding="utf-8",
             )
             (build / f"bigcherry-build-metadata-{binary.name}.json").write_text(
-                json.dumps({"binary_hash": "digest", "runtime_artifacts": {"llama-server": "digest"}}),
+                json.dumps({"binary_hash": "digest", "runtime_artifacts": {"llama-server": "digest"},
+                            "source_slice_id": "slice"}),
                 encoding="utf-8",
             )
             self.arms.append({"name": name, "binary": str(binary), "mode": mode})
@@ -95,6 +99,12 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             },
             "arms": self.arms,
         }
+        (self.root / "live-source").mkdir()
+        (self.root / "live-source.metadata.json").write_text(
+            json.dumps({"upstream_revision": "rev", "source_tree_oid": "tree",
+                        "git_object_format": "sha1", "source_slice_id": "slice"}),
+            encoding="utf-8",
+        )
 
     def write_config(self, **updates):
         config = dict(self.base_config)
@@ -102,12 +112,19 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.config.write_text(json.dumps(config), encoding="utf-8")
 
     def patches_for_preflight(self, *, instrumented=False):
-        return patch.multiple(
+        stack = ExitStack()
+        stack.enter_context(patch.multiple(
             "bigcherry.build.builds",
             inspect_dispatch_build=lambda _path: {"issues": [], "instrumented": instrumented},
             binary_hash=lambda _path: "digest",
             resolve_runtime_artifacts=lambda path: [path],
-        )
+        ))
+        stack.enter_context(patch(
+            "bigcherry.campaign.workers._source_attestation",
+            return_value=SourceAttestation("rev", "tree", "sha1", "slice"),
+        ))
+        stack.enter_context(patch("bigcherry.campaign.workers._verify_source"))
+        return stack
 
     def test_cli_server_config_routes_to_server_capture(self):
         self.write_config()
@@ -150,6 +167,28 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         capture.assert_not_called()
         self.assertFalse(self.output.exists())
 
+    def test_missing_source_home_directory_fails_before_server_launch(self):
+        self.write_config()
+        for arm in self.arms:
+            build = Path(arm["binary"]).parent.parent
+            cache = build / "CMakeCache.txt"
+            cache.write_text(
+                "\n".join(
+                    line for line in cache.read_text(encoding="utf-8").splitlines()
+                    if not line.startswith("CMAKE_HOME_DIRECTORY:")
+                ) + "\n",
+                encoding="utf-8",
+            )
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture",
+        ) as capture:
+            with self.assertRaisesRegex(ValueError, "CMAKE_HOME_DIRECTORY is required"):
+                benchmark.run_server_comparison_capture(
+                    self.config, self.output, rounds=2, seed=0, settle_seconds=0
+                )
+        capture.assert_not_called()
+        self.assertFalse(self.output.exists())
+
     def test_failed_cell_persists_without_exploratory_comparison(self):
         self.write_config()
         with self.patches_for_preflight(), patch(
@@ -160,6 +199,46 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(len(summary["runs"]), 1)
         self.assertNotIn("exploratory_comparisons", summary)
+
+    def test_live_source_is_reattested_before_each_cell_and_failure_stops_next_cell(self):
+        from bigcherry.source.identity import SourceAttestation
+
+        attestation = SourceAttestation("rev", "tree", "sha1", "slice")
+        for arm in self.arms:
+            build = Path(arm["binary"]).parent.parent
+            cache = build / "CMakeCache.txt"
+            cache.write_text(cache.read_text(), encoding="utf-8")
+            metadata = build / "bigcherry-build-metadata-llama-server.json"
+            metadata.write_text(json.dumps({
+                "binary_hash": "digest", "runtime_artifacts": {"llama-server": "digest"},
+                "source_slice_id": "slice",
+            }), encoding="utf-8")
+        self.write_config()
+        captured = []
+        verification_calls = []
+
+        def verify(_root, _expected):
+            verification_calls.append(call(_root, _expected))
+            if len(verification_calls) == 4:
+                raise ValueError("live source changed")
+
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture",
+            side_effect=lambda **kwargs: captured.append(kwargs) or {
+                "pair": kwargs["pair"] + 1, "mode": kwargs["side"],
+                "position": kwargs["position"], "returncode": 0,
+                "metrics": {"tg128_tps": 30.0},
+            },
+        ), patch("bigcherry.campaign.workers._source_attestation", return_value=attestation), patch(
+            "bigcherry.campaign.workers._verify_source", side_effect=verify,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(
+                self.config, self.output, rounds=2, seed=0, settle_seconds=0,
+            ), 1)
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(len(verification_calls), 4)
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(summary["runs"][-1]["source_attestation_error"], "live source changed")
 
 
 class ServerExecutionAttestationTests(unittest.TestCase):

@@ -55,6 +55,7 @@ class BenchRunnerEvidenceTests(unittest.TestCase):
         request = json.loads((self.output / "request.json").read_text())
         self.assertIn("another-model", request["command"])
         self.assertIn("server-bench", request["command"])
+        self.assertIn("--upload-dry-run", request["command"])
         self.assertEqual((self.output / "stderr.log").read_text(), "notice")
         self.assertEqual(len(request["runner_sha256"]), 64)
         config = self.root / "bench/config/bench-configs.json"
@@ -63,6 +64,16 @@ class BenchRunnerEvidenceTests(unittest.TestCase):
             request["bench_config_sha256"],
             hashlib.sha256(config.read_bytes()).hexdigest(),
         )
+
+    def test_without_evidence_does_not_add_upload_dry_run(self):
+        result = subprocess.CompletedProcess([], 0, "Extracted Results:\n tg512_tps: 30.5\n", "")
+        with patch("bigcherry.campaign.bench_runner.subprocess.run", return_value=result) as run:
+            run_bench_runner_server_bench(
+                server_url="http://127.0.0.1:4567", bench_configs="tg512",
+                model_label="another-model", runner_root=self.root,
+                required_metrics=("tg512_tps",),
+            )
+        self.assertNotIn("--upload-dry-run", run.call_args.args[0])
 
     def test_missing_config_refuses_evidence_capture(self):
         (self.root / "bench/config/bench-configs.json").unlink()
