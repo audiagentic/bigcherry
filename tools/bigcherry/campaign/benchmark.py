@@ -504,6 +504,65 @@ def _run_arm(
     )
 
 
+def run_server_arm_capture(
+    *, binary: Path, model: Path, extra_args: tuple[str, ...],
+    output: Path, pair: int, side: str, position: int,
+    env: dict[str, str], bench_configs: str, runner_root: Path,
+    required_metrics: tuple[str, ...], repetitions: int = 1,
+    shutdown_method: str = "http",
+) -> dict[str, Any]:
+    """Capture one server-bench cell using the maintained process lifecycle.
+
+    This is measurement capture, NOT performance admission: source/binary
+    identity, activation and work-equivalence must be checked by the caller.
+    Full runner streams and teardown results survive failed cells too.
+    """
+    from dataclasses import asdict
+    from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
+    from bigcherry.tuning.server_runner import ServerRunner
+
+    if not required_metrics:
+        raise ValueError("server cells require explicit expected metrics")
+    if pair < 0 or position < 0 or not re.fullmatch(r"[A-Za-z0-9_-]+", side):
+        raise ValueError("invalid cell identity")
+    cell = output / f"pair-{pair + 1:03d}-{side}"
+    cell.mkdir(parents=True, exist_ok=False)
+    run: dict[str, Any] = {
+        "pair": pair + 1, "mode": side, "position": position,
+        "returncode": 1, "performance_admitted": False,
+        "server_log": str(cell / "server.log"),
+    }
+    # Supply a complete, caller-sanitized environment. Merely overlaying it
+    # would resurrect dispatch/tuning variables removed by the caller.
+    server = ServerRunner(
+        binary=binary, model=model, extra_args=extra_args,
+        env_overrides=env, env_unset=tuple(os.environ),
+        log_path=cell / "server.log", shutdown_method=shutdown_method,
+    )
+    started = time.monotonic()
+    try:
+        with server:
+            run["metrics"] = run_bench_runner_server_bench(
+                server_url=f"http://{server.host}:{server.port}",
+                bench_configs=bench_configs, repetitions=repetitions,
+                runner_root=runner_root, model_label=model.stem,
+                evidence_dir=cell / "bench", required_metrics=required_metrics,
+            )
+        if server.last_shutdown is None or not server.last_shutdown.clean:
+            raise ValueError("server teardown was not clean; cell rejected")
+        run["returncode"] = 0
+    except Exception as exc:
+        run["metric_error"] = str(exc)
+        # A failed cell must not accidentally contribute partially captured
+        # throughput to callers that select rows by metric presence.
+        run.pop("metrics", None)
+    finally:
+        run["elapsed_s"] = time.monotonic() - started
+        run["shutdown"] = asdict(server.last_shutdown) if server.last_shutdown else None
+        (cell / "cell.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+    return run
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="bigcherry ab-benchmark",

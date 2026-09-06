@@ -394,9 +394,19 @@ a lookup" are the same measurement. Note also that coverage
 `dispatched == executed` does **not** prove tuning was applied — a miss is
 still a dispatch, to native, so a fully-covered run can be entirely untuned.
 
-The same principle generalises: for any patch or feature under test, record
-the evidence that its code path executed, in the same run that produced the
-numbers.
+These startup/shutdown requirements apply to an instrumented diagnostic
+cell. Production replay intentionally compiles out this telemetry, as
+specified in [BUILD.md — diagnostics split](../build/BUILD.md#which-build-to-measure-on-the-diagnostics-split).
+Do not enable counters in the production timing build to satisfy this check.
+
+Keep two explicit evidence roles: production cells supply throughput;
+diagnostic cells supply activation observations. A diagnostic companion is
+not proof that a particular production cell executed the winners. Linking
+them requires verified source/generated-input/cache/workload parity and an
+explicitly bounded inference. Until that admission path is implemented and
+verified, captured production numbers alone do not establish a tuning
+benefit. For instrumented causal patch tests, activation still belongs to
+the cell being qualified.
 
 ### 5. Confirm both arms did the same work
 
