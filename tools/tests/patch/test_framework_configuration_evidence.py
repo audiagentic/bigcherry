@@ -31,6 +31,10 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
         descriptors = registry.load_registry(cls.root / "patches")
         cls.composition = tuple((member.patch_id, descriptors.get(member.patch_id).implementation_digest)
                                 for member in resolved.modules)
+        from bigcherry.patch import source
+        cls.source_identity = source._make_source_identity_v2(
+            resolved_revision="b" * 40, composition=cls.composition, overlay_root=cls.root / "src")
+        cls.source_identity["materialization_plan_id"] = cls.source_identity["source_key"]
 
     def _record(self, directory):
         patch = self.root / "patches/0100_cmake_options/patch.py"
@@ -44,6 +48,15 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             source_name="bigcherry-native", source_composition=self.composition, source_tree="c" * 40,
             source_slice_id="a" * 32, compiled_targets=("gfx1100",),
             builds={"production": IDENTITY, "diagnostic": IDENTITY},
+            source_identity=self.source_identity,
+            compiler_observations={role: {
+                "build_identity": IDENTITY, "hip_compile_command_count": 2,
+                "compiled_definition_counts": {
+                    "GGML_HIP_DISPATCH_DIAGNOSTICS": 2 if role == "diagnostic" else 0,
+                    "GGML_HIP_AUTOTUNE": 0, "GGML_HIP_AUTOTUNE_RECORD": 0,
+                    "GGML_HIP_REPLAY_DIAGNOSTICS": 0, "GGML_HIP_WORKSPACE_METRICS": 0,
+                }, "coverage_translation_unit": role == "diagnostic", "issues": [],
+            } for role in ("production", "diagnostic")},
             generated_inputs={
                 role: {
                     "proof": "compiled-copy-v1", "compile_inputs_hash": manifest["compile_inputs_hash"],
@@ -74,6 +87,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
                 patch_path=self.module.path, pinned_ref="bigcherry",
                 required_compiled_targets=("gfx1100",), resolved_base_revision="b" * 40,
                 source_composition=self.composition,
+                source_identity=self.source_identity,
             )
             self.assertTrue(ok, problems)
             root = Path(directory) / "evidence"
@@ -88,6 +102,19 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(status.status, "framework-configuration-evidence")
             self.assertTrue(status.ok)
+            from unittest import mock
+            for target, value in (
+                ("bigcherry.patch.source.overlay_digest", "d" * 64),
+                ("bigcherry.patch.source.PATCH_APPLICATION_SEMANTICS_VERSION", "changed-semantics"),
+            ):
+                patcher = (mock.patch(target, return_value=value) if target.endswith("overlay_digest")
+                           else mock.patch(target, value))
+                with patcher:
+                    stale = evidence.verify_framework_configuration_patch(
+                        self.module, pinned_ref="bigcherry", required_compiled_targets=("gfx1100",), root=root,
+                        allow_legacy_grandfather=False, resolved_base_revision="b" * 40,
+                    )
+                self.assertFalse(stale.ok, target)
 
     def test_verifier_rejects_stale_identity_runtime_claim_and_missing_checks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -139,6 +166,100 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
                 pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
             )
             self.assertFalse(ok); self.assertIn("generated_inputs.production invalid", problems)
+
+    def test_verifier_rejects_overlay_digest_drift_with_same_composition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["source_identity"] = copy.deepcopy(candidate["source_identity"])
+            candidate["source_identity"]["overlay_digest"] = "d" * 64
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertIn("source materialization identity mismatch", problems)
+
+    def test_verifier_rejects_materialization_semantics_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["source_identity"] = copy.deepcopy(candidate["source_identity"])
+            candidate["source_identity"]["materialization_plan_id"] = "different-plan"
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertIn("source materialization identity mismatch", problems)
+
+    def test_verifier_requires_both_compiler_observations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["compiler_observations"] = dict(candidate["compiler_observations"])
+            candidate["compiler_observations"].pop("diagnostic")
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertIn("compiler observation missing: diagnostic", problems)
+
+    def test_verifier_rejects_production_diagnostic_macro_or_coverage_tu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["compiler_observations"] = copy.deepcopy(candidate["compiler_observations"])
+            candidate["compiler_observations"]["production"]["compiled_definition_counts"][
+                "GGML_HIP_DISPATCH_DIAGNOSTICS"
+            ] = 2
+            candidate["compiler_observations"]["production"]["coverage_translation_unit"] = True
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertIn("compiler observation invalid: production", problems)
+
+    def test_verifier_rejects_diagnostic_without_macro_or_coverage_tu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["compiler_observations"] = copy.deepcopy(candidate["compiler_observations"])
+            candidate["compiler_observations"]["diagnostic"]["compiled_definition_counts"][
+                "GGML_HIP_DISPATCH_DIAGNOSTICS"
+            ] = 0
+            candidate["compiler_observations"]["diagnostic"]["coverage_translation_unit"] = False
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertIn("compiler observation invalid: diagnostic", problems)
+
+    def test_verifier_rejects_mismatched_build_identity_bindings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self._record(directory)
+            candidate["builds"] = copy.deepcopy(candidate["builds"])
+            candidate["builds"]["diagnostic"]["effective_build_id"] = "other"
+            candidate["record_digest"] = evidence._record_digest(candidate)
+            ok, problems = evidence.verify_framework_configuration_record(
+                candidate, descriptor=self.descriptor, patch_path=self.module.path,
+                pinned_ref="bigcherry", required_compiled_targets=("gfx1100",),
+                source_identity=self.source_identity,
+            )
+            self.assertFalse(ok)
+            self.assertTrue(
+                any("compiler observation invalid: diagnostic" in p or
+                    "generated_inputs.diagnostic is not bound" in p for p in problems),
+                problems,
+            )
 
 
 if __name__ == "__main__":
