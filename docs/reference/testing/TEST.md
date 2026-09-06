@@ -85,7 +85,7 @@ python -m bigcherry.patch.validation_campaign \
 
 The command above is build-server qualification infrastructure, not a
 portable repository interface. Resolve the paths with
-`source tools/bigcherry-env.sh` (see [ENVIRONMENT.md](../ENVIRONMENT.md));
+`source tools/env/bigcherry-env.sh` (see [ENVIRONMENT.md](../ENVIRONMENT.md));
 on another host, change `config/environment.toml` rather than this command. A run contributes
 qualification evidence only when the campaign persists the required contract
 identity, measurements, provenance, and verdict through the canonical evidence
@@ -208,7 +208,7 @@ started ourselves (tune/replay/native build of our choice); the harness's own
 build lanes and spawn mode are not used.
 
 ```bash
-source tools/bigcherry-env.sh
+source tools/env/bigcherry-env.sh
 ssh "$BC_HOST" "cd $BC_BENCH_HARNESS/.. && python3 bench/run_bench.py \
   --bench-type server-bench \
   --server-url http://127.0.0.1:$BC_BENCH_PORT \

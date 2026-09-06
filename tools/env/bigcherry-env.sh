@@ -16,7 +16,7 @@
 
 _bc_env_root() {
     local d="${BASH_SOURCE[0]%/*}"
-    ( cd "$d/.." 2>/dev/null && pwd )
+    ( cd "$d/../.." 2>/dev/null && pwd )
 }
 
 _bc_env_load() {
