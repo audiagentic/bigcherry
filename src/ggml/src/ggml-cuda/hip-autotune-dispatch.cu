@@ -690,11 +690,15 @@ static inline uint64_t signature_fingerprint(
     // deterministic and hashing raw storage is well-defined.
     static_assert(sizeof(ggml_hip_dispatch_signature_v1) % sizeof(uint64_t) == 0,
                   "signature must be a whole number of 64-bit words to hash as words");
-    const uint64_t * words = reinterpret_cast<const uint64_t *>(&s);
+    const unsigned char * bytes = reinterpret_cast<const unsigned char *>(&s);
     const size_t     n     = sizeof(s) / sizeof(uint64_t);
     uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
     for (size_t i = 0; i < n; ++i) {
-        h ^= words[i];
+        // Read object representation without violating C++ strict aliasing.
+        // Fixed-size memcpy is lowered to a word load by optimizing compilers.
+        uint64_t word;
+        memcpy(&word, bytes + i * sizeof(word), sizeof(word));
+        h ^= word;
         h *= 1099511628211ull;
     }
     return h;
@@ -2559,7 +2563,9 @@ void ggml_hip_autotune_flush(void) {
     ggml_hip_replay_flush_hits();
 #endif
 #endif
+#ifdef GGML_HIP_DISPATCH_DIAGNOSTICS
     ggml_hip_coverage_report();
+#endif
     // HI92: same explicit end-of-run hook the coverage report above already
     // uses -- NOT std::atexit, which does not reliably fire in this
     // codebase's real shutdown path (confirmed on real hardware: a run with

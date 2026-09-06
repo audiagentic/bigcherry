@@ -6,9 +6,9 @@
 
 ## Description
 
-This is the current 397-row control-plane registry for in-scope tooling. The
+This is the current 401-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
-registered GP10 lab tools. It is
+registered GP10 lab tools and four HI168 investigation tools. It is
 the maintained disposition authority consumed by `tools/bigcherry/check.py`;
 it is not a raw filesystem snapshot. A row can intentionally name an ignored,
 historical, transitional, or machine-local path when that path's ownership
