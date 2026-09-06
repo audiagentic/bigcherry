@@ -16,6 +16,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -284,6 +285,44 @@ class LocalFrameworkStaticPolicyTests(unittest.TestCase):
             encoding="utf-8",
         )
         return path
+
+    def test_framework_configuration_predicate_is_packaged_and_state_independent(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _write_local_framework_package(root, adapter=FRAMEWORK_APPLY_BUILD)
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
+            self.assertTrue(vp.is_framework_configuration_patch(descriptor))
+            self.assertTrue(
+                vp.is_framework_configuration_patch(replace(descriptor, state="validated"))
+            )
+            self.assertTrue(
+                vp.is_framework_configuration_patch(replace(descriptor, state="untested"))
+            )
+            self.assertFalse(
+                vp.is_framework_configuration_patch(
+                    replace(descriptor, representation="flat")
+                )
+            )
+
+    def test_framework_configuration_predicate_excludes_bound_contracts_and_rd(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _write_local_framework_package(root, adapter=FRAMEWORK_APPLY_BUILD)
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
+            self.assertFalse(
+                vp.is_framework_configuration_patch(
+                    replace(descriptor, experiment_contracts=("RD08-Q6K-MMVQ-VDR2",))
+                )
+            )
+            self.assertFalse(
+                vp.is_framework_configuration_patch(
+                    replace(descriptor, plan_ids=("RD08",))
+                )
+            )
 
     def test_complete_zero_contract_framework_adapter_is_current(self) -> None:
         with tempfile.TemporaryDirectory() as d:

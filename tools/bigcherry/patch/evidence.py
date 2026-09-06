@@ -44,6 +44,8 @@ from .activation import ActivationEvidence
 SCHEMA_VERSION = 4
 READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4)
 CONTRACT_VERSION = "hi83-v1"
+FRAMEWORK_CONFIGURATION_SCHEMA_VERSION = 5
+FRAMEWORK_CONFIGURATION_KIND = "framework-configuration-v1"
 CORRECTNESS_SCHEMA_VERSION = 1
 
 # One-time migration contract -- see generate_legacy_baseline().
@@ -312,6 +314,124 @@ def _validation_digest(patch_path: Path) -> str:
     if manifest.is_file():
         return _sha256_file(manifest)
     return hashlib.sha256(b"no-validation-manifest").hexdigest()
+
+
+def _canonical_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                      ensure_ascii=False).encode()).hexdigest()
+
+
+def make_framework_configuration_record(
+    *, descriptor, patch_path: Path, base_ref: str, base_revision: str,
+    source_name: str, source_composition, source_tree: str, source_slice_id: str,
+    compiled_targets, builds, generated_inputs, check_results, artifact_hashes,
+    campaign_workdir: Path,
+) -> dict[str, object]:
+    """Construct the schema-5, configuration-only evidence record.
+
+    This is intentionally separate from :func:`make_record`; the latter is
+    the historical schema-4 campaign writer and must remain unchanged.
+    """
+    patch_path = Path(patch_path)
+    patch_digest = _sha256_file(patch_path)
+    subject_digest = patch_validation_subject_digest(patch_path)
+    composition = [{"id": str(pair[0]), "digest": str(pair[1])} for pair in source_composition]
+    targets = [str(target) for target in compiled_targets]
+    if not targets:
+        raise ValidationEvidenceError("compiled_targets must not be empty")
+    normalized_builds = {role: _validate_build_identity(value, field=f"builds.{role}")
+                         for role, value in builds.items()}
+    if set(normalized_builds) != {"production", "diagnostic"}:
+        raise ValidationEvidenceError("builds must contain production and diagnostic")
+    normalized_inputs = json.loads(json.dumps(generated_inputs, sort_keys=True))
+    for role in ("production", "diagnostic"):
+        entry = normalized_inputs.get(role)
+        if not isinstance(entry, dict) or entry.get("proof") != "compiled-copy-v1":
+            raise ValidationEvidenceError(f"generated_inputs.{role} requires compiled-copy-v1")
+    normalized_checks = json.loads(json.dumps(check_results, sort_keys=True))
+    normalized_artifacts = {str(path): _require_hex(value, f"artifact_hashes.{path}", (64,))
+                            for path, value in artifact_hashes.items()}
+    eligible = bool(normalized_checks) and all(
+        isinstance(value, dict) and value.get("status") == "pass" and
+        all(isinstance(artifact, dict) and artifact.get("path") in normalized_artifacts and
+            artifact.get("sha256") == normalized_artifacts[artifact["path"]]
+            for artifact in value.get("artifacts", ()))
+        for value in normalized_checks.values()
+    )
+    descriptor_id = getattr(descriptor, "patch_id", getattr(descriptor, "id", ""))
+    implementation_digest = getattr(descriptor, "implementation_digest", patch_digest)
+    record: dict[str, object] = {
+        "record_schema_version": FRAMEWORK_CONFIGURATION_SCHEMA_VERSION,
+        "kind": FRAMEWORK_CONFIGURATION_KIND,
+        "patch_id": _require_string(descriptor_id, "descriptor.patch_id"),
+        "patch_implementation_digest": _require_hex(implementation_digest, "patch_implementation_digest", (64,)),
+        "patch_validation_subject_digest": subject_digest,
+        "validation_digest": _validation_digest(patch_path),
+        "base_ref": _require_string(base_ref, "base_ref"), "base_revision": _require_string(base_revision, "base_revision"),
+        "source_name": _require_string(source_name, "source_name"), "source_composition": composition,
+        "source_tree": _require_string(source_tree, "source_tree"), "source_slice_id": _require_string(source_slice_id, "source_slice_id"),
+        "compiled_targets": targets, "builds": normalized_builds, "generated_inputs": normalized_inputs,
+        "check_results": normalized_checks, "artifact_hashes": normalized_artifacts,
+        "claim_scope": "configuration-only", "runtime_performance_qualified": False,
+        "hardware_execution_qualified": False, "eligible_for_validated_state": eligible,
+        "campaign_identity": _canonical_digest({"builds": normalized_builds, "source_tree": source_tree, "targets": targets}),
+        "campaign_workdir": str(Path(campaign_workdir)),
+    }
+    record["record_digest"] = _record_digest(record)
+    return record
+
+
+def verify_framework_configuration_record(
+    record: Mapping[str, object], *, descriptor, patch_path: Path, pinned_ref: str,
+    required_compiled_targets=(), resolved_base_revision: str | None = None,
+    source_composition=None,
+) -> tuple[bool, tuple[str, ...]]:
+    """Strict offline verifier for schema-5 framework configuration proof."""
+    problems: list[str] = []
+    try:
+        from . import validation_policy
+        if not validation_policy.is_framework_configuration_patch(descriptor):
+            problems.append("descriptor is not a framework configuration patch")
+    except Exception as exc:
+        problems.append(f"cannot classify descriptor: {exc}")
+    if not isinstance(record, Mapping):
+        return False, ("record must be an object",)
+    if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or record.get("kind") != FRAMEWORK_CONFIGURATION_KIND:
+        problems.append("wrong schema or kind")
+    if record.get("claim_scope") != "configuration-only" or record.get("runtime_performance_qualified") is not False or record.get("hardware_execution_qualified") is not False:
+        problems.append("forbidden runtime or hardware claim")
+    if record.get("record_digest") != _record_digest(record): problems.append("record_digest mismatch")
+    if record.get("base_ref") != pinned_ref: problems.append("stale base_ref")
+    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision: problems.append("stale base_revision")
+    if record.get("patch_id") != getattr(descriptor, "patch_id", None): problems.append("patch identity mismatch")
+    try:
+        if record.get("patch_implementation_digest") != getattr(descriptor, "implementation_digest", None): problems.append("implementation digest mismatch")
+        if record.get("patch_validation_subject_digest") != patch_validation_subject_digest(Path(patch_path)): problems.append("subject digest mismatch")
+    except Exception as exc: problems.append(f"cannot recompute patch digest: {exc}")
+    targets = record.get("compiled_targets")
+    if not isinstance(targets, list) or not targets or not set(required_compiled_targets).issubset(targets): problems.append("compiled target coverage incomplete")
+    builds = record.get("builds")
+    if not isinstance(builds, Mapping) or set(builds) != {"production", "diagnostic"}:
+        problems.append("build role identity set is not production/diagnostic")
+    else:
+        for role, value in builds.items():
+            try: _validate_build_identity(value, field=f"builds.{role}")
+            except ValidationEvidenceError as exc: problems.append(str(exc))
+    inputs = record.get("generated_inputs")
+    if not isinstance(inputs, Mapping): problems.append("generated_inputs missing")
+    else:
+        for role in ("production", "diagnostic"):
+            if not isinstance(inputs.get(role), Mapping) or inputs[role].get("proof") != "compiled-copy-v1": problems.append(f"generated_inputs.{role} invalid")
+    checks, artifacts = record.get("check_results"), record.get("artifact_hashes")
+    if not isinstance(checks, Mapping) or not checks: problems.append("check_results missing")
+    elif not all(isinstance(v, Mapping) and v.get("status") == "pass" and v.get("artifacts") for v in checks.values()): problems.append("required check missing or not pass")
+    if not isinstance(artifacts, Mapping) or not artifacts: problems.append("artifact_hashes missing")
+    else:
+        for value in checks.values() if isinstance(checks, Mapping) else ():
+            for artifact in value.get("artifacts", ()) if isinstance(value, Mapping) else ():
+                if not isinstance(artifact, Mapping) or artifacts.get(artifact.get("path")) != artifact.get("sha256"): problems.append("check artifact missing or tampered")
+    if source_composition is not None and record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]: problems.append("source composition mismatch")
+    return not problems, tuple(dict.fromkeys(problems))
 
 
 def make_record(

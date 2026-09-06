@@ -92,6 +92,54 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         fake_deferred.assert_not_called()
         self.assertIn(result["1000_rdna4_mmq_q2k_q6k_fix"].status, ("validated-evidence", "missing-or-stale", "legacy-grandfathered"))
 
+    def test_validated_framework_uses_configuration_verifier_and_compiled_targets(self) -> None:
+        # 0100_cmake_options is a validated, local framework package with no
+        # validation-architectures.  The requested target is passed as a
+        # compiled-target requirement, never as runtime gpu_architectures.
+        with mock.patch.object(
+            pve,
+            "verify_framework_configuration_patch",
+            create=True,
+            return_value=pve.EvidenceCheck("framework-configuration-evidence"),
+        ) as fake_framework, mock.patch.object(
+            pve, "verify_validated_patch"
+        ) as fake_runtime:
+            result = patch_catalog.validation_evidence_statuses(
+                ["0100_cmake_options"],
+                default_validation_architectures=("gfx1201",),
+            )
+        fake_framework.assert_called_once()
+        self.assertEqual(
+            fake_framework.call_args.kwargs["required_compiled_targets"], ("gfx1201",)
+        )
+        fake_runtime.assert_not_called()
+        self.assertEqual(result["0100_cmake_options"].status, "framework-configuration-evidence")
+
+    def test_framework_target_union_deduplicates_explicit_and_requested_targets(self) -> None:
+        # Exercise the explicit package declaration plus the requested target
+        # fallback without changing production metadata.
+        descriptor = mock.Mock(
+            patch_id="framework-test",
+            representation="packaged", kind="framework", origin="local",
+            external_source=None, experiment_contracts=(), state="validated",
+            plan_ids=(), plan_item=None,
+            validation_architectures=("gfx1100", "gfx1201"),
+        )
+        module = mock.Mock(state="validated", patch_id="framework-test")
+        with mock.patch.object(patch_catalog, "load_catalog", return_value={}), \
+             mock.patch.object(patch_catalog.patchset, "catalog", return_value=[module]), \
+             mock.patch.object(patch_catalog.patchset.patch_registry, "load_registry") as load_registry, \
+             mock.patch.object(pve, "verify_framework_configuration_patch", create=True,
+                               return_value=pve.EvidenceCheck("framework-configuration-evidence")) as fake:
+            load_registry.return_value.descriptors = [descriptor]
+            result = patch_catalog.validation_evidence_statuses(
+                ["framework-test"], default_validation_architectures=("gfx1201", "gfx1030")
+            )
+        self.assertEqual(result["framework-test"].status, "framework-configuration-evidence")
+        self.assertEqual(
+            fake.call_args.kwargs["required_compiled_targets"], ("gfx1100", "gfx1201", "gfx1030")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

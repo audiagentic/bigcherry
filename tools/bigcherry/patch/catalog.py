@@ -316,6 +316,30 @@ def validation_evidence_statuses(
             )
             continue
 
+        # Schema-5 framework configuration evidence is distinct from runtime
+        # validation: compiled targets are configuration observations, not
+        # gpu_architectures covered by a hardware campaign.  Keep this branch
+        # restricted to validated framework packages; untested framework
+        # packages retain the existing not-required behavior below.
+        is_framework_configuration = (
+            module.state == "validated"
+            and packaged_descriptor is not None
+            and validation_policy.is_framework_configuration_patch(packaged_descriptor)
+        )
+        if is_framework_configuration:
+            explicit_targets = tuple(packaged_descriptor.validation_architectures)
+            requested_targets = tuple(default_validation_architectures)
+            compiled_targets = tuple(dict.fromkeys((*explicit_targets, *requested_targets)))
+            result[patch_id] = patch_validation_evidence.verify_framework_configuration_patch(
+                module,
+                pinned_ref=pinned_ref,
+                required_compiled_targets=compiled_targets,
+                root=evidence_root,
+                allow_legacy_grandfather=allow_legacy_grandfather,
+                resolved_base_revision=resolved_base_revision,
+            )
+            continue
+
         required_archs = (
             packaged_descriptor.validation_architectures
             if packaged_descriptor is not None

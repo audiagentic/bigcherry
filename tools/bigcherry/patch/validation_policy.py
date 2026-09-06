@@ -60,10 +60,20 @@ class PolicyError(ValueError):
     escape, a missing required producer, ...)."""
 
 
-def _local_framework_adapter(descriptor: patch_registry.PatchDescriptor) -> bool:
+def is_framework_configuration_patch(descriptor: patch_registry.PatchDescriptor) -> bool:
+    """Return whether *descriptor* is a package-only framework configuration.
+
+    This classification is deliberately independent of lifecycle state.  A
+    bound Experiment Contract or RD plan binding makes the patch experimental
+    instead, even when its implementation kind is ``framework``.
+    """
     return (
-        descriptor.kind == "framework" and descriptor.origin == "local"
-        and not descriptor.external_source and not is_rd_validation_patch(descriptor)
+        descriptor.representation == patch_registry.REPRESENTATION_PACKAGED
+        and descriptor.kind == "framework"
+        and descriptor.origin == "local"
+        and not descriptor.external_source
+        and not descriptor.experiment_contracts
+        and not is_rd_validation_patch(descriptor)
     )
 
 
@@ -259,7 +269,7 @@ def check_validation_packages(
         # binding instead (handles compound bindings like RD05/RD06/RD07).
         is_rd_patch = is_rd_validation_patch(descriptor)
         framework_adapter = (
-            _local_framework_adapter(descriptor) and descriptor.validation_path is not None
+            is_framework_configuration_patch(descriptor) and descriptor.validation_path is not None
             and not (tracked & PACKAGE_STATUSES)
         )
         requires_package = bool(tracked & PACKAGE_STATUSES) or (
@@ -406,7 +416,7 @@ def require_execution_package(
     # VA17 policy slice: plural -- require_execution_package() must accept
     # a real multi-contract patch (e.g. 1203's RD05/RD06/RD07), not just
     # 0/1-contract patches.
-    local_framework = _local_framework_adapter(descriptor)
+    local_framework = is_framework_configuration_patch(descriptor)
     if not descriptor.experiment_contracts and not local_framework:
         raise PolicyError(
             f"{descriptor.patch_id}: cannot start a new validation run -- no experiment-contract bound"
