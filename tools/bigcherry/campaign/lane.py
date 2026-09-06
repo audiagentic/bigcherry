@@ -638,6 +638,14 @@ def _execute_build_phase(
             c_compiler=spec.c_compiler or platform_cfg.c_compiler,
             cxx_compiler=spec.cxx_compiler or platform_cfg.cxx_compiler,
         )
+    # ``--arch`` is resolved into the lane spec as a non-empty subset of the
+    # platform targets.  Narrow the compile platform before deriving backend
+    # options and the BuildPlan so CMake's AMDGPU_TARGETS follows the actual
+    # request rather than silently rebuilding every target declared by the
+    # platform.  The planner retains the original platform targets for
+    # validation; this replacement is lane-local only.
+    if spec.architectures:
+        platform_cfg = replace(platform_cfg, targets=spec.architectures)
     build_cfg = cfg.builds[spec.build_name]
     # RE-backend-identity (external review, 2026-08-20): backend must be
     # part of the SAME options map that becomes both BuildPlan.cmake_options
