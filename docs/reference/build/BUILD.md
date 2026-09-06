@@ -4,6 +4,27 @@ Environment setup and build commands for bigcherry recipes and manual configurat
 
 See also: [TEST.md](../testing/TEST.md) — testing, tuning workflows, and coverage.
 
+## Start here: production end-to-end comparisons
+
+Use the campaign engine and server test bench, not the manual CMake or
+`llama-bench` examples below. The maintained procedure and build-role matrix
+are in [TEST.md — reusable campaign build matrix](../testing/TEST.md#reusable-campaign-build-matrix-hi168).
+
+1. Verify the intended committed revision and a clean local Brutus checkout
+   (an explicitly isolated worktree is also supported; never disturb another
+   session's live tree).
+2. Build `e2e-build-matrix` with the model/topology's inventory, promoted
+   winners, and architecture. A failed admission or lane is a failed build;
+   a successful stock lane does not establish BC build success.
+3. Verify completed-build identities and actual compiled diagnostic flags.
+   Do not add targets or edit generated inputs inside cached build trees.
+4. Once compilation has stopped and the selected GPUs are idle, drive each
+   managed server with `bench/run_bench.py --bench-type server-bench` in
+   endpoint mode. Follow TEST.md for balancing, provenance and teardown.
+
+Framework configuration qualification is a prerequisite build/evidence
+operation, not a substitute for this production performance comparison.
+
 ## Environment — brutus (`10.10.100.10`)
 
 **`~/bigcherry` is the live tree — a real local git clone.** Git operations
@@ -221,9 +242,15 @@ back on.
 tuning and recording need the counters to function. So a `tune` or `record`
 lane is never a performance-measurement build.
 
-Never take a timing from the diagnostics build and never take activation
+Never use a timing from the diagnostics build as production performance, and never take activation
 evidence from the production build -- the first is not what ships, and the
 second cannot report anything.
+Retain diagnostic observations with their own cell/build identity. They are
+not same-cell production activation evidence. A linked companion protocol
+must verify source/generated-input/cache/workload parity and explicitly
+state the inference it supports; an arbitrary diagnostic run cannot admit
+a production replay performance claim. See TEST.md for the remaining HI168
+admission work.
 
 ### Device selection: the two-selector trap
 

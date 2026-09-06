@@ -20,6 +20,8 @@ baseline, `default` is pp512+tg128.
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import re
 import subprocess
 import sys
@@ -37,6 +39,8 @@ _BENCH_RUNNER_AGGREGATED_RESULT_PATTERN = re.compile(r"^\s*(\w+_tps):\s+([0-9.]+
 def run_bench_runner_server_bench(
     *, server_url: str, bench_configs: str, repetitions: int = 1, timeout_s: int = 300,
     runner_root: Path = BENCH_RUNNER_ROOT,
+    model_label: str = "rd73-va06", evidence_dir: Path | None = None,
+    required_metrics: tuple[str, ...] = (),
 ) -> dict[str, float]:
     """VA06 (user redirect, 2026-09-01): drive an already-running
     llama-server via the documented Brutus bench harness
@@ -56,19 +60,48 @@ def run_bench_runner_server_bench(
     line format, confirmed directly against a real Brutus run) for every
     <name>_tps metric. Fails closed on a missing runner script, nonzero
     exit, or no parseable metric at all."""
+    if repetitions < 1 or timeout_s <= 0 or not model_label.strip():
+        raise BenchRunnerError("positive repetitions/timeout and a nonempty model label are required")
     runner_path = runner_root / "bench" / "run_bench.py"
     if not runner_path.is_file():
         raise BenchRunnerError(f"bench runner not found at {runner_path}")
     command = [
         sys.executable, str(runner_path),
         "--bench-type", "server-bench", "--server-url", server_url,
-        "--model", "rd73-va06", "--bench-configs", bench_configs,
+        "--model", model_label, "--bench-configs", bench_configs,
         "--toggles", json.dumps({"repetitions": repetitions}),
     ]
-    completed = subprocess.run(
-        command, cwd=str(runner_root), capture_output=True, text=True,
-        check=False, timeout=timeout_s,
-    )
+    if evidence_dir is not None:
+        evidence_dir.mkdir(parents=True, exist_ok=False)
+        config_path = runner_root / "bench" / "config" / "bench-configs.json"
+        (evidence_dir / "request.json").write_text(json.dumps({
+            "command": command, "cwd": str(runner_root),
+            "runner_sha256": hashlib.sha256(runner_path.read_bytes()).hexdigest(),
+            "bench_config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest()
+            if config_path.is_file() else None,
+            "required_metrics": list(required_metrics),
+        }, indent=2) + "\n", encoding="utf-8")
+
+    def retain(stdout, stderr, returncode, *, timed_out=False):
+        if evidence_dir is None:
+            return
+        for name, value in (("stdout", stdout), ("stderr", stderr)):
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", errors="replace")
+            (evidence_dir / f"{name}.log").write_text(value or "", encoding="utf-8")
+        (evidence_dir / "exit.json").write_text(json.dumps({
+            "returncode": returncode, "timed_out": timed_out,
+        }) + "\n", encoding="utf-8")
+
+    try:
+        completed = subprocess.run(
+            command, cwd=str(runner_root), capture_output=True, text=True,
+            check=False, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        retain(exc.stdout, exc.stderr, None, timed_out=True)
+        raise BenchRunnerError(f"bench runner timed out after {timeout_s}s") from exc
+    retain(completed.stdout, completed.stderr, completed.returncode)
     if completed.returncode != 0:
         raise BenchRunnerError(
             f"bench runner failed (exit {completed.returncode}) against {server_url}: "
@@ -89,6 +122,10 @@ def run_bench_runner_server_bench(
             f"bench runner produced no parseable <name>_tps metric against {server_url}; "
             f"stdout tail:\n{completed.stdout[-2000:]}"
         )
+    missing = set(required_metrics) - metrics.keys()
+    if missing:
+        raise BenchRunnerError(f"bench runner omitted required metrics: {', '.join(sorted(missing))}")
+    if any(not math.isfinite(value) or value <= 0 for value in metrics.values()):
+        raise BenchRunnerError("bench runner returned non-positive or non-finite throughput")
     return metrics
-
 
