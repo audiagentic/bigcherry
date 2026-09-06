@@ -50,7 +50,7 @@ type. A future geometry dimension then touches the header and two signatures, no
 
 ### SQLite-free C++ via JSONL
 
-`libsqlite3-dev` is absent on both machines and `brutus` has no passwordless
+`libsqlite3-dev` is absent on both machines and the build server has no passwordless
 sudo, so record mode writes **JSON Lines** from C++ and
 `python -m bigcherry.inventory` builds the SQLite database offline with the
 stdlib `sqlite3` module. `sql/dispatch-db.sql` remains the schema of record — only
@@ -172,7 +172,7 @@ Not just dotfiles — any file created by a server-side command may not exist fr
 the Windows side. Produce repo files from the Windows side, or copy them back:
 
 ```bash
-scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
+scp "$BC_HOST:/tmp/thing.md" docs/reference/THING.md   # run from Windows
 ```
 
 This is a silent failure: the server-side command reports success, and the file

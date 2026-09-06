@@ -1,17 +1,17 @@
 # Multi-GPU large-model validation: real hardware findings
 
 Real, hardware-confirmed gotchas from RD73's (VA06) `--run-rd73-contract`
-qualification on Brutus (dual RX 7900 XTX, gfx1100, `tierL-qwen27b-q8`,
+qualification on the build server (dual RX 7900 XTX, gfx1100, `tierL-qwen27b-q8`,
 2026-09-01) -- discovered across 9 real hardware attempts. Anyone
 building a validation lane that launches `llama-server`/`llama-bench`
 against a model large enough to need multi-GPU tensor split should read
 this first; each item below cost a real, otherwise-avoidable hardware
 cycle to find.
 
-## Brutus/RD73 observation: `llama-bench` was unsuitable for this validated configuration
+## Build-server/RD73 observation: `llama-bench` was unsuitable for this validated configuration
 
 For the tested 27B model split across 2x 24.5GB gfx1100 cards, source pin,
-and Brutus command line, `llama-bench` crashed or rejected arguments in two
+and build-server command line, `llama-bench` crashed or rejected arguments in two
 different ways depending on flags:
 
 - **No `-sm tensor`**: fails to load the model at all -- a real
@@ -23,7 +23,7 @@ different ways depending on flags:
   below); passing it to `llama-bench` is always wrong.
 
 Given both failure modes, the validated configuration used a real
-`llama-server` + HTTP-request harness (or the documented Brutus bench runner,
+`llama-server` + HTTP-request harness (or the documented build-server bench runner,
 below) instead of `llama-bench`. Re-check this observation after changing the
 llama.cpp source pin, model, split mode, hardware, or CLI surface; it is not a
 universal prohibition on `llama-bench`.
@@ -32,7 +32,7 @@ universal prohibition on `llama-bench`.
 
 The `-sm tensor`/`--fit off` pairing is a current implementation requirement
 for the tested `llama-server` path. The non-concurrent-server and alternating
-order findings are Brutus empirical resource/measurement constraints for this
+order findings are build-server empirical resource/measurement constraints for this
 configuration. Long-lived cache sessions are a diagnostic recommendation
 when the measured behavior depends on cross-request state. A rule becomes an
 acceptance requirement only when the applicable Experiment Contract and
@@ -78,10 +78,10 @@ concurrent-VRAM conflict) session that drives a real repeated-request
 burst, instead of trying to derive that evidence from the paired
 alternating lane's logs.
 
-## Prefer the documented Brutus bench runner over raw `llama-bench`
+## Prefer the documented build-server bench runner over raw `llama-bench`
 
-`/mnt/vault/development/llmhosts/llamacpp/bench/run_bench.py`
-(`docs/reference/testing/TEST.md`'s "Server benchmark (Brutus bench
+`$BC_BENCH_HARNESS/run_bench.py`
+(`docs/reference/testing/TEST.md`'s "Server benchmark (build-server bench
 runner)" section, `--bench-type server-bench`, endpoint mode) drives an
 already-running server via real HTTP requests rather than spawning its
 own `llama-bench` process -- sidesteps every issue above. Its two
@@ -104,7 +104,7 @@ canonical contract/evidence record.
 ## Summary checklist for a new large multi-GPU model validation lane
 
 - [ ] `-sm tensor` on every `llama-server`/`llama-bench` invocation in this
-      Brutus RD73 multi-GPU lane
+      build-server RD73 multi-GPU lane
 - [ ] `--fit off` on `llama-server` invocations in this lane only -- never on
       `llama-bench`
 - [ ] Never launch two servers needing a large fraction of VRAM each at
@@ -113,6 +113,6 @@ canonical contract/evidence record.
 - [ ] If restarting per-request to solve the above, isolate any
       evidence that depends on cross-request in-process state into its
       own long-lived, non-concurrent session
-- [ ] If using the Brutus bench runner, parse both "Aggregated Results"
+- [ ] If using the build-server bench runner, parse both "Aggregated Results"
       and "Extracted Results" headers
 

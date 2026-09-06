@@ -9,9 +9,9 @@ promotion verdict.
 
 | Document | Authority class | Use it for |
 | --- | --- | --- |
-| [TEST.md](TEST.md) | Operational procedure | Repository gates, scoped dry-runs, correctness/timing checks, profiling, and the Brutus recipe |
+| [TEST.md](TEST.md) | Operational procedure | Repository gates, scoped dry-runs, correctness/timing checks, profiling, and the build-server recipe |
 | [PATCH_VALIDATION.md](PATCH_VALIDATION.md) | Normative patch lifecycle/evidence contract | Package requirements, named checks, evidence identity, status semantics, promotion, demotion, and re-promotion |
-| [MULTI_GPU_LARGE_MODEL_VALIDATION.md](MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped empirical implementation note | Brutus observations and constraints for the tested large-model multi-GPU configuration |
+| [MULTI_GPU_LARGE_MODEL_VALIDATION.md](MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped empirical implementation note | build-server observations and constraints for the tested large-model multi-GPU configuration |
 | [RCCL_HETEROGENEOUS_RUNBOOK.md](RCCL_HETEROGENEOUS_RUNBOOK.md) | Hardware qualification runbook | RCCL source viability, crash isolation, topology identity, correctness, and admissible performance |
 | [../../archive/COVERAGE_AUDIT.md](../../archive/COVERAGE_AUDIT.md) | Historical snapshot outside the maintained testing corpus | Reviewing the cited HI34 tuner-surface audit; verify current code before acting |
 

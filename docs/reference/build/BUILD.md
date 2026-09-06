@@ -10,7 +10,7 @@ Use the campaign engine and server test bench, not the manual CMake or
 `llama-bench` examples below. The maintained procedure and build-role matrix
 are in [TEST.md — reusable campaign build matrix](../testing/TEST.md#reusable-campaign-build-matrix-hi168).
 
-1. Verify the intended committed revision and a clean local Brutus checkout
+1. Verify the intended committed revision and a clean local build-server checkout
    (an explicitly isolated worktree is also supported; never disturb another
    session's live tree).
 2. Build `e2e-build-matrix` with the model/topology's inventory, promoted
@@ -25,11 +25,16 @@ are in [TEST.md — reusable campaign build matrix](../testing/TEST.md#reusable-
 Framework configuration qualification is a prerequisite build/evidence
 operation, not a substitute for this production performance comparison.
 
-## Environment — brutus (`10.10.100.10`)
+## Environment — the build server
+
+Host facts (address, paths, toolchain, ports, device inventory) live in
+[`config/environment.toml`](../../../config/environment.toml); `source
+tools/bigcherry-env.sh` exports them as `$BC_*`. See
+[ENVIRONMENT.md](../ENVIRONMENT.md).
 
 **`~/bigcherry` is the live tree — a real local git clone.** Git operations
 (fetch/checkout/status) over the old SMB-mounted path (below) were too slow
-and unreliable over the network, so brutus builds from its own local
+and unreliable over the network, so the build server builds from its own local
 checkout now, not from the share. Treat it as a normal git worktree, not a
 build cache: before building, `git status` must be clean and `git log -1`
 must match what you expect (fetch/pull first if not); after any hands-on
@@ -38,13 +43,13 @@ edit there, commit and push before moving on.
 **SMB share — file transfer only, never git/build:**
 
 ```text
-J:\development\llmhosts\bigcherry  ==  /mnt/vault/development/llmhosts/bigcherry
+J:\development\llmhosts\bigcherry  ==  $BC_SHARE/bigcherry
 ```
 
 Still useful for copying a build artifact or doc back and forth by hand.
 Do not `git` anything against this path, and do not point cmake at it for
-a brutus build — use `~/bigcherry` for that. (This section previously said
-the reverse — that `~/bigcherry` was the stale copy and `/mnt/vault` was
+a build-server build — use `$BC_REPO` for that. (This section previously said
+the reverse — that `$BC_REPO` was the stale copy and the share was
 live. That was wrong and out of date; see BUILD_AND_TEST.md, which already
 had the corrected version. If you're reading this after finding it
 contradicted `~/bigcherry`'s actual state again, trust the live checkout,
@@ -64,12 +69,12 @@ not either doc, and fix whichever doc is behind.)
   copy it back:
 
   ```bash
-  scp 10.10.100.10:/tmp/thing.md docs/reference/THING.md   # run from Windows
+  scp "$BC_HOST:/tmp/thing.md" docs/reference/THING.md   # run from Windows
   ```
 
 ## Sources — the normal way to build
 
-`$BC` = `~/bigcherry` on brutus.
+`$BC` = `$BC_REPO` on the build server.
 
 A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch composition: an upstream ref, an overlay flag, and the exact `patch-set`(s) it applies. Builds and platforms are a separate, orthogonal axis, composed per-lane.
 
@@ -79,7 +84,7 @@ A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch comp
 |------|---------|-------|----------|
 | **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-native`, `bigcherry` |
 | **Build** | A cmake variant set | Named independently, composed per-lane | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
-| **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on brutus), `windows-gfx1100` (workstation) |
+| **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on the build server), `windows-gfx1100` (workstation) |
 | **Patch state** | Patch acceptance status | Per-patch metadata, informational only under v2 | `validated`, `untested`, `rejected` |
 
 A source's `patch-sets` list is exact and curated -- there is no groups/states predicate filtering axis to override; a source either names a patch-set or it doesn't.
@@ -295,7 +300,7 @@ The campaign path enforces this automatically
 check it yourself. Note llama-**server** does not emit that line at all --
 even with `-v` -- so server lanes need different attestation (VA25 step 4).
 
-### Card inventory (brutus)
+### Card inventory (build server)
 
 | device | arch | VRAM | notes |
 |---|---|---|---|
@@ -318,13 +323,13 @@ These apply to the **manual build cycle** below (standalone `generate` + raw cma
 
 ## Manual build cycle
 
-One-off builds outside a source. `$BC` = `~/bigcherry` on brutus.
+One-off builds outside a source. `$BC` = `$BC_REPO` on the build server.
 
 ### Linux — all three GPUs
 
 **Vendored ROCm toolchains.** The same `vendor/rocm/<version>/` convention
 described in the Windows section below applies here — `tools/rocm-env.sh`
-works unchanged on Brutus. Two versions are already vendored under `$BC`:
+works unchanged on the build server. Two versions are already vendored under `$BC`:
 `7.2.4` (copied from `/opt/rocm-7.2.4`, currently `/opt/rocm`'s target) and
 `7.14` (copied from `/opt/rocm7140/rocm/core-7.14`, the version the older
 manual-build snippets below reference). Select one before building:
@@ -458,7 +463,7 @@ does **not** cover every ROCm-adjacent tool some tuning/experiment work
 wants:
 
 - **hipBLASLt offline-tuning client (`hipblaslt-bench`)** — not present in
-  either the Windows HIP SDK vendored copy or Brutus's `hipblaslt`/
+  either the Windows HIP SDK vendored copy or the build server's `hipblaslt`/
   `hipblaslt-dev` apt packages (confirmed directly, 2026-08-23: the library
   and headers are there, the client binary is not, and there is no separate
   apt package for it). It has to be built from the `ROCm/hipBLASLt` GitHub
