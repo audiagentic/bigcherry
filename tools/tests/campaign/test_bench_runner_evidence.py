@@ -1,10 +1,11 @@
 """Offline tests for retained server-bench invocation evidence."""
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from bigcherry.campaign.bench_runner import BenchRunnerError, run_bench_runner_server_bench
 
@@ -17,6 +18,25 @@ class BenchRunnerEvidenceTests(unittest.TestCase):
         (self.root / "bench").mkdir()
         (self.root / "bench/run_bench.py").write_text("# fixture", encoding="utf-8")
         self.output = self.root / "cell"
+
+    def test_environment_harness_points_to_bench_directory(self):
+        with patch.dict(os.environ, {"BC_BENCH_HARNESS": str(self.root / "bench")}):
+            from bigcherry.campaign import bench_runner
+            self.assertEqual(bench_runner._resolve_runner_root(None), self.root)
+
+    def test_configured_harness_is_loaded_only_when_called(self):
+        from bigcherry.campaign import bench_runner
+        host = Mock(bench_harness=str(self.root / "bench"))
+        environment = Mock()
+        environment.host.return_value = host
+        with patch.dict(os.environ, {}, clear=True), \
+             patch("bigcherry.core.environment.load_default", return_value=environment):
+            self.assertEqual(bench_runner._resolve_runner_root(None), self.root)
+
+    def test_explicit_runner_root_wins_over_environment(self):
+        from bigcherry.campaign import bench_runner
+        with patch.dict(os.environ, {"BC_BENCH_HARNESS": str(self.root / "other" / "bench")}):
+            self.assertEqual(bench_runner._resolve_runner_root(self.root), self.root)
 
     def run_cell(self):
         return run_bench_runner_server_bench(
