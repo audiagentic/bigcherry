@@ -398,13 +398,22 @@ class ReplayCompanionParityTests(unittest.TestCase):
             root.mkdir()
             manifest_path, tree_path = root / "manifest.json", root / "tree.json"
             manifest_path.write_text(json.dumps(self.manifest), encoding="utf-8")
-            tree_path.write_text(json.dumps({
-                "files": {"hip-autotune-registry.inc": "1" * 64},
-                "compile_inputs": ["hip-autotune-registry.inc"],
+            generated = root / "generated"
+            generated.mkdir()
+            registry = generated / "hip-autotune-registry.inc"
+            registry.write_text("registry", encoding="utf-8")
+            tree = workflow.generated_tree.build_manifest(generated, compile_inputs=(registry,))
+            tree_path.write_text(json.dumps(tree), encoding="utf-8")
+            bundle_path = root / "bundle.json"
+            bundle_path.write_text(json.dumps({
+                "generated_inputs_verification": "compiled-copy-v1",
+                "generated_compile_inputs_hash": tree["compile_inputs_hash"],
             }), encoding="utf-8")
             self.lanes.append(SimpleNamespace(
                 source_slice_id="slice", manifest_ref=SimpleNamespace(path=manifest_path),
                 generated_tree_ref=SimpleNamespace(path=tree_path),
+                runtime_bundle_ref=SimpleNamespace(path=bundle_path,
+                    content_hash=workflow.ArtifactStore.digest(bundle_path.read_bytes())),
                 build_plan=SimpleNamespace(cmake_options=(
                     ("GGML_HIP_DISPATCH_REPLAY", "ON"),
                     ("GGML_HIP_DISPATCH_DIAGNOSTICS", diag),
@@ -443,12 +452,21 @@ class ReplayCompanionParityTests(unittest.TestCase):
         tree = json.loads(path.read_text(encoding="utf-8"))
         tree["files"]["hip-autotune-registry.inc"] = "2" * 64
         path.write_text(json.dumps(tree), encoding="utf-8")
-        with self.assertRaisesRegex(workflow.TuneCampaignError, "compile inputs differ"):
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "hash does not recompute"):
             workflow._verify_replay_companion(*self.lanes)
 
     def test_non_diagnostic_compiler_change_is_rejected(self):
         self.lanes[1].build_plan.cmake_options += (("CMAKE_HIP_FLAGS", "-ffast-math"),)
-        with self.assertRaisesRegex(workflow.TuneCampaignError, "compiler options differ"):
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "requested CMake options differ"):
+            workflow._verify_replay_companion(*self.lanes)
+
+    def test_missing_compiled_copy_attestation_is_rejected(self):
+        ref = self.lanes[1].runtime_bundle_ref
+        bundle = json.loads(ref.path.read_bytes())
+        bundle.pop("generated_inputs_verification")
+        ref.path.write_text(json.dumps(bundle), encoding="utf-8")
+        ref.content_hash = workflow.ArtifactStore.digest(ref.path.read_bytes())
+        with self.assertRaisesRegex(workflow.TuneCampaignError, "build-bound"):
             workflow._verify_replay_companion(*self.lanes)
 
 

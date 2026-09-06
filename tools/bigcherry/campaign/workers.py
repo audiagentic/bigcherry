@@ -501,6 +501,11 @@ def make_build_worker(
             # Only NOW does the record become `metadata` (the validated
             # identity) -- after validate_reuse() has proven it, not before.
             metadata = cached_metadata
+            if has_generate_stage and cached_metadata.get("generated_inputs_verification") != "compiled-copy-v1":
+                raise campaign_build.CampaignBuildError(
+                    "cached build lacks compiled-copy generated-input verification; "
+                    "refusing to attest historical build inputs retroactively"
+                )
             reused = (
                 extras_present
                 and cached_metadata.get("generated_compile_inputs_hash")
@@ -547,7 +552,18 @@ def make_build_worker(
             # PA09's own required boundary is "immediately before CMake
             # configure", not "somewhere before compile finishes".
             _verify_source(source_root, expected_source)
+            if has_generate_stage:
+                generated_tree.verify_tree(cmake_generated_root, tree_document)
+                actual_inputs = generated_tree.build_manifest(
+                    cmake_generated_root,
+                    compile_inputs=tuple(cmake_generated_root / name for name in tree_document["compile_inputs"]),
+                )["compile_inputs_hash"]
+                if actual_inputs != compile_inputs_hash:
+                    raise generated_tree.GeneratedTreeError("compiled-copy input hash disagrees with generation evidence")
+                compile_inputs_hash = actual_inputs
             subprocess.run(configure_args, cwd=source_root, check=True)
+            if has_generate_stage:
+                generated_tree.verify_tree(cmake_generated_root, tree_document)
             subprocess.run(
                 campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
                 cwd=source_root,
@@ -576,6 +592,7 @@ def make_build_worker(
                 # and publication. Only meaningful when a compile actually
                 # ran AND there was a generated tree to begin with.
                 generated_tree.verify_tree(generated_root, tree_document)
+                generated_tree.verify_tree(cmake_generated_root, tree_document)
 
             effective_configure = parse_effective_configure(
                 build_dir / "CMakeCache.txt"
@@ -593,6 +610,7 @@ def make_build_worker(
                 "toolchain": expected_toolchain,
                 "binary_hash": binary_hash(binary),
                 "generated_compile_inputs_hash": compile_inputs_hash,
+                "generated_inputs_verification": "compiled-copy-v1" if has_generate_stage else None,
                 "runtime_artifacts": runtime_artifacts,
                 "runtime_bundle_hash": runtime_bundle_hash(runtime_artifacts),
             }
@@ -751,6 +769,7 @@ def make_build_worker(
             "generated_compile_inputs_hash": metadata.get(
                 "generated_compile_inputs_hash"
             ),
+            "generated_inputs_verification": metadata.get("generated_inputs_verification"),
             "toolchain": expected_toolchain,
         }
         # Content-addressed by a hash of the FULL manifest, not just

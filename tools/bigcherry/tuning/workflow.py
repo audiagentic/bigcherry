@@ -32,6 +32,7 @@ from . import tune_promotion
 from .server_runner import ServerError, ServerRunner
 from .. import hi80_generate_correctness_evidence as hi80
 from ..campaign import planner as campaign_planner
+from ..build import generated_tree
 from ..campaign.lane import CampaignLaneResult
 from ..core import config as campaign_config
 from ..core import gpu as gpu_mod
@@ -480,6 +481,14 @@ def _verify_replay_companion(production: CampaignLaneResult, diagnostic: Campaig
                 raise TuneCampaignError("replay companion descriptor does not recompute")
             manifests.append(descriptor)
             tree = json.loads(result.generated_tree_ref.path.read_text(encoding="utf-8"))
+            compiled_inputs_digest = generated_tree.compile_inputs_digest(tree)
+            bundle_bytes = result.runtime_bundle_ref.path.read_bytes()
+            if ArtifactStore.digest(bundle_bytes) != result.runtime_bundle_ref.content_hash:
+                raise TuneCampaignError("replay companion runtime bundle evidence hash mismatch")
+            bundle = json.loads(bundle_bytes)
+            if (bundle.get("generated_inputs_verification") != "compiled-copy-v1"
+                    or bundle.get("generated_compile_inputs_hash") != compiled_inputs_digest):
+                raise TuneCampaignError("replay companion lacks matching build-bound compiled-input evidence")
             inputs = {name: tree["files"][name] for name in tree["compile_inputs"]}
             if not inputs or "hip-autotune-registry.inc" not in inputs:
                 raise TuneCampaignError("replay companion lacks generated registry evidence")
@@ -487,7 +496,7 @@ def _verify_replay_companion(production: CampaignLaneResult, diagnostic: Campaig
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise TuneCampaignError(f"invalid replay companion evidence: {exc}") from exc
     if common_options[0] != common_options[1]:
-        raise TuneCampaignError("replay companion non-diagnostic compiler options differ")
+        raise TuneCampaignError("replay companion non-diagnostic requested CMake options differ")
     if manifests[0] != manifests[1] or generated_inputs[0] != generated_inputs[1]:
         raise TuneCampaignError("replay companion catalog/registry compile inputs differ")
 
