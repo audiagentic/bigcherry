@@ -14,8 +14,10 @@ imagined ones:
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
-from pathlib import Path
+from unittest.mock import patch
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -300,6 +302,142 @@ class ExecutionIdentityConstructionTests(unittest.TestCase):
         self.assertEqual(doc["device_count"], 2)
         self.assertEqual(len(doc["devices"]), 2)
         self.assertIn("telemetry", doc)
+
+
+class LinuxKfdProcessEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.pid = 4242
+        self.proc = self.root / "proc"
+        self.kfd = self.root / "kfd"
+        self.drm = self.root / "drm"
+        self.binary = self.root / "bin" / "llama-server"
+        self.binary.parent.mkdir()
+        self.binary.write_bytes(b"server")
+        proc_pid = self.proc / str(self.pid)
+        proc_pid.mkdir(parents=True)
+        self.exe_link = proc_pid / "exe"
+        self.other_binary = self.root / "bin" / "other"
+        self.other_binary.write_bytes(b"other")
+        # /proc/<pid>/stat fields after the final ')' begin at field 3;
+        # field 22 (starttime) is index 19 in this suffix.
+        (proc_pid / "stat").write_text(") " + " ".join(["S"] + ["0"] * 18 + ["1234"]) + "\n", encoding="ascii")
+        nodes = self.kfd / "topology" / "nodes"
+        self.drm_targets = {}
+        for node_id, gpu_id, minor in (("0", 10, 128), ("1", 11, 129)):
+            node = nodes / node_id
+            node.mkdir(parents=True)
+            (node / "gpu_id").write_text(str(gpu_id), encoding="ascii")
+            (node / "properties").write_text(
+                f"drm_render_minor {minor}\ngfx_target_version 1100\n", encoding="ascii"
+            )
+            render = self.drm / f"renderD{minor}"
+            render.mkdir(parents=True)
+            self.drm_targets[render / "device"] = PurePosixPath(
+                f"/sys/devices/pci0000:00/0000:00:01.0/0000:{gpu_id - 9:02x}:00.0"
+            )
+
+        def resolve_fixture(path, strict=False):
+            if path == self.exe_link:
+                return self.other_binary if getattr(self, "exe_changed", False) else self.binary
+            return self.drm_targets.get(path, path.absolute())
+        self.resolve_patch = patch.object(Path, "resolve", new=resolve_fixture)
+        self.resolve_patch.start()
+        self.addCleanup(self.resolve_patch.stop)
+        process_kfd = self.kfd / "proc" / str(self.pid)
+        process_kfd.mkdir(parents=True)
+        (process_kfd / "vram_10").write_text("4096\n", encoding="ascii")
+        (process_kfd / "vram_11").write_text("0\n", encoding="ascii")
+        for qid, gpu_id, size, qtype in (("7", 10, 2048, 0), ("8", 11, 0, 1)):
+            queue = process_kfd / "queues" / qid
+            queue.mkdir(parents=True)
+            (queue / "gpuid").write_text(str(gpu_id), encoding="ascii")
+            (queue / "size").write_text(str(size), encoding="ascii")
+            (queue / "type").write_text(str(qtype), encoding="ascii")
+
+    def capture(self, **kwargs):
+        return att.capture_linux_kfd_process_evidence(
+            self.pid, self.binary, proc_root=self.proc, kfd_root=self.kfd,
+            drm_root=self.drm, **kwargs,
+        )
+
+    def test_captures_all_nodes_including_zero_vram(self):
+        evidence = self.capture()
+        self.assertEqual(evidence["schema_version"], 1)
+        self.assertEqual(evidence["kind"], "linux-kfd-process-v1")
+        self.assertEqual(evidence["pid"], self.pid)
+        self.assertEqual(evidence["starttime_ticks"], 1234)
+        self.assertFalse(evidence["device_order_observed"])
+        self.assertEqual([d["gpu_id"] for d in evidence["devices"]], [10, 11])
+        self.assertEqual(evidence["devices"][1]["vram_bytes"], 0)
+        self.assertEqual(evidence["devices"][0]["queues"][0]["type"], 0)
+
+    def test_missing_proc_is_rejected(self):
+        import shutil
+        shutil.rmtree(self.proc / str(self.pid))
+        with self.assertRaises(att.AttestationError):
+            self.capture()
+
+    def test_executable_mismatch_is_rejected(self):
+        with self.assertRaisesRegex(att.AttestationError, "executable mismatch"):
+            att.capture_linux_kfd_process_evidence(
+                self.pid, self.other_binary, proc_root=self.proc, kfd_root=self.kfd, drm_root=self.drm,
+            )
+
+    def test_executable_change_after_capture_is_rejected(self):
+        def starttime_with_change(path):
+            if not self.exe_changed:
+                self.exe_changed = True
+                return 1234
+            return 1234
+        self.exe_changed = False
+        with patch.object(att, "_linux_kfd_starttime", side_effect=starttime_with_change):
+            with self.assertRaisesRegex(att.AttestationError, "executable changed"):
+                self.capture()
+
+    def test_cpu_node_is_skipped_and_gpu_is_required(self):
+        node = self.kfd / "topology/nodes/2"
+        node.mkdir()
+        (node / "gpu_id").write_text("0", encoding="ascii")
+        evidence = self.capture()
+        self.assertEqual(len(evidence["devices"]), 2)
+        (self.kfd / "topology/nodes/0/gpu_id").write_text("0", encoding="ascii")
+        (self.kfd / "topology/nodes/1/gpu_id").write_text("0", encoding="ascii")
+        with self.assertRaisesRegex(att.AttestationError, "no GPU nodes"):
+            self.capture()
+
+    def test_nested_bridge_path_uses_leaf_bdf(self):
+        self.assertEqual(self.capture()["devices"][0]["bdf"], "0000:01:00.0")
+
+    def test_zombie_process_is_rejected(self):
+        (self.proc / str(self.pid) / "stat").write_text(") " + " ".join(["Z"] + ["0"] * 18 + ["1234"]) + "\n", encoding="ascii")
+        with self.assertRaisesRegex(att.AttestationError, "zombie"):
+            self.capture()
+
+    def test_negative_property_or_vram_is_rejected(self):
+        (self.kfd / "topology/nodes/1/properties").write_text("drm_render_minor -1\ngfx_target_version 1100\n", encoding="ascii")
+        with self.assertRaisesRegex(att.AttestationError, "unsupported"):
+            self.capture()
+        (self.kfd / "topology/nodes/1/properties").write_text("drm_render_minor 129\ngfx_target_version 1100\n", encoding="ascii")
+        (self.kfd / "proc" / str(self.pid) / "vram_11").write_text("-1\n", encoding="ascii")
+        with self.assertRaisesRegex(att.AttestationError, "unsupported"):
+            self.capture()
+
+    def test_pid_reuse_is_rejected_when_starttime_changes(self):
+        with patch.object(att, "_linux_kfd_starttime", side_effect=(1234, 1235)):
+            with self.assertRaisesRegex(att.AttestationError, "PID reuse"):
+                self.capture()
+
+    def test_unknown_queue_gpu_is_rejected(self):
+        queue = self.kfd / "proc" / str(self.pid) / "queues" / "9"
+        queue.mkdir()
+        (queue / "gpuid").write_text("99", encoding="ascii")
+        (queue / "size").write_text("1", encoding="ascii")
+        (queue / "type").write_text("0", encoding="ascii")
+        with self.assertRaisesRegex(att.AttestationError, "unknown gpu_id"):
+            self.capture()
 
 
 if __name__ == "__main__":
