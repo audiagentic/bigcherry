@@ -1,6 +1,6 @@
 # 1244: N-way fused-root internal allreduce
 
-**Status:** landed; qualification pending
+**Status:** untested
 **Group:** gpu-collectives
 **Plan item:** GP11
 
