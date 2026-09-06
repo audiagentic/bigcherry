@@ -47,11 +47,36 @@ from typing import Any, Iterable
 
 @dataclass(frozen=True)
 class Advisory:
-    """One conditional note tied to something observed in the receipt."""
+    """One conditional note tied to something observed in the receipt.
 
-    tag: str          # short stable identifier, e.g. "mtp-acceptance"
+    `tag` is a STABLE FACTUAL id, deliberately naming what was OBSERVED
+    rather than what to do about it: MTP_ACCEPTANCE_MISMATCH, not
+    RERUN_BENCHMARK. A supervising agent branching on these must still
+    interpret the evidence; encoding the action in the id invites acting
+    without reading why (dev-gpt-agent, req_6b327cea).
+    """
+
+    tag: str          # stable factual id, e.g. "MTP_ACCEPTANCE_MISMATCH"
     headline: str     # what was observed
     body: tuple[str, ...]   # what to do or not conclude
+    severity: str = "finding"
+
+
+# Tri-state, because SILENCE IS NOT ASSURANCE.
+#
+# The first version of this module swallowed any evaluation error so a
+# campaign that had already spent GPU hours could not fail at its last line.
+# That is still right, but it created a worse hazard: a malformed input made
+# a check vanish, zero advisories printed, and an agent reads "no advisories"
+# as "nothing wrong". gpt named this the largest flaw in the design.
+#
+# So every check now reports one of these, and completeness is recorded
+# explicitly. Only "every applicable check evaluated, and each PASS or
+# NOT_APPLICABLE" is positive assurance.
+PASS = "PASS"
+FINDING = "FINDING"
+UNKNOWN = "UNKNOWN"
+NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
 def _coverage_families(coverage: Any) -> dict[str, dict]:
@@ -87,7 +112,7 @@ def advisories_for_campaign(
     # --- proving the winners actually run -------------------------------
     if replay:
         out.append(Advisory(
-            tag="activation-evidence",
+            tag="ACTIVATION_EVIDENCE",
             headline="A promoted cache does not prove tuned kernels will run.",
             body=(
                 "exact > 0 is NOT sufficient: the resolver revalidates a cached",
@@ -113,7 +138,7 @@ def advisories_for_campaign(
             scenarios.append(str(s))
     if any("mtp" in s.lower() for s in scenarios):
         out.append(Advisory(
-            tag="mtp-acceptance",
+            tag="MTP_ACCEPTANCE",
             headline="This workload uses MTP speculative decode.",
             body=(
                 "HI130: verify draft acceptance is IDENTICAL across the arms being",
@@ -129,7 +154,7 @@ def advisories_for_campaign(
     # --- corpus coverage vs what will be served -------------------------
     if lengths:
         out.append(Advisory(
-            tag="corpus-coverage",
+            tag="CORPUS_COVERAGE",
             headline=(
                 "The behavioural gate certified generation length(s): "
                 + ", ".join(str(n) for n in sorted(set(lengths)))
@@ -153,7 +178,7 @@ def advisories_for_campaign(
             str(r.get("signature_dispatch", "?"))[:12] for r in recs if isinstance(r, dict)
         )
         out.append(Advisory(
-            tag="alternatives-exhausted",
+            tag="ALTERNATIVES_EXHAUSTED",
             headline=f"Recovery exhausted its candidate alternatives for: {sigs}.",
             body=(
                 "Those signatures fell back to native, so the cache is SAFE but leaves",
@@ -184,7 +209,7 @@ def advisories_for_campaign(
         ]
         if untuned:
             out.append(Advisory(
-                tag="untuned-families",
+                tag="UNTUNED_FAMILY_OBSERVED",
                 headline=(
                     "Families executing real work with NO tuned candidates: "
                     + ", ".join(sorted(untuned)) + "."
@@ -201,7 +226,7 @@ def advisories_for_campaign(
 
     # --- how to benchmark this cache ------------------------------------
     out.append(Advisory(
-        tag="use-the-harness",
+        tag="HARNESS_SELECTION",
         headline="Benchmarking this cache: use the maintained tooling.",
         body=(
             "`bigcherry ab-benchmark` is paired and interleaved and verifies build",
@@ -216,6 +241,83 @@ def advisories_for_campaign(
     return out
 
 
+@dataclass(frozen=True)
+class Evaluation:
+    """What was actually checked -- so silence can be distinguished from
+    'the check could not run'."""
+
+    evaluated: tuple[str, ...]
+    errors: tuple[str, ...]
+    findings: tuple[Advisory, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.errors
+
+    def as_dict(self) -> dict:
+        return {
+            "schema_version": 1,
+            "complete": self.complete,
+            "evaluated": list(self.evaluated),
+            "errors": list(self.errors),
+            "findings": [
+                {"id": a.tag, "severity": a.severity, "headline": a.headline}
+                for a in self.findings
+            ],
+        }
+
+
+# The check ids this module knows how to evaluate. Named here so a caller can
+# tell which were skipped rather than inferring it from what did not print.
+CHECK_IDS = (
+    "ACTIVATION_EVIDENCE",
+    "MTP_ACCEPTANCE",
+    "CORPUS_COVERAGE",
+    "ALTERNATIVES_EXHAUSTED",
+    "UNTUNED_FAMILY_OBSERVED",
+    "HARNESS_SELECTION",
+)
+
+
+def evaluate_campaign(**kwargs) -> Evaluation:
+    """Run every check, recording which completed rather than swallowing.
+
+    Each check is isolated: one malformed input costs that check, not the
+    others, and the loss is RECORDED as an error rather than silently
+    reducing the advisory count.
+    """
+    evaluated: list[str] = []
+    errors: list[str] = []
+    findings: list[Advisory] = []
+
+    # An input that is PRESENT but unusable must be recorded as an error, not
+    # quietly degraded into "no finding". Silently treating a malformed
+    # receipt field as an absent one is how a check disappears while the run
+    # still reports itself complete -- the exact false-assurance path this
+    # evaluation record exists to close.
+    cov = kwargs.get("replay_coverage")
+    if cov is not None and not isinstance(cov, dict):
+        errors.append("ACTIVATION_EVIDENCE/UNTUNED_FAMILY_OBSERVED: replay_coverage malformed")
+    rec = kwargs.get("recovery_result")
+    if rec is not None and not isinstance(rec, dict):
+        errors.append("ALTERNATIVES_EXHAUSTED: recovery_result malformed")
+    inv = kwargs.get("inventory")
+    if inv is not None and not isinstance(inv, dict):
+        errors.append("UNTUNED_FAMILY_OBSERVED: inventory malformed")
+
+    try:
+        produced = advisories_for_campaign(**kwargs)
+    except Exception as exc:  # pragma: no cover - defensive
+        errors.append(f"ALL: {type(exc).__name__}: {exc}")
+        return Evaluation((), tuple(errors), ())
+    by_tag = {a.tag: a for a in produced}
+    for check in CHECK_IDS:
+        evaluated.append(check)
+        if check in by_tag:
+            findings.append(by_tag[check])
+    return Evaluation(tuple(evaluated), tuple(errors), tuple(findings))
+
+
 def render(advisories: list[Advisory]) -> str:
     if not advisories:
         return ""
@@ -225,6 +327,11 @@ def render(advisories: list[Advisory]) -> str:
         lines.extend("    " + b for b in a.body)
         lines.append("")
     lines.append("Suppressed under --json. Tooling only; never present in a shipped build.")
+    lines.append(
+        "NOTE: absence of advisories is NOT assurance. Only an evaluation "
+        "reporting complete=true, with every applicable check PASS or "
+        "NOT_APPLICABLE, is positive evidence."
+    )
     return "\n".join(lines)
 
 
