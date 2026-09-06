@@ -225,6 +225,7 @@ def generate_registry(*, source: Path, amdgpu_targets: str, generated_dir: Path)
 def build_tree(
     *, name: str, extra_cmake_args: list[str], hip_path: Path,
     amdgpu_targets: str, workdir: Path, targets: list[str], source: Path,
+    generated_proof_callback=None,
 ) -> Path:
     """cmake configure (if not already configured) + build the given
     targets. Returns the build tree's bin/ directory.
@@ -246,6 +247,9 @@ def build_tree(
     configure_request = _configure_request_document(source=source, cmake_args=cmake_args)
     configure_request_path = build_dir / "bigcherry-configure-request.json"
 
+    if generated_proof_callback is not None:
+        generated_proof_callback("preconfigure", build_dir)
+
     # Reconfigure only when the REQUEST actually changed -- the old "skip
     # whenever CMakeCache.txt exists" check could silently reuse a stale
     # configuration across differently-parameterized invocations; the
@@ -265,6 +269,9 @@ def build_tree(
             raise PatchCampaignError(f"{name} configure failed (see {log_path})")
         _atomic_write_json(configure_request_path, configure_request)
 
+    if generated_proof_callback is not None:
+        generated_proof_callback("postconfigure-precompile", build_dir)
+
     for target in targets:
         _print(f"building {name} ({target}) ...")
         log_path = log_dir / f"{name}-build-{target}.log"
@@ -278,6 +285,8 @@ def build_tree(
                 log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
             )
             raise PatchCampaignError(f"{name} build ({target}) failed:\n{tail}")
+    if generated_proof_callback is not None:
+        generated_proof_callback("postcompile", build_dir)
     _print(f"{name}: OK")
     return build_dir / "bin"
 
@@ -2108,6 +2117,174 @@ def run_rd73_contract_qualification(
     }
 
 
+def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> int:
+    """Build the canonical native framework composition and persist schema-5 proof."""
+    from bigcherry.build import generated_tree
+    from bigcherry.patch import evidence as patch_validation_evidence
+    from bigcherry.patch import source as psi
+    from bigcherry.patch import validation_policy
+    from bigcherry.patch import validation
+    from bigcherry.core import paths as bc_paths
+
+    if not validation_policy.is_framework_configuration_patch(descriptor):
+        raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
+    if any(getattr(args, name, False) for name in (
+        "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
+        "run_rd58_state_restore", "run_rd73_contract", "correctness_evidence",
+    )):
+        raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
+    targets = tuple(target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip())
+    if not targets or any(not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets):
+        raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
+    args.amdgpu_targets = ";".join(targets)
+    baseline_source = "bigcherry-native"
+    base_revision, composition = psi.resolve_source_composition(
+        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+    )
+    if (descriptor.patch_id, descriptor.implementation_digest) not in composition:
+        raise PatchCampaignError(
+            f"framework source {baseline_source!r} does not contain focal patch {descriptor.patch_id!r}"
+        )
+    source = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "framework",
+        resolved_revision=base_revision, composition=composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+    )
+    idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC, source=source, worktree_root=args.worktree_root / "framework",
+        resolved_revision=base_revision, composition=composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+    )
+    if not idempotent:
+        raise PatchCampaignError("framework composition did not reapply idempotently")
+    source_tree = psi.git_worktree_tree(source)
+    source_manifest = psi._read_manifest(source)
+    if not source_manifest or source_manifest.get("source_tree_oid") != source_tree:
+        raise PatchCampaignError("framework source attestation is missing or stale")
+    build_root = (args.build_root or args.workdir) / source.name
+    # Qualification owns fresh directories, never retroactively attests a
+    # historical build whose inputs were not observed during compilation.
+    for role in ("production", "diagnostic"):
+        if (build_root / f"framework-{role}").exists():
+            raise PatchCampaignError("framework qualification requires a fresh build-root; preserve the previous run")
+    generated_dir = build_root / "generated"
+    generate_registry(source=source, amdgpu_targets=args.amdgpu_targets, generated_dir=generated_dir)
+    # Same four compile inputs returned by catalog.emit().compile_input_paths;
+    # JSON manifests contain timestamps and are not compiler inputs.
+    compile_inputs = tuple(generated_dir / name for name in (
+        "hip-autotune-registry.inc", "hip-autotune-build-hash.h",
+        "hip-autotune-arch.h", "hip-autotune-mmvq-instances.inc",
+    ))
+    missing = [str(path) for path in compile_inputs if not path.is_file()]
+    if missing:
+        raise PatchCampaignError(f"generated compiler inputs missing: {missing}")
+    generated_manifest = generated_tree.build_manifest(generated_dir, compile_inputs=compile_inputs)
+    proof = {}
+
+    def generated_proof(phase, build_dir):
+        compiled_copy = build_dir / "generated-inputs"
+        if psi.git_worktree_tree(source) != source_tree:
+            raise PatchCampaignError(f"source changed at {phase}")
+        generated_tree.verify_tree(generated_dir, generated_manifest)
+        generated_tree.verify_tree(compiled_copy, generated_manifest)
+        copied_manifest = generated_tree.build_manifest(
+            compiled_copy,
+            compile_inputs=tuple(compiled_copy / name for name in generated_manifest["compile_inputs"]),
+        )
+        if copied_manifest["compile_inputs_hash"] != generated_manifest["compile_inputs_hash"]:
+            raise PatchCampaignError(f"{build_dir.name}: compiled-copy input hash disagrees with generated manifest")
+        proof[build_dir.name] = copied_manifest
+
+    import shutil
+    for role in ("production", "diagnostic"):
+        shutil.copytree(generated_dir, build_root / f"framework-{role}" / "generated-inputs")
+    common = ["-DGGML_HIP_RCCL=ON", "-DGGML_HIP_DISPATCH_REPLAY=ON",
+              "-DGGML_HIP_AUTOTUNE=OFF", "-DGGML_HIP_AUTOTUNE_RECORD=OFF",
+              "-DGGML_HIP_REPLAY_DIAGNOSTICS=OFF"]
+    production_args = common + ["-DGGML_HIP_DISPATCH_DIAGNOSTICS=OFF",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-production' / 'generated-inputs'}"]
+    diagnostic_args = common + ["-DGGML_HIP_DISPATCH_DIAGNOSTICS=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-diagnostic' / 'generated-inputs'}"]
+    production_bin = build_tree(
+        name="framework-production", hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets, workdir=build_root,
+        targets=["llama-server"], source=source,
+        extra_cmake_args=production_args, generated_proof_callback=generated_proof,
+    )
+    diagnostic_bin = build_tree(
+        name="framework-diagnostic", hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets, workdir=build_root,
+        targets=["llama-server"], source=source,
+        extra_cmake_args=diagnostic_args, generated_proof_callback=generated_proof,
+    )
+    env = _hip_env(args.hip_path)
+    exe = ".exe" if sys.platform == "win32" else ""
+    production = capture_completed_build_evidence(
+        build_root / "framework-production", source_root=source,
+        architecture=args.amdgpu_targets, binary=production_bin / f"llama-server{exe}",
+        requested_cmake_args=_full_requested_cmake_args(hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=production_args), build_env=env,
+    )
+    diagnostic = capture_completed_build_evidence(
+        build_root / "framework-diagnostic", source_root=source,
+        architecture=args.amdgpu_targets, binary=diagnostic_bin / f"llama-server{exe}",
+        requested_cmake_args=_full_requested_cmake_args(hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=diagnostic_args), build_env=env,
+    )
+    from bigcherry.build.builds import inspect_dispatch_build
+    for role, diagnostic_on in (("production", False), ("diagnostic", True)):
+        observed = inspect_dispatch_build(build_root / f"framework-{role}")
+        counts = observed["compiled_definition_counts"]
+        if observed["issues"] or bool(counts["GGML_HIP_DISPATCH_DIAGNOSTICS"]) != diagnostic_on:
+            raise PatchCampaignError(f"{role} diagnostic compiler state disagrees with qualification role")
+    run_dir = args.workdir / "framework" / descriptor.patch_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    generated_artifact = _write_bound_artifact(run_dir, "generated-tree.json", generated_manifest)
+    source_artifact = _write_bound_artifact(run_dir, "source-tree.json", source_manifest)
+    builds = {"production": production.campaign_identity(), "diagnostic": diagnostic.campaign_identity()}
+    build_artifacts = {role: _write_bound_artifact(run_dir, f"{role}-build.json", {
+        **completed.to_dict(), "generated_inputs_verification": "compiled-copy-v1",
+        "generated_inputs": proof[f"framework-{role}"],
+        "source_slice_id": source_manifest["source_slice_id"], "source_tree": source_tree,
+    }) for role, completed in (("production", production), ("diagnostic", diagnostic))}
+    plan = validation_policy.require_execution_package(descriptor, root=bc_paths.PATCHES)
+    ctx = validation.ValidationContext(
+        descriptor=descriptor, base_revision=base_revision,
+        control_source=None, subject_source=None,
+        package_root=bc_paths.PATCHES / descriptor.package_root, run_dir=run_dir,
+        register_artifact=validation.make_default_register_artifact(run_dir),
+        configuration_evidence={
+            "apply": {"single_composition": True, "verified": True, "idempotent": idempotent,
+                      "artifact": source_artifact},
+            "builds": {role: {"completed": True, "artifact": artifact}
+                       for role, artifact in build_artifacts.items()},
+        },
+    )
+    results = {spec.check_id: validation.evaluate_check(spec, ctx) for spec in plan.checks}
+    verdict = validation.compute_verdict(plan, results)
+    _print(f"adapter eligible: {verdict.eligible}")
+    for check_id, result in results.items():
+        _print(f"{check_id}: {result.status}: {result.summary}")
+    checks = {name: asdict(result) for name, result in results.items()}
+    artifacts = {artifact.path: artifact.sha256 for result in results.values() for artifact in result.artifacts}
+    artifacts[generated_artifact["path"]] = generated_artifact["sha256"]
+    record = patch_validation_evidence.make_framework_configuration_record(
+        descriptor=descriptor, patch_path=bc_paths.PATCHES / descriptor.implementation_path,
+        base_ref=cfg.pinned, base_revision=base_revision, source_name=baseline_source,
+        source_composition=composition, source_tree=source_tree,
+        source_slice_id=source_manifest["source_slice_id"], compiled_targets=tuple(
+            target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip()
+        ),
+        builds=builds,
+        generated_inputs={role: {"proof": "compiled-copy-v1",
+            "compile_inputs_hash": proof[f"framework-{role}"]["compile_inputs_hash"],
+            "tree_manifest": proof[f"framework-{role}"], "build_identity": builds[role],
+        } for role in builds},
+        check_results=checks, artifact_hashes=artifacts, campaign_workdir=run_dir,
+    )
+    path = patch_validation_evidence.write_record(record)
+    _print(f"framework configuration evidence: {path}")
+    return 0 if record["eligible_for_validated_state"] else 1
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -2162,6 +2339,9 @@ def run(args: argparse.Namespace) -> int:
     )
     if validation_plan is not None:
         _print(f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}")
+
+    if getattr(args, "framework_configuration", False):
+        return _run_framework_configuration(args, descriptor, cfg)
 
     worktree_root: Path = args.worktree_root
     # RV80/B6: the baseline is the source's EXPLICIT named composition from
@@ -3355,14 +3535,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
     parser.add_argument("--patch", required=True,
                          help="patch module name under patches/")
+    parser.add_argument(
+        "--framework-configuration", action="store_true", default=False,
+        help="run the explicit schema-5 local framework-configuration build path",
+    )
     parser.add_argument("--baseline-source", default="bigcherry",
                          help="explicit named source composition for CONTROL; SUBJECT adds "
                               "only the focal patch. The focal must be absent from this "
                               "baseline; dependencies/conflicts remain enforced.")
-    parser.add_argument("--model", required=True, type=Path)
+    parser.add_argument("--model", type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
     parser.add_argument("--amdgpu-targets", required=True, help="e.g. gfx1100 or gfx1201")
-    parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--manifest", type=Path)
     parser.add_argument("--workdir", required=True, type=Path,
                          help="per-run campaign output (record/tune/promote/replay/bench/report)")
     parser.add_argument("--build-root", type=Path, default=None,
@@ -3446,6 +3630,8 @@ def main(argv: list[str] | None = None) -> int:
              "(bench/server_completion.py's load_corpus() format).",
     )
     args = parser.parse_args(argv)
+    if not args.framework_configuration and (args.model is None or args.manifest is None):
+        parser.error("runtime qualification requires --model and --manifest")
     return run(args)
 
 
