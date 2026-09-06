@@ -23,8 +23,8 @@ ssh alias, never a literal address.
 ## Using it
 
 ```bash
-source tools/bigcherry-env.sh              # default host
-source tools/bigcherry-env.sh build-server # a named host
+source tools/env/bigcherry-env.sh              # default host
+source tools/env/bigcherry-env.sh build-server # a named host
 ```
 
 Exports:
@@ -55,7 +55,7 @@ ssh brutus 'cd /mnt/vault/development/llmhosts/llamacpp && python3 bench/run_ben
 write:
 
 ```bash
-source tools/bigcherry-env.sh
+source tools/env/bigcherry-env.sh
 ssh "$BC_HOST" "cd $BC_BENCH_HARNESS/.. && python3 bench/run_bench.py ..."
 ```
 
@@ -81,8 +81,19 @@ several trees, and a tree's path means nothing without the host it lives on.
 
 ## Migration status
 
-`config/environment.toml` and `tools/bigcherry-env.sh` exist and resolve
-correctly. The existing docs have **not** yet been rewritten to use roles —
-that is a mechanical pass over ~40 files and is tracked separately. Until it
-lands, treat this file as the source of truth for environment facts and the
-older docs' literal paths as illustrative of one host.
+Done. `docs/reference` contains **zero** occurrences of the hostname, IP
+address, home directory or share path — verified by grep. Prose names the
+role; commands use `$BC_*`.
+
+Two deliberate exceptions:
+
+- `tmp/brutus-probe.sh` and `tmp/h36-brutus-pipeline.sh` in
+  [tooling/TOOL_DISPOSITION.md](tooling/TOOL_DISPOSITION.md) are **filenames**.
+  Renaming them in prose would make the doc describe files that do not exist.
+- [testing/TEST.md](testing/TEST.md)'s ROCm-shim recipe constructs
+  `~/rocm-shim` literally, because that block is what *creates* the path
+  `BC_ROCM_SHIM` later refers to.
+
+Docs outside `docs/reference` (planning items, historical findings) still
+carry literal host facts. Those are records of what was done at a point in
+time, not procedure, and are left as written.
