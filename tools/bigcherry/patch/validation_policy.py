@@ -42,14 +42,15 @@ _RD_PLAN_ITEM = re.compile(r"^RD\d+$")
 def is_rd_validation_patch(descriptor: patch_registry.PatchDescriptor) -> bool:
     """Whether this patch's plan-item binding puts it in RD/experimental
     validation-package scope, per GPT round-6 review (req_6e54ebe0b3764350):
-    plan_item is the authoritative planning-namespace signal -- NOT
+    plan_ids and legacy plan_item are the planning-namespace signals -- NOT
     descriptor.kind ('enhancement' vs 'framework'), which describes
     implementation class, not scope, and would silently miss or
     misclassify future patches. Handles compound bindings like
     'RD05/RD06/RD07' (one packaged patch, several distinct hypotheses)."""
     return any(
         _RD_PLAN_ITEM.fullmatch(token.strip())
-        for token in (descriptor.plan_item or "").split("/")
+        for binding in (*descriptor.plan_ids, descriptor.plan_item or "")
+        for token in binding.split("/")
     )
 
 
@@ -378,8 +379,11 @@ def require_execution_package(
 ) -> patch_validation.ValidationPlan:
     """Execution-side anti-grandfather guard (VA02): starting a NEW
     validation run for a patch requires a real README + validation.toml +
-    resolved Experiment Contract to exist, regardless of any lint-side
-    structural-grandfather exemption. Never consults grandfather status --
+    resolved Experiment Contract for experimental work, regardless of any
+    lint-side structural-grandfather exemption. Local non-RD framework work
+    may execute its adapter without a scientific contract; this does not
+    grant eligibility or relax the persisted evidence verifier.
+    Never consults grandfather status --
     that status only ever makes lint non-fatal, never authorizes a run."""
     resolved_root = root or paths.PATCHES
     package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
@@ -391,7 +395,11 @@ def require_execution_package(
     # VA17 policy slice: plural -- require_execution_package() must accept
     # a real multi-contract patch (e.g. 1203's RD05/RD06/RD07), not just
     # 0/1-contract patches.
-    if not descriptor.experiment_contracts:
+    local_framework = (
+        descriptor.kind == "framework" and descriptor.origin == "local"
+        and not descriptor.external_source and not is_rd_validation_patch(descriptor)
+    )
+    if not descriptor.experiment_contracts and not local_framework:
         raise PolicyError(
             f"{descriptor.patch_id}: cannot start a new validation run -- no experiment-contract bound"
         )

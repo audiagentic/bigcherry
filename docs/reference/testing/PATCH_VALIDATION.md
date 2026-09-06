@@ -65,8 +65,13 @@ error removes qualification but is not by itself a rejection.
 
 ## Experiment Contract binding
 
-`patch.toml` must resolve every Experiment Contract before a validation-ready
-patch is executed. `apply` and `build` are universal capabilities; all other
+`patch.toml` must resolve every bound Experiment Contract before a validation-ready
+patch is executed. Local, non-RD framework packages with no external-source
+binding may execute a complete package-local adapter without inventing an
+Experiment Contract. This exception does not waive current-pin/architecture
+evidence, qualify a performance claim, or apply to experimental enhancements.
+Both canonical `plan-ids` and the legacy `plan-item` identify RD scope.
+`apply` and `build` are universal capabilities; all other
 obligations come from the bound contract. `validation.toml` may add producers,
 but cannot remove, replace, or change contract obligations or thresholds.
 
@@ -136,6 +141,15 @@ The live implementation is authoritative when this page and code disagree:
 Current campaign flags are module options for
 `python -m bigcherry.patch.validation_campaign`, not top-level `bigcherry`
 commands:
+
+`--baseline-source NAME` selects the explicit named CONTROL composition from
+`config/recipes.toml` (default `bigcherry`). SUBJECT adds the focal patch to
+that same composition. Both resolve against the configured pin; the evidence
+records the baseline name and exact patch/digest list. This does not subtract
+a patch from a production source or relax dependencies: a focal already in
+the selected baseline still blocks the comparison. Core-patch qualification
+therefore needs a deliberately declared, reviewed baseline and its applicable
+contract producers; merely selecting another source is not qualification.
 
 | Flag | Role | Final promotion evidence? |
 | --- | --- | --- |
