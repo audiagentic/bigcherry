@@ -36,9 +36,15 @@ class NativeSelectTimingContractTests(unittest.TestCase):
         self.assertIn('getenv("GGML_HIP_NATIVE_SELECT_TIMING")', self.src)
 
     def test_disabled_by_default(self):
-        idx = self.src.index("static bool native_select_timing_enabled() {")
-        window = self.src[idx:idx + 300]
-        self.assertIn("static std::atomic<bool> enabled{false};", window)
+        # HI159/GP11: strengthened from a runtime atomic defaulting to false
+        # to compile-time absence. A production build carries no timing code
+        # at all unless GGML_HIP_DISPATCH_DIAGNOSTICS is defined; within a
+        # diagnostics build it remains opt-in via the env var.
+        idx = self.src.index("bool native_select_timing_enabled() {")
+        window = self.src[idx:idx + 500]
+        self.assertIn("#ifndef GGML_HIP_DISPATCH_DIAGNOSTICS", window)
+        self.assertIn("return false;", window)
+        self.assertIn('getenv("GGML_HIP_NATIVE_SELECT_TIMING")', window)
 
     def test_two_independent_sample_counters_not_one_shared(self):
         # A shared counter alternates parity between the two call sites (one
@@ -68,7 +74,12 @@ class NativeSelectTimingContractTests(unittest.TestCase):
             )
 
     def test_native_select_call_site_is_timed(self):
-        idx = self.src.index("ggml_hip_native_select(ctx, src0, src1, ids, dst);")
+        # HI158/GP11: the selection is no longer called from the dispatch
+        # entry point. It is computed at most once, on demand, inside
+        # ggml_hip_native_force -- so that is where the sample timer lives,
+        # and it still measures one real native_select wherever demanded.
+        idx = self.src.index(
+            "provider.cached = ggml_hip_native_select(")
         window = self.src[max(0, idx - 500):idx + 500]
         self.assertIn("sample_native_select", window)
         self.assertIn("std::chrono::steady_clock::now()", window)

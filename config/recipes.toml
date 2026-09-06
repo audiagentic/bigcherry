@@ -442,7 +442,14 @@ behavioral-classes = ["mtp-speculative"]
 # corpus edition this profile validates against -- publishing a new
 # edition (a new fixtures/corpus-<edition>.toml file) never requires a
 # code change, only bumping this string.
-behavioral-corpus-edition = "qwen38-production-v1"
+# GP11 2026-09-06: bumped v1 -> v2. v1 had ONE vector at n_predict=128, so
+# the gate certified a single generation length. Campaign 27e45ae32ec4 passed
+# v1 validation, and a balanced A/B on its published cache then measured
+# tg512 -8.98% and tg2048 -5.54% (complete separation) with MTP acceptance
+# 0.94734 -> 0.86391, bit-identical across all 16 cells. tg128 -- the one
+# length v1 tests -- was the only metric that improved. v2 keeps the HI141
+# vector unchanged and adds 512 and 2048.
+behavioral-corpus-edition = "qwen38-production-v2"
 
 [runtime-profile.hi134-layer-split-control]
 # HI134 step 5: negative control for the __amd_rocclr_copyBufferRectAligned
