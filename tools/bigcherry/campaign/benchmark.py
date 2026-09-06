@@ -512,6 +512,7 @@ def run_server_arm_capture(
     required_metrics: tuple[str, ...], repetitions: int = 1,
     shutdown_method: str = "http",
     expected_execution: dict[str, Any] | None = None,
+    execution_evidence: str = "required",
 ) -> dict[str, Any]:
     """Capture one server-bench cell using the maintained process lifecycle.
 
@@ -525,6 +526,8 @@ def run_server_arm_capture(
 
     if not required_metrics:
         raise ValueError("server cells require explicit expected metrics")
+    if execution_evidence not in ("required", "observe"):
+        raise ValueError("execution_evidence must be required or observe")
     if pair < 0 or position < 0 or not re.fullmatch(r"[A-Za-z0-9_-]+", side):
         raise ValueError("invalid cell identity")
     cell = output / f"pair-{pair + 1:03d}-{side}"
@@ -558,7 +561,12 @@ def run_server_arm_capture(
                     architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
                 )
                 run["execution_attestation"] = observed.document() if observed else None
-                require_execution_identity(expected, observed, context=f"server cell {side}")
+                if observed is None and execution_evidence == "observe":
+                    run["execution_evidence_status"] = "missing"
+                    run["admission_blockers"] = ["physical-device execution evidence missing"]
+                else:
+                    require_execution_identity(expected, observed, context=f"server cell {side}")
+                    run["execution_evidence_status"] = "verified"
             run["metrics"] = run_bench_runner_server_bench(
                 server_url=f"http://{server.host}:{server.port}",
                 bench_configs=bench_configs, repetitions=repetitions,
@@ -619,6 +627,11 @@ def run_server_comparison_capture(
         raise ValueError("repetitions must be a positive integer")
     supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
     expected_execution = config.get("expected_execution")
+    execution_evidence = config.get("execution_evidence", "required")
+    if execution_evidence not in ("required", "observe"):
+        raise ValueError("execution_evidence must be required or observe")
+    if "execution_attestor" in config:
+        raise ValueError("optional execution_attestor integration is deferred under HI169")
     if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
         raise ValueError("server comparison requires expected_execution backend, architectures and physical device locators")
     from bigcherry.experiment.attestation import ExecutionIdentity
@@ -728,6 +741,7 @@ def run_server_comparison_capture(
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
                 expected_execution=expected_execution,
+                execution_evidence=execution_evidence,
             )
             summary["runs"].append(result)
             persist()

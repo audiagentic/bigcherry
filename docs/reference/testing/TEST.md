@@ -370,11 +370,21 @@ BC defaults to its HTTP endpoint.
 
 Current limitation: tensor split with `--fit off` can report only the virtual
 `Meta()` backend, and normal production logging may omit device details.
-Such a cell currently fails device attestation before the endpoint benchmark
-starts. Do not bypass this gate or infer physical-device execution from the
-visibility variables, build targets, or a successful model load. Increasing
+By default (`execution_evidence: required`), such a cell fails before timing.
+For explicitly exploratory baseline collection, set `execution_evidence` to
+`observe` in the local server config. This records missing device evidence as
+an admission blocker while collecting endpoint measurements; it does not mark
+execution evidence verified. Known CPU initialization failures or observed
+device mismatches still reject the cell. Source/build, instrumentation and
+clean-shutdown checks remain enforced. Never infer physical-device execution
+from visibility variables, build targets, or a successful model load. Increasing
 verbosity alone does not supply the missing physical membership for this path;
 any diagnostic logging run must remain separate from default-logging timing.
+
+This baseline-first mode is not contract qualification or a final parity
+verdict. Optional process-memory/ABI attestation is tracked separately in HI169
+and is not part of this capture path. Evidence capture suppresses external
+uploads; the maintained harness still appends its local result records.
 
 `run.json` deliberately retains `performance_admitted: false`. Exploratory
 paired estimates are not a parity verdict: full source provenance, work

@@ -251,7 +251,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             "locators": ["0000:01:00.0", "0000:02:00.0"],
         }
 
-    def run_cell(self, startup):
+    def run_cell(self, startup, execution_evidence="required"):
         class Server:
             def __init__(self, **kwargs):
                 self.host, self.port = "127.0.0.1", 4567
@@ -274,6 +274,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
                 output=self.root, pair=0, side="native", position=0, env={},
                 bench_configs="mtp-dual", runner_root=Path("runner"),
                 required_metrics=("tg128_tps",), expected_execution=self.expected,
+                execution_evidence=execution_evidence,
             )
         return result, bench
 
@@ -310,3 +311,25 @@ class ServerExecutionAttestationTests(unittest.TestCase):
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
         self.assertTrue(result["shutdown"]["requested"])
+
+    def test_explicit_observation_collects_missing_evidence_without_admission(self):
+        result, bench = self.run_cell("server is ready\n", "observe")
+        bench.assert_called_once()
+        self.assertEqual(result["returncode"], 0)
+        self.assertFalse(result["performance_admitted"])
+        self.assertEqual(result["execution_evidence_status"], "missing")
+        self.assertIsNone(result["execution_attestation"])
+        self.assertIn("physical-device execution evidence missing", result["admission_blockers"])
+
+    def test_observation_does_not_ignore_cpu_fallback_or_wrong_devices(self):
+        for startup in (
+            "failed to initialize ROCm: no ROCm-capable device is detected\n",
+            "using device ROCm0 (AMD) (0000:03:00.0)\n",
+        ):
+            with self.subTest(startup=startup):
+                # Each cell retains a fresh artifact directory.
+                self.root = self.root / "next"
+                result, bench = self.run_cell(startup, "observe")
+                bench.assert_not_called()
+                self.assertEqual(result["returncode"], 1)
+                self.assertNotIn("metrics", result)
