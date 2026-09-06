@@ -38,9 +38,22 @@ class Hi69CorrectnessTimingContractTests(unittest.TestCase):
         self.assertNotIn("CORRECTNESS_PROFILING", self.src)
 
     def test_disabled_by_default(self):
-        idx = self.src.index("static bool hi69_correctness_timing_enabled() {")
-        window = self.src[idx:idx + 300]
-        self.assertIn("static std::atomic<bool> enabled{false};", window)
+        # HI159/GP11: contract changed from a checked/enabled atomic PAIR to a
+        # function-local static. The old form ran `checked.exchange(true)` on
+        # EVERY call -- an unconditional atomic WRITE to a shared cache line,
+        # paid just to discover that timing was disabled. A magic static is
+        # initialised once, thread-safely, and costs a guard load thereafter.
+        #
+        # Deliberately NOT asserting a compile-time gate here, unlike the
+        # dispatch-side predicates: this lives in hip-autotune-tuner.cu, which
+        # is compiled only when GGML_HIP_AUTOTUNE is ON. It is therefore
+        # already absent from a production replay build because the entire
+        # translation unit is.
+        idx = self.src.index("bool hi69_correctness_timing_enabled() {")
+        window = self.src[idx:idx + 400]
+        self.assertIn("static const bool enabled = [] {", window)
+        self.assertNotIn("checked.exchange(true)", window)
+        self.assertIn('getenv("GGML_HIP_TUNE_CORRECTNESS_TIMING")', window)
 
     def test_cold_tuner_scope_is_raii_not_per_return_site(self):
         # ggml_hip_tuner_resolve_impl has ~25 exit sites (the function's own

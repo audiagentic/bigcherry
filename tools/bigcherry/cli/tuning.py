@@ -462,7 +462,49 @@ def cmd_tune_campaign(args: Namespace) -> int:
         print(f"promoted: {receipt.promoted_before_evidence} -> {receipt.promoted_after_evidence}")
         if receipt.replay_coverage is not None:
             print(f"replay coverage: {receipt.replay_coverage}")
-        print(
-            f"receipt: {context.work_root / 'tune-campaigns' / receipt.campaign_run_id / 'tune-campaign-receipt.json'}"
+        campaign_dir = (
+            context.work_root / "tune-campaigns" / receipt.campaign_run_id
         )
+        print(f"receipt: {campaign_dir / 'tune-campaign-receipt.json'}")
+        _emit_campaign_advisories(campaign_dir, receipt)
     return 0
+
+
+def _emit_campaign_advisories(campaign_dir, receipt) -> None:
+    """Tell the operator what this result does and does not establish.
+
+    Best-effort by construction: a campaign that has already spent real GPU
+    hours must not fail at the last line because an advisory input was
+    missing or malformed, so every read here is guarded and any failure
+    silently yields fewer advisories.
+    """
+    try:
+        import json as _json
+
+        from bigcherry.tuning.advisories import advisories_for_campaign, emit
+
+        def _load(name):
+            path = campaign_dir / name
+            try:
+                return _json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+
+        vectors = ()
+        gate = _load("behavioral-gate.json")
+        if isinstance(gate, dict):
+            raw = gate.get("vectors") or gate.get("selected_vectors") or []
+            vectors = tuple(
+                type("V", (), {"n_predict": v.get("n_predict"), "scenario": v.get("scenario")})()
+                for v in raw
+                if isinstance(v, dict)
+            )
+
+        emit(advisories_for_campaign(
+            replay_coverage=getattr(receipt, "replay_coverage", None),
+            recovery_result=_load("recovery-result.json"),
+            corpus_vectors=vectors,
+            inventory=_load("inventory.json"),
+        ))
+    except Exception:
+        pass
