@@ -230,6 +230,113 @@ class GrandfatherIdentityTests(unittest.TestCase):
 
 
 class RequireExecutionPackageTests(unittest.TestCase):
+    def _framework_descriptor(self, root: Path, adapter: str) -> object:
+        """Create a local, non-RD framework descriptor for execution tests."""
+        from bigcherry.patch import registry as patch_registry
+
+        package = _write_patch_package(root, with_readme=True)
+        metadata = PATCH_TOML.replace('kind = "enhancement"', 'kind = "framework"')
+        metadata = metadata.replace('origin = "external-fork"', 'origin = "local"')
+        (package / "patch.toml").write_text(metadata, encoding="utf-8")
+        (package / "validation.toml").write_text(adapter, encoding="utf-8")
+        return patch_registry.load_registry(root).get("9999_example_patch")
+
+    def test_zero_contract_execution_is_limited_to_local_non_rd_framework(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+        for kind, origin, extra, allowed in (
+            ("framework", "local", "", True),
+            ("enhancement", "local", "", False),
+            ("framework", "external-fork", "", False),
+            ("framework", "local", 'plan-ids = ["RD01"]\n', False),
+            ("framework", "local", 'external-source = "example"\n', False),
+        ):
+            with self.subTest(kind=kind, origin=origin, extra=extra), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                package = _write_patch_package(root, with_readme=True)
+                metadata = PATCH_TOML.replace('kind = "enhancement"', f'kind = "{kind}"')
+                metadata = metadata.replace('origin = "external-fork"', f'origin = "{origin}"')
+                (package / "patch.toml").write_text(metadata + extra, encoding="utf-8")
+                (package / "validation.toml").write_text(
+                    'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n'
+                    '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
+                    encoding="utf-8")
+                descriptor = patch_registry.load_registry(root).get("9999_example_patch")
+                if not allowed:
+                    with self.assertRaisesRegex(vp.PolicyError, "no experiment-contract"):
+                        vp.require_execution_package(descriptor, root=root)
+                    continue
+                plan = vp.require_execution_package(descriptor, root=root)
+                self.assertEqual(plan.contracts, ())
+                self.assertEqual(set(plan.required_capabilities), {"apply", "build"})
+                self.assertFalse(vp.patch_validation.compute_verdict(plan, {}).eligible)
+                (package / "validation.toml").unlink()
+                descriptor = patch_registry.load_registry(root).get("9999_example_patch")
+                with self.assertRaisesRegex(vp.PolicyError, "no validation.toml"):
+                    vp.require_execution_package(descriptor, root=root)
+
+    def test_zero_contract_framework_requires_readme_for_execution(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            package = _write_patch_package(root, with_readme=False)
+            metadata = PATCH_TOML.replace('kind = "enhancement"', 'kind = "framework"')
+            metadata = metadata.replace('origin = "external-fork"', 'origin = "local"')
+            (package / "patch.toml").write_text(metadata, encoding="utf-8")
+            (package / "validation.toml").write_text(
+                'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n'
+                '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
+                encoding="utf-8",
+            )
+            descriptor = patch_registry.load_registry(root).get("9999_example_patch")
+            with self.assertRaisesRegex(vp.PolicyError, "missing README\\.md"):
+                vp.require_execution_package(descriptor, root=root)
+
+    def test_zero_contract_framework_requires_apply_and_build_producers(self) -> None:
+        for missing, adapter in (
+            (
+                "build",
+                'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n',
+            ),
+            (
+                "apply",
+                'schema = 1\n[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
+            ),
+        ):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                descriptor = self._framework_descriptor(root, adapter)
+                with self.assertRaisesRegex(
+                    vp.patch_validation.ConfigurationError,
+                    rf"required capabilities with no producer: .*{missing}"
+                ):
+                    vp.require_execution_package(descriptor, root=root)
+
+    def test_zero_contract_framework_rejects_malformed_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            descriptor = self._framework_descriptor(root, "schema = 99\n")
+            with self.assertRaisesRegex(vp.patch_validation.ConfigurationError, "unsupported schema"):
+                vp.require_execution_package(descriptor, root=root)
+
+    def test_zero_contract_framework_rejects_unresolvable_bound_contract(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            package = _write_patch_package(root, with_readme=True)
+            metadata = PATCH_TOML.replace('kind = "enhancement"', 'kind = "framework"')
+            metadata = metadata.replace('origin = "external-fork"', 'origin = "local"')
+            metadata += 'experiment-contract = "missing-contract-for-execution-test"\n'
+            (package / "patch.toml").write_text(metadata, encoding="utf-8")
+            (package / "validation.toml").write_text(
+                'schema = 1\n[[check]]\nid = "apply"\ncapability = "apply"\nvalidator = "apply"\n'
+                '[[check]]\nid = "build"\ncapability = "build"\nvalidator = "build"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(patch_registry.PatchRegistryError, "not found"):
+                patch_registry.load_registry(root).get("9999_example_patch")
+
     def test_refuses_execution_for_grandfathered_but_packageless_patch(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

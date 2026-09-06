@@ -23,6 +23,7 @@ import inspect
 import re
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -42,7 +43,7 @@ class PinResolutionTests(unittest.TestCase):
         self.assertNotIn("requested_revision=\"HEAD\"", self.source)
 
     def test_cfg_pinned_used_for_both_resolve_source_composition_calls(self) -> None:
-        matches = re.findall(r"resolve_source_composition\(\s*\n\s*\"bigcherry\", [^\n]*base_ref=cfg\.pinned", self.source)
+        matches = re.findall(r"resolve_source_composition\(\s*\n\s*baseline_source, [^\n]*base_ref=cfg\.pinned", self.source)
         self.assertEqual(len(matches), 2, "both control and subject resolve_source_composition() calls must use base_ref=cfg.pinned")
 
     def test_cfg_pinned_used_for_all_four_requested_revision_sites(self) -> None:
@@ -69,6 +70,20 @@ class PinResolutionTests(unittest.TestCase):
 
     def test_evidence_base_ref_still_uses_cfg_pinned(self) -> None:
         self.assertIn("base_ref=cfg.pinned,", self.source)
+
+    def test_baseline_source_is_recorded_with_exact_composition(self) -> None:
+        self.assertIn('baseline_composition={"source": baseline_source', self.source)
+        self.assertIn('"patches": list(control_composition)', self.source)
+
+    def test_cli_preserves_default_and_accepts_explicit_named_baseline(self) -> None:
+        required = ["--patch", "0100_cmake_options", "--model", "model.gguf",
+                    "--hip-path", "rocm", "--amdgpu-targets", "gfx1100",
+                    "--manifest", "manifest.json", "--workdir", "run"]
+        for extra, expected in (([], "bigcherry"),
+                                (["--baseline-source", "framework-control"], "framework-control")):
+            with self.subTest(baseline=expected), mock.patch.object(vc, "run", return_value=0) as run:
+                self.assertEqual(vc.main(required + extra), 0)
+                self.assertEqual(run.call_args.args[0].baseline_source, expected)
 
 
 if __name__ == "__main__":

@@ -249,8 +249,11 @@ explicit review that resets it to `untested` before new validation.
 Never weaken these rules to get a green report:
 
 - `BLOCKED`, `ERROR`, and missing results are not `PASS`.
-- A validation-ready package must bind a resolvable Experiment Contract and
-  provide a producer for every universal and contract-required capability.
+- A validation-ready experimental package must bind a resolvable Experiment
+  Contract. Local non-RD framework packages without external-source bindings
+  may execute a package-local adapter with zero contracts; that is not current
+  qualification or a throughput claim. Every package must provide producers
+  for all universal and bound-contract-required capabilities.
 - Required checks must pass individually. `not_applicable` never satisfies a
   required check.
 - A benchmark artifact existing is not proof that the target path executed;

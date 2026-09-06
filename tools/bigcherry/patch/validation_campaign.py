@@ -2168,11 +2168,12 @@ def run(args: argparse.Namespace) -> int:
     # config/recipes.toml (never the retired implicit state=='validated'
     # scan), resolved through the exact-composition validator; the base ref
     # resolves to an immutable SHA that enters the v2 source identity.
+    baseline_source = getattr(args, "baseline_source", "bigcherry")
     control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry", focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+        baseline_source, focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
         raise RuntimeError("control and subject source plans resolved different base revisions")
@@ -3214,6 +3215,7 @@ def run(args: argparse.Namespace) -> int:
             contract=validation_plan.contract,
             contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
             run_dir=campaign_run_dir,
+            register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
             trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
             performance_evidence=performance_evidence,
         )
@@ -3331,7 +3333,8 @@ def run(args: argparse.Namespace) -> int:
         validation_implementation_digest=_descriptor.validation_digest,
         contracts=validation_contracts,
         contract_verdicts=validation_contract_verdicts,
-        baseline_composition={"base_revision": base_revision},
+        baseline_composition={"source": baseline_source, "base_revision": base_revision,
+                              "patches": list(control_composition)},
         control_composition={"base_revision": base_revision, "patches": list(control_composition)},
         subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
         control_tree=control_source_tree,
@@ -3352,6 +3355,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
     parser.add_argument("--patch", required=True,
                          help="patch module name under patches/")
+    parser.add_argument("--baseline-source", default="bigcherry",
+                         help="explicit named source composition for CONTROL; SUBJECT adds "
+                              "only the focal patch. The focal must be absent from this "
+                              "baseline; dependencies/conflicts remain enforced.")
     parser.add_argument("--model", required=True, type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
     parser.add_argument("--amdgpu-targets", required=True, help="e.g. gfx1100 or gfx1201")

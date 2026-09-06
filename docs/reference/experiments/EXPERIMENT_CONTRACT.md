@@ -346,4 +346,3 @@ evidence document and returns failure when the promotion gate fails.
 When adding a contract, update its owning plan item and add schema/identity,
 negative-case, lane-expansion, evidence, and promotion-gate tests. Keep
 historical design discussions in `docs/archive/`, not in this reference.
-
