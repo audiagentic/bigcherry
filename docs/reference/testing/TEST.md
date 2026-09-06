@@ -334,6 +334,11 @@ expanded at execution. For example:
   "model": "$BC_MODEL_ROOT/<model>/<model>.gguf",
   "server_args": ["-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096", "-np", "1"],
   "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": ["gfx1100", "gfx1100"],
+    "locators": ["<first-device-PCI-BDF>", "<second-device-PCI-BDF>"]
+  },
   "bench_configs": "default",
   "required_metrics": ["pp512_tps", "tg128_tps"],
   "repetitions": 1,
@@ -357,14 +362,15 @@ PYTHONPATH=tools python3 -m bigcherry ab-benchmark \
 Two arms require complete two-order blocks; three require six-order blocks.
 Use separate contrasts for larger build matrices. Capture validates the
 instrumentation role against compiler observations, checks runtime bytes
-against campaign metadata, retains the full bench-config content and cell
+against campaign metadata, verifies each server's own startup device evidence
+against the expected physical devices before timing, retains bench-config content and cell
 streams, and rejects unclean shutdown. Diagnostic builds require a separate
 `evidence_role: diagnostic` capture. Stock uses upstream SIGINT shutdown;
 BC defaults to its HTTP endpoint.
 
 `run.json` deliberately retains `performance_admitted: false`. Exploratory
-paired estimates are not a parity verdict: execution identity, full source
-provenance, work equivalence and applicable replay activation still need
+paired estimates are not a parity verdict: full source provenance, work
+equivalence and applicable replay activation still need
 admission. `--decision-grade` cannot be combined with this capture mode.
 
 ### 1. Never run arms in a fixed order

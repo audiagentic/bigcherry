@@ -89,6 +89,10 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             "required_metrics": ["tg128_tps"], "bench_configs": "mtp-dual",
             "runner_root": str(self.runner), "repetitions": 1,
             "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+            "expected_execution": {
+                "backend": "ROCm", "architectures": ["gfx1100", "gfx1100"],
+                "locators": ["0000:01:00.0", "0000:02:00.0"],
+            },
             "arms": self.arms,
         }
 
@@ -156,3 +160,74 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(len(summary["runs"]), 1)
         self.assertNotIn("exploratory_comparisons", summary)
+
+
+class ServerExecutionAttestationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.expected = {
+            "backend": "ROCm", "architectures": ["gfx1100", "gfx1100"],
+            "locators": ["0000:01:00.0", "0000:02:00.0"],
+        }
+
+    def run_cell(self, startup):
+        class Server:
+            def __init__(self, **kwargs):
+                self.host, self.port = "127.0.0.1", 4567
+                self.last_shutdown = None
+                self.log_path = kwargs["log_path"]
+
+            def __enter__(self):
+                self.log_path.write_text(startup, encoding="utf-8")
+                return self
+
+            def __exit__(self, *args):
+                self.last_shutdown = ShutdownResult("http", True, False, 0)
+
+        with patch("bigcherry.tuning.server_runner.ServerRunner", Server), patch(
+            "bigcherry.campaign.bench_runner.run_bench_runner_server_bench",
+            return_value={"tg128_tps": 30.0},
+        ) as bench:
+            result = run_server_arm_capture(
+                binary=Path("server"), model=Path("model"), extra_args=(),
+                output=self.root, pair=0, side="native", position=0, env={},
+                bench_configs="mtp-dual", runner_root=Path("runner"),
+                required_metrics=("tg128_tps",), expected_execution=self.expected,
+            )
+        return result, bench
+
+    def test_matching_attestation_allows_bench(self):
+        startup = (
+            "I llama_prepare_model_devices: using device ROCm0 (AMD Radeon RX 7900 XTX) (0000:01:00.0)\n"
+            "I llama_prepare_model_devices: using device ROCm1 (AMD Radeon RX 7900 XTX) (0000:02:00.0)\n"
+            "D load_tensors: layer 0 assigned to device ROCm0\n"
+        )
+        result, bench = self.run_cell(startup)
+        bench.assert_called_once()
+        self.assertEqual(result["returncode"], 0)
+        self.assertEqual(result["metrics"], {"tg128_tps": 30.0})
+        self.assertEqual(result["execution_attestation"]["backend"], "ROCm")
+
+    def test_wrong_physical_device_blocks_bench(self):
+        startup = "using device ROCm0 (AMD Radeon RX 7900 XTX) (0000:03:00.0)\n"
+        result, bench = self.run_cell(startup)
+        bench.assert_not_called()
+        self.assertEqual(result["returncode"], 1)
+        self.assertNotIn("metrics", result)
+        self.assertTrue(result["shutdown"]["requested"])
+
+    def test_cpu_fallback_blocks_bench(self):
+        result, bench = self.run_cell("failed to initialize ROCm: no ROCm-capable device is detected\n")
+        bench.assert_not_called()
+        self.assertEqual(result["returncode"], 1)
+        self.assertNotIn("metrics", result)
+        self.assertTrue(result["shutdown"]["requested"])
+
+    def test_missing_attestation_blocks_bench(self):
+        result, bench = self.run_cell("server is ready\n")
+        bench.assert_not_called()
+        self.assertEqual(result["returncode"], 1)
+        self.assertNotIn("metrics", result)
+        self.assertTrue(result["shutdown"]["requested"])
