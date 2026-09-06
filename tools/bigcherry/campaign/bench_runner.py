@@ -91,13 +91,19 @@ def run_bench_runner_server_bench(
         "--toggles", json.dumps({"repetitions": repetitions}),
     ]
     if evidence_dir is not None:
-        evidence_dir.mkdir(parents=True, exist_ok=False)
         config_path = runner_root / "bench" / "config" / "bench-configs.json"
+        if not config_path.is_file():
+            raise BenchRunnerError(
+                f"bench config not found at {config_path}; "
+                "evidence capture requires the exact bench-configs.json"
+            )
+        config_bytes = config_path.read_bytes()
+        evidence_dir.mkdir(parents=True, exist_ok=False)
+        (evidence_dir / "bench-configs.json").write_bytes(config_bytes)
         (evidence_dir / "request.json").write_text(json.dumps({
             "command": command, "cwd": str(runner_root),
             "runner_sha256": hashlib.sha256(runner_path.read_bytes()).hexdigest(),
-            "bench_config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest()
-            if config_path.is_file() else None,
+            "bench_config_sha256": hashlib.sha256(config_bytes).hexdigest(),
             "required_metrics": list(required_metrics),
         }, indent=2) + "\n", encoding="utf-8")
 

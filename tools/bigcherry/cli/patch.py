@@ -242,6 +242,7 @@ def cmd_patch_disposition(args: Namespace) -> int:
 def cmd_patch_verify_evidence(args: Namespace) -> int:
     """Report current validation evidence for selected patches."""
     from ..core import config as campaign_config
+    from ..core.context import ProjectContext
     from ..source.workspace import UpstreamRepository, WorkspaceError
 
     cfg = campaign_config.load(paths.RECIPES)
@@ -259,7 +260,10 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
     # fetch); if the configured pin cannot resolve locally, fail closed
     # with a real CLI error rather than silently skipping the check.
     try:
-        resolved_base_revision = UpstreamRepository(paths.llama_root()).resolve_ref(cfg.pinned)
+        import os
+        mirror = ProjectContext.resolve(work_root=os.environ.get("BC_CACHE")).upstream_repo
+        upstream = mirror if mirror.exists() else paths.llama_root()
+        resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)
     except WorkspaceError as exc:
         print(f"patch-verify-evidence: cannot resolve pin {cfg.pinned!r} locally: {exc}", file=sys.stderr)
         return 2
