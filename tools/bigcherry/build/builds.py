@@ -464,6 +464,61 @@ def _load_commands(build_dir: Path, env: Mapping[str, str]) -> tuple[str, tuple[
     return "ninja -t commands", commands
 
 
+def inspect_dispatch_build(build_dir: Path) -> dict[str, object]:
+    """Observe instrumentation from compiler commands, not recipe labels.
+
+    Read-only preflight for any campaign/model/topology. This does not prove
+    that binaries match the commands or that a runtime path executed; retain
+    normal completed-build and runtime activation evidence for those claims.
+    """
+    build_dir = Path(build_dir).resolve()
+    cache = _read_cmake_cache_raw(build_dir)
+    command_source, commands = _load_commands(build_dir, dict(os.environ))
+    hip = tuple(command for command in commands if _is_hip_compile(command))
+    if not hip:
+        raise BuildIdentityError("no HIP compilation found for dispatch inspection")
+    flags = (
+        "GGML_HIP_DISPATCH", "GGML_HIP_AUTOTUNE", "GGML_HIP_AUTOTUNE_RECORD",
+        "GGML_HIP_DISPATCH_REPLAY", "GGML_HIP_DISPATCH_DIAGNOSTICS",
+        "GGML_HIP_REPLAY_DIAGNOSTICS", "GGML_HIP_WORKSPACE_METRICS",
+    )
+    # These are #ifdef-controlled capabilities: -DMACRO=0 still defines one.
+    counts = {name: 0 for name in flags}
+    for command in hip:
+        definitions = _cmake_defines(_flag_tokens(command.text))
+        for name in counts:
+            counts[name] += name in definitions
+    sources = [command.source.replace("\\", "/") for command in commands]
+    # Ninja fallback has no source field; inspect actual compile lines only,
+    # never a link line naming the object as a proxy for compilation.
+    coverage = any(
+        source.endswith("/hip-autotune-coverage.cpp") or
+        (not source and " -c " in f" {command.text} " and
+         re.search(r"hip-autotune-coverage\.cpp(?:[\"']|\s|$)", command.text))
+        for source, command in zip(sources, commands)
+    )
+    diagnostic_flags = [name for name in flags if counts[name] and name in {
+        "GGML_HIP_AUTOTUNE", "GGML_HIP_AUTOTUNE_RECORD",
+        "GGML_HIP_DISPATCH_DIAGNOSTICS", "GGML_HIP_REPLAY_DIAGNOSTICS",
+        "GGML_HIP_WORKSPACE_METRICS",
+    }]
+    issues = []
+    if coverage and not counts["GGML_HIP_DISPATCH_DIAGNOSTICS"]:
+        issues.append("coverage translation unit present without dispatch diagnostics")
+    if counts["GGML_HIP_DISPATCH_DIAGNOSTICS"] and not coverage:
+        issues.append("dispatch diagnostics present without coverage translation unit")
+    return {
+        "build_dir": str(build_dir), "command_source": command_source,
+        "hip_compile_command_count": len(hip),
+        "declared_options": {name: cache.get(name) for name in flags},
+        "compiled_definition_counts": counts,
+        "diagnostic_flags": diagnostic_flags,
+        "instrumented": bool(diagnostic_flags or coverage),
+        "coverage_translation_unit": bool(coverage), "issues": issues,
+        "scope": "compile configuration only; not binary integrity or runtime activation",
+    }
+
+
 def _replace_root(text: str, root: Path, token: str) -> str:
     values = {str(root), str(root.resolve())}
     for value in list(values):

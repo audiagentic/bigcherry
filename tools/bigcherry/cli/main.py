@@ -924,8 +924,9 @@ def build_parser() -> argparse.ArgumentParser:
         "ab-benchmark",
         help="paired, interleaved native-versus-replay end-to-end benchmark",
     )
-    ab.add_argument("--cache", required=True)
-    ab.add_argument("--output", required=True)
+    ab.add_argument("--inspect-build", help="read-only compiler/diagnostic inventory; no hardware execution")
+    ab.add_argument("--cache")
+    ab.add_argument("--output")
     ab.add_argument("--pairs", type=int, default=3)
     ab.add_argument("--schedule-seed", type=int, default=0)
     ab.add_argument("--structured", action="store_true")
@@ -965,10 +966,9 @@ def build_parser() -> argparse.ArgumentParser:
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
-                "--cache",
-                args.cache,
-                "--output",
-                args.output,
+                *(["--inspect-build", args.inspect_build] if args.inspect_build else []),
+                *(["--cache", args.cache] if args.cache else []),
+                *(["--output", args.output] if args.output else []),
                 "--pairs",
                 str(args.pairs),
                 "--schedule-seed",
@@ -997,8 +997,7 @@ def build_parser() -> argparse.ArgumentParser:
                     if args.patched_cmake_cache
                     else []
                 ),
-                "--",
-                *args.command,
+                *(["--", *args.command] if args.command else []),
             ]
         )
     )

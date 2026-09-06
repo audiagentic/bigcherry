@@ -6,14 +6,17 @@ import re
 import json
 import itertools
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.campaign import benchmark as ab_benchmark # noqa: E402
+from bigcherry.build.builds import inspect_dispatch_build  # noqa: E402
 
 
 def _python_executable() -> str:
@@ -24,6 +27,46 @@ def _python_executable() -> str:
 
 
 class Pairing(unittest.TestCase):
+    def test_build_inventory_observes_implicit_diagnostics_despite_cache_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "CMakeCache.txt").write_text(
+                "GGML_HIP_DISPATCH_DIAGNOSTICS:BOOL=OFF\nGGML_HIP_AUTOTUNE:BOOL=ON\n")
+            (root / "compile_commands.json").write_text(json.dumps([
+                {"file": "/src/ggml-cuda/mmq.cu", "arguments": [
+                    "clang++", "-DGGML_HIP_DISPATCH", "-DGGML_HIP_AUTOTUNE",
+                    "-DGGML_HIP_DISPATCH_DIAGNOSTICS", "-c", "/src/ggml-cuda/mmq.cu"]},
+                {"file": "/src/ggml-cuda/hip-autotune-coverage.cpp",
+                 "command": "clang++ -c /src/ggml-cuda/hip-autotune-coverage.cpp"},
+            ]))
+            result = inspect_dispatch_build(root)
+            self.assertEqual(result["declared_options"]["GGML_HIP_DISPATCH_DIAGNOSTICS"], "OFF")
+            self.assertIn("GGML_HIP_DISPATCH_DIAGNOSTICS", result["diagnostic_flags"])
+            self.assertTrue(result["instrumented"])
+            self.assertEqual(result["issues"], [])
+            with patch("bigcherry.campaign.benchmark.subprocess.run") as run:
+                self.assertEqual(ab_benchmark.main(["--inspect-build", str(root)]), 0)
+            run.assert_not_called()
+            completed = subprocess.run(
+                [_python_executable(), "-m", "bigcherry", "ab-benchmark", "--inspect-build", str(root)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(json.loads(completed.stdout)["instrumented"])
+
+    def test_build_inventory_detects_old_coverage_leak(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "CMakeCache.txt").write_text("GGML_HIP_DISPATCH_DIAGNOSTICS:BOOL=OFF\n")
+            (root / "compile_commands.json").write_text(json.dumps([
+                {"file": "/src/mmq.cu", "command": "clang++ -DGGML_HIP_DISPATCH -c /src/mmq.cu"},
+                {"file": "/src/hip-autotune-coverage.cpp", "command": "clang++ -c /src/hip-autotune-coverage.cpp"},
+            ]))
+            result = inspect_dispatch_build(root)
+            self.assertTrue(result["instrumented"])
+            self.assertIn("without dispatch diagnostics", result["issues"][0])
+            self.assertEqual(ab_benchmark.main(["--inspect-build", str(root)]), 1)
+
     def test_order_alternates(self):
         self.assertEqual(ab_benchmark.pair_modes(0), ("native", "replay"))
         self.assertEqual(ab_benchmark.pair_modes(1), ("replay", "native"))

@@ -230,6 +230,17 @@ options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "inventory"
 needs = []
 
+# HI168: production-shaped framework baseline. The historical control build
+# above includes the tuner and implicit diagnostics; preserve its identity and
+# provide a distinct build instead of silently changing old campaign meaning.
+# Run this in MODE=native. For native-vs-winners isolation, use the SAME replay
+# binary in both modes, not this inventory-only candidate catalog.
+[build.native]
+description = "Production dispatch, native catalog, no tuner or diagnostics; run in native mode."
+options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "OFF", GGML_HIP_AUTOTUNE = "OFF" }
+variant-set = "inventory"
+needs = []
+
 [build.record]
 description = "Discovers which signatures a workload actually issues."
 options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_AUTOTUNE_RECORD = "ON" }
@@ -259,7 +270,7 @@ needs = ["inventory", "promoted-winners"]
 # what ships.
 [build.replay-diagnostic]
 description = "Replay with per-dispatch hit-log attribution -- validation only, not what ships."
-options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON" }
+options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
 variant-set = "replay-full"
 needs = ["inventory", "promoted-winners"]
 
@@ -338,6 +349,24 @@ lanes = [
   { source = "bigcherry", build = "record", platform = "linux-multi" },
   { source = "bigcherry", build = "tune", platform = "linux-multi" },
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
+]
+
+# HI168: reusable server build matrix, not a benchmark execution schedule.
+# Select architecture(s) with --arch; inventory/winners must belong to the
+# model/topology campaign. Native/replay modes share the production replay
+# binary during measurement. Record/tune/diagnostic lanes are observations,
+# never substitutes for an instrumentation-free throughput baseline.
+# audit/full-max remains opt-in: compiling every candidate is unnecessary for
+# an end-to-end workload-specific comparison.
+[campaign.e2e-build-matrix]
+lanes = [
+  { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # VA26: the repeatable patch-qualification matrix. `standard` above varies the
