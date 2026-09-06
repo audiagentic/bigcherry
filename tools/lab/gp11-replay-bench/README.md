@@ -19,7 +19,39 @@
 > coverage JSON, because llama-server's log callback swallows the library's
 > GGML_LOG_INFO lines -- that belongs in the maintained path, not in lab.
 
-Plan items: HI158 (lazy native provider), GP11 (dispatch overhead).
+Plan items: HI168 (current measurement owner), HI158 (lazy native provider), GP11 (dispatch overhead).
+
+## HI168 takeover audit (2026-09-06)
+
+No throughput conclusion is admitted by this audit. The Brutus run started at
+2026-09-06T12:17:15+10:00 writes `/home/audumla/tuned-nospec.log` and uses
+eight rounds, `SPEC_ARGS=` and `BENCH_CONFIGS=full`, with cache on/off in
+replay mode on the same build `6f1226a6bdbfa5750b567f3747410b4a`.
+Its CMake cache confirms AUTOTUNE=OFF, DISPATCH_DIAGNOSTICS=OFF and
+DISPATCH_REPLAY=ON. The source directory is
+`/home/audumla/.cache/bigcherry/sources/1ad3df0e2664faf5c46f6d4ea748cb76`.
+
+The executing runner does not set a per-cell coverage path, overwrites its
+server log each cell, and does not record successful process exit versus
+forced termination. Do not edit it while it runs. Its timing rows alone
+cannot establish activation or graceful teardown. A matching diagnostic
+build/run with final launch evidence still needs to be identified and bound
+to the production source, cache, model, devices and workload before attempting
+interpretation. Diagnostic timings must never substitute for production timings.
+
+The analyzer previously ignored a failed activation check and discovered cache
+arms only from visible cache-load messages, which llama-server can swallow.
+It now exits with status 2 before printing comparisons if the arm declaration
+is absent or a measured cache cell lacks a positive final tuned launch count.
+This is only an activation precondition: passing it is not proof of complete
+sampling, balanced order, equivalent work, build identity or graceful exit.
+It cannot admit the diagnostics-OFF production log by itself. Do not insert
+synthetic launch counts to make it pass.
+
+The historical conclusions below are preserved as investigation history;
+HI168 records their withdrawals and limitations. In particular, the old
+statement that kill -9 is acceptable is superseded by TEST.md: graceful
+teardown and retained evidence are required.
 
 ## Question
 

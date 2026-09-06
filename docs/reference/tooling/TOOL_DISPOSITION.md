@@ -473,7 +473,16 @@ ownership.
 | `tools/tests/test_workspace.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
 | `tools/verify_slice_a.py` | **MOVE** | HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI. |
 
-Inventory count: 397 script/tool files (vendor, build/cache, and artifacts excluded).
+## HI168 retained investigation tools
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/gp11-replay-bench/ab-balanced.sh` | **TRANSITIONAL** | HI168: preserve the executing historical server comparison; future runs belong in the maintained campaign path. |
+| `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
+| `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
+| `tools/lab/gp11-replay-bench/tune-per-card.sh` | **TRANSITIONAL** | HI168: retained investigation provenance; use tune-campaign for new tuning. |
+
+Inventory count: 401 script/tool files (vendor, build/cache, and artifacts excluded).
 
 ## Baseline blockers: reviewed and dispositioned (2026-08-25)
 
