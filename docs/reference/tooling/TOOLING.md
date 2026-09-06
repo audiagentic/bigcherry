@@ -46,7 +46,7 @@ stable facts that agents need are:
 
 - Canonical domain packages are established under `tools/bigcherry/` and
   permanent tests are organized under `tools/tests/`.
-- The current disposition control plane is the 397-row
+- The current disposition control plane is the 401-row
   [`TOOL_DISPOSITION.md`](TOOL_DISPOSITION.md). The immutable 383-row TR00
   implementation-start snapshot is preserved under
   [`docs/evidence/tooling-rationalisation/TR00/`](../../evidence/tooling-rationalisation/TR00/).

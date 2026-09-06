@@ -18,9 +18,9 @@
 // The difference is exactly what is escaping through uncovered collection
 // points (standards 9.1 lists five; HI04 covers two).
 //
-// Cost is one relaxed atomic increment per launch, on a path that is about to
-// do a matrix multiply. It stays compiled in because a coverage number nobody
-// can produce on demand is a coverage number nobody checks.
+// Diagnostic builds pay one relaxed atomic increment per counted launch.
+// Production call sites exclude both counting and its reentrancy probe with
+// GGML_HIP_DISPATCH_DIAGNOSTICS; setting a report path cannot enable them.
 
 #pragma once
 

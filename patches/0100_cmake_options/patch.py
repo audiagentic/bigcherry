@@ -22,6 +22,8 @@ both describe builds that should not exist:
 GROUP = "core"
 STATE = "validated"
 
+import re
+
 from bigcherry.patcher import Edit, FilePatch
 
 _OPTIONS = """
@@ -250,6 +252,18 @@ OPTIONS_PATCH = FilePatch(
     ),
 )
 
+_COVERAGE_SOURCE_OLD = (
+    '        "../ggml-cuda/hip-autotune-blake2b.cpp"\n'
+    '        "../ggml-cuda/hip-autotune-coverage.cpp")'
+)
+_COVERAGE_SOURCE_DIAGNOSTIC = (
+    '        "../ggml-cuda/hip-autotune-blake2b.cpp")\n'
+    '    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)\n'
+    '        list(APPEND _BC_DISPATCH_SOURCES\n'
+    '            "../ggml-cuda/hip-autotune-coverage.cpp")\n'
+    '    endif()'
+)
+
 HIP_BACKEND_PATCH = FilePatch(
     path="ggml/src/ggml-hip/CMakeLists.txt",
     description="HIP backend compile definitions, generated sources, SQLite",
@@ -274,6 +288,15 @@ HIP_BACKEND_PATCH = FilePatch(
                 '        "../ggml-cuda/hip-autotune-coverage.cpp")'
             ),
             guard=r'hip-autotune-coverage\.cpp',
+        ),
+        Edit(
+            id="hip-autotune-coverage-diagnostics-only",
+            anchor=re.escape(_COVERAGE_SOURCE_OLD),
+            text=_COVERAGE_SOURCE_DIAGNOSTIC,
+            mode="replace",
+            guard=re.escape(_COVERAGE_SOURCE_DIAGNOSTIC),
+            expect_matches=1,
+            rationale="HI168: remove coverage implementation from the production link graph",
         ),
         # No link edit. The dispatch layer has no external dependencies -- the
         # only one it ever had was SQLite, and record mode writes JSON Lines
