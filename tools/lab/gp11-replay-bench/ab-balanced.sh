@@ -28,6 +28,7 @@ H=/mnt/vault/development/llmhosts/llamacpp
 M=${MODEL:-/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}
 CACHE_PATH=${CACHE_PATH:-$HOME/.cache/bigcherry/tune-campaigns/b4d3cf708425/dispatch.cache}
 BENCH_MODEL=${BENCH_MODEL:-qwen27b}
+BENCH_CONFIGS=${BENCH_CONFIGS:-mtp-dual}
 DEVICES=${DEVICES:-0,1}
 PORT=${PORT:-18400}
 ROUNDS=${ROUNDS:-6}
@@ -63,6 +64,12 @@ cell () {
     unset GGML_HIP_DISPATCH_MODE
   fi
   if [ "$usecache" = "yes" ]; then export GGML_HIP_DISPATCH_CACHE=$CACHE_PATH; else unset GGML_HIP_DISPATCH_CACHE; fi
+  # SPEC_ARGS defaults to MTP but can be set empty. Without speculative decode
+  # there are no drafts, so draft acceptance cannot differ between arms -- the
+  # only honest way to compare tuned vs untuned throughput once the winners are
+  # known to change acceptance (0.94734 -> 0.86391, bit-identical across 16
+  # cells). With acceptance not applicable, a throughput delta is a real speed
+  # difference rather than a difference in how much work was done.
   rm -f /tmp/r.log
   # Patch 0800_server_shutdown_endpoint only REGISTERS the /shutdown route when
   # this is set -- without it the POST 404s and teardown falls back to kill -9,
@@ -71,7 +78,7 @@ cell () {
   # makes graceful shutdown exist at all.
   export LLAMA_SERVER_ENABLE_SHUTDOWN=1
   nohup "$bin" -m "$M" --port $PORT --host 127.0.0.1 --parallel 1 --metrics \
-    -sm tensor --fit off --spec-type draft-mtp --spec-draft-n-max 4 > /tmp/r.log 2>&1 &
+    -sm tensor --fit off ${SPEC_ARGS-"--spec-type draft-mtp --spec-draft-n-max 4"} > /tmp/r.log 2>&1 &
   local P=$!
   local ok=0; for i in $(seq 1 150); do curl -sf -o /dev/null http://127.0.0.1:$PORT/health && { ok=1; break; }; sleep 3; done
   if [ $ok -eq 0 ]; then
@@ -80,7 +87,7 @@ cell () {
   fi
   # The documented server-bench harness -- llama-bench cannot see MTP.
   local R=$(cd $H && timeout 3600 python3 bench/run_bench.py --bench-type server-bench \
-      --server-url http://127.0.0.1:$PORT --model $BENCH_MODEL --bench-configs mtp-dual 2>&1 \
+      --server-url http://127.0.0.1:$PORT --model $BENCH_MODEL --bench-configs $BENCH_CONFIGS 2>&1 \
       | grep -aE "_tps:" | tr -s " " | tr "\n" " ")
   echo "round=$round pos=$pos arm=$name ${R:-NO_RESULT}" >> "$OUT"
   # MTP draft acceptance: two arms accepting drafts at different rates are not
