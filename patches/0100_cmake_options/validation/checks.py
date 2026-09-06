@@ -7,11 +7,20 @@ import json
 import shutil
 import subprocess
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from bigcherry.patch.apply import FilePatch, apply_patch
-from bigcherry.patch.validation import BLOCKED, ERROR, FAIL, PASS, ArtifactRef, ValidationResult
+from bigcherry.patch.validation import (
+    BLOCKED,
+    ERROR,
+    FAIL,
+    PASS,
+    ArtifactRef,
+    ValidationResult,
+    _artifact_is_bound,
+)
 
 
 _CHECK_ID = "coverage-source-selection"
@@ -128,8 +137,11 @@ endif()
             report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
             script_ref = register("coverage-selection.cmake", script_path)
             report_ref = register("coverage-selection.json", report_path)
-            if not isinstance(script_ref, ArtifactRef) or not isinstance(report_ref, ArtifactRef):
-                raise TypeError("register_artifact must return ArtifactRef for both evidence files")
+            if (not isinstance(script_ref, ArtifactRef)
+                    or not isinstance(report_ref, ArtifactRef)
+                    or not _artifact_is_bound(asdict(script_ref), run_dir)
+                    or not _artifact_is_bound(asdict(report_ref), run_dir)):
+                raise TypeError("register_artifact returned an invalid or unbound ArtifactRef")
             artifacts = (script_ref, report_ref)
             if version.returncode != 0:
                 return _result(ERROR, "CMake version command failed", artifacts=artifacts)
