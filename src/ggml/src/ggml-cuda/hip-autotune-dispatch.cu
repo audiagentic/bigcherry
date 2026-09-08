@@ -29,6 +29,7 @@
 #include <limits>
 #include <set>
 #include <unordered_map>
+#include <vector>
 
 #ifdef GGML_HIP_AUTOTUNE_RECORD
 #include "hip-autotune-record.h"
@@ -608,24 +609,6 @@ const ggml_hip_native_selection & ggml_hip_native_force(
 
 namespace {
 
-struct DigestHash {
-    size_t operator()(const ggml_hip_digest & digest) const {
-        // The digest is already a uniform hash; folding its first bytes into
-        // size_t is all the bucket index needs.
-        size_t value = 0;
-        for (size_t i = 0; i < sizeof(size_t) && i < GGML_HIP_DIGEST_BYTES; ++i) {
-            value |= (size_t) digest.bytes[i] << (8 * i);
-        }
-        return value;
-    }
-};
-
-struct DigestEqual {
-    bool operator()(const ggml_hip_digest & a, const ggml_hip_digest & b) const {
-        return ggml_hip_digest_equal(a, b);
-    }
-};
-
 // Standards 15.2: the first encounter of a dispatch key performs the lookup;
 // every later encounter is a dictionary hit with no hashing cost. `Binding` is
 // what gets cached -- the resolved candidate, not the query.
@@ -747,11 +730,19 @@ struct ThreadBindingCache {
         configured = true;
     }
 
+    // HI163: fp is now precomputed once by the caller (ggml_hip_dispatch_
+    // resolve() calls signature_fingerprint(sig) a single time and threads
+    // it through find/insert AND the L2 lookup below) rather than
+    // recomputed here and again by L2 -- the whole point of separating the
+    // cheap runtime identity from the expensive persistent digest is
+    // undermined if the cheap identity itself gets computed twice per
+    // dispatch. Callers passing a stale/wrong fp for `signature` would
+    // silently mis-bucket; the memcmp below still decides real equality, so
+    // that remains a performance defect only, never a correctness one.
     bool find(int device, const ggml_hip_dispatch_signature_v1 & signature,
-              Binding * binding) {
+              Binding * binding, uint64_t fp) {
         if (!configured) configure();
-        const uint64_t fp   = signature_fingerprint(signature);
-        const size_t   base = ((size_t) (fp >> 32) & set_mask) * ways;
+        const size_t base = ((size_t) (fp >> 32) & set_mask) * ways;
         for (size_t w = 0; w < ways; ++w) {
             const ThreadBinding & slot = slots[base + w];
             if (slot.valid && slot.fingerprint == fp && slot.device == device &&
@@ -764,9 +755,8 @@ struct ThreadBindingCache {
     }
 
     void insert(int device, const ggml_hip_dispatch_signature_v1 & signature,
-                const Binding & binding) {
+                const Binding & binding, uint64_t fp) {
         if (!configured) configure();
-        const uint64_t fp   = signature_fingerprint(signature);
         const size_t   set  = (size_t) (fp >> 32) & set_mask;
         const size_t   base = set * ways;
         // Round-robin WITHIN the set only. A full-LRU is not built here on
@@ -785,8 +775,84 @@ struct ThreadBindingCache {
 
 thread_local ThreadBindingCache g_thread_bindings;
 
-std::unordered_map<ggml_hip_digest, Binding, DigestHash, DigestEqual> g_bindings;
+// HI163 (dev-gpt-agent req_7bd85f40d3334469, implementation sign-off
+// req_535fc57a30964a0d): L2 (this process-global, cross-thread cache) used
+// to be keyed on ggml_hip_digest -- the SAME persistent, cross-run identity
+// built from a canonical-JSON serialization + BLAKE2b hash, needed only so
+// a cache can be written to disk and matched across runs. Charging every
+// L1 miss the full cost of that persistence just to index an in-memory map
+// was the real, measured cost this item exists to remove (confirmed live in
+// production via HI171/HI172's rocprofv3 HIP API trace: replay's
+// hipLaunchKernel host-side duration was +5.2% slower than native's across
+// 78,210 identical calls, on a binary with GGML_HIP_DISPATCH_DIAGNOSTICS
+// compiled OFF -- so not counter overhead, the resolution work itself).
+//
+// L2Entry mirrors ThreadBinding's own collision-safety contract exactly:
+// the map is keyed by the CHEAP signature_fingerprint (reused from the
+// caller's already-computed L1 lookup, never recomputed here), a fingerprint
+// match only selects which vector to scan, and real equality is decided by
+// comparing the full signature via memcmp plus the hardware CLASS key (not
+// device ordinal -- HI64 requires two identical GPUs to share one L2 entry,
+// so ordinal must never enter equality). A fingerprint collision can only
+// cost one extra vector-element compare; it can never return a wrong
+// binding, matching L1's proof at process scope instead of thread scope.
+struct L2Entry {
+    ggml_hip_hardware_key_v1        hw;
+    ggml_hip_dispatch_signature_v1  signature;
+    Binding                         binding;
+};
+
+// unordered_map<fp, vector<L2Entry>>, not unordered_multimap: emplace() on
+// the old digest-keyed map implicitly suppressed a second insert for an
+// already-present exact key (first-insert-wins). A multimap has no such
+// suppression, so two concurrent cold misses for the same (device-class,
+// signature) could install two conflicting entries with no way to tell
+// which one a later lookup would see. l2_insert() below reacquires the
+// mutex, rechecks exact identity, and preserves first-insert-wins under
+// lock -- the same semantic the old std::unordered_map::emplace() gave for
+// free, made explicit now that a vector cannot give it for free.
+std::unordered_map<uint64_t, std::vector<L2Entry>> g_bindings;
 std::mutex g_bindings_mutex;
+
+static bool hardware_key_equal(const ggml_hip_hardware_key_v1 & a,
+                                const ggml_hip_hardware_key_v1 & b) {
+    return memcmp(&a, &b, sizeof(a)) == 0;
+}
+
+// Caller must hold g_bindings_mutex.
+static bool l2_find_locked(uint64_t fp, const ggml_hip_hardware_key_v1 & hw,
+                            const ggml_hip_dispatch_signature_v1 & signature,
+                            Binding * out) {
+    const auto found = g_bindings.find(fp);
+    if (found == g_bindings.end()) {
+        return false;
+    }
+    for (const L2Entry & entry : found->second) {
+        if (hardware_key_equal(entry.hw, hw) &&
+                memcmp(&entry.signature, &signature, sizeof(signature)) == 0) {
+            *out = entry.binding;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Caller must hold g_bindings_mutex. First-insert-wins: if an exact entry
+// already exists (a concurrent racer beat us to it, or this is a redundant
+// insert after a lock re-acquisition), leave it untouched rather than
+// overwrite -- matches the old map's emplace() semantics exactly.
+static void l2_insert_locked(uint64_t fp, const ggml_hip_hardware_key_v1 & hw,
+                              const ggml_hip_dispatch_signature_v1 & signature,
+                              const Binding & binding) {
+    std::vector<L2Entry> & bucket = g_bindings[fp];
+    for (const L2Entry & entry : bucket) {
+        if (hardware_key_equal(entry.hw, hw) &&
+                memcmp(&entry.signature, &signature, sizeof(signature)) == 0) {
+            return;
+        }
+    }
+    bucket.push_back(L2Entry{hw, signature, binding});
+}
 
 // Set while a dispatched candidate is executing.
 //
@@ -992,13 +1058,18 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // does not hold we force the selection before trusting the cached
     // binding, which reproduces the old ordering exactly.
 
+    // HI163: computed exactly once per dispatch and threaded through L1
+    // AND L2 below -- both used to (re)compute their own fingerprint
+    // independently, which defeated the point of it being cheap.
+    const uint64_t runtime_fp = signature_fingerprint(sig);
+
     Binding thread_binding = {};
     const bool l1_attempted = mode != GGML_HIP_DISPATCH_MODE_RECORD;
     const bool sample_l1 = l1_attempted && native_select_timing_enabled()
                             && native_select_timing_should_sample_l1();
     const auto l1_sample_t0 = sample_l1 ? std::chrono::steady_clock::now()
                                          : std::chrono::steady_clock::time_point{};
-    const bool l1_found = l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding);
+    const bool l1_found = l1_attempted && g_thread_bindings.find(ctx.device, sig, &thread_binding, runtime_fp);
     if (sample_l1) {
         const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - l1_sample_t0).count();
@@ -1125,15 +1196,21 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     const HardwareIdentity & hw_identity = cached_hardware_identity(ctx.device);
     const ggml_hip_hardware_key_v1 & hw = hw_identity.key;
     const ggml_hip_digest hardware_digest  = hw_identity.digest;
-    const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
-    if (dispatch_counters_enabled()) {
-        g_dispatch_counters.signature_digest_builds.fetch_add(1, std::memory_order_relaxed);
-    }
-    const ggml_hip_digest dispatch_digest =
-        ggml_hip_dispatch_digest(hardware_digest, signature_digest, "latency");
+    // HI163: signature_digest/dispatch_digest -- the canonical-JSON +
+    // BLAKE2b persistent identity -- used to be built HERE, unconditionally,
+    // before L2 was even consulted. That charged every L1 miss the full
+    // cost of "identify this dispatch across process runs forever" just to
+    // decide "have I resolved this recently in THIS process". Both are now
+    // built lazily, only once L2 (keyed on the cheap runtime_fp instead)
+    // has actually missed -- see below. The one remaining early use is the
+    // forced-candidate + RECORD debug path just below, which is never
+    // reached in production (GGML_HIP_FORCE_CANDIDATE is a manual testing
+    // override, never set outside deliberate diagnostics) and computes its
+    // own local copy rather than force the general case to pay upfront.
 
 #ifdef GGML_HIP_AUTOTUNE_RECORD
     if (forced_selected && mode == GGML_HIP_DISPATCH_MODE_RECORD) {
+        const ggml_hip_digest forced_signature_digest = ggml_hip_signature_digest(sig);
         const bool is_blas = resolved.candidate != nullptr
             && resolved.candidate->family == GGML_HIP_FAMILY_BLAS;
         const char * effective_api = is_blas
@@ -1144,7 +1221,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
         // the observation being recorded. Not a hot path: record mode exists
         // to build the tuning corpus, not to serve.
         const ggml_hip_native_selection & native = ggml_hip_native_force(native_provider);
-        ggml_hip_record_observation(ctx, sig, hw, signature_digest,
+        ggml_hip_record_observation(ctx, sig, hw, forced_signature_digest,
                                     hardware_digest, native,
                                     resolved.candidate, "forced",
                                     effective_api,
@@ -1155,27 +1232,32 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 
     {
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
-        const auto found = g_bindings.find(dispatch_digest);
-        if (found != g_bindings.end()) {
+        Binding l2_binding = {};
+        const bool l2_found = l2_find_locked(runtime_fp, hw, sig, &l2_binding);
+        if (l2_found) {
             if (dispatch_counters_enabled()) {
                 g_dispatch_counters.l2_hits.fetch_add(1, std::memory_order_relaxed);
             }
-            resolved.candidate  = found->second.candidate;
-            resolved.variant    = found->second.variant;
-            resolved.from_cache = found->second.from_cache;
+            resolved.candidate  = l2_binding.candidate;
+            resolved.variant    = l2_binding.variant;
+            resolved.from_cache = l2_binding.from_cache;
 #ifdef GGML_HIP_AUTOTUNE_RECORD
             // The warm path is where nearly every execution lands, so record
             // mode has to count here or `calls` never exceeds 1 and the
             // hot-signature ranking (standards 7.4) orders by nothing. It is
             // also the only place a second GPU sharing a dispatch key
-            // (standards 10.2) is ever seen.
+            // (standards 10.2) is ever seen. RECORD mode is not a hot path
+            // (see above), so computing the persistent digest here on every
+            // L2 hit -- rather than threading it in from outside -- costs
+            // nothing that matters.
             if (mode == GGML_HIP_DISPATCH_MODE_RECORD) {
-                ggml_hip_record_touch(signature_digest, hardware_digest,
+                const ggml_hip_digest touch_signature_digest = ggml_hip_signature_digest(sig);
+                ggml_hip_record_touch(touch_signature_digest, hardware_digest,
                                       ctx.device);
             }
 #endif
             if (mode != GGML_HIP_DISPATCH_MODE_RECORD) {
-                g_thread_bindings.insert(ctx.device, sig, found->second);
+                g_thread_bindings.insert(ctx.device, sig, l2_binding, runtime_fp);
             }
             return resolved;
         }
@@ -1183,6 +1265,18 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
             g_dispatch_counters.l2_misses.fetch_add(1, std::memory_order_relaxed);
         }
     }
+
+    // HI163: only a genuine L2 miss reaches here, so only a genuine L2 miss
+    // pays for the persistent digest -- exactly the population that still
+    // needs it (replay/disk-cache lookup, TUNE/RECORD observation, and the
+    // eventual L2 insert below, all of which require the cross-run identity,
+    // not merely an in-process one).
+    const ggml_hip_digest signature_digest = ggml_hip_signature_digest(sig);
+    if (dispatch_counters_enabled()) {
+        g_dispatch_counters.signature_digest_builds.fetch_add(1, std::memory_order_relaxed);
+    }
+    const ggml_hip_digest dispatch_digest =
+        ggml_hip_dispatch_digest(hardware_digest, signature_digest, "latency");
 
     // HI158: the cold-miss force point. Both caches missed, so there is no
     // stored binding and the native choice is what seeds one.
@@ -1372,7 +1466,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // process_binding_cacheable's declaration above for why.
     if (process_binding_cacheable) {
         std::lock_guard<std::mutex> lock(g_bindings_mutex);
-        g_bindings.emplace(dispatch_digest, binding);
+        l2_insert_locked(runtime_fp, hw, sig, binding);
     }
 
     resolved.candidate  = binding.candidate;
@@ -1409,7 +1503,7 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     // on it, while other devices remain free via the gated process-global
     // cache above.
     if (mode != GGML_HIP_DISPATCH_MODE_RECORD && thread_binding_cacheable) {
-        g_thread_bindings.insert(ctx.device, sig, binding);
+        g_thread_bindings.insert(ctx.device, sig, binding, runtime_fp);
     }
     return resolved;
 }

@@ -85,7 +85,7 @@ class NativeSelectTimingContractTests(unittest.TestCase):
         self.assertIn("std::chrono::steady_clock::now()", window)
 
     def test_l1_lookup_call_site_is_timed(self):
-        idx = self.src.index("g_thread_bindings.find(ctx.device, sig, &thread_binding)")
+        idx = self.src.index("g_thread_bindings.find(ctx.device, sig, &thread_binding, runtime_fp)")
         window = self.src[max(0, idx - 500):idx + 500]
         self.assertIn("sample_l1", window)
         self.assertIn("std::chrono::steady_clock::now()", window)
