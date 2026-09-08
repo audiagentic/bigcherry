@@ -184,6 +184,55 @@ class StageRecordDiscoveryWorkloadTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["n_predict"], 8)
 
 
+class StageTuneMeasurementWorkloadTests(unittest.TestCase):
+    """HI167 (unblocked by HI166 landing): _stage_tune must ALSO dispatch
+    the prefill-shaped sweep, or the tuner never gets a live MMQ dispatch
+    to measure -- the inventory listing mmq_types is not sufficient by
+    itself, since the tuner measures a signature on its first live
+    dispatch, not from the inventory/candidate-generation step alone."""
+
+    def test_tune_issues_original_smoke_call_plus_discovery_sweep(self):
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            fake_lane_result = MagicMock()
+            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+            fake_profile = MagicMock()
+            fake_profile.tune_context = 4096
+            fake_profile.server_args = ()
+
+            with (
+                patch.object(workflow, "_plan_and_run_one_lane", return_value=fake_lane_result),
+                patch.object(workflow, "ServerRunner") as fake_runner_cls,
+                patch.object(workflow.gpu_mod, "preflight_context"),
+            ):
+                fake_runner = fake_runner_cls.return_value
+                fake_runner.__enter__.return_value = fake_runner
+                tune_db_path = workdir / "tune"
+                measurements_path = Path(f"{tune_db_path}.measurements.jsonl")
+                measurements_path.write_bytes(b"fake-measurements-bytes")
+
+                workflow._stage_tune(
+                    context=None, cfg=None, store=None, run_id="rid",
+                    platform_name="platform", source_name="bigcherry",
+                    inventory_path=Path("/fake/inventory.json"),
+                    model_path=Path("/fake/model.gguf"), devices="0",
+                    runtime_profile=fake_profile,
+                    screen_samples=5, final_samples=10, workdir=workdir,
+                )
+
+            calls = fake_runner.run_completion.call_args_list
+            self.assertEqual(len(calls), 1 + len(workflow._RECORD_DISCOVERY_WORD_COUNTS))
+            self.assertEqual(calls[0].args[0], "Write a short paragraph about the ocean.")
+            self.assertEqual(calls[0].kwargs["n_predict"], 96)
+
+            for word_count, call in zip(workflow._RECORD_DISCOVERY_WORD_COUNTS, calls[1:]):
+                self.assertGreaterEqual(len(call.args[0].split()), word_count)
+                self.assertEqual(call.kwargs["n_predict"], 8)
+
+
 class StageReplayValidateTests(unittest.TestCase):
     """HI143: _stage_replay_validate replaces the old _stage_replay_verify
     with a combined behavioral-gate + coverage check. These tests patch
