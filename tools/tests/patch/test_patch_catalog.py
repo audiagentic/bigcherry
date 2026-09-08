@@ -360,6 +360,37 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
             self.assertEqual(first.modules, second.modules)
             self.assertEqual(first.metadata, second.metadata)
 
+    def test_digest_changes_when_a_catalog_entry_value_changes_with_no_id_added_or_removed(self):
+        """RE47 regression: the digest used to hash only sorted(metadata.keys()),
+        so editing an existing entry's VALUE (e.g. its declared kind) with no
+        ID added or removed produced an IDENTICAL digest -- a snapshot that
+        could not detect the exact kind of staleness it exists to catch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            catalog_path = root / "catalog.toml"
+            before = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+            self.assertEqual(before.metadata["0100_dep"].kind, "framework")
+
+            edited = LEGACY_CATALOG_TOML.replace('kind = "framework"', 'kind = "enhancement"')
+            catalog_path.write_text(edited, encoding="utf-8")
+            after = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+
+            self.assertEqual(after.metadata["0100_dep"].kind, "enhancement")
+            self.assertEqual(set(before.metadata), set(after.metadata))  # same ID set
+            self.assertNotEqual(before.digest, after.digest)
+
+    def test_metadata_mapping_is_not_mutable_via_normal_item_assignment(self):
+        """RE47: a frozen dataclass only blocks reassigning the ATTRIBUTE; a
+        plain dict inside it is still mutable in place. metadata must be a
+        real immutable mapping so a caller cannot silently invalidate an
+        already-taken snapshot's identity after the fact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            snapshot = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml")
+            with self.assertRaises(TypeError):
+                snapshot.metadata["0100_dep"] = snapshot.metadata["0100_dep"]
+
     def test_packaged_patch_with_catalog_entry_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self._tree(tmp, with_catalog_entry=True)
