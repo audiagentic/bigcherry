@@ -174,6 +174,42 @@ class ExecuteQualificationPlanTests(QualificationMatrixFixture):
         )
         self.assertTrue(result.correctness_gate["passed"], result.correctness_gate)
 
+    def test_a_failing_check_never_gets_silently_overwritten_by_a_later_passing_one(self):
+        """Regression: multiple cells reporting the SAME check name (e.g.
+        a multi-architecture plan where every architecture reports
+        'backend_reference') must never let a later PASSING cell hide an
+        earlier FAILING one via naive dict merge -- the merged result for
+        that check must stay failed."""
+        plan = self._plan()
+        order = []
+
+        def _run_cell(cell):
+            order.append(cell)
+            if len(order) == 1:
+                correctness = {"backend_reference": ec.CorrectnessResult(
+                    check="backend_reference", passed=False, detail="first cell failed")}
+            else:
+                correctness = {"backend_reference": ec.CorrectnessResult(
+                    check="backend_reference", passed=True, detail="later cell passed")}
+            if cell.evidence_level == "inferential":
+                correctness["greedy_parity"] = ec.CorrectnessResult(
+                    check="greedy_parity", passed=True)
+                return qe.CellResult(
+                    cell=cell, correctness_results=correctness,
+                    lane_effects=(
+                        ec.LaneEffect(role="positive", metric="tg128", geometric_effect_pct=6.0),
+                        ec.LaneEffect(role="control", metric="tg128", geometric_effect_pct=0.0),
+                    ),
+                )
+            correctness["greedy_parity"] = ec.CorrectnessResult(check="greedy_parity", passed=True)
+            return qe.CellResult(cell=cell, correctness_results=correctness, smoke_passed=True)
+
+        result = qe.execute_qualification_plan(
+            plan, self.contract, run_cell=_run_cell, target_metric="tg128",
+        )
+        self.assertFalse(result.correctness_gate["passed"], result.correctness_gate)
+        self.assertIn("backend_reference", result.correctness_gate["failed_checks"])
+
     def test_exactly_one_promotion_gate_call_per_plan(self):
         plan = self._plan()
         calls: list = []
