@@ -160,6 +160,7 @@ class PolicyDecision:
     policy_version: int
     is_production: bool
     predicted_winner: str
+    runner_up: str | None = None
     candidates: list[RankedCandidate] = field(default_factory=list)
 
     @classmethod
@@ -189,14 +190,23 @@ class PolicyDecision:
         predicted_winner = entry.get("predicted_winner", "")
         if not isinstance(predicted_winner, str):
             raise RankingPolicyError("ranking_decisions entry: predicted_winner must be a string")
+        runner_up = entry.get("runner_up")
+        if runner_up is not None and (not isinstance(runner_up, str) or not runner_up):
+            raise RankingPolicyError("ranking_decisions entry: runner_up must be a non-empty string or null")
         candidates_raw = entry.get("candidates", [])
         if not isinstance(candidates_raw, list):
             raise RankingPolicyError("ranking_decisions entry: candidates must be a list")
+        candidate_names = [c.get("name") for c in candidates_raw if isinstance(c, dict)]
+        if runner_up == predicted_winner:
+            raise RankingPolicyError("ranking_decisions entry: runner_up must differ from predicted_winner")
+        if runner_up is not None and runner_up not in candidate_names:
+            raise RankingPolicyError("ranking_decisions entry: runner_up must be one of candidates")
         return cls(
             policy_name=policy_name,
             policy_version=policy_version,
             is_production=is_production,
             predicted_winner=predicted_winner,
+            runner_up=runner_up,
             candidates=[RankedCandidate.from_json(c) for c in candidates_raw],
         )
 
