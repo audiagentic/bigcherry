@@ -84,6 +84,7 @@ class ParseRankingDecisionsTests(unittest.TestCase):
             {
                 "policy_name": "latency-v1", "policy_version": 1,
                 "is_production": True, "predicted_winner": "candidate:v2",
+                "runner_up": "native:v1",
                 "candidates": [
                     {"name": "native:v1", "effective_us": 10.0, "verdict": "qualified", "rejection_reason": ""},
                     {"name": "candidate:v2", "effective_us": 9.0, "verdict": "winner", "rejection_reason": ""},
@@ -93,6 +94,7 @@ class ParseRankingDecisionsTests(unittest.TestCase):
         decisions = rp.parse_ranking_decisions(result)
         self.assertEqual(len(decisions), 1)
         self.assertEqual(decisions[0].predicted_winner, "candidate:v2")
+        self.assertEqual(decisions[0].runner_up, "native:v1")
         self.assertTrue(decisions[0].is_production)
         self.assertEqual(len(decisions[0].candidates), 2)
 
@@ -149,10 +151,11 @@ class PolicySpecValidationTests(unittest.TestCase):
 
 
 def _decision_json(*, policy_name="latency-v1", policy_version=1, is_production=True,
-                    predicted_winner="candidate_a", candidates=None):
+                    predicted_winner="candidate_a", runner_up=None, candidates=None):
     return {
         "policy_name": policy_name, "policy_version": policy_version,
         "is_production": is_production, "predicted_winner": predicted_winner,
+        "runner_up": runner_up,
         "candidates": candidates or [],
     }
 
@@ -190,6 +193,23 @@ class PolicyDecisionStrictTypingTests(unittest.TestCase):
     def test_non_list_candidates_is_rejected(self):
         with self.assertRaises(rp.RankingPolicyError):
             rp.PolicyDecision.from_json(_decision_json(candidates="not-a-list"))
+
+    def test_runner_up_must_be_a_recorded_candidate(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(
+                predicted_winner="winner", candidates=[{"name": "winner"}],
+                runner_up="not-recorded"))
+
+    def test_runner_up_must_differ_from_winner(self):
+        with self.assertRaises(rp.RankingPolicyError):
+            rp.PolicyDecision.from_json(_decision_json(
+                predicted_winner="winner", candidates=[{"name": "winner"}],
+                runner_up="winner"))
+
+    def test_missing_runner_up_is_legacy_unknown_not_reconstructed(self):
+        decision = rp.PolicyDecision.from_json(_decision_json(
+            predicted_winner="winner", candidates=[{"name": "winner"}]))
+        self.assertIsNone(decision.runner_up)
 
     def test_malformed_decision_in_parse_ranking_decisions_fails_closed(self):
         result = {"ranking_decisions": [_decision_json(is_production="false")]}
