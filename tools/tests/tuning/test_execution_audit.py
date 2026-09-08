@@ -67,11 +67,11 @@ class ExecutionAuditClassificationTests(unittest.TestCase):
         self.assertEqual(len(audit), 1)
         self.assertEqual(audit[0].classification, ea.Classification.NOT_EXECUTED)
         self.assertIsNone(audit[0].actual_launched_candidate)
-        self.assertEqual(audit[0].launch_count, 0)
+        self.assertEqual(audit[0].recorded_calls, 0)
 
     def test_hit_confirms_winner_is_different_faster_by_default(self):
         hits = [{"dispatch": "dispatch-aaa", "signature": "sig-aaa",
-                 "candidate": "mmvq:q8_0:w4:nw8:rpb1:sk0:v1", "calls": 42}]
+                 "candidate": "mmvq:q8_0:w4:nw8:rpb1:sk0:v1", "from_cache": True, "calls": 42}]
         audit = ea.build_audit(
             promoted_path=self._promoted([PROMOTED_ROW]),
             hit_log_path=self._hits(hits),
@@ -79,24 +79,39 @@ class ExecutionAuditClassificationTests(unittest.TestCase):
         row = audit[0]
         self.assertEqual(row.classification, ea.Classification.DIFFERENT_FASTER)
         self.assertEqual(row.actual_launched_candidate, "mmvq:q8_0:w4:nw8:rpb1:sk0:v1")
-        self.assertEqual(row.launch_count, 42)
+        self.assertEqual(row.recorded_calls, 42)
         self.assertEqual(row.e2e_verdict, "not_measured")
 
     def test_hit_log_candidate_mismatch_is_fallback(self):
         # The resolver revalidated the exact hit and substituted something
         # else at launch time -- this is the HI160 scenario exactly.
         hits = [{"dispatch": "dispatch-aaa", "signature": "sig-aaa",
-                 "candidate": "mmvq:native:v1", "calls": 7}]
+                 "candidate": "mmvq:native:v1", "from_cache": False, "calls": 7}]
         audit = ea.build_audit(
             promoted_path=self._promoted([PROMOTED_ROW]),
             hit_log_path=self._hits(hits),
         )
         self.assertEqual(audit[0].classification, ea.Classification.FALLBACK)
 
+    def test_hit_log_from_cache_false_is_fallback_even_with_matching_candidate_name(self):
+        # commit 1291bea7: the recorder now fires at the TRUE final decision
+        # point and can UPDATE an entry to from_cache=False on a repeat
+        # observation of the same dispatch digest without changing the
+        # recorded candidate name. from_cache is the authoritative signal --
+        # a candidate-name match alone must never be read as a tuned launch.
+        hits = [{"dispatch": "dispatch-aaa", "signature": "sig-aaa",
+                 "candidate": "mmvq:q8_0:w4:nw8:rpb1:sk0:v1", "from_cache": False, "calls": 3}]
+        audit = ea.build_audit(
+            promoted_path=self._promoted([PROMOTED_ROW]),
+            hit_log_path=self._hits(hits),
+        )
+        self.assertEqual(audit[0].classification, ea.Classification.FALLBACK)
+        self.assertEqual(audit[0].actual_from_cache, False)
+
     def test_winner_equal_to_native_is_same_native_regardless_of_hits(self):
         row = dict(PROMOTED_ROW, winner="mmvq:native:v1")
         hits = [{"dispatch": "dispatch-aaa", "signature": "sig-aaa",
-                 "candidate": "mmvq:native:v1", "calls": 5}]
+                 "candidate": "mmvq:native:v1", "from_cache": True, "calls": 5}]
         audit = ea.build_audit(
             promoted_path=self._promoted([row]),
             hit_log_path=self._hits(hits),
@@ -105,7 +120,7 @@ class ExecutionAuditClassificationTests(unittest.TestCase):
 
     def test_e2e_regressed_verdict_overrides_isolated_win(self):
         hits = [{"dispatch": "dispatch-aaa", "signature": "sig-aaa",
-                 "candidate": "mmvq:q8_0:w4:nw8:rpb1:sk0:v1", "calls": 42}]
+                 "candidate": "mmvq:q8_0:w4:nw8:rpb1:sk0:v1", "from_cache": True, "calls": 42}]
         e2e_path = self.dir / "e2e.json"
         e2e_path.write_text(json.dumps({"dispatch-aaa": "regressed"}), encoding="utf-8")
         audit = ea.build_audit(
@@ -146,13 +161,13 @@ class ExecutionAuditClassificationTests(unittest.TestCase):
 class ExecutionAuditSummaryTests(unittest.TestCase):
     def test_unproven_fraction_counts_not_executed_and_fallback_only(self):
         rows = [
-            ea.AuditRow("d1", "s1", "native", "native", None, 0,
+            ea.AuditRow("d1", "s1", "native", "native", None, None, 0,
                         ea.Classification.SAME_NATIVE, 5.0, "not_measured", None),
-            ea.AuditRow("d2", "s2", "native", "winner", None, 0,
+            ea.AuditRow("d2", "s2", "native", "winner", None, None, 0,
                         ea.Classification.NOT_EXECUTED, 5.0, "not_measured", None),
-            ea.AuditRow("d3", "s3", "native", "winner", "native", 3,
+            ea.AuditRow("d3", "s3", "native", "winner", "native", False, 3,
                         ea.Classification.FALLBACK, 5.0, "not_measured", None),
-            ea.AuditRow("d4", "s4", "native", "winner", "winner", 3,
+            ea.AuditRow("d4", "s4", "native", "winner", "winner", True, 3,
                         ea.Classification.DIFFERENT_FASTER, 5.0, "not_measured", None),
         ]
         summary = ea.summarize(rows)
@@ -168,7 +183,7 @@ class ExecutionAuditSummaryTests(unittest.TestCase):
 class ExecutionAuditWriterTests(unittest.TestCase):
     def test_write_audit_round_trips_as_jsonl(self):
         row = ea.AuditRow("d1", "s1", "mmvq:native:v1", "mmvq:q8_0:w4:v1",
-                          "mmvq:q8_0:w4:v1", 10, ea.Classification.DIFFERENT_FASTER,
+                          "mmvq:q8_0:w4:v1", True, 10, ea.Classification.DIFFERENT_FASTER,
                           12.5, "not_measured", None)
         with tempfile.TemporaryDirectory() as td:
             out = Path(td) / "audit.jsonl"
@@ -177,7 +192,7 @@ class ExecutionAuditWriterTests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             parsed = json.loads(lines[0])
             self.assertEqual(parsed["classification"], "DIFFERENT_FASTER")
-            self.assertEqual(parsed["launch_count"], 10)
+            self.assertEqual(parsed["recorded_calls"], 10)
 
 
 class AuditCoversPromotedTests(unittest.TestCase):
