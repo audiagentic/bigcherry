@@ -270,6 +270,12 @@ class StageReplayValidateTests(unittest.TestCase):
             env_unset = call.kwargs["env_unset"]
             self.assertIn("GGML_HIP_FORCE_CANDIDATE", env_unset)
             self.assertIn("GGML_HIP_DISPATCH_CACHE", env_unset)
+            self.assertIn("GGML_HIP_DISPATCH_HIT_LOG", env_unset)
+        candidate_env = fake_runner_cls.call_args_list[1].kwargs["env_overrides"]
+        self.assertEqual(
+            Path(candidate_env["GGML_HIP_DISPATCH_HIT_LOG"]).name,
+            "hip-dispatch-hit-log.jsonl",
+        )
 
     def test_promotes_provisional_cache_to_final_path_on_success(self):
         # HI143: the provisional->final atomic rename only happens once

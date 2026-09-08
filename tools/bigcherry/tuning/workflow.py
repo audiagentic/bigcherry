@@ -656,6 +656,10 @@ def _stage_replay_validate(
     coverage_path = workdir / "coverage.json"
     report_path = workdir / "behavioral-gate.json"
     final_cache_path = workdir / "dispatch.cache"
+    # Diagnostic-only final-binding evidence; the production replay binary
+    # remains free of this branch. Keep it beside the other per-run artifacts
+    # and remove it before launch so a reused run-id cannot reuse old proof.
+    hit_log_path = workdir / "hip-dispatch-hit-log.jsonl"
     # Same stale-artifact defense as the old _stage_replay_verify (GPT
     # deep-review P2, 2026-08-29), extended to the FINALIZED cache itself
     # (gpt review, 2026-08-29): a reused workdir/run-id must never let a
@@ -663,7 +667,7 @@ def _stage_replay_validate(
     # run's result -- an old finalized cache surviving a failed rerun
     # would otherwise remain visible even though THIS validation rejected
     # its provisional replacement.
-    for stale in (coverage_path, report_path, final_cache_path):
+    for stale in (coverage_path, report_path, final_cache_path, hit_log_path):
         if stale.exists():
             stale.unlink()
 
@@ -679,6 +683,7 @@ def _stage_replay_validate(
     env_unset = (
         "GGML_HIP_FORCE_CANDIDATE", "GGML_HIP_FORCE_CANDIDATE_STRICT",
         "GGML_HIP_DISPATCH_DB", "GGML_HIP_DISPATCH_CACHE", "GGML_HIP_DISPATCH_COVERAGE",
+        "GGML_HIP_DISPATCH_HIT_LOG",
     )
 
     def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
@@ -701,6 +706,7 @@ def _stage_replay_validate(
     candidate_env = {
         "GGML_HIP_DISPATCH_CACHE": str(provisional_cache),
         "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
+        "GGML_HIP_DISPATCH_HIT_LOG": str(hit_log_path),
     }
     candidate_runner = ServerRunner(
         binary=binary_path, model=model_path, extra_args=common_args,
@@ -871,6 +877,18 @@ def _stage_replay_validate(
     # be silently overwritten by a later run reusing the same workdir.
     import hashlib
     coverage["validated_cache_digest"] = hashlib.sha256(final_cache_path.read_bytes()).hexdigest()
+    # Keep the receipt relocatable; execution-audit consumes the sibling JSONL
+    # directly. No server-local absolute path is committed to evidence docs.
+    if hit_log_path.is_file():
+        with hit_log_path.open(encoding="utf-8") as fh:
+            hit_log_records = sum(1 for _ in fh)
+    else:
+        hit_log_records = 0
+    coverage["hit_log"] = {
+        "path": hit_log_path.name,
+        "exists": hit_log_path.is_file(),
+        "records": hit_log_records,
+    }
     coverage["behavioral_gate_report_path"] = str(report_path)
     coverage["behavioral_gate_report_digest"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
     coverage["runtime_profile_digest"] = runtime_profile.digest
