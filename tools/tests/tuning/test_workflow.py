@@ -690,6 +690,26 @@ class StageIdentityTests(unittest.TestCase):
         self.assertEqual(identity.run_id, "real-lane-run-id-from-run-campaign")
 
 
+class GpuVisibilityEnvTests(unittest.TestCase):
+    """VA22, the two-selector trap: every ServerRunner env_overrides in this
+    module must route through _gpu_visibility_env, never set
+    HIP_VISIBLE_DEVICES alone or set both selectors to the same raw
+    physical-index string. See core.environment.gpu_visibility_pair for the
+    shared math this delegates to."""
+
+    def test_single_nonzero_device_reindexes_to_position_zero(self):
+        pair = workflow._gpu_visibility_env("2")
+        self.assertEqual(pair, {"ROCR_VISIBLE_DEVICES": "2", "HIP_VISIBLE_DEVICES": "0"})
+
+    def test_multi_device_string_reindexes_by_position(self):
+        pair = workflow._gpu_visibility_env("0,1")
+        self.assertEqual(pair, {"ROCR_VISIBLE_DEVICES": "0,1", "HIP_VISIBLE_DEVICES": "0,1"})
+
+    def test_noncontiguous_multi_device_string_reindexes_by_position(self):
+        pair = workflow._gpu_visibility_env("1,3")
+        self.assertEqual(pair, {"ROCR_VISIBLE_DEVICES": "1,3", "HIP_VISIBLE_DEVICES": "0,1"})
+
+
 class StageLoadAndPromoteVerifierWiringTests(unittest.TestCase):
     """HI125 close-out step 6: production ingest is mandatory-strengthened
     -- signature_digest_verifier has no default, and a RecordError from
