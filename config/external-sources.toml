@@ -109,13 +109,17 @@ available" (per each item's own ledger_events field) and consequently
 this source was never registered -- every other fork BigCherry tracks has
 an entry here; this one didn't, until now.
 
-CROSS-REFERENCE, not yet resolved: NRO06 ("Adaptive MTP draft-depth
-controller", nasone commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e)
-duplicates rdna-boost-experiments' RD62 ("UP-MTP-001: Adaptive MTP draft
-depth", cited to llama.cpp PR #27210, with existing dual-R9700 evidence
-already on file). Same feature, two different source citations, two
-different plan items -- reconcile into one before either is worked, do
-not run both in parallel."""
+RECONCILED 2026-09-09: NRO06 ("Adaptive MTP draft-depth controller",
+tracked commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e below) was a
+duplicate of rdna-boost-experiments/RD62 ("UP-MTP-001: Adaptive MTP draft
+depth", cited to llama.cpp PR #27210) -- confirmed via
+`gh api repos/nasone32/llama.cpp-RDNA3-7900xtx-opt/commits/10579a73...`:
+that commit's author is Stew Forster <stew675@gmail.com>, the SAME author
+as PR #27210. This is stew675's own commit cherry-picked into the nasone
+fork, not independently nasone-authored. NRO06 closed as superseded by
+RD62 (docs/planning/completed/nasone-rdna-optimizations/NRO06.md); RD62
+is the single owner going forward and now carries NRO06's more detailed
+design content."""
 
 [[sources.snapshots]]
 label = "main-2026-09-08"
@@ -136,8 +140,8 @@ note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/trans
 commit = "10579a7365a3bc86c4f8e41aaab20e73e1571e5e"
 title = "Adaptive MTP draft-depth controller"
 plan-item = "NRO06"
-status = "planned"
-note = "Per-sequence adaptive speculative-decode draft-depth state machine (climb after sustained full acceptance, drop after accumulated miss pressure). See the cross-reference note on this [[sources]] block: DUPLICATES rdna-boost-experiments/RD62, which cites the same feature to llama.cpp PR #27210 instead -- reconcile before porting either. Initial materialized patch: 1255_nro06_adaptive_mtp_depth, group nasone-rdna, state untested."
+status = "superseded"
+note = "Per-sequence adaptive speculative-decode draft-depth state machine (climb after sustained full acceptance, drop after accumulated miss pressure). SUPERSEDED 2026-09-09 by rdna-boost-experiments/RD62 -- same source work (stew675's commit, cherry-picked into this fork), see the RECONCILED note on this [[sources]] block. Initial materialized patch (patches/1255_nro06_adaptive_mtp_depth/) not yet renamed to an RD-numbered ID; RD62 is the owning plan item going forward."
 
 [[sources]]
 id = "amd-ecosystem-llama-cpp"
