@@ -1,0 +1,17 @@
+schema = 1
+id = "1255_nro06_adaptive_mtp_depth"
+order = 1255
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["NRO06"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["speculative-decoding", "mtp"]
+hardware = []
+validation-architectures = []
+backends = []

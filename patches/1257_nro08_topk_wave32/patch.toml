@@ -1,0 +1,17 @@
+schema = 1
+id = "1257_nro08_topk_wave32"
+order = 1257
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["NRO08"]
+requires = ["1256_nro07_topk_hybrid"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["top-k", "wave32", "moe-routing"]
+hardware = ["gfx1100"]
+validation-architectures = []
+backends = ["hip"]
