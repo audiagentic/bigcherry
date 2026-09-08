@@ -30,12 +30,29 @@ picked something other than native), joining:
                               measurement, not an in-situ or E2E number).
   - the replay hit log     -- GGML_HIP_DISPATCH_HIT_LOG output from a
                               GGML_HIP_REPLAY_DIAGNOSTICS build. Recorded at
-                              ggml_hip_replay_record_hit(), which fires at
-                              exactly the point a cached candidate survives
-                              revalidation and becomes the binding that later
-                              increments HI160's final_tuned_launches -- so a
-                              hit-log entry for a dispatch digest IS actual
-                              launch evidence, not merely a cache lookup.
+                              the resolver's true final decision point in
+                              ggml_hip_dispatch_resolve() (commit 1291bea7),
+                              AFTER the arch/can_execute revalidation that can
+                              still downgrade a cached candidate to native --
+                              so an entry's ``from_cache`` field is what says
+                              whether the finally-bound implementation was the
+                              tuned winner (true) or native (false). A hit-log
+                              entry existing at all is NOT sufficient evidence
+                              of a tuned launch; ``from_cache`` must also be
+                              true and its ``candidate`` must equal the
+                              promoted winner.
+                              CAVEAT (dev-gpt-agent review, 2026-09-08): warm
+                              thread-local (L1) and process-global (L2) cache
+                              returns bypass this recorder entirely and return
+                              before it is reached. A dispatch digest with no
+                              hit-log entry may still have launched many times
+                              via a warm cache -- NOT_EXECUTED here means "no
+                              recorded evidence", not "proven never to run".
+                              For the same reason, ``recorded_calls`` is NOT a
+                              true launch-frequency count; it only counts
+                              calls that missed L1/L2 and reached the final
+                              recorder. Never use it as a quantitative
+                              production launch-count claim.
   - an optional e2e verdict -- supplied by the caller (e.g. transcribed from
                               a HI168-style baseline doc), never invented
                               here. Absence is recorded explicitly rather
@@ -45,7 +62,9 @@ Deliberately NOT attempted: per-key GPU-time-in-production. Nothing in this
 project's current artifacts measures how long an individual promoted
 candidate actually runs inside the real serving graph (see HI168's runbook,
 section 16, for what that would require: rocprofv3 kernel-fraction data
-joined per dispatch digest). A row's ``launch_count`` is real; its
+joined per dispatch digest). A row's ``recorded_calls`` reflects what the
+final-decision recorder actually observed (not a true launch-frequency count
+-- see the L1/L2 caveat above); its
 ``isolated_improvement_pct`` is the tuner's own microbenchmark claim; there
 is no fabricated GPU-time-saving field here.
 """
@@ -103,7 +122,10 @@ class HitRecord:
     dispatch: str
     signature: str
     candidate: str
-    calls: int
+    from_cache: bool
+    # NOT a true launch-frequency count -- see the module docstring's L1/L2
+    # caveat. Recorded calls that reached the final decision point only.
+    recorded_calls: int
 
 
 @dataclass(frozen=True)
@@ -113,7 +135,9 @@ class AuditRow:
     native_candidate: str
     replay_candidate: str  # the tuner's promoted "winner"
     actual_launched_candidate: str | None
-    launch_count: int
+    actual_from_cache: bool | None
+    # NOT a true launch-frequency count -- see module docstring's L1/L2 caveat.
+    recorded_calls: int
     classification: Classification
     isolated_improvement_pct: float | None
     e2e_verdict: str  # "improved" | "regressed" | "not_measured" (default)
@@ -126,7 +150,8 @@ class AuditRow:
             "native_candidate": self.native_candidate,
             "replay_candidate": self.replay_candidate,
             "actual_launched_candidate": self.actual_launched_candidate,
-            "launch_count": self.launch_count,
+            "actual_from_cache": self.actual_from_cache,
+            "recorded_calls": self.recorded_calls,
             "classification": self.classification.value,
             "isolated_improvement_pct": self.isolated_improvement_pct,
             "e2e_verdict": self.e2e_verdict,
@@ -177,7 +202,8 @@ def load_hit_log(path: str | Path | None) -> dict[str, HitRecord]:
             dispatch=dispatch,
             signature=row.get("signature", ""),
             candidate=row.get("candidate", ""),
-            calls=int(row.get("calls", 0)),
+            from_cache=bool(row.get("from_cache", False)),
+            recorded_calls=int(row.get("calls", 0)),
         )
     return out
 
@@ -216,7 +242,12 @@ def classify(
         return Classification.SAME_NATIVE
     if hit is None:
         return Classification.NOT_EXECUTED
-    if hit.candidate != replay_candidate:
+    # from_cache=False means the final binding fell back to native (the
+    # arch/can_execute revalidation downgraded it after the recorder's own
+    # cache lookup) -- that is a FALLBACK regardless of what candidate name
+    # the entry carries, since the entry can be updated across repeat
+    # observations of the same digest (see hip-autotune-replay.cpp).
+    if not hit.from_cache or hit.candidate != replay_candidate:
         return Classification.FALLBACK
     if e2e_verdict == "regressed":
         return Classification.DIFFERENT_SLOWER
@@ -257,7 +288,8 @@ def build_audit(
             native_candidate=native_candidate,
             replay_candidate=replay_candidate,
             actual_launched_candidate=hit.candidate if hit else None,
-            launch_count=hit.calls if hit else 0,
+            actual_from_cache=hit.from_cache if hit else None,
+            recorded_calls=hit.recorded_calls if hit else 0,
             classification=classification,
             isolated_improvement_pct=row.get("improvement_pct"),
             e2e_verdict=verdict or "not_measured",
