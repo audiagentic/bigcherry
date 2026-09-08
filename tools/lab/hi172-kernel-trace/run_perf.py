@@ -49,15 +49,48 @@ def perf_command_prefix(*, out_dir: Path, label: str) -> tuple[str, ...]:
 
 
 def run_arm(*, binary, model, common_args, env, prompt, n_predict, requests, label, out_dir, askpass_path):
+    """Deliberately does NOT use ServerRunner's own __exit__/shutdown for
+    the perf-wrapped process: ServerRunner's HTTP-shutdown-then-kill
+    sequence was designed for a bare server process, not one wrapped by
+    `perf record`, and does not give perf a chance to finalize (flush and
+    close) its own trace file -- confirmed via a real run producing a
+    perf.data with a zero data-size field ("was the perf record command
+    properly terminated?"). perf record's own documented clean-stop
+    mechanism is SIGINT to the perf process itself (not its traced
+    child); it then finalizes the file and exits. Send that FIRST, wait
+    for perf's own process to exit (confirms the file is flushed), THEN
+    let ServerRunner do its normal HTTP-shutdown cleanup for whatever is
+    left of the (now-orphaned, since perf's SIGINT does not kill its
+    traced child) llama-server process."""
+    import signal
+
     prefix = perf_command_prefix(out_dir=out_dir, label=label)
     runner = ServerRunner(
         binary=binary, model=model, extra_args=common_args,
         env_overrides={**env, "SUDO_ASKPASS": askpass_path}, command_prefix=prefix,
         log_path=out_dir / f"{label}.log",
     )
-    with runner:
+    runner.launch()
+    runner.wait_healthy()
+    try:
         for i in range(requests):
             runner.run_completion(prompt, n_predict=n_predict, timeout_s=180)
+    finally:
+        runner._proc.send_signal(signal.SIGINT)  # noqa: SLF001 -- see docstring, deliberate
+        try:
+            runner._proc.wait(timeout=60)
+        except Exception:
+            pass
+        # perf's SIGINT stops ITS OWN recording/monitoring; it does not
+        # kill the traced llama-server child. That child is now orphaned
+        # but still running -- clean it up directly via its own HTTP
+        # endpoint (not runner.shutdown(), which drives its behavior off
+        # self._proc -- now perf's already-exited process, not the
+        # server's -- and would not target the right thing here).
+        try:
+            runner.post_json("/shutdown", {}, timeout_s=30)
+        except Exception:
+            pass
     return out_dir / f"{label}.perf.data"
 
 
