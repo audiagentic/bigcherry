@@ -7,6 +7,10 @@
   "source_revision": "52ab88bebc74e800645f0694327f3a8bf4965195",
   "command": "PYTHONPATH=tools python3 -m bigcherry inventory hot-list <record-27b.jsonl> --measurements <e2e_dualxtx_tune.measurements.jsonl> --output hot-list.json; python3 -m bigcherry inventory workload-check <record-27b.jsonl> --measurements <e2e_dualxtx_tune.measurements.jsonl>",
   "result": "PASS_WITH_ADVISORY_DIFFERENT_WORKLOAD",
+  "inputs": [
+    {"path": "/home/audumla/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-21-hi35-hi36-27b-r9700/record-27b.jsonl", "sha256": "b715cac6b41ef20bbf561050a97d738f2a91ea043e7967ba5d564de821cb0b84"},
+    {"path": "/home/audumla/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-27-dual-xtx-tune-run/e2e_dualxtx_tune.measurements.jsonl", "sha256": "df691cf8800ea1add874f07f9cdcd24a359b2d95f4c9c9103bda60613ce7061f"}
+  ],
   "limitations": ["This validates the reusable hot-list and workload-digest paths; it is not a new GPU timing claim."],
   "payloads": ["hi24.log", "hi37.log", "hot-list.json", "SHA256SUMS"]
 }
