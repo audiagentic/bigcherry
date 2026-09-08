@@ -132,7 +132,15 @@ def main(argv: list[str] | None = None) -> int:
     pass_stats: dict[str, list[dict]] = {"native": [], "replay": []}
 
     for pass_idx in range(1, args.passes + 1):
-        for arm_name, arm in arms.items():
+        # HI171/TEST.md's own "never run arms in a fixed order" rule: a
+        # fixed native-then-replay order every pass confounds arm identity
+        # with GPU thermal/clock-state drift within each pass (whichever
+        # arm runs SECOND inherits any warm-up drift from the arm that ran
+        # immediately before it). Alternate which arm goes first each pass.
+        ordered_arms = list(arms.items())
+        if pass_idx % 2 == 0:
+            ordered_arms = list(reversed(ordered_arms))
+        for arm_name, arm in ordered_arms:
             print(f"[hi172] pass {pass_idx}/{args.passes} {arm_name}: control (pre)", flush=True)
             control_times[arm_name].append(run_unprofiled_control(
                 binary=arm["binary"], model=model, common_args=common_args,
