@@ -146,6 +146,41 @@ def _plan_and_run_one_lane(
     return result
 
 
+#: HI167: the record stage's job is SIGNATURE DISCOVERY, not measurement --
+#: it must exercise the shape ENVELOPE the real production workload uses, or
+#: whole families of dispatch never enter the inventory at all (not filtered
+#: out downstream -- never observed in the first place). Confirmed on real
+#: hardware (campaign 27e45ae32ec4): a single ~15-token prompt produced 38
+#: mmvq signatures / 39,272 calls and ZERO mmq signatures, because native
+#: dispatch only selects MMQ for large-ne11 (prefill-shaped) work, and a
+#: short prompt with n_predict=96 is almost entirely decode-shaped from the
+#: first token onward. The production benchmark corpus sweeps pp256/pp1024/
+#: pp4096; record must span that same envelope or it is discovering a
+#: different, narrower workload than the one being tuned for.
+#:
+#: Deliberately NOT sharing this workload with `_stage_tune` (dev-gpt-agent
+#: review, req_bcf8417d476b435f): record's job is "what signatures exist",
+#: tune's job is "measure THIS signature under work identical between
+#: native/candidate" (HI130's equality rule is about A/B pairs, not about
+#: discovery vs. measurement matching each other). Widening what tune
+#: actually MEASURES is a tuning-coverage expansion and stays HI166-gated;
+#: this fixes discovery only.
+#:
+#: Word count, not exact token count: this drives a live server's
+#: /completion endpoint with a plain string: there is no tokenizer available
+#: here to hit an exact count, and per gpt review an exact pp256/pp1024/
+#: pp4096 token match is not required for discovery -- these are a
+#: deliberately generous envelope (a single common word is close to one
+#: token for most tokenizers), verified empirically against the resulting
+#: record file's observed families, not assumed correct from this length
+#: alone.
+_RECORD_DISCOVERY_WORD_COUNTS: tuple[int, ...] = (256, 1024, 4096)
+
+
+def _synthetic_prefill_prompt(word_count: int) -> str:
+    return "the quick brown fox jumps over the lazy dog . " * (word_count // 10 + 1)
+
+
 def _stage_record(
     *, context, cfg, store, run_id, platform_name, source_name,
     model_path: Path, devices: str, runtime_profile: campaign_config.RuntimeProfile,
@@ -170,7 +205,13 @@ def _stage_record(
         log_path=workdir / "record-server.log",
     )
     with runner:
+        # Original short decode-shaped smoke request -- kept: cheap, and
+        # still the right shape for confirming mmvq/decode signatures exist.
         runner.run_completion("Describe the water cycle in two sentences.", n_predict=96)
+        # HI167: prefill-shaped discovery sweep, small n_predict (this is
+        # about exercising the PREFILL dispatch, not generation length).
+        for word_count in _RECORD_DISCOVERY_WORD_COUNTS:
+            runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     actual_record_path = record_db_path  # the binary writes this exact path, no suffix
     if not actual_record_path.is_file():
         raise TuneCampaignError(f"record stage produced no output at {actual_record_path}")

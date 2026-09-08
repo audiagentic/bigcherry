@@ -120,6 +120,70 @@ class StageReplayExportTests(unittest.TestCase):
             self.assertEqual(result.name, "dispatch.cache.provisional")
 
 
+class SyntheticPrefillPromptTests(unittest.TestCase):
+    def test_word_count_meets_or_exceeds_target(self):
+        for target in workflow._RECORD_DISCOVERY_WORD_COUNTS:
+            with self.subTest(target=target):
+                prompt = workflow._synthetic_prefill_prompt(target)
+                self.assertGreaterEqual(len(prompt.split()), target)
+
+    def test_deterministic(self):
+        self.assertEqual(
+            workflow._synthetic_prefill_prompt(256), workflow._synthetic_prefill_prompt(256)
+        )
+
+
+class StageRecordDiscoveryWorkloadTests(unittest.TestCase):
+    """HI167: the record stage must exercise the same prefill-shape envelope
+    as production, not just the original short decode-shaped smoke prompt --
+    otherwise whole dispatch families (confirmed on real hardware: MMQ)
+    never enter the inventory at all. See _RECORD_DISCOVERY_WORD_COUNTS's
+    own comment for the evidence and the dev-gpt-agent review (HI167) this
+    implements."""
+
+    def test_record_issues_original_smoke_call_plus_discovery_sweep(self):
+        from unittest.mock import MagicMock, patch
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            workdir = Path(directory)
+            fake_lane_result = MagicMock()
+            fake_lane_result.binary_ref.path = "/fake/bin/llama-server"
+            fake_profile = MagicMock()
+            fake_profile.production_context = 64000
+            fake_profile.server_args = ()
+
+            with (
+                patch.object(workflow, "_plan_and_run_one_lane", return_value=fake_lane_result),
+                patch.object(workflow, "ServerRunner") as fake_runner_cls,
+            ):
+                fake_runner = fake_runner_cls.return_value
+                fake_runner.__enter__.return_value = fake_runner
+                (workdir / "record").write_bytes(b"fake-record-bytes")
+
+                workflow._stage_record(
+                    context=None, cfg=None, store=None, run_id="rid",
+                    platform_name="platform", source_name="bigcherry",
+                    model_path=Path("/fake/model.gguf"), devices="0",
+                    runtime_profile=fake_profile, workdir=workdir,
+                )
+
+            calls = fake_runner.run_completion.call_args_list
+            # original smoke call + one per discovery word count
+            self.assertEqual(len(calls), 1 + len(workflow._RECORD_DISCOVERY_WORD_COUNTS))
+            self.assertEqual(calls[0].args[0], "Describe the water cycle in two sentences.")
+            self.assertEqual(calls[0].kwargs["n_predict"], 96)
+
+            # discovery calls: strictly increasing prompt length, small
+            # n_predict (this is about exercising the PREFILL dispatch, not
+            # generation length).
+            discovery_lengths = [len(c.args[0].split()) for c in calls[1:]]
+            self.assertEqual(discovery_lengths, sorted(discovery_lengths))
+            for word_count, call in zip(workflow._RECORD_DISCOVERY_WORD_COUNTS, calls[1:]):
+                self.assertGreaterEqual(len(call.args[0].split()), word_count)
+                self.assertEqual(call.kwargs["n_predict"], 8)
+
+
 class StageReplayValidateTests(unittest.TestCase):
     """HI143: _stage_replay_validate replaces the old _stage_replay_verify
     with a combined behavioral-gate + coverage check. These tests patch
