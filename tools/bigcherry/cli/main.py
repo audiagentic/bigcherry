@@ -45,6 +45,7 @@ from .patch import (
 from .profiling import cmd_profile_campaign
 from .source import cmd_audit, cmd_pull
 from .tuning import (
+    cmd_execution_audit,
     cmd_generate,
     cmd_inventory,
     cmd_project_replay,
@@ -467,6 +468,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="machine-readable report"
     )
     replay_inspect_cmd.set_defaults(func=cmd_replay_inspect)
+
+    execution_audit_cmd = sub.add_parser(
+        "execution-audit",
+        help=(
+            "per-promoted-key execution audit: does a tuned kernel actually "
+            "launch? An exact replay cache hit proves compatibility, not "
+            "tuned execution -- see tools/bigcherry/tuning/execution_audit.py"
+        ),
+    )
+    execution_audit_cmd.add_argument(
+        "--promoted", required=True,
+        help="promoted.jsonl from a tune campaign",
+    )
+    execution_audit_cmd.add_argument(
+        "--hit-log", default=None,
+        help="GGML_HIP_DISPATCH_HIT_LOG output from a "
+        "GGML_HIP_REPLAY_DIAGNOSTICS build; omit if no diagnostic run exists "
+        "yet -- every promoted key will then classify as NOT_EXECUTED, which "
+        "is the honest answer, not an error",
+    )
+    execution_audit_cmd.add_argument(
+        "--e2e-verdicts", default=None,
+        help="optional JSON object {dispatch_digest: 'improved'|'regressed'} "
+        "transcribed from a real end-to-end comparison (e.g. a HI168-style "
+        "baseline); never inferred by this command",
+    )
+    execution_audit_cmd.add_argument(
+        "--output", required=True,
+        help="write hip-tuning-execution-audit.jsonl here",
+    )
+    execution_audit_cmd.add_argument(
+        "--json", action="store_true", help="print the summary as JSON",
+    )
+    execution_audit_cmd.set_defaults(func=cmd_execution_audit)
 
     project_replay_cmd = sub.add_parser(
         "project-replay",
