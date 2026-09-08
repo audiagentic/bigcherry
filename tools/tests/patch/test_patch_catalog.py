@@ -232,12 +232,18 @@ class TestPatchContext(unittest.TestCase):
             self.assertEqual(mocked.call_args.kwargs.get("resolved_base_revision"), "deadbeef" * 5)
             self.assertEqual(mocked.call_args.kwargs.get("patches_dir"), catalog_path.parent)
 
-    def test_patches_for_backend_on_the_real_catalog_is_empty_for_vulkan(self):
-        """No Vulkan patches exist yet -- an empty result is the CORRECT
-        answer (RE30 phases 2+ need real Vulkan hardware evidence first),
-        not a bug."""
+    def test_patches_for_backend_on_the_real_catalog_only_matches_agnostic_patches_for_vulkan(self):
+        """CO01 closure audit (2026-09-08): this used to assert an empty
+        result ('no Vulkan patches exist yet, RE30 phases 2+ need real
+        Vulkan hardware evidence first') -- that stopped being literally
+        true once an agnostic-backend patch (NRO06) was added, since
+        patches_for_backend() matches backend in (backend, 'agnostic') by
+        design. Still no HIP-specific patch has vulkan backend; only
+        genuinely backend-agnostic patches match."""
         result = patch_catalog.patches_for_backend("vulkan")
-        self.assertEqual(result, ())
+        entries = patch_catalog.build_snapshot().metadata
+        expected = tuple(sorted(pid for pid, e in entries.items() if e.backend == "agnostic"))
+        self.assertEqual(result, expected)
 
     def test_patches_for_backend_on_the_real_catalog_returns_all_hip_patches(self):
         result = patch_catalog.patches_for_backend("hip")
