@@ -132,7 +132,18 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = config["prompt_repeat_sentence"] * config["prompt_repeat_count"]
+    if "prompt_file" in config:
+        # A real source file, not a repeated sentence: the earlier
+        # repeated-sentence prompt made llama_vocab::tokenize the
+        # dominant on-CPU cost (identical between arms, unrelated to
+        # dispatch mode), swamping the dispatch-resolver signal this
+        # experiment exists to isolate. Real, varied text produces a
+        # realistic token distribution instead.
+        text = Path(config["prompt_file"]).read_text(encoding="utf-8", errors="replace")
+        max_chars = config.get("prompt_max_chars", len(text))
+        prompt = f"Review this code for correctness and style:\n\n{text[:max_chars]}"
+    else:
+        prompt = config["prompt_repeat_sentence"] * config["prompt_repeat_count"]
     n_predict = config.get("n_predict", 8)
     model = config["model"]
     common_args = config["common_args"]
