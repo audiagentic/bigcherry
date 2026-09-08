@@ -364,9 +364,13 @@ def evaluate_campaign(**kwargs) -> Evaluation:
 def render(advisories: list[Advisory]) -> str:
     if not advisories:
         return ""
+    # Stop-severity first: a reader in a hurry should hit the thing that
+    # blocks further work before the merely informational notes.
+    ordered = sorted(advisories, key=lambda a: 0 if a.severity == "stop" else 1)
     lines = ["", "-- advisories " + "-" * 62]
-    for a in advisories:
-        lines.append(f"[{a.tag}] {a.headline}")
+    for a in ordered:
+        prefix = "STOP" if a.severity == "stop" else a.tag
+        lines.append(f"[{prefix}] {a.headline}")
         lines.extend("    " + b for b in a.body)
         lines.append("")
     lines.append("Suppressed under --json. Tooling only; never present in a shipped build.")
