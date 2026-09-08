@@ -112,6 +112,50 @@ fault 800 signatures in.
 The library is mostly upstream's own kernel instantiations. Justify `replay-slim`
 on compile time or on not shipping unmeasured code, not on binary size.
 
+### A tuned candidate can break code that never runs it — check downstream assumptions, not just the candidate's own output
+
+Per-candidate correctness proves the tuned kernel computes the right numbers.
+It does not prove nothing *downstream* of that kernel call silently assumed a
+property of the *native* kernel that the winning candidate doesn't share. Three
+concrete mechanisms found so far, none requiring the downstream code itself to
+be tuned:
+
+- **Graph-capture identity (proven, not hypothetical — RD73).** RD73 changed
+  the CUDA/HIP graph cache key behavior for a tuned matmul candidate. MTP
+  speculative-decode's graph capture/replay path assumed a stable
+  kernel-launch identity for a given dispatch; the winning candidate's
+  different launch signature broke that assumption. It showed up as a ~2%
+  *end-to-end* regression under the exact workload where graph replay
+  matters, despite the candidate's own per-call output being numerically
+  correct. Demoted (`patches/1233_rd73_stable_graph_cache_key`,
+  `docs/planning/completed/hip-autotune/HI162.md`) specifically because
+  per-candidate correctness evidence alone didn't catch it.
+- **Precision propagation.** `numerical_class` (`exact_baseline` /
+  `equivalent_within_backend_tolerance` / `reduced_precision`, HI17) exists
+  because a tuned BLAS candidate can pick a different accumulation type than
+  native. Whatever precision the winner actually produces is what every
+  downstream op (norm, residual add, next layer) receives — not what native
+  would have produced. This is gated at candidate-eligibility time
+  (reduced-precision candidates rejected when the request's `prec` field
+  demands F32), not discovered after the fact.
+- **Fusion eligibility.** The BLAS candidate identity carries a `glu_op` /
+  fusion field: whether GLU activation runs fused *into* the matmul call, or
+  as a separate downstream kernel, is itself a dispatch-time decision. A
+  change in which candidate wins can change whether a neighboring,
+  never-tuned kernel runs at all, or with different inputs than before.
+
+A fourth, currently unproven but structurally real risk: shared **workspace/
+temp-buffer pool** pressure — a candidate that requests a different temp
+buffer size than native draws from the same pool allocator neighboring
+kernel launches use, even when those neighbors are never themselves tuned.
+
+**Consequence for every future tuning-family item (HI173, HI174–HI179 and
+beyond):** a candidate's own correctness/parity gate is necessary but not
+sufficient. Where the candidate sits next to graph capture, precision-
+sensitive consumers, or fusion-eligible neighbors, the gate needs an explicit
+check for *those* properties too — RD73 is the proof that "the numbers match"
+was not enough on its own.
+
 ## Operational gotchas
 
 ### Editing a patch's *text* is a no-op on an already-patched tree
