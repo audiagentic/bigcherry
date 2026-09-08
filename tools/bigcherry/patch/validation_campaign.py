@@ -48,6 +48,8 @@ from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.campaign.bench_runner import (  # noqa: F401
     BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
 )
+from bigcherry.experiment.attestation import ExecutionIdentity
+from bigcherry.experiment.server_execution import AttestedServerSession
 from bigcherry.patch.activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -1507,6 +1509,7 @@ def evaluate_rd73_activation_evidence(
 
 def run_rd73_mtp_server_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    expected_execution: ExecutionIdentity,
     host: str = "127.0.0.1", control_port: int = 18080, subject_port: int = 18081,
     spec_draft_n_max: int = 4,
     n_predict: int = 128, warmup_pairs: int = 2, measured_pairs: int = 10,
@@ -1545,7 +1548,6 @@ def run_rd73_mtp_server_lane(
     PatchCampaignError immediately, never silently drops a sample."""
     from bigcherry.bench import server_completion as sc
     from bigcherry.experiment import execution as experiment_execution
-    from bigcherry.tuning.server_runner import ServerRunner
 
     prompts, corpus_sha256 = sc.load_corpus(corpus_path)
     metric_pattern = re.compile(r"BIGCHERRY_RD73_MTP wall_tps=([0-9.]+)")
@@ -1620,11 +1622,12 @@ def run_rd73_mtp_server_lane(
         request_counters[arm] += 1
         log_path = logs_dir / f"rd73-mtp-{arm}-server-{index}.log"
         per_request_logs[arm].append(log_path)
-        runner = ServerRunner(
-            binary=binaries[arm], model=model, host=host, port=ports[arm],
+        session = AttestedServerSession(
+            binary=binaries[arm], model=model, expected=expected_execution,
+            host=host, port=ports[arm],
             extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
         )
-        with runner:
+        with session:
             transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
             sc.validate_server(transport)
             prompt = prompts[index % len(prompts)]
@@ -1683,6 +1686,7 @@ def run_rd73_mtp_server_lane(
 # patch internals. Imported below; no alias is kept here.
 def run_rd73_decode_control_lane(
     *, control_binary: Path, subject_binary: Path, model: Path, run_dir: Path,
+    expected_execution: ExecutionIdentity,
     host: str = "127.0.0.1", control_port: int = 18082, subject_port: int = 18083,
     pairs: int = 3, extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
 ) -> dict[str, object]:
@@ -1697,7 +1701,6 @@ def run_rd73_decode_control_lane(
     synthetic-stdout adapter pattern as the MTP lane, rather than
     duplicating its alternating-order + block-bootstrap statistics."""
     from bigcherry.experiment import execution as experiment_execution
-    from bigcherry.tuning.server_runner import ServerRunner
 
     metric_pattern = re.compile(r"BIGCHERRY_RD73_DECODE tg128_tps=([0-9.]+)")
     server_args = ("--parallel", "1", *extra_flags)
@@ -1719,11 +1722,12 @@ def run_rd73_decode_control_lane(
         arm = command[-1]
         index = request_counters[arm]
         request_counters[arm] += 1
-        runner = ServerRunner(
-            binary=binaries[arm], model=model, host=host, port=ports[arm],
+        session = AttestedServerSession(
+            binary=binaries[arm], model=model, expected=expected_execution,
+            host=host, port=ports[arm],
             extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
         )
-        with runner:
+        with session:
             metrics = run_bench_runner_server_bench(
                 server_url=f"http://{host}:{ports[arm]}", bench_configs="tg128", repetitions=1,
             )
@@ -1783,6 +1787,7 @@ def evaluate_rd73_resource_evidence(
 
 def run_rd73_resource_burst_session(
     *, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    expected_execution: ExecutionIdentity,
     host: str = "127.0.0.1", port: int = 18084, burst_requests: int = 20, n_predict: int = 32,
 ) -> dict[str, object]:
     """VA06 (real hardware finding, 2026-09-01): RD73's graph-cache-entries
@@ -1801,7 +1806,6 @@ def run_rd73_resource_burst_session(
     launch once, drive burst_requests real repeated requests against the
     SAME live process, read the resulting log, shut down."""
     from bigcherry.bench import server_completion as sc
-    from bigcherry.tuning.server_runner import ServerRunner
 
     prompts, _ = sc.load_corpus(corpus_path)
     burst_prompt = prompts[0]
@@ -1813,8 +1817,9 @@ def run_rd73_resource_burst_session(
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "rd73-resource-burst-subject-server.log"
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
-    runner = ServerRunner(
-        binary=subject_binary, model=model, host=host, port=port,
+    session = AttestedServerSession(
+        binary=subject_binary, model=model, expected=expected_execution,
+        host=host, port=port,
         extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
     )
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
@@ -1825,7 +1830,7 @@ def run_rd73_resource_burst_session(
         spec_draft_k="default", spec_draft_v="default", sampling=sampling,
         n_predict=n_predict, order_seed=12345,
     )
-    with runner:
+    with session:
         transport = sc.HttpTransport(f"http://{host}:{port}")
         sc.validate_server(transport)
         for index in range(burst_requests):
@@ -1952,9 +1957,20 @@ def run_rd73_contract_qualification(
     reason."""
     from bigcherry.experiment import contract as experiment_contract
 
+    # VA25: RD73's dual-XTX qualification is always `-sm tensor` across 2
+    # homogeneous devices of this run's own architecture -- the exact
+    # topology every RD73 server lane's docstring already documents as a
+    # real hardware constraint (concurrent control+subject exceeds VRAM,
+    # etc.). Constructed once here, not per-lane, so all three lanes
+    # attest against the identical expectation.
+    expected_execution = ExecutionIdentity(
+        backend="ROCm", architectures=(amdgpu_targets, amdgpu_targets),
+    )
+
     mtp = run_rd73_mtp_server_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
-        corpus_path=corpus_path, run_dir=run_dir, warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
+        corpus_path=corpus_path, run_dir=run_dir, expected_execution=expected_execution,
+        warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
     )
     activation = evaluate_rd73_activation_evidence(
         marker_regex=marker_regex, control_log_path=mtp["control_log_path"],
@@ -1962,10 +1978,11 @@ def run_rd73_contract_qualification(
     )
     resource = run_rd73_resource_burst_session(
         subject_binary=subject_server_binary, model=model, corpus_path=corpus_path, run_dir=run_dir,
+        expected_execution=expected_execution,
     )
     decode_control = run_rd73_decode_control_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
-        run_dir=run_dir, pairs=decode_pairs,
+        run_dir=run_dir, expected_execution=expected_execution, pairs=decode_pairs,
     )
     # A real content mismatch (or a missing/non-string/unpaired record) is a
     # genuine correctness RESULT, not an infrastructure failure -- it must

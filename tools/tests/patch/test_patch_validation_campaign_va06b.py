@@ -18,15 +18,28 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.bench import server_completion as sc  # noqa: E402
+from bigcherry.experiment import attestation as att  # noqa: E402
+from bigcherry.experiment import server_execution as se  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
-from bigcherry.tuning import server_runner as sr  # noqa: E402
+
+# VA25: run_rd73_mtp_server_lane() now drives each arm through
+# AttestedServerSession, not raw ServerRunner directly. This fixture's
+# ExecutionIdentity is arbitrary but must be non-empty (see
+# ExecutionIdentity.__post_init__) and is only ever compared against the
+# also-fixed fake attestation below -- the real attestation-content
+# parsing is covered by test_attested_server_session.py and
+# test_execution_attestation.py, not re-tested here.
+_FAKE_EXPECTED_EXECUTION = att.ExecutionIdentity(backend="ROCm", architectures=("gfx1100", "gfx1100"))
 
 
 class _FakeServerRunner:
     """Stands in for tuning.server_runner.ServerRunner -- no real process,
     no real HTTP -- so this adapter's own orchestration logic (warmup vs.
     measured, arm routing, fail-closed on missing wall_tps) can be tested
-    without a GPU."""
+    without a GPU. Exposes launch()/wait_healthy()/shutdown() rather than
+    just the context-manager protocol, matching what AttestedServerSession
+    actually calls (it does not use ``with runner:`` on the wrapped
+    ServerRunner directly)."""
 
     instances: list["_FakeServerRunner"] = []
 
@@ -37,6 +50,8 @@ class _FakeServerRunner:
         self.kwargs = kwargs
         self.entered = False
         self.exited = False
+        self.host = kwargs.get("host", "127.0.0.1")
+        self.port = kwargs.get("port", 0)
         # Real ServerRunner always creates its log file on launch (stdout
         # redirect); run_rd73_mtp_server_lane() now reads per-request log
         # files back (sequential single-request-per-launch restart, a real
@@ -48,16 +63,18 @@ class _FakeServerRunner:
             Path(log_path).write_text("", encoding="utf-8")
         _FakeServerRunner.instances.append(self)
 
-    def __enter__(self):
+    def launch(self) -> None:
         self.entered = True
         _FakeServerRunner._live_count += 1
         _FakeServerRunner.concurrent_entries.append(_FakeServerRunner._live_count)
-        return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def wait_healthy(self, timeout_s: int = 180) -> None:
+        pass
+
+    def shutdown(self, timeout_s: int = 90):
         self.exited = True
         _FakeServerRunner._live_count -= 1
-        return False
+        return None
 
 
 class _FakeTransport:
@@ -106,7 +123,26 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
             }
 
         return [
-            mock.patch.object(sr, "ServerRunner", _FakeServerRunner),
+            # VA25: run_rd73_mtp_server_lane() now goes through
+            # AttestedServerSession, which imports ServerRunner into its OWN
+            # module namespace -- patching sr.ServerRunner (the source
+            # module attribute) would not reach that already-bound name, so
+            # the fake must be installed on server_execution's namespace.
+            mock.patch.object(se, "ServerRunner", _FakeServerRunner),
+            # Real attestation-content parsing is tested elsewhere
+            # (test_attested_server_session.py, test_execution_attestation.py);
+            # here it is fixed to always match, so this file's own tests stay
+            # focused on the warmup/measured/arm-routing orchestration logic.
+            mock.patch.object(
+                se, "parse_llama_server_attestation",
+                return_value=att.ExecutionAttestation(
+                    backend="ROCm",
+                    devices=(
+                        att.ObservedDevice(architecture="gfx1100", locator=None),
+                        att.ObservedDevice(architecture="gfx1100", locator=None),
+                    ),
+                ),
+            ),
             mock.patch.object(sc, "load_corpus", return_value=_fake_corpus()),
             mock.patch.object(sc, "HttpTransport", _FakeTransport),
             mock.patch.object(sc, "validate_server", return_value=None),
@@ -121,6 +157,7 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         return vc.run_rd73_mtp_server_lane(
             control_binary=self.control_binary, subject_binary=self.subject_binary,
             model=self.model, corpus_path=self.corpus_path, run_dir=self.run_dir,
+            expected_execution=_FAKE_EXPECTED_EXECUTION,
             warmup_pairs=1, measured_pairs=3, **kwargs,
         )
 

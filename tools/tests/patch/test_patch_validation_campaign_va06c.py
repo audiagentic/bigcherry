@@ -18,6 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.experiment import attestation as att  # noqa: E402
 from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
@@ -33,19 +34,36 @@ class _FakeServerRunner:
     """User redirect (2026-09-01): decode control now launches real
     ServerRunner-managed llama-server processes (not llama-bench), driven
     via the documented Brutus bench runner. Faked here for hardware-free
-    testing, matching test_patch_validation_campaign_va06b.py's pattern."""
+    testing, matching test_patch_validation_campaign_va06b.py's pattern.
+
+    VA25: exposes launch()/wait_healthy()/shutdown() rather than just the
+    context-manager protocol, matching what AttestedServerSession actually
+    calls -- run_rd73_decode_control_lane() no longer uses ``with runner:``
+    on a raw ServerRunner directly."""
 
     instances: list["_FakeServerRunner"] = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+        self.host = kwargs.get("host", "127.0.0.1")
+        self.port = kwargs.get("port", 0)
+        # AttestedServerSession reads this file right after launch()/
+        # wait_healthy() succeed, so the fake must produce one just like
+        # real ServerRunner does (stdout redirect on launch).
+        log_path = kwargs.get("log_path")
+        if log_path is not None:
+            Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(log_path).write_text("", encoding="utf-8")
         _FakeServerRunner.instances.append(self)
 
-    def __enter__(self):
-        return self
+    def launch(self) -> None:
+        pass
 
-    def __exit__(self, exc_type, exc, tb):
-        return False
+    def wait_healthy(self, timeout_s: int = 180) -> None:
+        pass
+
+    def shutdown(self, timeout_s: int = 90):
+        return None
 
 
 class RunBenchRunnerServerBenchTests(unittest.TestCase):
@@ -161,12 +179,32 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
             counters[arm] += 1
             return {"tg128_tps": values[index]}
 
+        # VA25: patched on server_execution's namespace (where
+        # AttestedServerSession's own `from ..tuning.server_runner import
+        # ServerRunner` already bound the name), not tuning.server_runner
+        # itself -- patching the source module after that import happened
+        # would not reach it. Attestation content parsing is fixed to
+        # always match; it is tested in test_attested_server_session.py.
         with mock.patch.object(vc, "run_bench_runner_server_bench", side_effect=fake_bench_runner):
-            with mock.patch("bigcherry.tuning.server_runner.ServerRunner", _FakeServerRunner):
-                return vc.run_rd73_decode_control_lane(
-                    control_binary=Path("control-server"), subject_binary=Path("subject-server"),
-                    model=Path("m.gguf"), run_dir=self.run_dir, pairs=pairs,
-                )
+            with mock.patch("bigcherry.experiment.server_execution.ServerRunner", _FakeServerRunner):
+                with mock.patch(
+                    "bigcherry.experiment.server_execution.parse_llama_server_attestation",
+                    return_value=att.ExecutionAttestation(
+                        backend="ROCm",
+                        devices=(
+                            att.ObservedDevice(architecture="gfx1100", locator=None),
+                            att.ObservedDevice(architecture="gfx1100", locator=None),
+                        ),
+                    ),
+                ):
+                    return vc.run_rd73_decode_control_lane(
+                        control_binary=Path("control-server"), subject_binary=Path("subject-server"),
+                        model=Path("m.gguf"), run_dir=self.run_dir,
+                        expected_execution=att.ExecutionIdentity(
+                            backend="ROCm", architectures=("gfx1100", "gfx1100"),
+                        ),
+                        pairs=pairs,
+                    )
 
     def test_returns_control_role_effect(self) -> None:
         result = self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
