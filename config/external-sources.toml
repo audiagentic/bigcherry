@@ -94,6 +94,52 @@ status = "planned"
 note = "REAL, exact match for RD76's 'restore/benchmark rocWMMA FlashAttention on RDNA4' hypothesis. Small (29 lines), self-contained CMake-only change: GGML_HIP_ROCWMMA_FATTN already exists as an upstream llama.cpp build option (default OFF) but silently fails to find rocWMMA headers on a typical Windows/ROCm install; this commit adds real header auto-detection (checks GGML_HIP_ROCWMMA_INCLUDE_DIR then ROCM_PATH/include) plus a safe fallback warning instead of a hard build failure. Genuinely low-risk and portable -- build-system only, no kernel code touched. Does not itself prove RD76's performance hypothesis (that needs the actual gfx1201 rocWMMA-vs-native FA benchmark RD76 describes); this just makes the build option reliably usable to run that comparison. Not merged upstream."
 
 [[sources]]
+id = "nasone-rdna-optimizations"
+repo = "https://github.com/nasone32/llama.cpp-RDNA3-7900xtx-opt"
+locator = "main"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """Personal dual-RX-7900-XTX (RDNA3) optimization fork, cited by
+the 16-item nasone-rdna-optimizations plan (NRO01-NRO16), all filed
+2026-09-08. Standalone project (fork:false relative to llama.cpp), MIT-
+licensed, C++. Verified real and active 2026-09-08 via
+`gh api repos/nasone32/llama.cpp-RDNA3-7900xtx-opt` (created 2026-09-07,
+pushed 2026-09-08, public, MIT). This registration was itself a real gap:
+NRO01-NRO16 were authored in a session where "ag-ledger MCP was not
+available" (per each item's own ledger_events field) and consequently
+this source was never registered -- every other fork BigCherry tracks has
+an entry here; this one didn't, until now.
+
+CROSS-REFERENCE, not yet resolved: NRO06 ("Adaptive MTP draft-depth
+controller", nasone commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e)
+duplicates rdna-boost-experiments' RD62 ("UP-MTP-001: Adaptive MTP draft
+depth", cited to llama.cpp PR #27210, with existing dual-R9700 evidence
+already on file). Same feature, two different source citations, two
+different plan items -- reconcile into one before either is worked, do
+not run both in parallel."""
+
+[[sources.snapshots]]
+label = "main-2026-09-08"
+head = "10579a7365a3bc86c4f8e41aaab20e73e1571e5e"
+base = "10579a7365a3bc86c4f8e41aaab20e73e1571e5e"
+reviewed-at = "2026-09-08"
+active = true
+note = "base == head deliberately, same convention as mrlordcat-rdna-lab/amd-ecosystem-llama-cpp: no single reviewed commit range has been chosen yet. This head is NRO06's own cited commit, the most specific point-in-time reference available at registration time -- not a claim that it is the fork's current tip."
+
+[[sources.tracked]]
+commit = "e06dcf6300718227cb8cfda9e61fb12ccb693418"
+title = "ggml: add Q8 wire, residual fusion, and AllReduce tracing"
+plan-item = "NRO01"
+status = "planned"
+note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce."
+
+[[sources.tracked]]
+commit = "10579a7365a3bc86c4f8e41aaab20e73e1571e5e"
+title = "Adaptive MTP draft-depth controller"
+plan-item = "NRO06"
+status = "planned"
+note = "Per-sequence adaptive speculative-decode draft-depth state machine (climb after sustained full acceptance, drop after accumulated miss pressure). See the cross-reference note on this [[sources]] block: DUPLICATES rdna-boost-experiments/RD62, which cites the same feature to llama.cpp PR #27210 instead -- reconcile before porting either. Initial materialized patch: 1255_nro06_adaptive_mtp_depth, group nasone-rdna, state untested."
+
+[[sources]]
 id = "amd-ecosystem-llama-cpp"
 repo = "https://github.com/AMD-Ecosystem/llama.cpp"
 locator = "master"
