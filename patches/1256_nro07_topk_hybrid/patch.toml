@@ -1,0 +1,17 @@
+schema = 1
+id = "1256_nro07_topk_hybrid"
+order = 1256
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["NRO07"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["top-k", "moe-routing"]
+hardware = ["gfx1100"]
+validation-architectures = []
+backends = ["hip"]
