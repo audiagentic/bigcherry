@@ -9,9 +9,12 @@ missing hit log does not silently manufacture a positive finding.
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.tuning import execution_audit as ea
 
@@ -175,6 +178,59 @@ class ExecutionAuditWriterTests(unittest.TestCase):
             parsed = json.loads(lines[0])
             self.assertEqual(parsed["classification"], "DIFFERENT_FASTER")
             self.assertEqual(parsed["launch_count"], 10)
+
+
+class AuditCoversPromotedTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+
+    def _promoted(self, rows):
+        p = self.dir / "promoted.jsonl"
+        _write_jsonl(p, rows)
+        return p
+
+    def test_missing_audit_path_does_not_cover(self):
+        promoted = self._promoted([PROMOTED_ROW])
+        self.assertFalse(ea.audit_covers_promoted(promoted, None))
+
+    def test_nonexistent_audit_file_does_not_cover(self):
+        promoted = self._promoted([PROMOTED_ROW])
+        self.assertFalse(ea.audit_covers_promoted(promoted, self.dir / "does-not-exist.jsonl"))
+
+    def test_stale_audit_missing_current_dispatch_does_not_cover(self):
+        # The audit exists but covers a DIFFERENT promoted set -- e.g. left
+        # over from an earlier run that reused this workdir/run_id.
+        promoted = self._promoted([PROMOTED_ROW])
+        audit = self.dir / "audit.jsonl"
+        _write_jsonl(audit, [{"dispatch": "some-other-dispatch", "classification": "DIFFERENT_FASTER"}])
+        self.assertFalse(ea.audit_covers_promoted(promoted, audit))
+
+    def test_audit_covering_every_promoted_dispatch_does_cover(self):
+        promoted = self._promoted([PROMOTED_ROW])
+        audit = self.dir / "audit.jsonl"
+        _write_jsonl(audit, [{"dispatch": "dispatch-aaa", "classification": "DIFFERENT_FASTER"}])
+        self.assertTrue(ea.audit_covers_promoted(promoted, audit))
+
+    def test_audit_covering_a_superset_still_covers(self):
+        promoted = self._promoted([PROMOTED_ROW])
+        audit = self.dir / "audit.jsonl"
+        _write_jsonl(audit, [
+            {"dispatch": "dispatch-aaa", "classification": "DIFFERENT_FASTER"},
+            {"dispatch": "dispatch-from-a-prior-run", "classification": "NOT_EXECUTED"},
+        ])
+        self.assertTrue(ea.audit_covers_promoted(promoted, audit))
+
+    def test_no_promoted_keys_trivially_covered(self):
+        promoted = self._promoted([])
+        self.assertTrue(ea.audit_covers_promoted(promoted, self.dir / "does-not-exist.jsonl"))
+
+    def test_malformed_audit_file_does_not_cover(self):
+        promoted = self._promoted([PROMOTED_ROW])
+        audit = self.dir / "audit.jsonl"
+        audit.write_text("not json\n", encoding="utf-8")
+        self.assertFalse(ea.audit_covers_promoted(promoted, audit))
 
 
 if __name__ == "__main__":

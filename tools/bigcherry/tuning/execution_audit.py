@@ -302,3 +302,36 @@ def write_audit(rows: Iterable[AuditRow], output_path: str | Path) -> None:
     with p.open("w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row.to_json(), sort_keys=True) + "\n")
+
+
+def audit_covers_promoted(promoted_path: str | Path, audit_path: str | Path | None) -> bool:
+    """True only if `audit_path` is a real, readable audit that accounts for
+    EVERY key currently promoted in `promoted_path`.
+
+    A caller must not treat `execution_audit_path.is_file()` as "this run was
+    audited" -- a run that reuses a workdir/run_id can find a
+    hip-tuning-execution-audit.jsonl left over from an earlier, different
+    promoted set. That file existing proves nothing about THIS run's
+    winners. This checks the actual dispatch-digest coverage instead: every
+    currently-promoted dispatch must appear as a row in the audit file, or
+    the audit does not cover this run and must not suppress
+    EXECUTION_AUDIT_MISSING.
+    """
+    promoted_dispatches = {row["dispatch"] for row in load_promoted(promoted_path)}
+    if not promoted_dispatches:
+        # Nothing is promoted, so there is nothing an audit needs to cover --
+        # true regardless of whether an audit file happens to exist.
+        return True
+
+    if not audit_path:
+        return False
+    ap = Path(audit_path)
+    if not ap.is_file():
+        return False
+
+    try:
+        audited_dispatches = {row.get("dispatch") for row in _read_jsonl(ap)}
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    return promoted_dispatches.issubset(audited_dispatches)

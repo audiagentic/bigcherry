@@ -1323,9 +1323,16 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
 #ifdef GGML_HIP_ROUTING_TRANSFORM
             binding.transform  = winner_transform;
 #endif
-#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
-            ggml_hip_replay_record_hit(dispatch_digest, signature_digest, winner);
-#endif
+            // HI171 (dev-gpt-agent req_7794101a): recording here was WRONG --
+            // this is a PROVISIONAL binding. The arch/can_execute recheck a
+            // few lines below can still downgrade `binding` to native, and
+            // that downgrade happened silently as far as this log was
+            // concerned: the hit was already recorded against `winner`,
+            // which may never actually launch. HI141 independently found the
+            // same class of gap ("an identical hit-log ... does NOT prove
+            // identical execution, only identical dispatch-key resolution").
+            // The record call has moved to the true final decision point,
+            // after the recheck -- see below.
         } else {
             // Standards 9.2: a miss falls back to native and records the miss.
             // Production never attempts online measurement.
@@ -1373,6 +1380,26 @@ ggml_hip_resolved_dispatch ggml_hip_dispatch_resolve(
     resolved.from_cache = binding.from_cache;
 #ifdef GGML_HIP_ROUTING_TRANSFORM
     resolved.transform   = binding.transform;
+#endif
+#ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+    // HI171: THE actual final-decision point. Everything upstream (exact
+    // lookup, transform validity, the arch/can_execute recheck) has already
+    // run, so `binding.candidate` here is what the executor will really
+    // launch -- not a provisional resolution that might still be overridden.
+    // Scoped to replay mode: tune/record modes reach this same return with a
+    // valid dispatch_digest, but they are not what HI171 audits.
+    //
+    // Known gap, not silently papered over: a THREAD-LOCAL L1 cache hit
+    // (the `l1_found` branch earlier in this function) returns before this
+    // point and is not recorded here, so a long-running server under-counts
+    // launches relative to true frequency once L1 is warm. What IS recorded
+    // is unconditionally trustworthy: every entry reflects a real launch
+    // decision, never a provisional one. Extending coverage to L1 hits is
+    // tracked as HI171 follow-up work, not done in this pass.
+    if (mode == GGML_HIP_DISPATCH_MODE_REPLAY) {
+        ggml_hip_replay_record_hit(dispatch_digest, signature_digest,
+                                   binding.candidate, binding.from_cache);
+    }
 #endif
     // HI64: gated on thread_binding_cacheable (capture-time skip only) --
     // NOT on process_binding_cacheable. A device-local measurement failure
