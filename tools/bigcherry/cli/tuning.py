@@ -76,6 +76,49 @@ def cmd_replay_inspect(args: Namespace) -> int:
     return report["_exit"]
 
 
+def cmd_execution_audit(args: Namespace) -> int:
+    """Per-promoted-key execution audit. See tuning.execution_audit's module
+    docstring for why an exact cache hit is not evidence of tuned execution,
+    and why per-key production GPU time is not fabricated here."""
+    from ..tuning import execution_audit
+
+    try:
+        rows = execution_audit.build_audit(
+            promoted_path=args.promoted,
+            hit_log_path=args.hit_log,
+            e2e_verdicts_path=args.e2e_verdicts,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"execution-audit: {exc}", file=sys.stderr)
+        return 1
+
+    execution_audit.write_audit(rows, args.output)
+    summary = execution_audit.summarize(rows)
+
+    if args.json:
+        print(json.dumps({
+            "total_promoted": summary.total,
+            "by_classification": summary.by_classification,
+            "unproven_fraction": summary.unproven_fraction,
+            "output": str(args.output),
+        }, indent=2, sort_keys=True))
+    else:
+        print(f"execution-audit: {summary.total} promoted key(s) audited")
+        for cls, n in sorted(summary.by_classification.items()):
+            print(f"  {cls:16} {n}")
+        print(f"  unproven (NOT_EXECUTED + FALLBACK) fraction: {summary.unproven_fraction:.1%}")
+        print(f"  wrote: {args.output}")
+        if not args.hit_log:
+            print(
+                "  WARNING: no --hit-log supplied. Every row is NOT_EXECUTED "
+                "by construction -- this audits the ABSENCE of evidence, not "
+                "a real finding. Run a GGML_HIP_REPLAY_DIAGNOSTICS build with "
+                "GGML_HIP_DISPATCH_HIT_LOG set to get real launch evidence.",
+                file=sys.stderr,
+            )
+    return 0
+
+
 def cmd_project_replay(args: Namespace) -> int:
     """HI121 M4: project a measurements JSONL to the rows a specific target
     HIP build can safely reuse, using its own verified producer-capability
@@ -500,11 +543,16 @@ def _emit_campaign_advisories(campaign_dir, receipt) -> None:
                 if isinstance(v, dict)
             )
 
+        promoted_count = getattr(receipt, "promoted_after_evidence", None)
+        execution_audit_path = campaign_dir / "hip-tuning-execution-audit.jsonl"
+
         emit(advisories_for_campaign(
             replay_coverage=getattr(receipt, "replay_coverage", None),
             recovery_result=_load("recovery-result.json"),
             corpus_vectors=vectors,
             inventory=_load("inventory.json"),
+            promoted_count=promoted_count,
+            execution_audit_path=execution_audit_path if execution_audit_path.is_file() else None,
         ))
     except Exception:
         pass

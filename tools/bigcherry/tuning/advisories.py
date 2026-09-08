@@ -99,6 +99,8 @@ def advisories_for_campaign(
     recovery_result: Any = None,
     corpus_vectors: Iterable[Any] = (),
     inventory: Any = None,
+    promoted_count: int | None = None,
+    execution_audit_path: Any = None,
 ) -> list[Advisory]:
     """Build the advisories that apply to one completed campaign.
 
@@ -108,6 +110,46 @@ def advisories_for_campaign(
     """
     out: list[Advisory] = []
     replay = _replay(replay_coverage)
+
+    # --- STOP CONDITION: promoted winners with no execution audit -------
+    #
+    # HI168's production-shaped baseline found GPU0/GPU1/gfx1030 replay
+    # generally failed to beat BC native, with the dual-XTX 27B and gfx1201
+    # results still exploratory (performance_admitted=false throughout; the
+    # gfx1201 prompt-processing deltas are an execution-identity WARNING, not
+    # a performance claim, until physical-device evidence rules out a
+    # topology mismatch or CPU fallback).
+    #
+    # Given that, widening the candidate search or running another large
+    # tuning campaign BEFORE auditing whether the winners we already have
+    # even launch as intended is the wrong next step -- it risks finding more
+    # candidates that look like winners for reasons unrelated to being
+    # faster, exactly as HI166 found for MTP work-equivalence. This fires
+    # whenever a campaign promoted winners but no execution-audit artifact
+    # is present alongside it.
+    if promoted_count and promoted_count > 0 and not execution_audit_path:
+        out.append(Advisory(
+            tag="EXECUTION_AUDIT_MISSING",
+            headline=(
+                f"{promoted_count} winner(s) promoted with NO execution audit. "
+                "STOP before another large tuning campaign."
+            ),
+            severity="stop",
+            body=(
+                "An exact replay cache hit proves compatibility, not tuned execution.",
+                "Run `bigcherry execution-audit --promoted <promoted.jsonl> --hit-log",
+                "<GGML_HIP_DISPATCH_HIT_LOG output> --output",
+                "hip-tuning-execution-audit.jsonl` before trusting this cache or",
+                "widening the candidate set.",
+                "Classify every promoted key as SAME_NATIVE, DIFFERENT_FASTER,",
+                "DIFFERENT_SLOWER, FALLBACK or NOT_EXECUTED -- see",
+                "tools/bigcherry/tuning/execution_audit.py.",
+                "HI168 found GPU0/GPU1/gfx1030 replay generally failed to improve on",
+                "BC native end-to-end; the 27B/gfx1201 results remain exploratory",
+                "(performance_admitted=false). Poor replay results do NOT by",
+                "themselves imply missing candidates -- audit execution first.",
+            ),
+        ))
 
     # --- proving the winners actually run -------------------------------
     if replay:
@@ -270,6 +312,7 @@ class Evaluation:
 # The check ids this module knows how to evaluate. Named here so a caller can
 # tell which were skipped rather than inferring it from what did not print.
 CHECK_IDS = (
+    "EXECUTION_AUDIT_MISSING",
     "ACTIVATION_EVIDENCE",
     "MTP_ACCEPTANCE",
     "CORPUS_COVERAGE",
