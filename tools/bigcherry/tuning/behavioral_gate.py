@@ -116,10 +116,18 @@ class BehavioralVector:
 
 @dataclass(frozen=True)
 class BehavioralTrace:
-    """What one (native or candidate) run of one vector produced."""
+    """What one (native or candidate) run of one vector produced.
+
+    HI166: ``draft_trace`` is the ORDERED per-verify-step (draft_n,
+    accepted_n) sequence (patches/0850_ordered_speculative_trace's
+    ``timings.draft_trace``), not just the aggregate ``draft_n``/
+    ``draft_n_accepted`` scalars -- those cannot distinguish two runs whose
+    per-step work schedules differ but happen to sum to the same totals
+    (e.g. [(4,4),(4,0)] vs [(4,2),(4,2)], both draft_n=8/accepted=4)."""
     generated_token_ids: tuple[int, ...]
     draft_n: int
     draft_n_accepted: int
+    draft_trace: tuple[tuple[int, int], ...] = ()
 
 
 class BehavioralGateError(RuntimeError):
@@ -186,9 +194,54 @@ def run_vector(runner: ServerRunner, vector: BehavioralVector, *, require_mtp: b
                 f"vector {vector.name!r}: draft_n_accepted={draft_n_accepted} out of range "
                 f"for draft_n={draft_n}"
             )
+    draft_trace = _read_draft_trace(
+        timings, vector_name=vector.name, draft_n=draft_n,
+        draft_n_accepted=draft_n_accepted, require_mtp=require_mtp,
+    )
     return BehavioralTrace(
         generated_token_ids=token_ids, draft_n=draft_n, draft_n_accepted=draft_n_accepted,
+        draft_trace=draft_trace,
     )
+
+
+def _read_draft_trace(
+    timings: dict[str, Any], *, vector_name: str, draft_n: int, draft_n_accepted: int,
+    require_mtp: bool,
+) -> tuple[tuple[int, int], ...]:
+    """Read and validate ``timings.draft_trace`` (patches/
+    0850_ordered_speculative_trace). Fails closed the same way missing
+    draft_n/draft_n_accepted already does: an MTP vector with no trace, or
+    a trace whose totals do not reconcile with the aggregate scalars the
+    server ALSO reported, must never be silently treated as "no ordered
+    evidence, assume fine" -- that would readmit exactly the aggregate-only
+    blind spot this patch exists to close.
+    """
+    raw = timings.get("draft_trace")
+    if raw is None:
+        if require_mtp and draft_n > 0:
+            raise BehavioralGateError(
+                f"vector {vector_name!r}: 'timings' has draft_n={draft_n} > 0 but no "
+                f"'draft_trace' -- server is missing patches/0850_ordered_speculative_trace, "
+                f"or the trace was empty for a run that should have produced verify steps"
+            )
+        return ()
+    trace = tuple((int(step[0]), int(step[1])) for step in raw)
+    sum_draft = sum(step[0] for step in trace)
+    sum_accepted = sum(step[1] for step in trace)
+    if sum_draft != draft_n or sum_accepted != draft_n_accepted:
+        raise BehavioralGateError(
+            f"vector {vector_name!r}: draft_trace totals (draft={sum_draft}, "
+            f"accepted={sum_accepted}) do not reconcile with the aggregate scalars "
+            f"(draft_n={draft_n}, draft_n_accepted={draft_n_accepted}) -- the trace is "
+            f"not trustworthy evidence of this run's actual per-step work"
+        )
+    for step_draft, step_accepted in trace:
+        if not (0 <= step_accepted <= step_draft):
+            raise BehavioralGateError(
+                f"vector {vector_name!r}: draft_trace step ({step_draft}, {step_accepted}) "
+                f"has accepted_n out of range for draft_n"
+            )
+    return trace
 
 
 @dataclass(frozen=True)
@@ -208,9 +261,28 @@ def token_digest(token_ids: tuple[int, ...]) -> str:
     return hashlib.sha256(",".join(str(t) for t in token_ids).encode("utf-8")).hexdigest()
 
 
+def ordered_trace_digest(trace: tuple[tuple[int, int], ...]) -> str:
+    """HI166 step 2: a stable digest over the ORDERED per-step trace, for
+    the normal (every-request) artifact -- reporting/storage only, never
+    the equality primitive itself (dev-gpt-agent review, req_afbaf0f27c
+    6d4511: the server cannot know in advance whether a comparison will
+    match, so there is no server-side "common case" to special-case; the
+    equality check in compare_traces() below always compares the full
+    tuples directly)."""
+    import hashlib
+    return hashlib.sha256(
+        ",".join(f"{d}:{a}" for d, a in trace).encode("utf-8")
+    ).hexdigest()
+
+
 def compare_traces(vector_name: str, native: BehavioralTrace, candidate: BehavioralTrace) -> VectorVerdict:
     """Pure comparison logic -- no I/O, fully offline-testable. This is the
-    exact three-state contract described in this module's docstring."""
+    exact three-state contract described in this module's docstring.
+
+    HI166: "same output, same accepted/generated draft trace" now means
+    the ORDERED per-step trace matches exactly, not just the aggregate
+    (draft_n, draft_n_accepted) scalars -- see BehavioralTrace's own
+    docstring for why the aggregate alone is insufficient."""
     if native.generated_token_ids != candidate.generated_token_ids:
         first_divergence = next(
             (i for i, (a, b) in enumerate(zip(native.generated_token_ids, candidate.generated_token_ids)) if a != b),
@@ -220,7 +292,7 @@ def compare_traces(vector_name: str, native: BehavioralTrace, candidate: Behavio
             vector_name=vector_name, verdict="hard_fail",
             native=native, candidate=candidate, first_output_divergence=first_divergence,
         )
-    if (native.draft_n, native.draft_n_accepted) == (candidate.draft_n, candidate.draft_n_accepted):
+    if native.draft_trace == candidate.draft_trace:
         return VectorVerdict(vector_name=vector_name, verdict="exact_pass", native=native, candidate=candidate)
     return VectorVerdict(vector_name=vector_name, verdict="behavior_changed", native=native, candidate=candidate)
 
@@ -238,18 +310,28 @@ class BehavioralGateReport:
         return any(v.verdict == "behavior_changed" for v in self.verdicts)
 
     def summary(self) -> dict[str, Any]:
+        rows = []
+        for v in self.verdicts:
+            row = {
+                "name": v.vector_name, "verdict": v.verdict,
+                "native_draft": [v.native.draft_n, v.native.draft_n_accepted],
+                "candidate_draft": [v.candidate.draft_n, v.candidate.draft_n_accepted],
+                "native_ordered_trace_digest": ordered_trace_digest(v.native.draft_trace),
+                "candidate_ordered_trace_digest": ordered_trace_digest(v.candidate.draft_trace),
+                "first_output_divergence": v.first_output_divergence,
+            }
+            # HI166 step 2: the full ordered trace is retained only when it
+            # is actually needed to explain a mismatch -- the common
+            # (exact_pass) case stays as small as it was before this patch,
+            # digest-only.
+            if v.verdict != "exact_pass":
+                row["native_draft_trace"] = list(v.native.draft_trace)
+                row["candidate_draft_trace"] = list(v.candidate.draft_trace)
+            rows.append(row)
         return {
             "hard_fail": self.hard_fail,
             "needs_throughput_adjudication": self.needs_throughput_adjudication,
-            "vectors": [
-                {
-                    "name": v.vector_name, "verdict": v.verdict,
-                    "native_draft": [v.native.draft_n, v.native.draft_n_accepted],
-                    "candidate_draft": [v.candidate.draft_n, v.candidate.draft_n_accepted],
-                    "first_output_divergence": v.first_output_divergence,
-                }
-                for v in self.verdicts
-            ],
+            "vectors": rows,
         }
 
 
