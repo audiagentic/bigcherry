@@ -67,6 +67,9 @@ required-state = "validated"
 # dependency chain (e.g. rd44-only below, which pulls in its two
 # prerequisites) is not "two patches together" in that sense -- it is one
 # patch's own declared closure, expanded by expand_composition().
+[experiment.hi166-ordered-trace-only]
+patches = ["0850_ordered_speculative_trace"]
+
 [experiment.rd19-only]
 patches = ["1200_rd19_single_gpu_meta_bypass"]
 
