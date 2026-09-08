@@ -83,6 +83,10 @@ Treat source policy constants as experimental. No outcome-conditioned pair delet
 
 This item intentionally revives an idea formerly marked `excluded` only because the old intake scope was kernel-focused. That historical record should be cross-linked, not erased.
 
+This item intentionally revives an idea formerly marked `excluded` only because the old intake scope was kernel-focused. That historical record should be cross-linked, not erased.
+
+DUPLICATE FLAGGED 2026-09-08 (full plan audit): this item duplicates rdna-boost-experiments/RD62 ('UP-MTP-001: Adaptive MTP draft depth') -- same feature (adaptive per-sequence MTP draft-depth controller), but cited to two DIFFERENT sources: this item to nasone32/llama.cpp-RDNA3-7900xtx-opt commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e, RD62 to llama.cpp upstream PR #27210. RD62 already has dual-R9700 evidence on file per its own notes; this item does not yet. Do NOT work both in parallel -- reconcile into ONE item first: read both source implementations, determine whether they're the same algorithm/design or genuinely different approaches to the same goal, and decide which plan item is the real owner (likely RD62, given its existing evidence) before any implementation starts on either. Cross-referenced in config/external-sources.toml's nasone-rdna-optimizations source block.
+
 ## Change Log
 
 - 2026-09-08T09:50:40+10:00 (created-by): Created from current nasone adaptive-MTP implementation; P0.
@@ -90,3 +94,4 @@ This item intentionally revives an idea formerly marked `excluded` only because 
 ## Ledger-events
 
 - Pending: ag-ledger MCP unavailable in authoring session.
+- 2026-09-08T17:46:30.049272+00:00 (updated-by): Updated: section:notes
