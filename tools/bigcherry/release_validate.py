@@ -315,7 +315,7 @@ def probe(
     """Prove `ref` still audits, patches, and builds clean under the given
     canonical v2 (source, platform, builds) triple.
 
-    Explicit axes, not a bundled preset (compat.recipe removal plan,
+    Explicit axes, not a bundled preset (legacy recipe removal plan,
     gpt-dev-agent-reviewed, session ses_5307d9c58ec645cb): the legacy
     ``recipe`` parameter silently bundled a patch selection AND a platform
     AND a build list together; this probe's own internal model already

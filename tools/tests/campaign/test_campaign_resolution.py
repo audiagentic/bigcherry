@@ -135,7 +135,7 @@ class CampaignResolutionTests(unittest.TestCase):
 
 class CanonicalSelectionTests(unittest.TestCase):
     """resolve_canonical_selection() is the migration helper replacing
-    recipes.py's legacy [compat.recipe.*] bridge -- see the compat.recipe
+    recipes.py's retired compatibility bridge -- see the legacy recipe
     removal plan. These tests pin its exact contract before any --recipe
     consumer is migrated onto it."""
 
