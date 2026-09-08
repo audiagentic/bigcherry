@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.campaign import qualification_execution as qe  # noqa: E402
 from bigcherry.campaign import qualification_matrix as qm  # noqa: E402
 from bigcherry.campaign import qualification_rd08 as rd08  # noqa: E402
-from bigcherry.core import config, paths  # noqa: E402
+from bigcherry.core import config, context, paths  # noqa: E402
 from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.patch import patchset, registry as patch_registry  # noqa: E402
 
@@ -72,6 +72,15 @@ def main() -> int:
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
 
+    # base_repo: the shared, read-only, cached upstream mirror -- never the
+    # isolated clone's own (nonexistent, gitignored) vendor/llama.cpp, and
+    # never the SHARED checkout's vendor/llama.cpp (rd08_correctness.py's
+    # own docstring warns that tree is "currently mid-flight"). materialize_
+    # composition() only ever git-worktree-adds FROM base_repo into
+    # worktree_root -- it does not write into base_repo itself.
+    upstream_repo = context.ProjectContext.resolve().upstream_repo
+    print(f"upstream_repo (base_repo): {upstream_repo}")
+
     run_cell = rd08.make_rd08_run_cell(
         contract=contract, base_revision=cfg.pinned, hip_path=hip_path,
         model=model_root / "gpt-oss-20B" / "gguf" / "gpt-oss-20b-UD-Q6_K_XL.gguf",
@@ -79,6 +88,7 @@ def main() -> int:
         marker_regex=r"BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2",
         worktree_root=run_root / "worktrees", build_root=run_root / "builds",
         run_root=run_root / "evidence", build_env=dict(os.environ), pairs=3,
+        base_repo=upstream_repo,
     )
 
     result = qe.execute_qualification_plan(
