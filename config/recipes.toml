@@ -38,22 +38,30 @@ required-state = "validated"
 #
 # Adding one is a deliberate act with a real consequence: production runs it.
 # Record what qualified it and what the evidence does NOT cover.
-patches = [
-  # +1.8886% end-to-end, 95% CI [1.4754, 2.3523] over 6 pre-registered
-  # sessions; 0.0% control regression; bit-identical output; peak
-  # graph_cache_entries 386 -> 651, inside its declared 800 budget.
-  # Contract RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d, promoted 2026-09-05.
-  #
-  # SCOPE OF THE EVIDENCE, which is narrower than where this now runs: it was
-  # measured on the MTP speculative-verify workload, model tierL-qwen27b-q8,
-  # on gfx1100 (its only validation-architecture). Shipping applies it to
-  # every workload, model and architecture. The mechanism -- a shape
-  # fingerprint replacing an allocation-dependent graph-cache key -- is
-  # workload-agnostic, output is bit-identical, and a fingerprint collision
-  # costs only an extra recapture (the per-node memcmp check is unchanged),
-  # so the risk is low. It is not zero, and it is not what was measured.
-  "1233_rd73_stable_graph_cache_key",
-]
+#
+# DEMOTED 2026-09-09 (HI162, docs/planning/completed/hip-autotune/HI162.md):
+# 1233_rd73_stable_graph_cache_key (RD73) was promoted 2026-09-05 on
+# +1.8886% end-to-end, 95% CI [1.4754, 2.3523], 6 pre-registered sessions,
+# 0.0% control regression, bit-identical output (contract
+# RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d) -- that original promotion
+# evidence is PRESERVED, not erased; it remains in
+# patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
+# ledger. A later balanced, order-rotated, composition-verified 4-arm A/B on
+# the SAME contract workload (MTP speculative decode, tierL-qwen27b-q8,
+# gfx1100x2, -sm tensor) instead measured RD73 as a REGRESSION: tg128 -1.96%,
+# tg512 -1.24%, pp1024 -0.69%, pp4096 -0.60%, pp2048 -0.59%, with COMPLETE
+# statistical separation at n=8/arm (Mann-Whitney p=0.00016 per metric,
+# tg128 ranges [99.21-100.51] vs [101.58-102.31] never touching). This
+# regression finding specifically SURVIVED a later methodology correction
+# (GP11, commit 1d73e7a2) that withdrew two OTHER conclusions from the same
+# investigation (framework overhead, replay-build cost) as artifacts of an
+# unrelated dispatch-mode flag defect -- RD73's mechanism (the CUDA graph
+# cache key) is not gated behind that flag, so RD73 remained the only real
+# difference between the compared arms. Both claims cannot be true; the
+# later, better-controlled measurement is trusted over the earlier one.
+# patch.toml state set validated -> rejected accordingly. Demotion is this
+# deliberate act, not an automatic consequence of either benchmark.
+patches = []
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets

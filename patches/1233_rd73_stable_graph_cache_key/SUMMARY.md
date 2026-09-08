@@ -1,14 +1,17 @@
 # 1233_rd73_stable_graph_cache_key: Replace the HIP/CUDA graph-cache key with a stable FNV-1a shape fingerprint (RD73, re-scoped from FORK-MTP-003)
 
-**Status:** validated
+**Status:** rejected
 **Group:** rdna-boosts
 **Plan item:** RD73
 
 > Promoted 2026-09-05 on 6 pre-registered measurement sessions:
 > **+1.889% end-to-end, 95% CI [1.475, 2.352], 0.0% control regression,
 > bit-identical output.** See "GOVERNED QUALIFICATION" below.
-> Not in any patch-set yet -- `validated` means the evidence stands, not
-> that production runs it.
+> **DEMOTED 2026-09-09** (HI162): a later, better-controlled balanced A/B on
+> the same contract workload measured this as a real REGRESSION instead. See
+> "DEMOTION" section at the end of this file. The promotion evidence above
+> is preserved, not erased -- it is superseded by the later measurement, not
+> deleted.
 
 ## What it does
 
@@ -238,3 +241,58 @@ deliberate step. And per the contract's own resource limit, RD73 buys its
 timing with a measured ~68.7% increase in peak `graph_cache_entries`
 (386 -> 651), inside the declared 800 budget but worth watching if the cap is
 ever approached.
+
+[RD73 was subsequently added to `[patch-set.validated-enhancements]` and
+shipped in production builds between 2026-09-05 and 2026-09-09 -- see
+`config/recipes.toml`'s own git history for that addition; this file was not
+updated to say so at the time, which is itself a process gap worth noting.]
+
+## DEMOTION (2026-09-09): HI162's balanced A/B measures this as a real regression
+
+Filed as `docs/planning/completed/hip-autotune/HI162.md` (P0, 2026-09-05,
+`created-by: claude-opus-5`). An order-balanced, composition-verified 4-arm
+comparison on the SAME contract workload (MTP speculative decode, model
+`tierL-qwen27b-q8`, gfx1100 x2, `-sm tensor`) as the GOVERNED QUALIFICATION
+above:
+
+| arm       | tg128  | tg512  | tg2048 | pp1024 | pp4096  |
+|-----------|--------|--------|--------|--------|---------|
+| bcnative  | 102.02 | 100.34 | 106.95 | 987.36 | 1236.73 |
+| bcrd73    | 100.02 |  99.09 | 106.32 | 980.52 | 1229.26 |
+| delta     | -1.96% | -1.24% | -0.59% | -0.69% | -0.60%  |
+
+tg128, tg512 and pp1024 show COMPLETE separation at n=8 per arm (every
+`bcrd73` sample worse than every `bcnative` sample -- Mann-Whitney
+p = 2/C(16,8) = 0.00016 per metric). tg128 ranges [99.21-100.51] vs
+[101.58-102.31] never overlap.
+
+**Both the promotion evidence above and this regression cannot both be
+true.** The investigation that produced this table also found and withdrew
+two OTHER conclusions from the same measurement session (framework overhead
+measured as zero; the `GGML_HIP_DISPATCH_REPLAY` build flag measured as
+free) after discovering the dispatch-mode layer was OFF for every arm in
+that session (commit `1d73e7a2`, "GP11: the dispatch layer was OFF for
+every benchmark in this session"). RD73's regression finding SURVIVED that
+correction specifically: RD73 changes the CUDA graph cache key, a mechanism
+that is not gated behind the dispatch-mode flag that invalidated the other
+two conclusions, so RD73 remained the only real difference between the
+compared arms even after the fix. That commit's own words: *"NOT withdrawn:
+RD73's ~2% regression (HI162)... 1233 remains the only difference between
+them."*
+
+**Decision (via the bigcherry-patch-lifecycle skill, not inferred
+automatically from either benchmark): DEMOTED.**
+- `config/recipes.toml`: removed from `[patch-set.validated-enhancements]`
+  (production no longer ships this patch).
+- `patch.toml`: `state` changed `validated` -> `rejected` (the durable
+  implementation-state axis; this candidate's own performance claim is now
+  disproven by better-controlled evidence, which is exactly what `rejected`
+  means in this project's lifecycle vocabulary).
+- The original GOVERNED QUALIFICATION evidence above is preserved verbatim,
+  per this project's append-only-evidence rule -- it is superseded, not
+  deleted, and remains available if a future re-measurement (under a
+  properly balanced, order-rotated, composition-verified procedure, per
+  `docs/reference/testing/TEST.md`'s now-documented mandatory A/B
+  discipline) disagrees with HI162's finding.
+- `patch-graph --roots 1233_rd73_stable_graph_cache_key` shows no
+  dependents, so this demotion has no downstream composition impact.

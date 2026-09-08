@@ -481,6 +481,7 @@ ownership.
 | `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
 | `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
 | `tools/lab/gp11-replay-bench/tune-per-card.sh` | **TRANSITIONAL** | HI168: retained investigation provenance; use tune-campaign for new tuning. |
+| `tools/lab/va26-rd08-parity/run.py` | **TRANSITIONAL** | VA26: diagnostic driver proving the new qualification_execution orchestrator + qualification_rd08 adapter reproduce RD08's existing real-hardware verdict; answered, retained as a worked example pending a maintained CLI entry point (deliberately not added yet, per VA26's own design review). |
 
 Inventory count: 401 script/tool files (vendor, build/cache, and artifacts excluded).
 
