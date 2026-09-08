@@ -158,13 +158,19 @@ def _plan_and_run_one_lane(
 #: pp4096; record must span that same envelope or it is discovering a
 #: different, narrower workload than the one being tuned for.
 #:
-#: Deliberately NOT sharing this workload with `_stage_tune` (dev-gpt-agent
-#: review, req_bcf8417d476b435f): record's job is "what signatures exist",
-#: tune's job is "measure THIS signature under work identical between
-#: native/candidate" (HI130's equality rule is about A/B pairs, not about
-#: discovery vs. measurement matching each other). Widening what tune
-#: actually MEASURES is a tuning-coverage expansion and stays HI166-gated;
-#: this fixes discovery only.
+#: `_stage_tune` NOW ALSO uses this same sweep (added once HI166 -- ordered
+#: per-verify-step acceptance trace equality -- landed and unblocked
+#: widening what tune actually measures; see that function for why this
+#: was deliberately deferred rather than done at the same time as this
+#: record-side fix). record's job is "what signatures exist"; tune's job
+#: is "measure THIS signature under work identical between native/
+#: candidate" (HI130's equality rule is about A/B pairs, not about
+#: discovery vs. measurement matching each other) -- sharing the SWEEP
+#: SHAPE between the two does not violate that: each of record and tune
+#: still runs its own native-vs-candidate comparison independently, using
+#: whatever measurement the tuner's own screen/final-sample loop produces
+#: once a signature is dispatched at all, exactly like every other
+#: candidate family already tuned this way.
 #:
 #: Word count, not exact token count: this drives a live server's
 #: /completion endpoint with a plain string: there is no tokenizer available
@@ -257,7 +263,22 @@ def _stage_tune(
         log_path=workdir / "tune-server.log",
     )
     with runner:
+        # Original short decode-shaped smoke request -- kept: cheap, and
+        # still the right shape for measuring mmvq/decode signatures.
         runner.run_completion("Write a short paragraph about the ocean.", n_predict=96)
+        # HI167 (unblocked by HI166 landing): the tuner measures a signature
+        # once, on its FIRST live dispatch -- internally looping its own
+        # screen_samples/final_samples timing synchronously within that one
+        # interception, then caching the result (g_results.find() in
+        # hip-autotune-tuner.cu short-circuits every later occurrence). So a
+        # signature that never gets dispatched here never gets measured at
+        # all, however many MMQ candidates the inventory-driven build
+        # compiled in. This is the exact same prefill-shape gap _stage_record
+        # had -- one exposure per shape point is sufficient, no repeats
+        # needed, since the tuner's own internal loop does the repeated
+        # timing.
+        for word_count in _RECORD_DISCOVERY_WORD_COUNTS:
+            runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     measurements_path = Path(f"{tune_db_path}.measurements.jsonl")
     if not measurements_path.is_file():
         raise TuneCampaignError(f"tune stage produced no measurements at {measurements_path}")
