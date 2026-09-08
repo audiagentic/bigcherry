@@ -51,29 +51,39 @@ Mutates canonical BigCherry state: no
 
 ## Disposition
 
-**Answered (negative finding), 2026-09-09**: across all 55 real
-captured decode-time dispatch shapes, `hipblaslt-bench` in heuristic
-(default vendor pick) mode is **2x-10x SLOWER** than BigCherry's
-existing native/tuned MMVQ dispatch. Even in `--algo_method all` mode
-(library enumerates and reports every real kernel solution it has for
-the shape, i.e. the best case hipBLASLt itself can offer) it reaches
-only near-parity at best (~0.83x-0.99x on a handful of shapes) and is
-still slower on the large majority -- never a clear win. See
-`rd87_comparison.csv` for the full per-shape table.
+**Answered, 2026-09-09 (corrected same day)**: the first pass of this
+analysis had a real bug -- the section-header match used
+`header.endswith('all')`, but headers keep their trailing `' ==='`
+(e.g. `"k5120_m5120_n1 all ==="`), so the match silently always failed
+and every `all_ratio` (native vs hipBLASLt's best-of-every-solution
+run) column came out empty. That produced a false blanket "no-go" that
+hid every shape where hipBLASLt's exhaustive solution search actually
+beat native. Fixed in `analyze_results.py` (strips the punctuation
+before matching); `rd87_comparison.csv` now carries the real numbers.
 
-Root cause (consistent with hipBLASLt's design target): these are all
-memory-bound, tiny-N (N<=5) GEMV/skinny-GEMM decode shapes. hipBLASLt's
-kernel library and heuristic selector are built for compute-bound,
-large-N training/prefill GEMMs; the fixed per-call dispatch/heuristic
-overhead of a generic GEMM library dominates at these sizes and is not
-recovered even by exhaustive solution search. A dequantization step
-(hipBLASLt has no native Q8_0 GEMM support -- this oracle used f16 as
-the closest available proxy, which is itself an optimistic upper bound
-for hipBLASLt) would only add further overhead on top of these numbers.
+**Corrected finding, split by native code path:**
 
-Recommendation: **no-go** on a real hipBLASLt dispatch-path integration
-for decode-time GEMV shapes. RD87 should close as a real, evidence-backed
-negative finding, not be reopened to chase a pass. If hipBLASLt is
-worth revisiting at all, it would be for compute-bound, large-N
-prefill/prompt-processing GEMMs specifically -- a different, separate
-plan item, not a continuation of this one.
+- **17 of 55 shapes** show hipBLASLt's best-of-all-solutions run
+  genuinely faster than native (`all_ratio < 1.0`).
+- Every clear, sizeable win (`all_ratio` 0.37-0.83, i.e. hipBLASLt
+  1.2x-2.7x FASTER) is on a shape whose native path is already
+  `blas:native:v1` -- small-K (K=64/256), larger-N (N>=8) shapes that
+  llama.cpp already routes through rocBLAS, not through BigCherry's own
+  hand-written MMVQ/MMQ kernels. Best case: K=256,M=256,N=24 -- native
+  18.02us vs hipBLASLt-tuned 6.58us (2.74x faster).
+- The remaining `all_ratio < 1.0` shapes (K=5120, `mmvq:native:v1`
+  path) are all within ~0.89-0.99x -- effectively noise-level parity,
+  not real wins.
+- Every shape where native already uses tiny-N (N<=5) MMVQ decode and
+  hipBLASLt is clearly worse (`all_ratio` well above 1.0, up to 10x in
+  heuristic mode) is exactly the same MMVQ-decode population as before
+  -- that negative result stands unchanged.
+
+Recommendation, corrected: **no-go on hipBLASLt for MMVQ decode
+dispatch** (that negative result is real and survives the fix) --
+**but a real, evidence-backed go-signal for BLAS-family solution
+search on the shapes llama.cpp already routes through rocBLAS**
+(`blas:native:v1`). That second finding lands squarely in HI173's
+scope (BLAS-family candidate search over rocBLAS/Tensile solutions,
+filed 2026-09-08) rather than RD87's own (hipBLASLt as an MMVQ-decode
+replacement). See `rd87_comparison.csv` for the full per-shape table.
