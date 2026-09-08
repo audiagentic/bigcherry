@@ -26,6 +26,26 @@ class EnvironmentError_(ValueError):
     """Raised for a malformed or missing environment document."""
 
 
+def gpu_visibility_pair(indices: tuple[int, ...]) -> dict[str, str]:
+    """Pure two-selector math, no ``Host``/device-inventory validation.
+
+    Shared core of ``Host.gpu_visibility_env`` for a caller that has already
+    validated its indices against a real device inventory elsewhere (e.g.
+    ``tuning/workflow.py``'s ``_devices_tuple`` parsing) and does not have a
+    ``Host`` object at hand. See ``Host.gpu_visibility_env`` for the VA22
+    two-selector-trap explanation this implements; do not duplicate that
+    logic at a call site -- route through one of these two functions.
+    """
+    if not indices:
+        raise EnvironmentError_("gpu_visibility_pair requires at least one device index")
+    if len(set(indices)) != len(indices):
+        raise EnvironmentError_(f"duplicate device index in {indices!r}")
+    return {
+        "ROCR_VISIBLE_DEVICES": ",".join(str(i) for i in indices),
+        "HIP_VISIBLE_DEVICES": ",".join(str(pos) for pos in range(len(indices))),
+    }
+
+
 @dataclass(frozen=True)
 class Device:
     """One GPU, as the runtime addresses it.
@@ -64,13 +84,29 @@ class Host:
     def devices_for_arch(self, arch: str) -> tuple[Device, ...]:
         return tuple(d for d in self.devices if d.arch == arch)
 
-    def visible_devices(self, *indices: int) -> str:
-        """The value to export as HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES.
+    def gpu_visibility_env(self, *indices: int) -> dict[str, str]:
+        """The exact ``ROCR_VISIBLE_DEVICES`` / ``HIP_VISIBLE_DEVICES`` pair
+        that makes exactly these physical device ordinals visible, in this
+        order, and nothing else.
 
-        Both must be set for a multi-GPU campaign: the campaign inherits
-        ambient visibility rather than restricting it, so that ``-sm tensor``
-        topology is preserved, and exposing all four heterogeneous cards makes
-        the server fail its AllReduce init and segfault.
+        VA22, "the two-selector trap" (has recurred more than once in this
+        project's history): ``ROCR_VISIBLE_DEVICES`` filters the physical
+        device list FIRST; ``HIP_VISIBLE_DEVICES`` then indexes INTO that
+        already-filtered list by POSITION, not by physical ordinal. So
+        selecting physical devices ``(1, 3)`` needs
+        ``ROCR_VISIBLE_DEVICES="1,3"`` (the physical filter) and
+        ``HIP_VISIBLE_DEVICES="0,1"`` (position within that filtered list,
+        same order) -- setting both to the same physical indices is wrong,
+        and for a selection that does not start at physical index 0 (e.g.
+        gfx1201 alone at index 2: ``ROCR_VISIBLE_DEVICES="2"``,
+        ``HIP_VISIBLE_DEVICES="0"``, never ``"2"``) it silently selects the
+        wrong device or nothing at all rather than failing loudly.
+
+        Both variables must be set for a multi-GPU campaign: the campaign
+        inherits ambient visibility rather than restricting it, so that
+        ``-sm tensor`` topology is preserved, and exposing all four
+        heterogeneous cards makes the server fail its AllReduce init and
+        segfault.
         """
         known = {d.index for d in self.devices}
         unknown = [i for i in indices if i not in known]
@@ -78,7 +114,7 @@ class Host:
             raise EnvironmentError_(
                 f"host {self.name!r} has no device(s) {unknown}; known: {sorted(known)}"
             )
-        return ",".join(str(i) for i in indices)
+        return gpu_visibility_pair(indices)
 
 
 @dataclass(frozen=True)

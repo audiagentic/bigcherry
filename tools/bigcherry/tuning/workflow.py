@@ -35,6 +35,7 @@ from ..campaign import planner as campaign_planner
 from ..build import generated_tree
 from ..campaign.lane import CampaignLaneResult
 from ..core import config as campaign_config
+from ..core import environment as environment_mod
 from ..core import gpu as gpu_mod
 from ..core import paths
 from ..core.artifacts import ArtifactStore
@@ -104,6 +105,20 @@ def _devices_tuple(devices: str) -> tuple[int, ...]:
     return tuple(int(d) for d in devices.split(","))
 
 
+def _gpu_visibility_env(devices: str) -> dict[str, str]:
+    """ROCR_VISIBLE_DEVICES + HIP_VISIBLE_DEVICES, correctly paired (VA22,
+    the two-selector trap -- see environment.gpu_visibility_pair). Every
+    ServerRunner env_overrides in this module must set BOTH via this helper,
+    never HIP_VISIBLE_DEVICES alone: leaving ROCR_VISIBLE_DEVICES to ambient/
+    inherited state is fragile the moment this runs in a parent shell or CI
+    context that already has it set to something else, and setting both to
+    the same raw physical-index string is the exact bug this helper exists
+    to prevent for any device selection that does not start at physical
+    index 0.
+    """
+    return environment_mod.gpu_visibility_pair(_devices_tuple(devices))
+
+
 def _plan_and_run_one_lane(
     *, context: ProjectContext, cfg: campaign_config.Config, store: ArtifactStore,
     source_name: str, build_name: str, platform_name: str, run_id: str,
@@ -147,7 +162,7 @@ def _stage_record(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
+            **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "record",
             "GGML_HIP_DISPATCH_DB": str(record_db_path),
             "GGML_CUDA_DISABLE_GRAPHS": "1",
@@ -191,7 +206,7 @@ def _stage_tune(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context), *runtime_profile.server_args),
         env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
+            **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "tune",
             "GGML_HIP_DISPATCH_DB": str(tune_db_path),
             "GGML_HIP_TUNE_SCREEN_SAMPLES": str(screen_samples),
@@ -687,7 +702,7 @@ def _stage_replay_validate(
     )
 
     def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
-        env = {"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
+        env = {**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
         runner = ServerRunner(
             binary=binary_path, model=model_path, extra_args=common_args,
             env_overrides=env, env_unset=env_unset, log_path=workdir / log_name,
@@ -710,7 +725,7 @@ def _stage_replay_validate(
     }
     candidate_runner = ServerRunner(
         binary=binary_path, model=model_path, extra_args=common_args,
-        env_overrides={"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
+        env_overrides={**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
         env_unset=env_unset, log_path=workdir / "behavioral-candidate.log",
     )
     try:
