@@ -54,6 +54,26 @@ def run_unprofiled_control(*, binary, model, common_args, env, prompt, n_predict
         return float(timings.get("prompt_ms", 0.0))
 
 
+def parse_hip_launch_kernel_durations(hip_api_trace_csv: Path) -> list[float]:
+    """HI163 retest: hipLaunchKernel's own host-side duration (End - Start,
+    microseconds) is exactly the metric HI172's original HIP API trace found
+    +5.2% slower in replay -- this reproduces that same measurement so the
+    fix's effect can be compared directly against it."""
+    import csv as _csv
+    if not hip_api_trace_csv.is_file():
+        return []
+    durations = []
+    with hip_api_trace_csv.open(encoding="utf-8", newline="") as f:
+        for row in _csv.DictReader(f):
+            if row.get("Function") != "hipLaunchKernel":
+                continue
+            start, end = row.get("Start_Timestamp"), row.get("End_Timestamp")
+            if not start or not end:
+                continue
+            durations.append((int(end) - int(start)) / 1000.0)
+    return durations
+
+
 def run_profiled_pass(*, binary, model, common_args, env, prompt, n_predict, label, out_dir):
     prefix = rocprof.rocprofv3_command_prefix(output_dir=out_dir, label=label)
     runner = ServerRunner(
@@ -65,7 +85,9 @@ def run_profiled_pass(*, binary, model, common_args, env, prompt, n_predict, lab
         result = runner.run_completion(prompt, n_predict=n_predict, timeout_s=180)
     csv_path = out_dir / f"{label}_kernel_trace.csv"
     stats = rocprof.parse_kernel_trace(csv_path)
-    return result.get("timings", {}), {s.name: s for s in stats}
+    hip_api_csv = out_dir / f"{label}_hip_api_trace.csv"
+    launch_durations = parse_hip_launch_kernel_durations(hip_api_csv)
+    return result.get("timings", {}), {s.name: s for s in stats}, launch_durations
 
 
 def aggregate(passes: list[dict[str, rocprof.KernelStat]]) -> dict[str, dict]:
@@ -127,9 +149,15 @@ def main(argv: list[str] | None = None) -> int:
                     "GGML_HIP_DISPATCH_CACHE": config["replay_cache"]},
         },
     }
+    # HI163 retest hook: override just the replay arm's shared-library
+    # resolution (e.g. to point at a rebuilt libggml-hip.so.0 with the
+    # HI163 fix) without touching the native arm's baseline build.
+    if "replay_ld_library_path" in config:
+        arms["replay"]["env"]["LD_LIBRARY_PATH"] = config["replay_ld_library_path"]
 
     control_times: dict[str, list[float]] = {"native": [], "replay": []}
     pass_stats: dict[str, list[dict]] = {"native": [], "replay": []}
+    launch_durations: dict[str, list[float]] = {"native": [], "replay": []}
 
     for pass_idx in range(1, args.passes + 1):
         # HI171/TEST.md's own "never run arms in a fixed order" rule: a
@@ -150,12 +178,13 @@ def main(argv: list[str] | None = None) -> int:
 
             print(f"[hi172] pass {pass_idx}/{args.passes} {arm_name}: profiled", flush=True)
             pass_dir = out_dir / f"{arm_name}-p{pass_idx}"
-            timings, stats = run_profiled_pass(
+            timings, stats, launches = run_profiled_pass(
                 binary=arm["binary"], model=model, common_args=common_args,
                 env=arm["env"], prompt=prompt, n_predict=n_predict,
                 label=arm_name, out_dir=pass_dir,
             )
             pass_stats[arm_name].append(stats)
+            launch_durations[arm_name].extend(launches)
             (pass_dir / "completion_timings.json").write_text(
                 json.dumps(timings, indent=2), encoding="utf-8",
             )
@@ -174,10 +203,14 @@ def main(argv: list[str] | None = None) -> int:
         spread_pct = (max(times) - min(times)) / statistics.fmean(times) * 100 if times else 0.0
         if spread_pct > ENVIRONMENT_DRIFT_THRESHOLD_PCT:
             environment_stable = False
+        durs = launch_durations[arm_name]
         summary["arms"][arm_name] = {
             "control_prompt_ms": times,
             "control_spread_pct": spread_pct,
             "kernel_stats": aggregate(pass_stats[arm_name]),
+            "hip_launch_kernel_calls": len(durs),
+            "hip_launch_kernel_mean_us": statistics.fmean(durs) if durs else 0.0,
+            "hip_launch_kernel_total_us": sum(durs),
         }
     summary["environment_stable"] = environment_stable
 
