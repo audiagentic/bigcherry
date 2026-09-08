@@ -544,7 +544,19 @@ def _emit_campaign_advisories(campaign_dir, receipt) -> None:
             )
 
         promoted_count = getattr(receipt, "promoted_after_evidence", None)
+        promoted_path = campaign_dir / "promoted.jsonl"
         execution_audit_path = campaign_dir / "hip-tuning-execution-audit.jsonl"
+
+        # A file existing at this path is NOT evidence THIS run was audited --
+        # a reused run_id/workdir can leave a stale audit from a different
+        # promoted set sitting right here. Only an audit that actually covers
+        # every currently-promoted dispatch counts; see
+        # execution_audit.audit_covers_promoted for why.
+        from bigcherry.tuning.execution_audit import audit_covers_promoted
+        covered = (
+            promoted_path.is_file()
+            and audit_covers_promoted(promoted_path, execution_audit_path)
+        )
 
         emit(advisories_for_campaign(
             replay_coverage=getattr(receipt, "replay_coverage", None),
@@ -552,7 +564,7 @@ def _emit_campaign_advisories(campaign_dir, receipt) -> None:
             corpus_vectors=vectors,
             inventory=_load("inventory.json"),
             promoted_count=promoted_count,
-            execution_audit_path=execution_audit_path if execution_audit_path.is_file() else None,
+            execution_audit_path=execution_audit_path if covered else None,
         ))
     except Exception:
         pass
