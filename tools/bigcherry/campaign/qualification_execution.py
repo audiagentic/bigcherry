@@ -43,6 +43,7 @@ from .qualification_matrix import QualificationCell, QualificationMatrixPlan
 from ..experiment.contract import (
     CorrectnessResult,
     ExperimentContract,
+    ExperimentContractError,
     LaneEffect,
     TriggerEvidence,
     aggregate_contract_effects,
@@ -145,13 +146,33 @@ def execute_qualification_plan(
             )
         cell_results.append(result)
 
+    # Merge by check name, but a FAILING result for a given check always
+    # wins over a passing one for that same check -- never let a later
+    # cell's pass silently overwrite (hide) an earlier cell's fail for the
+    # same logical check (e.g. "bit_identical" reported once per
+    # architecture in a multi-arch plan). A plain dict.update() here would
+    # let whichever cell happened to run last decide the outcome.
     merged_correctness: dict[str, CorrectnessResult] = {}
     for result in cell_results:
-        merged_correctness.update(result.correctness_results)
-    correctness_gate = (
-        evaluate_correctness_gate(contract, merged_correctness)
-        if contract.correctness.required_checks else None
-    )
+        for check, check_result in result.correctness_results.items():
+            existing = merged_correctness.get(check)
+            if existing is None or (existing.passed and not check_result.passed):
+                merged_correctness[check] = check_result
+    correctness_gate: dict[str, object] | None = None
+    if contract.correctness.required_checks:
+        try:
+            correctness_gate = evaluate_correctness_gate(contract, merged_correctness)
+        except ExperimentContractError:
+            # Same reasoning as aggregate_contract_effects() below: a
+            # contract with required checks but LITERALLY ZERO correctness
+            # results (every cell that would have supplied one already
+            # failed with an error) is a caller-empty-input raise, not a
+            # returned failure dict. Leave correctness_gate=None here --
+            # the fail-closed "invalid" verdict below already covers this
+            # case; a real caller with genuine partial data never hits
+            # this branch, since evaluate_correctness_gate() only raises
+            # on a totally empty results dict, not a partial one.
+            pass
 
     trigger_evidence = tuple(
         evidence for result in cell_results for evidence in result.trigger_evidence
