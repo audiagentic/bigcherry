@@ -46,10 +46,10 @@ No repository-wide lock/session registry is justified yet. A global lock would s
 
 This exercise requires two live sessions on the same checkout; it cannot be proven from GitHub-only review.
 
-1. Session A records `git status --short`, creates an uncommitted probe file in a chosen tracked-area test path, and leaves it present.
+1. Session A records `git status --short`, creates an uncommitted probe file in a chosen tracked-area test path, and leaves it present. Capture the transcript outside the checkout (for example under a host temporary directory); do not write evidence into the checkout while the cleanliness claim is being tested.
 2. Session B records `git status --short` and must identify A's probe as pre-existing/unowned before changing anything.
 3. Session B creates a distinct probe, stages only its own path with `git add -- <B-path>`, and records `git diff --cached --name-only`; A's path must not be staged or modified.
 4. Session B unstages/removes only B's probe. Session A verifies its probe is byte-identical, then removes only A's probe.
-5. Save the command transcript as compact evidence under `docs/evidence/<date>-to03-shared-worktree/` with revision and checksums per `docs/evidence/README.md`.
+5. After both sessions have released their probes and `git status --porcelain` is clean, copy/assemble the externally captured transcripts as compact evidence under `docs/evidence/<date>-to03-shared-worktree/` with revision and checksums per `docs/evidence/README.md`. Each session may remove only state it created; never use blanket cleanup or delete unknown files. Preserve failed transcripts and record the blocker rather than marking the exercise passed.
 
 Passing this exercise closes the remaining TO03 evidence requirement. Failure is evidence to revisit scoped locking; it is not permission to introduce a generic coordination service preemptively.
