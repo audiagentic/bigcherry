@@ -34,20 +34,25 @@ DISPATCH_SYMBOLS = ("ggml_hip_dispatch_resolve", "ggml_hip_replay_lookup",
 
 
 def perf_command_prefix(*, out_dir: Path, label: str) -> tuple[str, ...]:
+    """-A (askpass) rather than -n (non-interactive/cached-ticket-only):
+    a cached sudo timestamp is per-tty/session and does not carry over to
+    a detached subprocess launched from a different session, so -n fails
+    here even right after an interactive `sudo -v`. SUDO_ASKPASS must be
+    set in the launched process's own environment (see run_arm)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     data_path = out_dir / f"{label}.perf.data"
     return (
-        "sudo", "-n", PERF_BIN, "record",
+        "sudo", "-A", PERF_BIN, "record",
         "-F", "999", "-g", "--call-graph", "dwarf,16384",
         "-o", str(data_path), "--",
     )
 
 
-def run_arm(*, binary, model, common_args, env, prompt, n_predict, requests, label, out_dir):
+def run_arm(*, binary, model, common_args, env, prompt, n_predict, requests, label, out_dir, askpass_path):
     prefix = perf_command_prefix(out_dir=out_dir, label=label)
     runner = ServerRunner(
         binary=binary, model=model, extra_args=common_args,
-        env_overrides=env, command_prefix=prefix,
+        env_overrides={**env, "SUDO_ASKPASS": askpass_path}, command_prefix=prefix,
         log_path=out_dir / f"{label}.log",
     )
     with runner:
@@ -56,14 +61,16 @@ def run_arm(*, binary, model, common_args, env, prompt, n_predict, requests, lab
     return out_dir / f"{label}.perf.data"
 
 
-def summarize_perf_data(data_path: Path) -> dict:
+def summarize_perf_data(data_path: Path, askpass_path: str) -> dict:
     """perf report --stdio --children -- children percentages give inclusive
     time under each symbol's own subtree, which is what we want for
     attributing time to the dispatch-resolution call path as a whole."""
+    import os
+    env = {**os.environ, "SUDO_ASKPASS": askpass_path}
     result = subprocess.run(
-        ["sudo", "-n", PERF_BIN, "report", "-i", str(data_path),
+        ["sudo", "-A", PERF_BIN, "report", "-i", str(data_path),
          "--stdio", "--children", "--percent-limit", "0.01"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120, env=env,
     )
     lines = result.stdout.splitlines()
     dispatch_lines = []
@@ -85,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--requests", type=int, default=40)
     parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--askpass", required=True, help="path to a sudo SUDO_ASKPASS helper script")
     args = parser.parse_args(argv)
 
     config = json.loads(args.config.read_text(encoding="utf-8"))
@@ -116,9 +124,10 @@ def main(argv: list[str] | None = None) -> int:
             binary=arm["binary"], model=model, common_args=common_args,
             env=arm["env"], prompt=prompt, n_predict=n_predict,
             requests=args.requests, label=arm_name, out_dir=out_dir,
+            askpass_path=args.askpass,
         )
         print(f"[hi172-perf] {arm_name}: summarizing {data_path}", flush=True)
-        summary[arm_name] = summarize_perf_data(data_path)
+        summary[arm_name] = summarize_perf_data(data_path, args.askpass)
 
     (out_dir / "perf_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"[hi172-perf] wrote {out_dir / 'perf_summary.json'}")
