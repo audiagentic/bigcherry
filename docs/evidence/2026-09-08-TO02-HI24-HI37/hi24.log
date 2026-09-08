@@ -1,0 +1,7 @@
+wrote /tmp/to02-hi24-hi37-20260908T115341Z/hot-list.json
+  69 signature(s), basis calls_x_native_median
+    1  395ec8f68a5c3158       431 calls   34.41%  cum  34.41%
+    2  2c1e9b0c6f4f2d0d      1946 calls   10.90%  cum  45.31%
+    3  3c9764e23c7a712e       973 calls    5.45%  cum  50.76%
+    4  583a1d99bdbeb560       745 calls    4.17%  cum  54.93%
+    5  dfce2cac5890052c       745 calls    4.17%  cum  59.10%
