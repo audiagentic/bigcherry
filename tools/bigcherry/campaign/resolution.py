@@ -284,8 +284,8 @@ class CanonicalSelection:
     """The minimal shape a legacy ``--recipe``-consuming command actually
     needs: a resolved upstream ref plus an exact patch-set identity.
 
-    Introduced to remove ``recipes.py``'s ``[compat.recipe.*]`` bridge (see
-    docs/planning/active/... the compat.recipe removal plan) without
+    Introduced to remove ``recipes.py``'s retired compatibility bridge (see
+    docs/planning/active/... the legacy recipe removal plan) without
     smuggling ``Recipe``'s unrelated build/platform/groups/states baggage
     back in through a different name. Deliberately NOT a drop-in
     replacement for every legacy ``Recipe`` field -- a caller that also

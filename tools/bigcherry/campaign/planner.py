@@ -9,8 +9,8 @@ materialize actually runs), and RE14's own step ordering only requires
 sequential execution to be correct, not parallel or graph-unified. And
 deliberately built over canonical v2 identities (config.Source/Build/
 Platform names, config.CampaignLaneSelector/CampaignProfile from RE19) --
-not legacy recipes/groups/states, which recipes.py's own _load_v2_compat
-adapter documents as transitional compatibility concepts only.
+not legacy recipes/groups/states, which were transitional compatibility
+concepts only.
 
 The run_id collision trap flagged during RE17's design review: every
 run-scoped filesystem/ArtifactStore path inside campaign_execution.py and
