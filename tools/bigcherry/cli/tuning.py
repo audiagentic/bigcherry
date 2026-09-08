@@ -119,6 +119,39 @@ def cmd_execution_audit(args: Namespace) -> int:
     return 0
 
 
+def cmd_tuning_rollup(args: Namespace) -> int:
+    """Consolidated rollup across multiple tune campaigns. See
+    tuning.rollup's module docstring for why this is a derived view over the
+    per-campaign artifacts, not a merged replay cache."""
+    from ..tuning import rollup
+
+    try:
+        rows = rollup.build_rollup(args.campaign_dirs)
+    except (OSError, ValueError, json.JSONDecodeError, KeyError) as exc:
+        print(f"tuning-rollup: {exc}", file=sys.stderr)
+        return 1
+
+    rollup.write_rollup(rows, args.output)
+    summary = rollup.summarize(rows)
+
+    if args.json:
+        print(json.dumps({
+            "total": summary.total,
+            "by_campaign": summary.by_campaign,
+            "by_classification": summary.by_classification,
+            "output": str(args.output),
+        }, indent=2, sort_keys=True))
+    else:
+        print(f"tuning-rollup: {summary.total} promoted key(s) across {len(summary.by_campaign)} campaign(s)")
+        for campaign, n in sorted(summary.by_campaign.items()):
+            print(f"  {campaign:32} {n}")
+        print("  by execution-audit classification (None = no audit run yet):")
+        for cls, n in sorted(summary.by_classification.items()):
+            print(f"    {cls:20} {n}")
+        print(f"  wrote: {args.output}")
+    return 0
+
+
 def cmd_project_replay(args: Namespace) -> int:
     """HI121 M4: project a measurements JSONL to the rows a specific target
     HIP build can safely reuse, using its own verified producer-capability
