@@ -46,6 +46,7 @@ from .profiling import cmd_profile_campaign
 from .source import cmd_audit, cmd_pull
 from .tuning import (
     cmd_execution_audit,
+    cmd_tuning_rollup,
     cmd_generate,
     cmd_inventory,
     cmd_project_replay,
@@ -502,6 +503,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print the summary as JSON",
     )
     execution_audit_cmd.set_defaults(func=cmd_execution_audit)
+
+    tuning_rollup_cmd = sub.add_parser(
+        "tuning-rollup",
+        help=(
+            "consolidated, derived, read-only rollup of promoted.jsonl (+ "
+            "execution-audit classification, if present) across multiple "
+            "tune campaigns -- not a cache merge; see "
+            "tools/bigcherry/tuning/rollup.py for why a merged binary "
+            "replay cache is the wrong packaging abstraction"
+        ),
+    )
+    tuning_rollup_cmd.add_argument(
+        "--campaign-dir", dest="campaign_dirs", action="append", required=True,
+        help="a tune-campaign directory (containing promoted.jsonl and "
+        "tune-campaign-receipt.json); repeat for each campaign to roll up",
+    )
+    tuning_rollup_cmd.add_argument(
+        "--output", required=True,
+        help="write the consolidated rollup JSONL here",
+    )
+    tuning_rollup_cmd.add_argument(
+        "--json", action="store_true", help="print the summary as JSON",
+    )
+    tuning_rollup_cmd.set_defaults(func=cmd_tuning_rollup)
 
     project_replay_cmd = sub.add_parser(
         "project-replay",
