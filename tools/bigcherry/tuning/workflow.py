@@ -187,6 +187,26 @@ def _synthetic_prefill_prompt(word_count: int) -> str:
     return "the quick brown fox jumps over the lazy dog . " * (word_count // 10 + 1)
 
 
+def _discovery_word_counts_fitting_context(context_size: int, *, n_predict: int) -> tuple[int, ...]:
+    """Real bug found on real hardware (HI167 follow-up validation): tune's
+    context is deliberately SMALLER than record's (tune_context=4096 vs.
+    production_context=8192 on every current runtime profile -- see
+    RuntimeProfile's own docstring for why), so blindly reusing
+    _RECORD_DISCOVERY_WORD_COUNTS unfiltered for tune sent a prompt that
+    overflowed tune_context and got a real HTTP 400 from the live server.
+    ``_synthetic_prefill_prompt`` already deliberately overshoots its target
+    word count (see that function), so this applies a generous 1.3x safety
+    margin on top for word-to-token ratio uncertainty rather than assuming
+    a tighter, unverified bound -- always keeping at least the smallest
+    target so a pathologically small context still gets SOME prefill-shaped
+    exposure rather than silently skipping discovery/measurement entirely."""
+    safe = tuple(
+        wc for wc in _RECORD_DISCOVERY_WORD_COUNTS
+        if wc * 1.3 <= context_size - n_predict
+    )
+    return safe or _RECORD_DISCOVERY_WORD_COUNTS[:1]
+
+
 def _stage_record(
     *, context, cfg, store, run_id, platform_name, source_name,
     model_path: Path, devices: str, runtime_profile: campaign_config.RuntimeProfile,
@@ -216,7 +236,12 @@ def _stage_record(
         runner.run_completion("Describe the water cycle in two sentences.", n_predict=96)
         # HI167: prefill-shaped discovery sweep, small n_predict (this is
         # about exercising the PREFILL dispatch, not generation length).
-        for word_count in _RECORD_DISCOVERY_WORD_COUNTS:
+        # Filtered to what actually fits this stage's own context -- see
+        # _discovery_word_counts_fitting_context's docstring for the real
+        # HTTP 400 this prevents.
+        for word_count in _discovery_word_counts_fitting_context(
+            runtime_profile.production_context, n_predict=8,
+        ):
             runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     actual_record_path = record_db_path  # the binary writes this exact path, no suffix
     if not actual_record_path.is_file():
@@ -277,7 +302,17 @@ def _stage_tune(
         # had -- one exposure per shape point is sufficient, no repeats
         # needed, since the tuner's own internal loop does the repeated
         # timing.
-        for word_count in _RECORD_DISCOVERY_WORD_COUNTS:
+        #
+        # Filtered to what fits tune_context specifically -- REAL bug found
+        # on real hardware: tune_context is deliberately smaller than
+        # production_context (every current runtime profile sets
+        # tune-context=4096 vs. production-context=8192), and the
+        # unfiltered largest discovery prompt (~4100 words) overflowed it,
+        # producing a real HTTP 400 from the live tune-mode server. See
+        # _discovery_word_counts_fitting_context.
+        for word_count in _discovery_word_counts_fitting_context(
+            runtime_profile.tune_context, n_predict=8,
+        ):
             runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     measurements_path = Path(f"{tune_db_path}.measurements.jsonl")
     if not measurements_path.is_file():

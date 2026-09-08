@@ -133,6 +133,38 @@ class SyntheticPrefillPromptTests(unittest.TestCase):
         )
 
 
+class DiscoveryWordCountsFittingContextTests(unittest.TestCase):
+    """Real bug found on real hardware: the unfiltered largest discovery
+    prompt (~4100 words) overflowed tune_context=4096 and produced a real
+    HTTP 400 from a live tune-mode server. This filter is what prevents it
+    -- see _discovery_word_counts_fitting_context's own docstring."""
+
+    def test_large_context_keeps_every_target(self):
+        self.assertEqual(
+            workflow._discovery_word_counts_fitting_context(64000, n_predict=8),
+            workflow._RECORD_DISCOVERY_WORD_COUNTS,
+        )
+
+    def test_tune_sized_context_drops_the_largest_target(self):
+        # The exact real-hardware case that produced the HTTP 400.
+        self.assertEqual(
+            workflow._discovery_word_counts_fitting_context(4096, n_predict=8),
+            (256, 1024),
+        )
+
+    def test_pathologically_small_context_still_keeps_the_smallest_target(self):
+        # Never return an empty sweep -- SOME prefill-shaped exposure beats
+        # silently skipping discovery/measurement entirely.
+        result = workflow._discovery_word_counts_fitting_context(50, n_predict=8)
+        self.assertEqual(result, (workflow._RECORD_DISCOVERY_WORD_COUNTS[0],))
+
+    def test_n_predict_reduces_the_effective_headroom(self):
+        # A larger n_predict eats into the same context budget.
+        with_small_n_predict = workflow._discovery_word_counts_fitting_context(1400, n_predict=8)
+        with_large_n_predict = workflow._discovery_word_counts_fitting_context(1400, n_predict=800)
+        self.assertGreaterEqual(len(with_small_n_predict), len(with_large_n_predict))
+
+
 class StageRecordDiscoveryWorkloadTests(unittest.TestCase):
     """HI167: the record stage must exercise the same prefill-shape envelope
     as production, not just the original short decode-shaped smoke prompt --
@@ -224,11 +256,21 @@ class StageTuneMeasurementWorkloadTests(unittest.TestCase):
                 )
 
             calls = fake_runner.run_completion.call_args_list
-            self.assertEqual(len(calls), 1 + len(workflow._RECORD_DISCOVERY_WORD_COUNTS))
             self.assertEqual(calls[0].args[0], "Write a short paragraph about the ocean.")
             self.assertEqual(calls[0].kwargs["n_predict"], 96)
 
-            for word_count, call in zip(workflow._RECORD_DISCOVERY_WORD_COUNTS, calls[1:]):
+            # REAL bug found on real hardware: tune_context (4096 here) is
+            # deliberately smaller than production_context, so the largest
+            # discovery word count (4096, ~4100 words once rendered) must be
+            # filtered OUT here -- sending it produced a genuine HTTP 400
+            # from a live tune-mode server. Exactly 2 discovery calls
+            # (256, 1024), not all 3.
+            expected = workflow._discovery_word_counts_fitting_context(
+                fake_profile.tune_context, n_predict=8,
+            )
+            self.assertEqual(expected, (256, 1024))
+            self.assertEqual(len(calls), 1 + len(expected))
+            for word_count, call in zip(expected, calls[1:]):
                 self.assertGreaterEqual(len(call.args[0].split()), word_count)
                 self.assertEqual(call.kwargs["n_predict"], 8)
 
