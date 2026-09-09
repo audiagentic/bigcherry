@@ -30,6 +30,7 @@ def main() -> int:
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--evidence", type=Path, required=True)
     ap.add_argument("--resolution", type=Path, help="optional explicit human resolution overriding an ambiguous GPT row")
+    ap.add_argument("--reviewer", default="dev-gpt-agent", help="reviewer identity recorded in semantic review rows")
     ns = ap.parse_args()
     work = ns.work.resolve()
     evidence = {r["source_id"]: r for r in read(ns.evidence.resolve())}
@@ -86,7 +87,7 @@ def main() -> int:
         if not review:
             continue
         row["unfinished_work"] = review["evidence"]
-        row["reviewed_by"] = "dev-gpt-agent"
+        row["reviewed_by"] = ns.reviewer
         row["approved"] = "false"
     write(semantic_path, semantic_fields, semantic)
     print(f"applied={len(evidence)}")
