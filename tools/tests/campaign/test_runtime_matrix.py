@@ -66,6 +66,7 @@ class RuntimeMatrixRunTests(unittest.TestCase):
                 "model": "/models/9b.gguf", "bench_configs": "pp512",
                 "runner_root": "/bench", "required_metrics": ["pp512_tps"],
                 "extra_args": ["-ngl", "99"], "execution_evidence": "observe",
+                "environment": {"GGML_HIP_DISPATCH_MODE": "native"},
             }
         }
         resolved = resolve_matrix([raw], host=host())[0]
@@ -78,6 +79,7 @@ class RuntimeMatrixRunTests(unittest.TestCase):
         capture.assert_called_once()
         self.assertEqual(capture.call_args.kwargs["binary"], Path("/bin/server"))
         self.assertEqual(capture.call_args.kwargs["bench_configs"], "pp512")
+        self.assertEqual(capture.call_args.kwargs["env"]["GGML_HIP_DISPATCH_MODE"], "native")
 
     def test_serial_progress_and_child_verdict_are_preserved(self):
         cells = resolve_matrix([cell("a"), cell("b", devices=(0,))], host=host())
