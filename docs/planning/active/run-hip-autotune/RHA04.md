@@ -15,9 +15,7 @@ priority: P0
 
 ## Description
 
-Runtime/parity qualification and hardware matrix remain.
-
-Run-owned acceptance boundary for the remaining HI168 production-parity work. The rebaseline successor must prove diagnostics-OFF BC native is at least comparable to llama.cpp native for prompt processing and generation, then isolate validated replay/winner effects without conflating diagnostics, build composition, topology, or work.
+Runtime/parity qualification and hardware matrix remain in progress. The 2026-09-08 HI168 bundle completed all requested server-bench cells (four 9B GPUs plus dual-XTX 27B, stock/native/replay, balanced orders) with clean shutdown and useful exploratory metrics, but every cell has execution_evidence_status=missing and performance_admitted=false. Those numbers are direction-finding only; the decision-grade rerun must use the current server-capture contract with explicit expected_execution locators and diagnostics-off production arms, followed by the matched dual-XTX 27B run.
 
 ## Steps
 
@@ -56,18 +54,7 @@ successor-specs/run-hip-autotune-hi168.md
 
 ## Validation
 
-Decision-grade closure requires:
-(a) all four 9B physical-GPU cells for stock/native/replay or an explicit unsupported-device record;
-(b) fresh dual-XTX 27B stock/native/replay;
-(c) diagnostics OFF for production timing and a separate diagnostics build for activation only;
-(d) server-bench endpoint output, not llama-bench;
-(e) balanced/interleaved ordering and clean teardown;
-(f) replay cache compatibility plus coverage and final_tuned_launches evidence;
-(g) correctness/work-equivalence;
-(h) separate pp/tg analysis with uncertainty and position effects;
-(i) all remaining requested BC build types either exercised or explicitly classified unavailable;
-(j) retained raw output and identities;
-(k) focused regression tests for any code/docs change, ledger event, commit, and push. Historical HI168 evidence remains attached to HI168.
+The retained 2026-09-08 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. It cannot satisfy closure. Next validation is a fresh serial 9B matrix using required execution evidence and raw identity-bound receipts, then the matched 27B matrix; retain all invalid/missing-attestation cells and do not promote their throughput.
 
 ## Effort & Risk
 
@@ -96,13 +83,14 @@ Supersedes: HI168
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-hip-autotune-hi168
 
+Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: run-hip-autotune-hi168\n\nInherited HI168 bundle is exploratory only because physical execution attestation is missing. Rerun must use environment settings, explicit expected_execution locators, maintained server-bench, and diagnostics-off production timing before any parity or replay conclusion.
+
 ## Change Log
 
 - 2026-09-09T10:49:44.318293+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:54.453513+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 
 - chg_20260909_115759_created-and-populated-the-192_2958
@@ -116,3 +104,6 @@ Successor key: run-hip-autotune-hi168
 - 2026-09-09T14:03:31.913574+00:00 (state-transition): State: pending → in_progress
 - chg_20260909_140341_rha04-is-now-actively-executin_4158
 - 2026-09-09T14:03:41.316296+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T14:33:08.340751+00:00 (updated-by): Updated: section:description, section:validation, section:notes
+- chg_20260909_143319_marked-the-existing-hi168-numb_5423
+- 2026-09-09T14:33:19.052828+00:00 (updated-by): Updated: section:ledger-events
