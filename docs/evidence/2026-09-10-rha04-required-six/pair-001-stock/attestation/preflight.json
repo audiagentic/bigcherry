@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "kind": "server-device-attestation-preflight-v1",
+  "correlation_id": "0157d3c3b8f24dc79ae30cf9c3c65bb1",
+  "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+  "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348",
+  "common_server_args": [
+    "-ngl",
+    "99",
+    "-sm",
+    "tensor",
+    "--fit",
+    "off",
+    "-c",
+    "4096",
+    "--flash-attn",
+    "on",
+    "--ubatch-size",
+    "512",
+    "--batch-size",
+    "2048",
+    "--threads",
+    "8",
+    "--parallel",
+    "1"
+  ],
+  "diagnostic_delta": [
+    "--verbosity",
+    "5"
+  ],
+  "diagnostic_environment": {
+    "NCCL_DEBUG": "INFO",
+    "NCCL_DEBUG_SUBSYS": "INIT"
+  },
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0,1",
+    "ROCR_VISIBLE_DEVICES": "0,1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1100",
+      "gfx1100"
+    ],
+    "locators": [
+      "0000:03:00.0",
+      "0000:06:00.0"
+    ]
+  },
+  "observed_execution": {
+    "schema_version": 1,
+    "backend": "ROCm",
+    "device_count": 2,
+    "devices": [
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:03:00.0"
+      },
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:06:00.0"
+      }
+    ],
+    "failure_signature": null,
+    "telemetry": {
+      "rccl_device_bindings": {
+        "0": "0000:03:00.0",
+        "1": "0000:06:00.0"
+      },
+      "layers_assigned_to_devices": [],
+      "layers_assigned_to_meta": 66,
+      "layer_assignment_mode": "meta"
+    }
+  },
+  "elapsed_s": 24.212305875960737,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  }
+}

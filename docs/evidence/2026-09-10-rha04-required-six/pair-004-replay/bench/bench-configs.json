@@ -1,0 +1,678 @@
+{
+  "description": "Benchmark config sets. 'default' and 'full' sets are shared across llama-bench and bench.",
+  "shared": {
+    "default": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "full": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg1024",
+        "prompt_length": 1,
+        "generation_length": 1024
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "vk-queue-on": [
+      {
+        "name": "pp512-qk-on",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "tg128-qk-on",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "pp1024-qk-on",
+        "prompt_length": 1024,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "tg256-qk-on",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "graphics_queue": true
+      }
+    ],
+    "vk-queue-off": [
+      {
+        "name": "pp512-qk-off",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "tg128-qk-off",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "pp1024-qk-off",
+        "prompt_length": 1024,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "tg256-qk-off",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "graphics_queue": false
+      }
+    ]
+  },
+  "llama-bench": {
+    "description": "Default benchmark configs matching llama-bench native behavior",
+    "default": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      }
+    ],
+    "full": [
+      {
+        "name": "pp256",
+        "prompt_length": 256,
+        "generation_length": 128
+      },
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "vk-queue-on": [
+      {
+        "name": "pp512-qk-on",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "tg128-qk-on",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "pp1024-qk-on",
+        "prompt_length": 1024,
+        "generation_length": 128,
+        "graphics_queue": true
+      },
+      {
+        "name": "tg256-qk-on",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "graphics_queue": true
+      }
+    ],
+    "vk-queue-off": [
+      {
+        "name": "pp512-qk-off",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "tg128-qk-off",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "pp1024-qk-off",
+        "prompt_length": 1024,
+        "generation_length": 128,
+        "graphics_queue": false
+      },
+      {
+        "name": "tg256-qk-off",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "graphics_queue": false
+      }
+    ]
+  },
+  "cli-bench": {
+    "description": "Eval benchmark configs matching llama-bench format. Configs may include 'prompt' (string) or 'prompt_file' (path) for custom prompts instead of synthetic ones.",
+    "default": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      }
+    ],
+    "full": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "long-output": [
+      {
+        "name": "long-output",
+        "prompt_length": 1,
+        "generation_length": 32768,
+        "reasoning_budget": 2048,
+        "ignore_eos": true
+      }
+    ],
+    "custom-prompt-example": [
+      {
+        "name": "custom-pp",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "prompt": "Write a detailed technical analysis of quantum computing architectures, covering superconducting qubits, trapped ions, and topological approaches. Compare their error rates, coherence times, and scalability prospects."
+      },
+      {
+        "name": "custom-tg",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "prompt": "Explain the key differences between transformers and RNNs:"
+      }
+    ],
+    "long-prompt": [
+      {
+        "name": "long-pp",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "prompt_file": "bench/prompts/technical-analysis.txt"
+      },
+      {
+        "name": "long-tg",
+        "prompt_length": 1,
+        "generation_length": 256,
+        "prompt_file": "bench/prompts/technical-analysis.txt"
+      }
+    ],
+    "compression-128k-token": [
+      {
+        "name": "pp128k-token",
+        "prompt_file": "bench/data/compression-stress-test-128k-token.md",
+        "generation_length": 8192
+      }
+    ]
+  },
+  "vllm-server-bench": {
+    "description": "OpenAI-compatible vLLM server benchmarks with explicit warmup before measured requests.",
+    "default": [
+      {
+        "name": "tg256",
+        "prompt_length": 512,
+        "generation_length": 256,
+        "warmup_repetitions": 1
+      }
+    ],
+    "longctx-96k": [
+      {
+        "name": "ctx96k",
+        "prompt_length": 98304,
+        "generation_length": 16,
+        "warmup_repetitions": 1
+      }
+    ],
+    "longctx-128k": [
+      {
+        "name": "ctx128k",
+        "prompt_length": 131072,
+        "generation_length": 16,
+        "warmup_repetitions": 1
+      }
+    ],
+    "longctx-160k": [
+      {
+        "name": "ctx160k",
+        "prompt_length": 163840,
+        "generation_length": 16,
+        "warmup_repetitions": 1
+      }
+    ],
+    "longctx-192k": [
+      {
+        "name": "ctx192k",
+        "prompt_length": 196608,
+        "generation_length": 16,
+        "warmup_repetitions": 1
+      }
+    ],
+    "longctx-224k": [
+      {
+        "name": "ctx224k",
+        "prompt_length": 229376,
+        "generation_length": 16,
+        "warmup_repetitions": 1
+      }
+    ]
+  },
+  "server-bench": {
+    "description": "llama-server /completion benchuation configs",
+    "default": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      }
+    ],
+    "long-prompt-12k": [
+      {
+        "name": "pp12288",
+        "prompt_length": 12288,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      }
+    ],
+    "long-prompt-16k": [
+      {
+        "name": "pp16384",
+        "prompt_length": 16384,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      }
+    ],
+    "full": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      }
+    ],
+    "full": [
+      {
+        "name": "pp256",
+        "prompt_length": 256,
+        "generation_length": 128
+      },
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "tg128",
+        "prompt_length": 1,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "tg256",
+        "prompt_length": 1,
+        "generation_length": 256
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "request-cache": [
+      {
+        "name": "pp512-cache-off",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "cache_prompt": false
+      },
+      {
+        "name": "pp512-cache-on",
+        "prompt_length": 512,
+        "generation_length": 128,
+        "cache_prompt": true
+      },
+      {
+        "name": "tg128-cache-off",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "cache_prompt": false
+      },
+      {
+        "name": "tg128-cache-on",
+        "prompt_length": 1,
+        "generation_length": 128,
+        "cache_prompt": true
+      }
+    ],
+    "compression-128k-token": [
+      {
+        "name": "pp128k-token",
+        "prompt_file": "bench/data/compression-stress-test-128k-token.md",
+        "generation_length": 8192
+      }
+    ],
+    "compression-172k-token": [
+      {
+        "name": "pp172k-token",
+        "prompt_file": "bench/data/compression-stress-test-172k-token.md",
+        "generation_length": 8192
+      }
+    ],
+    "compression-20k-token": [
+      {
+        "name": "pp20k-token",
+        "prompt_file": "bench/data/compression-stress-test-20k-token.md",
+        "generation_length": 8192
+      }
+    ],
+    "compression-120k-token": [
+      {
+        "name": "pp120k-token",
+        "prompt_file": "bench/data/compression-stress-test-120k-token.md",
+        "generation_length": 8192
+      }
+    ],
+    "tg2048": [
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "mtp-dual": [
+      {
+        "name": "pp256",
+        "prompt_length": 256,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ],
+    "throughput-sweep-10x": [
+      {
+        "name": "pp512",
+        "prompt_length": 512,
+        "generation_length": 128
+      },
+      {
+        "name": "pp1024",
+        "prompt_length": 1024,
+        "generation_length": 128
+      },
+      {
+        "name": "pp2048",
+        "prompt_length": 2048,
+        "generation_length": 128
+      },
+      {
+        "name": "pp4096",
+        "prompt_length": 4096,
+        "generation_length": 128
+      },
+      {
+        "name": "tg512",
+        "prompt_length": 1,
+        "generation_length": 512
+      },
+      {
+        "name": "tg1024",
+        "prompt_length": 1,
+        "generation_length": 1024
+      },
+      {
+        "name": "tg2048",
+        "prompt_length": 1,
+        "generation_length": 2048
+      }
+    ]
+  },
+  "perplex": {
+    "description": "Perplexity evaluation configs. Single metric \u2014 lower PPL = better model quality for given quantization/KV cache.",
+    "default": [
+      {
+        "name": "ppl-default"
+      }
+    ],
+    "self-eval": [
+      {
+        "name": "ppl-self"
+      }
+    ]
+  }
+}

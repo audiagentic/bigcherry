@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "/mnt/vault/development/llmhosts/llamacpp/bench/run_bench.py",
+    "--bench-type",
+    "server-bench",
+    "--server-url",
+    "http://127.0.0.1:45993",
+    "--model",
+    "Qwen3.8-27B-Q8_0",
+    "--bench-configs",
+    "pp512,pp2048,tg512",
+    "--toggles",
+    "{\"repetitions\": 1}",
+    "--upload-dry-run"
+  ],
+  "cwd": "/mnt/vault/development/llmhosts/llamacpp",
+  "runner_sha256": "d1753288e06dd4019cb0fdd3125ce3a0e32b729bff6c7dd337f02e6c38a296d3",
+  "bench_config_sha256": "aa7a2b165f394ea174125298a9faa6e16907d3a98784308dfc8c2cd8564d7348",
+  "required_metrics": [
+    "pp512_tps",
+    "pp2048_tps",
+    "tg512_tps"
+  ]
+}
