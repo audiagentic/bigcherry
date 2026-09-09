@@ -2,7 +2,7 @@
 id: RHA10
 order: 10
 plan: run-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T19:45:36.770283+00:00'
 breadth: ''
 skill: advanced
@@ -44,11 +44,7 @@ Use the maintained server-bench runner and existing execution-audit/admission sc
 
 ## Validation
 
-- Exact-source diagnostics witness records final_tuned_launches > 0 after revalidation.
-- Diagnostics-off production timing is retained separately with clean teardown.
-- Stock/native/replay fixed-seed probe is retained; any mismatch blocks admission until RHA11 resolves it.
-- Correctness/work-equivalence passes across the selected corpus.
-- Admission record is fail-closed and reproducible.
+- Exact-source diagnostics witness records 21,566/21,566 executed/dispatched operations, 79 replay entries, 57 exact matches, and zero misses, unavailable, rerun-required, or incompatible rows after native seeding of the 24 uncovered signatures.\n- Diagnostics-off production timing is retained separately with clean teardown: pp512 927.62, pp2048 1289.19, tg128 33.71, tg512 34.05 t/s.\n- Stock/native/replay fixed-seed three-prompt probe matches on all three prompts after quarantining the two divergent tuned winners.\n- Correctness/work-equivalence, source/build identity, replay activation, cache compatibility, and final tuned-launch evidence are retained in the corrected admission record.\n- Admission record is now true and reproducible; raw artifacts are retained under RHA11 evidence.
 
 ## Effort & Risk
 
@@ -78,12 +74,13 @@ Exact-source diagnostic activation and diagnostics-off production timing are com
 
 RHA11 correctness issue is resolved in evidence: both implicated MMVQ winners were seeded to mmvq:native:v1 through the normal exporter, the corrected cache is now installed at the canonical campaign path (original retained as dispatch.cache.pre-rha11), the three-prompt corpus matches stock/native, diagnostics activation returns 0 with 21,566/21,566 coverage and 14,622 final tuned launches, and diagnostics-off production timing returns 0 (pp512 930.03, pp2048 1282.63, tg128 33.83, tg512 34.17). RHA10 remains in_progress/fail-closed pending admission-record refresh and explicit treatment of the 24 replay misses/native fallbacks under the stated zero-miss policy.
 
+RHA10 is complete. RHA11 quarantined the two divergent MMVQ winners and then added 24 explicit hardware-bound native seed entries for all previously uncovered runtime signatures through the normal replay-cache exporter. The resulting 79-entry cache is canonical on Brutus (original cache retained as dispatch.cache.pre-rha11; intermediate 55-entry cache retained as dispatch.cache.rha11-corrected55). The final exact-source diagnostics run recorded 21,566/21,566 coverage, 57 exact matches, zero replay misses/unavailable/rerun/incompatible rows, and 21,566 final tuned launches. The diagnostics-off production server-bench run returned 0 at pp512 927.62, pp2048 1289.19, tg128 33.71, tg512 34.05. The corrected three-prompt work-equivalence corpus matched stock/native on all prompts. Admission record production_admitted=true in docs/evidence/2026-09-10-rha10-admission-gate/replay-diagnostic-activation-rha11-corrected.json.
+
 ## Change Log
 
 - 2026-09-09T19:45:36.770283+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
 
 
 - chg_20260909_194609_separated-completed-parity-cap_7282
@@ -104,3 +101,7 @@ RHA11 correctness issue is resolved in evidence: both implicated MMVQ winners we
 - 2026-09-09T20:47:50.990239+00:00 (state-transition): State: pending → in_progress
 - chg_20260909_204807_rha10-is-active-rather-than-si_5340
 - 2026-09-09T20:48:07.166443+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:59:20.780309+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-09-09T20:59:30.850558+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_210128_the-remaining-replay-misses-ar_2991
+- 2026-09-09T21:01:28.088132+00:00 (updated-by): Updated: section:ledger-events

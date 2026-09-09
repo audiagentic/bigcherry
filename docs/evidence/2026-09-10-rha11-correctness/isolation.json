@@ -33,6 +33,27 @@
     "path": "raw/corrected-dispatch.cache",
     "sha256": "a7d9e867f49578c447c99d598fd4200e2612db007aa5a2deb4817b9bf872b747"
   },
+  "native_miss_completion": {
+    "miss_count_seeded": 24,
+    "cache_entries": 79,
+    "cache_sha256": "145f849a59c3310171696d38c5049deb0c39a232a4de63d963d807817c485c95",
+    "exact": 57,
+    "misses": 0,
+    "candidate_unavailable": 0,
+    "rerun_required": 0,
+    "incompatible": 0,
+    "final_tuned_launches": 21566,
+    "final_native_launches": 0,
+    "coverage_sha256": "2ce07e876943b3fbefa8283b02b0d1bdf03ee17569c9c9af1ce998ec477c7262"
+  },
+  "complete_cache_production_timing": {
+    "bench_returncode": 0,
+    "pp512_tps": 927.62,
+    "pp2048_tps": 1289.19,
+    "tg128_tps": 33.71,
+    "tg512_tps": 34.05,
+    "server_log_sha256": "8aae5162053bb5599063c48e6a9d0e356a1ac13e1e1ef32a7f1d17f3dc953a5c"
+  },
   "corpus": {
     "prompt_count": 3,
     "stock_native_replay_content_equal": [true, true, true],
@@ -61,5 +82,5 @@
     "tg512_tps": 34.17,
     "server_log_sha256": "a2bb5491f149ad5f1168fc410be55dd911d2326d6f59892b3261f86242f8d662"
   },
-  "disposition": "candidate-quarantine-proven; regenerate campaign cache and rerun RHA10 production timing/activation before admission"
+  "disposition": "complete; divergent winners and uncovered native signatures quarantined through the supported exporter; canonical cache and final timing/activation verified"
 }

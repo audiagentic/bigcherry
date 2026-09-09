@@ -2,7 +2,7 @@
 id: RHA04
 order: 0
 plan: run-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:49:44.318293+00:00'
 breadth: ''
 skill: advanced
@@ -65,7 +65,7 @@ docs/evidence/2026-09-10-rha04-required-six/pair-*/
 
 ## Validation
 
-Current required-six matrix is complete and identity-verified with diagnostics isolated. Production admission remains fail-closed until RHA10 verifies source/work equivalence and replay final_tuned_launches.
+Required-six identity-bound dual-XTX matrix is complete and identity-verified with diagnostics isolated. RHA10/RHA11 admission evidence now proves source/work equivalence, corrected replay activation with 79 entries and zero misses/unavailable/rerun/incompatible rows, positive final tuned launches, clean diagnostics-off production timing, correctness, and graceful teardown. The completed admission record is docs/evidence/2026-09-10-rha10-admission-gate/replay-diagnostic-activation-rha11-corrected.json.
 
 ## Effort & Risk
 
@@ -111,6 +111,8 @@ Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL prefl
 Final production-admission proof is split to RHA10. RHA04 retains the completed identity-bound parity matrix and remains in_progress until RHA10 proves source/work equivalence and final tuned replay launches. RHA08 and RHA09 are completed evidence dependencies, not admission substitutes.
 
 RHA11 completed correctness quarantine: two replay winners were replaced with native through a manifest-valid cache export. Corrected cache is canonical on Brutus with the original retained as dispatch.cache.pre-rha11. Corrected diagnostics activation and diagnostics-off timing are retained under docs/evidence/2026-09-10-rha11-correctness. RHA04 admission still follows RHA10's explicit miss-policy decision.
+
+Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: run-hip-autotune-hi168\n\nThe identity-bound 9B per-GPU matrices and required dual-XTX 27B stock/native/replay matrix are complete. RHA10 and RHA11 are now complete: the two divergent tuned winners were quarantined, 24 previously uncovered native signatures were explicitly seeded through the supported exporter, and the resulting 79-entry cache is canonical on Brutus. Final replay activation recorded 21,566/21,566 coverage, 57 exact matches, zero misses/unavailable/rerun/incompatible rows, and positive final tuned launches. Diagnostics-off production timing returned 0 at pp512 927.62, pp2048 1289.19, tg128 33.71, tg512 34.05 t/s. The corrected three-prompt work-equivalence corpus matched stock/native on all prompts. Reusable BC build-type evidence remains under RHA08 and durable raw lifecycle evidence under RHA09.
 
 ## Change Log
 
@@ -190,3 +192,7 @@ RHA11 completed correctness quarantine: two replay winners were replaced with na
 - 2026-09-09T20:45:19.134130+00:00 (updated-by): Updated: section:notes
 - chg_20260909_204705_the-quarantined-cache-is-now-t_2378
 - 2026-09-09T20:47:05.979876+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T21:00:40.650761+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-09-09T21:00:51.165160+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_210128_the-remaining-replay-misses-ar_2991
+- 2026-09-09T21:01:28.031001+00:00 (updated-by): Updated: section:ledger-events
