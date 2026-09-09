@@ -1,0 +1,12 @@
+{"active_cell": null, "at": 1788981934.1403892, "completed": 0, "schema_version": 1, "state": "preflight_complete", "total": 5}
+{"active_cell": "control", "at": 1788981934.1514785, "completed": 0, "schema_version": 1, "state": "running", "total": 5}
+{"active_cell": "control", "at": 1788982023.4088433, "completed": 1, "schema_version": 1, "state": "cell_complete", "total": 5}
+{"active_cell": "record", "at": 1788982023.4129853, "completed": 1, "schema_version": 1, "state": "running", "total": 5}
+{"active_cell": "record", "at": 1788982112.9993403, "completed": 2, "schema_version": 1, "state": "cell_complete", "total": 5}
+{"active_cell": "tune", "at": 1788982113.0037906, "completed": 2, "schema_version": 1, "state": "running", "total": 5}
+{"active_cell": "tune", "at": 1788982217.6593935, "completed": 3, "schema_version": 1, "state": "cell_complete", "total": 5}
+{"active_cell": "replay", "at": 1788982217.6637805, "completed": 3, "schema_version": 1, "state": "running", "total": 5}
+{"active_cell": "replay", "at": 1788982307.2173538, "completed": 4, "schema_version": 1, "state": "cell_complete", "total": 5}
+{"active_cell": "replay-diagnostic", "at": 1788982307.2212148, "completed": 4, "schema_version": 1, "state": "running", "total": 5}
+{"active_cell": "replay-diagnostic", "at": 1788982396.3521187, "completed": 5, "schema_version": 1, "state": "cell_complete", "total": 5}
+{"active_cell": null, "at": 1788982396.356019, "completed": 5, "schema_version": 1, "state": "completed", "total": 5}

@@ -1,0 +1,360 @@
+{
+  "cells": [
+    {
+      "arm": "control",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/118a40e2bb40b64a2d031a0198d33940/bin/llama-server",
+      "build_id": "a94245e17b1476f63bc3edd5bf41ba5e",
+      "cache_id": null,
+      "cell_id": "control",
+      "devices": [
+        0,
+        1
+      ],
+      "identity_digest": "ad8d1da6175dbd47f0b74a3e4819dca1",
+      "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+      "model_id": "tierL-qwen27b-q8",
+      "runtime_profile": "production-dual-xtx",
+      "schema_version": 1,
+      "topology": "dual-xtx",
+      "visibility": {
+        "HIP_VISIBLE_DEVICES": "0,1",
+        "ROCR_VISIBLE_DEVICES": "0,1"
+      },
+      "workload": {
+        "server_capture": {
+          "bench_configs": "pp512,pp2048,tg512",
+          "environment": {
+            "GGML_HIP_DISPATCH_MODE": "native"
+          },
+          "execution_evidence": "required",
+          "expected_execution": {
+            "architectures": [
+              "gfx1100",
+              "gfx1100"
+            ],
+            "backend": "ROCm",
+            "locators": [
+              "0000:03:00.0",
+              "0000:06:00.0"
+            ]
+          },
+          "extra_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "required_metrics": [
+            "pp512_tps",
+            "pp2048_tps",
+            "tg512_tps"
+          ],
+          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "shutdown_method": "sigint"
+        }
+      }
+    },
+    {
+      "arm": "record",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/e469c549154beb1d286f72705528a0fd/bin/llama-server",
+      "build_id": "728dc6d69ebc9a203e7d7aca6032bc97",
+      "cache_id": null,
+      "cell_id": "record",
+      "devices": [
+        0,
+        1
+      ],
+      "identity_digest": "e24932cad864e28ce6291dd4293f6d10",
+      "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+      "model_id": "tierL-qwen27b-q8",
+      "runtime_profile": "production-dual-xtx",
+      "schema_version": 1,
+      "topology": "dual-xtx",
+      "visibility": {
+        "HIP_VISIBLE_DEVICES": "0,1",
+        "ROCR_VISIBLE_DEVICES": "0,1"
+      },
+      "workload": {
+        "server_capture": {
+          "bench_configs": "pp512,pp2048,tg512",
+          "environment": {
+            "GGML_HIP_DISPATCH_DB": "/tmp/rha08-record.jsonl",
+            "GGML_HIP_DISPATCH_MODE": "record"
+          },
+          "execution_evidence": "required",
+          "expected_execution": {
+            "architectures": [
+              "gfx1100",
+              "gfx1100"
+            ],
+            "backend": "ROCm",
+            "locators": [
+              "0000:03:00.0",
+              "0000:06:00.0"
+            ]
+          },
+          "extra_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "required_metrics": [
+            "pp512_tps",
+            "pp2048_tps",
+            "tg512_tps"
+          ],
+          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "shutdown_method": "sigint"
+        }
+      }
+    },
+    {
+      "arm": "tune",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/df3437785ca9c7e1ece71fe44b3ce7e9/bin/llama-server",
+      "build_id": "ca6957e50bd6036d5616309a67cddfc6",
+      "cache_id": null,
+      "cell_id": "tune",
+      "devices": [
+        0,
+        1
+      ],
+      "identity_digest": "56779e0ccfb989914340ee5a83594873",
+      "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+      "model_id": "tierL-qwen27b-q8",
+      "runtime_profile": "production-dual-xtx",
+      "schema_version": 1,
+      "topology": "dual-xtx",
+      "visibility": {
+        "HIP_VISIBLE_DEVICES": "0,1",
+        "ROCR_VISIBLE_DEVICES": "0,1"
+      },
+      "workload": {
+        "server_capture": {
+          "bench_configs": "pp512,pp2048,tg512",
+          "environment": {
+            "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+            "GGML_HIP_DISPATCH_DB": "/tmp/rha08-tune.jsonl",
+            "GGML_HIP_DISPATCH_MODE": "tune"
+          },
+          "execution_evidence": "required",
+          "expected_execution": {
+            "architectures": [
+              "gfx1100",
+              "gfx1100"
+            ],
+            "backend": "ROCm",
+            "locators": [
+              "0000:03:00.0",
+              "0000:06:00.0"
+            ]
+          },
+          "extra_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "required_metrics": [
+            "pp512_tps",
+            "pp2048_tps",
+            "tg512_tps"
+          ],
+          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "shutdown_method": "sigint"
+        }
+      }
+    },
+    {
+      "arm": "replay",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+      "build_id": "ad004f0a625b8c95e8ff7ca439b9ad8f",
+      "cache_id": "hi171-27b-dual-reexport-20260908",
+      "cell_id": "replay",
+      "devices": [
+        0,
+        1
+      ],
+      "identity_digest": "b39277be095ba6e213e8ad88f9bf1989",
+      "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+      "model_id": "tierL-qwen27b-q8",
+      "runtime_profile": "production-dual-xtx",
+      "schema_version": 1,
+      "topology": "dual-xtx",
+      "visibility": {
+        "HIP_VISIBLE_DEVICES": "0,1",
+        "ROCR_VISIBLE_DEVICES": "0,1"
+      },
+      "workload": {
+        "server_capture": {
+          "bench_configs": "pp512,pp2048,tg512",
+          "environment": {
+            "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+            "GGML_HIP_DISPATCH_MODE": "replay"
+          },
+          "execution_evidence": "required",
+          "expected_execution": {
+            "architectures": [
+              "gfx1100",
+              "gfx1100"
+            ],
+            "backend": "ROCm",
+            "locators": [
+              "0000:03:00.0",
+              "0000:06:00.0"
+            ]
+          },
+          "extra_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "required_metrics": [
+            "pp512_tps",
+            "pp2048_tps",
+            "tg512_tps"
+          ],
+          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "shutdown_method": "sigint"
+        }
+      }
+    },
+    {
+      "arm": "replay-diagnostic",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/0492949234b9fa8f8ad4d964403e9201/bin/llama-server",
+      "build_id": "f31350384ee17b5582806a7fdb3a2d99",
+      "cache_id": "hi171-27b-dual-reexport-20260908",
+      "cell_id": "replay-diagnostic",
+      "devices": [
+        0,
+        1
+      ],
+      "identity_digest": "889d8b776bed48b1c4b1e40b7f818978",
+      "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+      "model_id": "tierL-qwen27b-q8",
+      "runtime_profile": "production-dual-xtx",
+      "schema_version": 1,
+      "topology": "dual-xtx",
+      "visibility": {
+        "HIP_VISIBLE_DEVICES": "0,1",
+        "ROCR_VISIBLE_DEVICES": "0,1"
+      },
+      "workload": {
+        "server_capture": {
+          "bench_configs": "pp512,pp2048,tg512",
+          "environment": {
+            "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+            "GGML_HIP_DISPATCH_HIT_LOG": "/tmp/rha08-replay-hit.jsonl",
+            "GGML_HIP_DISPATCH_MODE": "replay"
+          },
+          "execution_evidence": "required",
+          "expected_execution": {
+            "architectures": [
+              "gfx1100",
+              "gfx1100"
+            ],
+            "backend": "ROCm",
+            "locators": [
+              "0000:03:00.0",
+              "0000:06:00.0"
+            ]
+          },
+          "extra_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "required_metrics": [
+            "pp512_tps",
+            "pp2048_tps",
+            "tg512_tps"
+          ],
+          "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+          "shutdown_method": "sigint"
+        }
+      }
+    }
+  ],
+  "config": "/tmp/rha08-build-matrix.json",
+  "host": "build-server",
+  "model_registry": "/tmp/rha04-30ec/config/models.toml",
+  "recipe_registry": "/tmp/rha04-30ec/config/recipes.toml",
+  "schema_version": 1
+}
