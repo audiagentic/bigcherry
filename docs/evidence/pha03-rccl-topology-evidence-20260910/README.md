@@ -71,6 +71,27 @@ This confirms the current shared predicate's observed per-device boundary,
 but it is not complete PCIe-component AtomicOps/transport evidence and does
 not by itself authorize a topology allowlist.
 
+## Crash-isolated direct RCCL qualification
+
+A bounded current-code campaign was run on Brutus against the exact observed
+RCCL library identity, using `all_reduce_perf`, 30,720 float elements, Ring /
+Simple, and three attempts per topology. The campaign recorded 15 cases in
+`cases.jsonl` (SHA-256
+`095daced9c33197c2690cb17340781135509b2e0177915de79cd11c447d2ab8a`):
+
+| Topology | Result |
+| --- | --- |
+| XTX + XTX (`0,1`) | 6 `pass` (including three post-fault control rechecks) |
+| XTX0 + R9700 (`0,2`) | 3 `pass` |
+| XTX1 + R9700 (`1,2`) | 3 `pass` |
+| XTX0 + 6900 XT (`0,3`) | 3 `gpu_fault` |
+
+Each case ran in a separate child process; after every negative-control fault,
+the homogeneous control passed before the campaign proceeded. This is direct
+RCCL-tests evidence only. It is not a managed BigCherry dispatch or 0840
+secondary-communicator result, and the topology identity is intentionally
+incomplete, so these observations do not enable patch 1225 admission.
+
 The earlier qualification artifacts remain authoritative historical inputs:
 
 - `rq04-01/environment.txt`:
