@@ -1,0 +1,2204 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "production",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "schema_version": 1,
+    "evidence_role": "production",
+    "execution_evidence": "required",
+    "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+    "server_args": [
+      "-ngl",
+      "99",
+      "-sm",
+      "none",
+      "--fit",
+      "off",
+      "-c",
+      "8192",
+      "--flash-attn",
+      "on",
+      "--ubatch-size",
+      "512",
+      "--batch-size",
+      "2048",
+      "--threads",
+      "8",
+      "--parallel",
+      "1"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "0000:09:00.0"
+      ]
+    },
+    "bench_configs": "pp512,pp2048,tg512",
+    "required_metrics": [
+      "pp512_tps",
+      "pp2048_tps",
+      "tg512_tps"
+    ],
+    "repetitions": 1,
+    "arms": [
+      {
+        "name": "stock",
+        "mode": "stock",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "shutdown_method": "sigint"
+      },
+      {
+        "name": "native",
+        "mode": "native",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "shutdown_method": "sigint"
+      },
+      {
+        "name": "replay",
+        "mode": "replay",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "environment": {
+          "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-9b-gpu2-reexport-20260908/dispatch.cache"
+        },
+        "shutdown_method": "sigint"
+      }
+    ]
+  },
+  "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+  "arm_provenance": {
+    "stock": {
+      "campaign_metadata": {
+        "binary_hash": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "build_id": "41b4be73a94782d7c2433899c0c75d82",
+        "build_plan_id": "9f00effa353dd1adb738081f038e8426",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "8cbe361e683754caa8aa68bb5c073649977cbb7a977cddd4dc5b4a542bc7350f",
+          "libggml-cpu.so.0.22.0": "4a9a4c901f21f60ef33be519e3ba5c9d74afd6698b051ba40c8549713be8cb4e",
+          "libggml-hip.so.0.22.0": "97e689a8dbee5f2054069809c6410392cbf1c46ec6e2cd7e7a6542448d0888ff",
+          "libggml.so.0.22.0": "5ce40b7c4ba103bde8ce8f6403490cf9e3a1144ac3e36ed2c059a1cdcb51e390",
+          "libllama-common.so.0.3.0": "ac318f369a7134cc95b6d826055015a779d386df08a4b89634bee139618297df",
+          "libllama-server-impl.so": "f22d583cf709b22f26f3f1e4cd75a12e49f69396a605aa2ceafbd038b93972af",
+          "libllama.so.0.3.0": "162d45c18362ba35c8e9df0daef67ebcef0dddb2c8e916e2ee7548d1c68d9259",
+          "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53",
+          "llama-server": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7"
+        },
+        "runtime_bundle_hash": "ac92356f5506077caa28618d3dadf591",
+        "source_slice_id": "e77c7964e5dc0ba3bf8bddc644b3cd78",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "libggml-base.so.0.22.0": "8cbe361e683754caa8aa68bb5c073649977cbb7a977cddd4dc5b4a542bc7350f",
+        "libggml-cpu.so.0.22.0": "4a9a4c901f21f60ef33be519e3ba5c9d74afd6698b051ba40c8549713be8cb4e",
+        "libggml-hip.so.0.22.0": "97e689a8dbee5f2054069809c6410392cbf1c46ec6e2cd7e7a6542448d0888ff",
+        "libggml.so.0.22.0": "5ce40b7c4ba103bde8ce8f6403490cf9e3a1144ac3e36ed2c059a1cdcb51e390",
+        "libllama-common.so.0.3.0": "ac318f369a7134cc95b6d826055015a779d386df08a4b89634bee139618297df",
+        "libllama-server-impl.so": "f22d583cf709b22f26f3f1e4cd75a12e49f69396a605aa2ceafbd038b93972af",
+        "libllama.so.0.3.0": "162d45c18362ba35c8e9df0daef67ebcef0dddb2c8e916e2ee7548d1c68d9259",
+        "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 142,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": null,
+          "GGML_HIP_AUTOTUNE_RECORD": null,
+          "GGML_HIP_DISPATCH_REPLAY": null,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": null,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": null,
+          "GGML_HIP_WORKSPACE_METRICS": null
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 0,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 0,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "fbd68931ed0d019c5b4a86efbe3f71845ffc8311",
+        "object_format": "sha1",
+        "source_slice_id": "e77c7964e5dc0ba3bf8bddc644b3cd78",
+        "allowed_untracked": []
+      }
+    },
+    "native": {
+      "campaign_metadata": {
+        "binary_hash": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "build_id": "1060f896728dc2f98661041eede45fec",
+        "build_plan_id": "b86b1e97d91605ce764e48f59342a962",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "",
+          "GGML_HIP_AUTOTUNE_SQLITE": "ON",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET": "inventory",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_ROUTING_TRANSFORM": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": "6d817cbc4de10bf3fa3fcc5c2f60b8935543e5575f3604181b4009061b0188c4",
+        "generated_inputs_verification": "compiled-copy-v1",
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+          "libggml-cpu.so.0.22.0": "c7e0e4a71089f6aa348c95360756c7789dfba4dc0717fd8878786077a43bca71",
+          "libggml-hip.so.0.22.0": "50d2004dd481e03478d433ad0fdc4041adef5377767ed9f682d76f0ee5bf5b48",
+          "libggml.so.0.22.0": "4b26b6cd08bf9bd3551f9cc233114a8453d3a691dd740b1706e64fa7df145fe6",
+          "libllama-common.so.0.3.0": "23e3b2f275aa0c847b79be67916c9ba03fb928d1acf5d125089bf4349b269b57",
+          "libllama-server-impl.so": "5da908d5694d39acc9a40a44904ffb239c26a8189fde595fb78a9d1b759a4198",
+          "libllama.so.0.3.0": "5fa1b1298f61a01ac640b14593c819619158b55786e3d46df675f91741f228ad",
+          "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc",
+          "llama-server": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c"
+        },
+        "runtime_bundle_hash": "e6be9aea156ac042c836b31c805024a6",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+        "libggml-cpu.so.0.22.0": "c7e0e4a71089f6aa348c95360756c7789dfba4dc0717fd8878786077a43bca71",
+        "libggml-hip.so.0.22.0": "50d2004dd481e03478d433ad0fdc4041adef5377767ed9f682d76f0ee5bf5b48",
+        "libggml.so.0.22.0": "4b26b6cd08bf9bd3551f9cc233114a8453d3a691dd740b1706e64fa7df145fe6",
+        "libllama-common.so.0.3.0": "23e3b2f275aa0c847b79be67916c9ba03fb928d1acf5d125089bf4349b269b57",
+        "libllama-server-impl.so": "5da908d5694d39acc9a40a44904ffb239c26a8189fde595fb78a9d1b759a4198",
+        "libllama.so.0.3.0": "5fa1b1298f61a01ac640b14593c819619158b55786e3d46df675f91741f228ad",
+        "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 148,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF"
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 148,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 148,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "4a6d809a7f8ec709666f08ea87e9693ca6faa440",
+        "object_format": "sha1",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "allowed_untracked": [
+          "ggml/include/ggml-hip-autotune.h",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.h",
+          "ggml/src/ggml-cuda/hip-autotune-canary.h",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.h",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-inspect.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.h",
+          "ggml/src/ggml-cuda/hip-autotune-journal.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-journal.h",
+          "ggml/src/ggml-cuda/hip-autotune-record.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-record.h",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h",
+          "ggml/src/ggml-cuda/hip-autotune-replay.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-replay.h",
+          "ggml/src/ggml-cuda/hip-autotune-signature.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-signature.h",
+          "ggml/src/ggml-cuda/hip-autotune-smi.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-smi.h",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cu",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cu",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-types.h",
+          "ggml/src/ggml-cuda/hip-q81-cache.cpp",
+          "ggml/src/ggml-cuda/hip-q81-cache.h",
+          "ggml/src/ggml-cuda/mmvq-autotune.cuh",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-replay.h",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-types.h",
+          "tests/test-hip-reduce.cpp"
+        ]
+      }
+    },
+    "replay": {
+      "campaign_metadata": {
+        "binary_hash": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "build_id": "3c4559a0a63032d40c155cde8629ab57",
+        "build_plan_id": "60f936db36097b7b9360eb7c707808bc",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/generated-inputs",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/977e9aa581d5166f87fd5ed1fc225697646b41efe86fce50a117b90467234f71",
+          "GGML_HIP_AUTOTUNE_SQLITE": "ON",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET": "replay-full",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_ROUTING_TRANSFORM": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": "ab2624da0f4186d969ed0eb213551c94f292c9c15e7e1b0b34e191e13df64473",
+        "generated_inputs_verification": "compiled-copy-v1",
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+          "libggml-cpu.so.0.22.0": "4275cfdd7ab91a7d9698d831c754e5ebeb4189317d81d69a246ae779d07139cb",
+          "libggml-hip.so.0.22.0": "e4e75139ba04e103dd5926740a202447a99e20222998d575cb0f99206f5e4ccd",
+          "libggml.so.0.22.0": "cae3e97b5ed71523709556aabe3f6a57d62b3b9bbfb7c83831edfdff6ee34f9f",
+          "libllama-common.so.0.3.0": "4342cc9480a3c7ecd14f4867fc89ea3432ad2d4b4ac1b4901f1721f4d9afda8b",
+          "libllama-server-impl.so": "36b7b1ed78db40ade79d5a2155144fff4533fa497d622e1e8ff74ad0ec12d904",
+          "libllama.so.0.3.0": "e3ce8fa3c8deea7b724bf95c1f6c7a3162d66c93c0fee0c2b0f0bb7dcf1efeb2",
+          "libmtmd.so.0.3.0": "bfd9d4abc604be265e0abd5a338bc757be98868e688b10e4431cce6213b440fa",
+          "llama-server": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856"
+        },
+        "runtime_bundle_hash": "9fcce8d2f596cf68c0d5f4ac0bf0895b",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+        "libggml-cpu.so.0.22.0": "4275cfdd7ab91a7d9698d831c754e5ebeb4189317d81d69a246ae779d07139cb",
+        "libggml-hip.so.0.22.0": "e4e75139ba04e103dd5926740a202447a99e20222998d575cb0f99206f5e4ccd",
+        "libggml.so.0.22.0": "cae3e97b5ed71523709556aabe3f6a57d62b3b9bbfb7c83831edfdff6ee34f9f",
+        "libllama-common.so.0.3.0": "4342cc9480a3c7ecd14f4867fc89ea3432ad2d4b4ac1b4901f1721f4d9afda8b",
+        "libllama-server-impl.so": "36b7b1ed78db40ade79d5a2155144fff4533fa497d622e1e8ff74ad0ec12d904",
+        "libllama.so.0.3.0": "e3ce8fa3c8deea7b724bf95c1f6c7a3162d66c93c0fee0c2b0f0bb7dcf1efeb2",
+        "libmtmd.so.0.3.0": "bfd9d4abc604be265e0abd5a338bc757be98868e688b10e4431cce6213b440fa"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 148,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF"
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 148,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 148,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "4a6d809a7f8ec709666f08ea87e9693ca6faa440",
+        "object_format": "sha1",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "allowed_untracked": [
+          "ggml/include/ggml-hip-autotune.h",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.h",
+          "ggml/src/ggml-cuda/hip-autotune-canary.h",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.h",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-inspect.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.h",
+          "ggml/src/ggml-cuda/hip-autotune-journal.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-journal.h",
+          "ggml/src/ggml-cuda/hip-autotune-record.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-record.h",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h",
+          "ggml/src/ggml-cuda/hip-autotune-replay.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-replay.h",
+          "ggml/src/ggml-cuda/hip-autotune-signature.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-signature.h",
+          "ggml/src/ggml-cuda/hip-autotune-smi.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-smi.h",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cu",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cu",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-types.h",
+          "ggml/src/ggml-cuda/hip-q81-cache.cpp",
+          "ggml/src/ggml-cuda/hip-q81-cache.h",
+          "ggml/src/ggml-cuda/mmvq-autotune.cuh",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-replay.h",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-types.h",
+          "tests/test-hip-reduce.cpp"
+        ]
+      }
+    }
+  },
+  "schedule": [
+    [
+      "replay",
+      "native",
+      "stock"
+    ],
+    [
+      "stock",
+      "replay",
+      "native"
+    ],
+    [
+      "native",
+      "replay",
+      "stock"
+    ],
+    [
+      "native",
+      "stock",
+      "replay"
+    ],
+    [
+      "stock",
+      "native",
+      "replay"
+    ],
+    [
+      "replay",
+      "stock",
+      "native"
+    ]
+  ],
+  "schedule_seed": 29,
+  "settle_seconds": 5.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "replay",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-001-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "d2b9ba6b1bc7439489fb1295ac731def",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-001-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1385.5,
+        "tg128_tps": 68.01,
+        "pp2048_tps": 2837.94,
+        "tg512_tps": 68.54
+      },
+      "elapsed_s": 40.62896395899588,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "native",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-001-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "f55bcc0062a64f2fa0feff17efe74fde",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-001-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1396.78,
+        "tg128_tps": 68.04,
+        "pp2048_tps": 2819.74,
+        "tg512_tps": 67.92
+      },
+      "elapsed_s": 40.67227598896716,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "stock",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-001-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "748c3be5555746e7be494fc97079889f",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-001-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1251.96,
+        "tg128_tps": 67.78,
+        "pp2048_tps": 2268.0,
+        "tg512_tps": 68.27
+      },
+      "elapsed_s": 40.87365552398842,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "stock",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-002-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "86307e915da0478c8f1b0e1211c50d53",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-002-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1254.22,
+        "tg128_tps": 67.59,
+        "pp2048_tps": 2259.38,
+        "tg512_tps": 68.25
+      },
+      "elapsed_s": 40.88266423396999,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "replay",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-002-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "84d0e0d8daca4f7289d5d1a1bfae704c",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-002-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1400.55,
+        "tg128_tps": 67.83,
+        "pp2048_tps": 2660.43,
+        "tg512_tps": 68.31
+      },
+      "elapsed_s": 40.59068228799151,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "native",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-002-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "a74dc208d75e4125badfd4f7262f3330",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-002-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1403.17,
+        "tg128_tps": 67.79,
+        "pp2048_tps": 2799.71,
+        "tg512_tps": 68.29
+      },
+      "elapsed_s": 40.619451556995045,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "native",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-003-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "3062acdf966c4c70b34088906db3597a",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-003-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1401.3,
+        "tg128_tps": 67.82,
+        "pp2048_tps": 2798.21,
+        "tg512_tps": 67.78
+      },
+      "elapsed_s": 40.73649115400622,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "replay",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-003-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "a5f1afcb75c244f6859f5b37bba2f9ad",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-003-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1392.32,
+        "tg128_tps": 67.82,
+        "pp2048_tps": 2795.87,
+        "tg512_tps": 68.25
+      },
+      "elapsed_s": 40.80090934498003,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "stock",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-003-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "5eef9f0efb5e499dbe15ace08a106b6a",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-003-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1227.21,
+        "tg128_tps": 67.72,
+        "pp2048_tps": 2242.97,
+        "tg512_tps": 68.17
+      },
+      "elapsed_s": 41.057384282990824,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "native",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-004-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "d52e3da786974ba7869f827b44957f89",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-004-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1377.15,
+        "tg128_tps": 67.81,
+        "pp2048_tps": 2787.49,
+        "tg512_tps": 68.22
+      },
+      "elapsed_s": 40.65717861399753,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "stock",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-004-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "a59a9b9768954f01b3171b73d92c4762",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-004-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1225.74,
+        "tg128_tps": 67.67,
+        "pp2048_tps": 2246.12,
+        "tg512_tps": 68.13
+      },
+      "elapsed_s": 40.925323128001764,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "replay",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-004-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "939fce6fdcf84b04be91ae138f94933f",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-004-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1394.53,
+        "tg128_tps": 67.02,
+        "pp2048_tps": 2793.04,
+        "tg512_tps": 68.31
+      },
+      "elapsed_s": 40.767316769983154,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "stock",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-005-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "c49dcff9c8ec4c4e93e6599c764eae4e",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-005-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1241.08,
+        "tg128_tps": 67.81,
+        "pp2048_tps": 2246.05,
+        "tg512_tps": 68.26
+      },
+      "elapsed_s": 40.97640821605455,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "native",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-005-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "5d3ccce2d752470a879debb5d49e26bf",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-005-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1347.7,
+        "tg128_tps": 67.83,
+        "pp2048_tps": 2788.52,
+        "tg512_tps": 67.99
+      },
+      "elapsed_s": 40.730659160006326,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "replay",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-005-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "a860e75d512f4996a96a321a9266fb9d",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-005-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1384.13,
+        "tg128_tps": 67.7,
+        "pp2048_tps": 2789.63,
+        "tg512_tps": 68.3
+      },
+      "elapsed_s": 40.72606244095368,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "replay",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-006-replay/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "482bf2c21abf4ddbb51a1960956cbd48",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+        "binary_sha256": "4c996fe32b0f7ffae8c7496b0656f45885cd804d784543ac7cb1cae19c5c1856",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-006-replay/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1385.59,
+        "tg128_tps": 67.87,
+        "pp2048_tps": 2788.77,
+        "tg512_tps": 68.36
+      },
+      "elapsed_s": 40.72197311697528,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "stock",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-006-stock/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "cbb925b4750e49e4b16dcffd198999ac",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "binary_sha256": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-006-stock/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1239.61,
+        "tg128_tps": 67.77,
+        "pp2048_tps": 2240.57,
+        "tg512_tps": 68.27
+      },
+      "elapsed_s": 40.94511915597832,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "native",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-gpu2-full/pair-006-native/server.log",
+      "execution_attestation": {
+        "schema_version": 1,
+        "backend": "ROCm",
+        "device_count": 1,
+        "devices": [
+          {
+            "architecture": "gfx1201",
+            "locator": "0000:09:00.0"
+          }
+        ],
+        "failure_signature": null,
+        "telemetry": {
+          "layers_assigned_to_devices": [
+            0
+          ]
+        }
+      },
+      "execution_evidence_status": "verified",
+      "attestation_binding": {
+        "correlation_id": "9cf93afaa0fa4d0b8985e8b6e0392dea",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+        "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+        "common_server_args": [
+          "-ngl",
+          "99",
+          "-sm",
+          "none",
+          "--fit",
+          "off",
+          "-c",
+          "8192",
+          "--flash-attn",
+          "on",
+          "--ubatch-size",
+          "512",
+          "--batch-size",
+          "2048",
+          "--threads",
+          "8",
+          "--parallel",
+          "1"
+        ],
+        "diagnostic_delta": [
+          "--verbosity",
+          "5"
+        ],
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "2"
+        }
+      },
+      "attestation_preflight": "/tmp/rha04-gpu2-full/pair-006-native/attestation/preflight.json",
+      "metrics": {
+        "pp512_tps": 1379.79,
+        "tg128_tps": 67.74,
+        "pp2048_tps": 2789.15,
+        "tg512_tps": 68.2
+      },
+      "elapsed_s": 40.71579810901312,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    }
+  ],
+  "exploratory_comparisons": {
+    "native_vs_stock": {
+      "pp512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 11.634501356296711,
+        "ci95_low_pct": 10.205843291500805,
+        "ci95_high_pct": 12.92100409554986,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1156746221924023,
+          1.1187590693817673,
+          1.1418583616495954,
+          1.1235253805864214,
+          1.0859090469591002,
+          1.1130839538241868
+        ]
+      },
+      "pp2048_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 24.28892946848118,
+        "ci95_low_pct": 24.08041226325157,
+        "ci95_high_pct": 24.518729554375017,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.2432716049382715,
+          1.2391496782303109,
+          1.2475467794932613,
+          1.2410245222873222,
+          1.2415217826851583,
+          1.2448394828101776
+        ]
+      },
+      "tg512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": -0.23240355763648468,
+        "ci95_low_pct": -0.4451634305612573,
+        "ci95_high_pct": -0.009760352338883393,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9948732972022851,
+          1.0005860805860807,
+          0.9942790083614493,
+          1.001321003963012,
+          0.9960445355991795,
+          0.9989746594404572
+        ]
+      }
+    },
+    "replay_vs_stock": {
+      "pp512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 12.138025340949564,
+        "ci95_low_pct": 11.303841761391787,
+        "ci95_high_pct": 13.012481905731367,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.1066647496725135,
+          1.1166701216692445,
+          1.1345409506115496,
+          1.1377045703003899,
+          1.1152625132948724,
+          1.1177628447656924
+        ]
+      },
+      "pp2048_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 23.397671646597228,
+        "ci95_low_pct": 21.048782046051826,
+        "ci95_high_pct": 24.76446116758968,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.2512962962962964,
+          1.1775044481229362,
+          1.246503519886579,
+          1.2434954499314375,
+          1.2420159836156808,
+          1.2446698831101013
+        ]
+      },
+      "tg512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 0.1758284348846395,
+        "ci95_low_pct": 0.09277582997562206,
+        "ci95_high_pct": 0.2783189317176582,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0039548850153803,
+          1.000879120879121,
+          1.0011735367463694,
+          1.0026420079260239,
+          1.0005859947260474,
+          1.0013182950051267
+        ]
+      }
+    }
+  }
+}

@@ -72,6 +72,8 @@ The first complete current-source decision-shaped cell is now retained for GPU0:
 
 The GPU1 full current-source 9B matrix is now complete and retained: 18/18 stock/native/replay cells across six balanced rounds, verified physical identity gfx1100/0000:06:00.0, and clean SIGINT teardown. Medians: stock 1303.420/2519.355/84.385/85.080, native 1296.765/2526.685/84.490/85.185, replay 1299.100/2529.420/83.835/84.755 (pp512/pp2048/tg128/tg512). Direct replay-vs-native bootstrap effects: pp512 +0.205% (-0.841..+1.195), pp2048 +0.063% (-0.165..+0.242), tg512 -0.464% (-0.587..-0.303). Evidence: docs/evidence/2026-09-10-rha04-gpu1-full/. Still exploratory/unadmitted; GPU2/GPU3 and dual-XTX 27B remain required.
 
+GPU2 is complete: 18/18 current-source stock/native/replay cells across six balanced rounds, verified gfx1201/0000:09:00.0 identity, clean SIGINT teardown. Medians: stock 1240.345/2246.085/67.745/68.255, native 1388.285/2793.680/67.815/68.095, replay 1388.955/2791.335/67.825/68.310 (pp512/pp2048/tg128/tg512). Direct replay-vs-native bootstrap effects: pp512 +0.451% (-0.438..+1.496), pp2048 -0.717% (-2.500..+0.322), tg512 +0.409% (+0.169..+0.684). The stock pp anomaly is explicitly classified as an execution/build anomaly, not a tuning gain. Evidence: docs/evidence/2026-09-10-rha04-gpu2-full/. GPU3 and dual-XTX 27B remain required.
+
 ## Effort & Risk
 
 Hardware execution is time-consuming and can be invalidated by concurrent workload, changed model/build, diagnostics leakage, cache incompatibility, or unequal MTP work. Preserve failed/invalid cells with their reason; do not retry selectively until a preferred result appears. Use environment roles and availability checks rather than committed host facts.
@@ -152,3 +154,6 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T16:31:42.399424+00:00 (updated-by): Updated: section:validation
 - chg_20260909_163156_completed-and-retained-the-ful_5078
 - 2026-09-09T16:31:56.222599+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T16:47:05.627763+00:00 (updated-by): Updated: section:validation
+- chg_20260909_164716_completed-and-retained-the-att_3548
+- 2026-09-09T16:47:16.871836+00:00 (updated-by): Updated: section:ledger-events
