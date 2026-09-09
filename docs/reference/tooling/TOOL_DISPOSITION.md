@@ -494,6 +494,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/retarget_terminal_references.py` | **TRANSITIONAL** | Reclassifies references/dependencies that targeted successors removed by terminal lifecycle alignment. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/refresh_pack_manifest.py` | **TRANSITIONAL** | Migration-local manifest maintenance helper; refreshes pack metadata only and is not planning/evidence authority. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_reference_decisions.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed, occurrence-based reference/dependency migration; dry-run by default and never performs global replacements. |
 | `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
 | `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **TRANSITIONAL** | Migration-local procedure; retained with the v3 pack and not production tooling. |
@@ -510,6 +511,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **TRANSITIONAL** | Migration reference review template; not canonical repository references. |
 | `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **TRANSITIONAL** | Migration successor specification template; successor authority remains ag-planning. |
 | `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SEMANTIC_REVIEW.csv` | **TRANSITIONAL** | Migration semantic-review template; advisory review input and not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the v3 migration; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_REMAINING_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the remaining active rows; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **TRANSITIONAL** | Explicit source-backed resolutions for GPT-ambiguous lifecycle rows; not canonical plan state. |

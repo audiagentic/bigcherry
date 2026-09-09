@@ -49,6 +49,28 @@ machine-local raw output into the repository:
 | PCI tree | `dcdcfece3df33ac23f37de1b1e5a5593986412ec0f56968bbcdb1953d29c5fc6` |
 | Full PCI detail | `719d27869ec9f82f9190cbce3640238374de57a374ae128ddf2390afdb17b402` |
 
+## Current HIP AtomicOps capability probe
+
+On 2026-09-10, a temporary HIP probe was compiled and executed on Brutus
+using `/opt/rocm-7.2.4/bin/hipcc`. It queried
+`hipDeviceAttributeHostNativeAtomicSupported` for every visible device and
+reported successful HIP calls for all four devices:
+
+| Device | Result |
+| --- | --- |
+| 0 | `value=1` |
+| 1 | `value=1` |
+| 2 | `value=1` |
+| 3 | `value=0` |
+
+The temporary source hash is
+`061e9373d85631c5d9818a1cdfa6e5d6b033626a55c60608da989d095024f7cf` and the
+probe binary hash is
+`04043b62ad86e16b84907e7e49898685bc92cde6fc340482b37300de597dd34a`.
+This confirms the current shared predicate's observed per-device boundary,
+but it is not complete PCIe-component AtomicOps/transport evidence and does
+not by itself authorize a topology allowlist.
+
 The earlier qualification artifacts remain authoritative historical inputs:
 
 - `rq04-01/environment.txt`:

@@ -56,7 +56,7 @@ Hardware-free evidence slice implemented and verified. Focused command:
 $env:PYTHONPATH='tools'; uv run --no-sync python -m pytest -q tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py tools/tests/profiling/test_rccl_qualify.py tools/tests/profiling/test_rccl_qualify_campaign.py
 Result: 58 passed, 1 skipped. Ruff check over the changed profiling and test files passes.
 
-Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, and raw evidence hashes in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. This is provenance only: complete per-component AtomicOps/transport evidence and managed direct plus 0840 collective success are still missing, so no positive admission row is claimed.
+Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, raw evidence hashes, and a fresh all-device `hipDeviceAttributeHostNativeAtomicSupported` probe in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. The probe reports devices 0/1/2 as supported and device 3 as unsupported, matching the shared predicate. This is still provenance only: complete per-component AtomicOps/transport evidence and managed direct plus 0840 collective success are still missing, so no positive admission row is claimed.
 
 ## Effort & Risk
 
@@ -80,10 +80,6 @@ Supersedes: HI146
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-hip-autotune-hi146
 
-Supersedes: HI146
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-hip-autotune-hi146
-
 Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exact topology/version whitelist inputs exist. Current fail-closed predicate remains authoritative.
 
 ## Change Log
@@ -92,6 +88,8 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 - 2026-09-09T11:04:57.995242+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
+
 
 
 - chg_20260909_115759_created-and-populated-the-192_2958
@@ -109,3 +107,7 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 - 2026-09-09T14:17:44.578152+00:00 (updated-by): Updated: section:files, section:validation, section:notes
 - chg_20260909_141754_added-current-brutus-topology_6647
 - 2026-09-09T14:17:54.082286+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_142236_added-current-brutus-atomicops_2526
+- 2026-09-09T14:22:36.242073+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_142318_kept-the-planning-rebaseline-t_9396
+- 2026-09-09T14:23:18.204353+00:00 (updated-by): Updated: section:ledger-events
