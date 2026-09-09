@@ -29,9 +29,22 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--evidence", type=Path, required=True)
+    ap.add_argument("--resolution", type=Path, help="optional explicit human resolution overriding an ambiguous GPT row")
     ns = ap.parse_args()
     work = ns.work.resolve()
     evidence = {r["source_id"]: r for r in read(ns.evidence.resolve())}
+    if ns.resolution:
+        resolutions = {r["source_id"]: r for r in read(ns.resolution.resolve())}
+        for source_id, resolution in resolutions.items():
+            if source_id not in evidence:
+                raise ValueError(f"resolution references source absent from GPT evidence: {source_id}")
+            if resolution.get("classification") not in CLASSIFICATIONS:
+                raise ValueError(f"{source_id}: invalid resolution classification")
+            evidence[source_id] = {
+                **evidence[source_id],
+                "classification": resolution["classification"],
+                "evidence": f"GPT classification was {evidence[source_id]['classification']}; {resolution['rationale']}",
+            }
     if len(evidence) != len(read(ns.evidence.resolve())):
         raise ValueError("GPT evidence contains duplicate source_id values")
     for source_id, row in evidence.items():
