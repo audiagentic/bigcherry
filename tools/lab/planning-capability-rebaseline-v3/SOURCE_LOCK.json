@@ -1,0 +1,8 @@
+{
+  "repository": "audiagentic/bigcherry",
+  "source_branch": "planning-refactor",
+  "source_commit": "4ff1e93dd39997f9d9ec206273ad3f444eadda7e",
+  "migration_id": "capability-rebaseline-v3-2026-09",
+  "capabilities": ["build", "run", "patching", "tuning"],
+  "rule": "All semantic review is against source_commit. Do not silently refresh the source snapshot."
+}

@@ -6,9 +6,10 @@
 
 ## Description
 
-This is the current 401-row control-plane registry for in-scope tooling. The
+This is the current 423-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
-registered GP10 lab tools and four HI168 investigation tools. It is
+registered GP10 lab tools, four HI168 investigation tools, and the
+planning-capability-rebaseline-v3 migration pack and scripts. It is
 the maintained disposition authority consumed by `tools/bigcherry/check.py`;
 it is not a raw filesystem snapshot. A row can intentionally name an ignored,
 historical, transitional, or machine-local path when that path's ownership
@@ -472,6 +473,30 @@ ownership.
 | `tools/tests/test_vulkan_audit.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
 | `tools/tests/test_workspace.py` | **KEEP** | Permanent test coverage; domain reorganisation deferred to TR11. |
 | `tools/verify_slice_a.py` | **MOVE** | HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI. |
+
+## Planning capability rebaseline v3 temporary tooling
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **TRANSITIONAL** | Planning capability rebaseline v3: read-only frozen-plan inventory/reference generator; migration-local and not planning/evidence authority. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **TRANSITIONAL** | Migration-local draft manifest seeder; outputs explicitly unapproved review data and never mutates canonical planning state. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
+| `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
+| `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **TRANSITIONAL** | Migration-local procedure; retained with the v3 pack and not production tooling. |
+| `tools/lab/planning-capability-rebaseline-v3/MANIFEST_MODEL.md` | **TRANSITIONAL** | Migration-local manifest contract; retained with the v3 pack and not planning/evidence authority. |
+| `tools/lab/planning-capability-rebaseline-v3/PACK_MANIFEST.json` | **TRANSITIONAL** | Migration pack metadata; retained with the v3 pack and not evidence authority. |
+| `tools/lab/planning-capability-rebaseline-v3/PLACEMENT.md` | **TRANSITIONAL** | Migration-local placement and disposition guidance. |
+| `tools/lab/planning-capability-rebaseline-v3/REVIEW_PROTOCOL.md` | **TRANSITIONAL** | Migration-local semantic review protocol; retained with the v3 pack. |
+| `tools/lab/planning-capability-rebaseline-v3/SOURCE_LOCK.json` | **TRANSITIONAL** | Immutable migration source lock; retained with the v3 pack. |
+| `tools/lab/planning-capability-rebaseline-v3/TOOL_DISPOSITION_SNIPPET.md` | **TRANSITIONAL** | Migration-local registry guidance; retained with the v3 pack. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/DEPENDENCY_REMAP.tsv` | **TRANSITIONAL** | Migration review template; not a production dependency registry. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/DISPOSITIONS.csv` | **TRANSITIONAL** | Migration review template; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/LINEAGE.csv` | **TRANSITIONAL** | Migration lineage review template; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/NAMESPACES.csv` | **TRANSITIONAL** | Migration namespace review template; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **TRANSITIONAL** | Migration reference review template; not canonical repository references. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **TRANSITIONAL** | Migration successor specification template; successor authority remains ag-planning. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
 
 ## HI168 retained investigation tools
 

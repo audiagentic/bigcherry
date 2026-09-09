@@ -1,0 +1,98 @@
+{
+  "pack": "bigcherry-planning-rebaseline-v3",
+  "version": 3,
+  "migration_id": "capability-rebaseline-v3-2026-09",
+  "source_commit": "4ff1e93dd39997f9d9ec206273ad3f444eadda7e",
+  "files": [
+    {
+      "path": "AGENT_PROMPT.md",
+      "bytes": 2407,
+      "sha256": "12d4f9281eecc679f299ac11c92279ae98c911225503d99a123290273f130c50"
+    },
+    {
+      "path": "EXECUTION.md",
+      "bytes": 5412,
+      "sha256": "b158583bdd4e5dea8578257bd3b3119f997d367b2fe34a0e2fdfe1123ffe2f82"
+    },
+    {
+      "path": "MANIFEST_MODEL.md",
+      "bytes": 2252,
+      "sha256": "a171350bc8f4d20f4f07322f79d253e6e14cf69f2701774cbc90fab064f7b2a0"
+    },
+    {
+      "path": "PLACEMENT.md",
+      "bytes": 989,
+      "sha256": "c1f21e8cc69bd500ebc8f0a161ea58f43cae24aa00bd5ec81180dfcf6b69b1ce"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5561,
+      "sha256": "d1f44a7f8ac55aade4d9394ee8c90c779db5ce51562abf10074fd07607827f8e"
+    },
+    {
+      "path": "REVIEW_PROTOCOL.md",
+      "bytes": 6188,
+      "sha256": "e4f40b852572fda3ec2fbc55ba72a2ab2d2f231ced6c221de11f71c15a497195"
+    },
+    {
+      "path": "SOURCE_LOCK.json",
+      "bytes": 363,
+      "sha256": "63cf57b614f3cbb81b4d118b5a18b2b9c1e024f89dd2cce8dac89f57c36619f2"
+    },
+    {
+      "path": "TOOL_DISPOSITION_SNIPPET.md",
+      "bytes": 1157,
+      "sha256": "d4105c8ef91d92778977ca781b5926623a646faa52e0d74242768e9f18193ad3"
+    },
+    {
+      "path": "scripts/generate_inventory.py",
+      "bytes": 11836,
+      "sha256": "1371168577b8112d6d4e2621423b37a07d67ffb2a09d065050f41c055ce1614a"
+    },
+    {
+      "path": "scripts/render_operations.py",
+      "bytes": 9486,
+      "sha256": "92bd051f1ac5568fb96858c22a4bca7dbb84c6100de31e81fb453b5b85b11471"
+    },
+    {
+      "path": "scripts/validate_manifests.py",
+      "bytes": 21155,
+      "sha256": "af81e782c1a86f3290ff4591e674cc7a288d4aea20e74cffc32452d165f991c1"
+    },
+    {
+      "path": "templates/DEPENDENCY_REMAP.tsv",
+      "bytes": 80,
+      "sha256": "30fa3994e5ac2d87f3bab3f84929c4689e1701abc0c31901ed8e4976959ec73e"
+    },
+    {
+      "path": "templates/DISPOSITIONS.csv",
+      "bytes": 188,
+      "sha256": "5bc34787017fd2aa52c040a010e7c00fd5026cccecfd519a8da216e48d2e5d4d"
+    },
+    {
+      "path": "templates/LINEAGE.csv",
+      "bytes": 52,
+      "sha256": "6b37321974c7cb44600af2c5b1f7df4a4119d293375e3108eb09d9edc8c34dd0"
+    },
+    {
+      "path": "templates/NAMESPACES.csv",
+      "bytes": 113,
+      "sha256": "095835022b5441d42d685bbe25a270781f07c456dd4cabd10c0a20c9b937c364"
+    },
+    {
+      "path": "templates/REFERENCE_DECISIONS.tsv",
+      "bytes": 94,
+      "sha256": "f044f7549af4bd453cee4875fe8c58eca92b99e6bc75dd635f1e0ebde883fee2"
+    },
+    {
+      "path": "templates/SUCCESSORS.csv",
+      "bytes": 119,
+      "sha256": "13a4f2e028c51de3c3c1c89d79f2ff3f490dbe1aa10e9ede293bf1d38e4465cc"
+    },
+    {
+      "path": "templates/SUCCESSOR_SPEC.md",
+      "bytes": 902,
+      "sha256": "637d7ec3757a10c54670c32d66ecc04edcace3a2ee85254d5d7bae1e44886c8b"
+    }
+  ]
+}
