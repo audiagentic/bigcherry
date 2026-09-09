@@ -104,6 +104,22 @@ heterogeneous audit revision. It is consequently a useful negative control
 for source identity, not a substitute for the historical failing-runtime
 source and not closure evidence.
 
+An independent canonical-public lookup was also performed against
+`https://github.com/ROCm/rccl.git` with `git ls-remote` for the exact object;
+it returned no matching ref. The exact historical source/build provenance is
+therefore externally unavailable from the authoritative public remote. The
+registration-to-architecture-selection-to-launch trace cannot be established
+for that runtime, and no safe source change is justified from substitutes.
+
+## Final disposition
+
+PHA02 is closed as an external-blocker / no-safe-change finding. The current
+source audit, the non-substitute `593de54e...` control, and the historical
+`57e5868...` audit remain strictly provenance; none is relabeled as the
+missing exact-runtime trace. Patch 1225 remains unchanged and fail-closed.
+Reopen this item only if the exact `9fb6fbe7...` source, or independently
+authoritative source-to-historical-binary provenance, becomes available.
+
 ## Reproduction commands
 
 The authoritative commands and complete logs remain on Brutus under
