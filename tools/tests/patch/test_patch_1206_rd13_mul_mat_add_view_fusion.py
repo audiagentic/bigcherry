@@ -46,33 +46,23 @@ class Rd13PatchApplicationTests(unittest.TestCase):
         self.assertEqual(result.results[0].status, "applied")
 
     def test_current_pinned_source_has_the_expected_fusion_site(self) -> None:
-        """The current pin still has RD13's PRE-patch anchor site -- i.e. the
-        patch could still apply, proving upstream hasn't refactored the
-        target away. This checks RD13._OLD content, not RD13._NEW.
+        """The current pin accepts the package patch in an isolated copy.
 
-        This assertion previously checked strings from RD13._NEW (the
-        patch's own POST-patch guards: has_view, fused_node_count, etc.)
-        instead of RD13._OLD -- those strings can only ever be present in
-        vendor/llama.cpp if this patch has actually been applied there.
-        RD13 is GROUP="rdna-boosts"/STATE="untested" (see
-        patches/1206_rd13_mul_mat_add_view_fusion/patch.toml): the
-        production "bigcherry" recipe only selects state="validated"
-        (config/recipes.toml), so RD13 has never been part of any real
-        pin-bump's applied patch set, and this test failed on every single
-        real bump this whole session (b10502 through b10705) for that
-        reason -- not because the patch's real target site (which
-        patch-rebase-check --all independently confirms as CLEAN every
-        bump) had actually drifted.
+        This deliberately does not assert that the mutable vendor checkout
+        already contains RD13's post-apply text.  Patch 1206 is unvalidated
+        and is not selected by the production recipe, so an out-of-band
+        application must never be a prerequisite for this test.
         """
         source = VENDOR_SOURCE.read_text(encoding="utf-8")
-        self.assertIn("// mul_mat + add\n", source)
-        self.assertIn("if (!ggml_can_fuse(cgraph, i, { op, bias_op })) {", source)
-        self.assertIn("ggml_tensor * mm_node   = cgraph->nodes[i];", source)
-        self.assertIn("ggml_tensor * bias_node = cgraph->nodes[i + 1];", source)
-        self.assertIn(
-            "if (bias_op == GGML_OP_ADD && !ggml_are_same_shape(bias_node->src[0], bias_node->src[1])) {",
-            source,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / RD13.PATCH.path
+            target.parent.mkdir(parents=True)
+            target.write_text(source, encoding="utf-8", newline="")
+            result = apply_patch(RD13.PATCH, root, dry_run=True)
+
+        self.assertTrue(result.ok, result.results)
+        self.assertEqual(result.results[0].status, "applied")
 
 
 class Rd13NearMissGuardTests(unittest.TestCase):

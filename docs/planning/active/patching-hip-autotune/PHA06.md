@@ -2,7 +2,7 @@
 id: PHA06
 order: 0
 plan: patching-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:49:06.721439+00:00'
 breadth: ''
 skill: intermediate
@@ -15,13 +15,11 @@ priority: null
 
 ## Description
 
-The original RD13-regression theory was corrected to a stale-test assumption; fixing or deleting that mutable-tree test remains outstanding.
+Fix the RD13 patch compatibility test so it validates the patch against an isolated copy of the current pinned vendor source rather than requiring an out-of-band patch application in the mutable checkout.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Read the current pinned vendor source.\n2. Copy it into a temporary isolated target at the patch's declared path.\n3. Run the real patch apply dry-run and assert exactly one applied result.\n4. Keep the package's independent anchor/near-miss tests unchanged.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-hip-autotune-hi149.md
+tools/tests/patch/test_patch_1206_rd13_mul_mat_add_view_fusion.py
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Focused pytest: tools/tests/patch/test_patch_1206_rd13_mul_mat_add_view_fusion.py — 5 passed.
 
 ## Effort & Risk
 
@@ -57,13 +51,15 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+The test passes on a clean checkout without requiring patch 1206 to have been applied out-of-band; it fails if the current pinned source no longer accepts the real patch anchor.
 
 ## Notes
 
 Supersedes: HI149
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-hip-autotune-hi149
+
+Implemented 2026-09-09. Replaced direct post-apply/live-tree assumptions with an isolated-copy dry-run against the current vendor source.
 
 ## Change Log
 
@@ -72,5 +68,10 @@ Successor key: patching-hip-autotune-hi149
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.857574+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:28:35.585358+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
+- 2026-09-09T12:28:51.135157+00:00 (state-transition): State: pending → in_progress
+- chg_20260909_122907_fixed-the-rd13-test-process-de_6932
+- 2026-09-09T12:29:07.294612+00:00 (updated-by): Updated: section:ledger-events
