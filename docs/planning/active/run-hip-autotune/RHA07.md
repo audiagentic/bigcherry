@@ -15,7 +15,7 @@ priority: P1
 
 ## Description
 
-RHA03's remaining lifecycle-advisory scope is now split here. The first implementation slice covers the maintained paired A/B server-capture boundary; runtime-matrix advisories remain complete under RHA03.
+RHA03's remaining lifecycle-advisory scope is being implemented in stage slices. Maintained paired A/B server-capture and build campaign boundaries now write shared machine-readable advisories without changing worker policy. Recovery and promotion remain pending.
 
 ## Steps
 
@@ -37,13 +37,14 @@ Capability owner: run reporting. Reuse the existing campaign/tuning workers and 
 
 tools/bigcherry/campaign/run_advisories.py
 tools/bigcherry/campaign/benchmark.py
+tools/bigcherry/cli/build.py
 tools/tests/campaign/test_run_advisories.py
 tools/tests/campaign/test_server_benchmark_capture.py
 docs/reference/testing/TEST.md
 
 ## Validation
 
-Added evaluate_ab_result() with conditional AB_RUN_FAILURE, AB_NO_EVIDENCE, AB_NOT_ADMITTED, AB_MISSING_COMPARISON and AB_DIAGNOSTIC_EVIDENCE findings. Existing server-comparison capture now writes sibling advisories.json on every persisted result, including partial/failure paths, without changing its return code or performance-admission field. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/campaign/test_run_advisories.py tools/tests/campaign/test_server_benchmark_capture.py tools/tests/campaign/test_runtime_matrix.py tools/tests/cli/test_runtime_matrix_cli.py -q (32 passed, 4 subtests). Remaining: build, recovery and promotion boundary integrations.
+Added evaluate_ab_result() and evaluate_build_result() with conditional AB_* and BUILD_* findings. Server comparison capture writes advisories.json on every persisted result; build CLI writes a run-scoped build-advisories/advisories.json after the existing worker completes. Findings never change benchmark/build return codes or admission policy. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/campaign/test_run_advisories.py tools/tests/campaign/test_server_benchmark_capture.py tools/tests/campaign/test_runtime_matrix.py tools/tests/cli/test_runtime_matrix_cli.py -q (33 passed, 4 subtests). Remaining: recovery and promotion boundary integrations.
 
 ## Effort & Risk
 
@@ -73,6 +74,12 @@ RHA03 owns completed run-result/matrix advisories; RHA07 owns only the remaining
 
 Progress: maintained A/B server-capture advisories are implemented; build/recovery/promotion remain.
 
+Split from RHA03 by review RV159.
+Migration: capability-rebaseline-v3-2026-09
+RHA03 owns completed run-result/matrix advisories; RHA07 owns only the remaining lifecycle-stage integrations.
+
+Progress: run-result, maintained A/B server-capture and build advisories implemented; recovery/promotion remain.
+
 ## Change Log
 
 - 2026-09-09T18:00:32.292398+00:00 (created-by): Created by agent
@@ -85,3 +92,6 @@ Progress: maintained A/B server-capture advisories are implemented; build/recove
 - 2026-09-09T18:03:24.244807+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
 - chg_20260909_180344_ab-benchmark-artifacts-now-in_6663
 - 2026-09-09T18:03:44.352055+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T18:05:36.278265+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
+- chg_20260909_180600_build-runs-now-leave-an-adviso_1305
+- 2026-09-09T18:06:00.890915+00:00 (updated-by): Updated: section:ledger-events

@@ -152,6 +152,16 @@ def cmd_build_new(args: Namespace) -> int:
             lanes, cfg=cfg, context=context, store=store, run_id=args.run_id
         )
 
+    from ..campaign.run_advisories import evaluate_build_result, render as render_advisories, write_evaluation
+    build_evaluation = evaluate_build_result(results)
+    write_evaluation(
+        context.work_root / "build-advisories" / (args.run_id or "unspecified") / "advisories.json",
+        build_evaluation,
+    )
+    advisory_text = render_advisories(build_evaluation)
+    if advisory_text:
+        print(advisory_text, file=sys.stderr, end="")
+
     failed = 0
     for lid in sorted(results):
         result = results[lid]

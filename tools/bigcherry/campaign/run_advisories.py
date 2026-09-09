@@ -8,6 +8,8 @@ performance-admission decision.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Any, Mapping
 
 
@@ -160,6 +162,41 @@ def evaluate_ab_result(result: Mapping[str, Any]) -> RunEvaluation:
             ("Do not transfer its timings to a production performance claim."),
         ))
     return RunEvaluation(AB_CHECK_IDS, tuple(errors), tuple(findings))
+
+
+BUILD_CHECK_IDS = ("BUILD_FAILURE", "BUILD_NO_EVIDENCE", "BUILD_IDENTITY_MISSING")
+
+
+def evaluate_build_result(results: Mapping[str, Any]) -> RunEvaluation:
+    """Classify build worker outcomes; never changes the build exit policy."""
+    errors: list[str] = []
+    findings: list[RunAdvisory] = []
+    if not isinstance(results, Mapping):
+        return RunEvaluation((), ("build results must be an object",), ())
+    if not results:
+        findings.append(RunAdvisory(
+            "BUILD_NO_EVIDENCE", "The build request produced no lane results.",
+            ("No artifact identity can be inferred from an empty build result.",), "stop"
+        ))
+    for lane, result in results.items():
+        if isinstance(result, Exception):
+            findings.append(RunAdvisory(
+                "BUILD_FAILURE", f"Build lane {lane!s} failed.",
+                ("Inspect the worker exception before consuming any downstream artifact.",), "stop"
+            ))
+            continue
+        if not getattr(result, "build_plan_id", None):
+            findings.append(RunAdvisory(
+                "BUILD_IDENTITY_MISSING", f"Build lane {lane!s} has no build_plan_id.",
+                ("Do not pass an artifact without a content-addressed build identity downstream.",), "stop"
+            ))
+    return RunEvaluation(BUILD_CHECK_IDS, tuple(errors), tuple(findings))
+
+
+def write_evaluation(path: str | Path, evaluation: RunEvaluation) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(evaluation.document(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def render(evaluation: RunEvaluation) -> str:
