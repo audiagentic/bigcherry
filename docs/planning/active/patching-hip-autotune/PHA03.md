@@ -48,12 +48,15 @@ tools/tests/profiling/test_rccl_qualify_campaign.py
 tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py
 patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py
 docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md
+docs/evidence/pha03-rccl-topology-evidence-20260910/README.md
 
 ## Validation
 
 Hardware-free evidence slice implemented and verified. Focused command:
 $env:PYTHONPATH='tools'; uv run --no-sync python -m pytest -q tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py tools/tests/profiling/test_rccl_qualify.py tools/tests/profiling/test_rccl_qualify_campaign.py
-Result: 58 passed, 1 skipped. Ruff check over the changed profiling and test files passes. The new tests cover stable and placement-sensitive topology identity, missing/unknown fail-closed evidence, runtime/driver serialization, and existing shared-predicate behavior. Current results remain prerequisite evidence only; hardware admission remains open until Brutus captures complete PCIe graph/capability identity, exact ROCm/driver/RCCL versions, managed direct and 0840 collective success, and negative altered-placement/version/unknown controls.
+Result: 58 passed, 1 skipped. Ruff check over the changed profiling and test files passes.
+
+Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, and raw evidence hashes in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. This is provenance only: complete per-component AtomicOps/transport evidence and managed direct plus 0840 collective success are still missing, so no positive admission row is claimed.
 
 ## Effort & Risk
 
@@ -77,6 +80,12 @@ Supersedes: HI146
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-hip-autotune-hi146
 
+Supersedes: HI146
+Migration: capability-rebaseline-v3-2026-09
+Successor key: patching-hip-autotune-hi146
+
+Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exact topology/version whitelist inputs exist. Current fail-closed predicate remains authoritative.
+
 ## Change Log
 
 - 2026-09-09T10:48:53.551059+00:00 (created-by): Created by capability-rebaseline-v3
@@ -97,3 +106,6 @@ Successor key: patching-hip-autotune-hi146
 - 2026-09-09T14:14:24.980527+00:00 (updated-by): Updated: section:validation
 - chg_20260909_141436_the-safe-rccl-evidence-plumbin_6883
 - 2026-09-09T14:14:36.246107+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T14:17:44.578152+00:00 (updated-by): Updated: section:files, section:validation, section:notes
+- chg_20260909_141754_added-current-brutus-topology_6647
+- 2026-09-09T14:17:54.082286+00:00 (updated-by): Updated: section:ledger-events
