@@ -66,6 +66,8 @@ The maintained capture now runs an untimed identity-bound attestation preflight 
 
 Real Brutus GPU0 preflight now succeeds on the current pushed implementation: expected ROCm/gfx1100/0000:03:00.0 was observed with matching binary/model hashes, common production arguments and HIP/ROCR visibility, and clean SIGINT teardown. Raw evidence is retained under docs/evidence/2026-09-10-rha04-gpu0-attestation-preflight/. An earlier HTTP attempt correctly failed closed because the binary returned 404 and was force-killed; no timing was recorded. The full 9B per-GPU and dual-XTX 27B server-bench matrices remain pending.
 
+A real Brutus GPU0 native timed smoke now passes the new gate and maintained server-bench contract: pp512 1198.19, pp2048 2460.25, tg128 84.83, tg512 85.36 tokens/s for one repetition, with verified ROCm/gfx1100/0000:03:00.0 identity and clean SIGINT teardown. Evidence is retained under docs/evidence/2026-09-10-rha04-gpu0-native-cell/. This is exploratory and remains performance_admitted=false; balanced stock/native/replay 9B and dual-XTX 27B matrices remain pending.
+
 ## Effort & Risk
 
 Hardware execution is time-consuming and can be invalidated by concurrent workload, changed model/build, diagnostics leakage, cache incompatibility, or unequal MTP work. Preserve failed/invalid cells with their reason; do not retry selectively until a preferred result appears. Use environment roles and availability checks rather than committed host facts.
@@ -137,3 +139,6 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T15:55:53.136139+00:00 (updated-by): Updated: section:files, section:validation
 - chg_20260909_155626_verified-the-new-physical-gpu_5643
 - 2026-09-09T15:56:26.937731+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T16:00:33.021296+00:00 (updated-by): Updated: section:validation
+- chg_20260909_160047_validated-that-the-new-physica_8483
+- 2026-09-09T16:00:47.461671+00:00 (updated-by): Updated: section:ledger-events
