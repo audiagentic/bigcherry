@@ -6,7 +6,7 @@
 
 ## Description
 
-This is the current 423-row control-plane registry for in-scope tooling. The
+This is the current 424-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
 registered GP10 lab tools, four HI168 investigation tools, and the
 planning-capability-rebaseline-v3 migration pack and scripts. It is
@@ -480,6 +480,7 @@ ownership.
 |---|---|---|
 | `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **TRANSITIONAL** | Planning capability rebaseline v3: read-only frozen-plan inventory/reference generator; migration-local and not planning/evidence authority. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **TRANSITIONAL** | Migration-local draft manifest seeder; outputs explicitly unapproved review data and never mutates canonical planning state. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **TRANSITIONAL** | Migration-local lifecycle review hint generator; cues require human adjudication and never allocate IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
 | `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
