@@ -1,6 +1,8 @@
 import unittest
 
-from bigcherry.campaign.run_advisories import evaluate_ab_result, evaluate_build_result, evaluate_runtime_result
+from bigcherry.campaign.run_advisories import (evaluate_ab_result, evaluate_build_result,
+                                               evaluate_promotion_result, evaluate_recovery_result,
+                                               evaluate_runtime_result)
 
 
 def child(**extra):
@@ -72,3 +74,17 @@ class RunAdvisoryTests(unittest.TestCase):
         tags = [finding.tag for finding in evaluation.findings]
         self.assertIn("BUILD_FAILURE", tags)
         self.assertIn("BUILD_IDENTITY_MISSING", tags)
+
+    def test_recovery_failure_and_exhaustion_are_visible(self):
+        evaluation = evaluate_recovery_result({
+            "published": False, "stop_reason": "budget", "evaluations_used": 3,
+            "retune_recommendations": [{"signature_dispatch": "abc"}],
+        })
+        tags = [finding.tag for finding in evaluation.findings]
+        self.assertIn("RECOVERY_FAILURE", tags)
+        self.assertIn("RECOVERY_ALTERNATIVES_EXHAUSTED", tags)
+
+    def test_promotion_none_promoted_is_not_a_failure(self):
+        evaluation = evaluate_promotion_result({"promoted": 0, "content_hash": "abc"})
+        self.assertTrue(evaluation.complete)
+        self.assertIn("PROMOTION_NONE_PROMOTED", [finding.tag for finding in evaluation.findings])

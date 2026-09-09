@@ -936,7 +936,7 @@ def _stage_replay_validate(
                     f"publishable assignment: {exc}. Original gate report: {report.summary()!r}"
                 ) from exc
             recovery_report_path = workdir / "recovery-result.json"
-            atomic_write_json(recovery_report_path, {
+            recovery_document = {
                 "published": result.published, "final_overrides": result.final_overrides,
                 "evaluations_used": result.evaluations_used, "stop_reason": result.stop_reason,
                 # HTR04: structured evidence only -- no code path here or in
@@ -952,7 +952,10 @@ def _stage_replay_validate(
                     }
                     for r in result.retune_recommendations
                 ],
-            })
+            }
+            atomic_write_json(recovery_report_path, recovery_document)
+            from bigcherry.campaign.run_advisories import evaluate_recovery_result, write_evaluation
+            write_evaluation(recovery_report_path.with_name("recovery-advisories.json"), evaluate_recovery_result(recovery_document))
             if not result.published:
                 raise TuneCampaignError(
                     f"behavioral gate failed and recovery search exhausted its budget "
