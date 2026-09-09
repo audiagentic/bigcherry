@@ -272,6 +272,20 @@ def main() -> int:
         ["source_id", "source_plan", "source_path", "source_state", "title", "work", "skill", "priority", "source_hash", "reference_count"],
         inventory_rows,
     )
+    write_csv(
+        output / "LIFECYCLE_NORMALIZATION.csv",
+        ["source_id", "source_state", "normalized_lifecycle", "reason", "approved"],
+        [
+            {
+                "source_id": item.item_id,
+                "source_state": item.state,
+                "normalized_lifecycle": "terminal/no-successor" if item.state in TERMINAL_STATES else "adjudicate",
+                "reason": "Frozen terminal state; retain predecessor history." if item.state in TERMINAL_STATES else "Active metadata requires explicit semantic completion/continuation review before successor allocation.",
+                "approved": "true" if item.state in TERMINAL_STATES else "false",
+            }
+            for item in items
+        ],
+    )
     queue_rows.sort(key=lambda r: (r["source_state"] in TERMINAL_STATES, r["source_plan"], r["source_id"]))
     write_csv(
         output / "SEMANTIC_REVIEW_QUEUE.csv",

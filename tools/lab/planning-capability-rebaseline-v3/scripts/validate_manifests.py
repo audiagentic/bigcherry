@@ -153,6 +153,7 @@ def main() -> int:
             p.error("working SOURCE_LOCK.json differs from pack source lock")
 
     inventory = read_rows(work / "PLAN_INVENTORY.csv")
+    lifecycle = read_rows(work / "LIFECYCLE_NORMALIZATION.csv")
     dispositions = read_rows(work / "DISPOSITIONS.csv")
     namespaces = read_rows(work / "NAMESPACES.csv")
     successors = read_rows(work / "SUCCESSORS.csv")
@@ -164,6 +165,25 @@ def main() -> int:
     if len(inventory_by_id) != len(inventory):
         p.error("PLAN_INVENTORY.csv contains duplicate source_id values")
     path_to_id = {normalize_path_ref(r["source_path"]): r["source_id"] for r in inventory}
+
+    lifecycle_by_id = {r["source_id"]: r for r in lifecycle}
+    if len(lifecycle_by_id) != len(lifecycle):
+        p.error("LIFECYCLE_NORMALIZATION.csv contains duplicate source_id values")
+    if set(lifecycle_by_id) != set(inventory_by_id):
+        p.error("LIFECYCLE_NORMALIZATION.csv must cover exactly the frozen inventory")
+    for source_id, row in lifecycle_by_id.items():
+        if source_id not in inventory_by_id:
+            continue
+        expected_state = inventory_by_id[source_id].get("source_state", "")
+        if row.get("source_state", "") != expected_state:
+            p.error(f"{source_id}: lifecycle source_state differs from frozen inventory")
+        if row.get("normalized_lifecycle") not in {"continuing", "terminal/no-successor", "adjudicate"}:
+            p.error(f"{source_id}: invalid lifecycle normalization {row.get('normalized_lifecycle')!r}")
+        if not row.get("reason"):
+            p.error(f"{source_id}: lifecycle normalization reason is required")
+        if ns.phase in {"preapply", "postapply"}:
+            if row.get("normalized_lifecycle") == "adjudicate" or not truth(row.get("approved", "")):
+                p.error(f"{source_id}: lifecycle normalization is not approved for {ns.phase}")
 
     disp_by_id = {r["source_id"]: r for r in dispositions}
     if len(disp_by_id) != len(dispositions):
