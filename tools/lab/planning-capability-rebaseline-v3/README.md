@@ -44,6 +44,26 @@ Build and Run are shared infrastructure. Patching and Tuning define/evaluate exp
 - `scripts/seed_review_manifests.py` — generates an explicitly unapproved draft disposition/successor/lineage graph from the reviewed v2 capability map; it never allocates IDs or mutates plan state.
 - `scripts/analyze_lifecycle_cues.py` — emits review hints for active plans whose prose contains terminal-language cues; hints require human adjudication.
 - `scripts/apply_gpt_lifecycle_review.py` — records dated GPT classifications as advisory lifecycle evidence; it cannot approve dispositions or allocate IDs.
+- `scripts/reconcile_lifecycle_reviews.py` — compares independent reviewer CSVs and reports coverage/conflicts without silently selecting a winner.
+
+To reproduce the current advisory review state after regenerating the frozen
+inventory, seed the draft manifests, apply the dated GPT review with the
+source-backed manual resolutions, then apply the independent Luna review:
+
+```powershell
+$env:PYTHONPATH = 'tools'
+python tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py `
+  --work artifacts/lab/planning-capability-rebaseline-v3 `
+  --v2-map artifacts/lab/planning-capability-rebaseline-v3/V2_ACTIVE_PLAN_MOVE_MAP.csv
+python tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py `
+  --work artifacts/lab/planning-capability-rebaseline-v3 `
+  --evidence tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv `
+  --resolution tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv
+python tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py `
+  --work artifacts/lab/planning-capability-rebaseline-v3 `
+  --evidence tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv `
+  --reviewer luna-high-agent
+```
 - `scripts/validate_manifests.py` — fail-closed graph/source/reference validator.
 - `scripts/render_operations.py` — emits deterministic JSONL operations for an agent to execute through `ag-planning`, repository editing, and `ag-ledger`.
 

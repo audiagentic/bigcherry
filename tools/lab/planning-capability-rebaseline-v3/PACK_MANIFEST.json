@@ -26,13 +26,18 @@
     },
     {
       "path": "README.md",
-      "bytes": 6231,
-      "sha256": "cbe1a56511ee57e73c0043c0f1224094da525d79c363af459ffcfb42d5004b47"
+      "bytes": 7554,
+      "sha256": "19400809cbbeec6deba4b815d244585695a492bb700ead87ebf1830f09452b93"
     },
     {
       "path": "review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv",
       "bytes": 7632,
       "sha256": "fa61f56b72a027fbda8caba41168a182c1c1689edcdda846845b4036bbcb3ce9"
+    },
+    {
+      "path": "review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv",
+      "bytes": 12204,
+      "sha256": "08cfd9147c1e30901e31e8abe511f32b292d8b306e35cf2a3c2abdee681d00cf"
     },
     {
       "path": "review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv",
@@ -51,13 +56,18 @@
     },
     {
       "path": "scripts/apply_gpt_lifecycle_review.py",
-      "bytes": 4350,
-      "sha256": "151f0a7f34d7a10ebd8334a5813a16d9a3887cfcdbfe4525fbb8c0b0e1a92b67"
+      "bytes": 4464,
+      "sha256": "c7048d33c88fbc7cf812e817b69ebef15f999b0775737a18eb026ead92afb9d5"
     },
     {
       "path": "scripts/generate_inventory.py",
       "bytes": 16040,
       "sha256": "e10710e3d7416555cd6c4b8ce899e8d0f32626048ae4cdd56def5b02a0e4800c"
+    },
+    {
+      "path": "scripts/reconcile_lifecycle_reviews.py",
+      "bytes": 2122,
+      "sha256": "16d78482dea44a224b53d2fa5bf046f9466672e23b895587e62ea50428476ef9"
     },
     {
       "path": "scripts/refresh_pack_manifest.py",
