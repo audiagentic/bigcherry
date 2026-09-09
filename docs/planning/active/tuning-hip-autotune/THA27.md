@@ -11,7 +11,7 @@ work: M
 priority: null
 ---
 
-# Make tuning falsifiable � predicted matmul saving, and the decode fraction it applies to
+# Make tuning falsifiable — predicted matmul saving, and the decode fraction it applies to
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: tuning-hip-autotune-hi35
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.979180+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:29.097375+00:00 (updated-by): Updated: section:title

@@ -11,7 +11,7 @@ work: L
 priority: null
 ---
 
-# Custom gfx1100 Q8_0 � Q8_1 WMMA kernel for K=5120, M=6144, N=512 (cherrypips family)
+# Custom gfx1100 Q8_0 × Q8_1 WMMA kernel for K=5120, M=6144, N=512 (cherrypips family)
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: tuning-hip-autotune-hi25
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.965772+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:25.332102+00:00 (updated-by): Updated: section:title

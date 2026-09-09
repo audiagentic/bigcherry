@@ -11,7 +11,7 @@ work: L
 priority: null
 ---
 
-# HI36b � generalised dispatch runtime: two-level lookup and generalised cache entries on replay v5
+# HI36b — generalised dispatch runtime: two-level lookup and generalised cache entries on replay v5
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: tuning-hip-autotune-hi75
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.984179+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:31.481521+00:00 (updated-by): Updated: section:title
