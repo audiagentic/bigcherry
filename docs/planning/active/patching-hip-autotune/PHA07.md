@@ -2,7 +2,7 @@
 id: PHA07
 order: 7
 plan: patching-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T12:34:07.591900+00:00'
 breadth: ''
 skill: advanced
@@ -37,6 +37,8 @@ patches/0850_ordered_speculative_trace/patch.toml; patches/0850_ordered_speculat
 
 Hardware-free: patch-lint, bigcherry check, patch-verify-evidence/patch-rebase-check for the current pin, focused HI166 patch and behavioral-gate tests, and a clean normal-composition build. Hardware: real supported dual-XTX MTP native/control/replay comparison with complete ordered traces and HI141 witness hard-fail preservation. No promotion or completion claim without all required evidence.
 
+Hardware-free initial gate (2026-09-09): `patch-lint` passed; `patch-verify-evidence 0850_ordered_speculative_trace` correctly reported `not-required` because the patch remains untested; current-pin `patch-rebase-check --all` passed 60/60 clean including 0850; focused tests `tools/tests/patch/test_hi166_ordered_speculative_trace.py tools/tests/tuning/test_behavioral_gate.py` passed 35 tests. Real production-composition qualification and lifecycle decision remain open.
+
 ## Effort & Risk
 
 M: lifecycle decision spans patch mechanics, recipe composition, behavioral-gate contracts, and real MTP hardware. Main risks are accidentally promoting an experimental server-schema dependency or changing non-MTP lanes; preserve fail-closed and explicit experiment boundaries.
@@ -53,6 +55,8 @@ A current-pin lifecycle decision is recorded for patch 0850. If promoted, the pa
 
 Created from dev-GPT audit req_ca99651c6e134bc9. HI166's ordered-trace implementation is functionally validated, but patch 0850 remains untested and experiment-only. PHA07 owns the residual lifecycle/integration boundary; do not close HI166 until PHA07 records a deliberate result.
 
+Initial mechanics evidence is clean on upstream revision 2578138397d7b422bb0e160efdd429976c55fb55. This does not promote the patch: 0850 remains untested and experiment-only until the production-shaped MTP qualification and explicit lifecycle decision are complete.
+
 ## Change Log
 
 - 2026-09-09T12:34:07.591900+00:00 (created-by): Created by agent
@@ -64,3 +68,7 @@ Created from dev-GPT audit req_ca99651c6e134bc9. HI166's ordered-trace implement
 - 2026-09-09T12:35:08.318139+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_123629_reconciled-the-lifecycle-revie_7239
 - 2026-09-09T12:36:29.378599+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:38:34.624322+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-09-09T12:38:41.744559+00:00 (state-transition): State: pending → in_progress
+- chg_20260909_123855_pha07-now-has-clean-mechanics_6055
+- 2026-09-09T12:38:55.591368+00:00 (updated-by): Updated: section:ledger-events
