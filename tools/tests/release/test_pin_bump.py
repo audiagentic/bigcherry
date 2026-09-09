@@ -1,9 +1,9 @@
-"""HI153: bigcherry pin-bump orchestrator -- unit tests for the composable
-phase functions. Full end-to-end `run()` testing against a real git
-fixture is tracked as follow-up (see HI153's plan item) -- these tests
-cover the state machine's pure logic: state persistence, the structured
-failure envelope, the narrow overlay self-heal decision, bad-rebase-status
-stops, and the coverage gate delegation.
+"""HI153: bigcherry pin-bump orchestrator tests.
+
+The suite covers the composable phase functions plus a STOP/resume end-to-end
+state-machine test against a real temporary git fixture. The E2E test mocks
+external source/build work, but exercises the maintained ``run()`` entrypoint,
+on-disk state, phase advancement, structured stop context, and resume path.
 """
 
 from __future__ import annotations
@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -46,6 +48,79 @@ class PinBumpStateTests(unittest.TestCase):
             state.save(state_dir)
             loaded = pin_bump.PinBumpState.load(state_dir)
             self.assertEqual(loaded, state)
+
+
+class PinBumpStopResumeE2ETests(unittest.TestCase):
+    """Exercise the real orchestrator state machine across a recoverable STOP."""
+
+    def test_run_stops_after_coverage_and_resume_completes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "vendor"
+            report_dir = Path(directory) / "report"
+            dispositions = Path(directory) / "dispositions"
+            root.mkdir(parents=True)
+            dispositions.mkdir()
+            _init_repo(root)
+
+            class Record:
+                stage = "pulled"
+                audit = {}
+                notes = ""
+
+                def advance_to(self, stage):
+                    self.stage = stage
+
+                def save(self):
+                    return None
+
+            record = Record()
+            clean_report = {"checks": [], "summary": {}, "patches": []}
+            apply_calls = []
+
+            def apply_once_then_resume(*args, **kwargs):
+                apply_calls.append(1)
+                if len(apply_calls) == 1:
+                    raise pin_bump.PinBumpStop(
+                        "apply", "TEST_STOP", "synthetic recoverable stop",
+                    )
+                return pin_bump.patch_rebase.ApplyKnownGoodResult(
+                    ok=True, selected_patch_ids=(), known_good_patch_ids=(), partial=False,
+                )
+
+            with patch.object(pin_bump, "acquire_maintenance_lock", return_value=nullcontext()), \
+                 patch.object(pin_bump, "run_phase_preflight", return_value=("b10502", "b" * 40)), \
+                 patch.object(pin_bump, "run_phase_declare", return_value="c" * 40), \
+                 patch.object(pin_bump, "_selector_patch_ids", return_value=("0100_x",)), \
+                 patch.object(pin_bump, "_sync_campaign_mirror_best_effort"), \
+                 patch("bigcherry.cli.source.cmd_pull", return_value=0), \
+                 patch("bigcherry.source.audit.audit", return_value=clean_report), \
+                 patch("bigcherry.source.audit.passed", return_value=True), \
+                 patch("bigcherry.__main__._record_for", return_value=record), \
+                 patch.object(pin_bump.patch_rebase, "run_rebase_check", return_value=clean_report), \
+                 patch.object(pin_bump.patch_rebase, "apply_known_good", side_effect=apply_once_then_resume), \
+                 patch.object(pin_bump, "enforce_all_patches_clean_or_dispositioned", return_value={"ok": True}), \
+                 patch.object(pin_bump, "_write_release_doc_best_effort"), \
+                 patch.object(pin_bump, "_commit_release_records"):
+                with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                    pin_bump.run(
+                        target_ref="b10680", root=root,
+                        dispositions_dir=dispositions, report_dir=report_dir,
+                    )
+                self.assertEqual(stopped.exception.code, "TEST_STOP")
+                self.assertTrue((report_dir / "state.json").is_file())
+                saved = pin_bump.PinBumpState.load(report_dir)
+                self.assertEqual(saved.next_phase, "apply")
+                self.assertIn("coverage", saved.completed_phases)
+
+                result = pin_bump.run(
+                    target_ref="b10680", root=root,
+                    dispositions_dir=dispositions, report_dir=report_dir, resume=True,
+                )
+
+            self.assertTrue(result.ok)
+            self.assertIn("complete", result.state.completed_phases)
+            self.assertEqual(result.state.next_phase, "complete")
+            self.assertEqual(len(apply_calls), 2)
 
 
 class SchemaTwoRoundTripTests(unittest.TestCase):
