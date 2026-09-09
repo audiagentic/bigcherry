@@ -1,0 +1,1324 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "production",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "schema_version": 1,
+    "evidence_role": "production",
+    "execution_evidence": "observe",
+    "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "server_args": [
+      "-ngl",
+      "99",
+      "-sm",
+      "tensor",
+      "--fit",
+      "off",
+      "-c",
+      "4096",
+      "--flash-attn",
+      "on",
+      "--ubatch-size",
+      "512",
+      "--batch-size",
+      "2048",
+      "--threads",
+      "8",
+      "--parallel",
+      "1"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0,1",
+      "ROCR_VISIBLE_DEVICES": "0,1"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1100",
+        "gfx1100"
+      ],
+      "locators": [
+        "0000:03:00.0",
+        "0000:06:00.0"
+      ]
+    },
+    "bench_configs": "pp512,pp2048,tg512",
+    "required_metrics": [
+      "pp512_tps",
+      "pp2048_tps",
+      "tg512_tps"
+    ],
+    "repetitions": 1,
+    "arms": [
+      {
+        "name": "stock",
+        "mode": "stock",
+        "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+        "shutdown_method": "sigint"
+      },
+      {
+        "name": "native",
+        "mode": "native",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "shutdown_method": "sigint"
+      },
+      {
+        "name": "replay",
+        "mode": "replay",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+        "environment": {
+          "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache"
+        },
+        "shutdown_method": "sigint"
+      }
+    ]
+  },
+  "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348",
+  "arm_provenance": {
+    "stock": {
+      "campaign_metadata": {
+        "binary_hash": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "build_id": "41b4be73a94782d7c2433899c0c75d82",
+        "build_plan_id": "9f00effa353dd1adb738081f038e8426",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "8cbe361e683754caa8aa68bb5c073649977cbb7a977cddd4dc5b4a542bc7350f",
+          "libggml-cpu.so.0.22.0": "4a9a4c901f21f60ef33be519e3ba5c9d74afd6698b051ba40c8549713be8cb4e",
+          "libggml-hip.so.0.22.0": "97e689a8dbee5f2054069809c6410392cbf1c46ec6e2cd7e7a6542448d0888ff",
+          "libggml.so.0.22.0": "5ce40b7c4ba103bde8ce8f6403490cf9e3a1144ac3e36ed2c059a1cdcb51e390",
+          "libllama-common.so.0.3.0": "ac318f369a7134cc95b6d826055015a779d386df08a4b89634bee139618297df",
+          "libllama-server-impl.so": "f22d583cf709b22f26f3f1e4cd75a12e49f69396a605aa2ceafbd038b93972af",
+          "libllama.so.0.3.0": "162d45c18362ba35c8e9df0daef67ebcef0dddb2c8e916e2ee7548d1c68d9259",
+          "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53",
+          "llama-server": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7"
+        },
+        "runtime_bundle_hash": "ac92356f5506077caa28618d3dadf591",
+        "source_slice_id": "e77c7964e5dc0ba3bf8bddc644b3cd78",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "74cf56624e461cc8a14e081698490eee02cf31bf5d35c64af05632daaf0255c7",
+        "libggml-base.so.0.22.0": "8cbe361e683754caa8aa68bb5c073649977cbb7a977cddd4dc5b4a542bc7350f",
+        "libggml-cpu.so.0.22.0": "4a9a4c901f21f60ef33be519e3ba5c9d74afd6698b051ba40c8549713be8cb4e",
+        "libggml-hip.so.0.22.0": "97e689a8dbee5f2054069809c6410392cbf1c46ec6e2cd7e7a6542448d0888ff",
+        "libggml.so.0.22.0": "5ce40b7c4ba103bde8ce8f6403490cf9e3a1144ac3e36ed2c059a1cdcb51e390",
+        "libllama-common.so.0.3.0": "ac318f369a7134cc95b6d826055015a779d386df08a4b89634bee139618297df",
+        "libllama-server-impl.so": "f22d583cf709b22f26f3f1e4cd75a12e49f69396a605aa2ceafbd038b93972af",
+        "libllama.so.0.3.0": "162d45c18362ba35c8e9df0daef67ebcef0dddb2c8e916e2ee7548d1c68d9259",
+        "libmtmd.so.0.3.0": "e8fcfeb4db5398da5d357916916cda420f2a6d7d2c35c472aab533f199572f53"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 142,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": null,
+          "GGML_HIP_AUTOTUNE_RECORD": null,
+          "GGML_HIP_DISPATCH_REPLAY": null,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": null,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": null,
+          "GGML_HIP_WORKSPACE_METRICS": null
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 0,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 0,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "fbd68931ed0d019c5b4a86efbe3f71845ffc8311",
+        "object_format": "sha1",
+        "source_slice_id": "e77c7964e5dc0ba3bf8bddc644b3cd78",
+        "allowed_untracked": []
+      }
+    },
+    "native": {
+      "campaign_metadata": {
+        "binary_hash": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "build_id": "1060f896728dc2f98661041eede45fec",
+        "build_plan_id": "b86b1e97d91605ce764e48f59342a962",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/generated-inputs",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "",
+          "GGML_HIP_AUTOTUNE_SQLITE": "ON",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET": "inventory",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_ROUTING_TRANSFORM": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": "6d817cbc4de10bf3fa3fcc5c2f60b8935543e5575f3604181b4009061b0188c4",
+        "generated_inputs_verification": "compiled-copy-v1",
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+          "libggml-cpu.so.0.22.0": "c7e0e4a71089f6aa348c95360756c7789dfba4dc0717fd8878786077a43bca71",
+          "libggml-hip.so.0.22.0": "50d2004dd481e03478d433ad0fdc4041adef5377767ed9f682d76f0ee5bf5b48",
+          "libggml.so.0.22.0": "4b26b6cd08bf9bd3551f9cc233114a8453d3a691dd740b1706e64fa7df145fe6",
+          "libllama-common.so.0.3.0": "23e3b2f275aa0c847b79be67916c9ba03fb928d1acf5d125089bf4349b269b57",
+          "libllama-server-impl.so": "5da908d5694d39acc9a40a44904ffb239c26a8189fde595fb78a9d1b759a4198",
+          "libllama.so.0.3.0": "5fa1b1298f61a01ac640b14593c819619158b55786e3d46df675f91741f228ad",
+          "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc",
+          "llama-server": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c"
+        },
+        "runtime_bundle_hash": "e6be9aea156ac042c836b31c805024a6",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+        "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+        "libggml-cpu.so.0.22.0": "c7e0e4a71089f6aa348c95360756c7789dfba4dc0717fd8878786077a43bca71",
+        "libggml-hip.so.0.22.0": "50d2004dd481e03478d433ad0fdc4041adef5377767ed9f682d76f0ee5bf5b48",
+        "libggml.so.0.22.0": "4b26b6cd08bf9bd3551f9cc233114a8453d3a691dd740b1706e64fa7df145fe6",
+        "libllama-common.so.0.3.0": "23e3b2f275aa0c847b79be67916c9ba03fb928d1acf5d125089bf4349b269b57",
+        "libllama-server-impl.so": "5da908d5694d39acc9a40a44904ffb239c26a8189fde595fb78a9d1b759a4198",
+        "libllama.so.0.3.0": "5fa1b1298f61a01ac640b14593c819619158b55786e3d46df675f91741f228ad",
+        "libmtmd.so.0.3.0": "980f33d13abef930dd2c36ba80d050e1b1721e44fe606ac7650ababfd8f471dc"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 148,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF"
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 148,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 148,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "4a6d809a7f8ec709666f08ea87e9693ca6faa440",
+        "object_format": "sha1",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "allowed_untracked": [
+          "ggml/include/ggml-hip-autotune.h",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.h",
+          "ggml/src/ggml-cuda/hip-autotune-canary.h",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.h",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-inspect.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.h",
+          "ggml/src/ggml-cuda/hip-autotune-journal.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-journal.h",
+          "ggml/src/ggml-cuda/hip-autotune-record.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-record.h",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h",
+          "ggml/src/ggml-cuda/hip-autotune-replay.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-replay.h",
+          "ggml/src/ggml-cuda/hip-autotune-signature.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-signature.h",
+          "ggml/src/ggml-cuda/hip-autotune-smi.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-smi.h",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cu",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cu",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-types.h",
+          "ggml/src/ggml-cuda/hip-q81-cache.cpp",
+          "ggml/src/ggml-cuda/hip-q81-cache.h",
+          "ggml/src/ggml-cuda/mmvq-autotune.cuh",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-replay.h",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-types.h",
+          "tests/test-hip-reduce.cpp"
+        ]
+      }
+    },
+    "replay": {
+      "campaign_metadata": {
+        "binary_hash": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
+        "build_id": "ad004f0a625b8c95e8ff7ca439b9ad8f",
+        "build_plan_id": "5ffe0ebb35a044d0397aa986d53da12d",
+        "effective_configure": {
+          "AMDGPU_TARGETS": "gfx1100;gfx1201;gfx1030",
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/opt/rocm/llvm/bin/clang++",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/opt/rocm/llvm/bin/clang",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ar",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS": "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-NOTFOUND",
+          "CMAKE_C_COMPILER_CLANG_SCAN_DEPS-ADVANCED": "1",
+          "CMAKE_C_COMPILER_RANLIB": "/opt/rocm-7.2.4/lib/llvm/bin/llvm-ranlib",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "GGML_HIP": "ON",
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_GENERATED_DIR": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/generated-inputs",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+          "GGML_HIP_AUTOTUNE_SQLITE": "ON",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET": "replay-full",
+          "GGML_HIP_AUTOTUNE_VARIANT_SET-STRINGS": "inventory;workload-max;full-max;replay-full;replay-slim",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_EXPORT_METRICS": "OFF",
+          "GGML_HIP_GRAPHS": "ON",
+          "GGML_HIP_MMQ_MFMA": "ON",
+          "GGML_HIP_NO_VMM": "ON",
+          "GGML_HIP_RCCL": "ON",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_ROUTING_TRANSFORM": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF",
+          "GGML_VULKAN": "OFF",
+          "GGML_VULKAN_CHECK_RESULTS": "OFF",
+          "GGML_VULKAN_DEBUG": "OFF",
+          "GGML_VULKAN_MEMORY_DEBUG": "OFF",
+          "GGML_VULKAN_RUN_TESTS": "OFF",
+          "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN": "",
+          "GGML_VULKAN_SHADER_DEBUG_INFO": "OFF",
+          "GGML_VULKAN_VALIDATE": "OFF"
+        },
+        "generated_compile_inputs_hash": "99c41bb5313b05ff3745cddaa755e998e235ece1b5c87e3ccbd93e4ad534741b",
+        "generated_inputs_verification": "compiled-copy-v1",
+        "runtime_artifacts": {
+          "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+          "libggml-cpu.so.0.22.0": "98f59e3c28f6d31ec733d088b3b2d402ed191c4e510d87e4efcbff15f3003240",
+          "libggml-hip.so.0.22.0": "87f0c60e44515c447c4c26d25016c59af2b66025dd9a1a9c19e287630ca502b3",
+          "libggml.so.0.22.0": "9f6d3f9258fbb95bbc3f027921229e17f41f7f63e5cb7189ac842a52ddb24b75",
+          "libllama-common.so.0.3.0": "74a34f586b0d419390c424d0fdfa3f19df7e3e6d755800d7fa8a2785ce293d9d",
+          "libllama-server-impl.so": "510339898d614335aa6f343faa2e64c88a766eac75df957d115dcfe3da00b01b",
+          "libllama.so.0.3.0": "af6bfd9527d7fa7f50a4128153557f90378dd4d998b82ffa7a865fe4ec7e1489",
+          "libmtmd.so.0.3.0": "dd26d4c09447785553d4f8df83885c49336c5a2860a9be064bd96f199b36b9b0",
+          "llama-server": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa"
+        },
+        "runtime_bundle_hash": "745249141678d8beb0b490641447bdc0",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/opt/rocm/llvm/bin/clang++"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/opt/rocm/llvm/bin/clang"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "c_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/opt/rocm-7.2.4/lib/llvm/bin/clang-22"
+          ],
+          [
+            "cxx_compiler_version",
+            "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "llama-server": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
+        "libggml-base.so.0.22.0": "fe12e8c6ec6e6fda15c61b5ca9483c2456a7ad154cf909a1aa23d313dd287a23",
+        "libggml-cpu.so.0.22.0": "98f59e3c28f6d31ec733d088b3b2d402ed191c4e510d87e4efcbff15f3003240",
+        "libggml-hip.so.0.22.0": "87f0c60e44515c447c4c26d25016c59af2b66025dd9a1a9c19e287630ca502b3",
+        "libggml.so.0.22.0": "9f6d3f9258fbb95bbc3f027921229e17f41f7f63e5cb7189ac842a52ddb24b75",
+        "libllama-common.so.0.3.0": "74a34f586b0d419390c424d0fdfa3f19df7e3e6d755800d7fa8a2785ce293d9d",
+        "libllama-server-impl.so": "510339898d614335aa6f343faa2e64c88a766eac75df957d115dcfe3da00b01b",
+        "libllama.so.0.3.0": "af6bfd9527d7fa7f50a4128153557f90378dd4d998b82ffa7a865fe4ec7e1489",
+        "libmtmd.so.0.3.0": "dd26d4c09447785553d4f8df83885c49336c5a2860a9be064bd96f199b36b9b0"
+      },
+      "compiler_observation": {
+        "build_dir": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d",
+        "command_source": "compile_commands.json",
+        "hip_compile_command_count": 148,
+        "declared_options": {
+          "GGML_HIP_DISPATCH": null,
+          "GGML_HIP_AUTOTUNE": "OFF",
+          "GGML_HIP_AUTOTUNE_RECORD": "OFF",
+          "GGML_HIP_DISPATCH_REPLAY": "ON",
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF",
+          "GGML_HIP_REPLAY_DIAGNOSTICS": "OFF",
+          "GGML_HIP_WORKSPACE_METRICS": "OFF"
+        },
+        "compiled_definition_counts": {
+          "GGML_HIP_DISPATCH": 148,
+          "GGML_HIP_AUTOTUNE": 0,
+          "GGML_HIP_AUTOTUNE_RECORD": 0,
+          "GGML_HIP_DISPATCH_REPLAY": 148,
+          "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+          "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+          "GGML_HIP_WORKSPACE_METRICS": 0
+        },
+        "diagnostic_flags": [],
+        "instrumented": false,
+        "coverage_translation_unit": false,
+        "issues": [],
+        "scope": "compile configuration only; not binary integrity or runtime activation"
+      },
+      "source_attestation": {
+        "upstream_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+        "tree_oid": "4a6d809a7f8ec709666f08ea87e9693ca6faa440",
+        "object_format": "sha1",
+        "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+        "allowed_untracked": [
+          "ggml/include/ggml-hip-autotune.h",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-blake2b.h",
+          "ggml/src/ggml-cuda/hip-autotune-canary.h",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-coverage.h",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+          "ggml/src/ggml-cuda/hip-autotune-dispatch.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-inspect.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-io.h",
+          "ggml/src/ggml-cuda/hip-autotune-journal.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-journal.h",
+          "ggml/src/ggml-cuda/hip-autotune-record.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-record.h",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h",
+          "ggml/src/ggml-cuda/hip-autotune-replay.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-replay.h",
+          "ggml/src/ggml-cuda/hip-autotune-signature.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-signature.h",
+          "ggml/src/ggml-cuda/hip-autotune-smi.cpp",
+          "ggml/src/ggml-cuda/hip-autotune-smi.h",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cu",
+          "ggml/src/ggml-cuda/hip-autotune-transform.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cu",
+          "ggml/src/ggml-cuda/hip-autotune-tuner.cuh",
+          "ggml/src/ggml-cuda/hip-autotune-types.h",
+          "ggml/src/ggml-cuda/hip-q81-cache.cpp",
+          "ggml/src/ggml-cuda/hip-q81-cache.h",
+          "ggml/src/ggml-cuda/mmvq-autotune.cuh",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-replay.h",
+          "ggml/src/ggml-vulkan/bigcherry/vk-autotune-types.h",
+          "tests/test-hip-reduce.cpp"
+        ]
+      }
+    }
+  },
+  "schedule": [
+    [
+      "replay",
+      "stock",
+      "native"
+    ],
+    [
+      "replay",
+      "native",
+      "stock"
+    ],
+    [
+      "stock",
+      "native",
+      "replay"
+    ],
+    [
+      "stock",
+      "replay",
+      "native"
+    ],
+    [
+      "native",
+      "stock",
+      "replay"
+    ],
+    [
+      "native",
+      "replay",
+      "stock"
+    ]
+  ],
+  "schedule_seed": 41,
+  "settle_seconds": 5.0,
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "replay",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-001-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 928.47,
+        "tg128_tps": 34.19,
+        "pp2048_tps": 1253.15,
+        "tg512_tps": 34.14
+      },
+      "elapsed_s": 51.90861452399986,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "stock",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-001-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 927.63,
+        "tg128_tps": 34.02,
+        "pp2048_tps": 1247.1,
+        "tg512_tps": 34.01
+      },
+      "elapsed_s": 51.39715650200378,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "native",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-001-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 932.49,
+        "tg128_tps": 33.11,
+        "pp2048_tps": 1250.12,
+        "tg512_tps": 33.66
+      },
+      "elapsed_s": 52.62158709199866,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "replay",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-002-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 932.41,
+        "tg128_tps": 34.16,
+        "pp2048_tps": 1254.34,
+        "tg512_tps": 34.03
+      },
+      "elapsed_s": 50.81150222202996,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "native",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-002-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 930.72,
+        "tg128_tps": 33.93,
+        "pp2048_tps": 1256.37,
+        "tg512_tps": 33.94
+      },
+      "elapsed_s": 50.949859540036414,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "stock",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-002-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 918.08,
+        "tg128_tps": 34.03,
+        "pp2048_tps": 1287.76,
+        "tg512_tps": 34.23
+      },
+      "elapsed_s": 50.543141356960405,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "stock",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-003-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 934.63,
+        "tg128_tps": 34.01,
+        "pp2048_tps": 1286.87,
+        "tg512_tps": 34.32
+      },
+      "elapsed_s": 50.61577659496106,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "native",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-003-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 927.22,
+        "tg128_tps": 33.81,
+        "pp2048_tps": 1285.6,
+        "tg512_tps": 34.26
+      },
+      "elapsed_s": 50.51346793398261,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "replay",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-003-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 925.04,
+        "tg128_tps": 34.3,
+        "pp2048_tps": 1287.19,
+        "tg512_tps": 34.49
+      },
+      "elapsed_s": 50.52510283596348,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "stock",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-004-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 930.87,
+        "tg128_tps": 33.99,
+        "pp2048_tps": 1289.16,
+        "tg512_tps": 34.16
+      },
+      "elapsed_s": 50.54110250400845,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "replay",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-004-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 932.39,
+        "tg128_tps": 33.99,
+        "pp2048_tps": 1285.18,
+        "tg512_tps": 34.36
+      },
+      "elapsed_s": 50.53829549299553,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "native",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-004-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 926.14,
+        "tg128_tps": 33.94,
+        "pp2048_tps": 1289.67,
+        "tg512_tps": 34.16
+      },
+      "elapsed_s": 50.51334814395523,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "native",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-005-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 928.91,
+        "tg128_tps": 33.76,
+        "pp2048_tps": 1288.35,
+        "tg512_tps": 34.04
+      },
+      "elapsed_s": 50.46453391999239,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "stock",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-005-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 924.91,
+        "tg128_tps": 33.95,
+        "pp2048_tps": 1285.3,
+        "tg512_tps": 33.7
+      },
+      "elapsed_s": 51.03206667397171,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "replay",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-005-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 929.57,
+        "tg128_tps": 33.97,
+        "pp2048_tps": 1289.25,
+        "tg512_tps": 34.17
+      },
+      "elapsed_s": 50.50679739896441,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "native",
+      "position": 0,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-006-native/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 934.08,
+        "tg128_tps": 33.99,
+        "pp2048_tps": 1288.46,
+        "tg512_tps": 34.17
+      },
+      "elapsed_s": 50.51224370102864,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "replay",
+      "position": 1,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-006-replay/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 928.56,
+        "tg128_tps": 34.23,
+        "pp2048_tps": 1287.6,
+        "tg512_tps": 34.38
+      },
+      "elapsed_s": 50.5001160770189,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "stock",
+      "position": 2,
+      "returncode": 0,
+      "performance_admitted": false,
+      "server_log": "/tmp/rha04-27b-observe/pair-006-stock/server.log",
+      "execution_attestation": null,
+      "execution_evidence_status": "missing",
+      "admission_blockers": [
+        "physical-device execution evidence missing"
+      ],
+      "metrics": {
+        "pp512_tps": 934.96,
+        "tg128_tps": 33.96,
+        "pp2048_tps": 1288.85,
+        "tg512_tps": 34.22
+      },
+      "elapsed_s": 50.556060783041175,
+      "shutdown": {
+        "method": "sigint",
+        "requested": true,
+        "forced": false,
+        "returncode": 0,
+        "error": null
+      }
+    }
+  ],
+  "exploratory_comparisons": {
+    "native_vs_stock": {
+      "pp512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 0.15376977742267428,
+        "ci95_low_pct": -0.39652733500475934,
+        "ci95_high_pct": 0.7454054350162664,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0052391578538857,
+          1.0137678633670268,
+          0.9920717289194655,
+          0.9949187319389389,
+          1.004324745110335,
+          0.9990587832634551
+        ]
+      },
+      "pp2048_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": -0.34578891213440377,
+        "ci95_low_pct": -1.2085186416866178,
+        "ci95_high_pct": 0.16130696217717677,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0024216181541175,
+          0.975624339939119,
+          0.9990131093272825,
+          1.0003956064414037,
+          1.0023729868513187,
+          0.9996974046630718
+        ]
+      },
+      "tg512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": -0.20023460760478784,
+        "ci95_low_pct": -0.6843934445879274,
+        "ci95_high_pct": 0.3351760076671706,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          0.9897089091443693,
+          0.9915278995033596,
+          0.9982517482517482,
+          1.0,
+          1.0100890207715132,
+          0.9985388661601403
+        ]
+      }
+    },
+    "replay_vs_stock": {
+      "pp512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 0.09784705167630303,
+        "ci95_low_pct": -0.529910898647068,
+        "ci95_high_pct": 0.7730041196863491,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0009055334562271,
+          1.0156086615545485,
+          0.9897392551062987,
+          1.001632881068248,
+          1.0050383280535404,
+          0.9931547873705826
+        ]
+      },
+      "pp2048_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": -0.3693240134378106,
+        "ci95_low_pct": -1.313912963924424,
+        "ci95_high_pct": 0.2518893362527752,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0048512549113946,
+          0.9740479592470647,
+          1.000248665366354,
+          0.9969127183592417,
+          1.0030732124795767,
+          0.9990301431508709
+        ]
+      },
+      "tg512_tps": {
+        "paired_rounds": 6,
+        "geometric_effect_pct": 0.455182742041238,
+        "ci95_low_pct": -0.040203598034149746,
+        "ci95_high_pct": 0.9272505640556483,
+        "resamples": 10000,
+        "seed": 0,
+        "pair_ratios": [
+          1.0038224051749487,
+          0.9941571720712826,
+          1.00495337995338,
+          1.0058548009367683,
+          1.0139465875370919,
+          1.0046756282875513
+        ]
+      }
+    }
+  }
+}
