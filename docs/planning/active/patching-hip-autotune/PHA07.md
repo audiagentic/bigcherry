@@ -59,5 +59,8 @@ Created from dev-GPT audit req_ca99651c6e134bc9. HI166's ordered-trace implement
 
 ## Ledger-events
 
+
 - chg_20260909_123508_added-pha07-so-hi166s-remaini_9277
 - 2026-09-09T12:35:08.318139+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_123629_reconciled-the-lifecycle-revie_7239
+- 2026-09-09T12:36:29.378599+00:00 (updated-by): Updated: section:ledger-events
