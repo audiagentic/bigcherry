@@ -1,0 +1,122 @@
+source_id,classification,evidence
+CD01,CONTINUING,Deferred RE11 durability protocol remains explicitly retained; cross-process run resume is unfinished.
+CO02,CONTINUING,"Patch-test regressions have partial lineage fixes, but CO02 still owns unresolved cleanup including the HI104 nested-runtime failure."
+DO01,CONTINUING,"Reference cleanup has landed incrementally, but the frozen item remains in progress without evidence that its full classification/relocation boundary is accepted."
+DR01,CONTINUING,"The environment mechanism exists, but the source explicitly leaves the mechanical multi-file prose/path migration undone."
+EC14,CONTINUING,The Vulkan MoE ubatch boundary sweep and resulting campaign/recommendation disposition are still unevaluated.
+GP09,CONTINUING,"RCCL 2.27.7, hierarchical bridge, and pinned-host fallback candidates still require real-hardware disposition against META."
+GP12,CONTINUING,"The naive tensor override produced a negative result, but the source explicitly leaves split-mode discrimination and possible graph-builder work open."
+HI120,CONTINUING,Explicit signature coverage for RD12 dst_gate and RD17 x_scale_channel_dst remains follow-up work while those candidate paths remain active.
+HI133,CONTINUING,"Perf availability was unblocked, but perf.py integration and real-target CPU call-graph validation are explicitly not done."
+HI137,CONTINUING,Heterogeneous RCCL dispatch root-cause and fix-or-no-fix investigation remains unperformed.
+HI144,CONTINUING,"The hypothesis was narrowed, but the four-way discriminator and phase-tagged dispatch instrumentation remain unexecuted."
+HI148,CONTINUING,Production promotion remains dependent on still-open HI146/HI147 validation gates.
+HI149,CONTINUING,The original RD13-regression theory was corrected to a stale-test assumption; fixing or deleting that mutable-tree test remains outstanding.
+HI150,TERMINAL-COMPLETE,"The design deliverable is explicitly complete and converged; implementation ownership was split to HI151, HI152, and HI153."
+HI159,CONTINUING,"Diagnostic atomic-removal changes landed, but the frozen item still specifies audit/compile-out/measurement validation and contains no completed acceptance record."
+HI160,CONTINUING,"The source records the required replay instrumentation, but final_tuned_launches/per-winner/fallback-after-exact evidence is not implemented or validated."
+HI161,CONTINUING,Brutus reproduction confirmed standalone AUTO winners diverge from production; root-cause and harness correction remain owned here.
+HI163,TERMINAL-COMPLETE,"op_variant_id cache-key correction was implemented, tested, merged, and hardware-retested; remaining performance root cause is explicitly assigned to other items."
+HI164,CONTINUING,Typed op_variant_id cleanup plus helper/test refactoring remains explicit post-HI163 work.
+HI165,CONTINUING,Testing-state build/A-B/recovery/promotion lifecycle support and tests remain unimplemented.
+HI169,CONTINUING,Coverage-tolerant single-GPU tune application is still retained as a future experiment with no terminal disposition.
+HI172,CONTINUING,"Two-GPU evidence narrows the issue, but the GPU0/27B production-path mismatch and follow-up experiments remain unresolved."
+HI175,CONTINUING,RoPE candidate search is explicitly not started and is blocked on HI174 proving the non-matmul dispatch/candidate pattern.
+HI176,CONTINUING,rmsnorm/norm candidate search is explicitly not started and blocked on HI174.
+HI177,CONTINUING,Flash-attention candidate search is explicitly not started and blocked on HI174 plus a simpler pilot-op cycle.
+HI178,CONTINUING,Quantize/dequantize candidate search is explicitly not started; HI174 and the overlap check with HI173 remain prerequisites.
+HI179,CONTINUING,Softmax/GLU candidate search is explicitly not started and blocked on HI174.
+HI26,CONTINUING,RD89 reconciliation explicitly retains HI26 as a real internally designed kernel candidate; implementation/qualification remains outstanding.
+HI86,CONTINUING,The source explicitly says the broader topology-aware planner should stay pending/backlog until concrete need arises; it is not terminal.
+HI94,CONTINUING,"Replay fallback, process-cache-hit, hardware-separation, corruption, and graph-capture tests split from HI16 remain unimplemented."
+HI95,CONTINUING,Adaptive screen-stage retention remains blocked on HI35 re-baseline and lacks the required real-hardware validation.
+HTR02,CONTINUING,"Pinned recovery/profile work still requires reset, native-BF16 rebuild, FA_ALL_QUANTS A/B, and profile evidence."
+HTR04,CONTINUING,The source explicitly keeps cross-process resume durability deferred for later rather than closed.
+HTR05,CONTINUING,Reusable recovery-patch extraction depends on HTR02 and has no implementation/qualification evidence.
+HTR06,CONTINUING,Long-horizon resumable recovery campaign and no-invalid-launch recurrence evidence remain unrun.
+HTR07,CONTINUING,The deterministic interleaved ABBA validation ladder is specified but not implemented/executed.
+KC03,CONTINUING,CPU-only provider acceptance remains undecided and unverified.
+KC04,CONTINUING,"Small-N dispatch-gap profiling, kernel coverage implementation, and benchmark/regression proof remain open."
+NRO02,CONTINUING,RD89 reconciliation records NRO02 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO04,CONTINUING,RD89 reconciliation records NRO04 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO05,CONTINUING,RD89 reconciliation records NRO05 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO07,CONTINUING,RD89 reconciliation records NRO07 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO08,CONTINUING,RD89 reconciliation records NRO08 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO09,CONTINUING,RD89 reconciliation records NRO09 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO10,CONTINUING,RD89 reconciliation records NRO10 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO11,CONTINUING,RD89 reconciliation records NRO11 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO12,CONTINUING,RD89 reconciliation records NRO12 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO14,CONTINUING,RD89 reconciliation records NRO14 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO15,CONTINUING,RD89 reconciliation records NRO15 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+NRO16,CONTINUING,RD89 reconciliation records NRO16 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+QU02,CONTINUING,"Standard CLI launch/progress/completion telemetry still requires shared helper integration, tests, and documentation."
+RD06,CONTINUING,"Patch 1203 materialized the RDNA4 WMMA configuration, but the frozen item explicitly awaits isolated gfx1201 benchmarking."
+RD10,CONTINUING,Direct RMS-norm Q8_1 production remains planning-only and dependent on proving RD09's cache contract.
+RD101,CONTINUING,RD89 reconciliation explicitly records RD101 as not started and still an open third-party MTP sidecar candidate.
+RD104,CONTINUING,RD89 reconciliation explicitly retains RD104 as open upstream-tracking work for Vulkan tensor-parallel AllReduce.
+RD11,CONTINUING,Gating-MUL direct Q8_1 production remains Wave-2 work blocked on RD09; no materialization or qualification is recorded.
+RD12,CONTINUING,"Patch 1205 materialized the paired-MMVQ candidate, but composition-safe correctness/performance qualification remains outstanding."
+RD15,CONTINUING,"Shared-expert output-chain fusion remains planning-only; exact-pattern, correctness, workspace, and performance acceptance are unfinished."
+RD17,CONTINUING,"Patch 1207 materialized the MoE top-k fold, but the source explicitly keeps RD17 active until correctness/performance disposition."
+RD18,CONTINUING,IMRoPE/BF16 SET_ROWS fusion remains planning-only and still depends on explicit patch-1004 capability/causal validation.
+RD22,CONTINUING,"Integrated-GPU host-buffer work is explicitly deferred pending relevant hardware evidence, not retired."
+RD24,CONTINUING,The SSM pre-scan fusion remains an unported Wave-2 candidate dependent on RD09/bake-in correctness state.
+RD25,CONTINUING,RD25 was converted from an impossible standalone port into an active bake-in rule; dependent RD21/RD24/RD15/RD26 ports and regression validation still must honor it.
+RD26,CONTINUING,Only the standalone subset materialized; flash-attention and post-fix MMVQ portions remain composition-gated and full-cluster bit-identity acceptance is unfinished.
+RD27,CONTINUING,"SSM conv-input folding remains an unmaterialized candidate requiring dependency audit, port, and isolated SSM/Mamba qualification."
+RD28,CONTINUING,"The original diff port was invalidated by upstream MMQ redesign, but the item was re-scoped to a still-open table-driven redesign investigation."
+RD31,CONTINUING,RD89 says RD31 is newly unblocked; its old diff no longer applies and the compact-map experiment still needs redesign/qualification.
+RD32,CONTINUING,RD89 says RD32 is newly unblocked; compact-grid work remains pending and depends on RD31.
+RD33,CONTINUING,"Converged null-result evidence exists, but RD89 records an explicit unfinished ncols=5/6 eligibility follow-up for the dominant MTP shape."
+RD34,CONTINUING,The old gfx1151 MMQ diff no longer applies; the item remains re-scoped to checking/redesigning the current table-driven configuration with hardware evidence.
+RD35,CONTINUING,"The row-padding/cache-aliasing experiment retains unexecuted correctness, cache-counter, and performance acceptance work."
+RD36,CONTINUING,RD89 reconciliation explicitly records RD36 as still pending with no patch and as a high-value remaining candidate.
+RD37,CONTINUING,K-pad F16-shadow aliasing work remains dependent on RD36 and retains unexecuted correctness/performance validation.
+RD38,CONTINUING,RD89 reconciliation explicitly records RD38 as still pending with no patch and as a high-value remaining candidate.
+RD40,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD41,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD42,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD43,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD44,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD45,CONTINUING,RD89 reconciliation explicitly records RD45 as still pending with no patch; its GEMV epilogue-fusion qualification remains.
+RD46,CONTINUING,RD89 reconciliation explicitly records RD46 as still pending with no patch; its GEMV epilogue-fusion qualification remains.
+RD47,CONTINUING,RD89 reconciliation explicitly records RD47 as still pending with no patch; its GEMV epilogue-fusion qualification remains.
+RD48,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD49,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD51,CONTINUING,RD89 reconciliation records RD51 as newly unblocked by completed RD50 but still pending with no patch.
+RD52,CONTINUING,RD89 reconciliation records RD52 as newly unblocked by completed RD50 but still pending with no patch.
+RD53,CONTINUING,RD89 reconciliation records RD53 as newly unblocked by completed RD50 but still pending with no patch.
+RD55,CONTINUING,RD89 reconciliation explicitly calls RD55 genuinely open with no patch and a real next candidate.
+RD56,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD57,CONTINUING,RD89 reconciliation explicitly retains RD57 as pending research/strategic work with no patch.
+RD59,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD60,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD61,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD63,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD64,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD65,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD67,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD71,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD72,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD77,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD78,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD79,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD80,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD81,CONTINUING,RD89 reconciliation explicitly retains RD81 as pending research/strategic work with no patch.
+RD82,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD83,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD84,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD85,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD86,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD88,CONTINUING,RD89 reconciliation explicitly retains RD88 as pending research/strategic work with no patch.
+RD91,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD92,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD93,CONTINUING,The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+RD98,CONTINUING,RD89 reconciliation explicitly identifies RD98 as a real open Q4_K MMVQ candidate with qualification still ahead.
+RE31,CONTINUING,The frozen reusable-build-campaign item remains active with implementation/acceptance work outstanding and no terminal disposition.
+RE34,CONTINUING,The frozen reusable-build-campaign item remains active with implementation/acceptance work outstanding and no terminal disposition.
+RE37,CONTINUING,The frozen reusable-build-campaign item remains active with implementation/acceptance work outstanding and no terminal disposition.
+RE39,CONTINUING,The frozen reusable-build-campaign item remains active with implementation/acceptance work outstanding and no terminal disposition.
+RO10,CONTINUING,"Explicit hipBLASLt algorithm selection still has unchecked acceptance for shared execution primitive, provider identity, and replay-safe fingerprinting."
+RO11,CONTINUING,The provider-integration stage remains active and has no completed acceptance/retirement evidence in current lineage.
+RO22,CONTINUING,The provider-integration follow-up remains active and has no completed acceptance/retirement evidence in current lineage.
