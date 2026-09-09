@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "kind": "server-device-attestation-preflight-v1",
+  "correlation_id": "7631a484104b4b6aa5cb9a3317b17021",
+  "binary": "/home/audumla/.cache/bigcherry/builds/d0af37458d1ffb9412a7a2ecb18952e6/4bd62c7fba032f095c698730f677cf1a/bin/llama-server",
+  "binary_sha256": "249618ad89ba98aa2e8c658022f48b9ff5f17e03194b5fcba54139e5e7908ce6",
+  "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+  "common_server_args": [
+    "-sm",
+    "none",
+    "--fit",
+    "off",
+    "-ngl",
+    "99",
+    "-c",
+    "512"
+  ],
+  "diagnostic_delta": [
+    "--verbosity",
+    "5"
+  ],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "0"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1100"
+    ],
+    "locators": [
+      "0000:03:00.0"
+    ]
+  },
+  "observed_execution": {
+    "schema_version": 1,
+    "backend": "ROCm",
+    "device_count": 1,
+    "devices": [
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:03:00.0"
+      }
+    ],
+    "failure_signature": null,
+    "telemetry": {
+      "layers_assigned_to_devices": [
+        0
+      ]
+    }
+  },
+  "elapsed_s": 6.005919295013882,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  }
+}

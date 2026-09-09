@@ -55,11 +55,16 @@ docs/evidence/2026-09-10-rha04-attestation-smoke/
 docs/evidence/2026-09-10-rha04-gpu0-required-capture/
 successor-specs/run-hip-autotune-hi168.md
 
+- docs/evidence/2026-09-10-rha04-gpu0-attestation-preflight/
+- tools/bigcherry/campaign/benchmark.py
+
 ## Validation
 
 The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. The 2026-09-10 BC-native dual-XTX smoke at docs/evidence/2026-09-10-rha04-attestation-smoke/ never reached health during model materialization and is explicitly invalid. The fresh 2026-09-10 GPU0 required-attestation capture at docs/evidence/2026-09-10-rha04-gpu0-required-capture/ loaded and shut down cleanly but failed closed before timing with ATTESTATION_MISSING; no throughput result was produced. This confirms the maintained server-capture attestation gap. The capture path now has an identity-bound, untimed preflight using the same binary/model/common production arguments and relevant environment, with only a diagnostic verbosity delta; it persists a correlation ID and hashes and fails closed on missing/wrong/ambiguous identity. The timed production process is unchanged. Unit coverage passes for success, failure-before-timing, argument/environment drift, clean shutdown, and existing observe/required behavior. RHA04 remains open until the fresh per-GPU 9B and matched dual-XTX 27B matrices complete with replay/work-equivalence evidence.
 
 The maintained capture now runs an untimed identity-bound attestation preflight with the same binary/model/common production arguments and relevant environment, a separate diagnostic verbosity delta, persisted hashes/correlation ID, and fail-closed missing/wrong/ambiguous identity checks. Timed production arguments remain unchanged. Unit coverage passes for success, failure-before-timing, argument/environment drift, clean shutdown, and existing observe/required behavior. Hardware matrices remain pending.
+
+Real Brutus GPU0 preflight now succeeds on the current pushed implementation: expected ROCm/gfx1100/0000:03:00.0 was observed with matching binary/model hashes, common production arguments and HIP/ROCR visibility, and clean SIGINT teardown. Raw evidence is retained under docs/evidence/2026-09-10-rha04-gpu0-attestation-preflight/. An earlier HTTP attempt correctly failed closed because the binary returned 404 and was force-killed; no timing was recorded. The full 9B per-GPU and dual-XTX 27B server-bench matrices remain pending.
 
 ## Effort & Risk
 
@@ -127,3 +132,8 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T15:40:30.521435+00:00 (updated-by): Updated: section:validation
 - chg_20260909_154042_hardened-production-benchmark_7289
 - 2026-09-09T15:40:42.183106+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_155359_fixed-attestation-preflight-te_4726
+- 2026-09-09T15:53:59.349146+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:55:53.136139+00:00 (updated-by): Updated: section:files, section:validation
+- chg_20260909_155626_verified-the-new-physical-gpu_5643
+- 2026-09-09T15:56:26.937731+00:00 (updated-by): Updated: section:ledger-events
