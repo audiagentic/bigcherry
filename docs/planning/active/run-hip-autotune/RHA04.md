@@ -15,18 +15,18 @@ priority: P0
 
 ## Description
 
-Runtime/parity qualification and hardware matrix remain in progress. The 2026-09-08 HI168 bundle completed all requested server-bench cells (four 9B GPUs plus dual-XTX 27B, stock/native/replay, balanced orders) with clean shutdown and useful exploratory metrics, but every cell has execution_evidence_status=missing and performance_admitted=false. Those numbers are direction-finding only; the decision-grade rerun must use the current server-capture contract with explicit expected_execution locators and diagnostics-off production arms, followed by the matched dual-XTX 27B run.
+Runtime/parity qualification remains in progress. The four single-GPU 9B identity-bound stock/native/replay matrices are complete and provide exploratory per-topology evidence; the matched dual-XTX 27B run is observe-only because tensor-split logs lack ordered physical locators. Decision-grade dual-XTX parity and any production admission remain open. Reusable remaining BC build-type coverage is split to RHA08 by review RV160.
 
 ## Steps
 
 1. Resolve model/build/topology from config/environment.toml and BC_* variables; record immutable build plans, source revisions, compiler/generated-input bindings, model identity, GPU identity, topology, runtime settings, dispatch mode, cache identity, and diagnostics state.
 2. Use the maintained server-bench endpoint runner documented in docs/reference/testing/TEST.md; do not use llama-bench. Verify graceful shutdown and retain raw runner output plus machine-readable cell evidence.
-3. Complete the 9B Q6_K matrix serially on each physical GPU (XTX GPU0, XTX GPU1, gfx1201, gfx1030 where available): llama.cpp stock/native, BC native, and validated BC replay/tuned. Keep diagnostics-off production timing separate from diagnostic activation evidence.
-4. Run the fresh matched dual-XTX 27B Q8_0 matrix after the 9B matrix, with stock, BC native, and validated replay arms, balanced/interleaved ordering, uncontended GPUs, non-speculative settings first, and the same production-shaped prompt/decode workload.
-5. Analyze pp and generation independently with per-cell samples, ordering/position effects, uncertainty, correctness, replay activation, final tuned-launch counts, cache compatibility, and work-equivalence. A missing proof is not a pass; diagnostic throughput is never a production performance claim.
-6. If native regression is established, bisect the common production path and dispatch overhead before changing winner policy; repeat the matched contrast after each accepted fix. If tuned replay is neutral or slower, report that result and retain native fallback rather than forcing promotion.
-7. Exercise the remaining BC build types using the same runner and standardized configuration/output schema, but classify diagnostic/framework observations separately from the three-arm production result.
-8. Update reusable test/build documentation and preserve raw artifacts, provenance, limitations, and exact environment roles. Only after the complete matrix and validation gates pass may this successor be considered for completion.
+3. Completed: the identity-bound 9B Q6_K matrix on each available physical GPU (stock/native/replay), with diagnostics-off production timing separated from diagnostic evidence.
+4. Run a fresh matched dual-XTX 27B Q8_0 stock/native/replay matrix after the 9B matrix, with physical attestation, balanced/interleaved ordering, uncontended GPUs and the same production-shaped workload.
+5. Analyze pp and generation independently with per-cell samples, ordering/position effects, uncertainty, correctness, replay activation, final tuned-launch counts, cache compatibility and work-equivalence. A missing proof is not a pass; diagnostic throughput is never a production performance claim.
+6. If native regression is established, bisect the common production path and dispatch overhead before changing winner policy; repeat the matched contrast after each accepted fix. If tuned replay is neutral or slower, retain native fallback rather than forcing promotion.
+7. Remaining reusable BC build-type coverage is tracked under RHA08 and must not be silently counted as RHA04 parity evidence.
+8. Only after the complete identity-bound dual-XTX matrix and validation gates pass may RHA04 be completed.
 
 ## Detailed Solution & Technical Design
 
@@ -53,12 +53,9 @@ artifacts/<run-id>/ (raw evidence only)
 docs/evidence/2026-09-08-HI168-e2e/
 docs/evidence/2026-09-10-rha04-attestation-smoke/
 docs/evidence/2026-09-10-rha04-gpu0-required-capture/
+docs/evidence/2026-09-10-rha04-matrix-summary/
+docs/planning/completed/run-hip-autotune/reviews/RHA04/RV160.md
 successor-specs/run-hip-autotune-hi168.md
-
-- docs/evidence/2026-09-10-rha04-gpu0-attestation-preflight/
-- tools/bigcherry/campaign/benchmark.py
-
-- docs/evidence/2026-09-10-rha04-matrix-summary/README.md
 
 ## Validation
 
@@ -117,6 +114,8 @@ Successor key: run-hip-autotune-hi168
 
 Inherited HI168 bundle is exploratory only because physical execution attestation is missing. The first fresh required-attestation GPU0 cell also failed closed before measurement because the production-shaped -sm none/--fit off launch emitted no physical locator evidence; see review RV157 and docs/evidence/2026-09-10-rha04-gpu0-required-capture/. Do not weaken required evidence to observe. The identity-bound preflight is implemented in tools/bigcherry/campaign/benchmark.py and deliberately does not promote KFD observation to authoritative identity or alter timed diagnostics/server arguments.
 
+Supersedes HI168. Migration: capability-rebaseline-v3-2026-09. Four single-GPU 9B matrices are identity-attested and retained, but the dual-XTX 27B timing is observe-only because tensor-split --fit off emits no ordered physical locators. Do not weaken required attestation or infer parity from observe-only numbers. Review RV160 split reusable BC build-type coverage into RHA08; RHA04 now owns only decision-grade native/replay parity and dual-XTX attestation.
+
 ## Change Log
 
 - 2026-09-09T10:49:44.318293+00:00 (created-by): Created by capability-rebaseline-v3
@@ -174,3 +173,6 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T17:25:45.277109+00:00 (updated-by): Updated: section:files, section:validation
 - chg_20260909_172557_added-the-full-reproducible-ma_5709
 - 2026-09-09T17:25:57.323123+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T18:21:27.940700+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:notes
+- chg_20260909_182139_the-plan-now-separates-the-dua_5938
+- 2026-09-09T18:21:39.235727+00:00 (updated-by): Updated: section:ledger-events
