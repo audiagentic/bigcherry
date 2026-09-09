@@ -1,0 +1,84 @@
+{
+  "pair": 6,
+  "mode": "replay",
+  "position": 1,
+  "returncode": 0,
+  "performance_admitted": false,
+  "server_log": "/tmp/rha04-required-six-v2/pair-006-replay/server.log",
+  "execution_attestation": {
+    "schema_version": 1,
+    "backend": "ROCm",
+    "device_count": 2,
+    "devices": [
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:03:00.0"
+      },
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:06:00.0"
+      }
+    ],
+    "failure_signature": null,
+    "telemetry": {
+      "rccl_device_bindings": {
+        "0": "0000:03:00.0",
+        "1": "0000:06:00.0"
+      },
+      "layers_assigned_to_devices": [],
+      "layers_assigned_to_meta": 66,
+      "layer_assignment_mode": "meta"
+    }
+  },
+  "execution_evidence_status": "verified",
+  "attestation_binding": {
+    "correlation_id": "79a17abc0265425da420167968db6b71",
+    "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+    "binary_sha256": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
+    "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348",
+    "common_server_args": [
+      "-ngl",
+      "99",
+      "-sm",
+      "tensor",
+      "--fit",
+      "off",
+      "-c",
+      "4096",
+      "--flash-attn",
+      "on",
+      "--ubatch-size",
+      "512",
+      "--batch-size",
+      "2048",
+      "--threads",
+      "8",
+      "--parallel",
+      "1"
+    ],
+    "diagnostic_delta": [
+      "--verbosity",
+      "5"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0,1",
+      "ROCR_VISIBLE_DEVICES": "0,1"
+    }
+  },
+  "attestation_preflight": "/tmp/rha04-required-six-v2/pair-006-replay/attestation/preflight.json",
+  "metrics": {
+    "pp512_tps": 929.92,
+    "tg128_tps": 34.13,
+    "pp2048_tps": 1287.14,
+    "tg512_tps": 34.33
+  },
+  "elapsed_s": 88.6697913450189,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  }
+}

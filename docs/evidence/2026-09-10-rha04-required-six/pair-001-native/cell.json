@@ -1,0 +1,84 @@
+{
+  "pair": 1,
+  "mode": "native",
+  "position": 2,
+  "returncode": 0,
+  "performance_admitted": false,
+  "server_log": "/tmp/rha04-required-six-v2/pair-001-native/server.log",
+  "execution_attestation": {
+    "schema_version": 1,
+    "backend": "ROCm",
+    "device_count": 2,
+    "devices": [
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:03:00.0"
+      },
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:06:00.0"
+      }
+    ],
+    "failure_signature": null,
+    "telemetry": {
+      "rccl_device_bindings": {
+        "0": "0000:03:00.0",
+        "1": "0000:06:00.0"
+      },
+      "layers_assigned_to_devices": [],
+      "layers_assigned_to_meta": 66,
+      "layer_assignment_mode": "meta"
+    }
+  },
+  "execution_evidence_status": "verified",
+  "attestation_binding": {
+    "correlation_id": "b75806818f034d6290373b25350982cd",
+    "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+    "binary_sha256": "9b5b49a5809634ac206992616f2bdd8f1b6a284778eef101bf92038603350e3c",
+    "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348",
+    "common_server_args": [
+      "-ngl",
+      "99",
+      "-sm",
+      "tensor",
+      "--fit",
+      "off",
+      "-c",
+      "4096",
+      "--flash-attn",
+      "on",
+      "--ubatch-size",
+      "512",
+      "--batch-size",
+      "2048",
+      "--threads",
+      "8",
+      "--parallel",
+      "1"
+    ],
+    "diagnostic_delta": [
+      "--verbosity",
+      "5"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0,1",
+      "ROCR_VISIBLE_DEVICES": "0,1"
+    }
+  },
+  "attestation_preflight": "/tmp/rha04-required-six-v2/pair-001-native/attestation/preflight.json",
+  "metrics": {
+    "pp512_tps": 932.25,
+    "tg128_tps": 33.74,
+    "pp2048_tps": 1288.55,
+    "tg512_tps": 34.06
+  },
+  "elapsed_s": 89.15269789099693,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  }
+}
