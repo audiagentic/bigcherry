@@ -27,13 +27,81 @@ bare version string.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass
 
 
 class InsufficientCompatibilityIdentity(ValueError):
     """Raised when a RcclCompatibilityRevision has no durable identity
     component -- a bare version string is not enough (GP06's own finding:
     two installs reporting the same version string regressed differently)."""
+
+
+@dataclass(frozen=True)
+class RcclTopologyEvidence:
+    """Portable, fail-closed evidence for a physical RCCL topology.
+
+    Device ordinals are deliberately absent. A topology may run with a
+    descriptive legacy ID, but it is not admission-ready until the PCIe
+    graph, placement, and capability facts for every participant are present.
+    """
+
+    device_bdfs: tuple[str, ...] = ()
+    root_ports: tuple[str, ...] = ()
+    pcie_edges: tuple[str, ...] = ()
+    link_properties: tuple[str, ...] = ()
+    numa_nodes: tuple[str, ...] = ()
+    atomic_ops: tuple[str, ...] = ()
+    rocm_runtime_id: str | None = None
+    driver_id: str | None = None
+    unknown_fields: tuple[str, ...] = ()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "device_bdfs": list(self.device_bdfs),
+            "root_ports": list(self.root_ports),
+            "pcie_edges": list(self.pcie_edges),
+            "link_properties": list(self.link_properties),
+            "numa_nodes": list(self.numa_nodes),
+            "atomic_ops": list(self.atomic_ops),
+            "rocm_runtime_id": self.rocm_runtime_id,
+            "driver_id": self.driver_id,
+            "unknown_fields": list(self.unknown_fields),
+        }
+
+    def is_complete(self, rank_count: int) -> bool:
+        """Return true only when every required graph fact is present."""
+        if self.unknown_fields or rank_count <= 0:
+            return False
+        per_rank = (
+            self.device_bdfs,
+            self.root_ports,
+            self.link_properties,
+            self.numa_nodes,
+            self.atomic_ops,
+        )
+        return (
+            all(len(values) == rank_count and all(values) for values in per_rank)
+            and bool(self.pcie_edges)
+            and bool(self.rocm_runtime_id)
+            and bool(self.driver_id)
+        )
+
+    def qualification_id(self, rank_count: int) -> str:
+        """Hash the canonical graph, or fail closed when evidence is absent."""
+        if not self.is_complete(rank_count):
+            raise ValueError(
+                "RCCL topology evidence is incomplete or unknown; refusing "
+                "to derive an admission identity"
+            )
+        encoded = json.dumps(
+            self._payload(), sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return "rccl-topology-v2:" + hashlib.sha256(encoded).hexdigest()
+
+    def to_json(self) -> dict[str, object]:
+        return self._payload()
 
 
 @dataclass(frozen=True)
@@ -84,6 +152,11 @@ class RcclCompatibilityRevision:
     # "COLLTRACE=OFF,Release").
     build_config: str | None = None
 
+    # Runtime provenance needed to reject evidence captured under a different
+    # ROCm/driver stack even when the RCCL marketing version is unchanged.
+    rocm_runtime_id: str | None = None
+    driver_id: str | None = None
+
     @property
     def revision_id(self) -> str:
         """Stable string key for grouping/lookup in qualification and
@@ -123,6 +196,8 @@ class RcclCompatibilityRevision:
             "code_object_arches": list(self.code_object_arches),
             "rocm_install_label": self.rocm_install_label,
             "build_config": self.build_config,
+            "rocm_runtime_id": self.rocm_runtime_id,
+            "driver_id": self.driver_id,
         }
 
 

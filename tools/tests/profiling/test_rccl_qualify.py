@@ -358,11 +358,65 @@ def test_topology_identity_unaffected_by_diagnostic_visible_devices(tmp_path: Pa
     assert result_a.diagnostic_visible_devices != result_b.diagnostic_visible_devices
 
 
-def test_rccl_topology_rejects_no_ordinal_fields():
-    # RcclTopology's only fields are topology_id and device_arches -- this
-    # test documents/enforces that contract at the dataclass level.
+def test_rccl_topology_identity_keeps_ordinals_out_of_evidence():
+    # Diagnostic-visible ordinals remain outside identity; qualification
+    # evidence is an explicit third field.
     fields = {f for f in rq.RcclTopology.__dataclass_fields__}
-    assert fields == {"topology_id", "device_arches"}
+    assert fields == {"topology_id", "device_arches", "evidence"}
+
+
+def _complete_topology_evidence() -> rs.RcclTopologyEvidence:
+    return rs.RcclTopologyEvidence(
+        device_bdfs=("0000:03:00.0", "0000:09:00.0"),
+        root_ports=("0000:00:01.0", "0000:00:06.0"),
+        pcie_edges=("00:01.0-03:00.0:x16", "00:06.0-09:00.0:x16"),
+        link_properties=("gen4x16", "gen4x16"),
+        numa_nodes=("0", "0"),
+        atomic_ops=("native", "native"),
+        rocm_runtime_id="rocm-7.2.4-build-a",
+        driver_id="amdgpu-6.8.0",
+    )
+
+
+def test_topology_evidence_identity_is_stable_and_placement_bound():
+    evidence = _complete_topology_evidence()
+    assert evidence.qualification_id(2) == evidence.qualification_id(2)
+    swapped = rs.RcclTopologyEvidence(
+        device_bdfs=tuple(reversed(evidence.device_bdfs)),
+        root_ports=evidence.root_ports, pcie_edges=evidence.pcie_edges,
+        link_properties=evidence.link_properties, numa_nodes=evidence.numa_nodes,
+        atomic_ops=evidence.atomic_ops, rocm_runtime_id=evidence.rocm_runtime_id,
+        driver_id=evidence.driver_id,
+    )
+    assert swapped.qualification_id(2) != evidence.qualification_id(2)
+
+
+def test_topology_without_complete_graph_evidence_is_not_admission_ready():
+    topology = rq.RcclTopology(
+        topology_id="xtx_r9700", device_arches=("gfx1100", "gfx1201")
+    )
+    assert topology.qualification_id is None
+    incomplete = rs.RcclTopologyEvidence(
+        device_bdfs=("0000:03:00.0", "0000:09:00.0"),
+        root_ports=("0000:00:01.0", "0000:00:06.0"),
+        pcie_edges=("edge",), link_properties=("gen4x16", "gen4x16"),
+        numa_nodes=("0", "0"), atomic_ops=("native", "unknown"),
+        rocm_runtime_id="rocm-7.2.4-build-a", driver_id="amdgpu-6.8.0",
+        unknown_fields=("atomic_ops[1]",),
+    )
+    assert rq.RcclTopology(
+        topology_id="xtx_r9700", device_arches=("gfx1100", "gfx1201"),
+        evidence=incomplete,
+    ).qualification_id is None
+
+
+def test_compatibility_records_runtime_and_driver_identity():
+    revision = rs.RcclCompatibilityRevision(
+        rccl_version="2.28.3", rccl_source_revision="abc123",
+        rocm_runtime_id="rocm-7.2.4-build-a", driver_id="amdgpu-6.8.0",
+    )
+    assert revision.to_json()["rocm_runtime_id"] == "rocm-7.2.4-build-a"
+    assert revision.to_json()["driver_id"] == "amdgpu-6.8.0"
 
 
 def test_rccl_case_result_rejects_unknown_classification(tmp_path: Path):

@@ -204,6 +204,8 @@ def _parse_compatibility(args: argparse.Namespace) -> rs.RcclCompatibilityRevisi
         library_build_id=args.library_build_id,
         rocm_install_label=args.rocm_install_label,
         build_config=args.build_config,
+        rocm_runtime_id=args.rocm_runtime_id,
+        driver_id=args.driver_id,
     )
 
 
@@ -217,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--library-build-id", default=None, help="SHA256/build-id of librccl.so")
     parser.add_argument("--rocm-install-label", default=None, help='e.g. "vendor/rocm/7.2.4"')
     parser.add_argument("--build-config", default=None)
+    parser.add_argument("--rocm-runtime-id", default=None, help="exact ROCm runtime identity")
+    parser.add_argument("--driver-id", default=None, help="kernel/driver identity")
 
     parser.add_argument(
         "--element-count", type=int, action="append", dest="element_counts",

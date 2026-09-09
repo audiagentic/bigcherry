@@ -148,6 +148,7 @@ def test_parse_compatibility_rejects_bare_version():
     parser_args = campaign.argparse.Namespace(
         rccl_version="2.30.4", rccl_source_revision=None, library_build_id=None,
         rocm_install_label=None, build_config=None,
+        rocm_runtime_id=None, driver_id=None,
     )
     with pytest.raises(SystemExit):
         campaign._parse_compatibility(parser_args)
@@ -157,9 +158,12 @@ def test_parse_compatibility_accepts_source_revision():
     parser_args = campaign.argparse.Namespace(
         rccl_version="2.28.3", rccl_source_revision="57e58688f4", library_build_id=None,
         rocm_install_label="vendor/rocm/7.2.4", build_config=None,
+        rocm_runtime_id="rocm-7.2.4-build-a", driver_id="amdgpu-6.8.0",
     )
     rev = campaign._parse_compatibility(parser_args)
     assert rev.revision_id == "57e58688f4"
+    assert rev.rocm_runtime_id == "rocm-7.2.4-build-a"
+    assert rev.driver_id == "amdgpu-6.8.0"
 
 
 def test_default_topologies_include_control_and_negative_control():
