@@ -322,6 +322,34 @@ def main() -> int:
         ),
     )
 
+    copy_or_write(
+        "SEMANTIC_REVIEW.csv",
+        lambda dst: write_csv(
+            dst,
+            [
+                "source_id", "unfinished_work", "acceptance_boundary", "capability",
+                "split_assessment", "overlap_assessment", "historical_evidence",
+                "active_dependencies", "reference_notes", "reviewed_by", "approved",
+            ],
+            [
+                {
+                    "source_id": item.item_id,
+                    "unfinished_work": "",
+                    "acceptance_boundary": "",
+                    "capability": "",
+                    "split_assessment": "",
+                    "overlap_assessment": "",
+                    "historical_evidence": "",
+                    "active_dependencies": "",
+                    "reference_notes": "",
+                    "reviewed_by": "",
+                    "approved": "false",
+                }
+                for item in items
+            ],
+        ),
+    )
+
     for filename in ["NAMESPACES.csv", "SUCCESSORS.csv", "LINEAGE.csv", "DEPENDENCY_REMAP.tsv"]:
         src = pack / "templates" / filename
         copy_or_write(filename, lambda dst, src=src: shutil.copyfile(src, dst))

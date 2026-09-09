@@ -157,6 +157,7 @@ def main() -> int:
     inventory = read_rows(work / "PLAN_INVENTORY.csv")
     lifecycle = read_rows(work / "LIFECYCLE_NORMALIZATION.csv")
     dispositions = read_rows(work / "DISPOSITIONS.csv")
+    semantic_reviews = read_rows(work / "SEMANTIC_REVIEW.csv")
     namespaces = read_rows(work / "NAMESPACES.csv")
     successors = read_rows(work / "SUCCESSORS.csv")
     lineage = read_rows(work / "LINEAGE.csv")
@@ -173,6 +174,22 @@ def main() -> int:
         p.error("LIFECYCLE_NORMALIZATION.csv contains duplicate source_id values")
     if set(lifecycle_by_id) != set(inventory_by_id):
         p.error("LIFECYCLE_NORMALIZATION.csv must cover exactly the frozen inventory")
+    semantic_by_id = {r["source_id"]: r for r in semantic_reviews}
+    if len(semantic_by_id) != len(semantic_reviews):
+        p.error("SEMANTIC_REVIEW.csv contains duplicate source_id values")
+    if set(semantic_by_id) != set(inventory_by_id):
+        p.error("SEMANTIC_REVIEW.csv must cover exactly the frozen inventory")
+    required_review_fields = [
+        "unfinished_work", "acceptance_boundary", "capability", "split_assessment",
+        "overlap_assessment", "historical_evidence", "active_dependencies", "reference_notes",
+        "reviewed_by",
+    ]
+    for source_id, row in semantic_by_id.items():
+        for field in required_review_fields:
+            if not row.get(field):
+                p.error(f"{source_id}: semantic review field {field} is required")
+        if ns.phase in {"preapply", "postapply"} and not truth(row.get("approved", "")):
+            p.error(f"{source_id}: semantic review is not approved for {ns.phase}")
     for source_id, row in lifecycle_by_id.items():
         if source_id not in inventory_by_id:
             continue
