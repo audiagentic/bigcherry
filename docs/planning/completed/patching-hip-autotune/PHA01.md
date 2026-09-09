@@ -2,7 +2,7 @@
 id: PHA01
 order: 0
 plan: patching-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:48:04.945767+00:00'
 breadth: ''
 skill: advanced
@@ -70,6 +70,7 @@ Successor key: patching-hip-autotune-hi102
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.785104+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:27:22.858646+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
@@ -77,3 +78,6 @@ Successor key: patching-hip-autotune-hi102
 - 2026-09-09T13:27:32.588197+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:27:52.066363+00:00 (updated-by): Updated: section:steps
 - 2026-09-09T13:28:53.082865+00:00 (state-transition): State: pending → in_progress
+- 2026-09-09T14:00:02.242875+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_140013_closed-the-validated-pha01-pat_5977
+- 2026-09-09T14:00:13.445615+00:00 (updated-by): Updated: section:ledger-events
