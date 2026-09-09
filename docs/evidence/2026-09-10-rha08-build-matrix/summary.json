@@ -1,0 +1,793 @@
+{
+  "completed": 5,
+  "results": [
+    {
+      "cell": {
+        "arm": "control",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/118a40e2bb40b64a2d031a0198d33940/bin/llama-server",
+        "build_id": "a94245e17b1476f63bc3edd5bf41ba5e",
+        "cache_id": null,
+        "cell_id": "control",
+        "devices": [
+          0,
+          1
+        ],
+        "identity_digest": "ad8d1da6175dbd47f0b74a3e4819dca1",
+        "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+        "model_id": "tierL-qwen27b-q8",
+        "runtime_profile": "production-dual-xtx",
+        "schema_version": 1,
+        "topology": "dual-xtx",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "workload": {
+          "server_capture": {
+            "bench_configs": "pp512,pp2048,tg512",
+            "environment": {
+              "GGML_HIP_DISPATCH_MODE": "native"
+            },
+            "execution_evidence": "required",
+            "expected_execution": {
+              "architectures": [
+                "gfx1100",
+                "gfx1100"
+              ],
+              "backend": "ROCm",
+              "locators": [
+                "0000:03:00.0",
+                "0000:06:00.0"
+              ]
+            },
+            "extra_args": [
+              "-ngl",
+              "99",
+              "-sm",
+              "tensor",
+              "--fit",
+              "off",
+              "-c",
+              "4096",
+              "--flash-attn",
+              "on",
+              "--ubatch-size",
+              "512",
+              "--batch-size",
+              "2048",
+              "--threads",
+              "8",
+              "--parallel",
+              "1"
+            ],
+            "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "required_metrics": [
+              "pp512_tps",
+              "pp2048_tps",
+              "tg512_tps"
+            ],
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "shutdown_method": "sigint"
+          }
+        }
+      },
+      "child_result": {
+        "attestation_binding": {
+          "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/118a40e2bb40b64a2d031a0198d33940/bin/llama-server",
+          "binary_sha256": "72afecb14331f3cb389c742010500476b14961677dab5f283aa218d1e3149eb3",
+          "common_server_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "correlation_id": "0a6331e4d1b94aa6ae067c300af7d746",
+          "diagnostic_delta": [
+            "--verbosity",
+            "5"
+          ],
+          "environment": {
+            "HIP_VISIBLE_DEVICES": "0,1",
+            "ROCR_VISIBLE_DEVICES": "0,1"
+          },
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
+        },
+        "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-control/attestation/preflight.json",
+        "elapsed_s": 89.24285749602132,
+        "execution_attestation": {
+          "backend": "ROCm",
+          "device_count": 2,
+          "devices": [
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:03:00.0"
+            },
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:06:00.0"
+            }
+          ],
+          "failure_signature": null,
+          "schema_version": 1,
+          "telemetry": {
+            "layer_assignment_mode": "meta",
+            "layers_assigned_to_devices": [],
+            "layers_assigned_to_meta": 66,
+            "rccl_device_bindings": {
+              "0": "0000:03:00.0",
+              "1": "0000:06:00.0"
+            }
+          }
+        },
+        "execution_evidence_status": "verified",
+        "metrics": {
+          "pp2048_tps": 1288.56,
+          "pp512_tps": 924.42,
+          "tg128_tps": 33.74,
+          "tg512_tps": 33.87
+        },
+        "mode": "control",
+        "pair": 1,
+        "performance_admitted": false,
+        "position": 0,
+        "returncode": 0,
+        "server_log": "/tmp/rha08-build-matrix/pair-001-control/server.log",
+        "shutdown": {
+          "error": null,
+          "forced": false,
+          "method": "sigint",
+          "requested": true,
+          "returncode": 0
+        }
+      },
+      "matrix_status": "executed"
+    },
+    {
+      "cell": {
+        "arm": "record",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/e469c549154beb1d286f72705528a0fd/bin/llama-server",
+        "build_id": "728dc6d69ebc9a203e7d7aca6032bc97",
+        "cache_id": null,
+        "cell_id": "record",
+        "devices": [
+          0,
+          1
+        ],
+        "identity_digest": "e24932cad864e28ce6291dd4293f6d10",
+        "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+        "model_id": "tierL-qwen27b-q8",
+        "runtime_profile": "production-dual-xtx",
+        "schema_version": 1,
+        "topology": "dual-xtx",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "workload": {
+          "server_capture": {
+            "bench_configs": "pp512,pp2048,tg512",
+            "environment": {
+              "GGML_HIP_DISPATCH_DB": "/tmp/rha08-record.jsonl",
+              "GGML_HIP_DISPATCH_MODE": "record"
+            },
+            "execution_evidence": "required",
+            "expected_execution": {
+              "architectures": [
+                "gfx1100",
+                "gfx1100"
+              ],
+              "backend": "ROCm",
+              "locators": [
+                "0000:03:00.0",
+                "0000:06:00.0"
+              ]
+            },
+            "extra_args": [
+              "-ngl",
+              "99",
+              "-sm",
+              "tensor",
+              "--fit",
+              "off",
+              "-c",
+              "4096",
+              "--flash-attn",
+              "on",
+              "--ubatch-size",
+              "512",
+              "--batch-size",
+              "2048",
+              "--threads",
+              "8",
+              "--parallel",
+              "1"
+            ],
+            "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "required_metrics": [
+              "pp512_tps",
+              "pp2048_tps",
+              "tg512_tps"
+            ],
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "shutdown_method": "sigint"
+          }
+        }
+      },
+      "child_result": {
+        "attestation_binding": {
+          "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/e469c549154beb1d286f72705528a0fd/bin/llama-server",
+          "binary_sha256": "af09a14ebec091a13e30467a0e0e0ba41177f167dace0dcb7d50f1ad9e55ff5c",
+          "common_server_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "correlation_id": "6fcfe71364fb4e09a1acd94cfa2496a0",
+          "diagnostic_delta": [
+            "--verbosity",
+            "5"
+          ],
+          "environment": {
+            "HIP_VISIBLE_DEVICES": "0,1",
+            "ROCR_VISIBLE_DEVICES": "0,1"
+          },
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
+        },
+        "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-record/attestation/preflight.json",
+        "elapsed_s": 89.58137467398774,
+        "execution_attestation": {
+          "backend": "ROCm",
+          "device_count": 2,
+          "devices": [
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:03:00.0"
+            },
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:06:00.0"
+            }
+          ],
+          "failure_signature": null,
+          "schema_version": 1,
+          "telemetry": {
+            "layer_assignment_mode": "meta",
+            "layers_assigned_to_devices": [],
+            "layers_assigned_to_meta": 66,
+            "rccl_device_bindings": {
+              "0": "0000:03:00.0",
+              "1": "0000:06:00.0"
+            }
+          }
+        },
+        "execution_evidence_status": "verified",
+        "metrics": {
+          "pp2048_tps": 1288.85,
+          "pp512_tps": 916.03,
+          "tg128_tps": 33.92,
+          "tg512_tps": 34.07
+        },
+        "mode": "record",
+        "pair": 1,
+        "performance_admitted": false,
+        "position": 0,
+        "returncode": 0,
+        "server_log": "/tmp/rha08-build-matrix/pair-001-record/server.log",
+        "shutdown": {
+          "error": null,
+          "forced": false,
+          "method": "sigint",
+          "requested": true,
+          "returncode": 0
+        }
+      },
+      "matrix_status": "executed"
+    },
+    {
+      "cell": {
+        "arm": "tune",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/df3437785ca9c7e1ece71fe44b3ce7e9/bin/llama-server",
+        "build_id": "ca6957e50bd6036d5616309a67cddfc6",
+        "cache_id": null,
+        "cell_id": "tune",
+        "devices": [
+          0,
+          1
+        ],
+        "identity_digest": "56779e0ccfb989914340ee5a83594873",
+        "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+        "model_id": "tierL-qwen27b-q8",
+        "runtime_profile": "production-dual-xtx",
+        "schema_version": 1,
+        "topology": "dual-xtx",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "workload": {
+          "server_capture": {
+            "bench_configs": "pp512,pp2048,tg512",
+            "environment": {
+              "GGML_HIP_AUTOTUNE_SIGNATURE_FILE": "/home/audumla/.cache/bigcherry/artifacts-store/inputs/inventory/e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+              "GGML_HIP_DISPATCH_DB": "/tmp/rha08-tune.jsonl",
+              "GGML_HIP_DISPATCH_MODE": "tune"
+            },
+            "execution_evidence": "required",
+            "expected_execution": {
+              "architectures": [
+                "gfx1100",
+                "gfx1100"
+              ],
+              "backend": "ROCm",
+              "locators": [
+                "0000:03:00.0",
+                "0000:06:00.0"
+              ]
+            },
+            "extra_args": [
+              "-ngl",
+              "99",
+              "-sm",
+              "tensor",
+              "--fit",
+              "off",
+              "-c",
+              "4096",
+              "--flash-attn",
+              "on",
+              "--ubatch-size",
+              "512",
+              "--batch-size",
+              "2048",
+              "--threads",
+              "8",
+              "--parallel",
+              "1"
+            ],
+            "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "required_metrics": [
+              "pp512_tps",
+              "pp2048_tps",
+              "tg512_tps"
+            ],
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "shutdown_method": "sigint"
+          }
+        }
+      },
+      "child_result": {
+        "attestation_binding": {
+          "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/df3437785ca9c7e1ece71fe44b3ce7e9/bin/llama-server",
+          "binary_sha256": "7be8db9267788790b955d753d40e0c0bc7d360d97eaf1feed2afe8cf3108d9c3",
+          "common_server_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "correlation_id": "106b53ee723f4101a23fe6e1fbab693c",
+          "diagnostic_delta": [
+            "--verbosity",
+            "5"
+          ],
+          "environment": {
+            "HIP_VISIBLE_DEVICES": "0,1",
+            "ROCR_VISIBLE_DEVICES": "0,1"
+          },
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
+        },
+        "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-tune/attestation/preflight.json",
+        "elapsed_s": 104.65076400502585,
+        "execution_attestation": {
+          "backend": "ROCm",
+          "device_count": 2,
+          "devices": [
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:03:00.0"
+            },
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:06:00.0"
+            }
+          ],
+          "failure_signature": null,
+          "schema_version": 1,
+          "telemetry": {
+            "layer_assignment_mode": "meta",
+            "layers_assigned_to_devices": [],
+            "layers_assigned_to_meta": 66,
+            "rccl_device_bindings": {
+              "0": "0000:03:00.0",
+              "1": "0000:06:00.0"
+            }
+          }
+        },
+        "execution_evidence_status": "verified",
+        "metrics": {
+          "pp2048_tps": 894.58,
+          "pp512_tps": 96.58,
+          "tg128_tps": 33.88,
+          "tg512_tps": 33.92
+        },
+        "mode": "tune",
+        "pair": 1,
+        "performance_admitted": false,
+        "position": 0,
+        "returncode": 0,
+        "server_log": "/tmp/rha08-build-matrix/pair-001-tune/server.log",
+        "shutdown": {
+          "error": null,
+          "forced": false,
+          "method": "sigint",
+          "requested": true,
+          "returncode": 0
+        }
+      },
+      "matrix_status": "executed"
+    },
+    {
+      "cell": {
+        "arm": "replay",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+        "build_id": "ad004f0a625b8c95e8ff7ca439b9ad8f",
+        "cache_id": "hi171-27b-dual-reexport-20260908",
+        "cell_id": "replay",
+        "devices": [
+          0,
+          1
+        ],
+        "identity_digest": "b39277be095ba6e213e8ad88f9bf1989",
+        "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+        "model_id": "tierL-qwen27b-q8",
+        "runtime_profile": "production-dual-xtx",
+        "schema_version": 1,
+        "topology": "dual-xtx",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "workload": {
+          "server_capture": {
+            "bench_configs": "pp512,pp2048,tg512",
+            "environment": {
+              "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+              "GGML_HIP_DISPATCH_MODE": "replay"
+            },
+            "execution_evidence": "required",
+            "expected_execution": {
+              "architectures": [
+                "gfx1100",
+                "gfx1100"
+              ],
+              "backend": "ROCm",
+              "locators": [
+                "0000:03:00.0",
+                "0000:06:00.0"
+              ]
+            },
+            "extra_args": [
+              "-ngl",
+              "99",
+              "-sm",
+              "tensor",
+              "--fit",
+              "off",
+              "-c",
+              "4096",
+              "--flash-attn",
+              "on",
+              "--ubatch-size",
+              "512",
+              "--batch-size",
+              "2048",
+              "--threads",
+              "8",
+              "--parallel",
+              "1"
+            ],
+            "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "required_metrics": [
+              "pp512_tps",
+              "pp2048_tps",
+              "tg512_tps"
+            ],
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "shutdown_method": "sigint"
+          }
+        }
+      },
+      "child_result": {
+        "attestation_binding": {
+          "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+          "binary_sha256": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
+          "common_server_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "correlation_id": "f72b92830a57452ab975df82ecb0cd9e",
+          "diagnostic_delta": [
+            "--verbosity",
+            "5"
+          ],
+          "environment": {
+            "HIP_VISIBLE_DEVICES": "0,1",
+            "ROCR_VISIBLE_DEVICES": "0,1"
+          },
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
+        },
+        "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-replay/attestation/preflight.json",
+        "elapsed_s": 89.5489673789707,
+        "execution_attestation": {
+          "backend": "ROCm",
+          "device_count": 2,
+          "devices": [
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:03:00.0"
+            },
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:06:00.0"
+            }
+          ],
+          "failure_signature": null,
+          "schema_version": 1,
+          "telemetry": {
+            "layer_assignment_mode": "meta",
+            "layers_assigned_to_devices": [],
+            "layers_assigned_to_meta": 66,
+            "rccl_device_bindings": {
+              "0": "0000:03:00.0",
+              "1": "0000:06:00.0"
+            }
+          }
+        },
+        "execution_evidence_status": "verified",
+        "metrics": {
+          "pp2048_tps": 1289.0,
+          "pp512_tps": 870.96,
+          "tg128_tps": 34.02,
+          "tg512_tps": 34.01
+        },
+        "mode": "replay",
+        "pair": 1,
+        "performance_admitted": false,
+        "position": 0,
+        "returncode": 0,
+        "server_log": "/tmp/rha08-build-matrix/pair-001-replay/server.log",
+        "shutdown": {
+          "error": null,
+          "forced": false,
+          "method": "sigint",
+          "requested": true,
+          "returncode": 0
+        }
+      },
+      "matrix_status": "executed"
+    },
+    {
+      "cell": {
+        "arm": "replay-diagnostic",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/0492949234b9fa8f8ad4d964403e9201/bin/llama-server",
+        "build_id": "f31350384ee17b5582806a7fdb3a2d99",
+        "cache_id": "hi171-27b-dual-reexport-20260908",
+        "cell_id": "replay-diagnostic",
+        "devices": [
+          0,
+          1
+        ],
+        "identity_digest": "889d8b776bed48b1c4b1e40b7f818978",
+        "inventory_id": "e36eecfe1c5ccce0358c8e427a10b8b71b7295d56d7f9afea13101dcc315053d",
+        "model_id": "tierL-qwen27b-q8",
+        "runtime_profile": "production-dual-xtx",
+        "schema_version": 1,
+        "topology": "dual-xtx",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "workload": {
+          "server_capture": {
+            "bench_configs": "pp512,pp2048,tg512",
+            "environment": {
+              "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+              "GGML_HIP_DISPATCH_HIT_LOG": "/tmp/rha08-replay-hit.jsonl",
+              "GGML_HIP_DISPATCH_MODE": "replay"
+            },
+            "execution_evidence": "required",
+            "expected_execution": {
+              "architectures": [
+                "gfx1100",
+                "gfx1100"
+              ],
+              "backend": "ROCm",
+              "locators": [
+                "0000:03:00.0",
+                "0000:06:00.0"
+              ]
+            },
+            "extra_args": [
+              "-ngl",
+              "99",
+              "-sm",
+              "tensor",
+              "--fit",
+              "off",
+              "-c",
+              "4096",
+              "--flash-attn",
+              "on",
+              "--ubatch-size",
+              "512",
+              "--batch-size",
+              "2048",
+              "--threads",
+              "8",
+              "--parallel",
+              "1"
+            ],
+            "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+            "required_metrics": [
+              "pp512_tps",
+              "pp2048_tps",
+              "tg512_tps"
+            ],
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "shutdown_method": "sigint"
+          }
+        }
+      },
+      "child_result": {
+        "attestation_binding": {
+          "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/0492949234b9fa8f8ad4d964403e9201/bin/llama-server",
+          "binary_sha256": "9a69fd35f361dc40c694da131e6a561ea2e1ebeb898c6c24250d1fcd470a8920",
+          "common_server_args": [
+            "-ngl",
+            "99",
+            "-sm",
+            "tensor",
+            "--fit",
+            "off",
+            "-c",
+            "4096",
+            "--flash-attn",
+            "on",
+            "--ubatch-size",
+            "512",
+            "--batch-size",
+            "2048",
+            "--threads",
+            "8",
+            "--parallel",
+            "1"
+          ],
+          "correlation_id": "e880b0d702584c8b864b6bb8e1bb5b99",
+          "diagnostic_delta": [
+            "--verbosity",
+            "5"
+          ],
+          "environment": {
+            "HIP_VISIBLE_DEVICES": "0,1",
+            "ROCR_VISIBLE_DEVICES": "0,1"
+          },
+          "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+          "model_sha256": "a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348"
+        },
+        "attestation_preflight": "/tmp/rha08-build-matrix/pair-001-replay-diagnostic/attestation/preflight.json",
+        "elapsed_s": 89.126815405034,
+        "execution_attestation": {
+          "backend": "ROCm",
+          "device_count": 2,
+          "devices": [
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:03:00.0"
+            },
+            {
+              "architecture": "gfx1100",
+              "locator": "0000:06:00.0"
+            }
+          ],
+          "failure_signature": null,
+          "schema_version": 1,
+          "telemetry": {
+            "layer_assignment_mode": "meta",
+            "layers_assigned_to_devices": [],
+            "layers_assigned_to_meta": 66,
+            "rccl_device_bindings": {
+              "0": "0000:03:00.0",
+              "1": "0000:06:00.0"
+            }
+          }
+        },
+        "execution_evidence_status": "verified",
+        "metrics": {
+          "pp2048_tps": 1286.69,
+          "pp512_tps": 925.71,
+          "tg128_tps": 34.03,
+          "tg512_tps": 34.33
+        },
+        "mode": "replay-diagnostic",
+        "pair": 1,
+        "performance_admitted": false,
+        "position": 0,
+        "returncode": 0,
+        "server_log": "/tmp/rha08-build-matrix/pair-001-replay-diagnostic/server.log",
+        "shutdown": {
+          "error": null,
+          "forced": false,
+          "method": "sigint",
+          "requested": true,
+          "returncode": 0
+        }
+      },
+      "matrix_status": "executed"
+    }
+  ],
+  "state": "completed",
+  "total": 5
+}

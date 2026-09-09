@@ -1,0 +1,55 @@
+{
+  "complete": true,
+  "errors": [],
+  "evaluated": [
+    "RUN_FAILURE",
+    "RUN_INCOMPLETE_MATRIX",
+    "RUN_NO_CHILD_RESULT",
+    "RUN_NOT_ADMITTED",
+    "RUN_MISSING_METRICS",
+    "RUN_DIAGNOSTIC_EVIDENCE"
+  ],
+  "findings": [
+    {
+      "body": [
+        "This run may prove wiring or liveness, but it is not a parity claim."
+      ],
+      "headline": "A child result is explicitly not performance-admitted.",
+      "id": "RUN_NOT_ADMITTED",
+      "severity": "finding"
+    },
+    {
+      "body": [
+        "This run may prove wiring or liveness, but it is not a parity claim."
+      ],
+      "headline": "A child result is explicitly not performance-admitted.",
+      "id": "RUN_NOT_ADMITTED",
+      "severity": "finding"
+    },
+    {
+      "body": [
+        "This run may prove wiring or liveness, but it is not a parity claim."
+      ],
+      "headline": "A child result is explicitly not performance-admitted.",
+      "id": "RUN_NOT_ADMITTED",
+      "severity": "finding"
+    },
+    {
+      "body": [
+        "This run may prove wiring or liveness, but it is not a parity claim."
+      ],
+      "headline": "A child result is explicitly not performance-admitted.",
+      "id": "RUN_NOT_ADMITTED",
+      "severity": "finding"
+    },
+    {
+      "body": [
+        "This run may prove wiring or liveness, but it is not a parity claim."
+      ],
+      "headline": "A child result is explicitly not performance-admitted.",
+      "id": "RUN_NOT_ADMITTED",
+      "severity": "finding"
+    }
+  ],
+  "schema_version": 1
+}
