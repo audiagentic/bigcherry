@@ -1,6 +1,6 @@
 import unittest
 
-from bigcherry.campaign.run_advisories import evaluate_ab_result, evaluate_runtime_result
+from bigcherry.campaign.run_advisories import evaluate_ab_result, evaluate_build_result, evaluate_runtime_result
 
 
 def child(**extra):
@@ -64,3 +64,11 @@ class RunAdvisoryTests(unittest.TestCase):
         self.assertIn("AB_RUN_FAILURE", tags)
         self.assertIn("AB_MISSING_COMPARISON", tags)
         self.assertIn("AB_NOT_ADMITTED", tags)
+
+    def test_build_failure_and_missing_identity_are_distinct(self):
+        class Result:
+            build_plan_id = None
+        evaluation = evaluate_build_result({"broken": RuntimeError("no build"), "empty": Result()})
+        tags = [finding.tag for finding in evaluation.findings]
+        self.assertIn("BUILD_FAILURE", tags)
+        self.assertIn("BUILD_IDENTITY_MISSING", tags)

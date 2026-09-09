@@ -389,6 +389,11 @@ comparisons, diagnostic-only evidence and non-admitted results. The advisory
 file is explanatory; the benchmark's return code and admission fields remain
 authoritative.
 
+The campaign build CLI similarly writes a run-scoped
+`build-advisories/advisories.json` after the existing build workers finish.
+Missing build identities and failed lanes are surfaced there without changing
+the build worker's authoritative exit status.
+
 #### Balanced server capture
 
 The existing A/B command can now manage one server per arm and invoke the
