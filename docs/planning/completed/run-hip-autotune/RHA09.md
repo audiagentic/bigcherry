@@ -2,7 +2,7 @@
 id: RHA09
 order: 0
 plan: run-hip-autotune
-state: pending
+state: completed
 created-at: '2026-09-09T19:16:56.626655+00:00'
 breadth: ''
 skill: intermediate
@@ -15,7 +15,7 @@ priority: P2
 
 ## Description
 
-Preserve a repository-backed raw log bundle and machine-readable validator result for the already-proven dual-XTX graph lifecycle. This follow-up is evidence hygiene only and does not reopen RHA04 parity or require mixed-topology/long-context rows outside the current release target.
+Retain durable raw graph-lifecycle artifacts from the historical HI14 dual-XTX run and make the evidence independently re-checkable offline.
 
 ## Steps
 
@@ -31,14 +31,17 @@ Use graph_lifecycle_evidence.capture_lifecycle_from_log() and multi_gpu_validate
 
 ## Files
 
-docs/evidence/<run-id>-graph-lifecycle/README.md
-docs/evidence/<run-id>-graph-lifecycle/server.log
-docs/evidence/<run-id>-graph-lifecycle/lifecycle.json
-docs/evidence/<run-id>-graph-lifecycle/validator.json
+- docs/evidence/2026-09-10-rha09-graph-lifecycle/server.log
+- docs/evidence/2026-09-10-rha09-graph-lifecycle/dispatch-record.jsonl
+- docs/evidence/2026-09-10-rha09-graph-lifecycle/lifecycle.json
+- docs/evidence/2026-09-10-rha09-graph-lifecycle/validator.json
+- docs/evidence/2026-09-10-rha09-graph-lifecycle/README.md
 
 ## Validation
 
-Run the strict graph lifecycle and multi-GPU validators against the retained machine-readable artifacts; confirm all four lifecycle stages, device identity, clean teardown, and provenance hashes. No mixed gfx1100/gfx1201 or long-context claim is required unless the release scope changes.
+- Run capture_lifecycle_from_log against server.log and require all four stages.
+- Run validate_multi_gpu_evidence against validator.json.
+- Verify SHA-256 hashes documented in README.
 
 ## Effort & Risk
 
@@ -56,11 +59,18 @@ A durable raw artifact bundle exists, validates offline, and documents exact bui
 
 Successor follow-up created by review RV161. Keep separate from RHA04 performance admission.
 
+Historical artifact provenance is explicit. The bundle supports graph lifecycle and dual-device dispatch coverage only; it is not a new performance admission and does not claim mixed topology or long-context coverage.
+
 ## Change Log
 
 - 2026-09-09T19:16:56.626655+00:00 (created-by): Created by RV161
 
 ## Ledger-events
 
+
 - chg_20260909_191740_rha02s-core-graph-lifecycle-q_5460
 - 2026-09-09T19:17:40.613889+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:39:06.850044+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
+- chg_20260909_193911_preserved-and-offline-validate_5866
+- 2026-09-09T19:39:11.730959+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:39:20.895278+00:00 (state-transition): State: pending → completed
