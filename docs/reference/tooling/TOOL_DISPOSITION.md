@@ -484,6 +484,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **TRANSITIONAL** | Migration-local advisory GPT evidence importer; never approves dispositions, allocates IDs, or mutates plan files. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **TRANSITIONAL** | Migration-local independent-review reconciliation report; never selects dispositions or allocates IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
 | `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
