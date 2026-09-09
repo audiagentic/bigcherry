@@ -36,6 +36,11 @@ def main() -> int:
     if len(by_id) != len(review):
         raise SystemExit("semantic review contains duplicate or empty source IDs")
     for source_id, row in by_id.items():
+        malformed = [field for field in FIELDS if row.get(field) is None]
+        if malformed:
+            raise SystemExit(
+                f"{source_id}: malformed CSV row; missing columns {malformed}"
+            )
         missing = [field for field in FIELDS if row.get(field, "").strip().lower() in PLACEHOLDERS]
         if missing:
             raise SystemExit(f"{source_id}: missing semantic fields {missing}")
