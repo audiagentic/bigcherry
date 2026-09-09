@@ -192,6 +192,32 @@ class ParseLlamaServerAttestationTests(unittest.TestCase):
             (att.ATTESTATION_CORRUPT,),
         )
 
+    def test_rccl_mapping_accepts_tensor_split_meta_layer_assignment(self):
+        output = (
+            "I llama_prepare_model_devices: using device Meta() (Meta()) (unknown id)\n"
+            "D load_tensors: layer 0 assigned to device Meta(), is_swa = 0\n"
+            "D load_tensors: layer 1 assigned to device Meta(), is_swa = 0\n"
+            "NCCL INFO comm rank 0 cudaDev 0 busId 3000 - Init START\n"
+            "NCCL INFO comm rank 1 cudaDev 1 busId 6000 - Init START\n"
+        )
+        observed = att.merge_rccl_server_attestation(
+            output, None,
+            architecture_by_locator={
+                "0000:03:00.0": "gfx1100", "0000:06:00.0": "gfx1100",
+            },
+        )
+        self.assertEqual(observed.telemetry["layer_assignment_mode"], "meta")
+        self.assertEqual(observed.telemetry["layers_assigned_to_meta"], 2)
+        self.assertEqual(
+            att.compare_execution_identity(
+                att.ExecutionIdentity(
+                    "ROCm", ("gfx1100", "gfx1100"),
+                    ("0000:03:00.0", "0000:06:00.0"),
+                ), observed,
+            ),
+            (),
+        )
+
     def test_rccl_conflicting_bus_mapping_fails_closed(self):
         output = (
             "NCCL INFO comm rank 0 cudaDev 0 busId 3000 - Init START\n"

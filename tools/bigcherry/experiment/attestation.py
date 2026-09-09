@@ -426,6 +426,9 @@ _SERVER_USING_DEVICE = re.compile(
 _SERVER_LAYER_ASSIGNED = re.compile(
     r"assigned to device (?P<backend>[A-Za-z]+)(?P<index>\d+)"
 )
+_SERVER_META_LAYER_ASSIGNED = re.compile(
+    r"assigned to device Meta\(\)", re.IGNORECASE
+)
 
 # RCCL's NCCL_DEBUG=INFO initialisation record carries the logical HIP
 # ordinal and the physical PCI address encoded as a hexadecimal busId, e.g.:
@@ -502,11 +505,13 @@ def merge_rccl_server_attestation(
         int(match.group("index"))
         for match in _SERVER_LAYER_ASSIGNED.finditer(output or "")
     }
+    meta_assignments = len(_SERVER_META_LAYER_ASSIGNED.findall(output or ""))
     expected_indices = set(bindings)
-    if assigned != expected_indices:
+    if assigned != expected_indices and not (not assigned and meta_assignments > 0):
         return ExecutionAttestation(
             backend=None, devices=(), telemetry={**telemetry,
-                "layers_assigned_to_devices": sorted(assigned)},
+                "layers_assigned_to_devices": sorted(assigned),
+                "layers_assigned_to_meta": meta_assignments},
             failure_signature=(
                 "RCCL device mapping does not match server layer assignments"
             ),
@@ -535,6 +540,10 @@ def merge_rccl_server_attestation(
                     backend=None, devices=(), telemetry=telemetry,
                     failure_signature="server/RCCL physical device order disagrees",
                 )
+    telemetry["layers_assigned_to_devices"] = sorted(assigned)
+    if meta_assignments:
+        telemetry["layers_assigned_to_meta"] = meta_assignments
+        telemetry["layer_assignment_mode"] = "meta"
     return ExecutionAttestation(backend="ROCm", devices=devices, telemetry=telemetry)
 
 
