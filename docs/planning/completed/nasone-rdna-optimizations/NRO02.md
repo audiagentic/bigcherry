@@ -17,11 +17,11 @@ work: M
 
 Port the residual-fusion portion of nasone commit `e06dcf6300718227cb8cfda9e61fb12ccb693418` as a separate BigCherry experiment. The target graph pattern is a Tensor-Parallel reduction whose reduced F32 tensor feeds, optionally through reshape-only nodes, a single mirrored residual `ADD`. Instead of completing AllReduce and launching a second elementwise ADD, the AllReduce finish kernel writes `reduced + residual` directly and the Meta scheduler skips exactly the consumed ADD node.
 
-This is deliberately a child of NRO01 in the first draft because NRO01 introduces a unified finish abstraction used by exact/BF16/Q8 paths. The scientific question remains independent: NRO02 must be benchmarked with identical wire representation on both control and subject. It cannot claim Q8's transfer-volume effect.
+This is deliberately a child of PNRO01 in the first draft because NRO01 introduces a unified finish abstraction used by exact/BF16/Q8 paths. The scientific question remains independent: NRO02 must be benchmarked with identical wire representation on both control and subject. It cannot claim Q8's transfer-volume effect.
 
 ## Steps
 
-1. Freeze the shared source commit but register provenance through NRO01 only; NRO02 is a local atomic derivative to satisfy the external-source registry's commit-uniqueness rule.
+1. Freeze the shared source commit but register provenance through PNRO01 only; NRO02 is a local atomic derivative to satisfy the external-source registry's commit-uniqueness rule.
 2. Implement an exact, conservative Meta graph matcher: reduction boundary, zero or more no-op reshape nodes, one ADD, one consumer chain, same shape/type, mirrored residual, mirrored output.
 3. Add the residual pointer to the internal AllReduce finish interface only after every backend/rank has independently validated the same graph relation.
 4. Preserve the ordinary AllReduce API and fallback. If any matcher predicate fails, perform the existing reduction and execute the ADD normally.
@@ -50,7 +50,7 @@ and a Meta-side matcher that returns false on extra consumers, non-mirrored spli
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO02.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO02.md`
 - `patches/1251_nro02_allreduce_fused_residual/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - shared NRO patch tests.
 
@@ -74,11 +74,11 @@ Exact graph matching, one-consumer proof, fallback preservation, dependency-awar
 - All negative graph fixtures execute the original ADD.
 - Fused and unfused outputs meet the representation-specific correctness gate.
 - Subject reduces launch count and establishes a positive performance effect without >1% non-target regression.
-- NRO02 remains independently disableable from NRO01's Q8 selection.
+- PNRO02 remains independently disableable from NRO01's Q8 selection.
 
 ## Notes
 
-The source commit is intentionally not duplicated in external-source metadata; NRO01 is the source-identity owner and this item records the atomic decomposition.
+The source commit is intentionally not duplicated in external-source metadata; PNRO01 is the source-identity owner and this item records the atomic decomposition.
 
 Superseded by: PNRO02
 Migration: capability-rebaseline-v3-2026-09

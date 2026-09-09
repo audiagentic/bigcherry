@@ -17,7 +17,7 @@ work: L
 
 Track nasone commit `abca85cdc608efe8edc89546e1c3e5d6323b6308`, sourced from upstream PR #28136. It adds `--lazy-mode on-direct` for very large per-layer embedding/PLE tables: known row IDs are sorted/deduplicated, fetched with explicit `pread()` from an independently opened descriptor, optionally dequantized to F32, and staged for graph use instead of relying on mmap demand paging.
 
-As with NRO13, ancestry to the current pin must be checked before any local backport.
+As with PNRO12, ancestry to the current pin must be checked before any local backport.
 
 ## Steps
 

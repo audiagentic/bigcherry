@@ -57,7 +57,7 @@ Then each destination waits for the transfer that targets its scratch before the
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO03.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO03.md`
 - `patches/1252_nro03_allreduce_p2p_provider/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - shared NRO static tests; future custom bidirectional hardware probe.
 
@@ -73,7 +73,7 @@ High. ROCm may return success while data is wrong on exactly the path this optim
 
 ## Standards
 
-GP11/GP13 corrected evidence is authoritative for Brutus. Never treat `hipDeviceCanAccessPeer==1` or API success as correctness. Fail closed to validated host staging.
+PGC02/GP13 corrected evidence is authoritative for Brutus. Never treat `hipDeviceCanAccessPeer==1` or API success as correctness. Fail closed to validated host staging.
 
 ## Acceptance Criteria
 
@@ -92,7 +92,7 @@ Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
-- 2026-09-08T09:50:40+10:00 (created-by): Created from nasone P2P provider plus GP11/GP13 corrected hardware evidence; P0 correctness-first.
+- 2026-09-08T09:50:40+10:00 (created-by): Created from nasone P2P provider plus PGC02/GP13 corrected hardware evidence; P0 correctness-first.
 
 ## Ledger-events
 

@@ -17,20 +17,20 @@ work: M
 
 Apply nasone follow-up commit `7f1d25f7e05cb34053d317a0f72f601d846c8662` (`ROCm: make TOP_K wave32-native`) on top of NRO07. The follow-up replaces shared-memory tree reductions in TOP-1/multi-pass helpers with wave32 shuffle reductions where safe, splits 64-bin radix accumulation into two 32-lane scans, and increases per-thread item ownership to reduce intermediate passes/launches.
 
-This must not be folded into NRO07's first qualification because then a win or regression could not be attributed to the hybrid algorithm versus the wave32 mapping.
+This must not be folded into PNRO06's first qualification because then a win or regression could not be attributed to the hybrid algorithm versus the wave32 mapping.
 
 ## Steps
 
-1. Require `1256_nro07_topk_hybrid` and verify source pre-image matches the NRO07 post-image expected by the follow-up.
+1. Require `1256_nro07_topk_hybrid` and verify source pre-image matches the PNRO06 post-image expected by the follow-up.
 2. Port wave32 shuffle reduction with explicit `USE_SHUFFLE`/fallback structure; preserve a shared-memory path for shapes/builds where wave32 assumptions are not proven.
 3. Make 32-lane width explicit in shuffles/ballots; do not rely on HIP `warpSize` implicitly if the algorithm is wave32-specific.
 4. Port two-half 64-bin scan logic and validate bucket selection at every boundary.
 5. Port `ITEMS_PER_THREAD` tuning separately from semantic changes where possible; record launch/pass-count effect.
-6. Run exact correctness fixtures from NRO07 unchanged. Any output difference versus NRO07 is a failure unless traced to a pre-registered tie-order policy.
+6. Run exact correctness fixtures from PNRO06 unchanged. Any output difference versus NRO07 is a failure unless traced to a pre-registered tie-order policy.
 7. Add stress tests for ncols around block_size*items_per_thread boundaries.
 8. Profile LDS reduction traffic, wave occupancy, VGPR use, pass count, and kernel duration.
-9. Compare NRO07-only versus NRO07+NRO08 on identical real TOP_K signatures.
-10. If the wave32 follow-up wins only on a subset, retain selector/fallback rather than replacing NRO07 globally.
+9. Compare PNRO06-only versus NRO07+NRO08 on identical real TOP_K signatures.
+10. If the wave32 follow-up wins only on a subset, retain selector/fallback rather than replacing PNRO06 globally.
 
 ## Detailed Solution & Technical Design
 
@@ -46,34 +46,34 @@ Keep the fallback reduction implementation in code until validation proves all t
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO08.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO07.md`
 - `patches/1257_nro08_topk_wave32/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
-- shared NRO static tests; reuse/extend NRO07 TOP_K reference suite.
+- shared NRO static tests; reuse/extend PNRO06 TOP_K reference suite.
 
 ## Validation
 
-Exact NRO07 correctness suite plus targeted 31/32/33 and 63/64/65 bin/column boundaries, high/low radix-half threshold selection, block/item coverage boundaries, ties and NaNs.
+Exact PNRO06 correctness suite plus targeted 31/32/33 and 63/64/65 bin/column boundaries, high/low radix-half threshold selection, block/item coverage boundaries, ties and NaNs.
 
-Performance: NRO07 as control, NRO08 subject, same binary/config where possible. Capture LDS instructions/occupancy if profiler supports them.
+Performance: PNRO06 as control, NRO08 subject, same binary/config where possible. Capture LDS instructions/occupancy if profiler supports them.
 
 ## Effort & Risk
 
-Medium-high. Smaller than NRO07 but architecture-sensitive; subtle shuffle-width or lane-mask errors produce rare routing errors at boundary ranks.
+Medium-high. Smaller than PNRO06 but architecture-sensitive; subtle shuffle-width or lane-mask errors produce rare routing errors at boundary ranks.
 
 ## Standards
 
-Dependency-aware source composition; exact routing semantics; keep NRO07 fallback; no unsupported wave-size extrapolation.
+Dependency-aware source composition; exact routing semantics; keep PNRO06 fallback; no unsupported wave-size extrapolation.
 
 ## Acceptance Criteria
 
-- Exact outputs match NRO07/reference across full fixture matrix.
+- Exact outputs match PNRO06/reference across full fixture matrix.
 - Wave32 path activates only where supported.
 - Measurable reduction in kernel time/LDS traffic or launch/pass count on real gfx1100 signatures.
 - No >1% non-target model regression.
 
 ## Notes
 
-NRO08 is the only plan item that should use source commit `7f1d25f7...`; NRO07 owns the preceding hybrid implementation commit.
+PNRO07 is the only plan item that should use source commit `7f1d25f7...`; NRO07 owns the preceding hybrid implementation commit.
 
 Superseded by: PNRO07
 Migration: capability-rebaseline-v3-2026-09

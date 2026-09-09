@@ -21,7 +21,7 @@ The source implementation uses BF16 WMMA operands with FP32 accumulation and FP3
 
 ## Steps
 
-1. Require `1221_rd50_gdn_chunked_recurrence`; preserve RD50's existing code and fallback.
+1. Require `1221_rd50_gdn_chunked_recurrence`; preserve PRBE42's existing code and fallback.
 2. Extract only the gfx1100/gfx11 BF16 WMMA implementation and required helpers from nasone's `gated_delta_net_chunked_bf16_gfx11.cu`; fold it into the existing translation unit because BigCherry's patcher cannot create upstream files.
 3. Gate host dispatch by runtime `GGML_CUDA_CC_IS_RDNA3(cc)` and exact supported geometry. Do not gate host code on device-pass-only `RDNA3` macros.
 4. Compile WMMA intrinsics only under the gfx11 device pass. Non-gfx11 builds must compile cleanly and never select the path.
@@ -57,13 +57,13 @@ Do not broaden to `S_v=16/32/64` in this item unless the source WMMA implementat
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO04.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO04.md`
 - `patches/1253_nro04_gfx1100_bf16_chunked_gdn/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - shared NRO package tests; future gfx1100 WMMA/GDN validation fixtures.
 
 ## Validation
 
-Static: exact RD50 dependency, architecture guards, fallback marker, compile exclusion on non-gfx11 device pass.
+Static: exact PRBE42 dependency, architecture guards, fallback marker, compile exclusion on non-gfx11 device pass.
 
 Hardware: gfx1100 WMMA matrix probe, GDN op reference across sequence lengths/chunk boundaries, recurrent state comparison, multi-layer model PPL/greedy checks, graph/non-graph execution.
 
@@ -75,7 +75,7 @@ High. Large architecture-specific kernel, non-bit-exact arithmetic, subtle fragm
 
 ## Standards
 
-Correctness before performance; architecture-specific promotion; source SHA fixed; no conflation with RD50's RDNA3.5 evidence; no synthetic claim that gfx1100 inherits gfx1151 results.
+Correctness before performance; architecture-specific promotion; source SHA fixed; no conflation with PRBE42's RDNA3.5 evidence; no synthetic claim that gfx1100 inherits gfx1151 results.
 
 ## Acceptance Criteria
 
@@ -87,14 +87,14 @@ Correctness before performance; architecture-specific promotion; source SHA fixe
 
 ## Notes
 
-NRO05 owns the MTP prefix/tail composition from the same source commit. This item is ordinary K==1/prefill chunked gfx1100 execution only.
+PNRO05 owns the MTP prefix/tail composition from the same source commit. This item is ordinary K==1/prefill chunked gfx1100 execution only.
 
 Superseded by: PNRO04
 Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
-- 2026-09-08T09:50:40+10:00 (created-by): Created as gfx1100 successor to RD50 from nasone block 02; P0.
+- 2026-09-08T09:50:40+10:00 (created-by): Created as gfx1100 successor to PRBE42 from nasone block 02; P0.
 
 ## Ledger-events
 

@@ -90,6 +90,11 @@
       "sha256": "c7048d33c88fbc7cf812e817b69ebef15f999b0775737a18eb026ead92afb9d5"
     },
     {
+      "path": "scripts/apply_reference_decisions.py",
+      "bytes": 5800,
+      "sha256": "28bf2eda5e81eda61202b82df716f2de662bb26b134b8135ed962f2aa516bea6"
+    },
+    {
       "path": "scripts/apply_semantic_review.py",
       "bytes": 2604,
       "sha256": "64d505b566f68b33c26c246cde8c27f7197584bcbe07ceb7a3b7d3e382eb7cec"
