@@ -133,7 +133,9 @@ def frozen_identity_set(repo: Path, source_commit: str) -> set[tuple[str, str, s
         pos += size + 1
     identities: set[tuple[str, str, str, str]] = set()
     for oid, path in entries:
-        text = blob_by_oid[oid]
+        # Match run_git(text=True)'s universal-newline normalization used by
+        # generate_inventory.py before hashing frozen source content.
+        text = blob_by_oid[oid].replace("\r\n", "\n")
         fm: dict[str, str] = {}
         lines = text.splitlines()
         if lines and lines[0].strip() == "---":
@@ -247,6 +249,15 @@ def main() -> int:
     }
     if len(frozen) != 524:
         p.error(f"frozen lifecycle enumeration expected 524 items, found {len(frozen)}")
+    frozen_payload = "".join(
+        f"{source_id}\t{path}\t{state}\t{digest}\n"
+        for source_id, path, state, digest in sorted(frozen)
+    )
+    frozen_digest = hashlib.sha256(frozen_payload.encode("utf-8")).hexdigest()
+    if lock.get("inventory_count") != len(frozen):
+        p.error("SOURCE_LOCK.json inventory_count does not match frozen enumeration")
+    if lock.get("inventory_sha256") != frozen_digest:
+        p.error("SOURCE_LOCK.json inventory_sha256 does not match frozen enumeration")
     if supplied != frozen:
         p.error(f"PLAN_INVENTORY.csv does not exactly match frozen lifecycle universe (missing={len(frozen - supplied)}, extra={len(supplied - frozen)})")
 

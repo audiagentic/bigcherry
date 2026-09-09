@@ -56,8 +56,8 @@
     },
     {
       "path": "scripts/generate_inventory.py",
-      "bytes": 15198,
-      "sha256": "47c8588a749d889651606b3acba273140cb79164b567aa124e95f13911cec29d"
+      "bytes": 16040,
+      "sha256": "e10710e3d7416555cd6c4b8ce899e8d0f32626048ae4cdd56def5b02a0e4800c"
     },
     {
       "path": "scripts/refresh_pack_manifest.py",
@@ -76,13 +76,13 @@
     },
     {
       "path": "scripts/validate_manifests.py",
-      "bytes": 32672,
-      "sha256": "f04848d199cd320db5a0ddf311766b6ec11b9cfa1a5ebc7e721d4d53168fa26a"
+      "bytes": 33347,
+      "sha256": "208eb0b19a48148043c1499ad10b1971d8c479798326d7cb3b31fcd8275db88e"
     },
     {
       "path": "SOURCE_LOCK.json",
-      "bytes": 363,
-      "sha256": "63cf57b614f3cbb81b4d118b5a18b2b9c1e024f89dd2cce8dac89f57c36619f2"
+      "bytes": 479,
+      "sha256": "80c51e16147c08d1f4ac1d1c561f624f783a9283c4cae97e2a5bc6da332ce883"
     },
     {
       "path": "templates/DEPENDENCY_REMAP.tsv",

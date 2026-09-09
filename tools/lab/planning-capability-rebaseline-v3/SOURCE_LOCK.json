@@ -4,5 +4,7 @@
   "source_commit": "4ff1e93dd39997f9d9ec206273ad3f444eadda7e",
   "migration_id": "capability-rebaseline-v3-2026-09",
   "capabilities": ["build", "run", "patching", "tuning"],
+  "inventory_count": 524,
+  "inventory_sha256": "d33f50d64c97cf4983ef81a4c7fc263c86ea395f0393df16f046cef8cff537fd",
   "rule": "All semantic review is against source_commit. Do not silently refresh the source snapshot."
 }

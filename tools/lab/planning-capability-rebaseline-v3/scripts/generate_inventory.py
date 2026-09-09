@@ -143,6 +143,14 @@ def context(line: str, limit: int = 360) -> str:
     return compact[: limit - 3] + "..."
 
 
+def identity_digest(items: list[PlanItem]) -> str:
+    payload = "".join(
+        f"{item.item_id}\t{item.path}\t{item.state}\t{item.content_hash}\n"
+        for item in sorted(items, key=lambda item: item.item_id)
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", type=Path, default=Path(__file__).resolve().parents[1])
@@ -172,6 +180,11 @@ def main() -> int:
         raise RuntimeError(f"duplicate plan IDs in frozen source: {dups}")
 
     item_by_id = {item.item_id: item for item in items}
+    inventory_digest = identity_digest(items)
+    if lock.get("inventory_count") is not None and lock["inventory_count"] != len(items):
+        raise RuntimeError("source lock inventory_count does not match frozen inventory")
+    if lock.get("inventory_sha256") and lock["inventory_sha256"] != inventory_digest:
+        raise RuntimeError("source lock inventory_sha256 does not match frozen inventory")
     id_pattern = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(re.escape(i) for i in sorted(ids, key=len, reverse=True)) + r")(?![A-Za-z0-9_])")
 
     inventory_rows: list[dict[str, str]] = []
@@ -273,7 +286,8 @@ def main() -> int:
         )
 
     output.mkdir(parents=True, exist_ok=True)
-    (output / "SOURCE_LOCK.json").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    output_lock = {**lock, "inventory_count": len(items), "inventory_sha256": inventory_digest}
+    (output / "SOURCE_LOCK.json").write_text(json.dumps(output_lock, indent=2) + "\n", encoding="utf-8")
 
     write_csv(
         output / "PLAN_INVENTORY.csv",
@@ -404,6 +418,7 @@ def main() -> int:
     print(f"source_commit={source_commit}")
     print(f"plan_items={len(items)}")
     print(f"reference_occurrences={len(reference_rows)}")
+    print(f"inventory_sha256={inventory_digest}")
     print(f"output={output}")
     return 0
 
