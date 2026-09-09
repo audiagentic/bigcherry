@@ -427,6 +427,116 @@ _SERVER_LAYER_ASSIGNED = re.compile(
     r"assigned to device (?P<backend>[A-Za-z]+)(?P<index>\d+)"
 )
 
+# RCCL's NCCL_DEBUG=INFO initialisation record carries the logical HIP
+# ordinal and the physical PCI address encoded as a hexadecimal busId, e.g.:
+# ``NCCL INFO comm ... rank 0 ... cudaDev 0 busId 3000 ...``.  Tensor split
+# wraps the physical devices in Meta, so llama-server's own diagnostics may
+# omit the locator even while RCCL has bound both ranks.  This parser is only
+# used in the diagnostics-only preflight; the timed process never inherits
+# NCCL_DEBUG.
+_RCCL_CUDA_DEVICE = re.compile(
+    r"(?:NCCL|RCCL)\s+(?:INFO|WARN)\b.*?"
+    r"\bcudaDev\s+(?P<cuda>\d+)\s+busId\s+(?P<bus>(?:0x)?[0-9a-fA-F]+)\b",
+    re.IGNORECASE,
+)
+
+
+def _rccl_bus_id_to_locator(raw: str) -> str:
+    """Convert RCCL's packed hexadecimal busId into a PCI BDF."""
+    value = int(raw[2:] if raw.lower().startswith("0x") else raw, 16)
+    domain = (value >> 20) & 0xFFFF
+    bus = (value >> 12) & 0xFF
+    device = (value >> 4) & 0xFF
+    function = value & 0xF
+    return f"{domain:04x}:{bus:02x}:{device:02x}.{function}"
+
+
+def parse_rccl_device_bindings(output: str) -> tuple[dict[int, str], tuple[str, ...]]:
+    """Parse strict logical-device to PCI-BDF bindings from RCCL logs.
+
+    The second return value contains fail-closed errors for conflicting or
+    malformed records.  An empty mapping is not evidence of execution.
+    """
+    bindings: dict[int, str] = {}
+    errors: list[str] = []
+    for match in _RCCL_CUDA_DEVICE.finditer(output or ""):
+        cuda = int(match.group("cuda"))
+        try:
+            locator = _rccl_bus_id_to_locator(match.group("bus"))
+        except (TypeError, ValueError):
+            errors.append(f"invalid RCCL busId for cudaDev {cuda}")
+            continue
+        previous = bindings.get(cuda)
+        if previous is not None and previous != locator:
+            errors.append(f"RCCL cudaDev {cuda} maps to multiple PCI locators")
+        else:
+            bindings[cuda] = locator
+    return bindings, tuple(errors)
+
+
+def merge_rccl_server_attestation(
+    output: str,
+    observed: ExecutionAttestation | None,
+    *,
+    architecture_by_locator: Mapping[str, str] | None = None,
+) -> ExecutionAttestation | None:
+    """Bind RCCL physical locators to server layer-assignment evidence.
+
+    RCCL records alone prove communicator setup, not model placement.  A
+    composite attestation therefore requires server layer-assignment lines
+    for exactly the same logical ordinals.  Any missing, duplicate, or
+    reversed mapping is represented as a failure signature and is rejected by
+    the canonical identity comparator.
+    """
+    bindings, errors = parse_rccl_device_bindings(output)
+    if not bindings and not errors:
+        return observed
+    telemetry = dict(observed.telemetry) if observed is not None else {}
+    telemetry["rccl_device_bindings"] = dict(sorted(bindings.items()))
+    if errors:
+        return ExecutionAttestation(
+            backend=None, devices=(), telemetry=telemetry,
+            failure_signature="; ".join(errors),
+        )
+    assigned = {
+        int(match.group("index"))
+        for match in _SERVER_LAYER_ASSIGNED.finditer(output or "")
+    }
+    expected_indices = set(bindings)
+    if assigned != expected_indices:
+        return ExecutionAttestation(
+            backend=None, devices=(), telemetry={**telemetry,
+                "layers_assigned_to_devices": sorted(assigned)},
+            failure_signature=(
+                "RCCL device mapping does not match server layer assignments"
+            ),
+        )
+    if expected_indices != set(range(len(bindings))):
+        return ExecutionAttestation(
+            backend=None, devices=(), telemetry=telemetry,
+            failure_signature="RCCL logical device ordinals are incomplete",
+        )
+    lookup = dict(architecture_by_locator or {})
+    devices = tuple(
+        ObservedDevice(architecture=lookup.get(bindings[index], "<unknown>"), locator=bindings[index])
+        for index in range(len(bindings))
+    )
+    if observed is not None:
+        if observed.failure_signature is not None:
+            return observed
+        if observed.devices and len(observed.devices) != len(devices):
+            return ExecutionAttestation(
+                backend=None, devices=(), telemetry=telemetry,
+                failure_signature="RCCL/server device counts disagree",
+            )
+        for index, device in enumerate(observed.devices):
+            if device.locator is not None and device.locator != devices[index].locator:
+                return ExecutionAttestation(
+                    backend=None, devices=(), telemetry=telemetry,
+                    failure_signature="server/RCCL physical device order disagrees",
+                )
+    return ExecutionAttestation(backend="ROCm", devices=devices, telemetry=telemetry)
+
 
 def parse_llama_server_attestation(
     output: str, *, architecture_by_locator: Mapping[str, str] | None = None,

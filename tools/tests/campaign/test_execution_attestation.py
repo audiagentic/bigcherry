@@ -151,6 +151,56 @@ class ParseLlamaServerAttestationTests(unittest.TestCase):
             (att.DEVICE_ID_MISMATCH,),
         )
 
+    def test_rccl_bus_ids_bind_tensor_split_layers_in_logical_order(self):
+        output = (
+            "NCCL INFO comm ... rank 0 nranks 2 cudaDev 0 busId 3000 - Init COMPLETE\n"
+            "NCCL INFO comm ... rank 1 nranks 2 cudaDev 1 busId 6000 - Init COMPLETE\n"
+            "D load_tensors: layer 0 assigned to device ROCm0\n"
+            "D load_tensors: layer 1 assigned to device ROCm1\n"
+        )
+        bindings, errors = att.parse_rccl_device_bindings(output)
+        self.assertEqual(bindings, {0: "0000:03:00.0", 1: "0000:06:00.0"})
+        self.assertEqual(errors, ())
+        observed = att.merge_rccl_server_attestation(
+            output, None,
+            architecture_by_locator={
+                "0000:03:00.0": "gfx1100", "0000:06:00.0": "gfx1100",
+            },
+        )
+        self.assertEqual(
+            tuple(device.locator for device in observed.devices),
+            ("0000:03:00.0", "0000:06:00.0"),
+        )
+        expected = att.ExecutionIdentity(
+            backend="ROCm", architectures=("gfx1100", "gfx1100"),
+            locators=("0000:03:00.0", "0000:06:00.0"),
+        )
+        self.assertEqual(att.compare_execution_identity(expected, observed), ())
+
+    def test_rccl_mapping_without_both_layer_assignments_fails_closed(self):
+        output = (
+            "NCCL INFO comm ... rank 0 nranks 2 cudaDev 0 busId 3000 - Init COMPLETE\n"
+            "NCCL INFO comm ... rank 1 nranks 2 cudaDev 1 busId 6000 - Init COMPLETE\n"
+            "D load_tensors: layer 0 assigned to device ROCm0\n"
+        )
+        observed = att.merge_rccl_server_attestation(output, None)
+        self.assertIsNotNone(observed.failure_signature)
+        self.assertEqual(
+            att.compare_execution_identity(
+                att.ExecutionIdentity("ROCm", ("gfx1100", "gfx1100")), observed
+            ),
+            (att.ATTESTATION_CORRUPT,),
+        )
+
+    def test_rccl_conflicting_bus_mapping_fails_closed(self):
+        output = (
+            "NCCL INFO comm rank 0 cudaDev 0 busId 3000 - Init START\n"
+            "NCCL INFO comm rank 0 cudaDev 0 busId 6000 - Init COMPLETE\n"
+        )
+        bindings, errors = att.parse_rccl_device_bindings(output)
+        self.assertEqual(bindings, {0: "0000:03:00.0"})
+        self.assertTrue(errors)
+
 
 class CompareExecutionIdentityTests(unittest.TestCase):
     ONE_GFX1201 = att.ExecutionIdentity(backend="ROCm", architectures=("gfx1201",))
