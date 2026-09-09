@@ -382,6 +382,13 @@ subprocess delegates; the matrix layer does not reimplement their policy.
 Production activation admission remains HI168 work; this profile alone is
 not an executable benchmark campaign.
 
+The maintained paired server-capture path (`bigcherry ab-benchmark
+--server-config`) writes the same style of conditional `advisories.json` next
+to `run.json`, including explicit findings for failed arms, missing paired
+comparisons, diagnostic-only evidence and non-admitted results. The advisory
+file is explanatory; the benchmark's return code and admission fields remain
+authoritative.
+
 #### Balanced server capture
 
 The existing A/B command can now manage one server per arm and invoke the

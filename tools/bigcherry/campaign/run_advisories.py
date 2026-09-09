@@ -36,6 +36,14 @@ CHECK_IDS = (
     "RUN_DIAGNOSTIC_EVIDENCE",
 )
 
+AB_CHECK_IDS = (
+    "AB_RUN_FAILURE",
+    "AB_NO_EVIDENCE",
+    "AB_NOT_ADMITTED",
+    "AB_MISSING_COMPARISON",
+    "AB_DIAGNOSTIC_EVIDENCE",
+)
+
 
 @dataclass(frozen=True)
 class RunEvaluation:
@@ -113,6 +121,45 @@ def evaluate_runtime_result(result: Mapping[str, Any]) -> RunEvaluation:
             ))
 
     return RunEvaluation(tuple(CHECK_IDS), tuple(errors), tuple(findings))
+
+
+def evaluate_ab_result(result: Mapping[str, Any]) -> RunEvaluation:
+    """Evaluate a maintained paired A/B result without changing its policy."""
+    errors: list[str] = []
+    findings: list[RunAdvisory] = []
+    if not isinstance(result, Mapping):
+        return RunEvaluation((), ("result must be an object",), ())
+    rows = result.get("runs")
+    if not isinstance(rows, list):
+        errors.append("runs missing or malformed")
+        rows = []
+    if not rows:
+        findings.append(RunAdvisory(
+            "AB_NO_EVIDENCE", "The A/B boundary produced no arm observations.",
+            ("Do not interpret the configuration as a comparison.",), "stop"
+        ))
+    if any(isinstance(row, Mapping) and row.get("returncode") not in (None, 0) for row in rows):
+        findings.append(RunAdvisory(
+            "AB_RUN_FAILURE", "At least one A/B arm failed.",
+            ("Partial arm output cannot support a paired conclusion.",), "stop"
+        ))
+    if result.get("performance_admitted") is False:
+        findings.append(RunAdvisory(
+            "AB_NOT_ADMITTED", "This A/B result is explicitly not performance-admitted.",
+            ("Treat it as exploratory or wiring evidence until all admission gates pass."),
+        ))
+    comparisons = result.get("exploratory_comparisons") or result.get("comparisons")
+    if not isinstance(comparisons, Mapping) or not comparisons:
+        findings.append(RunAdvisory(
+            "AB_MISSING_COMPARISON", "No paired comparison summary is present.",
+            ("Check work equivalence and metric extraction before interpreting arms."),
+        ))
+    if result.get("evidence_role") == "diagnostic" or result.get("execution_evidence") == "observe":
+        findings.append(RunAdvisory(
+            "AB_DIAGNOSTIC_EVIDENCE", "The A/B result is diagnostic or observation-only evidence.",
+            ("Do not transfer its timings to a production performance claim."),
+        ))
+    return RunEvaluation(AB_CHECK_IDS, tuple(errors), tuple(findings))
 
 
 def render(evaluation: RunEvaluation) -> str:

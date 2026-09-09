@@ -15,7 +15,7 @@ priority: P1
 
 ## Description
 
-Continue the lifecycle-advisory portion split from RHA03. Attach conditional, machine-readable findings at the existing build, ab-benchmark, recovery and promotion result boundaries without duplicating their execution or admission policy. Run-stage matrix advisories are complete under RHA03.
+RHA03's remaining lifecycle-advisory scope is now split here. The first implementation slice covers the maintained paired A/B server-capture boundary; runtime-matrix advisories remain complete under RHA03.
 
 ## Steps
 
@@ -37,17 +37,13 @@ Capability owner: run reporting. Reuse the existing campaign/tuning workers and 
 
 tools/bigcherry/campaign/run_advisories.py
 tools/bigcherry/campaign/benchmark.py
-tools/bigcherry/cli/build.py
-tools/bigcherry/cli/tuning.py
-tools/bigcherry/tuning/recovery.py
-tools/bigcherry/tuning/promotion.py
-tools/tests/campaign/
-tools/tests/tuning/
+tools/tests/campaign/test_run_advisories.py
+tools/tests/campaign/test_server_benchmark_capture.py
 docs/reference/testing/TEST.md
 
 ## Validation
 
-Stage-specific unit fixtures prove conditional findings and unchanged child verdict/admission for build, A/B, recovery and promotion success/degraded/failure/no-evidence receipts. Existing RHA03 run-result tests remain green. Review RV159 is closed after the split is incorporated.
+Added evaluate_ab_result() with conditional AB_RUN_FAILURE, AB_NO_EVIDENCE, AB_NOT_ADMITTED, AB_MISSING_COMPARISON and AB_DIAGNOSTIC_EVIDENCE findings. Existing server-comparison capture now writes sibling advisories.json on every persisted result, including partial/failure paths, without changing its return code or performance-admission field. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/campaign/test_run_advisories.py tools/tests/campaign/test_server_benchmark_capture.py tools/tests/campaign/test_runtime_matrix.py tools/tests/cli/test_runtime_matrix_cli.py -q (32 passed, 4 subtests). Remaining: build, recovery and promotion boundary integrations.
 
 ## Effort & Risk
 
@@ -71,11 +67,21 @@ Split from RHA03 by review RV159.
 Migration: capability-rebaseline-v3-2026-09
 RHA03 owns completed run-result/matrix advisories; RHA07 owns only the remaining lifecycle-stage integrations.
 
+Split from RHA03 by review RV159.
+Migration: capability-rebaseline-v3-2026-09
+RHA03 owns completed run-result/matrix advisories; RHA07 owns only the remaining lifecycle-stage integrations.
+
+Progress: maintained A/B server-capture advisories are implemented; build/recovery/promotion remain.
+
 ## Change Log
 
 - 2026-09-09T18:00:32.292398+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20260909_180121_run-results-now-expose-conditi_8235
 - 2026-09-09T18:01:21.357937+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T18:03:24.244807+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
+- chg_20260909_180344_ab-benchmark-artifacts-now-in_6663
+- 2026-09-09T18:03:44.352055+00:00 (updated-by): Updated: section:ledger-events

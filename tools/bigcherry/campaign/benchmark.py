@@ -742,6 +742,7 @@ def run_server_comparison_capture(
     """
     from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts
     from bigcherry.campaign.bench_runner import _resolve_runner_root
+    from bigcherry.campaign.run_advisories import evaluate_ab_result
 
     config = json.loads(config_path.read_text(encoding="utf-8"))
     if config.get("schema_version") != 1:
@@ -862,6 +863,10 @@ def run_server_comparison_capture(
     }
     def persist():
         (output / "run.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        (output / "advisories.json").write_text(
+            json.dumps(evaluate_ab_result(summary).document(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     persist()
     for pair, order in enumerate(run_schedule):
         for position, name in enumerate(order):
