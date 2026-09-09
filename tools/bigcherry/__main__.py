@@ -27,6 +27,7 @@ from .patch import catalog as patch_catalog
 from .patch import apply as patcher
 from .patch import patchset
 from .patch import rebase as patch_rebase_module
+from . import patch_admission
 
 if TYPE_CHECKING:
     from .patch.selection import CliPatchSelection
@@ -241,6 +242,7 @@ def _apply_exact_selection(
     *,
     force: bool = False,
     dry_run: bool = False,
+    allow_stale_validation_evidence: bool = False,
 ) -> bool:
     """Install the overlay and apply one exact ``--source``-resolved patch
     selection. True if all placed.
@@ -304,6 +306,20 @@ def _apply_exact_selection(
             "never resolved -- refusing to guess whether to install it",
             file=sys.stderr,
         )
+        return False
+
+    admission = patch_admission.admit(
+        selection.patch_ids,
+        mode="apply",
+        pinned_ref=selection.source_ref,
+        resolved_base_revision=live_revision,
+        allow_stale_validation_evidence=allow_stale_validation_evidence,
+    )
+    for warning in admission.warnings:
+        print(f"apply: admission warning: {warning}", file=sys.stderr)
+    if not admission.admissible:
+        detail = "; ".join(admission.failures) or admission.status
+        print(f"apply: patch admission failed: {detail}", file=sys.stderr)
         return False
 
     record = _record_for(root)

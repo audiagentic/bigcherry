@@ -382,6 +382,30 @@ class ReleaseLifecycleTests(unittest.TestCase):
             )
         self.assertFalse(ok)
 
+    def test_apply_exact_selection_rejects_admission_before_overlay_mutation(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        rejected = bigcherry_main.patch_admission.AdmissionResult(
+            False, True, "rejected", failures=("0100_x: stale evidence",)
+        )
+        with mock.patch.object(
+            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            bigcherry_main.patch_admission, "admit", return_value=rejected,
+        ), mock.patch.object(bigcherry_main, "_copy_overlay") as copy_overlay:
+            ok = bigcherry_main._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+        self.assertFalse(ok)
+        copy_overlay.assert_not_called()
+
     def test_apply_exact_selection_skips_overlay_when_source_overlay_false(self):
         from bigcherry.patch.selection import CliPatchSelection
 
@@ -435,6 +459,12 @@ class ReleaseLifecycleTests(unittest.TestCase):
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ), mock.patch.object(
             bigcherry_main, "_record_for", return_value=record,
+        ), mock.patch.object(
+            bigcherry_main.patch_admission,
+            "admit",
+            return_value=bigcherry_main.patch_admission.AdmissionResult(
+                True, True, "admitted"
+            ),
         ), mock.patch.object(
             bigcherry_main, "_copy_overlay", return_value=[],
         ), mock.patch.object(

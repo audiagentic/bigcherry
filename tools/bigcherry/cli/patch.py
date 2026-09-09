@@ -26,6 +26,9 @@ def cmd_apply(args: Namespace) -> int:
     root = paths.llama_root(args.llama_root)
     report_path = getattr(args, "rebase_report", None)
     known_good = bool(getattr(args, "known_good", False))
+    allow_stale_validation_evidence = bool(
+        getattr(args, "allow_stale_validation_evidence", False)
+    )
 
     if bool(report_path) != known_good:
         print(
@@ -35,6 +38,13 @@ def cmd_apply(args: Namespace) -> int:
         return 2
 
     if report_path:
+        if allow_stale_validation_evidence:
+            print(
+                "apply: --allow-stale-validation-evidence applies only to "
+                "direct --source admission; --rebase-report remains fail-closed",
+                file=sys.stderr,
+            )
+            return 2
         if getattr(args, "source", None):
             print(
                 "apply: --rebase-report owns the exact logical selection; "
@@ -70,7 +80,11 @@ def cmd_apply(args: Namespace) -> int:
         return 2
 
     ok = legacy._apply_exact_selection(
-        root, selection, force=args.force, dry_run=args.dry_run
+        root,
+        selection,
+        force=args.force,
+        dry_run=args.dry_run,
+        allow_stale_validation_evidence=allow_stale_validation_evidence,
     )
     print(f"selection: {selection.label}")
     print("  RESULT: " + ("PASS" if ok else "FAIL"))

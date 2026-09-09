@@ -89,6 +89,14 @@ class CliSurfaceTests(unittest.TestCase):
         self.assertTrue(args.json)
         self.assertTrue(callable(args.func))
 
+    def test_apply_admission_escape_hatch_is_explicit(self) -> None:
+        args = self.parser.parse_args([
+            "apply", "--source", "bigcherry",
+            "--allow-stale-validation-evidence",
+        ])
+        self.assertTrue(args.allow_stale_validation_evidence)
+        self.assertTrue(callable(args.func))
+
 
 if __name__ == "__main__":
     unittest.main()

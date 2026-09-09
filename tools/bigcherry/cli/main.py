@@ -154,6 +154,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="patch even without a passing audit"
     )
     apply_cmd.add_argument(
+        "--allow-stale-validation-evidence",
+        action="store_true",
+        help=(
+            "development escape hatch: allow apply when validation evidence "
+            "is stale or missing; emits a warning and never relaxes the "
+            "production build/campaign gate"
+        ),
+    )
+    apply_cmd.add_argument(
         "--rebase-report",
         metavar="PATH",
         default=None,
