@@ -15,13 +15,11 @@ priority: null
 
 ## Description
 
-Topology gate implementation, tests, and Brutus validation remain.
+Corrected the stale HI85/1225 mechanical tests to assert the current GP02 PCIe-AtomicOps admission predicate rather than the retired raw-architecture guard. The actual topology-qualified level-1 admission implementation and Brutus validation remain open.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Keep the current shared PCIe-AtomicOps predicate as the baseline safety mechanism and preserve its source/patch tests.\n2. Design the topology qualification identity and level-1 admission policy from HI142/THA07 evidence; do not reintroduce raw-architecture or ordinal checks.\n3. Add fail-closed tests for qualified, unqualified, and unknown topology records at the real comm-init seam.\n4. Validate on Brutus with homogeneous, qualified mixed, and device-3/unknown controls before any promotion.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-hip-autotune-hi146.md
+tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py; patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py; docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: HI142,HI145.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Fixed stale test expectations and ran `python -m pytest -q tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py tools/tests/profiling/test_rccl_qualify.py tools/tests/profiling/test_rccl_qualify_campaign.py`: 55 passed, 1 skipped. This only validates the current capability predicate and qualification harness; it is not yet evidence for topology allowlisting or production promotion.
 
 ## Effort & Risk
 
@@ -57,7 +51,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Level-1 comm-init admission must be capability/topology-identity based, fail closed for unknown/unqualified sets, pass current qualified sets without regression, and have real Brutus evidence. The current test refresh is a prerequisite, not closure.
 
 ## Notes
 
@@ -72,5 +66,9 @@ Successor key: patching-hip-autotune-hi146
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.842046+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:36:36.486669+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
+- chg_20260909_133646_updated-stale-rccl-admission-t_7143
+- 2026-09-09T13:36:46.061920+00:00 (updated-by): Updated: section:ledger-events
