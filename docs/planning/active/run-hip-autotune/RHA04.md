@@ -65,9 +65,7 @@ docs/evidence/2026-09-10-rha04-required-six/pair-*/
 
 ## Validation
 
-Current evidence remains: four 9B identity-bound matrices complete (72/72), dual-XTX 27B observe-only (18/18, not admitted) because tensor-split --fit off emitted no ordered physical locators. Implemented a fail-closed RCCL preflight composition in the maintained capture: preflight-only NCCL_DEBUG=INFO/NCCL_DEBUG_SUBSYS=INIT, strict cudaDev/busId-to-PCI conversion, exact layer-assignment matching, duplicate/reversed/missing mapping rejection, and unchanged timed environment. Focused validation passes: test_execution_attestation.py and test_server_benchmark_capture.py (54 passed, 4 subtests); broader capture/runtime/advisory set (74 passed, 4 subtests). Hardware confirmation of RCCL's actual installed log format and the fresh required dual-XTX 18-cell matrix remain pending.
-
-Completed fresh required dual-XTX matrix: docs/evidence/2026-09-10-rha04-required-six/run.json plus raw pair directories. All 18 cells returned 0, clean SIGINT shutdown, and execution_evidence_status=verified. RCCL mapped cudaDev 0→0000:03:00.0 and cudaDev 1→0000:06:00.0; 66 Meta tensor layer assignments were observed per preflight. Maintained server-bench runner used with production timed environment and diagnostics only in preflight. Medians (pp512/pp2048/tg128/tg512 tokens/s): stock 927.72/1286.465/33.97/34.22; native 928.30/1288.885/33.74/34.04; replay 930.88/1287.295/34.10/34.32. Stock pair-5 pp512 was a retained 772.35 outlier; no samples were silently removed. performance_admitted remains false pending source/work-equivalence provenance and separate replay activation/final tuned-launch admission.
+Current required-six matrix is complete and identity-verified with diagnostics isolated. Production admission remains fail-closed until RHA10 verifies source/work equivalence and replay final_tuned_launches.
 
 ## Effort & Risk
 
@@ -110,13 +108,14 @@ Supersedes HI168. Migration: capability-rebaseline-v3-2026-09. Four single-GPU 9
 
 Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL preflight diagnostics are isolated from timed production environment. The results show native within roughly +/-0.7% of stock on these medians and replay within roughly +/-0.4%; pp512 stock includes one retained host-side outlier. Do not call this production admission until correctness/work-equivalence, source/build provenance, and replay activation/final tuned-launch evidence are independently satisfied.
 
+Final production-admission proof is split to RHA10. RHA04 retains the completed identity-bound parity matrix and remains in_progress until RHA10 proves source/work equivalence and final tuned replay launches. RHA08 and RHA09 are completed evidence dependencies, not admission substitutes.
+
 ## Change Log
 
 - 2026-09-09T10:49:44.318293+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:54.453513+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 
 - chg_20260909_115759_created-and-populated-the-192_2958
@@ -183,3 +182,6 @@ Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL prefl
 - 2026-09-09T19:12:46.413981+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_191424_timed-benchmark-arms-now-fail_8101
 - 2026-09-09T19:14:24.974787+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:45:51.724390+00:00 (updated-by): Updated: section:validation, section:notes
+- chg_20260909_194609_separated-completed-parity-cap_7282
+- 2026-09-09T19:46:09.191178+00:00 (updated-by): Updated: section:ledger-events
