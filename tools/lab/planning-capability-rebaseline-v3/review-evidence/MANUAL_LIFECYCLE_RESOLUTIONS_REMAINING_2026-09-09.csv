@@ -1,0 +1,5 @@
+source_id,classification,rationale
+HI163,CONTINUING,"Frozen HI163 explicitly records that the fixed-source retest did not shrink the replay host-side gap and says the real cause remains open; it is not terminal despite the independent terminal suggestion."
+RD25,CONTINUING,"Frozen RD25 is an active bake-in sequencing rule whose dependent ports and regression validation remain ahead; its initial triage step being done is not item completion."
+RD104,CONTINUING,"Frozen RD104 retains an open upstream-tracking and adoption path for Vulkan tensor-parallel AllReduce; the scope decision is a future gate, not completed work."
+RD57,CONTINUING,"Frozen RD57 retains a strategic third-backend lane scoping question; an unresolved scope decision is continuing planning work, not a terminal item."

@@ -35,6 +35,11 @@
       "sha256": "fa61f56b72a027fbda8caba41168a182c1c1689edcdda846845b4036bbcb3ce9"
     },
     {
+      "path": "review-evidence/GPT_REMAINING_LIFECYCLE_REVIEW_2026-09-09.csv",
+      "bytes": 17468,
+      "sha256": "08d98873dc7bfe96920dbd74e9c23f9ba7f96242f6685e69dd872ad91e5fcf70"
+    },
+    {
       "path": "review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv",
       "bytes": 12204,
       "sha256": "08cfd9147c1e30901e31e8abe511f32b292d8b306e35cf2a3c2abdee681d00cf"
@@ -43,6 +48,11 @@
       "path": "review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv",
       "bytes": 555,
       "sha256": "4c68e77f2f518dc1913f8a44db913bc9fd396a7350e7f411b63fac4ac49f1225"
+    },
+    {
+      "path": "review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv",
+      "bytes": 790,
+      "sha256": "8641b93178e8868b7a3d2b0458619b8b0c6f87e0295c289c267d3b48596201a5"
     },
     {
       "path": "REVIEW_PROTOCOL.md",
