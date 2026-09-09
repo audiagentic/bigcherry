@@ -299,6 +299,16 @@ def main() -> int:
             if final_state != expected:
                 p.error(f"{source_id}: {disp} requires final_state={expected!r}, got {final_state!r}")
 
+    # Lifecycle normalization and disposition are separate review decisions,
+    # but they may not contradict one another once a lifecycle is adjudicated.
+    for source_id, lifecycle_row in lifecycle_by_id.items():
+        normalized = lifecycle_row.get("normalized_lifecycle", "")
+        disposition = disp_by_id.get(source_id, {}).get("disposition", "")
+        if ns.phase in {"preapply", "postapply"} and normalized == "terminal/no-successor" and disposition in CONTINUING:
+            p.error(f"{source_id}: terminal lifecycle cannot retain continuing disposition {disposition}")
+        if ns.phase in {"preapply", "postapply"} and normalized == "continuing" and disposition not in CONTINUING:
+            p.error(f"{source_id}: continuing lifecycle requires continuing disposition, got {disposition!r}")
+
     # Successor catalog and specs.
     succ_by_key: dict[str, dict[str, str]] = {}
     allocated_ids: dict[str, str] = {}
