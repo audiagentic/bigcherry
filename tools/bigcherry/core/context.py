@@ -18,6 +18,20 @@ def _absolute(value: str | os.PathLike[str]) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def _paths_overlap(first: Path, second: Path) -> bool:
+    """Return whether two resolved roots alias or contain one another.
+
+    ``os.path.commonpath`` handles path components correctly (unlike string
+    prefixes such as ``work``/``work-old``) and raises on different Windows
+    drives, which are necessarily disjoint.
+    """
+    try:
+        common = Path(os.path.commonpath((str(first), str(second))))
+    except ValueError:
+        return False
+    return common == first or common == second
+
+
 @dataclass(frozen=True)
 class ProjectContext:
     project_root: Path
@@ -65,9 +79,19 @@ class ProjectContext:
                     os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
                 ) / "bigcherry"
         work = _absolute(work_root)
+        upstream_was_explicit = upstream_repo is not None
         upstream = _absolute(
             upstream_repo or work / "upstream" / "llama.cpp.git"
         )
+        # The host-local default deliberately nests its bare upstream cache
+        # below the host-local work root.  The guard protects explicit
+        # topology configuration, where aliasing a caller-owned checkout
+        # would let campaign writes mutate it.
+        if upstream_was_explicit and _paths_overlap(work, upstream):
+            raise ValueError(
+                "work_root and upstream_repo must be disjoint: "
+                f"{work} vs {upstream}"
+            )
         return cls(
             project_root=project,
             config_path=config,
