@@ -2,7 +2,7 @@
 id: PHA06
 order: 0
 plan: patching-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:49:06.721439+00:00'
 breadth: ''
 skill: intermediate
@@ -69,9 +69,13 @@ Implemented 2026-09-09. Replaced direct post-apply/live-tree assumptions with an
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.857574+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T12:28:35.585358+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-09-09T12:28:51.135157+00:00 (state-transition): State: pending → in_progress
 - chg_20260909_122907_fixed-the-rd13-test-process-de_6932
 - 2026-09-09T12:29:07.294612+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:58:51.678906+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_135901_closed-the-corrected-rd13-test_9901
+- 2026-09-09T13:59:01.913922+00:00 (updated-by): Updated: section:ledger-events
