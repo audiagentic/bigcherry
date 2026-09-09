@@ -375,6 +375,11 @@ def main() -> int:
 
     # Reference decisions: require decisions for references to changing predecessors.
     occurrence_ids: set[str] = set()
+    expected_occurrences: set[tuple[str, str, str, str]] = set()
+    plan_refs_path = work / "PLAN_REFERENCES.tsv"
+    if plan_refs_path.exists():
+        for ref in read_rows(plan_refs_path, delimiter="\t"):
+            expected_occurrences.add((ref.get("occurrence_id", ""), ref.get("source_path", ""), ref.get("line", ""), ref.get("old_ref", "")))
     changing = {sid for sid, row in disp_by_id.items() if row.get("disposition") != "retain-history"}
     for idx, row in enumerate(ref_rows, 2):
         occurrence_id = row.get("occurrence_id", "")
@@ -384,6 +389,15 @@ def main() -> int:
             p.error(f"REFERENCE_DECISIONS.tsv:{idx}: duplicate occurrence_id {occurrence_id}")
         else:
             occurrence_ids.add(occurrence_id)
+        source_id = row.get("source_id", "")
+        source_path = normalize_path_ref(row.get("source_path", ""))
+        if source_id not in inventory_by_id:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: unknown source_id {source_id!r}")
+        elif normalize_path_ref(inventory_by_id[source_id].get("source_path", "")) != source_path:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: source_id/source_path mismatch for {source_id}")
+        occurrence_key = (occurrence_id, row.get("source_path", ""), row.get("line", ""), row.get("old_ref", ""))
+        if expected_occurrences and occurrence_key not in expected_occurrences:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: occurrence is not present in PLAN_REFERENCES.tsv")
         semantic_class = row.get("semantic_class", "")
         action = row.get("action", "")
         if semantic_class not in SEMANTIC_CLASSES:
