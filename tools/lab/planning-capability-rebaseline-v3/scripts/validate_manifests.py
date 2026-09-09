@@ -284,7 +284,7 @@ def main() -> int:
                 if row.get(field, "") != inv.get(field, ""):
                     p.error(f"{source_id}: semantic review {field} differs from frozen inventory")
         for field in required_review_fields:
-            if not row.get(field):
+            if not row.get(field) or row.get(field, "").strip().lower() in {"adjudicate", "tbd", "todo", "unreviewed"}:
                 p.error(f"{source_id}: semantic review field {field} is required")
         if ns.phase in {"review", "preapply", "postapply"} and not truth(row.get("approved", "")):
             p.error(f"{source_id}: semantic review is not approved for {ns.phase}")
