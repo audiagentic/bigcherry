@@ -548,6 +548,7 @@ def run_server_arm_capture(
                 binary=binary, model=model, extra_args=extra_args,
                 output=cell / "attestation", env=env,
                 expected_execution=expected_execution,
+                shutdown_method=shutdown_method,
             )
             _verify_attestation_binding(
                 binding, binary=binary, model=model, extra_args=extra_args, env=env,
@@ -628,6 +629,7 @@ def _sha256_if_file(path: Path) -> str | None:
 def _run_server_attestation_preflight(
     *, binary: Path, model: Path, extra_args: tuple[str, ...],
     output: Path, env: dict[str, str], expected_execution: dict[str, Any],
+    shutdown_method: str = "http",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run an untimed, diagnostics-only server device preflight.
 
@@ -655,7 +657,7 @@ def _run_server_attestation_preflight(
         binary=binary, model=model,
         extra_args=(*extra_args, *_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
         env_overrides=env, env_unset=tuple(os.environ), log_path=log_path,
-        shutdown_method="http",
+        shutdown_method=shutdown_method,
     )
     started = time.monotonic()
     observed = None
