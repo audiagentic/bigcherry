@@ -50,11 +50,13 @@ tools/bigcherry/campaign/bench_runner.py
 tools/bigcherry/campaign/benchmark.py
 tools/bigcherry/tuning/server_runner.py
 artifacts/<run-id>/ (raw evidence only)
+docs/evidence/2026-09-08-HI168-e2e/
+docs/evidence/2026-09-10-rha04-attestation-smoke/
 successor-specs/run-hip-autotune-hi168.md
 
 ## Validation
 
-The retained 2026-09-08 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. It cannot satisfy closure. Next validation is a fresh serial 9B matrix using required execution evidence and raw identity-bound receipts, then the matched 27B matrix; retain all invalid/missing-attestation cells and do not promote their throughput.
+The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. A fresh 2026-09-10 BC-native dual-XTX smoke is separately retained at docs/evidence/2026-09-10-rha04-attestation-smoke/; it never reached health during model materialization and is explicitly invalid. Neither artifact satisfies closure. Next validation is a fresh serial 9B matrix using required execution evidence and raw identity-bound receipts, then the matched 27B matrix; retain all invalid/missing-attestation cells and do not promote their throughput.
 
 ## Effort & Risk
 
@@ -107,3 +109,6 @@ Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: r
 - 2026-09-09T14:33:08.340751+00:00 (updated-by): Updated: section:description, section:validation, section:notes
 - chg_20260909_143319_marked-the-existing-hi168-numb_5423
 - 2026-09-09T14:33:19.052828+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T14:46:18.213220+00:00 (updated-by): Updated: section:files, section:validation
+- chg_20260909_144630_recorded-the-latest-bc-native_4039
+- 2026-09-09T14:46:30.799268+00:00 (updated-by): Updated: section:ledger-events
