@@ -1,4 +1,4 @@
-"""Static contract tests for the nasone-rdna NRO draft package group.
+"""Static contract tests for the nasone-rdna NRO/PNRO draft package group.
 
 These tests deliberately do not claim GPU qualification. They pin the
 repository-level invariants of the initial NRO landing: namespace uniqueness,
@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PATCHES = ROOT / "patches"
-PLANS = ROOT / "docs" / "planning" / "active" / "nasone-rdna-optimizations"
+PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizations"
 
 EXPECTED = {
     "1250_nro01_allreduce_q8_wire": ("NRO01", ["1001_hip_internal_allreduce"]),
@@ -29,6 +29,12 @@ EXPECTED = {
     "1257_nro08_topk_wave32": ("NRO08", ["1256_nro07_topk_hybrid"]),
 }
 
+# The capability rebaseline gave the active successors a dedicated PNRO
+# namespace. Patch manifests retain their historical NRO plan IDs for
+# provenance, so the test keeps both identities explicit instead of silently
+# treating a renamed document as a missing package.
+EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 16)}
+
 
 def _manifest(patch_id: str) -> dict:
     return tomllib.loads((PATCHES / patch_id / "patch.toml").read_text(encoding="utf-8"))
@@ -40,12 +46,12 @@ def _patch_source(patch_id: str) -> str:
 
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
-        for i in range(1, 17):
-            item = PLANS / f"NRO{i:02d}.md"
+        for i in range(1, 16):
+            item = PLANS / f"PNRO{i:02d}.md"
             self.assertTrue(item.is_file(), item)
             text = item.read_text(encoding="utf-8")
-            self.assertRegex(text, rf"(?m)^id: NRO{i:02d}$")
-            self.assertRegex(text, r"(?m)^plan: nasone-rdna-optimizations$")
+            self.assertRegex(text, rf"(?m)^id: PNRO{i:02d}$")
+            self.assertRegex(text, r"(?m)^plan: patching-nasone-rdna-optimizations$")
             for heading in (
                 "## Description", "## Steps", "## Detailed Solution & Technical Design",
                 "## Code Samples & Guidance", "## Files", "## Validation",
@@ -53,6 +59,10 @@ class NroPackageShapeTests(unittest.TestCase):
                 "## Notes", "## Change Log", "## Ledger-events",
             ):
                 self.assertIn(heading, text, f"{item}: missing {heading}")
+        self.assertEqual(
+            {path.stem for path in PLANS.glob("PNRO*.md")},
+            EXPECTED_PLAN_DOCS,
+        )
 
     def test_priority_packages_have_full_draft_docs(self):
         for patch_id in EXPECTED:

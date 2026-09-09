@@ -15,7 +15,7 @@ priority: P2
 
 ## Description
 
-The packaged tests for patches 1233 (RD73) and 1242 (HI134) had drifted from their declared patch contracts. RD73 now includes its VA06 common.cuh resource edit, but the fixture copied only ggml-cuda.cu. HI134 declares 0830_split_reduce_telemetry as a dependency, but tests applied HI134 directly to an unmodified vendor tree, so its bridge anchors were absent. HI85 remained green.
+Patch-test regressions had drifted from both patch manifests and the capability-rebaseline plan namespace. RD73's test omitted its VA06 common.cuh target, HI134's test omitted declared 0830 dependency application, and the NRO package-shape test still expected retired nasone-rdna plan paths/IDs. Production patch manifests and selection state remain unchanged.
 
 ## Steps
 
@@ -40,14 +40,11 @@ Split assessment: one independent boundary; Build/Run support is a dependency. O
 - successor-specs/patching-code-cleanup-co02.md
 - tools/tests/patch/test_patch_1233_rd73_graph_cache_key.py
 - tools/tests/patch/test_hi134_meta_stage_trace.py
+- tools/tests/patch/test_nro_patch_packages.py
 
 ## Validation
 
-Historical evidence and constraints: preserve frozen notes/reviews/evidence on predecessor; IDs: CO01, HI134, HI85, RD73, VA25.
-
-Active dependencies: none recorded.
-
-Run pytest tools/tests/patch/test_patch_1233_rd73_graph_cache_key.py tools/tests/patch/test_hi134_meta_stage_trace.py -q (9 passed). Also run tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py -q (4 passed) and the patch hygiene checks.
+Run pytest tools/tests/patch -q. The focused fixed tests pass (RD73/HI134: 9 passed; NRO package shape: 13 passed; HI85 guard: 4 passed). The full patch suite must pass except for explicitly skipped tests.
 
 ## Effort & Risk
 
@@ -59,7 +56,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-The stale tests pass against the real pinned vendor source, remain idempotent, preserve composition coverage, and apply declared dependencies in the test fixture. No patch implementation or production selection state changes are made.
+All stale tests pass against the current real pinned vendor source and current PNRO successor plan namespace; idempotence, dependency application, and composition coverage remain enforced. No production patch implementation or selection state changes are made.
 
 ## Notes
 
@@ -68,6 +65,8 @@ Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-code-cleanup-co02
 
 2026-09-10: Fixed PCC01 test drift. RD73 fixtures now include common.cuh for the VA06 edit; HI134 fixtures apply 0830 before 1242. Focused suite: 9 passed; HI85 guard: 4 passed.
+
+2026-09-10: Fixed PCC01 test drift. RD73 fixtures now include common.cuh for the VA06 edit; HI134 fixtures apply 0830 before 1242; NRO package-shape tests now validate PNRO01..PNRO15 while retaining historical NRO manifest IDs for provenance.
 
 ## Change Log
 
@@ -84,3 +83,6 @@ Successor key: patching-code-cleanup-co02
 - 2026-09-09T15:11:25.711089+00:00 (updated-by): Updated: section:detailed_solution, section:files, section:validation
 - chg_20260909_151141_fixed-stale-patch-tests-so-rd7_2014
 - 2026-09-09T15:11:41.022339+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:15:00.454880+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260909_151742_aligned-the-remaining-package_2235
+- 2026-09-09T15:17:43.006339+00:00 (updated-by): Updated: section:ledger-events
