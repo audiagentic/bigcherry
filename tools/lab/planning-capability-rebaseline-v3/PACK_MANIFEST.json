@@ -70,6 +70,11 @@
       "sha256": "c7048d33c88fbc7cf812e817b69ebef15f999b0775737a18eb026ead92afb9d5"
     },
     {
+      "path": "scripts/apply_semantic_review.py",
+      "bytes": 2385,
+      "sha256": "a2356a6dd761a8eba5967cd381fc7a7969f88ac15a355b312282adae4d73d408"
+    },
+    {
       "path": "scripts/freeze_review_snapshot.py",
       "bytes": 2235,
       "sha256": "28cd6b261dbc6284d6cc4cbc493b8123802c9efb44817875ad7aab7379e6c42f"
