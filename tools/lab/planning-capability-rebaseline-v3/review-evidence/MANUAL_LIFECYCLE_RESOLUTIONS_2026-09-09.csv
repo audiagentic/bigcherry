@@ -1,0 +1,4 @@
+source_id,classification,rationale
+HI130,CONTINUING,"Frozen HI130 explicitly says the seven-stage tune-campaign implementation is not yet done; HI131 fixes one replay bug but does not complete the orchestrator acceptance boundary."
+RD50,CONTINUING,"Frozen RD50 records compile safety and fallback evidence but explicitly leaves the gfx1151/RDNA3.5 performance claim blocked and unvalidated."
+VA26,CONTINUING,"Frozen VA26 is an in-progress PQM-v1 implementation with multiple stated steps and acceptance gates still pending; it is not a completed matrix."
