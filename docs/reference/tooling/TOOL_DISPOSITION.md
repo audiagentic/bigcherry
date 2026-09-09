@@ -498,6 +498,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **TRANSITIONAL** | Migration reference review template; not canonical repository references. |
 | `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **TRANSITIONAL** | Migration successor specification template; successor authority remains ag-planning. |
 | `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the v3 migration; not canonical plan state. |
 
 ## HI168 retained investigation tools
 
