@@ -15,13 +15,11 @@ priority: null
 
 ## Description
 
-Implementation, tests, and hardware validation have not started.
+Assessment complete: the current 0830 per-call seam exposes requested/effective provider and reduction signature telemetry, but not the RCCL algorithm/protocol/channel candidate identity required by level-2 admission. PHA04 therefore depends on a settled PHA03 topology identity and an upstream/RCCL observation seam that can prove the actual candidate; no candidate allowlist or silent fallback is being invented prematurely.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Settle the PHA03 topology identity/admission contract and preserve its fail-closed ordering.\n2. Add an observation-only candidate identity at the real RCCL per-call selection boundary, including algorithm, protocol, channels, exact compatibility/build identity, reduction signature, and topology identity.\n3. Encode qualified versus unsupported versus performance-excluded outcomes from THA07 without conflating safety and performance.\n4. Bind the gate immediately before RCCL dispatch; unknown or unqualified candidates must fail closed.\n5. Add synthetic and real Brutus validation before any default-build promotion.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-hip-autotune-hi147.md
+patches/0830_split_reduce_telemetry/patch.py; patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py; tools/bigcherry/profiling/rccl_schema.py; tools/bigcherry/profiling/rccl_qualify.py; docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI85.
-
-Active dependencies: Frozen dependencies: HI142,HI145,HI146.
-
-Reference handling: Rewrite forward references (4); preserve historical references (1) on predecessor.
+Current source review confirms `ggml_hip_reduce_telemetry_provider()` carries provider/signature/topology observations only; it does not carry RCCL algorithm/protocol/channel identity. Existing RQ08/RQ10 evidence is scoped to its original artifacts and cannot be promoted into a per-call gate without that identity. Implementation remains intentionally pending PHA03 and the required observation seam.
 
 ## Effort & Risk
 
@@ -57,7 +51,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A level-2 gate must admit only an exactly qualified RCCL candidate for the current compatibility/build, reduction signature, topology identity, and candidate tuple; it must fail closed for unknown/unqualified candidates and preserve an explicit performance-exclusion distinction. No default-build promotion occurs without real hardware evidence.
 
 ## Notes
 
@@ -72,5 +66,9 @@ Successor key: patching-hip-autotune-hi147
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.848546+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:42:25.760165+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
+- chg_20260909_134238_pha04s-dependency-and-evidenc_1280
+- 2026-09-09T13:42:38.013204+00:00 (updated-by): Updated: section:ledger-events
