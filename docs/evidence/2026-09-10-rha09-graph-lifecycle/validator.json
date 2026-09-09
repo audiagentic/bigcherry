@@ -1,0 +1,33 @@
+{
+  "topology": {
+    "device_count": 2,
+    "ordinals": [0, 1],
+    "devices": [
+      {"ordinal": 0, "identity": "0000:03:00.0", "model": "AMD Radeon RX 7900 XTX"},
+      {"ordinal": 1, "identity": "0000:06:00.0", "model": "AMD Radeon RX 7900 XTX"}
+    ],
+    "mapping_source": "RCCL/cudaDev mapping retained with the HI14 run record"
+  },
+  "graph": {
+    "mode": "enabled",
+    "capture_observed": true,
+    "capture_lifecycle": {
+      "capture_begin": true,
+      "capture_end": true,
+      "instantiate": true,
+      "replay": true
+    }
+  },
+  "per_device": [
+    {"ordinal": 0, "identity": "0000:03:00.0", "dispatches": 5706, "replay_dispatches": 5706, "signatures": 33, "winners": ["mmvq:native:v1", "mmq:native:v1"]},
+    {"ordinal": 1, "identity": "0000:06:00.0", "dispatches": 5706, "replay_dispatches": 5706, "signatures": 33, "winners": ["mmvq:native:v1", "mmq:native:v1"]}
+  ],
+  "provenance": {
+    "run_date": "2026-08-23",
+    "source_revision": "0adcc3bb571011bff8b91335d0728a82845c421b",
+    "variant_set": "workload-max",
+    "model": "Qwen3.8-27B-Q8_0",
+    "raw_log": "server.log",
+    "raw_dispatch": "dispatch-record.jsonl"
+  }
+}

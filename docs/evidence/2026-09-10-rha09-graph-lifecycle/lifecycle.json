@@ -1,0 +1,15 @@
+{
+  "parser": "bigcherry.graph_lifecycle_evidence.capture_lifecycle_from_log",
+  "source": "server.log",
+  "observed": {
+    "capture_begin": true,
+    "capture_end": true,
+    "instantiate": true,
+    "replay": true
+  },
+  "dispatch": {
+    "signature_count": 33,
+    "matmul_launches": 5706,
+    "coverage": "100.0%"
+  }
+}
