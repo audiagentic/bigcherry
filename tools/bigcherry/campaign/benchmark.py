@@ -673,18 +673,22 @@ def _run_server_attestation_preflight(
     observed = None
     try:
         with runner:
-            server_output = log_path.read_text(encoding="utf-8", errors="replace")
-            observed = parse_llama_server_attestation(
-                server_output,
-                architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
-            )
-            observed = merge_rccl_server_attestation(
-                server_output, observed,
-                architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
-            )
-            require_execution_identity(expected, observed, context="server attestation preflight")
+            # RCCL may emit the strongest cudaDev/busId records during
+            # communicator teardown, so parse only after the process has
+            # completed its clean shutdown below.
+            pass
         if runner.last_shutdown is None or not runner.last_shutdown.clean:
             raise ValueError("server attestation preflight teardown was not clean")
+        server_output = log_path.read_text(encoding="utf-8", errors="replace")
+        observed = parse_llama_server_attestation(
+            server_output,
+            architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+        )
+        observed = merge_rccl_server_attestation(
+            server_output, observed,
+            architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+        )
+        require_execution_identity(expected, observed, context="server attestation preflight")
     finally:
         document = {
             "schema_version": 1,
