@@ -13,6 +13,26 @@ from bigcherry.tuning.server_runner import ShutdownResult
 from bigcherry.source.identity import SourceAttestation
 
 
+class ServerAttestationBindingTests(unittest.TestCase):
+    def test_binding_rejects_timed_argument_or_environment_drift(self):
+        binding = {
+            "binary": "server", "binary_sha256": None,
+            "model": "model", "model_sha256": None,
+            "common_server_args": ["-sm", "none"],
+            "environment": {"HIP_VISIBLE_DEVICES": "0"},
+        }
+        with self.assertRaisesRegex(ValueError, "common_server_args"):
+            benchmark._verify_attestation_binding(
+                binding, binary=Path("server"), model=Path("model"),
+                extra_args=("-sm", "tensor"), env={"HIP_VISIBLE_DEVICES": "0"},
+            )
+        with self.assertRaisesRegex(ValueError, "environment"):
+            benchmark._verify_attestation_binding(
+                binding, binary=Path("server"), model=Path("model"),
+                extra_args=("-sm", "none"), env={"HIP_VISIBLE_DEVICES": "1"},
+            )
+
+
 class ServerCaptureTests(unittest.TestCase):
     def test_clean_and_forced_shutdown(self):
         for forced in (False, True):
@@ -296,21 +316,21 @@ class ServerExecutionAttestationTests(unittest.TestCase):
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
-        self.assertTrue(result["shutdown"]["requested"])
+        self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_cpu_fallback_blocks_bench(self):
         result, bench = self.run_cell("failed to initialize ROCm: no ROCm-capable device is detected\n")
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
-        self.assertTrue(result["shutdown"]["requested"])
+        self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_missing_attestation_blocks_bench(self):
         result, bench = self.run_cell("server is ready\n")
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
-        self.assertTrue(result["shutdown"]["requested"])
+        self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_explicit_observation_collects_missing_evidence_without_admission(self):
         result, bench = self.run_cell("server is ready\n", "observe")
