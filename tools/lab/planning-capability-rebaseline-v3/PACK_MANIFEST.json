@@ -70,6 +70,11 @@
       "sha256": "c7048d33c88fbc7cf812e817b69ebef15f999b0775737a18eb026ead92afb9d5"
     },
     {
+      "path": "scripts/freeze_review_snapshot.py",
+      "bytes": 2235,
+      "sha256": "28cd6b261dbc6284d6cc4cbc493b8123802c9efb44817875ad7aab7379e6c42f"
+    },
+    {
       "path": "scripts/generate_inventory.py",
       "bytes": 17252,
       "sha256": "2dffbecedc5cdf9f83c80408aa27bf1d426a0d28e831f003cc3497a9a92991b2"
@@ -96,8 +101,8 @@
     },
     {
       "path": "scripts/validate_manifests.py",
-      "bytes": 33908,
-      "sha256": "594c95e81ff0bb4f794007378637db6f3b8c7d2a5d43cf9220944cd61fa4528d"
+      "bytes": 33993,
+      "sha256": "9eaf18b3c2f2b509d9c18af6f812b00d4f3fb41dded13c6e32cd8d908b898242"
     },
     {
       "path": "SOURCE_LOCK.json",
