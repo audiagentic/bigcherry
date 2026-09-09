@@ -13,7 +13,7 @@ The migration manifest is normalized across review-friendly files rather than on
 | `SUCCESSORS.csv` | 1 row / new plan | target namespace, allocated ID, acceptance boundary, spec |
 | `LINEAGE.csv` | 1 row / predecessor-successor edge | supports 1:1, 1:N and N:1 without lossy list fields |
 | `DEPENDENCY_REMAP.tsv` | 1 row / explicit dependency decision | active dependency migration |
-| `REFERENCE_DECISIONS.tsv` | 1 row / source occurrence requiring review | historical preserve vs active rewrite/remove |
+| `REFERENCE_DECISIONS.tsv` | 1 row / source occurrence requiring review | historical preserve vs active rewrite/remove; deterministic occurrence/context hashes and semantic action |
 | `successor-specs/*.md` | 1 file / successor | reviewed future scope/content passed to `plan_update_item` |
 
 `DISPOSITIONS.csv` is the coverage authority: every frozen item must appear exactly once. `LINEAGE.csv` is the graph authority: prose lineage is required for discoverability but does not replace graph validation.
@@ -47,3 +47,5 @@ References and dependencies may target a `successor_key` during review. After cr
 ## Source hashes
 
 Each disposition row repeats the frozen plan's SHA-256 content hash. The validator compares it to both `PLAN_INVENTORY.csv` and `git show <source_commit>:<path>`. This prevents an agent from accidentally reviewing one revision and retiring a different one.
+
+Each reference occurrence is pinned by a deterministic 16-hex occurrence ID and a SHA-256 hash of its frozen context. Semantic classes (`active_scope`, `historical_provenance`, `identity_declaration`, `literal_example`, or `unclassified`) and actions (`rewrite_to_successor`, `preserve_predecessor`, `remove`, `no_change`, or `unclassified`) are explicit. Unclassified or ambiguous occurrences block preapply.

@@ -192,12 +192,16 @@ def main() -> int:
                 refs += 1
                 reference_rows.append(
                     {
+                        "occurrence_id": hashlib.sha256(
+                            f"{source_commit}:{item.path}:{line_no}:{match.start()}:{old_ref}".encode("utf-8")
+                        ).hexdigest()[:16],
                         "source_path": item.path,
                         "source_id": item.item_id,
                         "line": str(line_no),
                         "ref_type": "plan_id",
                         "old_ref": old_ref,
                         "target_source_path": item_by_id[old_ref].path,
+                        "context_hash": hashlib.sha256(context(line).encode("utf-8")).hexdigest(),
                         "context": context(line),
                     }
                 )
@@ -210,12 +214,16 @@ def main() -> int:
                 refs += 1
                 reference_rows.append(
                     {
+                        "occurrence_id": hashlib.sha256(
+                            f"{source_commit}:{item.path}:{line_no}:{match.start()}:{old_ref}".encode("utf-8")
+                        ).hexdigest()[:16],
                         "source_path": item.path,
                         "source_id": item.item_id,
                         "line": str(line_no),
                         "ref_type": "plan_path",
                         "old_ref": old_ref,
                         "target_source_path": old_ref,
+                        "context_hash": hashlib.sha256(context(line).encode("utf-8")).hexdigest(),
                         "context": context(line),
                     }
                 )
@@ -294,7 +302,7 @@ def main() -> int:
     )
     write_csv(
         output / "PLAN_REFERENCES.tsv",
-        ["source_path", "source_id", "line", "ref_type", "old_ref", "target_source_path", "context"],
+        ["occurrence_id", "source_path", "source_id", "line", "ref_type", "old_ref", "target_source_path", "context_hash", "context"],
         reference_rows,
         delimiter="\t",
     )
@@ -323,19 +331,24 @@ def main() -> int:
         decision_rows = [
             {
                 "source_path": r["source_path"],
+                "occurrence_id": r["occurrence_id"],
                 "line": r["line"],
+                "source_id": r["source_id"],
                 "old_ref": r["old_ref"],
                 "reference_kind": "ambiguous",
                 "decision": "",
                 "target_successor_key_or_id": "",
                 "rationale": "",
+                "semantic_class": "unclassified",
+                "action": "unclassified",
+                "context_hash": r["context_hash"],
                 "context": r["context"],
             }
             for r in reference_rows
         ]
         write_csv(
             ref_decision_path,
-            ["source_path", "line", "old_ref", "reference_kind", "decision", "target_successor_key_or_id", "rationale", "context"],
+            ["occurrence_id", "source_path", "source_id", "line", "old_ref", "reference_kind", "decision", "target_successor_key_or_id", "rationale", "semantic_class", "action", "context_hash", "context"],
             decision_rows,
             delimiter="\t",
         )
