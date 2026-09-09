@@ -58,6 +58,8 @@ successor-specs/run-hip-autotune-hi168.md
 - docs/evidence/2026-09-10-rha04-gpu0-attestation-preflight/
 - tools/bigcherry/campaign/benchmark.py
 
+- docs/evidence/2026-09-10-rha04-matrix-summary/README.md
+
 ## Validation
 
 The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. The 2026-09-10 BC-native dual-XTX smoke at docs/evidence/2026-09-10-rha04-attestation-smoke/ never reached health during model materialization and is explicitly invalid. The fresh 2026-09-10 GPU0 required-attestation capture at docs/evidence/2026-09-10-rha04-gpu0-required-capture/ loaded and shut down cleanly but failed closed before timing with ATTESTATION_MISSING; no throughput result was produced. This confirms the maintained server-capture attestation gap. The capture path now has an identity-bound, untimed preflight using the same binary/model/common production arguments and relevant environment, with only a diagnostic verbosity delta; it persists a correlation ID and hashes and fails closed on missing/wrong/ambiguous identity. The timed production process is unchanged. Unit coverage passes for success, failure-before-timing, argument/environment drift, clean shutdown, and existing observe/required behavior. RHA04 remains open until the fresh per-GPU 9B and matched dual-XTX 27B matrices complete with replay/work-equivalence evidence.
@@ -77,6 +79,8 @@ GPU2 is complete: 18/18 current-source stock/native/replay cells across six bala
 GPU3 is complete: 18/18 current-source stock/native/replay cells across six balanced rounds, verified gfx1030/0000:17:00.0 identity, clean SIGINT teardown. Medians: stock 905.130/1281.160/55.260/55.815, native 892.860/1279.880/55.290/55.700, replay 888.725/1281.450/55.250/55.785 (pp512/pp2048/tg128/tg512). Direct replay-vs-native bootstrap effects: pp512 -0.800% (-2.299..+0.482), pp2048 +0.018% (-0.210..+0.177), tg512 +0.033% (-0.251..+0.318). Evidence: docs/evidence/2026-09-10-rha04-gpu3-full/. All single-GPU 9B cells are now complete; matched dual-XTX 27B remains required.
 
 The matched dual-XTX 27B workload was run in explicit observe mode after the required capture failed closed on missing ordered physical locators under -sm tensor/--fit off. All 18 observe cells completed with clean SIGINT teardown but all have execution_evidence_status=missing, so no decision-grade performance claim is made. Medians: stock 929.250/1287.315/34.000/34.190, native 929.815/1286.975/33.870/34.100, replay 929.065/1286.185/34.175/34.265 (pp512/pp2048/tg128/tg512). Direct replay-vs-native bootstrap effects: pp512 -0.056% (-0.377..+0.298), pp2048 -0.024% (-0.185..+0.131), tg512 +0.657% (+0.411..+0.990). Evidence: docs/evidence/2026-09-10-rha04-27b-dual-observe/. RHA04 remains open until a dual-device physical attestation path is implemented or explicitly accepted by review.
+
+The current-source matrix summary now consolidates all four attested 9B topologies and the dual-XTX 27B observe-only result with full medians, paired replay/native effects, bootstrap intervals, and explicit admission limitations. The four 9B runs provide 72/72 physically attested cells; the dual-XTX run provides 18/18 engineering cells but remains blocked on ordered dual-device physical attestation.
 
 ## Effort & Risk
 
@@ -167,3 +171,6 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T17:24:26.558009+00:00 (updated-by): Updated: section:validation
 - chg_20260909_172439_completed-the-dual-xtx-27b-eng_9789
 - 2026-09-09T17:24:39.722856+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T17:25:45.277109+00:00 (updated-by): Updated: section:files, section:validation
+- chg_20260909_172557_added-the-full-reproducible-ma_5709
+- 2026-09-09T17:25:57.323123+00:00 (updated-by): Updated: section:ledger-events
