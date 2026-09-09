@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "evidence_role": "production",
+  "execution_evidence": "required",
+  "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "server_args": [
+    "-ngl",
+    "99",
+    "-sm",
+    "none",
+    "--fit",
+    "off",
+    "-c",
+    "8192",
+    "--flash-attn",
+    "on",
+    "--ubatch-size",
+    "512",
+    "--batch-size",
+    "2048",
+    "--threads",
+    "8",
+    "--parallel",
+    "1"
+  ],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1100"
+    ],
+    "locators": [
+      "0000:06:00.0"
+    ]
+  },
+  "bench_configs": "pp512,pp2048,tg512",
+  "required_metrics": [
+    "pp512_tps",
+    "pp2048_tps",
+    "tg512_tps"
+  ],
+  "repetitions": 1,
+  "arms": [
+    {
+      "name": "stock",
+      "mode": "stock",
+      "binary": "/home/audumla/.cache/bigcherry/builds/e77c7964e5dc0ba3bf8bddc644b3cd78/9f00effa353dd1adb738081f038e8426/bin/llama-server",
+      "shutdown_method": "sigint"
+    },
+    {
+      "name": "native",
+      "mode": "native",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+      "shutdown_method": "sigint"
+    },
+    {
+      "name": "replay",
+      "mode": "replay",
+      "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+      "environment": {
+        "GGML_HIP_DISPATCH_CACHE": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-9b-gpu1-reexport-20260908/dispatch.cache"
+      },
+      "shutdown_method": "sigint"
+    }
+  ]
+}
