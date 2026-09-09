@@ -368,6 +368,13 @@ Before each cell, the adapter rechecks the configuration/registry/recipe
 digests and any available binary identity captured during preflight; drift
 fails the matrix before that cell is launched.
 
+Each executed matrix also writes `advisories.json` and prints applicable
+run-stage findings to stderr. These findings distinguish a failed or partial
+matrix, missing child evidence/metrics, non-admitted performance, and
+diagnostic-only evidence from a successful production result. They never alter
+the matrix state or child verdict; absence of findings is not performance
+admission.
+
 Use `workload.server_bench` for the maintained `bench/run_bench.py
 --bench-type server-bench` boundary. Use `workload.delegate_argv` when an
 existing tune, build, or other worker command owns the cell. Both forms are

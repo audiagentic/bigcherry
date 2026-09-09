@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..campaign.runtime_matrix import MatrixResolutionError, resolve_matrix, run_matrix
+from ..campaign.run_advisories import evaluate_runtime_result, render as render_run_advisories
 from ..core import environment
 
 
@@ -247,6 +248,11 @@ def cmd_runtime_matrix(args) -> int:
             quiescent=_quiescence_checker(document, base_env=base_env),
             revalidate=revalidate,
         )
+        advisory_evaluation = evaluate_runtime_result(result)
+        _atomic_json(output / "advisories.json", advisory_evaluation.document())
+        advisory_text = render_run_advisories(advisory_evaluation)
+        if advisory_text:
+            print(advisory_text, file=sys.stderr, end="")
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result.get("state") == "completed" else 1
     except (MatrixResolutionError, OSError, ValueError) as exc:
