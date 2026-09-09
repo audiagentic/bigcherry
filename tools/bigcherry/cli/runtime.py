@@ -56,6 +56,19 @@ def _models_from_registry(path: Path) -> frozenset[str]:
     return ids
 
 
+def _runtime_profiles_from_recipes(path: Path) -> frozenset[str]:
+    import tomllib
+
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise MatrixResolutionError(f"recipe registry {path}: {exc}") from exc
+    profiles = raw.get("runtime-profile")
+    if not isinstance(profiles, dict) or not profiles:
+        raise MatrixResolutionError(f"recipe registry {path}: no runtime profiles")
+    return frozenset(name for name in profiles if isinstance(name, str) and name)
+
+
 def _load_document(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -71,6 +84,28 @@ def _load_document(path: Path) -> dict[str, Any]:
 
 def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
     command = cell.workload.get("delegate_argv")
+    server_bench = cell.workload.get("server_bench")
+    if server_bench is not None:
+        if not isinstance(server_bench, Mapping):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_bench must be an object")
+        from ..campaign.bench_runner import run_bench_runner_server_bench
+
+        required = ("server_url", "bench_configs")
+        if any(not isinstance(server_bench.get(key), str) or not server_bench[key].strip() for key in required):
+            raise MatrixResolutionError(
+                f"cell {cell.cell_id!r}: server_bench requires server_url and bench_configs"
+            )
+        metrics = run_bench_runner_server_bench(
+            server_url=server_bench["server_url"],
+            bench_configs=server_bench["bench_configs"],
+            repetitions=int(server_bench.get("repetitions", 1)),
+            timeout_s=int(server_bench.get("timeout_s", 300)),
+            runner_root=Path(server_bench["runner_root"]).resolve()
+            if server_bench.get("runner_root") else None,
+            model_label=str(server_bench.get("model_label", cell.model_id)),
+            env_overrides=dict(cell.visibility),
+        )
+        return {"returncode": 0, "metrics": metrics, "performance_admitted": False}
     if not isinstance(command, list) or not command or not all(
         isinstance(arg, str) and arg for arg in command
     ):
@@ -145,12 +180,27 @@ def cmd_runtime_matrix(args) -> int:
         host = env.host(document.get("host"))
         registry = Path(args.models).resolve() if args.models else Path("config/models.toml").resolve()
         known_models = _models_from_registry(registry)
+        recipes = Path(args.recipes).resolve() if args.recipes else Path("config/recipes.toml").resolve()
+        known_profiles = _runtime_profiles_from_recipes(recipes)
+        for raw in document["cells"]:
+            if raw.get("runtime_profile") not in known_profiles:
+                raise MatrixResolutionError(
+                    f"cell {raw.get('cell_id', '<unknown>')!r}: unknown runtime_profile "
+                    f"{raw.get('runtime_profile')!r}"
+                )
+            topology = raw.get("topology")
+            devices = raw.get("devices")
+            if topology == "single" and (not isinstance(devices, list) or len(devices) != 1):
+                raise MatrixResolutionError(f"cell {raw.get('cell_id', '<unknown>')!r}: single topology requires one device")
+            if topology in {"dual", "dual-xtx"} and (not isinstance(devices, list) or len(devices) != 2):
+                raise MatrixResolutionError(f"cell {raw.get('cell_id', '<unknown>')!r}: dual topology requires two devices")
         cells = resolve_matrix(document["cells"], host=host, known_models=known_models)
         resolved = {
             "schema_version": 1,
             "config": str(config_path),
             "host": host.name,
             "model_registry": str(registry),
+            "recipe_registry": str(recipes),
             "cells": [cell.document() for cell in cells],
         }
         _atomic_json(output / "resolved-matrix.json", resolved)

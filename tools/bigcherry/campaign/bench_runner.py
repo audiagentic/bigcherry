@@ -58,7 +58,7 @@ def run_bench_runner_server_bench(
     *, server_url: str, bench_configs: str, repetitions: int = 1, timeout_s: int = 300,
     runner_root: Path | None = None,
     model_label: str = "rd73-va06", evidence_dir: Path | None = None,
-    required_metrics: tuple[str, ...] = (),
+    required_metrics: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
 ) -> dict[str, float]:
     """VA06 (user redirect, 2026-09-01): drive an already-running
     llama-server via the documented configured build server bench harness
@@ -125,6 +125,7 @@ def run_bench_runner_server_bench(
         completed = subprocess.run(
             command, cwd=str(runner_root), capture_output=True, text=True,
             check=False, timeout=timeout_s,
+            env={**os.environ, **(env_overrides or {})},
         )
     except subprocess.TimeoutExpired as exc:
         retain(exc.stdout, exc.stderr, None, timed_out=True)
