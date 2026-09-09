@@ -61,13 +61,23 @@
     },
     {
       "path": "review-evidence/SEMANTIC_APPROVAL_2026-09-09.json",
-      "bytes": 788,
-      "sha256": "29f8b06ab68004cf7445d0338d4d50f6f1a160272ee2333179b72ccaec0a4e86"
+      "bytes": 962,
+      "sha256": "3ee1b3287b977726b3d36807780e514c8656a3b2c666a49903d9d0eb5c14d1ba"
     },
     {
       "path": "REVIEW_PROTOCOL.md",
       "bytes": 6188,
       "sha256": "e4f40b852572fda3ec2fbc55ba72a2ab2d2f231ced6c221de11f71c15a497195"
+    },
+    {
+      "path": "scripts/align_lifecycle_graph.py",
+      "bytes": 3542,
+      "sha256": "606b5ed2c3dc7bfbfaa832acbd1fb4bf8a0a21b34ff4a953e9258d5900f2a405"
+    },
+    {
+      "path": "scripts/allocate_successor_ids.py",
+      "bytes": 1374,
+      "sha256": "0cf54ffd1a4286449ba34dadc1699b7bf2bdf019f5f6f56eee5ddc9ae30a4a19"
     },
     {
       "path": "scripts/analyze_lifecycle_cues.py",
@@ -83,6 +93,11 @@
       "path": "scripts/apply_semantic_review.py",
       "bytes": 2604,
       "sha256": "64d505b566f68b33c26c246cde8c27f7197584bcbe07ceb7a3b7d3e382eb7cec"
+    },
+    {
+      "path": "scripts/approve_graph.py",
+      "bytes": 4813,
+      "sha256": "1e00ec4455b3e3a88d3651ee5b9522a0d1cba4d04f971f6650db9baed2a7a0cf"
     },
     {
       "path": "scripts/approve_semantic_review.py",
@@ -116,8 +131,18 @@
     },
     {
       "path": "scripts/render_operations.py",
-      "bytes": 9486,
-      "sha256": "92bd051f1ac5568fb96858c22a4bca7dbb84c6100de31e81fb453b5b85b11471"
+      "bytes": 9659,
+      "sha256": "3d604f2d71deed3e5e1002f41ac197a2737fb1f3785a629467ed8294838857ba"
+    },
+    {
+      "path": "scripts/render_successor_specs.py",
+      "bytes": 3091,
+      "sha256": "d5d3b8316a8486be906964ac20798f9c45e6cf3cf5ba615ce25cca32bb7c354c"
+    },
+    {
+      "path": "scripts/retarget_terminal_references.py",
+      "bytes": 3748,
+      "sha256": "b79f2050963b9b6fe201797622951cdfd404b49f5a3098191eba251f6c4941be"
     },
     {
       "path": "scripts/seed_review_manifests.py",

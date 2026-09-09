@@ -53,7 +53,12 @@ def main() -> int:
     pack = ns.pack.resolve()
     work = ns.work.resolve()
     repo = ns.repo.resolve()
-    run_validator(pack, work, repo, "review" if ns.stage == "create" else "preapply")
+    if ns.stage == "create":
+        successor_rows = rows(work / "SUCCESSORS.csv")
+        phase = "preapply" if any(r.get("allocated_id") for r in successor_rows) else "review"
+    else:
+        phase = "preapply"
+    run_validator(pack, work, repo, phase)
 
     lock = json.loads((pack / "SOURCE_LOCK.json").read_text(encoding="utf-8"))
     migration_id = lock["migration_id"]
