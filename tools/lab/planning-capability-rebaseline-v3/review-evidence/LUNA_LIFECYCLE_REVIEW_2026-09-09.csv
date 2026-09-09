@@ -1,0 +1,122 @@
+source_id,classification,evidence
+CD01,CONTINUING,Frozen plan keeps this valid but dormant; reactivation awaits a real restart/resume failure.
+CO02,CONTINUING,Frozen plan records reproducible stale-test failures; root causes and fixes remain open.
+DO01,CONTINUING,Frozen plan is in_progress; documentation-placement audit and artifact relocation remain.
+DR01,CONTINUING,Frozen plan says the mechanism exists but the mechanical 40-file prose migration remains.
+EC14,CONTINUING,"Frozen plan is an unevaluated Vulkan campaign-boundary recommendation, not a completed decision."
+GP09,CONTINUING,Frozen plan requires real fallback performance evidence or a documented negative result; neither is recorded.
+GP12,CONTINUING,Frozen plan records naive pinning crash; alternate split/code-path work remains unvalidated.
+HI120,CONTINUING,Frozen plan identifies RD12/RD17 signature gaps; hardening work remains pending.
+HI133,CONTINUING,Frozen plan marks perf integration and target-question hardware validation NOT DONE.
+HI137,CONTINUING,Frozen plan is a pending source/debug investigation with reproduction and mixed-architecture validation outstanding.
+HI144,CONTINUING,Frozen plan says the discriminator experiment and phase-tag instrumentation are not yet run.
+HI148,CONTINUING,Frozen plan is the final admission step, waiting for HI146/HI147 real-hardware completion.
+HI149,CONTINUING,Frozen plan still requires deciding whether to fix/delete the live-tree stale test.
+HI150,TERMINAL-COMPLETE,Frozen notes say the design is complete and split into implementation items HI151-HI153.
+HI159,CONTINUING,Frozen steps still require replacing diagnostic atomic RMWs, auditing helpers, and measuring.
+HI160,CONTINUING,Frozen plan says replay runs are uninterpretable because kill -9 destroys launch evidence.
+HI161,CONTINUING,Frozen review will not call cache-key identity repository-wide complete; proof-table work remains.
+HI163,CONTINUING,Frozen plan diagnoses persistent-digest lookup overhead; runtime-identity redesign remains open.
+HI164,CONTINUING,Frozen plan proposes graph-lifetime binding to eliminate per-dispatch lookup; implementation is not recorded.
+HI165,CONTINUING,"Frozen plan has tune advisories implemented, but other stage advisories, tests, and machine-readable output remain."
+HI169,CONTINUING,Frozen notes remove the prototype from baseline but preserve it for deliberate later review.
+HI172,CONTINUING,Frozen plan records an initial trace but requires further causal/critical-path investigation.
+HI175,CONTINUING,Frozen plan is not started and is blocked on HI174 foundational dispatch work.
+HI176,CONTINUING,Frozen plan is not started and is blocked on HI174 pilot findings.
+HI177,CONTINUING,Frozen plan is not started; flash-attention work is blocked on HI174 and a pilot cycle.
+HI178,CONTINUING,Frozen plan is not started and leaves standalone-vs-BLAS scope unresolved.
+HI179,CONTINUING,Frozen plan is not started and is blocked on HI174.
+HI26,CONTINUING,Frozen plan is in_progress with multiple implementation and validation phases remaining.
+HI86,CONTINUING,Frozen plan explicitly stays pending/backlog until a concrete topology-planner need forces it.
+HI94,CONTINUING,"Frozen plan leaves hardware-separation, fallback, cache-corruption, and graph-capture tests to build."
+HI95,CONTINUING,Frozen plan leaves screen-canary implementation and real-hardware validation outstanding.
+HTR02,CONTINUING,Frozen plan requires a durable witness schema/store and reuse-policy tests; not implemented.
+HTR04,CONTINUING,Frozen plan stays pending until real HTR01 usage data supports retune-escalation design.
+HTR05,CONTINUING,Frozen notes say no work has started; the BH/BY/Holm empirical study remains.
+HTR06,CONTINUING,Frozen plan is a not-started bounded E2E ranking-fidelity investigation.
+HTR07,CONTINUING,Frozen plan records the recovery rationale but leaves adaptive bisection to implement/validate.
+KC03,CONTINUING,Frozen plan is a conditional decision gate; evidence/ownership matrix and closure decision are not recorded.
+KC04,CONTINUING,Frozen plan defers the scope decision until RO16-RO22; no closure or follow-up decision is recorded.
+NRO02,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO04,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO05,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO07,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO08,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO09,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO10,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO11,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO12,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO14,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO15,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+NRO16,CONTINUING,Frozen plan remains active/pending with unfinished future scope or validation.
+QU02,CONTINUING,Frozen plan is pending standard CLI launch/progress/completion telemetry implementation.
+RD06,CONTINUING,Frozen plan says patch materialized but isolated gfx1201 benchmarking is still awaited.
+RD10,CONTINUING,Frozen plan is a future RD09-dependent child with no qualification evidence.
+RD101,CONTINUING,Frozen plan was set aside for later initial evaluation; no evaluation evidence is recorded.
+RD104,AMBIGUOUS,Frozen plan is explicitly blocked on unresolved RD57 user scope and absent Vulkan build stream.
+RD11,CONTINUING,Frozen plan cannot materialize until RD09 lands; no qualification evidence is recorded.
+RD12,CONTINUING,Frozen plan materialized the patch but retains bench/composition and correctness gates.
+RD15,CONTINUING,Frozen plan remains planning-only with RD09 dependency verification outstanding.
+RD17,CONTINUING,Frozen plan says patch materialized and awaits isolated bench; disposition remains open.
+RD18,CONTINUING,Frozen plan remains planning-only and depends on unpromoted 1004 readiness.
+RD22,CONTINUING,Frozen plan is explicitly deferred pending relevant integrated-GPU evidence.
+RD24,CONTINUING,"Frozen plan supersedes RD14/RD16 but its own port, correctness, and timing work remains."
+RD25,TERMINAL-COMPLETE,"Frozen steps mark triage done and convert the source change into a future-port bake-in rule, with no standalone patch."
+RD26,CONTINUING,Frozen plan materializes part of a five-commit determinism cluster; full cluster qualification remains.
+RD27,CONTINUING,Frozen plan is an unported SSM/MMVQ experiment with no completion evidence.
+RD28,CONTINUING,Frozen review re-scopes the candidate to needs-redesign against the current table-driven mechanism.
+RD31,CONTINUING,Frozen review re-scopes the prerequisite to needs-redesign; no implementation or qualification exists.
+RD32,CONTINUING,Frozen review re-scopes the dependent launch-grid work to needs-redesign.
+RD33,CONTINUING,"Frozen later notes leave state pending/untested, require widened-gate follow-up, and flag evidence reconciliation."
+RD34,CONTINUING,Frozen review re-scopes the gfx1151 MMQ table to needs-redesign; no validation exists.
+RD35,CONTINUING,Frozen backlog candidate has no implementation or measured qualification.
+RD36,CONTINUING,Frozen plan is an unimplemented prerequisite for RD37/RD38.
+RD37,CONTINUING,Frozen plan is pending on RD36 and has no qualification evidence.
+RD38,CONTINUING,Frozen plan is pending on RD36/RD37-dependent crossover evidence.
+RD40,CONTINUING,Frozen plan is pending on RD39 and has no port/validation evidence.
+RD41,CONTINUING,Frozen plan is pending on RD39 and has no port/validation evidence.
+RD42,CONTINUING,Frozen plan is pending on RD39-RD41 and has no port/validation evidence.
+RD43,CONTINUING,Frozen plan is pending on RD42 and has no port/validation evidence.
+RD44,CONTINUING,Frozen plan is the unimplemented final item in the RD39-RD44 chain.
+RD45,CONTINUING,Frozen plan is an unimplemented GEMV-fusion root for RD46.
+RD46,CONTINUING,Frozen plan is pending on RD45 and has no qualification evidence.
+RD47,CONTINUING,Frozen plan remains a distinct unimplemented GEMV epilogue-fusion candidate.
+RD48,CONTINUING,Frozen plan is an unimplemented gfx1151 K/V projection candidate.
+RD49,CONTINUING,Frozen plan is an unimplemented channels-major SSM API candidate.
+RD51,CONTINUING,Frozen plan remains pending on RD50; no DPP reduction evidence is recorded.
+RD52,CONTINUING,Frozen plan remains pending on RD50; no native-exp2 evidence is recorded.
+RD53,CONTINUING,Frozen plan remains pending on RD50; no launch-bounds qualification is recorded.
+RD55,CONTINUING,"Frozen plan is an unimplemented, recheck-before-port Vulkan MMV candidate."
+RD56,CONTINUING,"Frozen plan is an unimplemented, recheck-before-port HIP shuffle candidate."
+RD57,AMBIGUOUS,Frozen plan explicitly says the RE30/backend-lane relationship is an open user decision.
+RD59,CONTINUING,"Frozen plan is an unimplemented, recheck-before-port Vulkan FA correctness candidate."
+RD60,CONTINUING,"Frozen plan is an unimplemented, recheck-before-port Vulkan GET_ROWS correctness candidate."
+RD61,CONTINUING,Frozen plan is an unimplemented UMA input-offload candidate.
+RD63,CONTINUING,Frozen plan is an unimplemented mixed-K/V FlashAttention dispatch candidate.
+RD64,CONTINUING,Frozen plan is an unimplemented F16 dequantization control/candidate.
+RD65,CONTINUING,Frozen plan is an unimplemented Vulkan small-N route candidate.
+RD67,CONTINUING,Frozen plan is a compound upstream candidate requiring atomic qualification; no evidence exists.
+RD71,CONTINUING,Frozen plan is blocked on external-source registration and retains a genuine candidate status.
+RD72,CONTINUING,Frozen plan is blocked on external-source registration and retains a genuine candidate status.
+RD77,CONTINUING,Frozen plan is pending local reproduction before optional host-tuning documentation.
+RD78,CONTINUING,Frozen plan is an unimplemented Vulkan specialization sweep.
+RD79,CONTINUING,Frozen plan is an unimplemented driver-specific queue experiment.
+RD80,CONTINUING,Frozen plan is an unimplemented driver-specific cooperative-matrix study with scoped acceptance.
+RD81,CONTINUING,Frozen plan is a pending P2 research audit after bottleneck measurement.
+RD82,CONTINUING,Frozen plan is an unimplemented Vulkan occupancy/capability-semantics study.
+RD83,CONTINUING,Frozen plan is a pending HIP graph-failure reproduction/instrumentation root.
+RD84,CONTINUING,Frozen plan is pending RD83 reproduction and has no recapture validation.
+RD85,CONTINUING,Frozen plan is an unimplemented architecture-aware Vulkan submission root.
+RD86,CONTINUING,Frozen plan is pending RD85 and has no startup-ramp evidence.
+RD88,CONTINUING,Frozen plan is an unimplemented P2 CK-profiler oracle study.
+RD91,CONTINUING,Frozen plan requires temporary ablation infrastructure and causal evidence for coupled patches.
+RD92,CONTINUING,Frozen plan requires first-class device-trait eligibility design and validation.
+RD93,CONTINUING,Frozen plan proposes an unimplemented retire-or-recheck policy for hardware-blocked patches.
+RD98,CONTINUING,Frozen plan is an unevaluated Q4_K experiment family with correctness-before-performance gates.
+RE31,CONTINUING,Frozen plan is a prerequisite for RE30 stock-lane acceptance and remains unimplemented.
+RE34,CONTINUING,Frozen notes explicitly keep this dormant pending a concrete toolchain/RDNA trigger.
+RE37,CONTINUING,Frozen plan requires typed hashed environment-action capture and validation; not implemented.
+RE39,CONTINUING,Frozen notes identify CatalogSnapshot threading as OPEN and deliberately deferred.
+RO10,CONTINUING,Frozen plan leaves explicit hipBLASLt enumeration, identity, and integration work open.
+RO11,CONTINUING,Frozen plan leaves the independent hipBLASLt validation oracle open.
+RO22,CONTINUING,Frozen plan requires real CM1 contract execution and exact-identity qualification before promotion.
