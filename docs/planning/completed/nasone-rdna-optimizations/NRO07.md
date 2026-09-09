@@ -17,7 +17,7 @@ work: L
 
 Port and qualify the HIP-specific TOP_K implementation from nasone commit `7f3e1e4d0b166cb681b2c01503370e610a5b423d` (`ROCm: add hybrid TOP_K kernels`). BigCherry currently optimizes downstream use of MoE routing weights (for example RD17) but does not carry an AMD-specific implementation of the TOP_K selection operation itself. On current `b10705`, non-CUB HIP falls back to full bitonic argsort plus copy, so a selection-specific algorithm can remove substantial unnecessary work for small k.
 
-NRO07 is the foundation implementation. NRO08 applies the later wave32-native reduction/tuning commit on top. Keeping the two separate allows BigCherry to determine whether the hybrid algorithm itself wins before attributing additional gain to wave32 reduction changes.
+PNRO06 is the foundation implementation. NRO08 applies the later wave32-native reduction/tuning commit on top. Keeping the two separate allows BigCherry to determine whether the hybrid algorithm itself wins before attributing additional gain to wave32 reduction changes.
 
 ## Steps
 
@@ -30,7 +30,7 @@ NRO07 is the foundation implementation. NRO08 applies the later wave32-native re
 7. Profile scratch size, shared-memory use, atomics, waves/block, and number of passes.
 8. Capture real MoE/QSA TOP_K signatures and weight measurements by call count/time; synthetic microbench results are insufficient for priority decisions.
 9. Compare hybrid versus existing bitonic path at k=1 and routing-like k values (e.g. 2/4/8/10 where models exercise them).
-10. Keep NRO08 disabled during the NRO07 causal arm.
+10. Keep PNRO07 disabled during the NRO07 causal arm.
 
 ## Detailed Solution & Technical Design
 
@@ -46,7 +46,7 @@ Primary target is `ggml/src/ggml-cuda/top-k.cu`. HIP-specific code must be surro
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO07.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO06.md`
 - `patches/1256_nro07_topk_hybrid/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - shared NRO static tests; future TOP_K correctness fixture runner.
 
@@ -62,7 +62,7 @@ High. Large kernel code, tie/NaN semantics, shared-memory/atomic coordination, a
 
 ## Standards
 
-Exact routing correctness before performance; HIP-only containment; native fallback; no conflation with RD17 or downstream MoE fusion.
+Exact routing correctness before performance; HIP-only containment; native fallback; no conflation with PRBE14 or downstream MoE fusion.
 
 ## Acceptance Criteria
 
@@ -70,11 +70,11 @@ Exact routing correctness before performance; HIP-only containment; native fallb
 - Non-HIP builds are unaffected.
 - Unsupported shapes fall back safely.
 - At least one real high-cost gfx1100 signature establishes a repeatable kernel win with no model correctness regression.
-- NRO08 remains a separate causal increment.
+- PNRO07 remains a separate causal increment.
 
 ## Notes
 
-This is genuinely distinct from RD17: NRO07 computes selected expert indices; RD17 folds already-computed routing weights into a later projection.
+This is genuinely distinct from PRBE14: NRO07 computes selected expert indices; RD17 folds already-computed routing weights into a later projection.
 
 Superseded by: PNRO06
 Migration: capability-rebaseline-v3-2026-09

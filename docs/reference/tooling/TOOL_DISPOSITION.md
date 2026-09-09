@@ -494,6 +494,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/retarget_terminal_references.py` | **TRANSITIONAL** | Reclassifies references/dependencies that targeted successors removed by terminal lifecycle alignment. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_reference_decisions.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed, occurrence-based reference/dependency migration; dry-run by default and never performs global replacements. |
 | `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
 | `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **TRANSITIONAL** | Migration-local procedure; retained with the v3 pack and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/MANIFEST_MODEL.md` | **TRANSITIONAL** | Migration-local manifest contract; retained with the v3 pack and not planning/evidence authority. |

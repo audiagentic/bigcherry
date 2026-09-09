@@ -21,7 +21,7 @@ This item tests that orchestration independently of the gfx1100 WMMA kernel's ra
 
 ## Steps
 
-1. Require `1253_nro04_gfx1100_bf16_chunked_gdn` (and transitively RD50).
+1. Require `1253_nro04_gfx1100_bf16_chunked_gdn` (and transitively PRBE42).
 2. Enable only non-KDA, `K>1`, `n_seqs==1`, sufficiently long sequences, and supported head dimensions. Keep short or multi-sequence batches fully sequential.
 3. Compute `n_prefix = n_tokens-K`; allocate temporary prefix state with existing pool ownership.
 4. Run chunked GDN only over `n_prefix`. If launch rejects/fails synchronously, abandon the optimization and execute the original full sequential path.
@@ -36,7 +36,7 @@ This item tests that orchestration independently of the gfx1100 WMMA kernel's ra
 
 Snapshot correctness is the invariant. MTP does not merely need the final GDN state; it needs the sequence of states corresponding to speculative positions. A prefix-only chunked transform can safely accelerate history before those snapshots, because all snapshot-producing steps remain in the proven sequential recurrence and see the same prefix state within the accepted numerical policy.
 
-The experiment must separate two error sources: NRO04's BF16 chunked prefix error and NRO05's orchestration/snapshot mapping. Include an FP32 chunked-prefix arm where feasible so a snapshot-index bug cannot be hidden behind BF16 tolerance.
+The experiment must separate two error sources: PNRO04's BF16 chunked prefix error and NRO05's orchestration/snapshot mapping. Include an FP32 chunked-prefix arm where feasible so a snapshot-index bug cannot be hidden behind BF16 tolerance.
 
 No attempt should be made to chunk across the final K snapshot positions until a new algorithm explicitly produces all intermediate states. That would be a distinct experiment.
 
@@ -56,7 +56,7 @@ fallback: existing full sequential path
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO05.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO05.md`
 - `patches/1254_nro05_gdn_mtp_prefix_tail/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - shared NRO package tests; future snapshot-integrity fixtures.
 
@@ -72,7 +72,7 @@ High. State-slot off-by-one or stride errors can corrupt speculative verificatio
 
 ## Standards
 
-State restoration/snapshot correctness is affirmative evidence, not absence of crashes. Preserve fully sequential fallback and pre-register all numerical tolerances inherited from NRO04.
+State restoration/snapshot correctness is affirmative evidence, not absence of crashes. Preserve fully sequential fallback and pre-register all numerical tolerances inherited from PNRO04.
 
 ## Acceptance Criteria
 
@@ -84,7 +84,7 @@ State restoration/snapshot correctness is affirmative evidence, not absence of c
 
 ## Notes
 
-Same nasone source commit as NRO04; NRO04 owns external source identity and this item is an atomic BigCherry child.
+Same nasone source commit as PNRO04; NRO04 owns external source identity and this item is an atomic BigCherry child.
 
 Superseded by: PNRO05
 Migration: capability-rebaseline-v3-2026-09

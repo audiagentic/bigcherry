@@ -58,7 +58,7 @@ Correctness fix requires affirmative scheduler evidence and output parity; no th
 
 ## Notes
 
-Pairs naturally with NRO12 in a DFlash/DSpark validation campaign but should remain an independent patch/hypothesis.
+Pairs naturally with PNRO11 in a DFlash/DSpark validation campaign but should remain an independent patch/hypothesis.
 
 Superseded by: PNRO10
 Migration: capability-rebaseline-v3-2026-09

@@ -62,9 +62,9 @@ Affirmative TP topology proof; exact candidate-selection correctness; explicit r
 
 ## Notes
 
-NRO11 may be required in some shared-target device-list configurations but is not inherently a source-code prerequisite.
+PNRO10 may be required in some shared-target device-list configurations but is not inherently a source-code prerequisite.
 
-Superseded by: PNRO11
+Superseded by: PPNRO10
 Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log

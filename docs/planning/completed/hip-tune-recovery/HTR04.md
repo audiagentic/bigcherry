@@ -38,7 +38,7 @@ GPT's stated reason for deferring implementation (adopt verbatim as this item's 
 
 ## Files
 
-tools/bigcherry/tuning/recovery.py (RetuneRecommendation schema already landed here), future: a registry-diff module, a query surface over HTR02's witness store, an E2E-loss estimator
+tools/bigcherry/tuning/recovery.py (RetuneRecommendation schema already landed here), future: a registry-diff module, a query surface over THTR01's witness store, an E2E-loss estimator
 
 ## Validation
 
@@ -60,7 +60,7 @@ No implementation validation yet -- this item's near-term acceptance criterion i
 
 This item stays 'pending, not yet actionable' until HTR01 has real production/campaign usage data to design from -- do not pick this up speculatively. When it is picked up, re-open the negotiation with GPT rather than assuming this note captures a complete design; it explicitly does not (three of its four reasons are unimplemented by design).
 
-STATISTICAL CONSTRAINT ADDED (2026-08-29, adversarially reviewed with GPT, see HTR05): a future targeted single-signature retune must NOT use 'family = this one signature' as a shortcut to treat its remeasurement as statistically valid on its own -- GPT explicit: that reintroduces the original experiment's already-spent BH multiplicity budget as a new, uncontrolled sequential-testing problem. Valid approaches (none yet designed): recompute the entire original family with fresh comparable evidence; a predefined hierarchical/group error-allocation scheme; alpha-spending/online-FDR semantics; or explicitly define the targeted retune as a wholly NEW experiment whose results do not inherit any claim from the old family without a specified composition rule. This is now a required, explicit design constraint for whenever HTR04's targeted-retune mechanism is actually designed -- not optional, not deferrable to implementation time.
+STATISTICAL CONSTRAINT ADDED (2026-08-29, adversarially reviewed with GPT, see THTR03): a future targeted single-signature retune must NOT use 'family = this one signature' as a shortcut to treat its remeasurement as statistically valid on its own -- GPT explicit: that reintroduces the original experiment's already-spent BH multiplicity budget as a new, uncontrolled sequential-testing problem. Valid approaches (none yet designed): recompute the entire original family with fresh comparable evidence; a predefined hierarchical/group error-allocation scheme; alpha-spending/online-FDR semantics; or explicitly define the targeted retune as a wholly NEW experiment whose results do not inherit any claim from the old family without a specified composition rule. This is now a required, explicit design constraint for whenever HTR04's targeted-retune mechanism is actually designed -- not optional, not deferrable to implementation time.
 
 Superseded by: THTR02
 Migration: capability-rebaseline-v3-2026-09

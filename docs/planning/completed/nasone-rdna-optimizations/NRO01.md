@@ -31,7 +31,7 @@ The initial materialized patch is `1250_nro01_allreduce_q8_wire`, group `nasone-
 6. Build a correctness matrix with adversarial values: zeros, alternating signs, large dynamic range, denorm-like small values, non-multiple-of-32 tails, and independent rank inputs. Compare both ranks against a CPU FP32 reference and against the exact internal provider.
 7. Run model-level quality gates on the positive workload. Because Q8 is lossy, bit-identical output is not an appropriate acceptance criterion; use bounded backend/model numerical checks and greedy divergence characterization before any throughput decision.
 8. Sweep tensor size around the transfer crossover and Q8 threshold. Include small decode reductions, medium reductions, and large prefill reductions; record conversion time separately from transfer and finish time.
-9. Compare four arms where supported: RCCL, exact internal, BF16 internal, Q8 internal. The causal treatment/control for NRO01 is exact internal versus Q8 internal using the same patch composition and binary where possible.
+9. Compare four arms where supported: RCCL, exact internal, BF16 internal, Q8 internal. The causal treatment/control for PNRO01 is exact internal versus Q8 internal using the same patch composition and binary where possible.
 10. Promote only an explicit size/topology envelope. A global default is forbidden unless the evidence proves it across decode and prefill controls.
 
 ## Detailed Solution & Technical Design
@@ -42,7 +42,7 @@ The selector belongs to the AllReduce provider, not the generic matmul tuning ca
 
 Numerical policy is the primary risk. Each rank chooses its Q8 scale independently, so the result is not equivalent to quantizing the already-reduced FP32 sum. The experiment therefore measures the actual algorithm, not a simulated compression ratio. Correctness should include elementwise max/mean error, relative error with zero-safe handling, model PPL/KL or the project's available quality metric, and greedy-output divergence. Any tolerance must be pre-registered before the performance result is inspected.
 
-NRO02 may later reuse NRO01's finish abstraction, but NRO01 itself must remain runnable without residual fusion. NRO03 P2P transport is orthogonal: Q8 must first work correctly over the existing host-staged transport so transfer encoding and transport mechanism are not confounded.
+PNRO02 may later reuse PNRO01's finish abstraction, but NRO01 itself must remain runnable without residual fusion. PNRO03 P2P transport is orthogonal: Q8 must first work correctly over the existing host-staged transport so transfer encoding and transport mechanism are not confounded.
 
 ## Code Samples & Guidance
 
@@ -60,7 +60,7 @@ The draft patch should include an opt-in marker such as `GGML_CUDA_AR_Q8_THRESHO
 
 ## Files
 
-- `docs/planning/active/nasone-rdna-optimizations/NRO01.md`
+- `docs/planning/active/nasone-rdna-optimizations/PNRO01.md`
 - `patches/1250_nro01_allreduce_q8_wire/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
 - `tools/tests/patch/test_nro_patch_packages.py` (shared package/static tests)
 - Future: experiment contract and validation adapter/evidence once the draft applies/builds cleanly.
@@ -92,7 +92,7 @@ Follow `PATCH_SYSTEM.md`, `PATCH_AUTHORING.md`, `PATCH_VALIDATION.md`, Experimen
 
 ## Notes
 
-Source commit also contains residual fusion and tracing. NRO02 intentionally owns residual fusion so Q8 compression can be evaluated causally. BigCherry already has separate split-reduce telemetry; do not duplicate generic tracing infrastructure merely because the fork commit contains it.
+Source commit also contains residual fusion and tracing. PNRO02 intentionally owns residual fusion so Q8 compression can be evaluated causally. BigCherry already has separate split-reduce telemetry; do not duplicate generic tracing infrastructure merely because the fork commit contains it.
 
 Superseded by: PNRO01
 Migration: capability-rebaseline-v3-2026-09
