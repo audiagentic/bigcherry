@@ -31,6 +31,14 @@ Requirements:
 
 This prevents allocating IDs against a namespace taxonomy that is still moving.
 
+## 2a. Normalize lifecycle semantics
+
+Review `LIFECYCLE_NORMALIZATION.csv` before treating an active metadata state as
+continuing engineering work. Each item must be explicitly classified as
+`continuing`, `terminal/no-successor`, or `adjudicate`. The `adjudicate` value is
+not eligible for successor creation or ID allocation; it exists to catch plans
+whose prose says the objective is already satisfied despite an active state.
+
 ## 3. Review every predecessor
 
 Fill every row of `DISPOSITIONS.csv`.
