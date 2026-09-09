@@ -2,7 +2,7 @@
 id: PHA02
 order: 0
 plan: patching-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:48:38.219639+00:00'
 breadth: ''
 skill: advanced
@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Current audit is useful but not closure evidence: it traced RCCL revision 57e58688f44c77076ad536ef1f6b68741fc6e694 and the multi-arch bundle, while dev-GPT identified the historical failing runtime as RCCL 2.27.7-1/source 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe. Fresh exact-object fetch failed (`not our ref`); a subsequent additive unshallow succeeded but the exact object remained absent. The nearest reachable public 2.27.7-1 commit 593de54e52679b51428571c13271e2ea9f91b1b1 has a different generic launch/source trace and cannot substitute. PHA02 remains open pending matching-source acquisition or the required repeated blocked/no-safe-change disposition.
+The exact historical RCCL source/build provenance required for a dispatch-level repair is externally unavailable. The Brutus checkout traced RCCL revision 57e58688f44c77076ad536ef1f6b68741fc6e694; exact 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe acquisition returned `not our ref`, additive unshallow completed without the object, and an independent canonical GitHub lookup returned no matching ref. The nearest reachable 593de54e52679b51428571c13271e2ea9f91b1b1 source is a documented non-substitute. Close as external-blocker/no-safe-change; retain patch 1225 unchanged and fail-closed.
 
 ## Steps
 
@@ -39,7 +39,7 @@ docs/evidence/pha02-rccl-source-audit-20260909/README.md; docs/reference/testing
 
 ## Validation
 
-Dev-GPT review requires exact failing-runtime source/build provenance, exact RCCL kernel/code-object registration→architecture-selection→launch function, and if instrumentable a mixed-architecture pre-launch trace. Current evidence records the non-matching source audit, code-object presence, exact-object fetch failure, successful unshallow, and nearest-public-source negative control; it does not claim closure. Same-arch control and existing 1225 guard evidence remain historical and unchanged.
+Completed the bounded source audit and repeated acquisition attempts: exact fetch failure, successful additive unshallow with object absence, nearest-public-source negative control, and independent canonical-public exact-SHA lookup with no matching ref. Exact registration→architecture-selection→launch trace cannot be established for the missing historical runtime. Historical 57e5868 and 593de54 evidence remains provenance only; no source repair or positive RCCL dispatch conclusion is claimed.
 
 ## Effort & Risk
 
@@ -51,7 +51,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Do not close on the non-matching 57e5868 audit or the nearest public 593de54 source alone. Obtain/review source matching 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe and produce the exact dispatch trace, or after the required repeated acquisition attempts document a concrete external blocker/no-safe-change conclusion while retaining 1225 unchanged.
+- Exact 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe source/build provenance is either obtained or its external unavailability is documented with fetch, unshallow, and canonical-public lookup evidence.\n- The exact dispatch trace is produced only if matching source becomes available; otherwise the item closes as external-blocker/no-safe-change.\n- 57e5868 and 593de54 remain explicitly non-substitute controls.\n- No RCCL source repair is justified, and patch 1225 remains unchanged and fail-closed.\n- Reopen only on exact source or authoritative source-to-historical-binary provenance.
 
 ## Notes
 
@@ -63,6 +63,8 @@ Supersedes: HI137
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-hip-autotune-hi137
 Latest acquisition evidence: exact fetch returned `not our ref`; unshallow completed; exact object remained absent; nearest reachable 593de54e source was inspected as a non-substitute control.
+
+Supersedes: HI137\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: patching-hip-autotune-hi137\n\nFinal disposition: external-blocker / no-safe-change. Exact historical source object is unavailable from the canonical public remote; runtime probing cannot satisfy this source-dispatch boundary. Reopen only if exact source or authoritative source-to-binary provenance becomes available.
 
 ## Change Log
 
@@ -84,3 +86,7 @@ Latest acquisition evidence: exact fetch returned `not our ref`; unshallow compl
 - 2026-09-09T13:55:42.341337+00:00 (updated-by): Updated: section:description, section:validation, section:acceptance_criteria, section:notes
 - chg_20260909_135552_strengthened-pha02-provenance_7624
 - 2026-09-09T13:55:52.202983+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T14:28:26.499070+00:00 (updated-by): Updated: section:description, section:validation, section:acceptance_criteria, section:notes
+- 2026-09-09T14:29:03.776178+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_142913_closed-the-rccl-source-dispatc_5240
+- 2026-09-09T14:29:13.427571+00:00 (updated-by): Updated: section:ledger-events
