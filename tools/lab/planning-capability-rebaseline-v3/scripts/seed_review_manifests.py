@@ -80,10 +80,13 @@ def main() -> int:
         source_id = item["source_id"]
         mapped = v2.get(source_id)
         if not mapped:
-            dispositions.append({**{k: item.get(k, "") for k in ("source_id", "source_plan", "source_path", "source_state", "source_hash")}, "disposition": "retain-history", "final_state": item["source_state"], "capability": "", "target_namespace": "", "successor_keys": "", "reason": "Terminal historical item outside the active capability move map.", "scope_carry_forward": "", "scope_retired": "", "reviewed_by": "draft-seed", "approved": "true"})
+            if item["source_state"] not in TERMINAL:
+                dispositions.append({**{k: item.get(k, "") for k in ("source_id", "source_plan", "source_path", "source_state", "source_hash")}, "disposition": "retain-history", "final_state": item["source_state"], "capability": "", "target_namespace": "", "successor_keys": "", "reason": "Unmapped active item requires explicit lifecycle adjudication; it must not be silently discarded.", "scope_carry_forward": "", "scope_retired": "", "reviewed_by": "draft-seed", "approved": "false"})
+                continue
+            dispositions.append({**{k: item.get(k, "") for k in ("source_id", "source_plan", "source_path", "source_state", "source_hash")}, "disposition": "retain-history", "final_state": item["source_state"], "capability": "", "target_namespace": "", "successor_keys": "", "reason": "Terminal historical item outside the active capability move map; explicit review required.", "scope_carry_forward": "", "scope_retired": "", "reviewed_by": "draft-seed", "approved": "false"})
             continue
         if item["source_state"] == "completed":
-            dispositions.append({**{k: item.get(k, "") for k in ("source_id", "source_plan", "source_path", "source_state", "source_hash")}, "disposition": "retire-completed", "final_state": "completed", "capability": "", "target_namespace": "", "successor_keys": "", "reason": "Already completed hygiene item; no successor required.", "scope_carry_forward": "", "scope_retired": "Completed before the new planning epoch.", "reviewed_by": "draft-seed", "approved": "true"})
+            dispositions.append({**{k: item.get(k, "") for k in ("source_id", "source_plan", "source_path", "source_state", "source_hash")}, "disposition": "retire-completed", "final_state": "completed", "capability": "", "target_namespace": "", "successor_keys": "", "reason": "Already completed hygiene item; explicit review required before retirement.", "scope_carry_forward": "", "scope_retired": "Completed before the new planning epoch.", "reviewed_by": "draft-seed", "approved": "false"})
             continue
         namespace = mapped["target_plan_frontmatter"]
         key = f"{namespace}-{source_id.lower()}"

@@ -1,1 +1,1 @@
-source_path	line	old_ref	reference_kind	decision	target_successor_key_or_id	rationale	context
+occurrence_id	source_path	source_id	line	old_ref	reference_kind	decision	target_successor_key_or_id	rationale	semantic_class	action	context_hash	context

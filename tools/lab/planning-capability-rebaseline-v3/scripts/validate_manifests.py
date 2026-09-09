@@ -13,6 +13,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 CAPABILITIES = {"build", "run", "patching", "tuning"}
+TERMINAL_STATES = {"completed", "superseded", "deprecated"}
 DISPOSITIONS = {
     "successor",
     "split",
@@ -39,6 +40,7 @@ SEMANTIC_CLASSES = {"active_scope", "historical_provenance", "identity_declarati
 SEMANTIC_ACTIONS = {"rewrite_to_successor", "preserve_predecessor", "remove", "no_change", "unclassified"}
 TRUE_VALUES = {"true", "1", "yes", "y"}
 ID_RE = re.compile(r"^[A-Z][A-Z0-9]*\d+$")
+LIFECYCLE_PATH_RE = re.compile(r"^docs/planning/(?:active|completed)/[^/]+/[A-Z]+[0-9]+\.md$")
 
 
 class Problems:
@@ -95,6 +97,57 @@ def find_repo(start: Path) -> Path:
     return Path(run_git(start, "rev-parse", "--show-toplevel").strip()).resolve()
 
 
+def frozen_identity_set(repo: Path, source_commit: str) -> set[tuple[str, str, str, str]]:
+    """Re-enumerate the frozen lifecycle universe independently of manifests."""
+    tree = run_git(repo, "ls-tree", "-r", source_commit, "--", "docs/planning/active", "docs/planning/completed").splitlines()
+    entries: list[tuple[str, str]] = []
+    for line in tree:
+        head, path = line.split("\t", 1)
+        parts = head.split()
+        if len(parts) == 3 and parts[1] == "blob" and LIFECYCLE_PATH_RE.fullmatch(path):
+            entries.append((parts[2], path))
+    batch = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "--batch"],
+        input="".join(f"{oid}\n" for oid, _ in entries).encode("ascii"),
+        text=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if batch.returncode:
+        raise RuntimeError(f"git cat-file --batch failed: {batch.stderr.decode('utf-8', 'replace').strip()}")
+    blob_by_oid: dict[str, str] = {}
+    data = batch.stdout
+    pos = 0
+    for oid, _ in entries:
+        end = data.find(b"\n", pos)
+        if end < 0:
+            raise RuntimeError("truncated git cat-file header")
+        header = data[pos:end].decode("ascii")
+        pos = end + 1
+        fields = header.split()
+        if len(fields) != 3 or fields[1] != "blob":
+            raise RuntimeError(f"unexpected git cat-file response: {header}")
+        size = int(fields[2])
+        blob_by_oid[oid] = data[pos:pos + size].decode("utf-8")
+        pos += size + 1
+    identities: set[tuple[str, str, str, str]] = set()
+    for oid, path in entries:
+        text = blob_by_oid[oid]
+        fm: dict[str, str] = {}
+        lines = text.splitlines()
+        if lines and lines[0].strip() == "---":
+            for line in lines[1:]:
+                if line.strip() == "---":
+                    break
+                if ":" in line and not line[:1].isspace():
+                    key, value = line.split(":", 1)
+                    fm[key.strip()] = value.strip().strip("'\"")
+        if fm.get("id"):
+            identities.add((fm["id"], path, fm.get("state", ""), hashlib.sha256(text.encode("utf-8")).hexdigest()))
+    return identities
+
+
 def resolve_spec(pack: Path, work: Path, value: str) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
@@ -148,6 +201,25 @@ def main() -> int:
     migration_id = lock["migration_id"]
     source_commit = lock["source_commit"]
 
+    pack_manifest_path = pack / "PACK_MANIFEST.json"
+    pack_manifest = json.loads(pack_manifest_path.read_text(encoding="utf-8"))
+    listed_files = {row.get("path", ""): row for row in pack_manifest.get("files", [])}
+    actual_files = {
+        path.relative_to(pack).as_posix(): path
+        for path in pack.rglob("*")
+        if path.is_file() and path != pack_manifest_path and "__pycache__" not in path.parts
+    }
+    if set(listed_files) != set(actual_files):
+        p.error(f"PACK_MANIFEST.json file set mismatch (missing={len(set(actual_files) - set(listed_files))}, extra={len(set(listed_files) - set(actual_files))})")
+    for rel, path in actual_files.items():
+        row = listed_files.get(rel)
+        if not row:
+            continue
+        data = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if int(row.get("bytes", -1)) != len(data) or row.get("sha256") != digest:
+            p.error(f"PACK_MANIFEST.json hash/size mismatch for {rel}")
+
     work_lock_path = work / "SOURCE_LOCK.json"
     if work_lock_path.exists():
         work_lock = json.loads(work_lock_path.read_text(encoding="utf-8"))
@@ -168,6 +240,15 @@ def main() -> int:
     if len(inventory_by_id) != len(inventory):
         p.error("PLAN_INVENTORY.csv contains duplicate source_id values")
     path_to_id = {normalize_path_ref(r["source_path"]): r["source_id"] for r in inventory}
+    frozen = frozen_identity_set(repo, source_commit)
+    supplied = {
+        (r.get("source_id", ""), r.get("source_path", ""), r.get("source_state", ""), r.get("source_hash", ""))
+        for r in inventory
+    }
+    if len(frozen) != 524:
+        p.error(f"frozen lifecycle enumeration expected 524 items, found {len(frozen)}")
+    if supplied != frozen:
+        p.error(f"PLAN_INVENTORY.csv does not exactly match frozen lifecycle universe (missing={len(frozen - supplied)}, extra={len(supplied - frozen)})")
 
     lifecycle_by_id = {r["source_id"]: r for r in lifecycle}
     if len(lifecycle_by_id) != len(lifecycle):
@@ -193,7 +274,7 @@ def main() -> int:
         for field in required_review_fields:
             if not row.get(field):
                 p.error(f"{source_id}: semantic review field {field} is required")
-        if ns.phase in {"preapply", "postapply"} and not truth(row.get("approved", "")):
+        if ns.phase in {"review", "preapply", "postapply"} and not truth(row.get("approved", "")):
             p.error(f"{source_id}: semantic review is not approved for {ns.phase}")
     for source_id, row in lifecycle_by_id.items():
         if source_id not in inventory_by_id:
@@ -205,7 +286,7 @@ def main() -> int:
             p.error(f"{source_id}: invalid lifecycle normalization {row.get('normalized_lifecycle')!r}")
         if not row.get("reason"):
             p.error(f"{source_id}: lifecycle normalization reason is required")
-        if ns.phase in {"preapply", "postapply"}:
+        if ns.phase in {"review", "preapply", "postapply"}:
             if row.get("normalized_lifecycle") == "adjudicate" or not truth(row.get("approved", "")):
                 p.error(f"{source_id}: lifecycle normalization is not approved for {ns.phase}")
 
@@ -268,6 +349,8 @@ def main() -> int:
             continue
         if not truth(row.get("approved", "")):
             p.error(f"{source_id}: disposition is not approved")
+        if not row.get("reviewed_by", ""):
+            p.error(f"{source_id}: disposition reviewed_by is required")
         if not row.get("reason"):
             p.error(f"{source_id}: disposition reason is required")
         final_state = row.get("final_state", "")
@@ -287,6 +370,8 @@ def main() -> int:
             if disp == "split" and len(keys) < 2:
                 p.error(f"{source_id}: split disposition requires >=2 successor keys")
         else:
+            if disp == "retain-history" and inventory_by_id[source_id].get("source_state", "") not in TERMINAL_STATES:
+                p.error(f"{source_id}: retain-history is only legal for frozen terminal states")
             if keys:
                 p.error(f"{source_id}: retirement/history disposition must not list successor_keys")
             if row.get("capability") or row.get("target_namespace"):
@@ -332,6 +417,8 @@ def main() -> int:
                 p.error(f"successor {key}: {field} required")
         if not truth(row.get("approved", "")):
             p.error(f"successor {key}: not approved")
+        if ns.phase == "review" and row.get("allocated_id", ""):
+            p.error(f"successor {key}: allocated_id must remain blank during review")
         spec_value = row.get("spec_path", "")
         if spec_value:
             spec = resolve_spec(pack, work, spec_value)
@@ -476,6 +563,17 @@ def main() -> int:
                 p.error(f"REFERENCE_DECISIONS.tsv:{idx}: unknown rewrite target {target!r}")
         if decision in {"rewrite", "remove"} and not row.get("rationale"):
             p.error(f"REFERENCE_DECISIONS.tsv:{idx}: {decision} requires rationale")
+
+    if expected_occurrences:
+        decision_occurrences = {
+            (r.get("occurrence_id", ""), r.get("source_path", ""), r.get("line", ""), r.get("old_ref", ""))
+            for r in ref_rows
+        }
+        if decision_occurrences != expected_occurrences:
+            p.error(
+                f"REFERENCE_DECISIONS.tsv must cover every PLAN_REFERENCES.tsv occurrence "
+                f"(missing={len(expected_occurrences - decision_occurrences)}, extra={len(decision_occurrences - expected_occurrences)})"
+            )
 
     # Explicit dependency remaps are stricter than generic references.
     for idx, row in enumerate(dep_rows, 2):
