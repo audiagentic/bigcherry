@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-The frozen reusable-build-campaign item remains active with implementation/acceptance work outstanding and no terminal disposition.
+Evaluated against predecessor RE34 and the current build/campaign tree. No real toolchain, recipe, or RDNA-target change currently triggers this dormant oracle. The existing campaign comparison and check_parity() remain the supported path; creating a permanent second planner now would violate the predecessor scope.
 
 ## Steps
 
@@ -41,11 +41,7 @@ successor-specs/build-reusable-build-campaign-re34.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RE23.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (1) on predecessor.
+No implementation is authorized until a concrete trigger exists. At trigger time, follow RE34's independent-construction recipe: freeze campaign BuildPlan A, construct B through a separate documented CMake/toolchain path, publish both through ArtifactStore, run check_parity plus explicit option/source/toolchain diff, and add the shared-omission negative test.
 
 ## Effort & Risk
 
@@ -65,6 +61,8 @@ Supersedes: RE34
 Migration: capability-rebaseline-v3-2026-09
 Successor key: build-reusable-build-campaign-re34
 
+2026-09-10 evaluation: intentionally remains pending/dormant; no trigger exists. Do not mark completed merely because the current campaign path is healthy, and do not implement speculative duplicate build machinery.
+
 ## Change Log
 
 - 2026-09-09T10:59:07.257799+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +70,9 @@ Successor key: build-reusable-build-campaign-re34
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.484239+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:27:41.040607+00:00 (updated-by): Updated: section:description, section:validation, section:notes
+- chg_20260909_152750_confirmed-brbc01-is-deliberate_9064
+- 2026-09-09T15:27:50.763518+00:00 (updated-by): Updated: section:ledger-events
