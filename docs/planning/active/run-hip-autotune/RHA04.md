@@ -2,7 +2,7 @@
 id: RHA04
 order: 0
 plan: run-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:49:44.318293+00:00'
 breadth: ''
 skill: advanced
@@ -104,6 +104,7 @@ Successor key: run-hip-autotune-hi168
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.903535+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:52:28.033769+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -112,3 +113,6 @@ Successor key: run-hip-autotune-hi168
 - 2026-09-09T13:53:18.300323+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260909_135334_corrected-the-rha04-plan-text_5379
 - 2026-09-09T13:53:34.448039+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T14:03:31.913574+00:00 (state-transition): State: pending → in_progress
+- chg_20260909_140341_rha04-is-now-actively-executin_4158
+- 2026-09-09T14:03:41.316296+00:00 (updated-by): Updated: section:ledger-events
