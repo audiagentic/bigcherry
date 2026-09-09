@@ -1,10 +1,25 @@
 {
   "evidence_role": "diagnostic",
   "production_admitted": false,
-  "source": "docs/evidence/2026-09-10-rha08-build-matrix/pair-001-replay-diagnostic/attestation/server.log",
-  "cache": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+  "source": "raw/diagnostic-server.log",
+  "source_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+  "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+  "model": "Qwen3.8-27B-Q8_0",
+  "topology": {"devices": [0, 1], "locators": ["0000:03:00.0", "0000:06:00.0"]},
+  "cache_identity": {"sha256": "fe292dc759ce4ca407c4a32cfc18fab510e026e368854a6382fa8e41a74a302a"},
+  "diagnostic_binary": {
+    "sha256": "57d6bcf2de308930063ab61cca91f30458d0f647961bae7dc228f82374499155",
+    "replay_diagnostics": true,
+    "dispatch_mode": "replay"
+  },
+  "matching_production_binary": {
+    "sha256": "9e8fbf18a45606168a66794d4a51d33fb8ce6f1d927ba251ae5245cd9a32fbfa",
+    "replay_diagnostics": false,
+    "dispatch_mode": "replay"
+  },
   "replay_winners": 54,
-  "exact_hits": 9,
+  "cache_hit_rows": 57,
+  "replay_exact": 32,
   "unavailable": 0,
   "rerun_required": 0,
   "incompatible": 0,
@@ -12,5 +27,42 @@
   "dispatch_coverage": {"dispatched": 1988, "executed": 1988, "percent": 100.0},
   "hit_log_rows": 57,
   "non_native_hit_rows": 12,
-  "interpretation": "Diagnostic activation proof only; cache-loaded and diagnostic hits are not production performance admission."
+  "dispatch": {
+    "entries": 21566,
+    "total_executed": 21566,
+    "total_dispatched": 21566,
+    "final_tuned_launches": 13342,
+    "final_native_launches": 8224,
+    "l1_hit_rate_pct": 99.351,
+    "replay_misses": 25,
+    "coverage_sha256": "faeaf367c8f20fc11d50bbdc225a08229f81949b5345a14761ae3687474457d0"
+  },
+  "production_timing": {
+    "returncode": 0,
+    "pp512_tps": 931.27,
+    "pp2048_tps": 1290.26,
+    "tg128_tps": 34.15,
+    "tg512_tps": 34.38,
+    "diagnostics_off": true
+  },
+  "work_equivalence": {
+    "probe": "raw/equivalence-summary-3prompt.json",
+    "all_content_equal": false,
+    "stock_native_equal": true,
+    "replay_equal_prompts": 2,
+    "replay_mismatched_prompts": 1,
+    "temperature": 0,
+    "seed": 42,
+    "n_predict": 48,
+    "disposition": "blocking-correctness-investigation"
+  },
+  "raw": {
+    "server_log_sha256": "2b3334c24c88dc96dbfb4ff66189d23a1c3c8676299fe907ac087a1eeb305d31",
+    "hit_log_sha256": "29a591e8db6d6cc57d2739e5ced742cffed0e1452dc91f996ad4de8e8a937446",
+    "production_server_log_sha256": "0fff0fbdd729ef305adcff487c9ac4404762d5c37d66aa9f7174d5b8768cbfd4",
+    "equivalence_summary_sha256": "c608c73cd9e7cd8d513b0be5a66b06dbb85badc5043b70cd31b2b7e590fc3f06",
+    "equivalence_3prompt_sha256": "f3f8eb7b17dd48b349eb776d790e9f54d7aa1901f7eafcd65d192a657ea0d936",
+    "diagnostic_bench_stdout_sha256": "32a4775082538992184b48e84393adaa9fc453f92e8550bf74accdf207883074"
+  },
+  "interpretation": "Exact-source diagnostic activation proof; timing remains from the separate diagnostics-off production binary and is not merged into this record."
 }

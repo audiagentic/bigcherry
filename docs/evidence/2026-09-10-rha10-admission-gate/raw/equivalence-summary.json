@@ -1,0 +1,26 @@
+{
+  "prompt": "fixed deterministic probe",
+  "temperature": 0,
+  "seed": 42,
+  "items": {
+    "stock": {
+      "response_sha256": "ddf8850176cb26aa9cdf5dced3aebc4af3aa3d9248574bd345cec756f11630d6",
+      "content": "\n\nDeterministic replay must preserve native fallback semantics because any divergence in how the engine handles missing or unsupported assets would alter the execution state, causing the replayed simulation to deviate from the original run and breaking the guarantee of bit-for-bit reproducibility.",
+      "stop_type": "eos",
+      "tokens": 14
+    },
+    "native": {
+      "response_sha256": "ddf8850176cb26aa9cdf5dced3aebc4af3aa3d9248574bd345cec756f11630d6",
+      "content": "\n\nDeterministic replay must preserve native fallback semantics because any divergence in how the engine handles missing or unsupported assets would alter the execution state, causing the replayed simulation to deviate from the original run and breaking the guarantee of bit-for-bit reproducibility.",
+      "stop_type": "eos",
+      "tokens": 14
+    },
+    "replay": {
+      "response_sha256": "ddf8850176cb26aa9cdf5dced3aebc4af3aa3d9248574bd345cec756f11630d6",
+      "content": "\n\nDeterministic replay must preserve native fallback semantics because any divergence in how the engine handles missing or unsupported assets would alter the execution state, causing the replayed simulation to deviate from the original run and breaking the guarantee of bit-for-bit reproducibility.",
+      "stop_type": "eos",
+      "tokens": 14
+    }
+  },
+  "all_content_equal": true
+}
