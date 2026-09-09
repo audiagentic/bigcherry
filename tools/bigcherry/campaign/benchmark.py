@@ -614,6 +614,14 @@ def run_server_arm_capture(
 
 
 _SERVER_ATTESTATION_DIAGNOSTIC_DELTA = ("--verbosity", "5")
+_SERVER_ATTESTATION_DIAGNOSTIC_ENV = {
+    # Tensor split hides physical devices behind Meta(); RCCL's init record is
+    # the only server-process diagnostic that carries logical cudaDev -> busId
+    # bindings on affected builds.  These are preflight-only and are never
+    # inherited by the timed production process.
+    "NCCL_DEBUG": "INFO",
+    "NCCL_DEBUG_SUBSYS": "INIT",
+}
 
 
 def _sha256_if_file(path: Path) -> str | None:
@@ -639,7 +647,8 @@ def _run_server_attestation_preflight(
     consulted: this authority must come from the server's own output.
     """
     from bigcherry.experiment.attestation import (
-        ExecutionIdentity, parse_llama_server_attestation, require_execution_identity,
+        ExecutionIdentity, merge_rccl_server_attestation,
+        parse_llama_server_attestation, require_execution_identity,
     )
     from bigcherry.tuning.server_runner import ServerRunner
 
@@ -656,15 +665,21 @@ def _run_server_attestation_preflight(
     runner = ServerRunner(
         binary=binary, model=model,
         extra_args=(*extra_args, *_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
-        env_overrides=env, env_unset=tuple(os.environ), log_path=log_path,
+        env_overrides={**env, **_SERVER_ATTESTATION_DIAGNOSTIC_ENV},
+        env_unset=tuple(os.environ), log_path=log_path,
         shutdown_method=shutdown_method,
     )
     started = time.monotonic()
     observed = None
     try:
         with runner:
+            server_output = log_path.read_text(encoding="utf-8", errors="replace")
             observed = parse_llama_server_attestation(
-                log_path.read_text(encoding="utf-8", errors="replace"),
+                server_output,
+                architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+            )
+            observed = merge_rccl_server_attestation(
+                server_output, observed,
                 architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
             )
             require_execution_identity(expected, observed, context="server attestation preflight")
@@ -681,6 +696,7 @@ def _run_server_attestation_preflight(
             "model_sha256": _sha256_if_file(model),
             "common_server_args": list(extra_args),
             "diagnostic_delta": list(_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
+            "diagnostic_environment": dict(_SERVER_ATTESTATION_DIAGNOSTIC_ENV),
             "environment": {
                 key: env.get(key)
                 for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")

@@ -474,6 +474,12 @@ shutdown; timed production arguments remain unchanged. The timed cell is
 admitted only when that binding matches exactly and the preflight observes the
 expected physical locators. Missing, wrong, or ambiguous identity fails closed
 without recording throughput.
+For tensor-split RCCL lanes, the preflight additionally enables
+`NCCL_DEBUG=INFO` and `NCCL_DEBUG_SUBSYS=INIT` only in that untimed process.
+When the installed RCCL emits `cudaDev`/`busId` records, the capture composes
+their ordered PCI mapping with the server's layer-assignment lines; incomplete,
+duplicate, reversed, or assignment-mismatched mappings still fail closed.
+These variables are explicitly absent from the timed production process.
 For explicitly exploratory baseline collection, set `execution_evidence` to
 `observe` in the local server config. This records missing device evidence as
 an admission blocker while collecting endpoint measurements; it does not mark

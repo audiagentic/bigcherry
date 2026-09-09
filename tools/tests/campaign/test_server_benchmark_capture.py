@@ -276,11 +276,13 @@ class ServerExecutionAttestationTests(unittest.TestCase):
         }
 
     def run_cell(self, startup, execution_evidence="required"):
+        seen_envs = []
         class Server:
             def __init__(self, **kwargs):
                 self.host, self.port = "127.0.0.1", 4567
                 self.last_shutdown = None
                 self.log_path = kwargs["log_path"]
+                seen_envs.append(dict(kwargs.get("env_overrides", {})))
 
             def __enter__(self):
                 self.log_path.write_text(startup, encoding="utf-8")
@@ -300,7 +302,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
                 required_metrics=("tg128_tps",), expected_execution=self.expected,
                 execution_evidence=execution_evidence,
             )
-        return result, bench
+        return result, bench, seen_envs
 
     def test_matching_attestation_allows_bench(self):
         startup = (
@@ -308,36 +310,40 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             "I llama_prepare_model_devices: using device ROCm1 (AMD Radeon RX 7900 XTX) (0000:02:00.0)\n"
             "D load_tensors: layer 0 assigned to device ROCm0\n"
         )
-        result, bench = self.run_cell(startup)
+        result, bench, seen_envs = self.run_cell(startup)
         bench.assert_called_once()
         self.assertEqual(result["returncode"], 0)
         self.assertEqual(result["metrics"], {"tg128_tps": 30.0})
         self.assertEqual(result["execution_attestation"]["backend"], "ROCm")
+        self.assertEqual(seen_envs[0]["NCCL_DEBUG"], "INFO")
+        self.assertEqual(seen_envs[0]["NCCL_DEBUG_SUBSYS"], "INIT")
+        self.assertNotIn("NCCL_DEBUG", seen_envs[1])
+        self.assertNotIn("NCCL_DEBUG_SUBSYS", seen_envs[1])
 
     def test_wrong_physical_device_blocks_bench(self):
         startup = "using device ROCm0 (AMD Radeon RX 7900 XTX) (0000:03:00.0)\n"
-        result, bench = self.run_cell(startup)
+        result, bench, _ = self.run_cell(startup)
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
         self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_cpu_fallback_blocks_bench(self):
-        result, bench = self.run_cell("failed to initialize ROCm: no ROCm-capable device is detected\n")
+        result, bench, _ = self.run_cell("failed to initialize ROCm: no ROCm-capable device is detected\n")
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
         self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_missing_attestation_blocks_bench(self):
-        result, bench = self.run_cell("server is ready\n")
+        result, bench, _ = self.run_cell("server is ready\n")
         bench.assert_not_called()
         self.assertEqual(result["returncode"], 1)
         self.assertNotIn("metrics", result)
         self.assertTrue(Path(result["attestation_preflight"]).is_file())
 
     def test_explicit_observation_collects_missing_evidence_without_admission(self):
-        result, bench = self.run_cell("server is ready\n", "observe")
+        result, bench, _ = self.run_cell("server is ready\n", "observe")
         bench.assert_called_once()
         self.assertEqual(result["returncode"], 0)
         self.assertFalse(result["performance_admitted"])
@@ -353,7 +359,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             with self.subTest(startup=startup):
                 # Each cell retains a fresh artifact directory.
                 self.root = self.root / "next"
-                result, bench = self.run_cell(startup, "observe")
+                result, bench, _ = self.run_cell(startup, "observe")
                 bench.assert_not_called()
                 self.assertEqual(result["returncode"], 1)
                 self.assertNotIn("metrics", result)
