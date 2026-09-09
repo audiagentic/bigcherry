@@ -56,7 +56,7 @@ Hardware-free evidence slice implemented and verified. Focused command:
 $env:PYTHONPATH='tools'; uv run --no-sync python -m pytest -q tools/tests/patch/test_hi85_nccl_heterogeneous_arch_guard.py tools/tests/profiling/test_rccl_qualify.py tools/tests/profiling/test_rccl_qualify_campaign.py
 Result: 58 passed, 1 skipped. Ruff check over the changed profiling and test files passes.
 
-Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, raw evidence hashes, and a fresh all-device `hipDeviceAttributeHostNativeAtomicSupported` probe in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. The probe reports devices 0/1/2 as supported and device 3 as unsupported, matching the shared predicate. This is still provenance only: complete per-component AtomicOps/transport evidence and managed direct plus 0840 collective success are still missing, so no positive admission row is claimed.
+Brutus snapshot 2026-09-10 records ROCm/HIP 7.2.53211-97f5574fe2, RCCL 2.27.7, exact librccl SHA/build ID, GPU placement graph, raw evidence hashes, a fresh all-device `hipDeviceAttributeHostNativeAtomicSupported` probe, and a bounded crash-isolated direct RCCL qualification in docs/evidence/pha03-rccl-topology-evidence-20260910/README.md. The probe reports devices 0/1/2 as supported and device 3 as unsupported, matching the shared predicate. Direct RCCL qualification passed the homogeneous control and both CPU-direct XTX+R9700 pairs, while the chipset-routed XTX+6900XT negative control faulted and the control recovered after each fault. This is still provenance only: complete per-component AtomicOps/transport evidence and managed BigCherry direct plus 0840 collective success are still missing, so no positive admission row is claimed.
 
 ## Effort & Risk
 
@@ -92,6 +92,7 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.842046+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:36:36.486669+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
@@ -111,3 +112,5 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 - 2026-09-09T14:22:36.242073+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_142318_kept-the-planning-rebaseline-t_9396
 - 2026-09-09T14:23:18.204353+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_142728_added-direct-rccl-qualificatio_6222
+- 2026-09-09T14:27:28.092303+00:00 (updated-by): Updated: section:ledger-events
