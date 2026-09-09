@@ -2,7 +2,7 @@
 id: RHA10
 order: 10
 plan: run-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T19:45:36.770283+00:00'
 breadth: ''
 skill: advanced
@@ -85,6 +85,7 @@ RHA11 correctness issue is resolved in evidence: both implicated MMVQ winners we
 ## Ledger-events
 
 
+
 - chg_20260909_194609_separated-completed-parity-cap_7282
 - 2026-09-09T19:46:09.213125+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T19:47:48.323863+00:00 (updated-by): Updated: section:validation, section:notes
@@ -100,3 +101,6 @@ RHA11 correctness issue is resolved in evidence: both implicated MMVQ winners we
 - 2026-09-09T20:45:00.888899+00:00 (updated-by): Updated: section:notes
 - chg_20260909_204705_the-quarantined-cache-is-now-t_2378
 - 2026-09-09T20:47:05.941088+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:47:50.990239+00:00 (state-transition): State: pending → in_progress
+- chg_20260909_204807_rha10-is-active-rather-than-si_5340
+- 2026-09-09T20:48:07.166443+00:00 (updated-by): Updated: section:ledger-events
