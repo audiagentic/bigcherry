@@ -831,6 +831,8 @@ def main(argv: list[str] | None = None) -> int:
             threshold_pct=args.threshold_pct,
             resamples=args.resamples,
         )
+        from bigcherry.campaign.run_advisories import evaluate_promotion_result, write_evaluation
+        write_evaluation(args.output.with_name("promotion-advisories.json"), evaluate_promotion_result(result))
     except (OSError, ValueError, PromotionError) as exc:
         print(f"invalid: {exc}")
         return 1

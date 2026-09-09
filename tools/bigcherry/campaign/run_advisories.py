@@ -193,6 +193,58 @@ def evaluate_build_result(results: Mapping[str, Any]) -> RunEvaluation:
     return RunEvaluation(BUILD_CHECK_IDS, tuple(errors), tuple(findings))
 
 
+RECOVERY_CHECK_IDS = ("RECOVERY_FAILURE", "RECOVERY_NO_EVIDENCE", "RECOVERY_ALTERNATIVES_EXHAUSTED")
+
+
+def evaluate_recovery_result(result: Mapping[str, Any]) -> RunEvaluation:
+    errors: list[str] = []
+    findings: list[RunAdvisory] = []
+    if not isinstance(result, Mapping):
+        return RunEvaluation((), ("recovery result must be an object",), ())
+    if "published" not in result or "stop_reason" not in result:
+        errors.append("published/stop_reason missing or malformed")
+    if result.get("published") is False:
+        findings.append(RunAdvisory(
+            "RECOVERY_FAILURE", "Recovery did not publish a replacement assignment.",
+            ("Keep the safe native fallback and do not treat recovery failure as a retune trigger.",), "stop"
+        ))
+    recommendations = result.get("retune_recommendations")
+    if recommendations:
+        findings.append(RunAdvisory(
+            "RECOVERY_ALTERNATIVES_EXHAUSTED",
+            "Recovery exhausted alternatives and recorded a retune recommendation.",
+            ("The recommendation is evidence for later triage, not an automatic retune action.",),
+        ))
+    if result.get("evaluations_used") is None:
+        findings.append(RunAdvisory(
+            "RECOVERY_NO_EVIDENCE", "Recovery result has no evaluation count.",
+            ("Do not infer search coverage from a result without bounded-work evidence.",),
+        ))
+    return RunEvaluation(RECOVERY_CHECK_IDS, tuple(errors), tuple(findings))
+
+
+PROMOTION_CHECK_IDS = ("PROMOTION_FAILURE", "PROMOTION_NO_EVIDENCE", "PROMOTION_NONE_PROMOTED")
+
+
+def evaluate_promotion_result(result: Mapping[str, Any]) -> RunEvaluation:
+    errors: list[str] = []
+    findings: list[RunAdvisory] = []
+    if not isinstance(result, Mapping):
+        return RunEvaluation((), ("promotion result must be an object",), ())
+    if "promoted" not in result or "content_hash" not in result:
+        errors.append("promoted/content_hash missing or malformed")
+        findings.append(RunAdvisory(
+            "PROMOTION_NO_EVIDENCE", "Promotion result lacks its output identity.",
+            ("Do not consume a promotion output without a content hash.",), "stop"
+        ))
+    if result.get("promoted") == 0:
+        findings.append(RunAdvisory(
+            "PROMOTION_NONE_PROMOTED", "Promotion retained native for every candidate.",
+            ("This is a valid policy result, not evidence that the candidate search failed.",),
+        ))
+    return RunEvaluation(PROMOTION_CHECK_IDS, tuple(errors), tuple(findings))
+
+
 def write_evaluation(path: str | Path, evaluation: RunEvaluation) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)

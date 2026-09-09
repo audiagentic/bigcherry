@@ -394,6 +394,16 @@ The campaign build CLI similarly writes a run-scoped
 Missing build identities and failed lanes are surfaced there without changing
 the build worker's authoritative exit status.
 
+Recovery and promotion boundaries use the same advisory schema. A behavioral
+recovery attempt writes `recovery-advisories.json` beside its
+`recovery-result.json`; failed publication, exhausted alternatives, and
+missing evaluation evidence are explicit findings, and recovery findings do
+not silently trigger a retune. The `tune-promote` CLI writes
+`promotion-advisories.json` beside its promoted output; malformed or
+evidence-free results are stop findings, while zero promotions is reported as
+a policy outcome rather than a command failure. These files are explanatory;
+the recovery/promotion result and exit status remain authoritative.
+
 #### Balanced server capture
 
 The existing A/B command can now manage one server per arm and invoke the
