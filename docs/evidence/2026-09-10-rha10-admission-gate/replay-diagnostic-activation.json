@@ -1,0 +1,16 @@
+{
+  "evidence_role": "diagnostic",
+  "production_admitted": false,
+  "source": "docs/evidence/2026-09-10-rha08-build-matrix/pair-001-replay-diagnostic/attestation/server.log",
+  "cache": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+  "replay_winners": 54,
+  "exact_hits": 9,
+  "unavailable": 0,
+  "rerun_required": 0,
+  "incompatible": 0,
+  "miss": 0,
+  "dispatch_coverage": {"dispatched": 1988, "executed": 1988, "percent": 100.0},
+  "hit_log_rows": 57,
+  "non_native_hit_rows": 12,
+  "interpretation": "Diagnostic activation proof only; cache-loaded and diagnostic hits are not production performance admission."
+}

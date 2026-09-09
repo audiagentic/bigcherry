@@ -43,9 +43,10 @@ Use the maintained server-bench runner and existing execution-audit/admission sc
 
 ## Validation
 
+- Diagnostic checkpoint parses to 54 replay winners, 9 exact hits, zero misses/incompatibilities, and 1,988/1,988 dispatch coverage.
 - All production arms share source/build/model/topology/workload identity.
 - Correctness/work-equivalence passes.
-- Replay reports final_tuned_launches > 0 and matching cache/signature identity.
+- Production replay reports final_tuned_launches > 0 with matching cache/signature identity.
 - No diagnostics are present in timed arms.
 - Admission record is fail-closed and reproducible.
 
@@ -67,11 +68,17 @@ M: evidence and schema integration are bounded, but hardware rerun may be requir
 
 RHA04 remains the parity owner; RHA08/RHA09 are dependencies/evidence providers, not admission substitutes.
 
+Checkpoint evidence is retained under docs/evidence/2026-09-10-rha10-admission-gate. It proves diagnostic replay activation (54 winners, 9 exact hits, 100% measured coverage, 12 non-native hit rows) but deliberately does not satisfy production admission. A diagnostics-off final_tuned_launches proof and work-equivalence remain required.
+
 ## Change Log
 
 - 2026-09-09T19:45:36.770283+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
+
 - chg_20260909_194609_separated-completed-parity-cap_7282
 - 2026-09-09T19:46:09.213125+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:47:48.323863+00:00 (updated-by): Updated: section:validation, section:notes
+- chg_20260909_194753_captured-positive-diagnostic-r_4130
+- 2026-09-09T19:47:53.704763+00:00 (updated-by): Updated: section:ledger-events
