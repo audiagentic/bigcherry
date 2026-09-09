@@ -10,6 +10,8 @@ import argparse
 import csv
 from pathlib import Path
 
+CLASSIFICATIONS = {"CONTINUING", "TERMINAL-COMPLETE", "TERMINAL-DEPRECATED", "AMBIGUOUS"}
+
 
 def read(path: Path, delimiter: str = ",") -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as f:
@@ -30,9 +32,20 @@ def main() -> int:
     ns = ap.parse_args()
     work = ns.work.resolve()
     evidence = {r["source_id"]: r for r in read(ns.evidence.resolve())}
+    if len(evidence) != len(read(ns.evidence.resolve())):
+        raise ValueError("GPT evidence contains duplicate source_id values")
+    for source_id, row in evidence.items():
+        if row.get("classification") not in CLASSIFICATIONS:
+            raise ValueError(f"{source_id}: invalid classification {row.get('classification')!r}")
+        if not row.get("evidence", "").strip():
+            raise ValueError(f"{source_id}: evidence is required")
 
     lifecycle_path = work / "LIFECYCLE_NORMALIZATION.csv"
     lifecycle = read(lifecycle_path)
+    lifecycle_ids = {r["source_id"] for r in lifecycle}
+    unknown = sorted(set(evidence) - lifecycle_ids)
+    if unknown:
+        raise ValueError(f"GPT evidence references unknown source IDs: {unknown}")
     lifecycle_fields = list(lifecycle[0]) if lifecycle else ["source_id"]
     for row in lifecycle:
         review = evidence.get(row["source_id"])
