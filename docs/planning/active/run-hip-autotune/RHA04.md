@@ -52,11 +52,12 @@ tools/bigcherry/tuning/server_runner.py
 artifacts/<run-id>/ (raw evidence only)
 docs/evidence/2026-09-08-HI168-e2e/
 docs/evidence/2026-09-10-rha04-attestation-smoke/
+docs/evidence/2026-09-10-rha04-gpu0-required-capture/
 successor-specs/run-hip-autotune-hi168.md
 
 ## Validation
 
-The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. A fresh 2026-09-10 BC-native dual-XTX smoke is separately retained at docs/evidence/2026-09-10-rha04-attestation-smoke/; it never reached health during model materialization and is explicitly invalid. Neither artifact satisfies closure. Next validation is a fresh serial 9B matrix using required execution evidence and raw identity-bound receipts, then the matched 27B matrix; retain all invalid/missing-attestation cells and do not promote their throughput.
+The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. The 2026-09-10 BC-native dual-XTX smoke at docs/evidence/2026-09-10-rha04-attestation-smoke/ never reached health during model materialization and is explicitly invalid. The fresh 2026-09-10 GPU0 required-attestation capture at docs/evidence/2026-09-10-rha04-gpu0-required-capture/ loaded and shut down cleanly but failed closed before timing with ATTESTATION_MISSING; no throughput result was produced. This confirms the maintained server-capture attestation gap. Keep RHA04 open and resolve the attestation design while preserving diagnostics-off production timing as a separate arm.
 
 ## Effort & Risk
 
@@ -87,6 +88,12 @@ Successor key: run-hip-autotune-hi168
 
 Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: run-hip-autotune-hi168\n\nInherited HI168 bundle is exploratory only because physical execution attestation is missing. Rerun must use environment settings, explicit expected_execution locators, maintained server-bench, and diagnostics-off production timing before any parity or replay conclusion.
 
+Supersedes: HI168
+Migration: capability-rebaseline-v3-2026-09
+Successor key: run-hip-autotune-hi168
+
+Inherited HI168 bundle is exploratory only because physical execution attestation is missing. The first fresh required-attestation GPU0 cell also failed closed before measurement because the production-shaped -sm none/--fit off launch emitted no physical locator evidence; see review RV157 and docs/evidence/2026-09-10-rha04-gpu0-required-capture/. Do not weaken required evidence to observe. Resolve an identity-bound attestation path before the 9B matrix.
+
 ## Change Log
 
 - 2026-09-09T10:49:44.318293+00:00 (created-by): Created by capability-rebaseline-v3
@@ -112,3 +119,6 @@ Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: r
 - 2026-09-09T14:46:18.213220+00:00 (updated-by): Updated: section:files, section:validation
 - chg_20260909_144630_recorded-the-latest-bc-native_4039
 - 2026-09-09T14:46:30.799268+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:02:13.405913+00:00 (updated-by): Updated: section:files, section:validation, section:notes
+- chg_20260909_150304_the-first-required-attestation_2781
+- 2026-09-09T15:03:04.213387+00:00 (updated-by): Updated: section:ledger-events
