@@ -92,6 +92,18 @@ finding, but it is **not** the exact-runtime source trace required to close
 PHA02. PHA02 remains open pending either matching source/build acquisition or
 a separately documented blocked/no-safe-change disposition.
 
+A second, additive acquisition/inspection attempt was completed after the
+initial fetch failure. `git fetch --unshallow origin` succeeded, proving that
+the checkout was no longer shallow, but `git cat-file -t
+9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe` still reported that the object was
+absent. The nearest reachable public 2.27.7-1 tag is commit
+`593de54e52679b51428571c13271e2ea9f91b1b1` (`NCCL 2.27.7-1`). Its source uses
+the generic `plan->kernelFn`/`ncclSymGetKernelPtr` launch path, but does not
+contain the per-rank `gcnArchName`/`comm->archName` trace found in the
+heterogeneous audit revision. It is consequently a useful negative control
+for source identity, not a substitute for the historical failing-runtime
+source and not closure evidence.
+
 ## Reproduction commands
 
 The authoritative commands and complete logs remain on Brutus under
