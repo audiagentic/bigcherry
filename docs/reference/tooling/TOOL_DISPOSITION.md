@@ -483,6 +483,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **TRANSITIONAL** | Migration-local lifecycle review hint generator; cues require human adjudication and never allocate IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **TRANSITIONAL** | Migration-local advisory GPT evidence importer; never approves dispositions, allocates IDs, or mutates plan files. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **TRANSITIONAL** | Migration-local independent-review reconciliation report; never selects dispositions or allocates IDs. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **TRANSITIONAL** | Migration-local field-by-field reconciliation of independent semantic reviews; never selects a winner or allocates IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
@@ -507,6 +508,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **TRANSITIONAL** | Explicit source-backed resolutions for GPT-ambiguous lifecycle rows; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv` | **TRANSITIONAL** | Source-backed resolutions for conflicts between GPT and independent lifecycle reviews; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna lifecycle review evidence for cross-checking GPT classifications; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna semantic review evidence for the 200 active frozen items; advisory migration evidence, not canonical plan state. |
 
 ## HI168 retained investigation tools
 
