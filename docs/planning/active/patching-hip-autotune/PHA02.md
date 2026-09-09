@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Completed a source/runtime audit against the pinned Brutus RCCL checkout. The multi-architecture bundle contains gfx1030/gfx1100/gfx1201 code objects; RCCL records per-rank architecture/tuning state but launches a generic kernel function without a BigCherry-visible per-rank code-object selector. Existing crash-isolated qualification evidence remains scoped to its tested topologies. No safe RCCL source fix was identified; the production guard and META heterogeneous path remain unchanged.
+Current audit is useful but not closure evidence: it traced RCCL revision 57e58688f44c77076ad536ef1f6b68741fc6e694 and the multi-arch bundle, while dev-GPT identified the historical failing runtime as RCCL 2.27.7-1/source 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe. A fresh fetch of that exact object from the available Brutus remote failed (`not our ref`). PHA02 remains open pending matching-source acquisition or a fresh blocked/no-safe-change disposition.
 
 ## Steps
 
@@ -39,7 +39,7 @@ docs/evidence/pha02-rccl-source-audit-20260909/README.md; docs/reference/testing
 
 ## Validation
 
-Brutus source checkout revision `57e58688f44c77076ad536ef1f6b68741fc6e694` was inspected. Existing source/build artifacts prove multi-arch code objects (`gfx1030`, `gfx1100`, `gfx1201`) and exact RCCL linkage. Static trace covers `src/init.cc:1355-1364,2135-2221`, `src/graph/tuning.cc:638-783,1017-1032`, and `src/enqueue.cc:896-898,1808-1832`. Existing `rq08-01/cases.jsonl` remains scoped evidence and is summarized in the new evidence record. No BigCherry production patch was changed.
+Dev-GPT review requires exact failing-runtime source/build provenance, exact RCCL kernel/code-object registration→architecture-selection→launch function, and if instrumentable a mixed-architecture pre-launch trace. Current evidence records the non-matching source audit, code-object presence, and fresh fetch failure; it does not claim closure. Same-arch control and existing 1225 guard evidence remain historical and unchanged.
 
 ## Effort & Risk
 
@@ -51,7 +51,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Source/runtime provenance and dispatch trace are recorded; the observed limitation is bounded to the tested RCCL/runtime/topology; no unsupported BigCherry fix is introduced; the fail-closed guard and META fallback remain the production boundary. A future source repair, if pursued, must be independently qualified before integration.
+Do not close on the non-matching 57e5868 audit alone. Obtain/review source matching 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe and produce the exact dispatch trace, or after a fresh acquisition attempt document a concrete external blocker/no-safe-change conclusion while retaining 1225 unchanged.
 
 ## Notes
 
@@ -73,3 +73,6 @@ Successor key: patching-hip-autotune-hi137
 - chg_20260909_133351_pha02-now-has-a-reproducible-r_8961
 - 2026-09-09T13:33:51.713052+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:39:02.797891+00:00 (state-transition): State: pending → in_progress
+- 2026-09-09T13:45:37.624883+00:00 (updated-by): Updated: section:description, section:validation, section:acceptance_criteria
+- chg_20260909_134551_pha02-evidence-is-now-accurate_7163
+- 2026-09-09T13:45:51.372943+00:00 (updated-by): Updated: section:ledger-events
