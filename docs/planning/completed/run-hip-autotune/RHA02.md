@@ -2,7 +2,7 @@
 id: RHA02
 order: 0
 plan: run-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:48:42.206554+00:00'
 breadth: ''
 skill: advanced
@@ -17,6 +17,8 @@ priority: null
 
 Offline validation and the headline dual-XTX graph lifecycle proof are complete. The remaining qualification scope is explicitly bounded to any still-required mixed-topology/long-context rows and durable raw artifact retention; this item must not be used to claim RHA04 production parity.
 
+Core multi-GPU graph lifecycle qualification is complete. The strict offline validator and real dual-XTX graph-on lifecycle proof are accepted for the current release target. Mixed gfx1100/gfx1201 and long-context rows are explicitly outside the current RHA04 production target; durable raw artifact retention is split to RHA09 and is not silently claimed here.
+
 ## Steps
 
 1. Preserve the strict offline validator and graph-lifecycle parser.
@@ -24,6 +26,8 @@ Offline validation and the headline dual-XTX graph lifecycle proof are complete.
 3. Determine whether mixed gfx1100/gfx1201 and long-context rows remain release-required; if yes, run them through the maintained server harness with identity, topology and lifecycle evidence.
 4. Retain raw logs and machine-readable validator output under docs/evidence and record limitations.
 5. Keep production parity/performance admission under RHA04.
+
+1. Preserve the strict offline validator and graph-lifecycle parser.\n2. Retain the real dual-XTX graph-on lifecycle evidence from the HI14 successor run: capture_begin, capture_end, instantiate and replay, with clean teardown and real graph reuse.\n3. Scope decision: mixed gfx1100/gfx1201 and long-context rows are not required by the current release target; do not run them under RHA02 unless scope changes.\n4. Durable raw artifact retention is tracked separately under RHA09.\n5. Keep production parity/performance admission under RHA04.
 
 ## Detailed Solution & Technical Design
 
@@ -43,9 +47,13 @@ docs/evidence/2026-08-23-hi14-graph-lifecycle/ (follow-up artifact if re-run)
 docs/planning/completed/hip-autotune/HI14.md
 docs/planning/completed/hip-autotune/HI90.md
 
+tools/bigcherry/multi_gpu_validate.py\ntools/bigcherry/graph_lifecycle_evidence.py\ntools/tests/test_multi_gpu_validate.py\ntools/tests/test_graph_lifecycle_evidence.py\ndocs/planning/completed/hip-autotune/HI14.md\ndocs/planning/completed/hip-autotune/HI90.md\ndocs/planning/active/run-hip-autotune/RHA09.md
+
 ## Validation
 
 Offline validator/parser and unit tests are complete. Real Brutus dual-XTX graph-on evidence is recorded in HI14/HI90 notes and ledger events: production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers observed. Completion is not claimed for mixed gfx1100/gfx1201 or long-context rows, and RHA04 performance admission remains independent.
+
+Core gate complete: offline validator/parser and unit tests pass; real Brutus dual-XTX graph-on evidence recorded in HI14/HI90 shows production-shaped tensor split, graphs reused, and capture_begin/capture_end/instantiate/replay markers with clean teardown. The current release target is homogeneous dual gfx1100 27B plus single-GPU 9B; mixed gfx1100/gfx1201 and long-context rows are out of scope. Durable raw retention is explicitly pending RHA09. RHA04 performance admission remains independent.
 
 ## Effort & Risk
 
@@ -67,6 +75,8 @@ Successor key: run-hip-autotune-hi14
 
 Successor of HI14; migration capability-rebaseline-v3-2026-09. Evaluated against current evidence: the core graph lifecycle gap is closed, but durable raw artifact retention and any release-required mixed/long-context rows remain. Do not duplicate RHA04's native/replay parity matrix or attestation gate.
 
+Supersedes: HI14\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: run-hip-autotune-hi14\n\nCore graph lifecycle acceptance is complete for the current release target. Mixed-topology and long-context rows are not release-required here and remain explicitly out of scope. Review RV161 split the missing durable raw artifact bundle into RHA09; do not claim that bundle exists until RHA09 closes. RHA04 owns parity/performance admission.
+
 ## Change Log
 
 - 2026-09-09T10:48:42.206554+00:00 (created-by): Created by capability-rebaseline-v3
@@ -81,3 +91,7 @@ Successor of HI14; migration capability-rebaseline-v3-2026-09. Evaluated against
 - 2026-09-09T18:18:17.869715+00:00 (state-transition): State: pending → in_progress
 - chg_20260909_181829_rha02-is-no-longer-stale-its_8078
 - 2026-09-09T18:18:29.048613+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:17:14.681140+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:notes
+- 2026-09-09T19:17:29.288502+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_191740_rha02s-core-graph-lifecycle-q_5460
+- 2026-09-09T19:17:40.595172+00:00 (updated-by): Updated: section:ledger-events
