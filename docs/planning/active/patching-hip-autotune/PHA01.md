@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Gate infrastructure landed; real evidence pass and CLI apply wiring remain.
+Implemented the direct `bigcherry apply --source` admission seam for validated-state evidence. Apply now fails closed before overlay or patch mutation when evidence is stale/missing, with an explicit development-only `--allow-stale-validation-evidence` escape hatch. Rebase-report/known-good apply remains independently fail-closed on its freshness proof.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Resolve and TOCTOU-check the exact source composition and live upstream revision.
+2. Run patch admission before audit-dependent mutation/overlay installation.
+3. Emit admission failures and explicit escape-hatch warnings; never relax production build/campaign admission.
+4. Validate rejection-before-mutation and parser wiring with focused release, admission, rebase, catalog, and CLI tests.
+5. Record the implementation in the release ledger and push the branch.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-hip-autotune-hi102.md
+tools/bigcherry/__main__.py; tools/bigcherry/cli/main.py; tools/bigcherry/cli/patch.py; tools/tests/release/test_releases.py; tools/tests/core/test_cli_tooling_surface.py
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI83,PA08,PA09,RD08.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (4) on predecessor.
+Focused validation passed: `python -m pytest -q tools/tests/release/test_releases.py tools/tests/patch/test_patch_admission.py tools/tests/patch/test_patch_catalog.py tools/tests/patch/test_patch_rebase.py` (92 passed, 5 subtests); CLI/campaign surface passed: `python -m pytest -q tools/tests/core/test_cli_tooling_surface.py tools/tests/campaign/test_campaign_build.py` (33 passed, 1 skipped). The new release test proves admission rejection occurs before `_copy_overlay`; parser coverage proves the escape hatch is explicit.
 
 ## Effort & Risk
 
@@ -57,7 +55,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Direct source apply invokes patch admission after exact selection/live revision checks and before any overlay or patch mutation; stale/missing evidence fails closed by default; the escape hatch is explicit and warns; production/rebase-report gates remain fail-closed; focused tests pass.
 
 ## Notes
 
@@ -74,3 +72,7 @@ Successor key: patching-hip-autotune-hi102
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.785104+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:27:22.858646+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
+- chg_20260909_132732_pha01-direct-patch-admission-i_5854
+- 2026-09-09T13:27:32.588197+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:27:52.066363+00:00 (updated-by): Updated: section:steps
