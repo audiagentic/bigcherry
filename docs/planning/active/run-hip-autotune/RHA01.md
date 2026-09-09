@@ -41,11 +41,7 @@ successor-specs/run-hip-autotune-hi133.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Deferred by explicit capability constraint: no usable perf event source on Brutus. When resumed, require a perf.py integration test plus a real-target CPU call-graph capture with provenance; absence of perf data is not a pass.
 
 ## Effort & Risk
 
@@ -65,6 +61,8 @@ Supersedes: HI133
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-hip-autotune-hi133
 
+Evaluated against the completed RHA04/RHA10/RHA11 production admission path. This is an optional profiling enhancement, not a prerequisite for the parity/admission mission. Brutus currently exposes no usable perf events for the requested CPU call graph; implementing perf.py integration without a functioning target would produce no decision-grade evidence. Leave pending/deferred until a perf-capable host or kernel configuration is available; do not reopen the completed GPU admission items.
+
 ## Change Log
 
 - 2026-09-09T10:48:34.167227+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +70,9 @@ Successor key: run-hip-autotune-hi133
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.818915+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T21:02:58.731913+00:00 (updated-by): Updated: section:validation, section:notes
+- chg_20260909_210309_the-only-remaining-active-plan_2565
+- 2026-09-09T21:03:09.280906+00:00 (updated-by): Updated: section:ledger-events
