@@ -191,6 +191,7 @@ def main() -> int:
     queue_rows: list[dict[str, str]] = []
     dispositions: list[dict[str, str]] = []
     reference_rows: list[dict[str, str]] = []
+    dependency_rows: list[dict[str, str]] = []
 
     for item in items:
         refs = 0
@@ -240,6 +241,22 @@ def main() -> int:
                         "context": context(line),
                     }
                 )
+            if re.search(r"\b(?:depends?\s+on|blocked\s+on|prerequisite)\b", line, re.IGNORECASE):
+                for match in id_pattern.finditer(line):
+                    target_id = match.group(1)
+                    if target_id == item.item_id:
+                        continue
+                    dependency_rows.append({
+                        "occurrence_id": hashlib.sha256(
+                            f"{source_commit}:{item.path}:{line_no}:dependency:{target_id}".encode("utf-8")
+                        ).hexdigest()[:16],
+                        "owner_source_id": item.item_id,
+                        "owner_source_path": item.path,
+                        "line": str(line_no),
+                        "old_dependency_id": target_id,
+                        "context_hash": hashlib.sha256(context(line).encode("utf-8")).hexdigest(),
+                        "context": context(line),
+                    })
 
         inventory_rows.append(
             {
@@ -318,6 +335,12 @@ def main() -> int:
         output / "PLAN_REFERENCES.tsv",
         ["occurrence_id", "source_path", "source_id", "line", "ref_type", "old_ref", "target_source_path", "context_hash", "context"],
         reference_rows,
+        delimiter="\t",
+    )
+    write_csv(
+        output / "DEPENDENCY_CANDIDATES.tsv",
+        ["occurrence_id", "owner_source_id", "owner_source_path", "line", "old_dependency_id", "context_hash", "context"],
+        dependency_rows,
         delimiter="\t",
     )
 

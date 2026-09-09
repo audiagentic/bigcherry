@@ -193,6 +193,18 @@ def main() -> int:
             ref["semantic_class"] = "active_scope"
             ref["action"] = "rewrite_to_successor"
     write_tsv(work / "REFERENCE_DECISIONS.tsv", ["occurrence_id", "source_path", "source_id", "line", "old_ref", "reference_kind", "decision", "target_successor_key_or_id", "rationale", "semantic_class", "action", "context_hash", "context"], references)
+
+    dependency_candidates = read_csv(work / "DEPENDENCY_CANDIDATES.tsv", delimiter="\t") if (work / "DEPENDENCY_CANDIDATES.tsv").exists() else []
+    dep_rows = []
+    for candidate in dependency_candidates:
+        owner = candidate["owner_source_id"]
+        dependency = candidate["old_dependency_id"]
+        target = disposition_by_id.get(dependency, {})
+        if target.get("disposition") in {"successor", "split", "merge"}:
+            dep_rows.append({"occurrence_id": candidate["occurrence_id"], "owner_source_id": owner, "old_dependency_id": dependency, "decision": "rewrite", "target_successor_key_or_id": target.get("successor_keys", ""), "rationale": "Draft classification: explicit dependency follows continuing successor."})
+        else:
+            dep_rows.append({"occurrence_id": candidate["occurrence_id"], "owner_source_id": owner, "old_dependency_id": dependency, "decision": "preserve", "target_successor_key_or_id": "", "rationale": "Draft classification: dependency remains historical or terminal; confirm during review."})
+    write_tsv(work / "DEPENDENCY_REMAP.tsv", ["occurrence_id", "owner_source_id", "old_dependency_id", "decision", "target_successor_key_or_id", "rationale"], dep_rows)
     print(f"namespaces={len(namespace_rows)} dispositions={len(dispositions)} successors={len(successors)} lineage={len(lineage)}")
     return 0
 

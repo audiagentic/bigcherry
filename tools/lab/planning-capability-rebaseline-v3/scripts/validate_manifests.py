@@ -236,6 +236,7 @@ def main() -> int:
     successors = read_rows(work / "SUCCESSORS.csv")
     lineage = read_rows(work / "LINEAGE.csv")
     dep_rows = read_rows(work / "DEPENDENCY_REMAP.tsv", delimiter="\t")
+    dep_candidates = read_rows(work / "DEPENDENCY_CANDIDATES.tsv", delimiter="\t")
     ref_rows = read_rows(work / "REFERENCE_DECISIONS.tsv", delimiter="\t")
 
     inventory_by_id = {r["source_id"]: r for r in inventory}
@@ -587,6 +588,10 @@ def main() -> int:
             )
 
     # Explicit dependency remaps are stricter than generic references.
+    candidate_keys = {(r.get("occurrence_id", ""), r.get("owner_source_id", ""), r.get("old_dependency_id", "")) for r in dep_candidates}
+    remap_keys = {(r.get("occurrence_id", ""), r.get("owner_source_id", ""), r.get("old_dependency_id", "")) for r in dep_rows}
+    if candidate_keys != remap_keys:
+        p.error(f"DEPENDENCY_REMAP.tsv must cover every explicit dependency candidate (missing={len(candidate_keys - remap_keys)}, extra={len(remap_keys - candidate_keys)})")
     for idx, row in enumerate(dep_rows, 2):
         owner = row.get("owner_source_id", "")
         old_dep = row.get("old_dependency_id", "")

@@ -16,8 +16,8 @@
     },
     {
       "path": "MANIFEST_MODEL.md",
-      "bytes": 3056,
-      "sha256": "67b4204747f603279a183ae41ee73e81541e9e1f564f54a97288c56a40155a77"
+      "bytes": 3228,
+      "sha256": "e56ed4539537d11e23b24b3d1031adc808c5cd8df9e096b8626765275ccf8e9d"
     },
     {
       "path": "PLACEMENT.md",
@@ -61,8 +61,8 @@
     },
     {
       "path": "scripts/generate_inventory.py",
-      "bytes": 16040,
-      "sha256": "e10710e3d7416555cd6c4b8ce899e8d0f32626048ae4cdd56def5b02a0e4800c"
+      "bytes": 17252,
+      "sha256": "2dffbecedc5cdf9f83c80408aa27bf1d426a0d28e831f003cc3497a9a92991b2"
     },
     {
       "path": "scripts/reconcile_lifecycle_reviews.py",
@@ -81,13 +81,13 @@
     },
     {
       "path": "scripts/seed_review_manifests.py",
-      "bytes": 12457,
-      "sha256": "c81b01dbe2f30c89f0c129803dadb43e768ad6c289ba7756e5670206aa929d71"
+      "bytes": 13679,
+      "sha256": "1ad4d8783df576086ca7a8b3a6bfc28e33c51371f352850242f8202078b3a758"
     },
     {
       "path": "scripts/validate_manifests.py",
-      "bytes": 33347,
-      "sha256": "208eb0b19a48148043c1499ad10b1971d8c479798326d7cb3b31fcd8275db88e"
+      "bytes": 33908,
+      "sha256": "594c95e81ff0bb4f794007378637db6f3b8c7d2a5d43cf9220944cd61fa4528d"
     },
     {
       "path": "SOURCE_LOCK.json",
