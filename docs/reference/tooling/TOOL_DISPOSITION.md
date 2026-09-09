@@ -501,6 +501,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the v3 migration; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **TRANSITIONAL** | Explicit source-backed resolutions for GPT-ambiguous lifecycle rows; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna lifecycle review evidence for cross-checking GPT classifications; not canonical plan state. |
 
 ## HI168 retained investigation tools
 
