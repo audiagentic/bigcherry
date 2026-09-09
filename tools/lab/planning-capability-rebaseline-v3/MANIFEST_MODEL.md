@@ -14,6 +14,7 @@ The migration manifest is normalized across review-friendly files rather than on
 | `SUCCESSORS.csv` | 1 row / new plan | target namespace, allocated ID, acceptance boundary, spec |
 | `LINEAGE.csv` | 1 row / predecessor-successor edge | supports 1:1, 1:N and N:1 without lossy list fields |
 | `DEPENDENCY_REMAP.tsv` | 1 row / explicit dependency decision | active dependency migration |
+| `DEPENDENCY_CANDIDATES.tsv` | 1 row / explicit frozen dependency occurrence | independently extracted dependency universe; every row must map to `DEPENDENCY_REMAP.tsv` |
 | `REFERENCE_DECISIONS.tsv` | 1 row / source occurrence requiring review | historical preserve vs active rewrite/remove; deterministic occurrence/context hashes and semantic action |
 | `successor-specs/*.md` | 1 file / successor | reviewed future scope/content passed to `plan_update_item` |
 
