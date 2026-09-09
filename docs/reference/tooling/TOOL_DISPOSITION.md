@@ -520,6 +520,25 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna semantic review evidence for the 200 active frozen items; advisory migration evidence, not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/SEMANTIC_APPROVAL_2026-09-09.json` | **TRANSITIONAL** | Explicit scoped approval basis for using Luna semantic evidence as primary after GPT evidence failed closed; not canonical plan state. |
 
+## HI172 kernel-trace investigation tooling
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/hi172-kernel-trace/config-27b-dual-xtx.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
+| `tools/lab/hi172-kernel-trace/config-gpu0-longgen.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
+| `tools/lab/hi172-kernel-trace/config-gpu0-realprompt.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
+| `tools/lab/hi172-kernel-trace/config-gpu0.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
+| `tools/lab/hi172-kernel-trace/run.py` | **TRANSITIONAL** | THA16/HI172: reusable diagnostic runner retained as investigation provenance; not a production benchmark engine. |
+| `tools/lab/hi172-kernel-trace/run_perf.py` | **TRANSITIONAL** | THA16/HI172: reusable perf diagnostic runner retained as investigation provenance; not a production benchmark engine. |
+
+## RD87 hipBLASLt oracle tooling
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/rd87-hipblaslt-oracle/analyze_results.py` | **TRANSITIONAL** | PRBE26/RD87: retained negative-finding analysis for captured decode GEMM shapes; not a production dispatch path. |
+| `tools/lab/rd87-hipblaslt-oracle/rd87_comparison.csv` | **TRANSITIONAL** | PRBE26/RD87: retained immutable comparison output and investigation provenance. |
+| `tools/lab/rd87-hipblaslt-oracle/rd87_shapes.sample.json` | **TRANSITIONAL** | PRBE26/RD87: retained sample input for the completed oracle analysis; not a canonical tuning catalog. |
+
 ## HI168 retained investigation tools
 
 | Path | Disposition | Owner and rationale |
