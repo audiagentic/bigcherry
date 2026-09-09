@@ -10,7 +10,8 @@
         0,
         1
       ],
-      "identity_digest": "89cc06c104eaa1ac56995d6444526da5",
+      "identity_digest": "d2bca2969ca17ed944a9e3ff64e7a82b",
+      "inventory_id": null,
       "model_id": "tierL-qwen27b-q8",
       "runtime_profile": "production-dual-xtx",
       "schema_version": 1,

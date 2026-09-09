@@ -1,0 +1,47 @@
+{
+  "completed": 1,
+  "results": [
+    {
+      "cell": {
+        "arm": "native",
+        "binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+        "build_id": "cc941b35debd296660cbbc382411a6b7-b86b1e97d91605ce764e48f59342a962",
+        "cache_id": null,
+        "cell_id": "rha06-9b-gpu0-native-smoke",
+        "devices": [
+          0
+        ],
+        "identity_digest": "bbd3d0cffa0027ac7c80f7ae2f9d2690",
+        "inventory_id": null,
+        "model_id": "tierB-qwen9b-q6k",
+        "runtime_profile": "production-safe-single",
+        "schema_version": 1,
+        "topology": "single",
+        "visibility": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "ROCR_VISIBLE_DEVICES": "0"
+        },
+        "workload": {
+          "server_bench": {
+            "bench_configs": "tg128",
+            "model_label": "Qwen3.5-9B-Q6_K",
+            "repetitions": 1,
+            "runner_root": "/mnt/vault/development/llmhosts/llamacpp",
+            "server_url": "http://127.0.0.1:18400",
+            "timeout_s": 300
+          }
+        }
+      },
+      "child_result": {
+        "metrics": {
+          "tg128_tps": 85.4
+        },
+        "performance_admitted": false,
+        "returncode": 0
+      },
+      "matrix_status": "executed"
+    }
+  ],
+  "state": "completed",
+  "total": 1
+}

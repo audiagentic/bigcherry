@@ -2,7 +2,7 @@
 id: RHA06
 order: 0
 plan: run-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T10:49:53.272839+00:00'
 breadth: ''
 skill: advanced
@@ -57,7 +57,7 @@ docs/reference/testing/TEST.md
 
 ## Validation
 
-Implemented and tested resolve_matrix()/run_matrix() plus the declarative runtime-matrix CLI. The adapter loads canonical config/environment.toml, config/models.toml and config/recipes.toml; rejects unknown models/profiles and invalid single/dual topology shapes before execution; tune cells require identity-bound inventory_id and replay cells require cache_id; writes immutable resolved-matrix.json and atomic summary.json; revalidates config/registry/recipe and available binary digests immediately before each child; and delegates cells serially without a shell while propagating canonical visibility and BIGCHERRY_RUNTIME_CELL_JSON. It has a maintained server-bench delegate through campaign/bench_runner.py. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/cli/test_runtime_matrix_cli.py tools/tests/campaign/test_runtime_matrix.py tools/tests/campaign/test_bench_runner_evidence.py tools/tests/campaign/test_server_benchmark_capture.py -q (35 passed, 4 subtests). Real Brutus maintained-harness smokes are recorded in docs/evidence/2026-09-10-rha06-cli-smoke and docs/evidence/2026-09-10-rha06-dual-27b-smoke; both completed with clean teardown; rerun after summary persistence lands to retain aggregate child-result files.
+Implemented and tested resolve_matrix()/run_matrix() plus the declarative runtime-matrix CLI. The adapter loads canonical config/environment.toml, config/models.toml and config/recipes.toml; rejects unknown models/profiles and invalid single/dual topology shapes before execution; tune cells require identity-bound inventory_id and replay cells require cache_id; writes immutable resolved-matrix.json and atomic summary.json; revalidates config/registry/recipe and available binary digests immediately before each child; and delegates cells serially without a shell while propagating canonical visibility and BIGCHERRY_RUNTIME_CELL_JSON. It has a maintained server-bench delegate through campaign/bench_runner.py. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/cli/test_runtime_matrix_cli.py tools/tests/campaign/test_runtime_matrix.py tools/tests/campaign/test_bench_runner_evidence.py tools/tests/campaign/test_server_benchmark_capture.py -q (35 passed, 4 subtests). Real Brutus maintained-harness smokes are recorded in docs/evidence/2026-09-10-rha06-cli-smoke and docs/evidence/2026-09-10-rha06-dual-27b-smoke; both completed with clean teardown, canonical visibility, resolved/status/events/summary artifacts, and no performance-admission claim.
 
 ## Effort & Risk
 
@@ -73,10 +73,10 @@ Fail closed; canonical models.toml, environment.toml/BC_* and recipes.toml only;
 
 ## Acceptance Criteria
 
-- A configuration-only JSON matrix can be resolved through the CLI for a registered model, physical GPU set and registered runtime profile.
+- A configuration-only JSON matrix resolves and runs registered model, physical GPU set and registered runtime profile through the CLI.
 - Preflight rejects unknown models/profiles, invalid topology/device shapes, tune cells without identity-bound inventory, and replay cells without cache evidence before worker launch.
 - Existing worker commands or the maintained server-bench runner are delegated serially with canonical visibility and immutable cell identity.
-- resolved-matrix.json, atomic status.json and sanitized append-only events.jsonl are emitted for UI polling.
+- resolved-matrix.json, atomic status.json, atomic summary.json and sanitized append-only events.jsonl are emitted for UI polling and audit.
 - Child non-zero exit/failure remains a failed matrix and cannot be upgraded by the adapter.
 - Maintained-harness boundary smokes pass for representative single-GPU/9B and dual-XTX/27B configurations without fake runtime_matrix callbacks.
 - Performance admission remains owned by the child workflows; smoke throughput is not a parity claim.
@@ -121,3 +121,7 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - 2026-09-09T17:54:13.237234+00:00 (updated-by): Updated: section:validation
 - chg_20260909_175423_every-runtime-matrix-run-now-l_3340
 - 2026-09-09T17:54:23.219332+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T17:57:17.498430+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-09-09T17:57:26.040769+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_175737_rha06-is-complete-configurabl_4198
+- 2026-09-09T17:57:38.014317+00:00 (updated-by): Updated: section:ledger-events

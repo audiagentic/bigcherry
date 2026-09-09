@@ -1,4 +1,4 @@
-{"active_cell": null, "at": 1788976204.2912068, "completed": 0, "schema_version": 1, "state": "preflight_complete", "total": 1}
-{"active_cell": "rha06-27b-dual-xtx-native-smoke", "at": 1788976204.301908, "completed": 0, "schema_version": 1, "state": "running", "total": 1}
-{"active_cell": "rha06-27b-dual-xtx-native-smoke", "at": 1788976223.8508344, "completed": 1, "schema_version": 1, "state": "cell_complete", "total": 1}
-{"active_cell": null, "at": 1788976223.8549936, "completed": 1, "schema_version": 1, "state": "completed", "total": 1}
+{"active_cell": null, "at": 1788976579.9639833, "completed": 0, "schema_version": 1, "state": "preflight_complete", "total": 1}
+{"active_cell": "rha06-27b-dual-xtx-native-smoke", "at": 1788976579.9699435, "completed": 0, "schema_version": 1, "state": "running", "total": 1}
+{"active_cell": "rha06-27b-dual-xtx-native-smoke", "at": 1788976599.5964534, "completed": 1, "schema_version": 1, "state": "cell_complete", "total": 1}
+{"active_cell": null, "at": 1788976599.6151597, "completed": 1, "schema_version": 1, "state": "completed", "total": 1}

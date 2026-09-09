@@ -9,7 +9,8 @@
       "devices": [
         0
       ],
-      "identity_digest": "8f38f78df6b0bd1944df2f3aae90e2d9",
+      "identity_digest": "bbd3d0cffa0027ac7c80f7ae2f9d2690",
+      "inventory_id": null,
       "model_id": "tierB-qwen9b-q6k",
       "runtime_profile": "production-safe-single",
       "schema_version": 1,
