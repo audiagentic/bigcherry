@@ -122,23 +122,31 @@ def main() -> int:
                 ref["reference_kind"] = "historical_decision"
                 ref["decision"] = "preserve"
                 ref["rationale"] = "Draft classification: terminal predecessor records a historical supporting path."
+                ref["semantic_class"] = "historical_provenance"
+                ref["action"] = "preserve_predecessor"
             continue
         if target["disposition"] == "retain-history":
             ref["reference_kind"] = "historical_decision"
             ref["decision"] = "preserve"
             ref["rationale"] = "Draft classification: reference targets a retained historical predecessor."
+            ref["semantic_class"] = "historical_provenance"
+            ref["action"] = "preserve_predecessor"
             continue
         historical = (source and source["source_state"] in TERMINAL) or target["source_state"] in TERMINAL
         if historical or target["disposition"] == "retire-completed":
             ref["reference_kind"] = "historical_decision"
             ref["decision"] = "preserve"
             ref["rationale"] = "Draft classification: historical/terminal provenance remains attached to the predecessor."
+            ref["semantic_class"] = "historical_provenance"
+            ref["action"] = "preserve_predecessor"
         else:
             ref["reference_kind"] = "active_scope"
             ref["decision"] = "rewrite"
             ref["target_successor_key_or_id"] = successor_by_id.get(target_id, "")
             ref["rationale"] = "Draft classification: active forward reference follows the successor."
-    write_tsv(work / "REFERENCE_DECISIONS.tsv", ["source_path", "line", "old_ref", "reference_kind", "decision", "target_successor_key_or_id", "rationale", "context"], references)
+            ref["semantic_class"] = "active_scope"
+            ref["action"] = "rewrite_to_successor"
+    write_tsv(work / "REFERENCE_DECISIONS.tsv", ["occurrence_id", "source_path", "source_id", "line", "old_ref", "reference_kind", "decision", "target_successor_key_or_id", "rationale", "semantic_class", "action", "context_hash", "context"], references)
     print(f"namespaces={len(namespace_rows)} dispositions={len(dispositions)} successors={len(successors)} lineage={len(lineage)}")
     return 0
 

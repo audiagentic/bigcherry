@@ -35,6 +35,8 @@ REFERENCE_KINDS = {
 ACTIVE_REFERENCE_KINDS = {"active_dependency", "active_followup", "active_scope"}
 HISTORICAL_REFERENCE_KINDS = {"historical_evidence", "historical_review", "historical_decision"}
 REFERENCE_DECISIONS = {"preserve", "rewrite", "remove"}
+SEMANTIC_CLASSES = {"active_scope", "historical_provenance", "identity_declaration", "literal_example", "unclassified"}
+SEMANTIC_ACTIONS = {"rewrite_to_successor", "preserve_predecessor", "remove", "no_change", "unclassified"}
 TRUE_VALUES = {"true", "1", "yes", "y"}
 ID_RE = re.compile(r"^[A-Z][A-Z0-9]*\d+$")
 
@@ -372,11 +374,33 @@ def main() -> int:
             p.error(f"successor {key}: merge disposition requires >=2 predecessor edges")
 
     # Reference decisions: require decisions for references to changing predecessors.
+    occurrence_ids: set[str] = set()
     changing = {sid for sid, row in disp_by_id.items() if row.get("disposition") != "retain-history"}
     for idx, row in enumerate(ref_rows, 2):
+        occurrence_id = row.get("occurrence_id", "")
+        if not re.fullmatch(r"[0-9a-f]{16}", occurrence_id):
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: occurrence_id must be a 16-digit lowercase hash")
+        elif occurrence_id in occurrence_ids:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: duplicate occurrence_id {occurrence_id}")
+        else:
+            occurrence_ids.add(occurrence_id)
+        semantic_class = row.get("semantic_class", "")
+        action = row.get("action", "")
+        if semantic_class not in SEMANTIC_CLASSES:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: invalid semantic_class {semantic_class!r}")
+        if action not in SEMANTIC_ACTIONS:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: invalid action {action!r}")
+        context_hash = row.get("context_hash", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", context_hash):
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: context_hash must be sha256")
+        elif hashlib.sha256(row.get("context", "").encode("utf-8")).hexdigest() != context_hash:
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: context_hash does not match context")
         old_ref = normalize_path_ref(row.get("old_ref", ""))
         target_id = old_ref if old_ref in inventory_by_id else path_to_id.get(old_ref, "")
         if not target_id or target_id not in changing:
+            continue
+        if semantic_class == "unclassified" or action == "unclassified":
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: semantic classification is unresolved for {old_ref}")
             continue
         kind = row.get("reference_kind", "")
         decision = row.get("decision", "")
@@ -386,6 +410,10 @@ def main() -> int:
         if decision not in REFERENCE_DECISIONS:
             p.error(f"REFERENCE_DECISIONS.tsv:{idx}: unresolved decision for {old_ref}")
             continue
+        if action == "rewrite_to_successor" and decision != "rewrite":
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: rewrite_to_successor must use decision=rewrite")
+        if action == "preserve_predecessor" and decision != "preserve":
+            p.error(f"REFERENCE_DECISIONS.tsv:{idx}: preserve_predecessor must use decision=preserve")
         target_disp = disp_by_id[target_id].get("disposition", "")
         if target_disp in CONTINUING:
             if kind in ACTIVE_REFERENCE_KINDS and decision != "rewrite":
