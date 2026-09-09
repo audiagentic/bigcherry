@@ -45,6 +45,11 @@
       "sha256": "08cfd9147c1e30901e31e8abe511f32b292d8b306e35cf2a3c2abdee681d00cf"
     },
     {
+      "path": "review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv",
+      "bytes": 116471,
+      "sha256": "c22f7e6e2e2b9569ccfbec848812edaaedda3342a827739c5bdc32df63651451"
+    },
+    {
       "path": "review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv",
       "bytes": 555,
       "sha256": "4c68e77f2f518dc1913f8a44db913bc9fd396a7350e7f411b63fac4ac49f1225"
@@ -88,6 +93,11 @@
       "path": "scripts/reconcile_lifecycle_reviews.py",
       "bytes": 2122,
       "sha256": "16d78482dea44a224b53d2fa5bf046f9466672e23b895587e62ea50428476ef9"
+    },
+    {
+      "path": "scripts/reconcile_semantic_reviews.py",
+      "bytes": 3092,
+      "sha256": "e8fd52b8433dbd56d8a59f91bdd217df133eb87520a396952cfd2245111e79c4"
     },
     {
       "path": "scripts/refresh_pack_manifest.py",
