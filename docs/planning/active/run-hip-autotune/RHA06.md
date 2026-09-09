@@ -2,7 +2,7 @@
 id: RHA06
 order: 0
 plan: run-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:49:53.272839+00:00'
 breadth: ''
 skill: advanced
@@ -118,3 +118,4 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - 2026-09-09T15:45:07.241811+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
 - chg_20260909_154517_added-reusable-ui-pollable-ru_5957
 - 2026-09-09T15:45:18.008716+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:57:03.090273+00:00 (state-transition): State: pending → in_progress
