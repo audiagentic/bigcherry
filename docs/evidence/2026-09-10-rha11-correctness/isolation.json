@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "evidence_role": "correctness-isolation",
+  "source_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+  "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "topology": {
+    "hip_visible_devices": "0,1",
+    "rocr_visible_devices": "0,1",
+    "locators": ["0000:03:00.0", "0000:06:00.0"]
+  },
+  "request_contract": {
+    "seed": 42,
+    "temperature": 0.0,
+    "n_predict": 48,
+    "server_args": ["-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096", "--flash-attn", "on", "--ubatch-size", "512", "--batch-size", "2048", "--threads", "8", "--parallel", "1"]
+  },
+  "quarantined_dispatches": [
+    {
+      "dispatch": "f21133b3ee604fd361cb7eb5ccfd1fc3",
+      "signature": "19a6ba40abbf5e14029d25cf67782eaa",
+      "previous_winner": "mmvq:q8_0:w1:nw4:rpb4:sk1:v1",
+      "replacement": "mmvq:native:v1"
+    },
+    {
+      "dispatch": "eb625b97022490d8e6ad5dcaa5cba1b9",
+      "signature": "a03e95a3b8808c2ebd4160067f73f01e",
+      "previous_winner": "mmvq:q8_0:w2:nw4:rpb4:sk1:v1",
+      "replacement": "mmvq:native:v1"
+    }
+  ],
+  "corrected_cache": {
+    "path": "raw/corrected-dispatch.cache",
+    "sha256": "a7d9e867f49578c447c99d598fd4200e2612db007aa5a2deb4817b9bf872b747"
+  },
+  "corpus": {
+    "prompt_count": 3,
+    "stock_native_replay_content_equal": [true, true, true],
+    "all_content_equal": true
+  },
+  "disposition": "candidate-quarantine-proven; regenerate campaign cache and rerun RHA10 production timing/activation before admission"
+}

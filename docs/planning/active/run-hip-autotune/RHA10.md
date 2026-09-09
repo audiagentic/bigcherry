@@ -74,6 +74,8 @@ Checkpoint evidence is retained under docs/evidence/2026-09-10-rha10-admission-g
 
 The exact-source diagnostic activation gate is now evidenced: 21,566/21,566 coverage and 13,342 final tuned launches, paired with diagnostics-off production timing. However, the three-prompt deterministic probe found replay divergence on one prompt; RHA11 owns the blocking correctness investigation. RHA10 remains in_progress and performance_admitted=false.
 
+Exact-source diagnostic activation and diagnostics-off production timing are complete, but the three-prompt correctness gate found replay divergence. RHA11 has now isolated two admitted MMVQ winners and generated a corrected cache with both seeded to native; RHA10 remains fail-closed until that corrected cache is installed in the canonical campaign location and activation/timing are rerun.
+
 ## Change Log
 
 - 2026-09-09T19:45:36.770283+00:00 (created-by): Created by agent
@@ -90,3 +92,6 @@ The exact-source diagnostic activation gate is now evidenced: 21,566/21,566 cove
 - 2026-09-09T20:09:23.176448+00:00 (updated-by): Updated: section:validation, section:notes
 - chg_20260909_200933_the-tuned-path-now-proves-actu_7816
 - 2026-09-09T20:09:33.369698+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:39:10.108454+00:00 (updated-by): Updated: section:notes
+- chg_20260909_203929_the-replay-mismatch-is-now-iso_7697
+- 2026-09-09T20:39:29.251175+00:00 (updated-by): Updated: section:ledger-events
