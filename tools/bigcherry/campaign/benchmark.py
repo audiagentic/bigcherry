@@ -202,6 +202,9 @@ def sanitize_environment(source: dict[str, str], mode: str, cache: Path | None =
         "GGML_HIP_DISPATCH_MODE", "GGML_HIP_DISPATCH_CACHE",
         "GGML_HIP_DISPATCH_COVERAGE", "GGML_HIP_DISPATCH_MISS",
         "GGML_HIP_DISPATCH_OVERRIDE", "GGML_HIP_AUTOTUNE_MODE",
+        # Diagnostics are preflight-only; never let ambient RCCL/NCCL
+        # logging contaminate a timed production arm.
+        "NCCL_DEBUG", "NCCL_DEBUG_SUBSYS", "NCCL_DEBUG_FILE",
     }
     for key in list(env):
         if key in exact or key.startswith(("GGML_HIP_FORCE_", "GGML_HIP_TUNE_")):

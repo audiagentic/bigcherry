@@ -84,7 +84,8 @@ class Pairing(unittest.TestCase):
     def test_environment_is_decontaminated(self):
         env = ab_benchmark.sanitize_environment({
             "PATH": "x", "GGML_HIP_FORCE_FAKE": "1", "GGML_HIP_TUNE_WARMUP": "99",
-            "GGML_HIP_DISPATCH_CACHE": "old",
+            "GGML_HIP_DISPATCH_CACHE": "old", "NCCL_DEBUG": "INFO",
+            "NCCL_DEBUG_SUBSYS": "INIT", "NCCL_DEBUG_FILE": "/tmp/nccl.log",
         }, "native")
         self.assertEqual(env, {"PATH": "x", "GGML_HIP_DISPATCH_MODE": "native"})
 

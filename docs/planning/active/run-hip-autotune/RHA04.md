@@ -118,6 +118,7 @@ Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL prefl
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.903535+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:52:28.033769+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -180,3 +181,5 @@ Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL prefl
 - 2026-09-09T19:12:33.995235+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
 - chg_20260909_191246_the-fresh-dual-xtx-27b-run-is_8236
 - 2026-09-09T19:12:46.413981+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_191424_timed-benchmark-arms-now-fail_8101
+- 2026-09-09T19:14:24.974787+00:00 (updated-by): Updated: section:ledger-events
