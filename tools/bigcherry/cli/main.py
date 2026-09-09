@@ -719,6 +719,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="model registry TOML (default: config/models.toml)",
     )
     runtime_matrix_cmd.add_argument(
+        "--recipes", default=None,
+        help="recipe registry TOML (default: config/recipes.toml)",
+    )
+    runtime_matrix_cmd.add_argument(
         "--dry-run", action="store_true",
         help="resolve and write the immutable matrix without launching workers",
     )

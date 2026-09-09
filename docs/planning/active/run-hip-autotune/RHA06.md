@@ -47,15 +47,17 @@ Evidence contract: cell orchestration status (executed, infrastructure_failed, s
 ## Files
 
 tools/bigcherry/campaign/runtime_matrix.py
+tools/bigcherry/campaign/bench_runner.py
 tools/bigcherry/cli/runtime.py
 tools/bigcherry/cli/main.py
 tools/tests/campaign/test_runtime_matrix.py
+tools/tests/campaign/test_bench_runner_evidence.py
 tools/tests/cli/test_runtime_matrix_cli.py
 docs/reference/testing/TEST.md
 
 ## Validation
 
-Implemented and tested resolve_matrix()/run_matrix() plus the declarative runtime-matrix CLI. The adapter loads canonical config/environment.toml and config/models.toml, rejects unknown models before execution, writes immutable resolved-matrix.json, and delegates cells serially without a shell while propagating visibility and BIGCHERRY_RUNTIME_CELL_JSON. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/cli/test_runtime_matrix_cli.py tools/tests/campaign/test_runtime_matrix.py -q (7 passed). Remaining: real maintained server-bench smoke on Brutus and any worker-specific adapter wiring beyond the generic existing-command delegate.
+Implemented and tested resolve_matrix()/run_matrix() plus the declarative runtime-matrix CLI. The adapter loads canonical config/environment.toml, config/models.toml and config/recipes.toml; rejects unknown models/profiles and invalid single/dual topology shapes before execution; writes immutable resolved-matrix.json; and delegates cells serially without a shell while propagating canonical visibility and BIGCHERRY_RUNTIME_CELL_JSON. It now has a maintained server-bench delegate through campaign/bench_runner.py, with a non-mocked subprocess smoke proving the runner boundary and physical visibility propagation. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/cli/test_runtime_matrix_cli.py tools/tests/campaign/test_runtime_matrix.py tools/tests/campaign/test_bench_runner_evidence.py -q (18 passed). Remaining: real Brutus server-bench smoke using a configured build/server; no performance evidence is claimed by the fixture smoke.
 
 ## Effort & Risk
 
@@ -71,12 +73,13 @@ Fail closed; canonical models.toml, environment.toml/BC_* and recipes.toml only;
 
 ## Acceptance Criteria
 
-- A configuration-only JSON matrix can be resolved through the CLI for a registered model, physical GPU set and runtime profile.
-- Preflight rejects unknown models and invalid cells before worker launch.
-- Existing worker commands are delegated serially with canonical visibility and immutable cell identity.
+- A configuration-only JSON matrix can be resolved through the CLI for a registered model, physical GPU set and registered runtime profile.
+- Preflight rejects unknown models/profiles and invalid topology/device shapes before worker launch.
+- Existing worker commands or the maintained server-bench runner are delegated serially with canonical visibility and immutable cell identity.
 - resolved-matrix.json, atomic status.json and sanitized append-only events.jsonl are emitted for UI polling.
 - Child non-zero exit/failure remains a failed matrix and cannot be upgraded by the adapter.
-- Real maintained server-bench smoke remains required before final completion.
+- A maintained-harness boundary smoke passes without a fake runtime_matrix callback.
+- Real Brutus server-bench smoke remains required before final completion.
 
 ## Notes
 
@@ -94,7 +97,6 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 ## Ledger-events
 
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.913234+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:05:55.347465+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -109,3 +111,6 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - 2026-09-09T17:41:06.460978+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_174340_runtime-matrix-launches-can-op_1267
 - 2026-09-09T17:43:40.045796+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T17:46:07.701684+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria
+- chg_20260909_174627_the-configurable-runtime-matri_5780
+- 2026-09-09T17:46:27.969431+00:00 (updated-by): Updated: section:ledger-events
