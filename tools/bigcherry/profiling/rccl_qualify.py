@@ -30,10 +30,11 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from bigcherry.profiling.rccl_schema import RcclCompatibilityRevision
+from bigcherry.profiling.rccl_schema import RcclTopologyEvidence
 from bigcherry.profiling.rccl_schema import qualification_key
 
 SCHEMA_VERSION = 1
@@ -108,10 +109,21 @@ class RcclTopology:
 
     topology_id: str
     device_arches: tuple[str, ...]
+    evidence: RcclTopologyEvidence | None = None
 
     @property
     def rank_count(self) -> int:
         return len(self.device_arches)
+
+    @property
+    def qualification_id(self) -> str | None:
+        """Return an admission identity only for complete evidence."""
+        if self.evidence is None:
+            return None
+        try:
+            return self.evidence.qualification_id(self.rank_count)
+        except ValueError:
+            return None
 
 
 @dataclass(frozen=True)
@@ -191,6 +203,7 @@ class RcclCaseResult:
     attempt: int
     plan_verification: str | None
     qualification_key: str
+    topology_qualification_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.classification not in CLASSIFICATIONS:
@@ -225,6 +238,7 @@ class RcclCaseResult:
             "attempt": self.attempt,
             "plan_verification": self.plan_verification,
             "qualification_key": self.qualification_key,
+            "topology_qualification_id": self.topology_qualification_id,
         }
 
 
@@ -559,6 +573,7 @@ def run_case(
             compatibility_revision_id=compatibility.revision_id,
             attempt=attempt, plan_verification=None,
             qualification_key=qualification_key(compatibility, case_id),
+            topology_qualification_id=case.topology.qualification_id,
         )
 
     elapsed = time.monotonic() - start
@@ -610,6 +625,7 @@ def run_case(
         plan_verification=plan_verification,
         compatibility_revision_id=revision_id,
         qualification_key=qualification_key(compatibility, case_id),
+        topology_qualification_id=case.topology.qualification_id,
         attempt=attempt,
         rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
