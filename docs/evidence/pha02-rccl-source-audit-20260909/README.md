@@ -71,6 +71,27 @@ layers. The current production decision therefore remains: retain the
 fail-closed admission guard, keep META as the safe heterogeneous path, and do
 not promote an RCCL heterogeneous-dispatch patch from this audit alone.
 
+## Matching-runtime source acquisition attempt
+
+The historical failing runtime identified by the dev-GPT review is associated
+with RCCL source revision
+`9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe` (RCCL 2.27.7-1, build ID
+`168a84…`). That object is not present in the Brutus checkout used above. A
+fresh acquisition was attempted on 2026-09-09:
+
+```text
+cd /home/audumla/rccl-heterogeneous-src/rccl
+git fetch --no-tags origin 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe
+fatal: remote error: upload-pack: not our ref 9fb6fbe7bfb4df87c4c9a09b5bb5239670f04ffe
+```
+
+The installed multi-architecture library is available, but its source tree
+cannot be mapped to that historical commit from the available remote. The
+current source audit is therefore useful provenance and a bounded no-fix
+finding, but it is **not** the exact-runtime source trace required to close
+PHA02. PHA02 remains open pending either matching source/build acquisition or
+a separately documented blocked/no-safe-change disposition.
+
 ## Reproduction commands
 
 The authoritative commands and complete logs remain on Brutus under
@@ -78,4 +99,3 @@ The authoritative commands and complete logs remain on Brutus under
 `rq08-01/`, driven by the checked-in
 `tools/bigcherry/profiling/rccl_qualify_campaign.py` and governed by
 `docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md`.
-
