@@ -11,7 +11,7 @@ work: L
 priority: P0
 ---
 
-# HI171 � Provenance-safe promoted-winner execution and winner-vs-runner-up counterfactual replay audit
+# HI171 — Provenance-safe promoted-winner execution and winner-vs-runner-up counterfactual replay audit
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: tuning-hip-autotune-hi171
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.918682+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:23.246039+00:00 (updated-by): Updated: section:title

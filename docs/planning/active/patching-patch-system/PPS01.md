@@ -11,7 +11,7 @@ work: L
 priority: null
 ---
 
-# Local CI + docs + pilot migrations + acceptance (RS12�RS18)
+# Local CI + docs + pilot migrations + acceptance (RS12–RS18)
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: patching-patch-system-pa04
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.121336+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:33.788649+00:00 (updated-by): Updated: section:title

@@ -11,7 +11,7 @@ work: L
 priority: null
 ---
 
-# Dispatch integration � use transformed winner at runtime with zero overhead when no transform applies
+# Dispatch integration — use transformed winner at runtime with zero overhead when no transform applies
 
 ## Description
 
@@ -74,3 +74,4 @@ Successor key: tuning-hip-autotune-hi31
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.974607+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T12:09:27.149595+00:00 (updated-by): Updated: section:title
