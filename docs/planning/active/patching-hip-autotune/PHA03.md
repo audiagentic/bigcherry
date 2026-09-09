@@ -2,7 +2,7 @@
 id: PHA03
 order: 0
 plan: patching-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:48:53.551059+00:00'
 breadth: ''
 skill: advanced
@@ -72,3 +72,4 @@ Successor key: patching-hip-autotune-hi146
 - 2026-09-09T13:36:36.486669+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
 - chg_20260909_133646_updated-stale-rccl-admission-t_7143
 - 2026-09-09T13:36:46.061920+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:39:18.720766+00:00 (state-transition): State: pending → in_progress
