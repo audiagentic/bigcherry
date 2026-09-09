@@ -486,6 +486,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **TRANSITIONAL** | Migration-local field-by-field reconciliation of independent semantic reviews; never selects a winner or allocates IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_semantic_review.py` | **TRANSITIONAL** | Explicit semantic evidence gate; requires a scoped approval basis and exact 200-row active coverage before setting approval state. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
 | `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
@@ -509,6 +510,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv` | **TRANSITIONAL** | Source-backed resolutions for conflicts between GPT and independent lifecycle reviews; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna lifecycle review evidence for cross-checking GPT classifications; not canonical plan state. |
 | `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna semantic review evidence for the 200 active frozen items; advisory migration evidence, not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/SEMANTIC_APPROVAL_2026-09-09.json` | **TRANSITIONAL** | Explicit scoped approval basis for using Luna semantic evidence as primary after GPT evidence failed closed; not canonical plan state. |
 
 ## HI168 retained investigation tools
 

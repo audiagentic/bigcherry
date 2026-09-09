@@ -1,0 +1,16 @@
+{
+  "migration_id": "capability-rebaseline-v3-2026-09",
+  "decision": "accept_as_primary",
+  "reviewer": "luna-high-agent",
+  "evidence": "LUNA_SEMANTIC_REVIEW_2026-09-09.csv",
+  "excluded_evidence_requests": [
+    "req_e6bd5f17d2fc4f7a (GPT response truncated at RD64)",
+    "req_260c1906f5dd422c (continuation failed with provider error-page)"
+  ],
+  "scope": "all 200 active frozen source items",
+  "basis": "Exact active-ID coverage, complete non-placeholder semantic fields, and source identity are validated by the semantic importer. The independent GPT review produced a truncated CSV and its continuation failed at the provider; it is excluded rather than repaired or merged.",
+  "limitations": [
+    "This approves semantic evidence only; lifecycle, dispositions, successor specs, lineage, references, and dependencies remain separately gated.",
+    "No GPT/Luna semantic conflict adjudication is claimed because the GPT evidence was incomplete."
+  ]
+}

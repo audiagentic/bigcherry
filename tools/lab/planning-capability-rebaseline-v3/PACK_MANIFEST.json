@@ -60,6 +60,11 @@
       "sha256": "8641b93178e8868b7a3d2b0458619b8b0c6f87e0295c289c267d3b48596201a5"
     },
     {
+      "path": "review-evidence/SEMANTIC_APPROVAL_2026-09-09.json",
+      "bytes": 788,
+      "sha256": "29f8b06ab68004cf7445d0338d4d50f6f1a160272ee2333179b72ccaec0a4e86"
+    },
+    {
       "path": "REVIEW_PROTOCOL.md",
       "bytes": 6188,
       "sha256": "e4f40b852572fda3ec2fbc55ba72a2ab2d2f231ced6c221de11f71c15a497195"
@@ -76,8 +81,13 @@
     },
     {
       "path": "scripts/apply_semantic_review.py",
-      "bytes": 2385,
-      "sha256": "a2356a6dd761a8eba5967cd381fc7a7969f88ac15a355b312282adae4d73d408"
+      "bytes": 2604,
+      "sha256": "64d505b566f68b33c26c246cde8c27f7197584bcbe07ceb7a3b7d3e382eb7cec"
+    },
+    {
+      "path": "scripts/approve_semantic_review.py",
+      "bytes": 2895,
+      "sha256": "37f865cc3ed5bb5aeae0d6a1ffbb3d2d51c9effa8645be28c46ed93edc94db45"
     },
     {
       "path": "scripts/freeze_review_snapshot.py",
