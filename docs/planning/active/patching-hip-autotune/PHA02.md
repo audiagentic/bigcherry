@@ -2,7 +2,7 @@
 id: PHA02
 order: 0
 plan: patching-hip-autotune
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:48:38.219639+00:00'
 breadth: ''
 skill: advanced
@@ -72,3 +72,4 @@ Successor key: patching-hip-autotune-hi137
 - 2026-09-09T13:33:37.333128+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
 - chg_20260909_133351_pha02-now-has-a-reproducible-r_8961
 - 2026-09-09T13:33:51.713052+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:39:02.797891+00:00 (state-transition): State: pending → in_progress
