@@ -39,6 +39,11 @@ def _apply_to_copy(tmp_path: Path) -> Path:
     target = tmp_path / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "ggml-cuda.cu", target)
+    # RD73 now carries its VA06 resource-observation edit in common.cuh as
+    # well as the graph-key edit.  Keep the fixture complete so the test
+    # exercises the packaged patch, not an accidentally partial subset.
+    common = tmp_path / "ggml" / "src" / "ggml-cuda" / "common.cuh"
+    shutil.copyfile(vendor / "ggml" / "src" / "ggml-cuda" / "common.cuh", common)
     return target
 
 

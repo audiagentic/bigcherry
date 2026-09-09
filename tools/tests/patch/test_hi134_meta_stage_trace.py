@@ -12,6 +12,7 @@ from bigcherry.patcher import apply_all
 
 ROOT = Path(__file__).resolve().parents[3]
 PATCH_PATH = ROOT / "patches" / "1242_hi134_meta_stage_trace" / "patch.py"
+BASE_PATCH_PATH = ROOT / "patches" / "0830_split_reduce_telemetry" / "patch.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 HEADER = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.h").read_text(encoding="utf-8")
 TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").read_text(encoding="utf-8")
@@ -19,6 +20,14 @@ TELEMETRY = (ROOT / "src/ggml/src/ggml-cuda/hip-autotune-reduce-telemetry.cpp").
 
 def _module():
     spec = importlib.util.spec_from_file_location("hi134_meta_stage_trace_patch", PATCH_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _base_module():
+    spec = importlib.util.spec_from_file_location("hi58_split_reduce_telemetry_patch", BASE_PATCH_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -81,7 +90,9 @@ def test_patch_declares_the_0830_bridge_dependency_and_only_two_copy_hooks():
 
 def test_patch_applies_to_the_real_pinned_source(tmp_path):
     cuda_target, meta_target = _copy_sources(tmp_path)
-    results = apply_all(_module().PATCHES, tmp_path)
+    # HI134 declares HI58/0830 as a real dependency; applying it first is
+    # required to create the bridge anchors that HI134 extends.
+    results = apply_all([*_base_module().PATCHES, *_module().PATCHES], tmp_path)
     assert all(result.ok for result in results), [
         (r.edit_id, r.status, r.detail) for result in results for r in result.results
     ]
@@ -98,10 +109,11 @@ def test_patch_applies_to_the_real_pinned_source(tmp_path):
 
 def test_patch_is_idempotent(tmp_path):
     cuda_target, meta_target = _copy_sources(tmp_path)
-    first = apply_all(_module().PATCHES, tmp_path)
+    patches = [*_base_module().PATCHES, *_module().PATCHES]
+    first = apply_all(patches, tmp_path)
     assert all(result.ok for result in first)
     once = (cuda_target.read_text(encoding="utf-8"), meta_target.read_text(encoding="utf-8"))
-    second = apply_all(_module().PATCHES, tmp_path)
+    second = apply_all(patches, tmp_path)
     assert all(result.ok for result in second)
     twice = (cuda_target.read_text(encoding="utf-8"), meta_target.read_text(encoding="utf-8"))
     assert once == twice
@@ -109,7 +121,7 @@ def test_patch_is_idempotent(tmp_path):
 
 def test_stage_labels_follow_fold_butterfly_copyback_context(tmp_path):
     _, meta_target = _copy_sources(tmp_path)
-    results = apply_all(_module().PATCHES, tmp_path)
+    results = apply_all([*_base_module().PATCHES, *_module().PATCHES], tmp_path)
     assert all(result.ok for result in results)
     meta = meta_target.read_text(encoding="utf-8")
     fold = meta.index("GGML_META_STAGE_PHASE_FOLD")
