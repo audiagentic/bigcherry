@@ -43,6 +43,7 @@ Build and Run are shared infrastructure. Patching and Tuning define/evaluate exp
 - `LIFECYCLE_NORMALIZATION.csv` — explicit continuing/terminal/adjudicate gate; active metadata is not treated as proof that a successor is required.
 - `scripts/seed_review_manifests.py` — generates an explicitly unapproved draft disposition/successor/lineage graph from the reviewed v2 capability map; it never allocates IDs or mutates plan state.
 - `scripts/analyze_lifecycle_cues.py` — emits review hints for active plans whose prose contains terminal-language cues; hints require human adjudication.
+- `scripts/apply_gpt_lifecycle_review.py` — records dated GPT classifications as advisory lifecycle evidence; it cannot approve dispositions or allocate IDs.
 - `scripts/validate_manifests.py` — fail-closed graph/source/reference validator.
 - `scripts/render_operations.py` — emits deterministic JSONL operations for an agent to execute through `ag-planning`, repository editing, and `ag-ledger`.
 
