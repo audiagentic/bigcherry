@@ -57,7 +57,9 @@ successor-specs/run-hip-autotune-hi168.md
 
 ## Validation
 
-The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. The 2026-09-10 BC-native dual-XTX smoke at docs/evidence/2026-09-10-rha04-attestation-smoke/ never reached health during model materialization and is explicitly invalid. The fresh 2026-09-10 GPU0 required-attestation capture at docs/evidence/2026-09-10-rha04-gpu0-required-capture/ loaded and shut down cleanly but failed closed before timing with ATTESTATION_MISSING; no throughput result was produced. This confirms the maintained server-capture attestation gap. Keep RHA04 open and resolve the attestation design while preserving diagnostics-off production timing as a separate arm.
+The retained 2026-09-08 HI168 evidence bundle at docs/evidence/2026-09-08-HI168-e2e/ proves server-bench completion, balanced ordering, successful requests, and clean teardown, but explicitly records missing physical-device attestation. The 2026-09-10 BC-native dual-XTX smoke at docs/evidence/2026-09-10-rha04-attestation-smoke/ never reached health during model materialization and is explicitly invalid. The fresh 2026-09-10 GPU0 required-attestation capture at docs/evidence/2026-09-10-rha04-gpu0-required-capture/ loaded and shut down cleanly but failed closed before timing with ATTESTATION_MISSING; no throughput result was produced. This confirms the maintained server-capture attestation gap. The capture path now has an identity-bound, untimed preflight using the same binary/model/common production arguments and relevant environment, with only a diagnostic verbosity delta; it persists a correlation ID and hashes and fails closed on missing/wrong/ambiguous identity. The timed production process is unchanged. Unit coverage passes for success, failure-before-timing, argument/environment drift, clean shutdown, and existing observe/required behavior. RHA04 remains open until the fresh per-GPU 9B and matched dual-XTX 27B matrices complete with replay/work-equivalence evidence.
+
+The maintained capture now runs an untimed identity-bound attestation preflight with the same binary/model/common production arguments and relevant environment, a separate diagnostic verbosity delta, persisted hashes/correlation ID, and fail-closed missing/wrong/ambiguous identity checks. Timed production arguments remain unchanged. Unit coverage passes for success, failure-before-timing, argument/environment drift, clean shutdown, and existing observe/required behavior. Hardware matrices remain pending.
 
 ## Effort & Risk
 
@@ -92,7 +94,7 @@ Supersedes: HI168
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-hip-autotune-hi168
 
-Inherited HI168 bundle is exploratory only because physical execution attestation is missing. The first fresh required-attestation GPU0 cell also failed closed before measurement because the production-shaped -sm none/--fit off launch emitted no physical locator evidence; see review RV157 and docs/evidence/2026-09-10-rha04-gpu0-required-capture/. Do not weaken required evidence to observe. Resolve an identity-bound attestation path before the 9B matrix.
+Inherited HI168 bundle is exploratory only because physical execution attestation is missing. The first fresh required-attestation GPU0 cell also failed closed before measurement because the production-shaped -sm none/--fit off launch emitted no physical locator evidence; see review RV157 and docs/evidence/2026-09-10-rha04-gpu0-required-capture/. Do not weaken required evidence to observe. The identity-bound preflight is implemented in tools/bigcherry/campaign/benchmark.py and deliberately does not promote KFD observation to authoritative identity or alter timed diagnostics/server arguments.
 
 ## Change Log
 
@@ -122,3 +124,6 @@ Inherited HI168 bundle is exploratory only because physical execution attestatio
 - 2026-09-09T15:02:13.405913+00:00 (updated-by): Updated: section:files, section:validation, section:notes
 - chg_20260909_150304_the-first-required-attestation_2781
 - 2026-09-09T15:03:04.213387+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:40:30.521435+00:00 (updated-by): Updated: section:validation
+- chg_20260909_154042_hardened-production-benchmark_7289
+- 2026-09-09T15:40:42.183106+00:00 (updated-by): Updated: section:ledger-events

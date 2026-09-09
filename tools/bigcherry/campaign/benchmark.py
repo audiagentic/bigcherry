@@ -28,6 +28,7 @@ import statistics
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -537,6 +538,30 @@ def run_server_arm_capture(
         "returncode": 1, "performance_admitted": False,
         "server_log": str(cell / "server.log"),
     }
+    started = time.monotonic()
+    # Required server captures use a separate, untimed diagnostic preflight.
+    # The timed process below intentionally receives the original arguments
+    # unchanged: diagnostics are evidence, never performance samples.
+    if expected_execution is not None and execution_evidence == "required":
+        try:
+            attestation, binding = _run_server_attestation_preflight(
+                binary=binary, model=model, extra_args=extra_args,
+                output=cell / "attestation", env=env,
+                expected_execution=expected_execution,
+            )
+            _verify_attestation_binding(
+                binding, binary=binary, model=model, extra_args=extra_args, env=env,
+            )
+            run["execution_attestation"] = attestation
+            run["execution_evidence_status"] = "verified"
+            run["attestation_binding"] = binding
+            run["attestation_preflight"] = str(cell / "attestation" / "preflight.json")
+        except Exception as exc:
+            run["metric_error"] = str(exc)
+            run["attestation_preflight"] = str(cell / "attestation" / "preflight.json")
+            run["elapsed_s"] = time.monotonic() - started
+            (cell / "cell.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+            return run
     # Supply a complete, caller-sanitized environment. Merely overlaying it
     # would resurrect dispatch/tuning variables removed by the caller.
     server = ServerRunner(
@@ -544,10 +569,9 @@ def run_server_arm_capture(
         env_overrides=env, env_unset=tuple(os.environ),
         log_path=cell / "server.log", shutdown_method=shutdown_method,
     )
-    started = time.monotonic()
     try:
         with server:
-            if expected_execution is not None:
+            if expected_execution is not None and execution_evidence == "observe":
                 from bigcherry.experiment.attestation import (
                     ExecutionIdentity, parse_llama_server_attestation, require_execution_identity,
                 )
@@ -586,6 +610,122 @@ def run_server_arm_capture(
         run["shutdown"] = asdict(server.last_shutdown) if server.last_shutdown else None
         (cell / "cell.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     return run
+
+
+_SERVER_ATTESTATION_DIAGNOSTIC_DELTA = ("--verbosity", "5")
+
+
+def _sha256_if_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _run_server_attestation_preflight(
+    *, binary: Path, model: Path, extra_args: tuple[str, ...],
+    output: Path, env: dict[str, str], expected_execution: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run an untimed, diagnostics-only server device preflight.
+
+    The common production arguments, binary/model identity and relevant device
+    environment are recorded in a binding document. The only permitted
+    preflight delta is ``--verbosity 5``. KFD observation is intentionally not
+    consulted: this authority must come from the server's own output.
+    """
+    from bigcherry.experiment.attestation import (
+        ExecutionIdentity, parse_llama_server_attestation, require_execution_identity,
+    )
+    from bigcherry.tuning.server_runner import ServerRunner
+
+    if any(value in ("--verbosity", "--log-verbosity", "-lv") for value in extra_args):
+        raise ValueError("server_args must not set verbosity; the attestation preflight owns its diagnostic delta")
+    output.mkdir(parents=True, exist_ok=False)
+    log_path = output / "server.log"
+    correlation_id = uuid.uuid4().hex
+    expected = ExecutionIdentity(
+        backend=expected_execution["backend"],
+        architectures=tuple(expected_execution["architectures"]),
+        locators=tuple(expected_execution["locators"]),
+    )
+    runner = ServerRunner(
+        binary=binary, model=model,
+        extra_args=(*extra_args, *_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
+        env_overrides=env, env_unset=tuple(os.environ), log_path=log_path,
+        shutdown_method="http",
+    )
+    started = time.monotonic()
+    observed = None
+    try:
+        with runner:
+            observed = parse_llama_server_attestation(
+                log_path.read_text(encoding="utf-8", errors="replace"),
+                architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+            )
+            require_execution_identity(expected, observed, context="server attestation preflight")
+        if runner.last_shutdown is None or not runner.last_shutdown.clean:
+            raise ValueError("server attestation preflight teardown was not clean")
+    finally:
+        document = {
+            "schema_version": 1,
+            "kind": "server-device-attestation-preflight-v1",
+            "correlation_id": correlation_id,
+            "binary": str(binary),
+            "binary_sha256": _sha256_if_file(binary),
+            "model": str(model),
+            "model_sha256": _sha256_if_file(model),
+            "common_server_args": list(extra_args),
+            "diagnostic_delta": list(_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
+            "environment": {
+                key: env.get(key)
+                for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")
+                if key in env
+            },
+            "expected_execution": {
+                "backend": expected.backend,
+                "architectures": list(expected.architectures),
+                "locators": list(expected.locators) if expected.locators is not None else None,
+            },
+            "observed_execution": observed.document() if observed else None,
+            "elapsed_s": time.monotonic() - started,
+            "shutdown": dataclasses.asdict(runner.last_shutdown) if runner.last_shutdown else None,
+        }
+        (output / "preflight.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    binding = {
+        "correlation_id": correlation_id,
+        "binary": str(binary), "binary_sha256": document["binary_sha256"],
+        "model": str(model), "model_sha256": document["model_sha256"],
+        "common_server_args": list(extra_args),
+        "diagnostic_delta": list(_SERVER_ATTESTATION_DIAGNOSTIC_DELTA),
+        "environment": document["environment"],
+    }
+    return observed.document(), binding
+
+
+def _verify_attestation_binding(
+    binding: dict[str, Any], *, binary: Path, model: Path,
+    extra_args: tuple[str, ...], env: dict[str, str],
+) -> None:
+    """Ensure the process about to be timed is the preflight-bound process shape."""
+    expected = {
+        "binary": str(binary), "binary_sha256": _sha256_if_file(binary),
+        "model": str(model), "model_sha256": _sha256_if_file(model),
+        "common_server_args": list(extra_args),
+        "environment": {
+            key: env.get(key)
+            for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")
+            if key in env
+        },
+    }
+    for field, value in expected.items():
+        if binding.get(field) != value:
+            raise ValueError(
+                f"attestation binding mismatch for {field}: "
+                f"preflight={binding.get(field)!r}, timed={value!r}"
+            )
 
 
 def run_server_comparison_capture(

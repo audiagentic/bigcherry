@@ -371,6 +371,14 @@ BC defaults to its HTTP endpoint.
 Current limitation: tensor split with `--fit off` can report only the virtual
 `Meta()` backend, and normal production logging may omit device details.
 By default (`execution_evidence: required`), such a cell fails before timing.
+The maintained capture performs an untimed server-attestation preflight using
+the same binary, model, production arguments, and relevant environment, with
+only a separate diagnostic verbosity delta. It persists a correlation ID,
+hashes, common arguments, environment, expected/observed identity, and clean
+shutdown; timed production arguments remain unchanged. The timed cell is
+admitted only when that binding matches exactly and the preflight observes the
+expected physical locators. Missing, wrong, or ambiguous identity fails closed
+without recording throughput.
 For explicitly exploratory baseline collection, set `execution_evidence` to
 `observe` in the local server config. This records missing device evidence as
 an admission blocker while collecting endpoint measurements; it does not mark
@@ -378,8 +386,10 @@ execution evidence verified. Known CPU initialization failures or observed
 device mismatches still reject the cell. Source/build, instrumentation and
 clean-shutdown checks remain enforced. Never infer physical-device execution
 from visibility variables, build targets, or a successful model load. Increasing
-verbosity alone does not supply the missing physical membership for this path;
-any diagnostic logging run must remain separate from default-logging timing.
+verbosity in the timed process is not permitted as a workaround: any
+diagnostic logging run must remain separate from default-logging timing.
+KFD/process observations are useful diagnostics but are not execution
+attestation and cannot satisfy this gate.
 
 This baseline-first mode is not contract qualification or a final parity
 verdict. Optional process-memory/ABI attestation is tracked separately in HI169
