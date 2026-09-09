@@ -404,6 +404,17 @@ evidence-free results are stop findings, while zero promotions is reported as
 a policy outcome rather than a command failure. These files are explanatory;
 the recovery/promotion result and exit status remain authoritative.
 
+For reusable build-type coverage (RHA08), define one runtime-matrix cell per
+configured BC lane rather than hand-running a second harness. The normal
+production contrast is `stock`/`native`/`replay`; `control`, `record`, `tune`,
+and `replay-diagnostic` are separate diagnostic/framework observations. Each
+cell must retain its build identity, dispatch mode, diagnostics state, cache or
+inventory identity, and server-bench receipt. A diagnostic cell may explain
+framework behavior or replay activation, but its throughput is never a
+production parity result. If a lane cannot run because its required input or
+binary is unavailable, record that as an explicit unavailable child result in
+the same matrix summary.
+
 #### Balanced server capture
 
 The existing A/B command can now manage one server per arm and invoke the
