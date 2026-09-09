@@ -185,6 +185,11 @@ def main() -> int:
         "reviewed_by",
     ]
     for source_id, row in semantic_by_id.items():
+        inv = inventory_by_id.get(source_id)
+        if inv:
+            for field in ["source_state", "source_path", "source_hash", "title"]:
+                if row.get(field, "") != inv.get(field, ""):
+                    p.error(f"{source_id}: semantic review {field} differs from frozen inventory")
         for field in required_review_fields:
             if not row.get(field):
                 p.error(f"{source_id}: semantic review field {field} is required")

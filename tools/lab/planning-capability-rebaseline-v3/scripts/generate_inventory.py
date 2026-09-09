@@ -327,13 +327,17 @@ def main() -> int:
         lambda dst: write_csv(
             dst,
             [
-                "source_id", "unfinished_work", "acceptance_boundary", "capability",
+                "source_id", "source_state", "source_path", "source_hash", "title", "unfinished_work", "acceptance_boundary", "capability",
                 "split_assessment", "overlap_assessment", "historical_evidence",
                 "active_dependencies", "reference_notes", "reviewed_by", "approved",
             ],
             [
                 {
                     "source_id": item.item_id,
+                    "source_state": item.state,
+                    "source_path": item.path,
+                    "source_hash": item.content_hash,
+                    "title": item.title,
                     "unfinished_work": "",
                     "acceptance_boundary": "",
                     "capability": "",
