@@ -8,6 +8,7 @@ The migration manifest is normalized across review-friendly files rather than on
 | --- | --- | --- |
 | `PLAN_INVENTORY.csv` | 1 row / frozen item | immutable source identity, state, path, content hash |
 | `LIFECYCLE_NORMALIZATION.csv` | 1 row / frozen item | explicit continuing vs terminal/no-successor vs adjudicate gate before successor allocation |
+| `SEMANTIC_REVIEW.csv` | 1 row / frozen item | explicit answers to unfinished-work, acceptance-boundary, ownership, split/overlap, provenance, dependency, and reference questions |
 | `NAMESPACES.csv` | 1 row / final plan namespace | capability ownership and ID prefix |
 | `DISPOSITIONS.csv` | exactly 1 row / frozen item | one final semantic disposition |
 | `SUCCESSORS.csv` | 1 row / new plan | target namespace, allocated ID, acceptance boundary, spec |

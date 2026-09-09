@@ -71,6 +71,7 @@ def main() -> int:
     write_csv(work / "NAMESPACES.csv", ["capability", "plan_namespace", "id_prefix", "scope", "approved"], list(namespace_rows.values()))
 
     dispositions: list[dict[str, str]] = []
+    semantic_reviews: list[dict[str, str]] = []
     successors: list[dict[str, str]] = []
     lineage: list[dict[str, str]] = []
     spec_dir = work / "successor-specs"
@@ -94,9 +95,43 @@ def main() -> int:
             encoding="utf-8",
         )
 
+        semantic_reviews.append({
+            "source_id": source_id,
+            "unfinished_work": "adjudicate",
+            "acceptance_boundary": "adjudicate",
+            "capability": mapped["capability"],
+            "split_assessment": "adjudicate",
+            "overlap_assessment": "adjudicate",
+            "historical_evidence": "adjudicate",
+            "active_dependencies": "adjudicate",
+            "reference_notes": "adjudicate",
+            "reviewed_by": "draft-seed",
+            "approved": "false",
+        })
+
+    # Terminal/history items still receive an explicit review record: this
+    # proves they were evaluated rather than silently omitted from the queue.
+    for item in inventory:
+        if any(row["source_id"] == item["source_id"] for row in semantic_reviews):
+            continue
+        semantic_reviews.append({
+            "source_id": item["source_id"],
+            "unfinished_work": "no unfinished scope in frozen lifecycle state",
+            "acceptance_boundary": "historical predecessor retained",
+            "capability": "history",
+            "split_assessment": "not applicable",
+            "overlap_assessment": "historical record; no active overlap decision",
+            "historical_evidence": "retain on predecessor",
+            "active_dependencies": "none",
+            "reference_notes": "preserve historical references",
+            "reviewed_by": "draft-seed",
+            "approved": "true",
+        })
+
     write_csv(work / "DISPOSITIONS.csv", ["source_id", "source_plan", "source_path", "source_state", "source_hash", "disposition", "final_state", "capability", "target_namespace", "successor_keys", "reason", "scope_carry_forward", "scope_retired", "reviewed_by", "approved"], dispositions)
     write_csv(work / "SUCCESSORS.csv", ["successor_key", "target_namespace", "id_prefix", "allocated_id", "title", "work", "skill", "priority", "acceptance_boundary", "spec_path", "approved"], successors)
     write_csv(work / "LINEAGE.csv", ["predecessor_id", "successor_key", "relation", "scope_summary"], lineage)
+    write_csv(work / "SEMANTIC_REVIEW.csv", ["source_id", "unfinished_work", "acceptance_boundary", "capability", "split_assessment", "overlap_assessment", "historical_evidence", "active_dependencies", "reference_notes", "reviewed_by", "approved"], sorted(semantic_reviews, key=lambda row: row["source_id"]))
 
     disposition_by_id = {row["source_id"]: row for row in dispositions}
     inventory_by_id = {row["source_id"]: row for row in inventory}
