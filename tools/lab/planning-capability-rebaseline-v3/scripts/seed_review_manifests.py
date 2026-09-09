@@ -97,6 +97,10 @@ def main() -> int:
 
         semantic_reviews.append({
             "source_id": source_id,
+            "source_state": item["source_state"],
+            "source_path": item["source_path"],
+            "source_hash": item["source_hash"],
+            "title": item["title"],
             "unfinished_work": "adjudicate",
             "acceptance_boundary": "adjudicate",
             "capability": mapped["capability"],
@@ -116,6 +120,10 @@ def main() -> int:
             continue
         semantic_reviews.append({
             "source_id": item["source_id"],
+            "source_state": item["source_state"],
+            "source_path": item["source_path"],
+            "source_hash": item["source_hash"],
+            "title": item["title"],
             "unfinished_work": "no unfinished scope in frozen lifecycle state",
             "acceptance_boundary": "historical predecessor retained",
             "capability": "history",
@@ -131,7 +139,7 @@ def main() -> int:
     write_csv(work / "DISPOSITIONS.csv", ["source_id", "source_plan", "source_path", "source_state", "source_hash", "disposition", "final_state", "capability", "target_namespace", "successor_keys", "reason", "scope_carry_forward", "scope_retired", "reviewed_by", "approved"], dispositions)
     write_csv(work / "SUCCESSORS.csv", ["successor_key", "target_namespace", "id_prefix", "allocated_id", "title", "work", "skill", "priority", "acceptance_boundary", "spec_path", "approved"], successors)
     write_csv(work / "LINEAGE.csv", ["predecessor_id", "successor_key", "relation", "scope_summary"], lineage)
-    write_csv(work / "SEMANTIC_REVIEW.csv", ["source_id", "unfinished_work", "acceptance_boundary", "capability", "split_assessment", "overlap_assessment", "historical_evidence", "active_dependencies", "reference_notes", "reviewed_by", "approved"], sorted(semantic_reviews, key=lambda row: row["source_id"]))
+    write_csv(work / "SEMANTIC_REVIEW.csv", ["source_id", "source_state", "source_path", "source_hash", "title", "unfinished_work", "acceptance_boundary", "capability", "split_assessment", "overlap_assessment", "historical_evidence", "active_dependencies", "reference_notes", "reviewed_by", "approved"], sorted(semantic_reviews, key=lambda row: row["source_id"]))
 
     disposition_by_id = {row["source_id"]: row for row in dispositions}
     inventory_by_id = {row["source_id"]: row for row in inventory}
