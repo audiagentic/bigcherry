@@ -72,5 +72,8 @@ Successor key: patching-rdna-boost-experiments-rd33
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.244503+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_143622_cleaned-up-the-tooling-registr_2452
+- 2026-09-09T14:36:22.965188+00:00 (updated-by): Updated: section:ledger-events
