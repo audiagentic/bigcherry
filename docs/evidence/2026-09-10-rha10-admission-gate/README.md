@@ -21,3 +21,11 @@ one prompt. This is retained as a blocking correctness investigation, not
 silently treated as harmless nondeterminism. `final_tuned_launches` is sourced
 from the compile-time diagnostic witness; production timing remains from the
 diagnostics-off binary, which is the documented zero-overhead design.
+
+RHA11 supersedes the blocking capture: both implicated winners were seeded to
+`mmvq:native:v1` through the supported replay-cache exporter. The corrected
+activation/timing record is
+`replay-diagnostic-activation-rha11-corrected.json`; its raw logs and cache are
+retained under `docs/evidence/2026-09-10-rha11-correctness/`. The corrected
+three-prompt corpus passes; RHA10 remains fail-closed only for the explicit
+24 replay-miss policy decision.

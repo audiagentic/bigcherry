@@ -1,0 +1,13 @@
+{
+  "families": {
+    "mmvq": {"executed": 15614, "dispatched": 15614},
+    "mmq": {"executed": 5952, "dispatched": 5952},
+    "mmvf": {"executed": 0, "dispatched": 0},
+    "mmf": {"executed": 0, "dispatched": 0},
+    "blas": {"executed": 0, "dispatched": 0}
+  },
+  "total_executed": 21566,
+  "total_dispatched": 21566,
+  "replay": {"schema_version": 2, "entries": 55, "miss_log_calls": 0, "exact": 33, "candidate_unavailable": 0, "rerun_required": 0, "incompatible": 0, "misses": 24, "stale": false},
+  "dispatch": {"entries": 21566, "native_select_calls": 56, "l1_hits": 21426, "l1_misses": 140, "l1_hit_rate_pct": 99.351, "l2_hits": 83, "l2_misses": 57, "l3_lookups": 57, "l3_hits": 33, "hw_key_builds": 2, "sig_digest_builds": 140, "native_forced_entry_guard": 0, "native_forced_native_mode": 0, "native_invalid_probed": 0, "native_invalid_with_l1_hit": 0, "final_tuned_launches": 14622, "final_native_launches": 6944}
+}

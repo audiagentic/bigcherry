@@ -38,5 +38,28 @@
     "stock_native_replay_content_equal": [true, true, true],
     "all_content_equal": true
   },
+  "corrected_cache_activation": {
+    "bench_returncode": 0,
+    "total_executed": 21566,
+    "total_dispatched": 21566,
+    "replay_entries": 55,
+    "replay_exact": 33,
+    "replay_candidate_unavailable": 0,
+    "replay_rerun_required": 0,
+    "replay_incompatible": 0,
+    "replay_misses": 24,
+    "final_tuned_launches": 14622,
+    "final_native_launches": 6944,
+    "diagnostic_server_log_sha256": "a3fd7fe6571e8a432c3a74cafc73812f153f340440fe48511a9d2b69d5bc08db",
+    "coverage_sha256": "668dda3b0ba4b11008ef6c52b9a62818966629476f57c467a351cbf92da89eab"
+  },
+  "corrected_cache_production_timing": {
+    "bench_returncode": 0,
+    "pp512_tps": 930.03,
+    "pp2048_tps": 1282.63,
+    "tg128_tps": 33.83,
+    "tg512_tps": 34.17,
+    "server_log_sha256": "a2bb5491f149ad5f1168fc410be55dd911d2326d6f59892b3261f86242f8d662"
+  },
   "disposition": "candidate-quarantine-proven; regenerate campaign cache and rerun RHA10 production timing/activation before admission"
 }

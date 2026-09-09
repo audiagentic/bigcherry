@@ -110,6 +110,8 @@ Fresh required dual-XTX 27B matrix is complete and identity verified. RCCL prefl
 
 Final production-admission proof is split to RHA10. RHA04 retains the completed identity-bound parity matrix and remains in_progress until RHA10 proves source/work equivalence and final tuned replay launches. RHA08 and RHA09 are completed evidence dependencies, not admission substitutes.
 
+RHA11 completed correctness quarantine: two replay winners were replaced with native through a manifest-valid cache export. Corrected cache is canonical on Brutus with the original retained as dispatch.cache.pre-rha11. Corrected diagnostics activation and diagnostics-off timing are retained under docs/evidence/2026-09-10-rha11-correctness. RHA04 admission still follows RHA10's explicit miss-policy decision.
+
 ## Change Log
 
 - 2026-09-09T10:49:44.318293+00:00 (created-by): Created by capability-rebaseline-v3
@@ -185,3 +187,6 @@ Final production-admission proof is split to RHA10. RHA04 retains the completed 
 - 2026-09-09T19:45:51.724390+00:00 (updated-by): Updated: section:validation, section:notes
 - chg_20260909_194609_separated-completed-parity-cap_7282
 - 2026-09-09T19:46:09.191178+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:45:19.134130+00:00 (updated-by): Updated: section:notes
+- chg_20260909_204705_the-quarantined-cache-is-now-t_2378
+- 2026-09-09T20:47:05.979876+00:00 (updated-by): Updated: section:ledger-events
