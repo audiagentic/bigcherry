@@ -108,6 +108,29 @@ def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
     return result
 
 
+def _quiescence_checker(document: Mapping[str, Any], *, base_env: Mapping[str, str]):
+    command = document.get("quiescence_argv")
+    if command is None:
+        return None
+    if not isinstance(command, list) or not command or not all(
+        isinstance(arg, str) and arg for arg in command
+    ):
+        raise MatrixResolutionError(
+            "matrix config: quiescence_argv must be a non-empty string array"
+        )
+
+    def check() -> bool:
+        try:
+            completed = subprocess.run(
+                command, env=dict(base_env), capture_output=True, check=False,
+            )
+        except OSError:
+            return False
+        return completed.returncode == 0
+
+    return check
+
+
 def cmd_runtime_matrix(args) -> int:
     """Resolve and optionally execute a declarative runtime matrix."""
     config_path = Path(args.config).resolve()
@@ -139,6 +162,7 @@ def cmd_runtime_matrix(args) -> int:
             cells,
             output=output,
             execute=lambda cell: _worker(cell, root=output, base_env=base_env),
+            quiescent=_quiescence_checker(document, base_env=base_env),
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result.get("state") == "completed" else 1

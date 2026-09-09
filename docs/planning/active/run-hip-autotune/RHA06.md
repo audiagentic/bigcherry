@@ -94,6 +94,7 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.913234+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:05:55.347465+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -106,3 +107,5 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - 2026-09-09T17:40:55.195470+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:acceptance_criteria
 - chg_20260909_174106_runtime-matrices-can-now-be-se_6137
 - 2026-09-09T17:41:06.460978+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_174340_runtime-matrix-launches-can-op_1267
+- 2026-09-09T17:43:40.045796+00:00 (updated-by): Updated: section:ledger-events
