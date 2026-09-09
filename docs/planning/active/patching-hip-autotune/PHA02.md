@@ -15,13 +15,11 @@ priority: null
 
 ## Description
 
-Heterogeneous RCCL dispatch root-cause and fix-or-no-fix investigation remains unperformed.
+Completed a source/runtime audit against the pinned Brutus RCCL checkout. The multi-architecture bundle contains gfx1030/gfx1100/gfx1201 code objects; RCCL records per-rank architecture/tuning state but launches a generic kernel function without a BigCherry-visible per-rank code-object selector. Existing crash-isolated qualification evidence remains scoped to its tested topologies. No safe RCCL source fix was identified; the production guard and META heterogeneous path remain unchanged.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Freeze the exact RCCL source/build/runtime and code-object provenance.\n2. Trace per-rank architecture/tuning state through RCCL kernel selection and launch.\n3. Correlate the source trace with the existing crash-isolated homogeneous/mixed controls without relocating historical evidence.\n4. Decide whether a safe source fix is justified; if not, record a no-fix disposition and preserve the production guard.\n5. Any future RCCL repair must be isolated from BigCherry and pass the runbook correctness/crash/topology gates.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-hip-autotune-hi137.md
+docs/evidence/pha02-rccl-source-audit-20260909/README.md; docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md; tools/bigcherry/profiling/rccl_qualify_campaign.py
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI134,HI85,HI88.
-
-Active dependencies: Frozen dependencies: HI134,HI85,HI86,HI88.
-
-Reference handling: Rewrite forward references (2); preserve historical references (3) on predecessor.
+Brutus source checkout revision `57e58688f44c77076ad536ef1f6b68741fc6e694` was inspected. Existing source/build artifacts prove multi-arch code objects (`gfx1030`, `gfx1100`, `gfx1201`) and exact RCCL linkage. Static trace covers `src/init.cc:1355-1364,2135-2221`, `src/graph/tuning.cc:638-783,1017-1032`, and `src/enqueue.cc:896-898,1808-1832`. Existing `rq08-01/cases.jsonl` remains scoped evidence and is summarized in the new evidence record. No BigCherry production patch was changed.
 
 ## Effort & Risk
 
@@ -57,7 +51,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Source/runtime provenance and dispatch trace are recorded; the observed limitation is bounded to the tested RCCL/runtime/topology; no unsupported BigCherry fix is introduced; the fail-closed guard and META fallback remain the production boundary. A future source repair, if pursued, must be independently qualified before integration.
 
 ## Notes
 
@@ -72,5 +66,9 @@ Successor key: patching-hip-autotune-hi137
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.823035+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T13:33:37.333128+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
+- chg_20260909_133351_pha02-now-has-a-reproducible-r_8961
+- 2026-09-09T13:33:51.713052+00:00 (updated-by): Updated: section:ledger-events
