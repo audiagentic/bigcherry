@@ -17,6 +17,8 @@ priority: P1
 
 Run-owned reusable orchestration layer above existing campaign/build and tuning workflows. Select registered models, physical GPU sets/topologies, runtime profiles and stock/native/replay arms by configuration only; do not create a second campaign engine or admission policy.
 
+Run-owned reusable orchestration layer above existing campaign/build and tuning workflows. The first implementation slice now provides a pure whole-matrix resolver and serial file-backed runner; caller-supplied delegates remain authoritative for tuning and benchmark execution.
+
 ## Steps
 
 1. Define one declarative runtime-matrix configuration and entrypoint over existing e2e-build-matrix, tune-campaign, ab-benchmark and ServerRunner machinery.
@@ -59,9 +61,16 @@ tools/tests/campaign/
 tools/tests/core/test_environment.py
 docs/reference/testing/TEST.md
 
+- tools/bigcherry/campaign/runtime_matrix.py
+- tools/tests/campaign/test_runtime_matrix.py
+- tools/bigcherry/campaign/benchmark.py
+- docs/reference/testing/TEST.md
+
 ## Validation
 
 Unknown model, GPU, topology, runtime, build or cache fails before execution. Tests prove deterministic order, full preflight, canonical visibility, zero overlapping GPU workloads, parent quiescence, explicit effective visibility, teardown gating, stable resolved identity digest, TOCTOU recheck, child failure and non-admission propagation, complete manifests, atomic status writes and sanitized append-only events. A tune cell may enter preflight only with an identity-bound inventory, unless a reviewed change explicitly documents staged resolution. Real smoke uses the maintained server-bench for representative dual-XTX/27B and single-GPU/9B lanes; no llama-bench.
+
+Implemented and tested resolve_matrix()/run_matrix(). Whole-matrix validation rejects unknown models, duplicate cells/devices, invalid visibility, and replay cells without cache identity before execution. ResolvedCell carries canonical ROCR/HIP visibility, runtime/build/cache identity, workload and stable digest. run_matrix executes serially, checks optional parent quiescence before/after each cell, preserves child verdicts, and writes atomic status.json plus sanitized append-only events.jsonl. Focused command: PYTHONPATH=tools python -m pytest tools/tests/campaign/test_runtime_matrix.py tools/tests/campaign/test_server_benchmark_capture.py -q; result 20 passed, 4 subtests passed. Remaining: wire a declarative CLI/config adapter and real maintained-harness smoke once Brutus is reachable.
 
 ## Effort & Risk
 
@@ -91,6 +100,8 @@ Supersedes: HI170
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-hip-autotune-hi170
 
+This is deliberately a thin runtime-placement layer, not a second campaign engine. Existing build/tune/ab-benchmark workers are injected as delegates; this layer cannot upgrade performance admission or child verdicts. The initial tune-cell inventory decision remains fail-closed until identity-bound inventory is available.
+
 ## Change Log
 
 - 2026-09-09T10:49:53.272839+00:00 (created-by): Created by capability-rebaseline-v3
@@ -104,3 +115,6 @@ Successor key: run-hip-autotune-hi170
 - 2026-09-09T14:05:55.347465+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
 - chg_20260909_140610_made-the-reusable-modelgputo_1377
 - 2026-09-09T14:06:10.944350+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T15:45:07.241811+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:notes
+- chg_20260909_154517_added-reusable-ui-pollable-ru_5957
+- 2026-09-09T15:45:18.008716+00:00 (updated-by): Updated: section:ledger-events
