@@ -15,19 +15,20 @@ priority: P0
 
 ## Description
 
-Complete the remaining RHA04 admission gate without conflating diagnostic observations with production timing. Bind stock/native/replay to one source/build identity, prove equivalent workload/correctness, and prove final tuned kernels actually launched in replay.
+Close the remaining production admission gate with source/work-equivalence and a two-build replay proof. Replay activation is observed in a compile-time diagnostics build; production timing remains diagnostics-off and uses the matching production replay binary/cache.
 
 ## Steps
 
-- Extract and verify source/build/generated-input digests for every production arm against one immutable campaign identity.
+- Extract and verify source/build/generated-input digests for stock/native/replay production arms and the replay-diagnostics activation arm against one immutable campaign identity.
 - Add or consume correctness/work-equivalence evidence for the matched stock/native/replay workload.
-- Run a diagnostics-off replay activation capture using the exact production replay binary/cache and retain final_tuned_launches, final_native_launches, fallback and cache identity.
+- Run or retain a replay-diagnostics activation capture using the exact source/catalog/cache identity; require positive exact hits, zero misses/incompatibilities, and positive non-native/tuned hit rows where the workload reaches them.
+- Run the production replay binary with diagnostics disabled under the same workload/topology/cache identity; retain timing and clean teardown separately. Do not require counters that are compiled out of this binary.
 - Join the evidence into a machine-readable admission record and only then set performance_admitted=true where all gates pass; otherwise retain the fail-closed blocker.
 - Update RHA04 with the admission decision and preserve all raw artifacts.
 
 ## Detailed Solution & Technical Design
 
-Use the maintained server-bench runner and existing execution-audit/admission schemas. Keep replay-diagnostic/framework observations separate from production arms. The minimum positive replay proof is final_tuned_launches > 0 with matching source, cache, signature and hardware identities; cache-loaded alone is insufficient.
+Use the maintained server-bench runner and existing execution-audit/admission schemas. Keep replay-diagnostic/framework observations separate from production arms. Because patch 0810 compiles the hit recorder only when GGML_HIP_REPLAY_DIAGNOSTICS is enabled, final tuned-launch evidence must come from the identity-matched diagnostic build; production replay timing must come from the diagnostics-off build. Cache-loaded alone remains insufficient.
 
 ## Code Samples & Guidance
 
@@ -43,11 +44,10 @@ Use the maintained server-bench runner and existing execution-audit/admission sc
 
 ## Validation
 
-- Diagnostic checkpoint parses to 54 replay winners, 9 exact hits, zero misses/incompatibilities, and 1,988/1,988 dispatch coverage.
-- All production arms share source/build/model/topology/workload identity.
-- Correctness/work-equivalence passes.
-- Production replay reports final_tuned_launches > 0 with matching cache/signature identity.
-- No diagnostics are present in timed arms.
+- Exact-source diagnostics witness records final_tuned_launches > 0 after revalidation.
+- Diagnostics-off production timing is retained separately with clean teardown.
+- Stock/native/replay fixed-seed probe is retained; any mismatch blocks admission until RHA11 resolves it.
+- Correctness/work-equivalence passes across the selected corpus.
 - Admission record is fail-closed and reproducible.
 
 ## Effort & Risk
@@ -70,6 +70,10 @@ RHA04 remains the parity owner; RHA08/RHA09 are dependencies/evidence providers,
 
 Checkpoint evidence is retained under docs/evidence/2026-09-10-rha10-admission-gate. It proves diagnostic replay activation (54 winners, 9 exact hits, 100% measured coverage, 12 non-native hit rows) but deliberately does not satisfy production admission. A diagnostics-off final_tuned_launches proof and work-equivalence remain required.
 
+Checkpoint evidence is retained under docs/evidence/2026-09-10-rha10-admission-gate. The existing RHA08 checkpoint satisfies the diagnostic activation shape, but its source/build identity must be joined explicitly to the RHA04 production replay binary before admission.
+
+The exact-source diagnostic activation gate is now evidenced: 21,566/21,566 coverage and 13,342 final tuned launches, paired with diagnostics-off production timing. However, the three-prompt deterministic probe found replay divergence on one prompt; RHA11 owns the blocking correctness investigation. RHA10 remains in_progress and performance_admitted=false.
+
 ## Change Log
 
 - 2026-09-09T19:45:36.770283+00:00 (created-by): Created by agent
@@ -82,3 +86,7 @@ Checkpoint evidence is retained under docs/evidence/2026-09-10-rha10-admission-g
 - 2026-09-09T19:47:48.323863+00:00 (updated-by): Updated: section:validation, section:notes
 - chg_20260909_194753_captured-positive-diagnostic-r_4130
 - 2026-09-09T19:47:53.704763+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T19:49:35.186489+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:validation, section:notes
+- 2026-09-09T20:09:23.176448+00:00 (updated-by): Updated: section:validation, section:notes
+- chg_20260909_200933_the-tuned-path-now-proves-actu_7816
+- 2026-09-09T20:09:33.369698+00:00 (updated-by): Updated: section:ledger-events
