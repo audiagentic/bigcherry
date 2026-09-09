@@ -31,19 +31,24 @@ p3 True
 ```
 
 This proves the mismatch is caused by the admitted tuned winners, not by the
-replay-enabled binary or the production topology. The corrected cache is a
-candidate quarantine artifact; RHA10 remains fail-closed until the campaign
-cache is regenerated from this seed decision and the diagnostics-off timing
-and activation evidence are rerun against that regenerated cache.
+replay-enabled binary or the production topology. The complete cache below
+extends that quarantine to every previously uncovered native signature, so the
+final replay gate can be evaluated without hidden native fallback misses.
 
 Raw response JSON and the manifest-bound seed are retained under `raw/`.
 
-The corrected cache was also exercised end-to-end with the maintained
+The first corrected cache was also exercised end-to-end with the maintained
 `run_bench.py --bench-type server-bench` runner. The diagnostics-on activation
 run returned 0 and recorded 21,566/21,566 executed and dispatched operations,
 55 cache entries, 33 exact replay matches, 0 unavailable/rerun/incompatible
-entries, and positive tuned launches (14,622). The diagnostics-off production
-run returned 0 with pp512 930.03 t/s, pp2048 1282.63 t/s, tg128 33.83 t/s,
-and tg512 34.17 t/s. These are corrected-cache observations; the final
-RHA10 admission record still needs to be updated from this evidence before
-the item can close.
+entries, and positive tuned launches (14,622). That run exposed 24 safe native
+fallbacks. Those 24 native-only misses were then added as explicit,
+hardware-bound native seed entries through the same exporter. The resulting
+79-entry cache is `raw/corrected-dispatch-complete.cache`, SHA-256
+`145F849A59C3310171696D38C5049DEB0C39A232A4DE63D963D807817C485C95`.
+The final diagnostics-on run returned 0 with 21,566/21,566 dispatches, 57
+exact matches, zero misses/unavailable/rerun/incompatible rows, and the final
+diagnostics-off production run returned 0 at pp512 927.62, pp2048 1289.19,
+tg128 33.71, and tg512 34.05 t/s. The complete cache is now the canonical
+Brutus campaign cache; both earlier cache generations remain preserved as
+rollback artifacts.

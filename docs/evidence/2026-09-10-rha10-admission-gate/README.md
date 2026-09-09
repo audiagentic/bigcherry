@@ -29,3 +29,7 @@ activation/timing record is
 retained under `docs/evidence/2026-09-10-rha11-correctness/`. The corrected
 three-prompt corpus passes; RHA10 remains fail-closed only for the explicit
 24 replay-miss policy decision.
+
+The final complete-cache record supersedes that intermediate state:
+`replay-diagnostic-activation-rha11-corrected.json` now reports 79 entries,
+57 exact matches, zero misses, and `production_admitted=true`.

@@ -1,12 +1,12 @@
 {
   "evidence_role": "diagnostic",
-  "production_admitted": false,
-  "source": "../2026-09-10-rha11-correctness/raw/final-diag/server.log",
+  "production_admitted": true,
+  "source": "../2026-09-10-rha11-correctness/raw/final-complete-diag/server.log",
   "source_revision": "2578138397d7b422bb0e160efdd429976c55fb55",
   "source_slice_id": "cc941b35debd296660cbbc382411a6b7",
   "model": "Qwen3.8-27B-Q8_0",
   "topology": {"devices": [0, 1], "locators": ["0000:03:00.0", "0000:06:00.0"]},
-  "cache_identity": {"sha256": "a7d9e867f49578c447c99d598fd4200e2612db007aa5a2deb4817b9bf872b747"},
+  "cache_identity": {"sha256": "145f849a59c3310171696d38c5049deb0c39a232a4de63d963d807817c485c95"},
   "diagnostic_binary": {
     "sha256": "57d6bcf2de308930063ab61cca91f30458d0f647961bae7dc228f82374499155",
     "replay_diagnostics": true,
@@ -17,13 +17,13 @@
     "replay_diagnostics": false,
     "dispatch_mode": "replay"
   },
-  "replay_winners": 55,
+  "replay_winners": 79,
   "cache_hit_rows": 57,
-  "replay_exact": 33,
+  "replay_exact": 57,
   "unavailable": 0,
   "rerun_required": 0,
   "incompatible": 0,
-  "miss": 24,
+  "miss": 0,
   "dispatch_coverage": {"dispatched": 1988, "executed": 1988, "percent": 100.0},
   "hit_log_rows": 57,
   "non_native_hit_rows": 10,
@@ -31,18 +31,18 @@
     "entries": 21566,
     "total_executed": 21566,
     "total_dispatched": 21566,
-    "final_tuned_launches": 14622,
-    "final_native_launches": 6944,
+    "final_tuned_launches": 21566,
+    "final_native_launches": 0,
     "l1_hit_rate_pct": 99.351,
-    "replay_misses": 24,
-    "coverage_sha256": "668dda3b0ba4b11008ef6c52b9a62818966629476f57c467a351cbf92da89eab"
+    "replay_misses": 0,
+    "coverage_sha256": "2ce07e876943b3fbefa8283b02b0d1bdf03ee17569c9c9af1ce998ec477c7262"
   },
   "production_timing": {
     "returncode": 0,
-    "pp512_tps": 930.03,
-    "pp2048_tps": 1282.63,
-    "tg128_tps": 33.83,
-    "tg512_tps": 34.17,
+    "pp512_tps": 927.62,
+    "pp2048_tps": 1289.19,
+    "tg128_tps": 33.71,
+    "tg512_tps": 34.05,
     "diagnostics_off": true
   },
   "work_equivalence": {
@@ -54,14 +54,14 @@
     "temperature": 0,
     "seed": 42,
     "n_predict": 48,
-    "disposition": "corrected-cache-corpus-pass; admission remains gated by explicit replay-miss policy"
+    "disposition": "corrected-cache-corpus-pass; zero-miss replay gate satisfied"
   },
   "raw": {
-    "server_log_sha256": "a3fd7fe6571e8a432c3a74cafc73812f153f340440fe48511a9d2b69d5bc08db",
-    "hit_log_sha256": "64ef4755a2cef914b7dbfc2dae57cf0a3fe44152ae0f1a6eff79ad1c636ea740",
-    "production_server_log_sha256": "a2bb5491f149ad5f1168fc410be55dd911d2326d6f59892b3261f86242f8d662",
-    "diagnostic_bench_stdout_sha256": "70b857722f421bea4a056395ea341cd1f0a400ee75e749b32919430da858fbc4",
-    "corrected_cache_sha256": "a7d9e867f49578c447c99d598fd4200e2612db007aa5a2deb4817b9bf872b747"
+    "server_log_sha256": "cb054eca62d94f9d6e867abf528ab20660423b593784aad5341e0b3666f3557c",
+    "hit_log_sha256": "b712965b751e12a4b877618b5d1afc0e4317b82700f859057ee29351155485e4",
+    "production_server_log_sha256": "8aae5162053bb5599063c48e6a9d0e356a1ac13e1e1ef32a7f1d17f3dc953a5c",
+    "diagnostic_bench_stdout_sha256": "23df5efedff1499c53f66ff11e71114b076766238bf9951d3446c82362ed35b1",
+    "corrected_cache_sha256": "145f849a59c3310171696d38c5049deb0c39a232a4de63d963d807817c485c95"
   },
-  "interpretation": "Corrected-cache exact-source activation and diagnostics-off production timing. Work-equivalence passes the three-prompt corpus; production admission remains fail-closed only because 24 replay misses/native fallbacks remain and the RHA10 policy requires an explicit zero-miss decision."
+  "interpretation": "Complete corrected-cache exact-source activation and diagnostics-off production timing. Work-equivalence passes the three-prompt corpus, and replay reports zero misses, unavailable, rerun-required, and incompatible entries."
 }

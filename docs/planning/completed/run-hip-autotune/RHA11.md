@@ -69,6 +69,7 @@ RHA11 investigation reproduced the RHA10 divergence with exact production server
 
 
 
+
 - chg_20260909_200933_the-tuned-path-now-proves-actu_7816
 - 2026-09-09T20:09:33.391094+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T20:38:16.733081+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
@@ -78,3 +79,5 @@ RHA11 investigation reproduced the RHA10 divergence with exact production server
 - 2026-09-09T20:45:09.779726+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_204705_the-quarantined-cache-is-now-t_2378
 - 2026-09-09T20:47:05.967022+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_210128_the-remaining-replay-misses-ar_2991
+- 2026-09-09T21:01:28.097131+00:00 (updated-by): Updated: section:ledger-events
