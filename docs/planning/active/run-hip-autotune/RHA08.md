@@ -73,5 +73,8 @@ Split from RHA04 by review RV160. RHA04 owns decision-grade native/replay parity
 
 ## Ledger-events
 
+
 - chg_20260909_182139_the-plan-now-separates-the-dua_5938
 - 2026-09-09T18:21:39.256909+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260909_182254_build-type-campaigns-now-have_3132
+- 2026-09-09T18:22:54.616330+00:00 (updated-by): Updated: section:ledger-events
