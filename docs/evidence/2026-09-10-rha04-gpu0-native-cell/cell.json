@@ -1,0 +1,66 @@
+{
+  "pair": 1,
+  "mode": "native",
+  "position": 0,
+  "returncode": 0,
+  "performance_admitted": false,
+  "server_log": "/tmp/rha04-timed-gpu0-native3/pair-001-native/server.log",
+  "execution_attestation": {
+    "schema_version": 1,
+    "backend": "ROCm",
+    "device_count": 1,
+    "devices": [
+      {
+        "architecture": "gfx1100",
+        "locator": "0000:03:00.0"
+      }
+    ],
+    "failure_signature": null,
+    "telemetry": {
+      "layers_assigned_to_devices": [
+        0
+      ]
+    }
+  },
+  "execution_evidence_status": "verified",
+  "attestation_binding": {
+    "correlation_id": "fac3649334344120a0df065376ef0a7b",
+    "binary": "/home/audumla/.cache/bigcherry/builds/d0af37458d1ffb9412a7a2ecb18952e6/4bd62c7fba032f095c698730f677cf1a/bin/llama-server",
+    "binary_sha256": "249618ad89ba98aa2e8c658022f48b9ff5f17e03194b5fcba54139e5e7908ce6",
+    "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+    "model_sha256": "8ae8fd04e30c5a4af3ef72654729fb0d7f33615cac1ba335dd88084a56287934",
+    "common_server_args": [
+      "-sm",
+      "none",
+      "--fit",
+      "off",
+      "-ngl",
+      "99",
+      "-c",
+      "4096"
+    ],
+    "diagnostic_delta": [
+      "--verbosity",
+      "5"
+    ],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "0"
+    }
+  },
+  "attestation_preflight": "/tmp/rha04-timed-gpu0-native3/pair-001-native/attestation/preflight.json",
+  "metrics": {
+    "pp512_tps": 1198.19,
+    "tg128_tps": 84.83,
+    "pp2048_tps": 2460.25,
+    "tg512_tps": 85.36
+  },
+  "elapsed_s": 40.626113149977755,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  }
+}
