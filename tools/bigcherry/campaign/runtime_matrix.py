@@ -36,6 +36,7 @@ class ResolvedCell:
     build_id: str
     binary: str
     cache_id: str | None
+    inventory_id: str | None
     visibility: tuple[tuple[str, str], ...]
     identity_digest: str
     workload: Mapping[str, Any]
@@ -52,6 +53,7 @@ class ResolvedCell:
             "build_id": self.build_id,
             "binary": self.binary,
             "cache_id": self.cache_id,
+            "inventory_id": self.inventory_id,
             "visibility": dict(self.visibility),
             "identity_digest": self.identity_digest,
             "workload": dict(self.workload),
@@ -116,6 +118,11 @@ def resolve_matrix(
             raise MatrixResolutionError(f"{where}: cache_id must be non-empty when supplied")
         if arm == "replay" and cache_id is None:
             raise MatrixResolutionError(f"{where}: replay arm requires cache_id")
+        inventory_id = raw.get("inventory_id")
+        if inventory_id is not None and (not isinstance(inventory_id, str) or not inventory_id.strip()):
+            raise MatrixResolutionError(f"{where}: inventory_id must be non-empty when supplied")
+        if arm == "tune" and inventory_id is None:
+            raise MatrixResolutionError(f"{where}: tune arm requires identity-bound inventory_id")
         workload = raw.get("workload", {})
         if not isinstance(workload, Mapping):
             raise MatrixResolutionError(f"{where}: workload must be an object")
@@ -129,6 +136,7 @@ def resolve_matrix(
             "build_id": build_id,
             "binary": binary,
             "cache_id": cache_id,
+            "inventory_id": inventory_id,
             "visibility": visibility,
             "workload": dict(workload),
         }
@@ -136,6 +144,7 @@ def resolve_matrix(
             cell_id=cell_id, model_id=model_id, devices=devices,
             topology=topology, runtime_profile=runtime_profile, arm=arm,
             build_id=build_id, binary=binary, cache_id=cache_id,
+            inventory_id=inventory_id,
             visibility=tuple(sorted(visibility.items())),
             identity_digest=_digest(identity), workload=dict(workload),
         ))
@@ -163,6 +172,7 @@ def run_matrix(
     output: str | Path,
     execute: Callable[[ResolvedCell], Mapping[str, Any]],
     quiescent: Callable[[], bool] | None = None,
+    revalidate: Callable[[ResolvedCell], bool] | None = None,
 ) -> dict[str, Any]:
     """Run resolved cells serially and expose UI-safe status/event files.
 
@@ -197,25 +207,34 @@ def run_matrix(
 
     emit("preflight_complete")
     results: list[dict[str, Any]] = []
+
+    def finish(state: str) -> dict[str, Any]:
+        summary = {"state": state, "completed": completed, "total": len(cells), "results": results}
+        _atomic_json(root / "summary.json", summary)
+        return summary
+
     for cell in cells:
         if quiescent is not None and not quiescent():
             emit("failed", cell=cell, error="parent quiescence check failed")
-            return {"state": "failed", "completed": completed, "total": len(cells), "results": results}
+            return finish("failed")
         emit("running", cell=cell)
         try:
+            if revalidate is not None and not revalidate(cell):
+                emit("failed", cell=cell, error="cell identity changed after preflight")
+                return finish("failed")
             child = dict(execute(cell))
         except Exception as exc:  # noqa: BLE001 - preserve terminal evidence
             emit("failed", cell=cell, error=f"{type(exc).__name__}: {exc}")
-            return {"state": "failed", "completed": completed, "total": len(cells), "results": results}
+            return finish("failed")
         result = {"cell": cell.document(), "matrix_status": "executed", "child_result": child}
         results.append(result)
         completed += 1
         if quiescent is not None and not quiescent():
             emit("failed", cell=cell, error="post-cell quiescence check failed")
-            return {"state": "failed", "completed": completed, "total": len(cells), "results": results}
+            return finish("failed")
         emit("cell_complete", cell=cell)
     emit("completed")
-    return {"state": "completed", "completed": completed, "total": len(cells), "results": results}
+    return finish("completed")
 
 
 __all__ = ["MatrixResolutionError", "ResolvedCell", "resolve_matrix", "run_matrix"]
