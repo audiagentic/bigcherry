@@ -76,6 +76,8 @@ The exact-source diagnostic activation gate is now evidenced: 21,566/21,566 cove
 
 Exact-source diagnostic activation and diagnostics-off production timing are complete, but the three-prompt correctness gate found replay divergence. RHA11 has now isolated two admitted MMVQ winners and generated a corrected cache with both seeded to native; RHA10 remains fail-closed until that corrected cache is installed in the canonical campaign location and activation/timing are rerun.
 
+RHA11 correctness issue is resolved in evidence: both implicated MMVQ winners were seeded to mmvq:native:v1 through the normal exporter, the corrected cache is now installed at the canonical campaign path (original retained as dispatch.cache.pre-rha11), the three-prompt corpus matches stock/native, diagnostics activation returns 0 with 21,566/21,566 coverage and 14,622 final tuned launches, and diagnostics-off production timing returns 0 (pp512 930.03, pp2048 1282.63, tg128 33.83, tg512 34.17). RHA10 remains in_progress/fail-closed pending admission-record refresh and explicit treatment of the 24 replay misses/native fallbacks under the stated zero-miss policy.
+
 ## Change Log
 
 - 2026-09-09T19:45:36.770283+00:00 (created-by): Created by agent
@@ -95,3 +97,6 @@ Exact-source diagnostic activation and diagnostics-off production timing are com
 - 2026-09-09T20:39:10.108454+00:00 (updated-by): Updated: section:notes
 - chg_20260909_203929_the-replay-mismatch-is-now-iso_7697
 - 2026-09-09T20:39:29.251175+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:45:00.888899+00:00 (updated-by): Updated: section:notes
+- chg_20260909_204705_the-quarantined-cache-is-now-t_2378
+- 2026-09-09T20:47:05.941088+00:00 (updated-by): Updated: section:ledger-events

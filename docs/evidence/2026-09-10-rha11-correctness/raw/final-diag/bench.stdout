@@ -1,0 +1,48 @@
+
+  Effective Toggles:  {
+  "prompt_length": 512,
+  "generation_length": 128,
+  "ubatch_size": 512,
+  "gpu_layers": 99,
+  "kv_cache_type_k": "f16",
+  "kv_cache_type_v": "f16",
+  "flash_attn": "auto",
+  "repetitions": 1,
+  "batch_size": 2048,
+  "threads": 8,
+  "load_mode": "mmap"
+}
+
+Running 3 benchmark config(s): ['pp512', 'pp2048', 'tg512']
+============================================================
+Lane:         None
+Bench Type:   server-bench
+Config:       pp512, pp2048, tg512
+Config Args:  pp512 (p=512, n=128); pp2048 (p=2048, n=128); tg512 (p=1, n=512)
+Backend:      unknown
+Variant:      unknown
+Model:        Qwen3.8-27B-Q8_0
+Device:       
+Toggles:      {"prompt_length": 1, "generation_length": 512, "ubatch_size": 512, "gpu_layers": 99, "kv_cache_type_k": "f16", "kv_cache_type_v": "f16", "flash_attn": "auto", "repetitions": 1, "batch_size": 2048, "threads": 8, "load_mode": "mmap"}
+Env vars:     {"SERVER_URL": "http://127.0.0.1:34376", "API_KEY": "sk-27aVkVVAlzzrw7GCE3jlkGzoX1R9EESjRmTa6Yh0wpzQnpG6ziIr9nhvjDG3mFtK"}
+============================================================
+
+Extracted Results (3 config(s)):
+             pp512_tps: 929.58
+          pp512_stddev: 0.00
+             tg128_tps: 33.77
+          tg128_stddev: 0.00
+            pp2048_tps: 1287.50
+         pp2048_stddev: 0.00
+             tg512_tps: 34.08
+          tg512_stddev: 0.00
+
+Run Summary:
+  Metrics:   pp512=929.6, tg128=33.8, pp2048=1287.5, tg512=34.1 t/s
+  Model:     Qwen3.8-27B-Q8_0
+  Context:          ? tokens (fit=None, target=None)
+  KV Cache:  K=f16, V=f16
+PPL:     skipped (llama-perplexity not found)
+Log:     /mnt/vault/development/llmhosts/llamacpp/bench/raw_logs/20260910_064134-server-bench-Qwen3.8-27B-Q8_0.log
+Upload:  [1 skipped (no metrics)]
+Synced 3297 rows from 32 files → /mnt/vault/development/llmhosts/llamacpp/bench/results.db

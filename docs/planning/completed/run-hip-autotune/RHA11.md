@@ -2,7 +2,7 @@
 id: RHA11
 order: 11
 plan: run-hip-autotune
-state: in_progress
+state: completed
 created-at: '2026-09-09T20:09:03.181768+00:00'
 breadth: ''
 skill: advanced
@@ -68,9 +68,13 @@ RHA11 investigation reproduced the RHA10 divergence with exact production server
 ## Ledger-events
 
 
+
 - chg_20260909_200933_the-tuned-path-now-proves-actu_7816
 - 2026-09-09T20:09:33.391094+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T20:38:16.733081+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
 - 2026-09-09T20:38:25.814080+00:00 (state-transition): State: pending → in_progress
 - chg_20260909_203929_the-replay-mismatch-is-now-iso_7697
 - 2026-09-09T20:39:29.272562+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-09T20:45:09.779726+00:00 (state-transition): State: in_progress → completed
+- chg_20260909_204705_the-quarantined-cache-is-now-t_2378
+- 2026-09-09T20:47:05.967022+00:00 (updated-by): Updated: section:ledger-events

@@ -37,3 +37,13 @@ cache is regenerated from this seed decision and the diagnostics-off timing
 and activation evidence are rerun against that regenerated cache.
 
 Raw response JSON and the manifest-bound seed are retained under `raw/`.
+
+The corrected cache was also exercised end-to-end with the maintained
+`run_bench.py --bench-type server-bench` runner. The diagnostics-on activation
+run returned 0 and recorded 21,566/21,566 executed and dispatched operations,
+55 cache entries, 33 exact replay matches, 0 unavailable/rerun/incompatible
+entries, and positive tuned launches (14,622). The diagnostics-off production
+run returned 0 with pp512 930.03 t/s, pp2048 1282.63 t/s, tg128 33.83 t/s,
+and tg512 34.17 t/s. These are corrected-cache observations; the final
+RHA10 admission record still needs to be updated from this evidence before
+the item can close.
