@@ -12,7 +12,7 @@ the native build identity before launching the maintained
 
 The server was a production-shaped native llama-server launched with the
 environment-provided device visibility. The maintained harness completed its
-`tg128` liveness configuration and returned `tg128_tps: 85.66`. This value is
+`tg128` liveness configuration and returned `tg128_tps: 85.4`. This value is
 not a performance claim: it is one repetition used to prove the configured
 run boundary and teardown path.
 
@@ -22,7 +22,7 @@ Observed invariants:
 - canonical visibility recorded as `ROCR_VISIBLE_DEVICES=0` and
   `HIP_VISIBLE_DEVICES=0`;
 - `resolved-matrix.json`, atomic `status.json`, and append-only
-  `events.jsonl` were emitted;
+  `events.jsonl`, and atomic `summary.json` were emitted;
 - the server was stopped cleanly after the smoke;
 - no production admission or parity conclusion is inferred from this run.
 

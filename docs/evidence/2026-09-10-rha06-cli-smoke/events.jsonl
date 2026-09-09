@@ -1,4 +1,4 @@
-{"active_cell": null, "at": 1788976098.3926418, "completed": 0, "schema_version": 1, "state": "preflight_complete", "total": 1}
-{"active_cell": "rha06-9b-gpu0-native-smoke", "at": 1788976098.4038212, "completed": 0, "schema_version": 1, "state": "running", "total": 1}
-{"active_cell": "rha06-9b-gpu0-native-smoke", "at": 1788976115.623452, "completed": 1, "schema_version": 1, "state": "cell_complete", "total": 1}
-{"active_cell": null, "at": 1788976115.6276004, "completed": 1, "schema_version": 1, "state": "completed", "total": 1}
+{"active_cell": null, "at": 1788976528.9695058, "completed": 0, "schema_version": 1, "state": "preflight_complete", "total": 1}
+{"active_cell": "rha06-9b-gpu0-native-smoke", "at": 1788976528.9753816, "completed": 0, "schema_version": 1, "state": "running", "total": 1}
+{"active_cell": "rha06-9b-gpu0-native-smoke", "at": 1788976546.2712138, "completed": 1, "schema_version": 1, "state": "cell_complete", "total": 1}
+{"active_cell": null, "at": 1788976546.2894228, "completed": 1, "schema_version": 1, "state": "completed", "total": 1}
