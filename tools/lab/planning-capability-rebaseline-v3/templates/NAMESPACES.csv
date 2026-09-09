@@ -1,0 +1,5 @@
+capability,plan_namespace,id_prefix,scope,approved
+build,,,,false
+run,,,,false
+patching,,,,false
+tuning,,,,false
