@@ -15,9 +15,7 @@ priority: P1
 
 ## Description
 
-Run-owned reusable orchestration layer above existing campaign/build and tuning workflows. Select registered models, physical GPU sets/topologies, runtime profiles and stock/native/replay arms by configuration only; do not create a second campaign engine or admission policy.
-
-Run-owned reusable orchestration layer above existing campaign/build and tuning workflows. The first implementation slice now provides a pure whole-matrix resolver and serial file-backed runner; caller-supplied delegates remain authoritative for tuning and benchmark execution.
+Run-owned reusable orchestration layer above existing campaign/build and tuning workflows. The pure whole-matrix resolver and serial file-backed runner are complete; this change adds the declarative JSON CLI adapter. Caller-supplied/configured worker commands remain authoritative for tuning and benchmark execution.
 
 ## Steps
 
@@ -49,28 +47,15 @@ Evidence contract: cell orchestration status (executed, infrastructure_failed, s
 ## Files
 
 tools/bigcherry/campaign/runtime_matrix.py
-tools/bigcherry/campaign/resolution.py
-tools/bigcherry/campaign/execution.py
-tools/bigcherry/campaign/benchmark.py
-tools/bigcherry/campaign/bench_runner.py
-tools/bigcherry/tuning/workflow.py
-tools/bigcherry/tuning/server_runner.py
-tools/bigcherry/core/environment.py
+tools/bigcherry/cli/runtime.py
 tools/bigcherry/cli/main.py
-tools/tests/campaign/
-tools/tests/core/test_environment.py
+tools/tests/campaign/test_runtime_matrix.py
+tools/tests/cli/test_runtime_matrix_cli.py
 docs/reference/testing/TEST.md
-
-- tools/bigcherry/campaign/runtime_matrix.py
-- tools/tests/campaign/test_runtime_matrix.py
-- tools/bigcherry/campaign/benchmark.py
-- docs/reference/testing/TEST.md
 
 ## Validation
 
-Unknown model, GPU, topology, runtime, build or cache fails before execution. Tests prove deterministic order, full preflight, canonical visibility, zero overlapping GPU workloads, parent quiescence, explicit effective visibility, teardown gating, stable resolved identity digest, TOCTOU recheck, child failure and non-admission propagation, complete manifests, atomic status writes and sanitized append-only events. A tune cell may enter preflight only with an identity-bound inventory, unless a reviewed change explicitly documents staged resolution. Real smoke uses the maintained server-bench for representative dual-XTX/27B and single-GPU/9B lanes; no llama-bench.
-
-Implemented and tested resolve_matrix()/run_matrix(). Whole-matrix validation rejects unknown models, duplicate cells/devices, invalid visibility, and replay cells without cache identity before execution. ResolvedCell carries canonical ROCR/HIP visibility, runtime/build/cache identity, workload and stable digest. run_matrix executes serially, checks optional parent quiescence before/after each cell, preserves child verdicts, and writes atomic status.json plus sanitized append-only events.jsonl. Focused command: PYTHONPATH=tools python -m pytest tools/tests/campaign/test_runtime_matrix.py tools/tests/campaign/test_server_benchmark_capture.py -q; result 20 passed, 4 subtests passed. Remaining: wire a declarative CLI/config adapter and real maintained-harness smoke once Brutus is reachable.
+Implemented and tested resolve_matrix()/run_matrix() plus the declarative runtime-matrix CLI. The adapter loads canonical config/environment.toml and config/models.toml, rejects unknown models before execution, writes immutable resolved-matrix.json, and delegates cells serially without a shell while propagating visibility and BIGCHERRY_RUNTIME_CELL_JSON. Focused validation: PYTHONPATH=tools python -m pytest tools/tests/cli/test_runtime_matrix_cli.py tools/tests/campaign/test_runtime_matrix.py -q (7 passed). Remaining: real maintained server-bench smoke on Brutus and any worker-specific adapter wiring beyond the generic existing-command delegate.
 
 ## Effort & Risk
 
@@ -86,13 +71,12 @@ Fail closed; canonical models.toml, environment.toml/BC_* and recipes.toml only;
 
 ## Acceptance Criteria
 
-- One runtime-matrix entrypoint runs another registered model, GPU set/topology and runtime configuration by configuration change only.
-- The complete requested matrix resolves before GPU execution, or a reviewed staged-tune exception explicitly documents why inventory must be acquired first.
-- Physical visibility is canonical, explicit and recorded; workloads never overlap; parent quiescence and clean teardown gate continuation.
-- Stock/native/replay identities, cache evidence, cell manifests and aggregate summary are retained.
-- Existing workflows perform execution and admission; the matrix cannot upgrade child verdicts or diagnostic evidence.
-- Atomic status.json and sanitized append-only events.jsonl expose current stage, active cell, progress counts, errors and terminal outcome for UI polling.
-- Invalid inputs and identity drift fail closed before the affected cell can execute.
+- A configuration-only JSON matrix can be resolved through the CLI for a registered model, physical GPU set and runtime profile.
+- Preflight rejects unknown models and invalid cells before worker launch.
+- Existing worker commands are delegated serially with canonical visibility and immutable cell identity.
+- resolved-matrix.json, atomic status.json and sanitized append-only events.jsonl are emitted for UI polling.
+- Child non-zero exit/failure remains a failed matrix and cannot be upgraded by the adapter.
+- Real maintained server-bench smoke remains required before final completion.
 
 ## Notes
 
@@ -119,3 +103,6 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - chg_20260909_154517_added-reusable-ui-pollable-ru_5957
 - 2026-09-09T15:45:18.008716+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:57:03.090273+00:00 (state-transition): State: pending → in_progress
+- 2026-09-09T17:40:55.195470+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:acceptance_criteria
+- chg_20260909_174106_runtime-matrices-can-now-be-se_6137
+- 2026-09-09T17:41:06.460978+00:00 (updated-by): Updated: section:ledger-events
