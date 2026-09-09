@@ -1,6 +1,6 @@
 import unittest
 
-from bigcherry.campaign.run_advisories import evaluate_runtime_result
+from bigcherry.campaign.run_advisories import evaluate_ab_result, evaluate_runtime_result
 
 
 def child(**extra):
@@ -46,3 +46,21 @@ class RunAdvisoryTests(unittest.TestCase):
         self.assertFalse(evaluation.complete)
         self.assertTrue(evaluation.errors)
 
+    def test_ab_success_has_no_advisory(self):
+        evaluation = evaluate_ab_result({
+            "performance_admitted": True,
+            "runs": [{"returncode": 0}],
+            "comparisons": {"replay_vs_native": {"tg128_tps": {"effect_pct": 1.0}}},
+        })
+        self.assertTrue(evaluation.complete)
+        self.assertEqual(evaluation.findings, ())
+
+    def test_ab_failure_and_missing_evidence_are_distinct(self):
+        evaluation = evaluate_ab_result({
+            "performance_admitted": False,
+            "runs": [{"returncode": 1}],
+        })
+        tags = [finding.tag for finding in evaluation.findings]
+        self.assertIn("AB_RUN_FAILURE", tags)
+        self.assertIn("AB_MISSING_COMPARISON", tags)
+        self.assertIn("AB_NOT_ADMITTED", tags)

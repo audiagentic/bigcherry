@@ -176,6 +176,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.assertEqual(summary["performance_admitted"], False)
         self.assertEqual(len(summary["runs"]), 4)
         self.assertIn("exploratory_comparisons", summary)
+        advisories = json.loads((self.output / "advisories.json").read_text())
+        self.assertIn("AB_NOT_ADMITTED", [item["id"] for item in advisories["findings"]])
 
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
@@ -219,6 +221,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(len(summary["runs"]), 1)
         self.assertNotIn("exploratory_comparisons", summary)
+        advisories = json.loads((self.output / "advisories.json").read_text())
+        self.assertIn("AB_RUN_FAILURE", [item["id"] for item in advisories["findings"]])
 
     def test_live_source_is_reattested_before_each_cell_and_failure_stops_next_cell(self):
         from bigcherry.source.identity import SourceAttestation
