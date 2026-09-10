@@ -551,6 +551,12 @@ ownership.
 | `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **TRANSITIONAL** | RD87: extracts deduped real GEMM/MMVQ dispatch shapes + native timing from a tune-campaign measurements.jsonl; answered/negative-finding, retained as investigation provenance. |
 | `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **TRANSITIONAL** | RD87: drives `hipblaslt-bench` (heuristic vs all-solutions) over the extracted real shapes on Brutus; answered/negative-finding, retained as investigation provenance. |
 
+## RHA12 pin-bump validation
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
+
 Inventory count: 403 script/tool files (vendor, build/cache, and artifacts excluded).
 
 ## Baseline blockers: reviewed and dispositioned (2026-08-25)

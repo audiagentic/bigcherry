@@ -136,6 +136,18 @@ window; bump one, record, then bump the other.
 5. **Rebuild the campaign surfaces on the new tree** (build dirs, catalog
    generation, descriptors), then `pin-status` again.
 
+   Then run the standing bump-validation matrix on real hardware:
+   `python3 tools/lab/bump-validation/run_bump_validation.py --output
+   <work-dir>` (build server only). It builds one fresh binary at the new
+   pin and launches it under the real production runtime-profiles across
+   every real GPU individually (`production-safe-single`,
+   `tierB-qwen9b-q6k`) plus the real dual-XTX multi-GPU topology
+   (`production-dual-xtx`, `tierL-qwen27b-q8`) — a real-server-launches-
+   and-completes-correctly gate that `patch-rebase-check`/`patch-lint`
+   cannot provide, since none of the static gates ever launch a server. A
+   failing cell is a bump blocker; investigate before declaring the bump
+   complete.
+
 6. **Walk the invalidation list below.** Every entry is a question:
    *is there an artifact of this kind that the next step will consume, that
    was produced at the old revision?* If yes, it is stale now.
