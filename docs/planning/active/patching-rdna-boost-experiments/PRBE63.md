@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Compare conventional versus cooperative-matrix Vulkan routes by exact driver/ICD, architecture, operation, quant type, and signature; do not introduce global coopmat policy.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Build the comparison matrix across proprietary AMDVLK/RADV, gfx1100/gfx115x/gfx120x, dense/MoE, MUL_MAT/MUL_MAT_ID, supported/excluded CM1 quant types and exact recorded shapes; fingerprint device/ICD; include PR #27952 as evidence; record route/fallback reason, parity, kernel/PP/TG and ISA where available; keep qualification separate from PRVP01-RO22.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Coopmat choice is workload/type/driver dependent. Measure conventional and CM1 routes per signature; preserve dense RDNA4 exclusions as controls and selected MoE/quantized wins where observed. No architecture-only or global coopmat-off policy.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd80.md
+Vulkan route selector/telemetry; driver-signature comparison matrix; parity tests; kernel/PP/TG/ISA evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD69.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (1) on predecessor.
+Parity for every route; performance split by driver/ICD, architecture, operation, quant, and signature; include RDNA4 dense and MoE controls.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No global coopmat policy; conclusions scoped to fingerprinted driver/architecture/operation/quant/signature; independent of PRVP01-RO22 qualification.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd80
 - 2026-09-09T11:58:01.411603+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.233203+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:16:32.506067+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031644_repaired-four-more-active-succ_8062
+- 2026-09-10T03:16:44.985999+00:00 (updated-by): Updated: section:ledger-events
