@@ -4,7 +4,7 @@
   "owner": "Audumla",
   "patch_digest": "4c5d8993f07ac479c67692b1c1a8775e08530ced2561b95e94ffdb99b744352a",
   "patch_id": "1238_hi119_deterministic_init_mul_mat_id_tensors",
-  "reason": "Transitively blocked by 1222_hi67_deterministic_test_backend_ops_seed's own anchor break (upstream PR #28325). Not selected by any production patch-set (core/untested) -- disposition follows its blocking dependency's disposition.",
-  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "reason": "Same finding as the b10883 disposition, re-recorded at b10884 because pin-bump correctly invalidates a revision-bound disposition on ANY revision move, even a CI-only diff. Underlying patch status is unchanged. Blocked by 1222.",
+  "target_revision": "434ddbbc0e30522e897670681e503b797c12b7c1",
   "tracking_item": "RHA12"
 }

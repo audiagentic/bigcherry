@@ -4,7 +4,7 @@
   "owner": "Audumla",
   "patch_digest": "1d992c03c13fb410633383e4579bea15c1a5659bd9ea8ef58f32275e23ba187b",
   "patch_id": "1209_rd22_integrated_gpu_host_buffer_backout",
-  "reason": "SUPERSEDED, verified via direct source inspection: upstream commit d4389a4dd920 (PR #28604, revert of the prop.integrated-restoring PR #24233) makes RD22's own fix -- unconditionally set info.devices[id].integrated=false -- the current upstream behavior verbatim at b10883 (ggml-cuda.cu:307). RD22's back-out is no longer needed; upstream adopted equivalent behavior. Not selected by any production patch-set (rdna-boosts/untested) -- disposition rather than editing/deleting mid-bump; real supersession closure belongs to a deliberate bigcherry-patch-lifecycle decision, not this disposition record alone.",
-  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "reason": "Same finding as the b10883 disposition, re-recorded at b10884 because pin-bump correctly invalidates a revision-bound disposition on ANY revision move, even a CI-only diff (b10883->b10884 touches only .github/workflows/*.yml, verified via git diff --stat). Underlying patch status is unchanged. Original: SUPERSEDED by upstream PR #28604 (verified ggml-cuda.cu:307 matches RD22's fix verbatim).",
+  "target_revision": "434ddbbc0e30522e897670681e503b797c12b7c1",
   "tracking_item": "RHA12"
 }
