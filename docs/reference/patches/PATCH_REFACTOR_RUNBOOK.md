@@ -6,10 +6,11 @@ layout. This is an operational runbook, not permission to run `git rebase`:
 the shared-tree policy forbids `git stash`, `git reset`, and `git rebase`.
 
 The locked design and historical acceptance run sheets remain in
-[`../../planning/active/patch-system/PATCH_REFACTOR_RUNBOOK.md`](../../planning/active/patch-system/PATCH_REFACTOR_RUNBOOK.md).
-Use the current registry/rebase implementation and the active plan item for
-live behavior and status; do not treat an old run-sheet criterion as evidence
-that has already been completed.
+[`../../planning/completed/patch-system/PATCH_REFACTOR_RUNBOOK.md`](../../planning/completed/patch-system/PATCH_REFACTOR_RUNBOOK.md)
+(the plan item has since completed and moved out of `active/`).
+Use the current registry/rebase implementation for live behavior and status;
+do not treat an old run-sheet criterion as evidence that has already been
+completed.
 
 ## When this runbook applies
 
