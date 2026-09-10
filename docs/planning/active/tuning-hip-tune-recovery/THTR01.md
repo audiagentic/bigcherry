@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Pinned recovery/profile work still requires reset, native-BF16 rebuild, FA_ALL_QUANTS A/B, and profile evidence.
+Persist scoped BehavioralFailureWitness records for real recovery failures without creating universal candidate/signature blacklists.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Define full witness context identity (candidate/signature/source/build/model/profile/MTP args/hardware/runtime/corpus/assignment/failing set/verdict/divergence/schema); implement exact-match skip, same candidate+environment different ensemble downrank, different context diagnostic-only; invalidate on identity changes; require HI143 gate before publishing.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+A witness describes one observed failure context, never an intrinsic candidate property. Preserve age as metadata only; content/context identity controls reuse.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-tune-recovery-htr02.md
+Recovery witness schema/storage, HTR01 integration, cache and classification tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI141,HTR01.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (2) on predecessor.
+Synthetic three-level policy tests and publish invariant requiring HI143 PASS.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Exact failures may be skipped, same-candidate alternatives only downranked, different contexts never auto-excluded, and no cache publishes without behavioral PASS.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-tune-recovery-htr02
 - 2026-09-09T11:58:01.011485+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.618193+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:36:25.570459+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033709_repaired-five-recovery-success_3695
+- 2026-09-10T03:37:09.509133+00:00 (updated-by): Updated: section:ledger-events

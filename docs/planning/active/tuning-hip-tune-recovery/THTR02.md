@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The source explicitly keeps cross-process resume durability deferred for later rather than closed.
+Make retune escalation a recommendation-only signal, never an autonomous action.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Define observable escalation reasons and report schema from recovery/behavioral evidence; expose operator recommendation with context and suggested next campaign; ensure no automatic retune, promotion, blacklist, or cache mutation; test absent/ambiguous evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Escalation is advisory orchestration output. Operator explicitly decides whether to retune; preserve provenance and fail closed on incomplete recommendation context.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-tune-recovery-htr04.md
+Recovery reporting/CLI and receipt schema; recommendation tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HTR01.
-
-Active dependencies: Frozen dependencies: HTR01.
-
-Reference handling: Rewrite forward references (4); preserve historical references (1) on predecessor.
+Reason classification, deterministic report, no side effects in recommendation mode.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Recommendations are actionable and provenance-rich but cannot autonomously change tuning state or launch work.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-tune-recovery-htr04
 - 2026-09-09T11:58:01.017180+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.625781+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:36:32.701240+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033709_repaired-five-recovery-success_3695
+- 2026-09-10T03:37:09.529832+00:00 (updated-by): Updated: section:ledger-events

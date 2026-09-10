@@ -15,21 +15,15 @@ priority: P0
 
 ## Description
 
-The deterministic interleaved ABBA validation ladder is specified but not implemented/executed.
+Optimize recovery bisection by selecting the shortest vector that reproduces the same first acceptance divergence, with full-corpus final validation.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Run full corpus once; identify failing vectors and first divergence; select shortest reproducer, optionally minimize n_predict; use only that oracle for bisection/alternative search; cache deterministic native trace; validate final candidate cache against immutable full corpus before publish.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Never use a cheap vector that cannot observe the failure. Oracle selection is anchored to same first divergence, guarding against isolating a different defect.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-tune-recovery-htr07.md
+Recovery oracle selection/bisection, native trace cache, full-corpus validator and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Known failure oracle reproduces same divergence, isolates same signature as full bisection, final cache passes full corpus.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Search cost is reduced without changing isolated cause or evidence quality; publication always requires full immutable corpus validation.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-tune-recovery-htr07
 - 2026-09-09T11:58:01.030411+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.648480+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:36:54.896836+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033709_repaired-five-recovery-success_3695
+- 2026-09-10T03:37:09.569044+00:00 (updated-by): Updated: section:ledger-events
