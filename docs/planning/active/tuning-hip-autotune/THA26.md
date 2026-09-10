@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Offline integration is done; real HIP tuned-to-promoted-to-replay-to-dispatch validation remains.
+Integrate transformed tuning winners at dispatch with zero overhead on untransformed signatures and fail-closed runtime fallback.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Carry transform_id/inverse mapping in resolved binding; apply transform before candidate launch and inverse writeback after; preserve fast path for transform_id=0; validate batch M MVF, cache warm path, can_execute fallback and bit-identical native output.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Implement directional HI30→THA26 seam; extend replay binding/cache identity without circular dependency. Transform is optional and runtime applicability is rechecked; any failure selects native.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi31.md
+HIP autotune types/dispatch/cache and transform producer/consumer tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI27,HI28,HI29,HI30,HI67,HI74,HI80,PH01.
-
-Active dependencies: Frozen dependencies: HI27,HI28,HI30.
-
-Reference handling: Rewrite forward references (1); preserve historical references (8) on predecessor.
+End-to-end transformed binding, no-transform overhead, full batch output, can_execute fallback, process-cache warm path, native bit identity.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Transformed winners execute correctly with inverse writeback, untransformed dispatch remains behavior/performance equivalent, and any invalid transform fails closed to native.
 
 ## Notes
 
@@ -78,3 +68,6 @@ Successor key: tuning-hip-autotune-hi31
 - 2026-09-09T12:09:27.149595+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.565652+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:33:33.368652+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033345_repaired-three-more-tuning-suc_6484
+- 2026-09-10T03:33:45.461102+00:00 (updated-by): Updated: section:ledger-events
