@@ -2,7 +2,7 @@
 id: RGC01
 order: 1
 plan: run-gpu-collectives
-state: pending
+state: completed
 created-at: '2026-09-09T10:47:57.287397+00:00'
 breadth: ''
 skill: intermediate
@@ -87,3 +87,4 @@ CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10), consistent with
 - 2026-09-10T00:14:42.238883+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:13.222201+00:00 (updated-by): Updated: section:notes
 - 2026-09-10T00:27:15.830241+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T01:49:31.905830+00:00 (state-transition): State: pending → completed

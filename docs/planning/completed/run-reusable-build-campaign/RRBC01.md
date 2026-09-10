@@ -2,7 +2,7 @@
 id: RRBC01
 order: 4
 plan: run-reusable-build-campaign
-state: pending
+state: completed
 created-at: '2026-09-09T10:58:54.395708+00:00'
 breadth: ''
 skill: intermediate
@@ -87,3 +87,4 @@ NOT yet done (explicitly deferred, matches RE31's own critique of the current co
 - 2026-09-10T00:23:07.296800+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:23:14.440795+00:00 (updated-by): Updated: section:notes
 - 2026-09-10T00:27:29.287862+00:00 (updated-by): Updated: section:detailed_solution, section:files, section:validation
+- 2026-09-10T01:49:32.854849+00:00 (state-transition): State: pending → completed
