@@ -18,7 +18,7 @@ The llama.cpp pin and ROCm version are independent identity axes. A pin does not
 | --- | --- | --- | --- |
 | Windows workstation | ROCm 7.1 | Observed in the 2026-08-23 TO01/RD87 investigation; `platform.windows-gfx1100` also names ROCm 7.1 compiler paths | Recheck the local install/vendor path before use; this update did not access the workstation |
 | build-server (`brutus`) | `/opt/rocm` | Configured in `config/environment.toml` | System/default path; resolve its real target before treating it as a version identity |
-| build-server | `/home/audumla/rocm-shim` | Configured in `config/environment.toml` | Compiler-name compatibility shim; not a distinct ROCm release |
+| build-server | `$BC_HOME/rocm-shim` | Configured in `config/environment.toml` | Compiler-name compatibility shim; not a distinct ROCm release |
 | build-server | `vendor/rocm/7.2.4` | Directly observed in TO01 on 2026-09-02 | Complete library tree used as the 7.2.4 reference |
 | build-server | `vendor/rocm/7.14` | Directly observed in TO01 on 2026-09-02 | Keep version-qualified; do not replace with an unversioned ad-hoc path |
 | build-server | `vendor/rocm/7.2.4-merged` | Created and verified in TO01 on 2026-09-02 | Combines the compiler-layout convenience of `artifacts/va15-rocm-merged` with the complete 7.2.4 libraries, including RCCL |
@@ -30,7 +30,7 @@ The llama.cpp pin and ROCm version are independent identity axes. A pin does not
 tools/rocm-env.sh --list
 ```
 
-For Brutus, also verify the shared defaults before a version-sensitive run:
+On the build server, also verify the shared defaults before a version-sensitive run:
 
 ```bash
 readlink -f /usr/bin/hipcc
