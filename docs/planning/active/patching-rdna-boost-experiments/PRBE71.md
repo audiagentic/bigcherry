@@ -14,21 +14,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Add temporary qualification-only ablation knobs to isolate causal contributions within the coupled stream/concurrency and GDN patch clusters.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Add compile-time/template toggles that need not survive production; for RD39-44 compare native, safe-plumbing-only, and safe-plumbing+overlap; for RD50-53 compare generic shuffle+expf+default launch, plus DPP, exp2, and launch-bounds variants; preserve coupled production correctness and record component effects.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The coupled patches are correct for deployment but currently obscure causal attribution. Use temporary instrumentation/knobs to separate safety prerequisites from performance overlap and GDN micro-decisions without splitting production patches.
 
 ## Code Samples & Guidance
 
@@ -36,15 +30,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd91.md
+Qualification-only toggles in RD39-44 and RD50-53 code paths; ablation manifests/results; no permanent runtime API unless separately approved.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Each variant passes correctness; report PP/TG, kernel time and component deltas with native controls; remove or quarantine knobs after qualification.
 
 ## Effort & Risk
 
@@ -56,7 +46,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Obtain causal attribution for both clusters while preserving the coupled production contract; no variant may bypass safety prerequisites or be promoted without correctness.
 
 ## Notes
 
@@ -76,3 +66,6 @@ Successor key: patching-rdna-boost-experiments-rd91
 - 2026-09-09T11:58:01.448926+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.286324+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:20:14.039303+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032047_repaired-five-more-active-succ_6361
+- 2026-09-10T03:20:47.933544+00:00 (updated-by): Updated: section:ledger-events

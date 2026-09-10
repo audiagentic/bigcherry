@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly retains RD88 as pending research/strategic work with no patch.
+Use Composable Kernel offline profiling as an oracle for captured hot GEMM signatures without adding CK as a broad runtime dependency.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Select top dense/MoE signatures ranked by time*calls; run CK profiler and native MMQ/MMVQ/hipBLASLt controls with numerical parity; record throughput/resource use; if CK wins, reproduce only the useful specialization in ggml or evaluate a narrow integration.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+CK is an offline vendor/architecture oracle. Keep exact-signature benchmarking and provenance separate from runtime dependencies; use it to identify tile/algorithm choices BigCherry can implement or deliberately decline.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd88.md
+Offline CK profiling tooling, captured signature manifests, native-control comparison and evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Numerical parity; kernel throughput and resource use against native winners.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Do not add broad CK dependency; accept only a reproduced narrow specialization or explicitly documented no-port disposition backed by parity/performance evidence.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd88
 - 2026-09-09T11:58:01.444745+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.280599+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:20:07.380935+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032047_repaired-five-more-active-succ_6361
+- 2026-09-10T03:20:47.919311+00:00 (updated-by): Updated: section:ledger-events
