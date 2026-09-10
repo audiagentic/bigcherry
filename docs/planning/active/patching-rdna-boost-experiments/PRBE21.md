@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-SSM conv-input folding remains an unmaterialized candidate requiring dependency audit, port, and isolated SSM/Mamba qualification.
+Qualify SSM conv_input folding into qkv MMVQ and rpb=2 small-K MoE as an isolated candidate with dependency audit.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit exact Q8/SSM symbols against existing 0600/0650/common.cuh and determine PRBE05/PRBE18 relationships explicitly.
+- Port source 0510d7cfa as an rdna-boosts package with provenance/registry; do not assume cache or SSM-chain dependency.
+- Run isolated SSM/Mamba fused-vs-unfused correctness and timing on gfx1100.
+- Check exact shapes, memory/bounds, false-pattern fallback and small-K MoE rpb behavior.
+- Only evaluate composition after isolated candidate is proven and dependency identity is declared.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd27.md
+common.cuh; ggml-cuda.cu; mmvq.cu; patch 12xx rd27; external source entry; SSM/Mamba fixtures; fused/unfused and fallback campaign artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD09,RD24.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Source/anchor audit; output equality; exact SSM/Mamba shapes; gfx1100; memory/bounds; small-K rpb; false-pattern fallback; causal timing.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependency audit; exact pattern; memory safety; isolated qualification.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Fused path is correct for exact SSM/small-K patterns, unsupported patterns fall back, and any benefit is shown in isolated causal evidence before composition.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd27
 - 2026-09-09T11:58:01.222985+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.942391+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:51:58.669575+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025218_rdna-successors-prbe2022-now_5714
+- 2026-09-10T02:52:18.419086+00:00 (updated-by): Updated: section:ledger-events
