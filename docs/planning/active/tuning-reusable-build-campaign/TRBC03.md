@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Forced Vulkan execution and telemetry remain blocked on RE30/RE32 foundations.
+Add Vulkan-native forced recipe selection and bounded route telemetry after TRBC01 hook and TRBC02 ABI.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Define force selector and recipe inputs; validate before dispatch; reject unknown/unsupported force requests; emit requested/selected route, fallback reason, candidate/recipe digest/device identity; support native/replay hit/miss and bounded logs; forced diagnostics remain non-promotable.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Vulkan analogue of HIP force contract with Vulkan-specific recipe selectors and native fallback. Never silently convert invalid force to native without observable failure.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-reusable-build-campaign-re36.md
+Vulkan dispatch hook/recipe selector, telemetry and campaign evidence adapters/tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Valid/unknown force, capability rejection, device-loss/timestamp failure, native, replay hit/miss, bounded route log, correctness parity.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Forced selection is fail-loud and observable; replay/native fallback is safe; diagnostics cannot be promoted without independent correctness/timing evidence.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-reusable-build-campaign-re36
 - 2026-09-09T11:58:01.493786+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.358805+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:39:45.414358+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_034017_repaired-six-vulkanprovider-s_6655
+- 2026-09-10T03:40:17.985718+00:00 (updated-by): Updated: section:ledger-events
