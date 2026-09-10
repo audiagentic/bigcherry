@@ -15,21 +15,19 @@ priority: P1
 
 ## Description
 
-RD89 reconciliation records NRO10 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Evaluate Meta compute-container view headroom for recurrent/MTP graphs. Port only after proving the existing 16-view bound is insufficient or a supported graph-derived bound exceeds it.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Confirm b10705 Meta allocator behavior and derive actual maximum static-tensor view count for recurrent+MTP graphs.
+- Build boundary fixtures at 15/16/17 and higher views through the real Meta context mechanism, plus repeated eval/reset.
+- Port the minimal constant/rationale only if failure is reproducible; prefer a derived bounded formula over magic 128.
+- Measure metadata memory and verify ordinary dense/non-recurrent graphs are unchanged.
+- Record capacity decision and keep the change correctness-scoped, not a performance claim.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Recurrent snapshot views are estimated around 2*(n_rs_seq+1) per shared recurrent layer. Headroom concerns tensor-object metadata, not model data; bound it from graph structure and retain safe failure if capacity is exceeded.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro10.md
+ggml-backend-meta.cpp; Meta context boundary fixture; recurrent/MTP graph construction and eval/reset tests; metadata memory evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+15/16/17+ view allocation; real recurrent+MTP graph; repeated reset; metadata accounting; dense/non-MTP controls; source identity.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Affirmative capacity proof; bounded resource accounting; no performance claim for correctness promotion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Existing 16 limit is shown insufficient or a proven bound requires change; new bound covers declared maximum with bounded metadata cost; no non-target behavior changes.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro10
 - 2026-09-09T11:58:01.090326+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.739019+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:44:03.530481+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024433_three-more-nasone-successors-n_7555
+- 2026-09-10T02:44:33.131554+00:00 (updated-by): Updated: section:ledger-events
