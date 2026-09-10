@@ -15,21 +15,15 @@ priority: P1
 
 ## Description
 
-CM1 source capture/package provenance and static validation remain unchecked.
+Capture immutable llama.cpp PR #27952 final-state source against the current vendor pin as an availability-only packaged patch.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Record URL/head 965e57103fce2c4329cdfc2b8300f8f7ed57c9fe, semantic base cc83d7b..., target pin 2578138...; diff final state against pin and classify all four coupled host/shader/generator files; package 1246_ro19_vulkan_cm1_pr27952 with patch.toml/patch.py/SUMMARY; register external source; materialize pristine and prove no default route change.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Capture coupled ggml-vulkan.cpp, mul_mmq_cm1.comp, funcs.glsl and shader generator as one deterministic semantic transplant. Keep state untested, no fabricated evidence, package-only identity, and availability disabled until PRVP02/TRVP qualification.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rocm-vulkan-provider-ro19.md
+config/external-sources.toml; patches/1246_ro19_vulkan_cm1_pr27952/{patch.toml,patch.py,SUMMARY.md}; four vendor Vulkan paths; source/provenance tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
-
-Active dependencies: TRBC01 (RE30 successor), TRVP13 (RO18 successor).
-
-Reference handling: Rewrite forward references; preserve historical references on predecessor.
+Source/external-source checks, patch-lint, pristine materialization/rebase/apply, compile host and shader generator, exact four-file diff accounting and identity changes on source/pin change.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Immutable provenance, clean packaged application/build, complete coupled diff, no default CM1 enablement or production behavior change, and moving upstream head blocks reuse.
 
 ## Notes
 
@@ -80,3 +70,6 @@ Successor key: patching-rocm-vulkan-provider-ro19
 - 2026-09-10T01:03:20.062956+00:00 (updated-by): Updated: section:validation
 - chg_20260910_010342_successor-plans-now-have-expli_8662
 - 2026-09-10T01:03:42.607862+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:23:00.294061+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032340_repaired-the-cm1-source-and-in_5642
+- 2026-09-10T03:23:40.354015+00:00 (updated-by): Updated: section:ledger-events
