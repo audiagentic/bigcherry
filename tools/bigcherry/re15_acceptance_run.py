@@ -39,7 +39,7 @@ from .campaign.lane import (
     CampaignLaneExecutionSpec,
     CampaignLaneResult,
     execute_campaign_lane,
-    smoke_environment_for_hip_devices,
+    smoke_environment_for_backend,
 )
 from .core.context import ProjectContext
 from . import lifecycle
@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     store = ArtifactStore(context.work_root / "artifacts-store")
     manifest: dict[str, object] = {"run_id": run_id, "device": args.hip_visible_devices}
 
-    environment = smoke_environment_for_hip_devices(args.hip_visible_devices)
+    environment = smoke_environment_for_backend("hip", args.hip_visible_devices)
     architectures = (args.arch,)
 
     def _spec(build_name: str, inputs: tuple[tuple[str, object], ...] = (),

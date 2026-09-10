@@ -22,7 +22,7 @@ def cmd_build_new(args: Namespace) -> int:
     """
     from ..core import config as campaign_config
     from ..core.artifacts import ArtifactStore
-    from ..campaign.lane import smoke_environment_for_hip_devices
+    from ..campaign.lane import smoke_environment_for_backend
     from ..campaign.planner import (
         CampaignPlannerError,
         CampaignRequest,
@@ -133,7 +133,7 @@ def cmd_build_new(args: Namespace) -> int:
         binary_relative_path=args.binary_relative_path,
         c_compiler=args.c_compiler,
         cxx_compiler=args.cxx_compiler,
-        smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
+        smoke_environment=smoke_environment_for_backend("hip", args.hip_visible_devices),
         experiment=args.experiment,
     )
     try:

@@ -31,7 +31,7 @@ from bigcherry.campaign.lane import (
     CampaignLaneError,
     CampaignLaneExecutionSpec,  # noqa: E402
     execute_campaign_lane,
-    smoke_environment_for_hip_devices,
+    smoke_environment_for_backend,
 )
 from bigcherry.core.context import ProjectContext  # noqa: E402
 from bigcherry.core.pipeline import ArtifactRef  # noqa: E402
@@ -922,7 +922,7 @@ GGML_HIP:BOOL=ON
 
 class SmokeEnvironmentHelperTests(unittest.TestCase):
     def test_translates_hip_visible_devices(self):
-        env = dict(smoke_environment_for_hip_devices("0,1"))
+        env = dict(smoke_environment_for_backend("hip", "0,1"))
         self.assertEqual(env["HIP_VISIBLE_DEVICES"], "0,1")
         self.assertIn("PATH", env)
 
@@ -932,8 +932,29 @@ class SmokeEnvironmentHelperTests(unittest.TestCase):
         # both to the same raw index double-filters and breaks device
         # selection for any nonzero index (proven on real Brutus hardware,
         # device 2/gfx1201: "no ROCm-capable device is detected").
-        env = dict(smoke_environment_for_hip_devices("2"))
+        env = dict(smoke_environment_for_backend("hip", "2"))
         self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
+
+    def test_translates_vulkan_visible_devices(self):
+        env = dict(smoke_environment_for_backend("vulkan", "0,1"))
+        self.assertEqual(env["GGML_VK_VISIBLE_DEVICES"], "0,1")
+        self.assertNotIn("HIP_VISIBLE_DEVICES", env)
+
+    def test_none_visible_devices_yields_no_visibility_key(self):
+        env = dict(smoke_environment_for_backend("hip", None))
+        self.assertEqual(env, {})
+
+    def test_empty_visible_devices_raises(self):
+        with self.assertRaises(ValueError):
+            smoke_environment_for_backend("hip", "   ")
+
+    def test_unknown_backend_raises(self):
+        with self.assertRaises(ValueError):
+            smoke_environment_for_backend("metal", "0")
+
+    def test_path_is_preserved(self):
+        env = dict(smoke_environment_for_backend("vulkan", "0"))
+        self.assertIn("PATH", env)
 
 
 if __name__ == "__main__":

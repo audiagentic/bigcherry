@@ -29,7 +29,7 @@ from pathlib import Path
 from .core import config
 from .core.artifacts import ArtifactStore
 from .campaign.lane import (CampaignLaneError, CampaignLaneExecutionSpec,
-                            execute_campaign_lane, smoke_environment_for_hip_devices)
+                            execute_campaign_lane, smoke_environment_for_backend)
 from .core.context import ProjectContext
 from .campaign.smoke import RuntimeSmokeSpec
 
@@ -69,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         validation=RuntimeSmokeSpec(model_path=args.model, split_mode=args.split_mode),
         binary_relative_path=args.binary_relative_path,
         c_compiler=args.c_compiler, cxx_compiler=args.cxx_compiler,
-        smoke_environment=smoke_environment_for_hip_devices(args.hip_visible_devices),
+        smoke_environment=smoke_environment_for_backend("hip", args.hip_visible_devices),
     )
 
     try:

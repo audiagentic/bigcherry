@@ -952,30 +952,46 @@ def execute_campaign_lane(
     )
 
 
-def smoke_environment_for_hip_devices(
-    hip_visible_devices: str,
+_SMOKE_VISIBILITY_ENV = {"hip": "HIP_VISIBLE_DEVICES", "vulkan": "GGML_VK_VISIBLE_DEVICES"}
+
+
+def smoke_environment_for_backend(
+    backend: str, visible_devices: str | None,
 ) -> tuple[tuple[str, str], ...]:
-    """The CLI-convenience translation from a single --hip-visible-devices
+    """The CLI-convenience translation from a single --*-visible-devices
     flag to the environment dict the smoke worker actually accepts --
     kept out of the reusable API itself (make_smoke_worker's own environment
-    parameter is HIP-agnostic; this is a CLI-specific convenience).
+    parameter is backend-agnostic; this is a CLI-specific convenience).
+    `backend` is derived from the planned lane's resolved source backend
+    (never a caller-supplied boolean), so a Vulkan lane cannot accidentally
+    receive HIP_VISIBLE_DEVICES or vice versa (RRBC01).
 
-    RE15 real-hardware finding (2026-08-18): HIP_VISIBLE_DEVICES and
-    ROCR_VISIBLE_DEVICES are NOT aliases -- ROCR_VISIBLE_DEVICES filters the
-    ROCm agent list first, and HIP_VISIBLE_DEVICES then indexes into
+    RE15 real-hardware finding (2026-08-18), HIP-specific but preserved here
+    because it governs the HIP branch of this function: HIP_VISIBLE_DEVICES
+    and ROCR_VISIBLE_DEVICES are NOT aliases -- ROCR_VISIBLE_DEVICES filters
+    the ROCm agent list first, and HIP_VISIBLE_DEVICES then indexes into
     whatever that filtered list left. Setting both to the SAME raw device
     index double-filters: on a real 4-GPU Brutus box, HIP_VISIBLE_DEVICES=2
     ROCR_VISIBLE_DEVICES=2 selects agent 2 (gfx1201), which becomes the
     sole entry in the ROCR-filtered list, and then HIP_VISIBLE_DEVICES=2
     tries to index into that single-entry list and fails with "no
     ROCm-capable device is detected" -- verified this only breaks for a
-    nonzero index (index 0 degenerately still resolves), which is why
-    every prior real run here (always device 0) never surfaced it. Only
-    HIP_VISIBLE_DEVICES is set now."""
+    nonzero index (index 0 degenerately still resolves), which is why every
+    prior real run here (always device 0) never surfaced it. Only the one
+    resolved visibility variable is ever set -- never both HIP and ROCR
+    selectors together for the hip backend."""
+    if visible_devices is None:
+        return ()
+    try:
+        variable = _SMOKE_VISIBILITY_ENV[backend]
+    except KeyError:
+        raise ValueError(f"unsupported smoke backend: {backend!r}") from None
+    if not visible_devices.strip():
+        raise ValueError("visible device selection must not be empty")
     return tuple(
         sorted(
             {
-                "HIP_VISIBLE_DEVICES": hip_visible_devices,
+                variable: visible_devices,
                 "PATH": os.environ.get("PATH", ""),
             }.items()
         )
