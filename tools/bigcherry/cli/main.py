@@ -43,6 +43,7 @@ from .patch import (
     cmd_patches,
 )
 from .profiling import cmd_profile_campaign
+from .runtime import cmd_runtime_matrix
 from .source import cmd_audit, cmd_pull
 from .tuning import (
     cmd_execution_audit,
@@ -688,6 +689,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print the WorkflowReceipt as JSON to stdout"
     )
     tune_campaign_cmd.set_defaults(func=cmd_tune_campaign)
+
+    runtime_matrix_cmd = sub.add_parser(
+        "runtime-matrix",
+        help=(
+            "RHA06: resolve and optionally run a declarative model/GPU runtime "
+            "matrix through configured existing worker commands"
+        ),
+    )
+    runtime_matrix_cmd.add_argument("--config", required=True, help="matrix JSON document")
+    runtime_matrix_cmd.add_argument(
+        "--output", required=True, help="directory for resolved cells, status and events"
+    )
+    runtime_matrix_cmd.add_argument(
+        "--environment", default=None,
+        help="host environment TOML (default: config/environment.toml)",
+    )
+    runtime_matrix_cmd.add_argument(
+        "--models", default=None,
+        help="model registry TOML (default: config/models.toml)",
+    )
+    runtime_matrix_cmd.add_argument(
+        "--dry-run", action="store_true",
+        help="resolve and write the immutable matrix without launching workers",
+    )
+    runtime_matrix_cmd.set_defaults(func=cmd_runtime_matrix)
 
     # PROF01/HI132: repeatable rocprofv3-based GPU/runtime deep-profiling
     # campaign -- see profiling/workflow.py for the actual orchestration.
