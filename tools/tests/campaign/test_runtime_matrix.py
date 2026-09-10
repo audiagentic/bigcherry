@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from bigcherry.campaign.runtime_matrix import (
@@ -9,6 +10,7 @@ from bigcherry.campaign.runtime_matrix import (
     run_matrix,
 )
 from bigcherry.core.environment import Device, Host
+from bigcherry.cli.runtime import _worker
 
 
 def host() -> Host:
@@ -57,6 +59,26 @@ class RuntimeMatrixResolutionTests(unittest.TestCase):
 
 
 class RuntimeMatrixRunTests(unittest.TestCase):
+    def test_server_capture_worker_reuses_maintained_capture_boundary(self):
+        raw = cell()
+        raw["workload"] = {
+            "server_capture": {
+                "model": "/models/9b.gguf", "bench_configs": "pp512",
+                "runner_root": "/bench", "required_metrics": ["pp512_tps"],
+                "extra_args": ["-ngl", "99"], "execution_evidence": "observe",
+            }
+        }
+        resolved = resolve_matrix([raw], host=host())[0]
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture",
+            return_value={"returncode": 0, "metrics": {"pp512_tps": 1.0}},
+        ) as capture:
+            result = _worker(resolved, root=Path(temporary), base_env={})
+        self.assertEqual(result["returncode"], 0)
+        capture.assert_called_once()
+        self.assertEqual(capture.call_args.kwargs["binary"], Path("/bin/server"))
+        self.assertEqual(capture.call_args.kwargs["bench_configs"], "pp512")
+
     def test_serial_progress_and_child_verdict_are_preserved(self):
         cells = resolve_matrix([cell("a"), cell("b", devices=(0,))], host=host())
         with tempfile.TemporaryDirectory() as temporary:
