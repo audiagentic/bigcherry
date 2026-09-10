@@ -47,7 +47,7 @@ Preserve graph capture correctness, dtype/accumulation behavior, unsupported-lay
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Acceptance requires exact GEMV->view->residual mapping and output/alias parity, graph-capture replay success, rejection of unsupported strides or ambiguous aliases, and repeatable launch/TG improvement versus control; otherwise retain fallback.
 
 ## Notes
 
@@ -72,3 +72,6 @@ Supersedes RD47. Keep separate from PRBE12/RD13: that existing mul_mat+add view 
 - 2026-09-10T03:02:57.572846+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - chg_20260910_030318_repaired-three-patching-succes_9681
 - 2026-09-10T03:03:18.986477+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:05:36.573029+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260910_030619_removed-migration-placeholder_7703
+- 2026-09-10T03:06:19.301698+00:00 (updated-by): Updated: section:ledger-events

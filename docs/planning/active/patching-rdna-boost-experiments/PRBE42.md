@@ -47,7 +47,7 @@ Fail-closed hardware/shape gating, preserve recurrent state semantics, no unsupp
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Acceptance requires exact scalar-gate/K=1/S_v=128 gfx1151 eligibility, long-sequence recurrent-state/output parity, verified gfx1100/gfx1201 and unsupported-shape fallback, and repeatable GDN/E2E prefill benefit without decode regression; source headline claims alone are insufficient.
 
 ## Notes
 
@@ -72,3 +72,6 @@ Supersedes RD50. Root prerequisite for PRBE43 and the later GDN-003/GDN-004 succ
 - 2026-09-10T03:04:32.318831+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - chg_20260910_030451_carried-forward-the-detailed-s_2071
 - 2026-09-10T03:04:51.342920+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:05:58.216876+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260910_030619_removed-migration-placeholder_7703
+- 2026-09-10T03:06:19.338602+00:00 (updated-by): Updated: section:ledger-events
