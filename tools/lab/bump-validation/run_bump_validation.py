@@ -45,6 +45,13 @@ from bigcherry.core import config as campaign_config
 from bigcherry.core.artifacts import ArtifactStore
 from bigcherry.core.context import ProjectContext
 
+# Only the real production lane -- NOT the full 'standard' profile, which
+# also plans record/tune/replay lanes that need inputs (inventory,
+# promoted-winners) this smoke matrix has no reason to provide.
+_CONTROL_LANE = campaign_config.CampaignLaneSelector(
+    source="bigcherry-native", build="control", platform="linux-multi",
+)
+
 SMOKE_MODEL = "tierB-qwen9b-q6k"
 PRODUCTION_MODEL = "tierL-qwen27b-q8"
 SINGLE_GPU_DEVICES = (0, 1, 2, 3)
@@ -62,7 +69,7 @@ def _build_once(context: ProjectContext, store: ArtifactStore, run_id: str):
         "PATH": os.environ.get("PATH", ""),
     }.items()))
     request = CampaignRequest(
-        profile_name="standard",
+        selectors=(_CONTROL_LANE,),
         binary_relative_path="bin/llama-server",
         smoke_environment=smoke_environment,
     )
@@ -73,8 +80,8 @@ def _build_once(context: ProjectContext, store: ArtifactStore, run_id: str):
         for lid, exc in failed.items():
             print(f"bump-validation: build lane {lid} FAILED -- {exc}", file=sys.stderr)
         raise SystemExit(1)
-    # The 'standard' profile's first/only production lane's binary is what
-    # every smoke cell below launches -- same binary, different devices/model.
+    # The one real production lane's binary is what every smoke cell below
+    # launches -- same binary, different devices/model.
     lane_id = sorted(results)[0]
     result = results[lane_id]
     return result.build_plan_id, str(store.resolve(result.binary_ref.path))
