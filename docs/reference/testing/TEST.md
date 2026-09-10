@@ -339,7 +339,11 @@ and replay cells without a cache before any worker is launched.
     "build_id": "<completed-build-id>",
     "binary": "<absolute-server-binary>",
     "workload": {
-      "delegate_argv": ["<existing-worker>", "--config", "<cell-config>"]
+      "server_bench": {
+        "server_url": "http://127.0.0.1:18400",
+        "bench_configs": "tg128",
+        "runner_root": "<configured-bench-repository>"
+      }
     }
   }]
 }
@@ -359,6 +363,11 @@ contains `resolved-matrix.json`, atomic `status.json`, and sanitized,
 append-only `events.jsonl`; these files are sufficient for polling a UI at this
 stage. Worker stdout/stderr are retained as bounded child results, and a
 non-zero worker exit fails the matrix without upgrading its verdict.
+
+Use `workload.server_bench` for the maintained `bench/run_bench.py
+--bench-type server-bench` boundary. Use `workload.delegate_argv` when an
+existing tune, build, or other worker command owns the cell. Both forms are
+subprocess delegates; the matrix layer does not reimplement their policy.
 Production activation admission remains HI168 work; this profile alone is
 not an executable benchmark campaign.
 
