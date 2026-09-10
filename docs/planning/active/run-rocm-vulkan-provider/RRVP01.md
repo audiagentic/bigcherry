@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-Stack propagation work is pending; acceptance remains unchecked.
+Thread explicit stack_name through CampaignRequest, lane/execution specs, planner backend checks, CLI/workflow stages, receipts, and lane identity while preserving legacy --lane syntax.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Add stack selection/absence semantics; parse source:build:platform plus stack internally; thread through build/record/tune/profile/verifier/replay and receipt reconstruction; reject missing/ambiguous/unknown/backend-mismatched stack before evidence execution; add legacy compatibility and collision tests.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Selected stack is execution intent and campaign identity, distinct from runtime attestation. Resolve cfg.stacks once, preserve public three-part lane grammar, and make source:build:platform:stack internal identity.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-PAUSED (Vulkan) -- when resumed: tools/bigcherry/campaign/planner.py (CampaignRequest/CampaignLane/lane_id), tools/bigcherry/core/config.py (CampaignLaneSelector.stack), tools/bigcherry/cli/build.py, tuning/workflow.py, profiling/workflow.py (callers), tools/tests/campaign/test_campaign_planner.py, tools/tests/campaign/test_campaign_resolution.py.
+campaign planner/lane/CLI build/tuning/profiling/workflow and tests.
 
 ## Validation
 
-PAUSED (Vulkan). Doctrine correction (deeper review): do NOT preserve legacy 3-part --lane syntax as a compatibility acceptance requirement -- migrate requests/CLI/lane identity/callers to explicit stack selection in one pass, no shim. Missing/ambiguous/unknown/backend-mismatched stack fails before any work starts. Same source/build/platform with different stacks must yield distinct lane identity.
+All stack stages preserve stack_name in receipts; legacy lanes parse; distinct stacks cannot collide; mismatch fails closed.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Stack-aware campaign identity is threaded end-to-end, legacy syntax remains compatible, and invalid or mismatched stacks fail before evidence-producing work.
 
 ## Notes
 
@@ -74,6 +68,7 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.515849+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:38.803173+00:00 (updated-by): Updated: section:notes
@@ -87,3 +82,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.819568+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:47.677492+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T03:28:45.445536+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032911_repaired-three-providerrun-su_5934
+- 2026-09-10T03:29:11.969018+00:00 (updated-by): Updated: section:ledger-events
