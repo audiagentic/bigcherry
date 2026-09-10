@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-docs-reference-dr01.md
+Mechanical prose/path pass over docs/** (scope determined by RDR01's closure audit -- live/maintained docs only, per the corrected notes above). config/environment.toml, tools/env/bigcherry-env.sh, docs/reference/ENVIRONMENT.md are the existing mechanism being pointed at, not files this item edits.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+grep -rc for the hostname, /home/, /mnt/vault, and hardcoded IPs across docs/ before and after -- RE-COUNT against current HEAD, the original DR01 baseline (83/64/39/15) is stale and must not be reused verbatim. `source tools/env/bigcherry-env.sh` then run a doc's command block verbatim and confirm it still works. Remaining occurrences must each be justifiable as genuinely host-identity-specific (immutable historical evidence, ssh config examples).
 
 ## Effort & Risk
 
@@ -85,3 +81,4 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): still valid a
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.190357+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:10.765467+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:27:39.763516+00:00 (updated-by): Updated: section:files, section:validation

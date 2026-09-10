@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-gpu-collectives-gp12.md
+Real hardware test only (no source patch this pass): dual-XTX Brutus, ~/bc-build-rccl/bin/llama-server, -ot "nextn\..*=ROCm0" override under -sm none and -sm layer. If a graph-builder fix is later authorized: src/llama-arch.cpp (NEXTN/MTP tensor classification), the -sm tensor graph construction path (a NEW patching-owned item, not this one).
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: GP03.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (1) on predecessor.
+DONE 2026-09-10: -sm none OOMs (uninformative, unrelated to override); -sm layer loads and runs cleanly with the override (no crash) -- confirms GP12's -sm-tensor-specific hypothesis. Completion-bench throughput/acceptance follow-on BLOCKED on a separate bench-harness/vendor metric-naming drift (see notes). Acceptance for this item's own bounded scope (crash-scope classification) is met; do not require the blocked throughput numbers to close it.
 
 ## Effort & Risk
 
@@ -90,3 +86,4 @@ CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10), consistent with
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.238883+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:13.222201+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:27:15.830241+00:00 (updated-by): Updated: section:files, section:validation

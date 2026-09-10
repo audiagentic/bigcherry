@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-rocm-vulkan-provider-ro05.md
+PAUSED (Vulkan) -- when resumed: extend existing ExecutionIdentity/ExecutionAttestation/AttestedServerSession seam (do not build a parallel evidence-acceptance path); src/ggml/src/ggml-cuda/hip-autotune-stack.{h,cpp} only if existing metadata transport cannot expose actual-loaded HIP providers; hand off persistence to TRVP01 (RO06 successor), do not implement persistence in this item.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RO04.
-
-Reference handling: Rewrite forward references (5); preserve historical references (0) on predecessor.
+PAUSED (Vulkan). Attestation finalized/refreshed after untimed provider-exercising warmup and before first accepted sample. Requested/build/actual mismatch, missing/malformed report, substitution, or lazy-load incompleteness all fail closed before evidence is accepted. Freeze wire schema before any source instrumentation.
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:47.119856+00:00 (updated-by): Updated: section:notes
@@ -91,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T00:25:58.470366+00:00 (updated-by): Updated: section:notes
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.854516+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:56.083117+00:00 (updated-by): Updated: section:files, section:validation
