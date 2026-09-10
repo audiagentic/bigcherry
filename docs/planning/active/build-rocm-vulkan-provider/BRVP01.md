@@ -69,12 +69,15 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once RRV
 
 CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): fits existing code directly -- extend the existing BuildPlan/build_plan_id/effective_build_id/reuse machinery rather than introducing a second build-identity system. The codebase already distinguishes requested build identity from effective configuration/runtime-bundle identity, which this item's stack_name/resolved_stack_fingerprint/build_stack_fingerprint split maps onto cleanly. Execution order shifts to #7 in the revised sequence.
 
+PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, implementation is paused. Design above stands for when resumed (depends on RRVP02, also paused).
+
 ## Change Log
 
 - 2026-09-09T10:59:53.142667+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:55.975074+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.524607+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +88,6 @@ CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): fits existing c
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.406863+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:00.040229+00:00 (updated-by): Updated: order=7, section:notes
+- 2026-09-10T00:25:57.108601+00:00 (updated-by): Updated: section:notes
+- chg_20260910_002605_paused-all-vulkan-provider-imp_6846
+- 2026-09-10T00:26:05.875846+00:00 (updated-by): Updated: section:ledger-events
