@@ -1,7 +1,7 @@
 # BigCherry campaign configuration v2.
 # All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
-pinned = "b10705"
+pinned = "b10883"
 
 [patch-set.framework]
 patches = [
