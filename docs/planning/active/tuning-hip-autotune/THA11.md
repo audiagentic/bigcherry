@@ -15,13 +15,16 @@ priority: P0
 
 ## Description
 
-The source records the required replay instrumentation, but final_tuned_launches/per-winner/fallback-after-exact evidence is not implemented or validated.
+Prove that replayed tuned kernels actually launched after final candidate validation; cache load or exact-hit counts alone are insufficient. Existing runs are uninterpretable without graceful teardown and launch-point evidence.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Add final_tuned_launches at the real executor/launch point after can_execute, blacklist, transform, and fallback revalidation.
+2. Emit per-winner launch counts and fallback_after_exact.
+3. Persist cache_entries_loaded, eligible_dispatches, exact_replay_resolutions, final_tuned_bindings, final_tuned_launches, fallback_after_exact, miss/unavailable/incompatible counts, and per-winner launches in the artifact.
+4. Require graceful shutdown so replay reports are emitted; reject kill-9/incomplete receipts.
+5. Make analyse.py fail closed unless loaded>0, exact>0, final_tuned_launches>0, sum(per_winner_launches)==final_tuned_launches, and fallback_after_exact is present.
+6. Compare predicted E2E gain from actual launch counts with measured E2E movement.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +40,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi160.md
+replay executor/launch telemetry; tune/replay artifact schema; tools/bigcherry analysis and tests; maintained replay evidence
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Replay artifact invariant: cache entries loaded, exact hits, final tuned launches, per-winner sum, fallback-after-exact, and shutdown receipt all present and consistent. Analysis rejects hollow exact-hit evidence. Predicted versus measured E2E comparison is recorded.
 
 ## Effort & Risk
 
@@ -57,13 +56,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A replay result is admissible only when final tuned launches are directly proven after final validation, per-winner counts reconcile, fallback-after-exact is reported, and graceful teardown produced the complete artifact. Neutral E2E results are interpreted only after predicted gain is computed.
 
 ## Notes
 
 Supersedes: HI160
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi160
+
+Supersedes: HI160
+Inherited semantic scope: preserve launch-point proof, per-winner/fallback invariant, graceful teardown, and predicted-E2E arithmetic from HI160.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +80,6 @@ Successor key: tuning-hip-autotune-hi160
 - 2026-09-09T11:58:00.876973+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.403308+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:23:56.968639+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_022438_the-next-five-high-risk-tuning_6580
+- 2026-09-10T02:24:38.688942+00:00 (updated-by): Updated: section:ledger-events
