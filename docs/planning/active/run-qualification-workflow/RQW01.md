@@ -69,6 +69,8 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, design 
 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): implementation should NOT invent a new subprocess telemetry abstraction. experiment.bundle.run_managed() already records command/env/timing/return-code/artifacts for managed runs -- telemetry should DECORATE that existing seam (and ServerRunner, campaign workers) rather than wrap subprocess calls a second way. Re-scope the implementation step accordingly before coding. Execution order MOVES UP to #3 (was #4) in the revised sequence: RGC01 -> RRBC03 -> RQW01 -> RRBC01 -> RRVP01 -> RRVP02 -> BRVP01 -> RRVP03 -> RRBC02 -> RHA01 -> RDR01 -> RDR02.
 
+IMPLEMENTED 2026-09-10: tools/bigcherry/telemetry.py -- console_telemetry() context manager emitting launch/progress/completion lines to stderr only, with summarize_launch() reducing argv to name+count+blake2b digest (never raw values, per redaction requirement) unless a trusted caller opts in with show_argv=True. Wired into experiment.bundle.run_managed() -- the first and, per the design review, the correct integration point (decorates the existing managed-process seam rather than adding a parallel subprocess wrapper). Verified all 10 pre-existing experiment-bundle tests still pass with telemetry active, and that CLI machine-readable stdout output is unaffected (confirmed via the managed-run-cli test's own JSON output). 5 new focused tests cover: stderr-only routing, non-leakage of secret argv values in default mode, show_argv opt-in, and completion-line emission even when the wrapped body raises. Remaining scope from this item's original Files list (campaign workers, profiling harnesses) not yet wired -- this lands the primitive plus its first integration.
+
 ## Change Log
 
 - 2026-09-09T10:53:26.474843+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +87,6 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): implementatio
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.792367+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:18:51.311580+00:00 (updated-by): Updated: order=3, section:notes
+- chg_20260910_002058_added-standard-launchprogress_1968
+- 2026-09-10T00:20:58.995673+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:21:03.268966+00:00 (updated-by): Updated: section:notes

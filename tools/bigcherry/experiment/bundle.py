@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ..telemetry import console_telemetry
 from ..tuning.journal import atomic_write, canonical
 
 SCHEMA_VERSION = 1
@@ -144,18 +145,21 @@ def run_managed(
     started = time.monotonic_ns()
     stdout_bytes = b""
     stderr_bytes = b""
-    try:
-        completed = subprocess.run(command, text=False, capture_output=True, env=env)
-        stdout_bytes = completed.stdout
-        stderr_bytes = completed.stderr
-        state = "completed" if completed.returncode == 0 else "failed"
-        returncode = completed.returncode
-    except KeyboardInterrupt:
-        stderr_bytes = b"interrupted by host\n"
-        state, returncode = "interrupted", 130
-    except OSError as exc:
-        stderr_bytes = f"process launch failed: {exc}\n".encode("utf-8", "backslashreplace")
-        state, returncode = "failed", 127
+    with console_telemetry(session_id=experiment_id, command=command, environment=environment) as telemetry:
+        try:
+            completed = subprocess.run(command, text=False, capture_output=True, env=env)
+            stdout_bytes = completed.stdout
+            stderr_bytes = completed.stderr
+            state = "completed" if completed.returncode == 0 else "failed"
+            returncode = completed.returncode
+        except KeyboardInterrupt:
+            stderr_bytes = b"interrupted by host\n"
+            state, returncode = "interrupted", 130
+        except OSError as exc:
+            stderr_bytes = f"process launch failed: {exc}\n".encode("utf-8", "backslashreplace")
+            state, returncode = "failed", 127
+        telemetry["returncode"] = returncode
+        telemetry["output_summary"] = f"stdout={len(stdout_bytes)}B stderr={len(stderr_bytes)}B"
     stdout.write_bytes(stdout_bytes)
     stderr.write_bytes(stderr_bytes)
     final = dict(intent)
