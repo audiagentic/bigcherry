@@ -93,6 +93,41 @@ def _load_document(path: Path) -> dict[str, Any]:
 
 
 def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
+    server_capture = cell.workload.get("server_capture")
+    if server_capture is not None:
+        if not isinstance(server_capture, Mapping):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture must be an object")
+        required = ("model", "bench_configs", "runner_root", "required_metrics")
+        if any(key not in server_capture for key in required):
+            raise MatrixResolutionError(
+                f"cell {cell.cell_id!r}: server_capture requires {', '.join(required)}"
+            )
+        model = server_capture["model"]
+        bench_configs = server_capture["bench_configs"]
+        runner_root = server_capture["runner_root"]
+        metrics = server_capture["required_metrics"]
+        extra_args = server_capture.get("extra_args", [])
+        if not all(isinstance(value, str) and value for value in (model, bench_configs, runner_root)):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture path/config values must be strings")
+        if not isinstance(metrics, list) or not metrics or not all(isinstance(value, str) and value for value in metrics):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture required_metrics must be a non-empty string array")
+        if not isinstance(extra_args, list) or not all(isinstance(value, str) and value for value in extra_args):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture extra_args must be a string array")
+        expected = server_capture.get("expected_execution")
+        if expected is not None and not isinstance(expected, Mapping):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture expected_execution must be an object")
+        from ..campaign.benchmark import run_server_arm_capture
+        result = run_server_arm_capture(
+            binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
+            output=root, pair=0, side=cell.cell_id, position=0,
+            env=dict(cell.visibility), bench_configs=bench_configs,
+            runner_root=Path(runner_root), required_metrics=tuple(metrics),
+            repetitions=int(server_capture.get("repetitions", 1)),
+            shutdown_method=str(server_capture.get("shutdown_method", "http")),
+            expected_execution=dict(expected) if expected is not None else None,
+            execution_evidence=str(server_capture.get("execution_evidence", "required")),
+        )
+        return {"returncode": int(result.get("returncode", 1)), **result}
     command = cell.workload.get("delegate_argv")
     server_bench = cell.workload.get("server_bench")
     if server_bench is not None:
