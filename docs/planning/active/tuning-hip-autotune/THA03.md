@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Explicit signature coverage for RD12 dst_gate and RD17 x_scale_channel_dst remains follow-up work while those candidate paths remain active.
+Harden signature coverage for experimental PRBE11 dst_gate and PRBE14/RD17 x_scale_channel_dst modes without blocking the upstream GLU harness.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+When PRBE11 moves toward production, add explicit patch-conditional dst_gate signature flag instead of GATE+glu_op NONE inference. When PRBE14 moves toward production, add x_scale_channel_dst semantic flag/field and destination-channel scale length (dst.ne[1]); add signature mapping and backward-compatibility tests. Keep both modes out of THA02 dependency until promoted.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Record semantics that are currently implicit in experimental signatures: RD12 dst_gate fused mode and RD17 channel-indexed x_scale. Use existing patch-conditional signature-field patterns and fail closed for unknown modes.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi120.md
+hip-autotune signature types/serialization/mapping; PRBE11/PRBE14 conditional fields; signature and evidence tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI118.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (4); preserve historical references (1) on predecessor.
+Synthetic and production-shaped signature round trips; distinguish dst_gate from GLU NONE; reconstruct x_scale_channel_dst length/indexing; ensure THA02 upstream GLU unaffected.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Experimental signatures remain unambiguous and round-trip semantic fields when promoted; no change to THA02 upstream-GLU scope or default behavior.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi120
 - 2026-09-09T11:58:00.800282+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.278902+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:25:44.385035+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032600_repaired-two-more-tuning-succe_5113
+- 2026-09-10T03:26:00.704225+00:00 (updated-by): Updated: section:ledger-events

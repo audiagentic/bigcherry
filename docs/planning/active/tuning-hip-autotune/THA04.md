@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Verifier gate is complete but live production workflow validation remains open.
+Complete C++-authoritative canonical signature digest verification and live workflow validation for all audited dispatch classes.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Retain shared verifier and schema-2 fail-closed behavior; verify canonical content and digest with real C++ for MUL_MAT, MUL_MAT_ID and routed GLU; ensure workflow tune-campaign uses dedicated verifier lane, mandatory strengthened ingest, first-device scoping and transactional winner attestation; run a real Brutus campaign and record winner_verification rows. Track unsupported ADD and other domains through HI136 quarantine work rather than weakening verification.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The verifier must compare the complete observed C++ canonical JSON and digest, not reimplement serialization in Python. Use dedicated verifier builds so campaign identity is not perturbed, fail on missing/ambiguous provenance, and preserve native fallback. The active completion boundary is operational wiring plus real campaign evidence, not merely offline mocks.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi125.md
+signature_digest_verification.py; inventory.py; signature_capabilities.py; hi80 evidence CLI; workflow.py; schema-2 tests; real Brutus campaign artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI121,HI124,HI126,HI127,HI129,HI136.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (6) on predecessor.
+Poisoned canonical rejection, honest C++ matches for all three classes, offline suite, dedicated verifier lane, mandatory strengthened ingest, and real tune-campaign winner_verification rows. Unsupported domains hard-fail or use separately approved per-row quarantine; no silent unverified success.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Close only when all audited classes match real C++ digests, production workflow is wired and proven by a live campaign with winner_verification rows, and unsupported operations remain fail-closed under an explicit HI136 disposition.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi125
 - 2026-09-09T11:58:00.804519+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.286272+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:25:50.330741+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032600_repaired-two-more-tuning-succe_5113
+- 2026-09-10T03:26:00.715946+00:00 (updated-by): Updated: section:ledger-events
