@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Evaluate overlapping MoE shared-expert compute on an auxiliary stream after per-stream handles and branch scratch prerequisites.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE32 and PRBE33 identities; verify gated shared-expert diamond has independent branches and safe join.
+- Implement scheduling only for exact Qwen MoE decode patterns; preserve graph-opt off and unsupported fallbacks.
+- Validate byte-identical output, join ordering, branch overlap and no races with profiler/trace evidence.
+- Compare tg128/tg512 at context 0/64K with graph opt on/off; use MoE without shared expert and dense controls.
+- Promote only when a workload predicate guarantees independence and E2E gain exceeds 1%; retain negative evidence otherwise.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd42.md
+Graph optimizer shared-expert scheduler; PRBE32 handles; PRBE33 scratch; Qwen MoE gated/shared-expert fixtures; profiler/trace and TG campaign.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD39,RD40,RD41,RD43,RD44.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (6); preserve historical references (0) on predecessor.
+Decode Q8/Q4; prefill controls; graph on/off; context 0/64K; byte parity; profiler overlap/join; concurrency/utilization/power; E2E TG.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (6); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependency-aware scheduling; workload predicate; join correctness; no unconditional overlap.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Exact eligible workload overlaps safely with byte-identical output and >1% E2E TG gain; all other paths retain existing behavior; prerequisites are explicit.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd42
 - 2026-09-09T11:58:01.280175+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.031786+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:58:31.227383+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025843_amd-stream-successors-prbe323_9820
+- 2026-09-10T02:58:43.116897+00:00 (updated-by): Updated: section:ledger-events
