@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-Quantize/dequantize candidate search is explicitly not started; HI174 and the overlap check with HI173 remain prerequisites.
+After THA18, determine whether standalone quantize/dequantize dispatch is distinct from HI173 BLAS conversion routes before authorizing tuning.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Audit quantize.cu and dequant paths versus HI17/THA17 conversion telemetry; define ownership and identity; if distinct, extend hook/telemetry and correctness/behavioral pipeline; otherwise record reuse/no-duplicate disposition.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Do not duplicate BLAS conversion-route work. Scope only standalone operations outside BLAS and preserve native fallback.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi178.md
+quantize/dequantize dispatch, shared identity/telemetry, tests/evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI17.
-
-Active dependencies: Frozen dependencies: HI174,HI175,HI176,HI177,HI179.
-
-Reference handling: Rewrite forward references (7); preserve historical references (1) on predecessor.
+Boundary/ownership audit, native correctness, telemetry and candidate evidence only after distinct surface proven.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No candidate search until distinct dispatch ownership and THA18 pattern are proven; promote only with exact correctness and E2E gates.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi178
 - 2026-09-09T11:58:00.954844+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.536503+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:32:14.398788+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033234_repaired-four-non-matmul-tunin_4268
+- 2026-09-10T03:32:34.850756+00:00 (updated-by): Updated: section:ledger-events

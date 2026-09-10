@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-Softmax/GLU candidate search is explicitly not started and blocked on HI174.
+After THA18's pilot, authorize softmax and standalone GLU/activation candidate search with simple op identities.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Wait for THA18; inspect softmax.cu and glu.cu variants outside BLAS fusion; define stable resolved-config identity and hook; add native telemetry then candidate search/HI67/HI143/HTR01 gates; keep fused GLU signature observation separate.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Treat softmax/activation as own dispatch targets, not the glu_op request field already observed in BLAS fusion. Preserve native fallback and avoid broad op-class bundling.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi179.md
+softmax.cu/glu.cu-family dispatch, candidate identity/registry, telemetry and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI17.
-
-Active dependencies: Frozen dependencies: HI174,HI175,HI176,HI177,HI178.
-
-Reference handling: Rewrite forward references (6); preserve historical references (1) on predecessor.
+Native/candidate correctness, standalone-vs-fused boundary, record telemetry, behavioral and E2E performance.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Remain blocked until THA18; promote only real variants with exact identity and full correctness/behavioral/E2E evidence, otherwise native remains default.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi179
 - 2026-09-09T11:58:00.959783+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.542615+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:32:20.933489+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033234_repaired-four-non-matmul-tunin_4268
+- 2026-09-10T03:32:34.863179+00:00 (updated-by): Updated: section:ledger-events
