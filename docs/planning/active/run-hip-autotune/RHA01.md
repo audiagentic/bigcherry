@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-Perf availability was unblocked, but perf.py integration and real-target CPU call-graph validation are explicitly not done.
+Optional, activation-gated CPU call-graph profiling capability for profile-campaign; implementation remains deferred until a usable perf path and a concrete unresolved CPU-attribution question exist.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Freeze the configured direct perf binary path and explicit sudo policy; use a capability preflight rather than inferring from perf_event_paranoid. 2. Implement perf.py with perf record -F 199 -e cpu-clock:u --call-graph dwarf,16384, perf script/report normalization, tool-version and exact-command capture, and two profile passes for call-stack reproducibility only. 3. Wire the CPU stage into workflow.py's existing interleaved-control sequence and keep perf mutually exclusive with rocprofv3. 4. Require a concrete unresolved CPU-attribution question selected at implementation time; do not default to retracted THA16 without re-justification and do not use PHC03's GPU crash localization as a synthetic target. 5. Treat failed sampling as failed diagnostic evidence, never as a silent control replacement; keep profiles diagnostic-only and separate from throughput comparisons. 6. Implement only after both perf capability and target question are confirmed on the real host.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The direct Brutus binary /usr/lib/linux-tools-6.8.0-139/perf is a configurable path, not a committed server detail. The normalized artifact schema is symbol,dso,self_samples,inclusive_samples,self_pct,inclusive_pct,estimated_on_cpu_ms plus tool version and exact command; values are sampling estimates, not exact call counts. `--profile-passes 2` tests call-stack distribution reproducibility, not performance power. Perf and rocprofv3 never run simultaneously; default thread inheritance covers the server process. If prerequisites are absent, report unavailable honestly and leave this item pending.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-tools/bigcherry/profiling/perf.py (new, per HI133's settled design); tools/bigcherry/profiling/workflow.py (wire into existing interleaved-control stage sequence, per HI132).
+tools/bigcherry/profiling/perf.py; tools/bigcherry/profiling/workflow.py integration; profiling configuration/schema; normalized artifact and preflight tests; real-target diagnostic evidence.
 
 ## Validation
 
-Freeze first: configured direct perf binary path (/usr/lib/linux-tools-6.8.0-139/perf on Brutus, per HI133's verified finding) + explicit sudo policy; normalized perf artifact schema (symbol,dso,self_samples,inclusive_samples,self_pct,inclusive_pct,estimated_on_cpu_ms) with tool-version/exact-command capture; a failed sampling pass is failed diagnostic evidence, never silently replaced by the control run. `perf record -F 199 -e cpu-clock:u --call-graph dwarf,16384`, `--profile-passes 2` checking pass-to-pass call-stack reproducibility (not throughput power), never run simultaneously with rocprofv3. Validate against a concrete, currently-unresolved CPU-attribution question -- NOT THA16 (retracted, see notes above), pick and justify one when implementing.
+Preflight the configured direct binary and a real cpu-clock sampling pass under the explicit sudo policy. Validate normalized output with tool/version/command provenance, two-pass reproducibility, and failure behavior. Run against a currently unresolved CPU-attribution question on a real target; ensure failed sampling is marked failed and never replaced by control. Verify perf/rocprofv3 mutual exclusion and diagnostic-only status.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Do not close while either perf capability or a legitimate unresolved CPU-attribution target is absent. When activated, perf.py is wired into the existing workflow, emits reproducible normalized sampling artifacts, preserves failure truth, and remains mutually exclusive with rocprofv3 and non-promotable for throughput. THA16/PHC03 are not assumed targets without fresh justification.
 
 ## Notes
 
@@ -68,6 +62,8 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO after a 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10, checked against planning-refactor HEAD 429134745b04b7b96c2e86ad1c18625cbcbb4ff3): the prior GO verdict understated two real problems. (1) This item's own Description says perf is unblocked while its Validation/older Notes still say Brutus has no usable perf -- self-contradictory as currently written, fix before treating as implementation-ready. (2) The prior review's "THA16 is the right first validation target" claim is NOT well-supported by the repo: THA16 is primarily the already-existing GPU trace/tuning-divergence investigation built on HI132 primitives, not a CPU-attribution question this item's perf capability was designed to answer. RETRACT that specific target; instead validate perf.py against a concrete, currently-unresolved CPU-attribution question (not yet identified -- pick one when implementing, do not default back to THA16 without re-justifying it). Execution order DROPS to #10 (after RRBC02), not #3 -- the original priority reflected an unsupported blocker claim.
 
 RE-ASSESSED 2026-09-10 against the WHOLE project run history including tonight's new RU01/PHC03 finding (per user directive). Verdict: CONFIRMED KEEP DEFERRED, still no legitimate CPU-attribution target. Specifically checked whether PHC03 (the real META D=3 segfault found by RU01 tonight) could be RHA01's real target -- it cannot: RU01 already localized the deterministic crash into ggml_backend_cuda_cpy_tensor_async during META's fold/copy-back path via a symbol-resolved gdb backtrace, and PHC03's own scope (find the exact copy/fallback branch responsible) is crash/control-flow localization work, not CPU on-CPU-time attribution -- sampling CPU call graphs would add little over gdb/core-dump/source instrumentation and would not answer PHC03's actual question. Every previously-considered candidate (THA16/THA13/THA09/THA10-class questions) remains either a non-CPU-attribution question or already resolved by direct evidence, confirmed again with the fuller history in view. No other currently open item supplies a genuine unresolved host-CPU attribution question. Repo evidence is sufficient to justify continued deferral -- but completing RHA01 cannot be justified from the repo alone regardless: Brutus still lacks a system-default usable perf event source (the workaround binary found earlier this project is a manual path, not a default-available one) AND the project currently lacks a real validation target; both conditions would need to hold before reopening. No action taken; correctly remains an optional, activation-gated capability, not scheduled work. Do NOT use PHC03 as a synthetic justification to force this open.
+
+Supersedes HI133. Preserve the corrected self-consistency: direct perf was verified but integration and target evidence remain undone; this remains optional and does not block GPU admission items.
 
 ## Change Log
 
@@ -93,3 +89,6 @@ RE-ASSESSED 2026-09-10 against the WHOLE project run history including tonight's
 - 2026-09-10T02:55:58.252588+00:00 (updated-by): Updated: section:notes
 - chg_20260910_025604_confirmed-via-a-fresh-whole-pr_7836
 - 2026-09-10T02:56:04.082942+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:48:20.752589+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_034835_repaired-the-final-six-live-su_3009
+- 2026-09-10T03:48:35.225417+00:00 (updated-by): Updated: section:ledger-events
