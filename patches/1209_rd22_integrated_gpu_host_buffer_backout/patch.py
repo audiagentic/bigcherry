@@ -74,6 +74,26 @@ Maintenance (future pin bumps / fork movement):
     already set it to prop.integrated; a future mainline commit could
     restructure the block). Re-derive from the tracked fork commit in
     external-sources.toml; run `python -m bigcherry sources check`.
+
+SUPERSEDED (2026-09-10, pin bump to b10884): exactly the maintenance
+check this docstring has always asked for found a real result. Upstream
+commit d4389a4dd920522899e5b46f1bd3b39592b1f0f7 (PR #28604, "Revert
+'ggml-cuda : restore prop.integrated on HIP builds (#24233)'") reverts
+the very PR #24233 this fork's divergence exists to work around.
+Verified directly against the real vendored source at b10884
+(ggml/src/ggml-cuda/ggml-cuda.cu:307): the HIP branch now reads
+`info.devices[id].integrated = false; // Temporarily disabled due to
+issues with corrupted output (e.g. #15034)` unconditionally -- the
+exact same value RD22's own fork-verbatim patch forces, now upstream's
+own default. Applying RD22 on top of b10884+ would be a no-op (same
+assignment, same value) but the patch would fail to rebase since the
+#if/#else branches this patch's anchor depends on no longer both
+exist in the source (upstream collapsed them into one unconditional
+line). Marking STATE=superseded rather than fixing the anchor: there
+is no remaining behavior gap for this patch to provide. If upstream
+ever re-diverges (restores prop.integrated again), re-open under a new
+plan item referencing this history, do not silently resurrect this
+patch package.
 """
 
 import re
@@ -81,7 +101,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "superseded"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",
