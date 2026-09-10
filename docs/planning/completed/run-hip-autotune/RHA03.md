@@ -82,6 +82,7 @@ Split review RV159: the run-result/matrix advisory boundary is independently com
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.899068+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T17:59:55.057809+00:00 (updated-by): Updated: section:description, section:files, section:validation, section:acceptance_criteria
@@ -89,3 +90,5 @@ Split review RV159: the run-result/matrix advisory boundary is independently com
 - 2026-09-09T18:01:00.232078+00:00 (state-transition): State: pending → completed
 - chg_20260909_180121_run-results-now-expose-conditi_8235
 - 2026-09-09T18:01:21.336855+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.438469+00:00 (updated-by): Updated: section:ledger-events

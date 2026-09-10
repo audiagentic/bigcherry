@@ -78,9 +78,12 @@ Terminal disposition: completed. Historical evidence remains attributed to RD100
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.156209+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:53:46.946653+00:00 (updated-by): Updated: section:description, section:validation, section:acceptance_criteria, section:notes
 - chg_20260909_145357_closed-brbe01-after-confirming_3643
 - 2026-09-09T14:53:57.076475+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:54:06.444462+00:00 (state-transition): State: pending → completed
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.843077+00:00 (updated-by): Updated: section:ledger-events

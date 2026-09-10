@@ -99,6 +99,7 @@ SEE ALSO: HTR06 (new, 2026-08-30) -- a related but explicitly SEPARATE investiga
 ## Ledger-events
 
 
+
 - chg_20260829_134919_the-tuning-system-can-now-reco_8101
 - 2026-08-29T13:49:19.490008+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T23:58:18.136268+00:00 (updated-by): Updated: section:notes
@@ -106,3 +107,5 @@ SEE ALSO: HTR06 (new, 2026-08-30) -- a related but explicitly SEPARATE investiga
 - 2026-08-30T07:14:25.687254+00:00 (state-transition): State: pending → completed
 - chg_20260830_071434_made-the-hi141-behavioral-safe_8223
 - 2026-08-30T07:14:34.818406+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:40.211085+00:00 (updated-by): Updated: section:ledger-events

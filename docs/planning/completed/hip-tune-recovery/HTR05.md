@@ -68,9 +68,12 @@ Migration: capability-rebaseline-v3-2026-09
 ## Ledger-events
 
 
+
 - chg_20260829_144231_closed-the-gap-found-in-real-h_7575
 - 2026-08-29T14:42:31.037673+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T11:23:55.807264+00:00 (updated-by): Updated: section:notes
 - 2026-09-09T11:42:00.434581+00:00 (state-transition): State: pending → superseded
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:57:59.776832+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:36.828176+00:00 (updated-by): Updated: section:ledger-events

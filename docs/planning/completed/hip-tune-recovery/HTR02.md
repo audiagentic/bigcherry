@@ -73,9 +73,12 @@ Migration: capability-rebaseline-v3-2026-09
 ## Ledger-events
 
 
+
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.383575+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T11:23:47.602237+00:00 (updated-by): Updated: section:notes
 - 2026-09-09T11:41:51.497538+00:00 (state-transition): State: pending → superseded
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:57:59.762103+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:36.810238+00:00 (updated-by): Updated: section:ledger-events

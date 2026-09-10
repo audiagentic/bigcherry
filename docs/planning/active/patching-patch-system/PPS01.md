@@ -72,6 +72,9 @@ Successor key: patching-patch-system-pa04
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.121336+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T12:09:33.788649+00:00 (updated-by): Updated: section:title
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.786694+00:00 (updated-by): Updated: section:ledger-events

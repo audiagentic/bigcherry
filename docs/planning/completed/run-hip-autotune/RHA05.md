@@ -79,9 +79,12 @@ Superseded in substance by the RHA04 identity-bound preflight. Preserve artifact
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.907675+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:46:26.523695+00:00 (updated-by): Updated: section:description, section:validation, section:notes
 - 2026-09-09T15:46:46.288471+00:00 (state-transition): State: pending → deprecated
 - chg_20260909_154656_retired-the-redundant-optional_8054
 - 2026-09-09T15:46:56.434110+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.467281+00:00 (updated-by): Updated: section:ledger-events

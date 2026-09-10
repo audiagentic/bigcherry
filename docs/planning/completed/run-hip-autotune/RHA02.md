@@ -85,6 +85,7 @@ Supersedes: HI14\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: ru
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.828955+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T18:18:09.476379+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:notes
@@ -95,3 +96,5 @@ Supersedes: HI14\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: ru
 - 2026-09-09T19:17:29.288502+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_191740_rha02s-core-graph-lifecycle-q_5460
 - 2026-09-09T19:17:40.595172+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.327364+00:00 (updated-by): Updated: section:ledger-events

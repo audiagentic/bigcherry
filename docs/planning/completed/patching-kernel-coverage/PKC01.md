@@ -70,6 +70,7 @@ Successor key: patching-kernel-coverage-kc01
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.035040+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:21:10.309548+00:00 (state-transition): State: pending → in_progress
@@ -77,3 +78,5 @@ Successor key: patching-kernel-coverage-kc01
 - chg_20260909_152204_closed-pkc01-existing-experim_8209
 - 2026-09-09T15:22:04.163091+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:22:11.442174+00:00 (state-transition): State: in_progress → completed
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.662346+00:00 (updated-by): Updated: section:ledger-events

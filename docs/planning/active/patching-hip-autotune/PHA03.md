@@ -93,6 +93,7 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.842046+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:36:36.486669+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
@@ -114,3 +115,5 @@ Dev GPT gate review req_a569c67f6b3e4312: no admission-enabling change until exa
 - 2026-09-09T14:23:18.204353+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_142728_added-direct-rccl-qualificatio_6222
 - 2026-09-09T14:27:28.092303+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.349587+00:00 (updated-by): Updated: section:ledger-events

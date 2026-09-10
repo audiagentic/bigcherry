@@ -99,7 +99,10 @@ This item's considerably more detailed design content (state-machine spec, phase
 
 ## Ledger-events
 
+
 - Pending: ag-ledger MCP unavailable in authoring session.
 - 2026-09-08T17:46:30.049272+00:00 (updated-by): Updated: section:notes
 - 2026-09-08T21:00:51.997983+00:00 (updated-by): Updated: section:notes
 - 2026-09-08T21:00:57.211841+00:00 (state-transition): State: pending → superseded
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:40.229574+00:00 (updated-by): Updated: section:ledger-events

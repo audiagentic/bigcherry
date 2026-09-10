@@ -70,6 +70,7 @@ Successor key: build-reusable-build-campaign-re35
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.489189+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:26:20.146265+00:00 (state-transition): State: pending → in_progress
@@ -77,3 +78,5 @@ Successor key: build-reusable-build-campaign-re35
 - chg_20260909_152645_added-a-centralized-fail-close_2080
 - 2026-09-09T15:26:45.350902+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:26:53.529383+00:00 (state-transition): State: in_progress → completed
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:43.352534+00:00 (updated-by): Updated: section:ledger-events

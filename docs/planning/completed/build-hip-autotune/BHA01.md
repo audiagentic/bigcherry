@@ -70,6 +70,7 @@ Successor key: build-hip-autotune-hi153
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.862826+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:31:26.128551+00:00 (state-transition): State: pending → in_progress
@@ -77,3 +78,5 @@ Successor key: build-hip-autotune-hi153
 - chg_20260909_153154_completed-the-pin-bump-stopre_5913
 - 2026-09-09T15:31:54.145215+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:32:02.510074+00:00 (state-transition): State: in_progress → completed
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.383033+00:00 (updated-by): Updated: section:ledger-events

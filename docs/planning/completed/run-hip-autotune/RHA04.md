@@ -122,6 +122,7 @@ Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: r
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.903535+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:52:28.033769+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -196,3 +197,5 @@ Supersedes: HI168\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: r
 - 2026-09-09T21:00:51.165160+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_210128_the-remaining-replay-misses-ar_2991
 - 2026-09-09T21:01:28.031001+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.452931+00:00 (updated-by): Updated: section:ledger-events
