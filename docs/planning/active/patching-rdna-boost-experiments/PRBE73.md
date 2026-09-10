@@ -14,21 +14,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Introduce reviewable retirement/recheck metadata and policy for hardware-blocked patch items.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Add hardware_blocked_since, last_source_recheck, last_upstream_equivalence_check and next_review_date to deferred items; define threshold and automatic flagging; audit RD21/RD22-class items and require explicit retire/recheck decision; recheck whether current gfx1201 qualifies RD22.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Prevent indefinite maintenance of hardware-deferred patches. Flag stale items for human disposition while preserving evidence and never auto-deleting a potentially useful patch.
 
 ## Code Samples & Guidance
 
@@ -36,15 +30,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd93.md
+Plan/evidence schema, validator/report, hardware-blocked item metadata and RD21/RD22 audit records.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD21,RD22.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Schema/validator tests, threshold date tests, stale-item report and explicit decisions.
 
 ## Effort & Risk
 
@@ -56,7 +46,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Every hardware-blocked item has review metadata and is flagged after the threshold for explicit retire/recheck; no silent accumulation or automatic deletion.
 
 ## Notes
 
@@ -76,3 +66,6 @@ Successor key: patching-rdna-boost-experiments-rd93
 - 2026-09-09T11:58:01.458618+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.298240+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:20:26.481445+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032047_repaired-five-more-active-succ_6361
+- 2026-09-10T03:20:47.960815+00:00 (updated-by): Updated: section:ledger-events

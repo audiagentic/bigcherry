@@ -14,21 +14,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Extend hardware eligibility keys with integrated/UMA/P2P/GPU-count/driver traits separate from architecture, and audit hardware-scoped contracts.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Add device-trait fields integrated, uma, peer_access, gpu_count and driver to Experiment Contracts/autotune hardware key; audit RD22/PRBE17 and similar items for architecture-versus-trait eligibility; update contract scopes and tests so traits drive selection where they are the real condition.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Architecture strings alone misclassify integrated/UMA correctness work. Preserve architecture as one dimension but include topology/device traits and driver identity in eligibility and candidate keys, with backward-compatible defaults and fail-closed unknown traits.
 
 ## Code Samples & Guidance
 
@@ -36,15 +30,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd92.md
+Experiment Contract schema and hardware-key resolution; device discovery; RD22/PRBE17 contract updates; eligibility serialization and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Unit/integration tests for trait combinations, serialization compatibility, integrated versus discrete/P2P and multi-GPU selection.
 
 ## Effort & Risk
 
@@ -56,7 +46,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Hardware-scoped items select by proven device traits rather than architecture alone, with unknown traits falling back safely and existing contracts remaining compatible.
 
 ## Notes
 
@@ -76,3 +66,6 @@ Successor key: patching-rdna-boost-experiments-rd92
 - 2026-09-09T11:58:01.454152+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.291596+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:20:20.626577+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032047_repaired-five-more-active-succ_6361
+- 2026-09-10T03:20:47.947706+00:00 (updated-by): Updated: section:ledger-events
