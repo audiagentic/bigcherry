@@ -19,9 +19,11 @@ BuildPlan/cache stack-identity implementation is pending; acceptance is unchecke
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- After RRVP02 identity is frozen and Vulkan scope resumes, define the compile-affecting per-backend projection; do not hash the entire RRVP02 object blindly.
+- Extend existing BuildPlan/build_plan_id/effective_build_id/reuse machinery rather than creating a second identity system.
+- Persist the build-time RRVP02 probe attestation beside metadata and include provider/toolchain/cache-stack identity in the projection.
+- Test same source/build/platform with rocm-7-14 vs rocm-10, provider-bit swaps, path/device-order/visibility-only changes, and incomplete attestations.
+- Reject cache reuse on exact identity mismatch or incomplete attestation; rebuild is allowed but warn-and-reuse is not.
 
 ## Detailed Solution & Technical Design
 
@@ -37,11 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-PAUSED (Vulkan) -- when resumed: tools/bigcherry/build/builds.py, campaign/build.py, campaign/lane.py, campaign/workers.py, core/provenance.py (extend existing BuildPlan/build_plan_id/effective_build_id machinery, per repo-validated review -- do not introduce a second build-identity system).
+tools/bigcherry/build/builds.py; campaign/build.py; campaign/lane.py; campaign/workers.py; core/provenance.py; existing BuildPlan/build_plan_id/effective_build_id reuse and RRVP02 probe attestation.
 
 ## Validation
 
-PAUSED (Vulkan). Same source/build/platform with rocm-7-14 vs rocm-10 -> different build_plan_id; provider-bit swap -> identity changes; path/device-order/visibility-only changes -> identity UNCHANGED; cache reuse REJECTS mismatch/incomplete attestation -- no warn-and-reuse, a rejected cache may rebuild but never be treated as reusable.
+Paused until Vulkan scope resumes and RRVP02 is frozen. Then verify compiler/toolchain/provider identity changes IDs, non-compile-affecting path/device-order/visibility changes do not, and mismatched/incomplete cache attestations reject reuse.
 
 ## Effort & Risk
 
@@ -53,7 +55,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+When resumed, the existing build identity/reuse machinery incorporates the explicit compile-affecting projection and rejects mismatched/incomplete cache reuse; no duplicate identity system is introduced.
 
 ## Notes
 
@@ -67,12 +69,17 @@ CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): fits existing c
 
 PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, implementation is paused. Design above stands for when resumed (depends on RRVP02, also paused).
 
+Supersedes: RO04
+semantic-carryforward: concrete identity/reuse gates restored 2026-09-10.
+Vulkan remains paused by directive; this is not closure.
+
 ## Change Log
 
 - 2026-09-09T10:59:53.142667+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:55.975074+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.524607+00:00 (updated-by): Updated: section:ledger-events
@@ -87,3 +94,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.875846+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:52.861830+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T02:41:03.776847+00:00 (updated-by): Updated: section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_024129_build-and-external-fix-success_1105
+- 2026-09-10T02:41:29.969279+00:00 (updated-by): Updated: section:ledger-events
