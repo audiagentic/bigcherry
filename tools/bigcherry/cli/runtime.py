@@ -116,11 +116,17 @@ def _worker(cell, *, root: Path, base_env: Mapping[str, str]):
         expected = server_capture.get("expected_execution")
         if expected is not None and not isinstance(expected, Mapping):
             raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture expected_execution must be an object")
+        env_overrides = server_capture.get("environment", {})
+        if not isinstance(env_overrides, Mapping) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in env_overrides.items()
+        ):
+            raise MatrixResolutionError(f"cell {cell.cell_id!r}: server_capture environment must be a string map")
         from ..campaign.benchmark import run_server_arm_capture
         result = run_server_arm_capture(
             binary=Path(cell.binary), model=Path(model), extra_args=tuple(extra_args),
             output=root, pair=0, side=cell.cell_id, position=0,
-            env=dict(cell.visibility), bench_configs=bench_configs,
+            env={**dict(cell.visibility), **dict(env_overrides)}, bench_configs=bench_configs,
             runner_root=Path(runner_root), required_metrics=tuple(metrics),
             repetitions=int(server_capture.get("repetitions", 1)),
             shutdown_method=str(server_capture.get("shutdown_method", "http")),
