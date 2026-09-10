@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "Audumla",
+  "patch_digest": "d88ab52456393228c20da4d10e3bc0d24e79e6cabaca7e4ac8a693572ef2d8e9",
+  "patch_id": "1245_gp11_mmvq_fusion_ncols_gate",
+  "reason": "Same upstream commit as 1207 (PR #27621, extend MOE fusion to specdec) changed the adjacent GGML_OP_MUL_MAT_ID condition in the mmvq fusion-eligibility gate (dst->ne[2] != 1 -> dst->ne[2] > get_mmvq_mmid_max_batch(...)), breaking the anchor. GP11's dense-path ncols gate (dst->ne[1] != 1) is still present and unfixed upstream -- GP11 fix still needed for MTP speculative-verify shapes. Not selected by any production patch-set (gpu-collectives/untested) -- disposition per pin-bump's own guidance rather than editing an unused experimental patch mid-bump.",
+  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "tracking_item": "RHA12"
+}
