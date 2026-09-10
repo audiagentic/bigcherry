@@ -67,7 +67,30 @@ config/recipes.toml pinned=b10883, every currently-selected bigcherry patch clea
 
 Filed as a real, hardware-validated tracking item per explicit user request to test the pin-bump process by actually running it. GPT explicitly recommended GO with the 4-step preflight, running pin-bump directly rather than a separate manual target-rebase pass first (the orchestrator's own checks are the load-bearing gate). Manual upstream PR/commit-range mapping against existing patches (step 2) requested explicitly by the user and must be done incrementally with GPT assistance per range, not as one bulk pass.
 
+RESULT 2026-09-10: pin-bump b10705 -> b10883 SUCCEEDED. Full trail: preflight clean (60/60 patches rebase-clean at b10705 baseline); vendor moved to b10883; patch-rebase-check found 11 real breaks (6 anchor-mismatch + 5 transitively blocked); all 11 confirmed non-production (not in framework/validated-enhancements patch-sets, only experimental); recorded known_broken dispositions for all 11 with exact upstream commit/PR citations obtained via dev-gpt research and independently verified against the real unshallowed vendor source before applying. pin-bump --resume then PASSED. Auto-committed by the orchestrator: 3f85d27e (pin flip) and ee5a467e (release record). Disposition files committed separately (3e875ce5).
+
+Per-patch findings (all verified against real b10883 source, not just GPT's claim):
+- 1202 RD04 (bf16 flash-attn tile): broken by upstream PR #27970 (sparse-fa for DSV4/GLM) adding a use_sparse bool param to launch_fattn() before warp_size. Fix still needed -- upstream has no native-BF16 tile behavior. Disposed, not re-anchored (non-production, experimental only).
+- 1205 RD12 (paired MMVQ dual output): broken by upstream PR #27930 (SWIGLU_CLAMP) touching the same gate switch/unused-vars list. Fix still needed. Disposed.
+- 1207 RD17 (MoE topk-down fold): broken by upstream PR #27621 (extend MOE fusion to specdec) duplicating the has_fusion computation this patch anchored on uniquely. Fix still needed. Disposed.
+- 1209 RD22 (integrated-GPU host-buffer backout): SUPERSEDED -- verified upstream commit d4389a4dd920 (PR #28604, revert of PR #24233) makes RD22's own fix (unconditional info.devices[id].integrated=false) upstream's current behavior verbatim at ggml-cuda.cu:307. Disposed as known_broken (not yet formally superseded via bigcherry-patch-lifecycle -- that remains real follow-on work if this patch is picked back up).
+- 1222 HI67 (deterministic test-backend-ops seed) + 4 transitive dependents (1223, 1236, 1238, 1239, 1240): broken by upstream PR #28325 changing the n_threads calculation line in init_tensor_uniform(). The nondeterministic std::default_random_engine HI67 works around remains present and unfixed upstream -- fix still needed. All 5 disposed.
+
+Post-bump validation (per PIN_BUMP.md, NOT automated by pin-bump itself, run explicitly): patch-lint clean. patch-verify-evidence run explicitly across the full catalog -- all 15 `framework` (the only currently-populated production patch-set; validated-enhancements is empty after RD73's demotion) patches are either legacy-grandfathered or missing-or-stale on stale base_ref only, which is the expected/documented post-bump state (evidence needs regeneration at the new pin, not a bump failure).
+
+`pin-status --complete --all-remotes`: local tree verdict CONSISTENT. Aggregate COMPLETION FAIL because the configured Brutus campaign tree (config/recipes.toml [[trees]] entry, path /mnt/vault/development/llmhosts/bigcherry) has not been bumped -- this is real, expected remaining work (this session only bumped the local/H: tree per PIN_BUMP.md's own 'work on ONE tree at a time' instruction), not a defect in this bump. Real hardware rebuild+smoke at the new pin also remains open (PIN_BUMP.md step 5/6), same reason.
+
+Process improvement made as part of this run: added PIN_BUMP.md step 8, requiring a per-bump ledger event with full per-patch investigation detail as a standing part of the procedure for all future bumps (not just this one) -- see docs/reference/build/PIN_BUMP.md commit c2528184.
+
+STATUS: local bump complete and PASS. Brutus tree convergence and real-hardware post-bump validation remain open as separate follow-on work, tracked under this same item.
+
 ## Change Log
 
 - 2026-09-10T04:51:00.813381+00:00 (created-by): Created by agent
 - 2026-09-10T04:51:30.622532+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+
+## Ledger-events
+
+- chg_20260910_053053_successfully-bumped-the-llama_6506
+- 2026-09-10T05:30:53.720115+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T05:31:54.933096+00:00 (updated-by): Updated: section:notes
