@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Integrated-GPU host-buffer work is explicitly deferred pending relevant hardware evidence, not retired.
+Retain the HIP integrated-GPU host-buffer backout as deferred hardware-scoped work; never apply it globally to discrete production.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Confirm a relevant integrated-GPU target exists before implementation.
+- Reproduce asynchronous host-buffer behavior and compare blocking/non-blocking and load modes.
+- Check PPL/output integrity and host-buffer ownership/lifetime.
+- Keep discrete GPUs on current behavior and run explicit non-selection controls.
+- If target hardware remains unavailable, retain deferred disposition rather than infer from discrete results.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd22.md
+HIP host-buffer policy source; integrated-GPU fixture; async/blocking/load and PPL/output tests; ownership/lifetime evidence; discrete-GPU non-selection controls.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Integrated GPU only; async correctness; PPL/output; blocking/non-blocking; load; ownership; discrete non-regression.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Hardware-scoped change; no global workaround without evidence.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Promotion requires affirmative integrated-GPU evidence with no discrete regression; until then this remains explicitly deferred and no global workaround is introduced.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd22
 - 2026-09-09T11:58:01.205711+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.915767+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:50:24.214993+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025049_rdna-successors-prbe1719-now_5726
+- 2026-09-10T02:50:49.204728+00:00 (updated-by): Updated: section:ledger-events

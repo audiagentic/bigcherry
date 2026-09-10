@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Frozen RD25 is an active bake-in sequencing rule whose dependent ports and regression validation remain ahead; its initial triage step being done is not item completion.
+Maintain RD25 as a bake-in sequencing rule: dependent ports must use branch-tip post-fix kernel regions; it is not a standalone patch.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- When PRBE16 is ported, take calc_nwarps gfx1151 table including ncols_dst extension from branch-tip.
+- When PRBE18 is ported, take SSM fused kernels with 2-warp reduction and qi=QI8_0 fix from tip.
+- When PRBE13 is ported, take shexp_down_gated_q8_0 from tip; likewise preserve post-fix regions for any declared PRBE20 dependents.
+- For each dependent port, validate fused decode against unfused and the named MTP batch-vs-seq scenario; preserve native non-MTP controls.
+- Never materialize a standalone RD25 patch from an absent pre-image; record exact branch-tip identity and dependency linkage.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd25.md
+Branch-tip 9e46e1fd/post-fix kernel regions; dependent PRBE16/18/13/20 packages; mmvq.cu fixtures; batch-vs-seq regression artifacts; source identity/provenance.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD08,RD14.
-
-Active dependencies: Frozen dependencies: RD08,RD12,RD14,RD15,RD21,RD24,RD26.
-
-Reference handling: Rewrite forward references (6); preserve historical references (2) on predecessor.
+Dependent region extraction; pre-fix reachability/reproduction or proof absent; fused decode bit identity/equality; MTP batch-vs-seq; native/non-MTP controls; no standalone patch assumption.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (6); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Correctness bake-in; branch-tip provenance; no standalone patch; dependency-aware promotion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Every dependent port uses post-fix branch-tip state and passes its own correctness gate; no broken pre-fix region is materialized; RD25 remains a sequencing/provenance rule.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd25
 - 2026-09-09T11:58:01.214040+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.929217+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:50:36.902436+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025049_rdna-successors-prbe1719-now_5726
+- 2026-09-10T02:50:49.233411+00:00 (updated-by): Updated: section:ledger-events
