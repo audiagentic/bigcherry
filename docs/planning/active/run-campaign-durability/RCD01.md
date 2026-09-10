@@ -63,12 +63,15 @@ Successor key: run-campaign-durability-cd01
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED PARK / do not implement now. Predecessor design is sufficient as a dormant reference; add one explicit activation trigger not previously stated: reactivate only after repeated REAL campaign failures that actually require cross-process/host recovery (not preemptively). Before any eventual implementation, resolve cross-host fencing/ownership (how a new host proves the former executor cannot publish while cross-host lock-breaking remains forbidden). Preserve the RE11 design's operation-spec vs execution-hash split, immutable result records, byte verification, and interrupted-never-equals-success rule. Execution order: explicitly NOT ranked in the 1-12 sequence — stays dormant.
 
+RE-ASSESSED 2026-09-10 against the WHOLE project run history (per user directive), independently of the earlier narrower review. Verdict: CONFIRMED KEEP DORMANT, activation trigger still not met. Evidence checked: repo history contains many real crashes/failures (including tonight's RU01/PHC03 META segfault, and known RCCL abort paths), but these are workload/runtime CORRECTNESS failures, not campaign-STATE durability failures requiring cross-process/host recovery -- a different failure class than this item's own trigger. HI82 already demonstrates successful controlled STOP/resume for at least one real campaign. Closest real incident found: one pin-bump run crashed and left a stale marker, recovered via existing manual reset+resume -- a single incident, not the 'repeated real campaign failures' this item's own activation trigger explicitly requires. No repeated evidence anywhere in commit history, the release ledger, or planning/evidence history of lost/ambiguous campaign state, unsafe resume, or repeated manual reconstruction after process/host loss. Repo evidence is sufficient to decide NOT to activate now -- cross-host fencing/ownership design details would only need to be filled in if/when activation eventually happens. No action taken; correctly remains a dormant, activation-gated reference item, not actionable run work.
+
 ## Change Log
 
 - 2026-09-09T10:47:10.667188+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:16.931644+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.731253+00:00 (updated-by): Updated: section:ledger-events
@@ -78,3 +81,6 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED P
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.162086+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:35.811237+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T02:55:52.402689+00:00 (updated-by): Updated: section:notes
+- chg_20260910_025604_confirmed-via-a-fresh-whole-pr_7836
+- 2026-09-10T02:56:04.074592+00:00 (updated-by): Updated: section:ledger-events
