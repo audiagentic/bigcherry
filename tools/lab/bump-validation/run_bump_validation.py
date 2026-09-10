@@ -56,6 +56,8 @@ _CONTROL_LANE = campaign_config.CampaignLaneSelector(
 SMOKE_MODEL = "tierB-qwen9b-q6k"
 PRODUCTION_MODEL = "tierL-qwen27b-q8"
 SINGLE_GPU_DEVICES = (0, 1, 2, 3)
+_SMOKE_WORKER = str(Path(__file__).resolve().parent / "smoke_worker.py")
+_DELEGATE_ARGV = [sys.executable, _SMOKE_WORKER]
 
 
 def _build_once(context: ProjectContext, store: ArtifactStore, run_id: str):
@@ -100,6 +102,7 @@ def build_cells(build_id: str, binary: str) -> list[dict]:
             "arm": "native",
             "build_id": build_id,
             "binary": binary,
+            "workload": {"delegate_argv": _DELEGATE_ARGV},
         })
     cells.append({
         "cell_id": "bump-validate-dual-xtx-mtp-smoke",
@@ -110,6 +113,7 @@ def build_cells(build_id: str, binary: str) -> list[dict]:
         "arm": "native",
         "build_id": build_id,
         "binary": binary,
+        "workload": {"delegate_argv": _DELEGATE_ARGV},
     })
     return cells
 
