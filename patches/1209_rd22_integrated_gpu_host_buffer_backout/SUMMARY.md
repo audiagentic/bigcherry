@@ -1,6 +1,6 @@
 # 1209_rd22_integrated_gpu_host_buffer_backout: Back out integrated-GPU host buffers on HIP (RD22, fork divergence from PR #24233)
 
-**Status:** untested
+**Status:** superseded
 **Group:** rdna-boosts
 **Plan item:** RD22
 
@@ -15,3 +15,7 @@ On the fork author's Strix Halo iGPU, the host-buffer path corrupts full-model r
 ## Upstream / provenance
 
 Ported verbatim from stew675-rdna-boosts fork commit 507f2e267 (https://github.com/stew675/llama.cpp), a deliberate divergence away from mainline PR #24233 -- a pin bump does not absorb this, it would re-enable the broken path.
+
+## Superseded (2026-09-10, pin bump to b10884)
+
+Upstream PR #28604 reverts PR #24233 (the change this patch's fork diverged to work around), making `integrated=false` upstream's own unconditional default on HIP at b10884+ -- verified against the real vendored source. See patch.py's SUPERSEDED note for full detail.

@@ -494,9 +494,9 @@ commit = "507f2e26719b33a7c82429609bc7806aa60f27e6"
 original = "85a9069a0a01a9949ee0df8bc0668c2ee0e2af12"
 title = "cuda : back out integrated-GPU host buffers on HIP (PR #24233)"
 plan-item = "RD22"
-status = "deferred-hardware"
+status = "superseded"
 patch = "1209_rd22_integrated_gpu_host_buffer_backout"
-note = "integrated-GPU scoped; Brutus device 2 (gfx1201 integrated) may satisfy the hardware prerequisite - re-assess before it stays parked. Patch materialized 2026-08-18; bench blocked on hardware"
+note = "SUPERSEDED 2026-09-10 (pin bump to b10884): upstream PR #28604 reverts PR #24233, making integrated=false upstream's own unconditional HIP default -- verified against real vendored source at b10884. No longer deferred-hardware (the underlying question upstream already answered the same way); do not resurrect the deferred-hardware disposition without new evidence upstream re-diverges."
 
 [[sources.tracked]]
 commit = "1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"
