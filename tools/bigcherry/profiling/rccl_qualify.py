@@ -73,6 +73,19 @@ _GPU_FAULT_MARKERS = (
 _UNSUPPORTED_MARKERS = (
     "not supported", "unsupported", "Unsupported"
 )
+# Real hardware evidence (2026-09-02, xtx_xtx homogeneous control, RCCL
+# 2.30.4): "Symmetric memory is not supported. cuMemEnable 0, ..." is a
+# routine NCCL_DEBUG=INFO capability-negotiation trace line printed on
+# EVERY run on this hardware, successful or not -- it previously
+# misclassified a clean PASS (0 wrong, correct algo/proto reported) as
+# UNSUPPORTED. Same class of over-broad-substring bug this file's own
+# INIT_FAILURE narrowing below already fixed once; neutralize this specific
+# known-benign substring rather than removing the (still useful) general
+# markers, and only the substring (not its whole line) so a genuine
+# unsupported marker sharing that line is still caught.
+_UNSUPPORTED_BENIGN_MARKERS = (
+    "Symmetric memory is not supported",
+)
 # Real hardware evidence (RQ08, xtx_r9700 Tree/LL): "ncclCommInitAll" and
 # "commInit" as bare substrings are too loose -- they appear in routine
 # trace lines on every run, successful or not (e.g. "ncclCommInitAll_impl
@@ -260,7 +273,12 @@ def _classify(
     if any(marker in combined_output for marker in _GPU_FAULT_MARKERS):
         return GPU_FAULT, None, "GPU/HIP fault marker found in output"
 
-    if any(marker in combined_output for marker in _UNSUPPORTED_MARKERS):
+    # Neutralize only the known-benign substring, not the whole line, so a
+    # genuine unsupported marker sharing a line with it is still caught.
+    unsupported_scan_text = combined_output
+    for benign in _UNSUPPORTED_BENIGN_MARKERS:
+        unsupported_scan_text = unsupported_scan_text.replace(benign, "")
+    if any(marker in unsupported_scan_text for marker in _UNSUPPORTED_MARKERS):
         return UNSUPPORTED, None, "RCCL declined the requested plan as unsupported"
 
     if any(marker in combined_output for marker in _INIT_FAILURE_MARKERS) and returncode:
