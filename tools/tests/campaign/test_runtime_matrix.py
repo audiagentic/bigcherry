@@ -47,6 +47,14 @@ class RuntimeMatrixResolutionTests(unittest.TestCase):
         with self.assertRaises(MatrixResolutionError):
             resolve_matrix([replay], host=host())
 
+    def test_tune_requires_identity_bound_inventory(self):
+        tuning = cell(arm="tune")
+        with self.assertRaises(MatrixResolutionError):
+            resolve_matrix([tuning], host=host())
+        tuning["inventory_id"] = "inventory-1"
+        resolved = resolve_matrix([tuning], host=host())
+        self.assertEqual(resolved[0].inventory_id, "inventory-1")
+
 
 class RuntimeMatrixRunTests(unittest.TestCase):
     def test_serial_progress_and_child_verdict_are_preserved(self):
@@ -59,8 +67,10 @@ class RuntimeMatrixRunTests(unittest.TestCase):
             self.assertEqual(seen, ["a", "b"])
             self.assertFalse(result["results"][0]["child_result"]["performance_admitted"])
             status = json.loads((output / "status.json").read_text())
+            summary = json.loads((output / "summary.json").read_text())
             events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
             self.assertEqual(status["state"], "completed")
+            self.assertEqual(summary["results"][0]["child_result"]["performance_admitted"], False)
             self.assertEqual(events[-1]["state"], "completed")
             self.assertEqual(events[-1]["completed"], 2)
 
@@ -83,3 +93,15 @@ class RuntimeMatrixRunTests(unittest.TestCase):
             result = run_matrix(cells, output=temporary, execute=fail)
             self.assertEqual(result["state"], "failed")
             self.assertEqual(result["completed"], 1)
+
+    def test_revalidation_failure_prevents_child_execution(self):
+        cells = resolve_matrix([cell()], host=host())
+        with tempfile.TemporaryDirectory() as temporary:
+            called = []
+            result = run_matrix(
+                cells, output=temporary,
+                execute=lambda item: called.append(item),
+                revalidate=lambda item: False,
+            )
+            self.assertEqual(result["state"], "failed")
+            self.assertEqual(called, [])

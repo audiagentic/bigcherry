@@ -10,6 +10,7 @@ through ``BIGCHERRY_RUNTIME_CELL_JSON``.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -34,6 +35,14 @@ def _atomic_json(path: Path, document: Mapping[str, Any]) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _models_from_registry(path: Path) -> frozenset[str]:
@@ -195,6 +204,15 @@ def cmd_runtime_matrix(args) -> int:
             if topology in {"dual", "dual-xtx"} and (not isinstance(devices, list) or len(devices) != 2):
                 raise MatrixResolutionError(f"cell {raw.get('cell_id', '<unknown>')!r}: dual topology requires two devices")
         cells = resolve_matrix(document["cells"], host=host, known_models=known_models)
+        source_digests = {
+            "config": _sha256(config_path),
+            "models": _sha256(registry),
+            "recipes": _sha256(recipes),
+        }
+        binary_digests = {
+            cell.cell_id: _sha256(Path(cell.binary))
+            for cell in cells if Path(cell.binary).is_file()
+        }
         resolved = {
             "schema_version": 1,
             "config": str(config_path),
@@ -208,11 +226,26 @@ def cmd_runtime_matrix(args) -> int:
             print(json.dumps(resolved, indent=2, sort_keys=True))
             return 0
         base_env = os.environ.copy()
+
+        def revalidate(cell) -> bool:
+            try:
+                if any(_sha256(path) != digest for path, digest in (
+                    (config_path, source_digests["config"]),
+                    (registry, source_digests["models"]),
+                    (recipes, source_digests["recipes"]),
+                )):
+                    return False
+                expected = binary_digests.get(cell.cell_id)
+                return expected is None or _sha256(Path(cell.binary)) == expected
+            except OSError:
+                return False
+
         result = run_matrix(
             cells,
             output=output,
             execute=lambda cell: _worker(cell, root=output, base_env=base_env),
             quiescent=_quiescence_checker(document, base_env=base_env),
+            revalidate=revalidate,
         )
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result.get("state") == "completed" else 1
