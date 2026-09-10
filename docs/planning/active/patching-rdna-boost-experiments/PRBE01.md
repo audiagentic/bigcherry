@@ -15,21 +15,20 @@ priority: null
 
 ## Description
 
-Port exists; correctness matrix and cross-architecture repeat remain.
+Port and qualify the folded native-BF16 flash-attention logical path from the reviewed commit series. Existing isolated evidence is directionally promising (clean decode gain and no measured prompt cost) but correctness and cross-architecture repeat remain before promotion.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Port only the reviewed logical BF16 path as one precision experiment; preserve F32 accumulation and native-BF16 guards.
+2. Keep unsupported hardware on the existing fallback and preserve no-F16-regression behavior.
+3. Separate cleanup/operand-order evidence from the implementation arm.
+4. Run the FLASH_ATTN_EXT backend correctness matrix, BF16 same-path checks, and exact output/precision checks without claiming F16 bit identity.
+5. Run long/deep-context numerical-quality checks and repeat on gfx1100 and gfx1201.
+6. Reproduce isolated decode/prompt characterization with balanced interleaved controls, then gate promotion on correctness, precision, quality, fallback, cross-architecture, and performance evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Treat this as a precision-path experiment, not six cherry-picks. Validate architecture guards, unsupported fallback, F32 accumulation, BF16 operand semantics, graph capture, and numerical stability. Existing evidence: materialized patch 1202; isolated gfx1100 decode was directionally positive and prompt deltas were noise-adjacent/indistinguishable at pp>=1024. This is not a promotion claim.
 
 ## Code Samples & Guidance
 
@@ -37,15 +36,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd04.md
+Future vendor HIP flash-attention sources; patches/1202_rd04_bf16_flash_attn_tile; correctness fixtures and backend matrix; balanced E2E evidence for gfx1100/gfx1201
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD02,RD03.
-
-Active dependencies: Frozen dependencies: HI25,RD02,RD03.
-
-Reference handling: Rewrite forward references (2); preserve historical references (2) on predecessor.
+Build and apply/idempotence; FLASH_ATTN_EXT backend matrix; BF16 same-path correctness; F32 accumulation; long/deep-context numerical quality; gfx1100/gfx1201; unsupported fallback; graph capture; no F16 regression; balanced decode/prompt performance with repeatability.
 
 ## Effort & Risk
 
@@ -53,17 +48,21 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Correctness before performance; explicit precision contract; fallback preservation; no claim of F16 bit identity.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+All RD04 requirements are either passed with evidence or explicitly dispositioned: F32 accumulation/native-BF16 guards, unsupported fallback, FLASH_ATTN_EXT correctness matrix, BF16 same-path checks, long/deep-context quality, gfx1100/gfx1201 coverage, unsupported fallback, no F16 regression, and balanced performance. No promotion on isolated throughput alone.
 
 ## Notes
 
 Supersedes: RD04
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd04
+
+Supersedes: RD04
+Inherited semantic scope: preserve every actionable RD04 gate; historical evidence remains on completed predecessor.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd04
 - 2026-09-09T11:58:01.129465+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.797954+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:10:06.643778+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- chg_20260910_021313_the-semantic-audit-is-now-trac_4827
+- 2026-09-10T02:13:13.308366+00:00 (updated-by): Updated: section:ledger-events

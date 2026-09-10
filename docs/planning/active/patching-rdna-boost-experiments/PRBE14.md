@@ -19,9 +19,12 @@ Evaluate MoE top-k weights folded into down projection while preserving the expl
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Preserve patch 1207's explicit MoE top-k/down-projection recipe identity and verify destination-channel scale semantics and scale-vector shape.
+2. Preserve existing NVFP4 behavior and native fallback.
+3. Compare fused and unfused outputs across MUL_MAT_ID expert routing, IDs, and scale cases.
+4. Validate graph capture, false-positive fallback, and expert routing correctness.
+5. Treat patch 1205 and 1207 as mutually exclusive unless an explicitly declared composed experiment passes PKC02 graph identity/conflict validation.
+6. Qualify performance only after correctness and composition gates pass.
 
 ## Detailed Solution & Technical Design
 
@@ -41,11 +44,7 @@ successor-specs/patching-rdna-boost-experiments-rd17.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+Correctness: destination-channel scale semantics/shape, expert IDs/routing, fused-vs-unfused output equality, NVFP4 preservation, native fallback, graph capture, and false-positive rejection. Performance: balanced fused versus unfused qualification with explicit recipe identity. Composition: 1205/1207 conflict gate through PKC02; no implicit combination.
 
 ## Effort & Risk
 
@@ -57,7 +56,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Correctness/performance qualification covers 1207 alone. 1205 and 1207 are mutually exclusive unless an explicitly declared composed experiment passes graph identity, conflict, and composition validation through PKC02; no implicit composition is admitted.
+All RD17 requirements are carried forward: scale semantics/shape, NVFP4 preservation, fused/unfused comparison, expert routing/fallback, graph capture, false-positive fallback, and explicit 1205/1207 composition disposition. Promotion requires correctness and performance evidence for the declared recipe.
 
 ## Notes
 
@@ -67,6 +66,10 @@ Successor key: patching-rdna-boost-experiments-rd17
 
 Supersedes: RD17
 Inherited constraint: RV105 — retain the 1205/1207 composition conflict and mutually exclusive recipe identities; link graph/DAG composition decisions to PKC02.
+Migration: capability-rebaseline-v3-2026-09
+
+Supersedes: RD17
+Inherited semantic scope: RD17 detailed requirements plus RV105 composition restriction; historical evidence remains on completed predecessor.
 Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
@@ -84,3 +87,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T00:52:25.957169+00:00 (updated-by): Updated: section:description, section:acceptance_criteria, section:notes
 - chg_20260910_005948_legacy-planning-folders-now-co_1240
 - 2026-09-10T00:59:48.994822+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:10:12.521404+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_021313_the-semantic-audit-is-now-trac_4827
+- 2026-09-10T02:13:13.325520+00:00 (updated-by): Updated: section:ledger-events

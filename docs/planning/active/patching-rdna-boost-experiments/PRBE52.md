@@ -15,21 +15,22 @@ priority: null
 
 ## Description
 
-NRO06 folded into RD62; implementation and qualification remain under this owner.
+Implement and qualify the consolidated adaptive MTP draft-depth controller from RD62 and duplicate NRO06. This is one backend-neutral speculative-policy owner; NRO06 is not an independent implementation.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Freeze source identity and re-audit ancestry after each pin bump; preserve the distinct adaptive type while leaving fixed draft-mtp unchanged.
+2. Add n_min_adaptive/floor and cap configuration with explicit validation.
+3. Implement per-sequence controller state: current depth, climb streak, drop pressure, reset semantics, and heterogeneous-sequence isolation.
+4. Preserve source policy semantics: floor/cap, full-accept climb, miss-pressure drop, floor non-accumulation, and depth-3→4 barrier as hypotheses rather than universal constants.
+5. Instrument requested/accepted depth transitions and support offline acceptance-trace replay; keep one pre-registered runtime policy during qualification.
+6. Validate request/sequence/context-rewind/failure/retry/recreation resets and no state leakage.
+7. Compare against fixed depths and production fixed depth over prose, code, repetitive, and reasoning-like content at multiple contexts; measure acceptance, rejected work, target/draft latency, and total TPS.
+8. Require deterministic target-output parity and exhaustive controller tests before any promotion.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The controller is a pure/testable state machine with n_cur, n_climb, and n_drop. Adaptive and fixed modes may vary speculative work but must preserve target semantics under deterministic sampling. Constants from the source are experimental hypotheses; offline replay and fixed-depth controls prevent overfitting. Aggregate TPS cannot conceal lower acceptance or changed token semantics.
 
 ## Code Samples & Guidance
 
@@ -37,15 +38,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd62.md
+patches/1255_nro06_adaptive_mtp_depth; adaptive controller/runtime policy; config and CLI; exhaustive unit tests; deterministic parity and balanced multi-content E2E evidence
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: NRO06.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (5); preserve historical references (1) on predecessor.
+Exhaustive transition tests over floor/cap/acceptance/reset edges; multi-sequence independence; malformed configuration; deterministic output parity vs target/fixed MTP; acceptance trace integrity; long requests and request-boundary resets; balanced adaptive versus best-fixed controls over heterogeneous content and contexts.
 
 ## Effort & Risk
 
@@ -53,17 +50,21 @@ Reference handling: Rewrite forward references (5); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Backend-neutral policy; source constants are hypotheses; no outcome-conditioned pair deletion; final-token correctness and work accounting required.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+All consolidated RD62/NRO06 requirements are explicit: state machine, reset boundaries, heterogeneous qualification, deterministic correctness, fixed-depth controls, instrumentation, and anti-overfitting. Fixed draft-mtp behavior remains unchanged; adaptive promotion requires improved results versus the best relevant fixed control across the pre-registered workload mix.
 
 ## Notes
 
 Supersedes: RD62
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd62
+
+Supersedes: RD62; consolidates duplicate NRO06 scope.
+Inherited semantic scope: carry forward RD62's detailed state machine and NRO06's richer design/qualification constraints; historical source evidence remains on completed predecessors.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +78,6 @@ Successor key: patching-rdna-boost-experiments-rd62
 - 2026-09-09T11:58:01.363199+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.151518+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:10:18.602333+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- chg_20260910_021313_the-semantic-audit-is-now-trac_4827
+- 2026-09-10T02:13:13.335804+00:00 (updated-by): Updated: section:ledger-events
