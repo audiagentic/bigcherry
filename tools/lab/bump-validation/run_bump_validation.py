@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -39,11 +40,17 @@ _BC_TOOLS = _REPO_ROOT / "tools"
 if str(_BC_TOOLS) not in sys.path:
     sys.path.insert(0, str(_BC_TOOLS))
 
-from bigcherry.campaign.lane import smoke_environment_for_backend
 from bigcherry.campaign.planner import CampaignRequest, plan, run_campaign
 from bigcherry.core import config as campaign_config
 from bigcherry.core.artifacts import ArtifactStore
 from bigcherry.core.context import ProjectContext
+
+# Only the real production lane -- NOT the full 'standard' profile, which
+# also plans record/tune/replay lanes that need inputs (inventory,
+# promoted-winners) this smoke matrix has no reason to provide.
+_CONTROL_LANE = campaign_config.CampaignLaneSelector(
+    source="bigcherry-native", build="control", platform="linux-multi",
+)
 
 SMOKE_MODEL = "tierB-qwen9b-q6k"
 PRODUCTION_MODEL = "tierL-qwen27b-q8"
@@ -52,10 +59,19 @@ SINGLE_GPU_DEVICES = (0, 1, 2, 3)
 
 def _build_once(context: ProjectContext, store: ArtifactStore, run_id: str):
     cfg = campaign_config.load(context.config_path)
+    # Inlined rather than calling a campaign.lane helper: RE15's real-
+    # hardware HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES finding (only set
+    # HIP_VISIBLE_DEVICES, never both) still applies to whichever build
+    # this runs against -- only HIP_VISIBLE_DEVICES=0 matters for a build
+    # step (the smoke cells below each set their own real device list).
+    smoke_environment = tuple(sorted({
+        "HIP_VISIBLE_DEVICES": "0",
+        "PATH": os.environ.get("PATH", ""),
+    }.items()))
     request = CampaignRequest(
-        profile_name="standard",
+        selectors=(_CONTROL_LANE,),
         binary_relative_path="bin/llama-server",
-        smoke_environment=smoke_environment_for_backend("hip", "0"),
+        smoke_environment=smoke_environment,
     )
     lanes = plan(request, cfg)
     results = run_campaign(lanes, cfg=cfg, context=context, store=store, run_id=run_id)
@@ -64,8 +80,8 @@ def _build_once(context: ProjectContext, store: ArtifactStore, run_id: str):
         for lid, exc in failed.items():
             print(f"bump-validation: build lane {lid} FAILED -- {exc}", file=sys.stderr)
         raise SystemExit(1)
-    # The 'standard' profile's first/only production lane's binary is what
-    # every smoke cell below launches -- same binary, different devices/model.
+    # The one real production lane's binary is what every smoke cell below
+    # launches -- same binary, different devices/model.
     lane_id = sorted(results)[0]
     result = results[lane_id]
     return result.build_plan_id, str(store.resolve(result.binary_ref.path))
@@ -129,7 +145,6 @@ def main() -> int:
     ]
     if args.dry_run:
         cmd.append("--dry-run")
-    import os
     full_env = dict(os.environ)
     full_env["PYTHONPATH"] = str(_BC_TOOLS)
     return subprocess.call(cmd, cwd=str(_REPO_ROOT), env=full_env)
