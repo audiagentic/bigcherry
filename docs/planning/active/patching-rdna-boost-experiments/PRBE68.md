@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Implement architecture-aware Vulkan submission caps that protect timeout-prone older AMD while avoiding the reported RDNA4 throughput regression.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Recheck issue #26679; characterize submission work/FLOP thresholds on gfx1201/R9700, older AMD/GCN timeout-prone controls, other vendors; add architecture-aware ceiling and telemetry; run PP/TG, submission count, GPU fault/timeout and corruption tests across long runs.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Replace generalized submission safety heuristic with architecture-sensitive caps. Select ceiling from device identity and work threshold, preserving conservative limits where timeout risk exists and allowing modern RDNA4 throughput. Keep fallback and observability.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd85.md
+Vulkan command submission batching/cap selector; architecture/work-threshold tests; PP/TG and fault telemetry evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+No DeviceLost, timeout or corruption; PP/TG, submission count, GPU fault telemetry and long-run stability.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Require architecture-specific cap that prevents safety failures while avoiding material modern-GPU throughput regression; retain conservative fallback on unknown devices.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd85
 - 2026-09-09T11:58:01.434952+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.268296+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:18:48.866865+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031907_repaired-the-vulkan-submission_2651
+- 2026-09-10T03:19:07.580884+00:00 (updated-by): Updated: section:ledger-events

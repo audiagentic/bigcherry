@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Bound adaptive Vulkan startup submission ramp by the learned safe ceiling from PRBE68.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Use PRBE68 cap; instrument warmup/ramp growth over repeated long AMD runs; clamp adaptive ramp before it exceeds architecture ceiling; compare capped/uncapped and architectures without cap; verify no timeout/corruption and stable steady-state PP/TG.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Ensure startup adaptation cannot grow beyond the architecture-specific safe submission cap. Preserve adaptive behavior below the cap and disable the cap only for architectures with no known safety requirement.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd86.md
+Vulkan submission ramp logic and cap integration; warmup/ramp tests; repeated long-run PP/TG and timeout evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD85.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+No timeout/corruption; ramp trace and cap adherence; stable steady-state PP/TG versus baseline.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Keep only if cap prevents safety regressions without reducing normal throughput; adaptive ramp must never exceed PRBE68's safe ceiling on affected AMD.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd86
 - 2026-09-09T11:58:01.440589+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.274152+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:18:55.271487+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031907_repaired-the-vulkan-submission_2651
+- 2026-09-10T03:19:07.594642+00:00 (updated-by): Updated: section:ledger-events
