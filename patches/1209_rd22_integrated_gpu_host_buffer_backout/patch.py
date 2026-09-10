@@ -77,7 +77,7 @@ Maintenance (future pin bumps / fork movement):
 
 SUPERSEDED (2026-09-10, pin bump to b10884, reconfirmed at b10900): exactly the
 maintenance check this docstring has always asked for found a real result.
-Upstream commit d4389a4dd920522899e5b46f1bd3b39592b1f0f7 (PR #28604, "Revert
+Upstream commit d4389a4dd920d24c9592f1dc3badbd69be23bd09 (PR #28604, "Revert
 'ggml-cuda : restore prop.integrated on HIP builds (#24233)'") reverts
 the very PR #24233 this fork's divergence exists to work around.
 Verified directly against the real vendored source at b10900
