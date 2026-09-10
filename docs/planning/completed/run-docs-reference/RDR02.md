@@ -2,7 +2,7 @@
 id: RDR02
 order: 12
 plan: run-docs-reference
-state: pending
+state: completed
 created-at: '2026-09-09T10:47:27.966718+00:00'
 breadth: ''
 skill: basic
@@ -65,12 +65,23 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, after R
 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): still valid after RDR01, but do NOT blindly reuse the original occurrence counts (83x 'brutus', 64x '/mnt/vault', etc.) quoted in DR01 -- those are stale. Recount against current HEAD before scoping the mechanical pass. Execution order stays #12 (unchanged), last.
 
+RE-COUNTED 2026-09-10 against current HEAD, per the deeper review's explicit instruction not to reuse DR01's stale 83/64/39/15 baseline: those old counts included historical docs/evidence/**and docs/planning/** material that RDR01's closure audit already confirmed is correctly out-of-scope (immutable historical record, not live reference). Isolated to the actual in-scope corpus (docs/reference/**, matching RDR01's own classification boundary): raw 'brutus' appears 8 times across only 3 files (ENVIRONMENT.md, build/DEPENDENCIES.md, tooling/TOOL_DISPOSITION.md) -- not 83 across 40. Reviewed every one individually against DR01's own rule (replace when the sentence is about the ROLE; keep when genuinely about that one machine's identity/evidence):
+- ENVIRONMENT.md:52 `ssh brutus '...'` -- NOT a violation, it is the deliberate BEFORE half of an existing before/after pair immediately followed by the correct `$BC_HOST` form; left as-is.
+- ENVIRONMENT.md:90, TOOL_DISPOSITION.md:149/155 -- literal script filenames (tmp/brutus-probe.sh, tmp/h36-brutus-pipeline.sh) containing 'brutus' as part of their actual name; not host-identity prose, left as-is.
+- DEPENDENCIES.md:56, TOOL_DISPOSITION.md:552 -- genuine historical/evidence statements ('RD87 built and executed a working client on Brutus') recording what was actually done on that real machine; kept per DR01's own exception for identity-specific statements.
+- DEPENDENCIES.md:21 `/home/audumla/rocm-shim` -- FIXED to `$BC_HOME/rocm-shim`.
+- DEPENDENCIES.md:33 'For Brutus, also verify...' -- FIXED to 'On the build server, also verify...' (procedure prose about the role, not the specific machine).
+No hardcoded IPs or /mnt/vault occurrences found in docs/reference/** at all (the earlier full-docs/ IP count of 171 was almost entirely timestamps like '0.00.374.130' and legitimate '127.0.0.1' loopback references in testing/TEST.md -- not host-identity leaks). Ports (8080/18400) not found hardcoded in docs/reference/** either.
+
+VERDICT: this item's ACTUAL residual scope, after RDR01 correctly narrowed what counts as live reference, was two small fixes -- both applied. DR01's original 'mechanical pass over 40 files' framing no longer matches current reality; the corpus shrank because RDR01's own classification work (and general doc hygiene since DR01 was filed 2026-09-06) already did most of what this item was for. CLOSED AS SATISFIED -- no further mechanical pass needed against docs/reference/**.
+
 ## Change Log
 
 - 2026-09-09T10:47:27.966718+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:28.103636+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.745382+00:00 (updated-by): Updated: section:ledger-events
@@ -82,3 +93,7 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): still valid a
 - 2026-09-10T00:14:42.190357+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:10.765467+00:00 (updated-by): Updated: section:notes
 - 2026-09-10T00:27:39.763516+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T00:32:24.971580+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:32:25.300266+00:00 (state-transition): State: pending → completed
+- chg_20260910_003230_closed-the-host-facts-to-envir_3349
+- 2026-09-10T00:32:30.672761+00:00 (updated-by): Updated: section:ledger-events
