@@ -241,6 +241,31 @@ def test_unsupported_text_classified_unsupported(tmp_path: Path):
     assert result.classification == rq.UNSUPPORTED
 
 
+def test_benign_symmetric_memory_line_alone_not_unsupported(tmp_path: Path):
+    # Real hardware evidence (2026-09-02, xtx_xtx homogeneous control, RCCL
+    # 2.30.4): this exact line is a routine capability-negotiation trace
+    # printed on every run, successful or not -- must not misclassify a
+    # clean run as UNSUPPORTED.
+    result = _run_fake(tmp_path, """
+        import sys
+        print("Symmetric memory is not supported. cuMemEnable 0, ...")
+        sys.exit(0)
+    """)
+    assert result.classification != rq.UNSUPPORTED
+
+
+def test_benign_symmetric_memory_line_does_not_mask_real_unsupported(tmp_path: Path):
+    # The benign substring must be neutralized on its own line only --
+    # a genuine unsupported marker on the SAME line must still classify
+    # as UNSUPPORTED (guards against over-broad whole-line suppression).
+    result = _run_fake(tmp_path, """
+        import sys
+        print("Symmetric memory is not supported. RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
+        sys.exit(1)
+    """)
+    assert result.classification == rq.UNSUPPORTED
+
+
 def test_missing_binary_classified_harness_failure(tmp_path: Path):
     case = _fake_case()
     result = rq.run_case(
