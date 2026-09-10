@@ -1,6 +1,6 @@
 ---
 id: RDR01
-order: 0
+order: 11
 plan: run-docs-reference
 state: pending
 created-at: '2026-09-09T10:47:23.952788+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: intermediate
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P3
 ---
 
 # Reference corpus classification and campaign-artifact relocation
@@ -65,6 +65,8 @@ Supersedes: DO01
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-docs-reference-do01
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): AUDIT FIRST — current residual scope is genuinely unknown from the stub/change-log alone; do not assume either "already done" or "fully open." Before touching any files, check: (1) does every current docs/reference/** entry have exactly one classification + an authoritative owner/location; (2) for every THA27/HI36 corpus file, does git grep identify every tool/test/fixture/doc consumer, with exactly one copy authoritative; (3) are any supposedly-movable files consumed by deterministic tests via path/filename/content hash; (4) has PA18 already dispositioned all patch-owned material (avoid duplicate ownership); (5) are generated reports clearly generated/reproducible rather than hand-maintained authorities; (6) do archive/campaign-artifact entries remain immutable historical evidence rather than live reference; (7) do indexes/links/fixtures point only to current authorities with link/reference tests green; (8) map DO01's Aug-Sep change-log entries back to each ORIGINAL acceptance requirement rather than treating activity/change-count itself as evidence of completion. If classification + THA27/HI36 authority map + link/fixture validation are already complete, close as satisfied rather than performing gratuitous relocation. RDR01's classification should become RDR02's scope filter, so RDR02's mechanical portability pass never rewrites immutable historical evidence. Execution order: ranked #11, before RDR02.
+
 ## Change Log
 
 - 2026-09-09T10:47:23.952788+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-docs-reference-do01
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.739805+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:54.982925+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:09.565275+00:00 (updated-by): Updated: order=11, priority='P3'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.905787+00:00 (updated-by): Updated: section:ledger-events

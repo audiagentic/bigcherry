@@ -1,6 +1,6 @@
 ---
 id: RGC01
-order: 0
+order: 1
 plan: run-gpu-collectives
 state: pending
 created-at: '2026-09-09T10:47:57.287397+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: intermediate
 created-by: capability-rebaseline-v3
 work: S
-priority: null
+priority: P1
 ---
 
 # Pin MTP head tensors to a single GPU via --override-tensor to avoid cross-GPU AllReduce on the draft path
@@ -65,6 +65,8 @@ Supersedes: GP12
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-gpu-collectives-gp12
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO for experiment only — sufficient design for the next -sm layer / -sm none classification runs (hold model/build/override/workload fixed; outcome is crash-scope classification first, perf only for configs that load). NOT sufficient authority to start graph-builder patching yet. If -ot "nextn\..*=..." works under -sm layer/-sm none but specifically fails under production -sm tensor, spin off a NEW patching-owned item for independently-placeable NEXTN/MTP graph construction rather than silently enlarging this item's scope. Execution order: ranked #1 (cheap, high-value, unblocks whether MTP work stays CLI-level or needs real patch work).
+
 ## Change Log
 
 - 2026-09-09T10:47:57.287397+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-gpu-collectives-gp12
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.775870+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:26.075341+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:02.602666+00:00 (updated-by): Updated: order=1, priority='P1'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.916836+00:00 (updated-by): Updated: section:ledger-events

@@ -1,6 +1,6 @@
 ---
 id: RRVP01
-order: 0
+order: 6
 plan: run-rocm-vulkan-provider
 state: pending
 created-at: '2026-09-09T10:59:42.884350+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: intermediate
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # Campaign and CLI stack propagation
@@ -65,6 +65,8 @@ Supersedes: RO02
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-rocm-vulkan-provider-ro02
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once absence semantics are made explicit. --lane may keep its 3-part external CLI syntax, but resolved INTERNAL lane identity must always include stack. Stack selection comes from an explicit request field or an explicit configured default — never inferred from PATH/env or dynamically "pick what exists." Unknown/missing/ambiguous/backend-mismatched stack must hard-fail before any work starts (RV126's prior confirmation that RO01 stays authoritative and this stays tooling/workflow-only, not a second stack-selection path, still holds). Execution order: ranked #6 — establish canonical stack selection through campaign intent/receipts before anything downstream hashes or probes it.
+
 ## Change Log
 
 - 2026-09-09T10:59:42.884350+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-rocm-vulkan-provider-ro02
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.515849+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:38.803173+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:06.058689+00:00 (updated-by): Updated: order=6, priority='P2'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.959982+00:00 (updated-by): Updated: section:ledger-events
