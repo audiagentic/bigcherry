@@ -84,6 +84,14 @@ Process improvement made as part of this run: added PIN_BUMP.md step 8, requirin
 
 STATUS: local bump complete and PASS. Brutus tree convergence and real-hardware post-bump validation remain open as separate follow-on work, tracked under this same item.
 
+REPEATABILITY PROOF 2026-09-10: ran a SECOND real bump, b10883 -> b10884, specifically to prove the procedure is repeatable rather than a one-off. b10884 appeared on upstream between the two bumps (live git ls-remote check found it: 434ddbbc0e30522e897670681e503b797c12b7c1, previously the untagged master commit GPT had already identified as a CI-only sanitizer fix one commit ahead of b10883). Verified via git diff --stat: the real b10883..b10884 diff touches only .github/workflows/*.yml (2 files, CI-only, zero source changes).
+
+pin-bump correctly re-stopped at COVERAGE_INCOMPLETE with the exact same 11 patch IDs as before -- NOT because anything newly broke, but because disposition.py's known_broken mechanism is exact-revision-bound BY DESIGN (per bigcherry-patch-lifecycle doctrine: 'A disposition is NOT a standing waiver... changing revision or patch digest invalidates the disposition automatically'). Confirmed all 11 patches' implementation_digests were byte-identical to the b10883 run before re-recording each disposition at the new target SHA with the same underlying reasoning (same upstream PR citations, cross-referenced back to the b10883 dispositions). `pin-bump --resume` PASSED cleanly. Post-bump patch-lint clean.
+
+This is the concrete repeatability proof: same tooling, same real patch conflicts, a genuinely different real edge case (disposition staleness triggered by a near-no-op upstream commit) handled correctly by the SAME documented procedure with zero manual code intervention -- only the disposition re-recording step, which is itself the exact mechanism PIN_BUMP.md and the patch-lifecycle doctrine specify for this situation.
+
+FINAL STATE: config/recipes.toml pinned=b10884 (moved twice this session: b10705->b10883->b10884). Both bumps PASS. Brutus tree convergence remains genuinely separate follow-on work per PIN_BUMP.md's own 'work on ONE tree at a time... do not bump H: and the build server in the same window' instruction, and is additionally blocked on unrelated uncommitted work sitting in Brutus's configured campaign tree that requires its own decision before touching.
+
 ## Change Log
 
 - 2026-09-10T04:51:00.813381+00:00 (created-by): Created by agent
@@ -94,3 +102,6 @@ STATUS: local bump complete and PASS. Brutus tree convergence and real-hardware 
 - chg_20260910_053053_successfully-bumped-the-llama_6506
 - 2026-09-10T05:30:53.720115+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T05:31:54.933096+00:00 (updated-by): Updated: section:notes
+- chg_20260910_053852_ran-a-second-real-pin-bump-b_8197
+- 2026-09-10T05:38:52.614139+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T05:39:02.500714+00:00 (updated-by): Updated: section:notes
