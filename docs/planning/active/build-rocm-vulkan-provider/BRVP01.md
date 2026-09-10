@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/build-rocm-vulkan-provider-ro04.md
+PAUSED (Vulkan) -- when resumed: tools/bigcherry/build/builds.py, campaign/build.py, campaign/lane.py, campaign/workers.py, core/provenance.py (extend existing BuildPlan/build_plan_id/effective_build_id machinery, per repo-validated review -- do not introduce a second build-identity system).
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RO03.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+PAUSED (Vulkan). Same source/build/platform with rocm-7-14 vs rocm-10 -> different build_plan_id; provider-bit swap -> identity changes; path/device-order/visibility-only changes -> identity UNCHANGED; cache reuse REJECTS mismatch/incomplete attestation -- no warn-and-reuse, a rejected cache may rebuild but never be treated as reusable.
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.524607+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:44.258237+00:00 (updated-by): Updated: section:notes
@@ -91,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T00:25:57.108601+00:00 (updated-by): Updated: section:notes
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.875846+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:52.861830+00:00 (updated-by): Updated: section:files, section:validation

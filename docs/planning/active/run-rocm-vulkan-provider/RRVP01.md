@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-rocm-vulkan-provider-ro02.md
+PAUSED (Vulkan) -- when resumed: tools/bigcherry/campaign/planner.py (CampaignRequest/CampaignLane/lane_id), tools/bigcherry/core/config.py (CampaignLaneSelector.stack), tools/bigcherry/cli/build.py, tuning/workflow.py, profiling/workflow.py (callers), tools/tests/campaign/test_campaign_planner.py, tools/tests/campaign/test_campaign_resolution.py.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RO01.
-
-Active dependencies: Frozen dependencies: RO01.
-
-Reference handling: Rewrite forward references (1); preserve historical references (1) on predecessor.
+PAUSED (Vulkan). Doctrine correction (deeper review): do NOT preserve legacy 3-part --lane syntax as a compatibility acceptance requirement -- migrate requests/CLI/lane identity/callers to explicit stack selection in one pass, no shim. Missing/ambiguous/unknown/backend-mismatched stack fails before any work starts. Same source/build/platform with different stacks must yield distinct lane identity.
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.515849+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:38.803173+00:00 (updated-by): Updated: section:notes
@@ -91,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T00:25:54.282915+00:00 (updated-by): Updated: section:notes
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.819568+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:47.677492+00:00 (updated-by): Updated: section:files, section:validation

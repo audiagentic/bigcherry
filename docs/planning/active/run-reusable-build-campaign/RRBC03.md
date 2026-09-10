@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-reusable-build-campaign-re37.md
+tools/bigcherry/environment_inputs.py (new); tools/tests/test_environment_inputs.py (new). Reuses tools/bigcherry/tuning/journal.py (canonical/checksum), tools/bigcherry/experiment/bundle.py (SECRET/file_hash/safe_environment). NOT yet wired into: tools/bigcherry/campaign/build.py, campaign/lane.py, core/artifacts.py, core/provenance.py (RE37's original integration points) -- typed model landed, campaign-plumbing integration remains open.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD87.
-
-Active dependencies: Frozen dependencies: RD87
-
-Reference handling: RD88.
+DONE 2026-09-10: 11 unit tests in tools/tests/test_environment_inputs.py, all passing -- determinism, secret-value rejection, artifact logical-role-not-path keying, scope partitioning (build/run/both/evidence_only), duplicate-name rejection, reversible-action restored-outcome enforcement, order-independent canonical document. Full offline suite (tools/tests/) confirmed green after this change. Remaining: no real hipBLASLt/rocblas-gemm-tune file has been captured through this model yet (HI173 integration is the real acceptance test, not yet run).
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ IMPLEMENTED 2026-09-10: tools/bigcherry/environment_inputs.py -- EnvironmentInpu
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.497934+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:29.804131+00:00 (updated-by): Updated: section:notes
@@ -90,3 +85,4 @@ IMPLEMENTED 2026-09-10: tools/bigcherry/environment_inputs.py -- EnvironmentInpu
 - 2026-09-10T00:19:20.773386+00:00 (updated-by): Updated: section:notes
 - chg_20260910_001944_added-a-typed-environment-inpu_2998
 - 2026-09-10T00:19:44.473629+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:20.419417+00:00 (updated-by): Updated: section:files, section:validation

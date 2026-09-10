@@ -37,11 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-hip-autotune-hi133.md
+tools/bigcherry/profiling/perf.py (new, per HI133's settled design); tools/bigcherry/profiling/workflow.py (wire into existing interleaved-control stage sequence, per HI132).
 
 ## Validation
 
-Deferred by explicit capability constraint: no usable perf event source on Brutus. When resumed, require a perf.py integration test plus a real-target CPU call-graph capture with provenance; absence of perf data is not a pass.
+Freeze first: configured direct perf binary path (/usr/lib/linux-tools-6.8.0-139/perf on Brutus, per HI133's verified finding) + explicit sudo policy; normalized perf artifact schema (symbol,dso,self_samples,inclusive_samples,self_pct,inclusive_pct,estimated_on_cpu_ms) with tool-version/exact-command capture; a failed sampling pass is failed diagnostic evidence, never silently replaced by the control run. `perf record -F 199 -e cpu-clock:u --call-graph dwarf,16384`, `--profile-passes 2` checking pass-to-pass call-stack reproducibility (not throughput power), never run simultaneously with rocprofv3. Validate against a concrete, currently-unresolved CPU-attribution question -- NOT THA16 (retracted, see notes above), pick and justify one when implementing.
 
 ## Effort & Risk
 
@@ -86,3 +86,4 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10, checked agains
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.306685+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:18:48.452755+00:00 (updated-by): Updated: order=10, section:notes
+- 2026-09-10T00:27:44.126726+00:00 (updated-by): Updated: section:files, section:validation

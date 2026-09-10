@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-rocm-vulkan-provider-ro03.md
+PAUSED (Vulkan) -- when resumed: tools/bigcherry/backend/{__init__,stack,hip_probe,vulkan_probe}.py (new), plus renamed RuntimeCapabilitySnapshot per the naming-collision correction above.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RO02.
-
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+PAUSED (Vulkan). Probe twice -> byte-identical JSON/fingerprint; provider-binary swap -> fingerprint changes; device-visibility/ordinal reordering -> fingerprint UNCHANGED; missing/unknown/unsupported states round-trip explicitly (never inferred).
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.519983+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:41.712289+00:00 (updated-by): Updated: section:notes
@@ -91,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T00:25:55.832992+00:00 (updated-by): Updated: section:notes
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.841918+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:50.126765+00:00 (updated-by): Updated: section:files, section:validation

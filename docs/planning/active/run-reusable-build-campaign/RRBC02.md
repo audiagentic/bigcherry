@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-reusable-build-campaign-re33.md
+PAUSED (Vulkan) -- when resumed: config/recipes.toml, tools/bigcherry/config.py, recipes.py, campaign_build.py, provenance.py, builds.py -- backend-aware schema migration separating HIP compile-target identity (platform.targets stays for HIP) from Vulkan platform/device constraints (new fields), consuming RRVP02's resolved_stack_fingerprint/capability_snapshot_digest rather than inventing a parallel identity.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC01,EC05,EC15.
-
-Active dependencies: Frozen dependencies: RE30,RE31,RE32.
-
-Reference handling: Rewrite forward references (4); preserve historical references (3) on predecessor.
+PAUSED (Vulkan). Vulkan platform config carries vendor/device-class/ICD/API constraints only -- no probed identity duplicated here. Raw device ordinal stays out of reusable identity. HIP compile-target semantics on platform.targets must remain unaffected by the migration.
 
 ## Effort & Risk
 
@@ -78,7 +74,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.480385+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:51.075586+00:00 (updated-by): Updated: section:notes
@@ -91,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T00:25:59.745578+00:00 (updated-by): Updated: section:notes
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.866232+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:59.179507+00:00 (updated-by): Updated: section:files, section:validation

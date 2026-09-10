@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-qualification-workflow-qu02.md
+tools/bigcherry/telemetry.py (new); tools/bigcherry/experiment/bundle.py (run_managed() wired); tools/tests/test_telemetry.py (new). NOT yet wired into: campaign/workers.py, profiling/ harnesses (RE37/QU02's original broader Files list) -- landed the primitive plus its first real integration point.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+DONE 2026-09-10: 5 new unit tests (stderr-only routing, secret-argv non-leakage in default mode, show_argv opt-in, completion-line-on-exception) all passing. All 10 pre-existing tools/tests/campaign/test_experiment_bundle.py tests still pass with telemetry active, confirmed CLI machine-readable stdout unaffected (managed-run-cli test's own JSON output verified unchanged). Remaining: campaign workers / profiling harness integration not yet done.
 
 ## Effort & Risk
 
@@ -90,3 +86,4 @@ IMPLEMENTED 2026-09-10: tools/bigcherry/telemetry.py -- console_telemetry() cont
 - chg_20260910_002058_added-standard-launchprogress_1968
 - 2026-09-10T00:20:58.995673+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:21:03.268966+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:27:23.974515+00:00 (updated-by): Updated: section:files, section:validation

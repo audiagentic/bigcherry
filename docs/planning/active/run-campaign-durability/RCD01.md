@@ -37,15 +37,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-campaign-durability-cd01.md
+tools/bigcherry/campaign_graph.py, tools/bigcherry/campaign.py, tools/bigcherry/resources.py (per RE11's original Files list -- verify these still exist under current tools/bigcherry/campaign/ layout before reactivating; project has reorganized since RE11 was filed 2026-08-15).
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI82,RE11,RE15,RE23,RE25,docs/planning/active/reusable-build-campaign/RE11.md.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (6) on predecessor.
+DORMANT -- not evaluated this pass. When reactivated: NEGATIVE/FALSIFICATION per RE11 -- kill the process mid-run, then resume; a tampered intent is rejected; output artifacts are re-byte-verified before reuse; a stage left 'running' by the crash does not surface as success; two concurrent processes cannot corrupt each other's run state; changing any field of the operation spec changes stage identity.
 
 ## Effort & Risk
 
@@ -74,8 +70,6 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED P
 
 ## Ledger-events
 
-
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.731253+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:59.576114+00:00 (updated-by): Updated: section:notes
@@ -83,3 +77,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED P
 - 2026-09-10T00:08:28.898595+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.162086+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:27:35.811237+00:00 (updated-by): Updated: section:files, section:validation

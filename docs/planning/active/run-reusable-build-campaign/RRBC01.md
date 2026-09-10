@@ -27,9 +27,7 @@ The frozen reusable-build-campaign item remains active with implementation/accep
 
 Capability owner: run
 
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+DEPENDENCY CORRECTION (deeper repo-validated dev-gpt review, 2026-09-10): this item's stub Validation field originally said 'Frozen dependencies: RE30', which is BACKWARDS -- RE30 itself depends on RE31 (this item's own predecessor), not the other way around. RE30's active successor is TRBC01 (tuning-reusable-build-campaign plan), which is a downstream CONSUMER of this item's work (Vulkan-as-tunable-build-line evaluation), not a prerequisite of it. RRBC01 has no real upstream dependency among the run-*/build-*/tuning-* successor items and should be treated as foundational (matches its #4/#5 position early in the execution order).
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/run-reusable-build-campaign-re31.md
+tools/bigcherry/campaign/lane.py (smoke_environment_for_backend, implemented); tools/bigcherry/cli/build.py, re14_real_run.py, re15_acceptance_run.py (migrated callers); tools/tests/campaign/test_campaign_lane.py (7 tests). NOT yet done: per-lane backend derivation in campaign/planner.py's plan() -- cmd_build_new still computes one request-global environment from a single CLI flag.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RE30.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+DONE 2026-09-10: 7 table tests (2 pre-existing HIP + 5 new: Vulkan, None, empty-error, unknown-backend-error, PATH-preserved) passing; full 19-test campaign-lane suite green. Device-safety mapping (Vulkan<->HIP enumeration order) NOT re-derived on real hardware -- still required before this item can be marked complete, per its own notes.
 
 ## Effort & Risk
 
@@ -92,3 +86,4 @@ NOT yet done (explicitly deferred, matches RE31's own critique of the current co
 - chg_20260910_002307_made-builds-device-visibility_2119
 - 2026-09-10T00:23:07.296800+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:23:14.440795+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:27:29.287862+00:00 (updated-by): Updated: section:detailed_solution, section:files, section:validation
