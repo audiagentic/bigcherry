@@ -15,23 +15,15 @@ priority: null
 
 ## Description
 
-Evaluate grouped CK/GEMM/MoE representation only after a fail-closed schema decision separates runtime candidate-family identity from Experiment Contract taxonomy.
+Resolve the grouped-GEMM/MoE schema boundary and, only if required, add a versioned GROUPED_GEMM runtime family with provider, persistence, replay, and correctness semantics.
 
 ## Steps
 
-1. Inventory grouped-GEMM/MoE semantic domains and existing EC16/EC19 representation.
-2. Decide whether a versioned runtime family is required; do not create one for taxonomy alone.
-3. If required, specify atomic schema/runtime/DB/manifest/replay changes and unavailable states.
-4. Keep transformed-weight and split-K implementation in TRVP09; consume shared stack identity and provider discovery.
-5. Validate conflict, persistence, replay, and provider semantics.
+1. Inventory grouped-GEMM/MoE semantic domains and current EC16/EC19 Experiment Contract representations. 2. Make a fail-closed decision whether runtime candidate-family identity cannot be represented by the existing families; do not create a family for taxonomy alone. 3. If required, update family enums, schema, registry, database CHECK constraints, coverage/reporting, manifests, and runtime/replay contracts atomically, including unavailable states and migration compatibility. 4. Keep split-K/preshuffle/transformed-weight ownership in TRVP09 and consume shared provider/stack identity. 5. Enumerate CK grouped candidates and validate expert routing, permutations, empty groups, workspace, provider identity, fallback, graph/inference behavior, independent oracle, and promotion/replay.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Grouped CK/MoE must not be smuggled through dense BLAS eligibility, which rejects MUL_MAT_ID. First record the EC16/EC19 versus runtime-family decision. If a true runtime family is needed, add GROUPED_GEMM across enums, schema, registry, DB constraints, coverage/reporting, manifests, serialization, and replay as one compatibility-aware change; represent unsupported/unavailable states explicitly. Provider discovery stays here, while transformed-weight and split-K work stays in TRVP09. Candidate identity uses shared exact CK/provider/build identity.
 
 ## Code Samples & Guidance
 
@@ -39,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-rocm-vulkan-provider-ro15.md
+hip-autotune-types.h; tuning schema/catalog/registry; DB constraints and migrations; coverage/report tooling; grouped provider/runtime route; manifest/replay contracts; correctness and schema compatibility tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
-
-Active dependencies: TRVP08 (RO13 successor). TRVP09 and TRVP10 are siblings; TRVP10 does not depend on TRVP09.
-
-Reference handling: Rewrite forward references; preserve historical references on predecessor.
+Inventory and decision artifact names every grouped domain and current EC16/EC19 representation. If a new family is introduced, verify all schema/DB/registry/report/replay contracts agree and old data migrates safely. Run grouped correctness with empty groups/experts, all tokens to one expert, skew, repeated experts, non-contiguous inputs, padded shapes, metadata ordering/maxima, deterministic seeds, independent oracle, tolerances, workspace, fallback, and graph/inference checks. Confirm dense candidates cannot accept grouped work and grouped identity cannot replay across providers/builds.
 
 ## Effort & Risk
 
@@ -59,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-A fail-closed decision records whether GROUPED_GEMM needs a runtime family; no provider implementation starts before identity/taxonomy boundary is resolved; TRVP09 remains a sibling, not a prerequisite.
+A fail-closed runtime-family decision is recorded before implementation. No grouped CK/MoE work enters dense BLAS. If GROUPED_GEMM is required, all schema, DB, registry, manifest, coverage, and replay changes land atomically with unavailable states and compatibility tests. Grouped routing/correctness/identity/fallback/promotion gates pass; TRVP09 remains a sibling.
 
 ## Notes
 
@@ -70,6 +58,8 @@ Successor key: tuning-rocm-vulkan-provider-ro15
 Supersedes: RO15
 Inherited constraint: RV117 and RV119 — decide runtime-family versus Experiment Contract ownership first; TRVP09/TRVP10 are sibling successors after RO13.
 Migration: capability-rebaseline-v3-2026-09
+
+Supersedes RO15. Preserve RV117/RV119: resolve runtime-family versus EC ownership first, and do not make TRVP09 a prerequisite. Preserve patch 1225 and ledger governance.
 
 ## Change Log
 
@@ -89,3 +79,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T01:02:55.006663+00:00 (updated-by): Updated: section:validation
 - chg_20260910_010342_successor-plans-now-have-expli_8662
 - 2026-09-10T01:03:42.557928+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:45:11.796331+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_034539_repaired-trvp10-12-with-the-co_1657
+- 2026-09-10T03:45:39.433583+00:00 (updated-by): Updated: section:ledger-events
