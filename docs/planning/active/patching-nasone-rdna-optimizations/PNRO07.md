@@ -15,21 +15,19 @@ priority: P0
 
 ## Description
 
-RD89 reconciliation records NRO08 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Apply and qualify the wave32-native TOP_K follow-up only as a causal increment on PNRO06.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PNRO06 post-image and verify source pre-image before applying 7f1d25f7...
+- Port explicit 32-lane shuffle/fallback structure, two-half 64-bin scans, and ITEMS_PER_THREAD tuning separately where possible.
+- Run PNRO06 correctness fixtures unchanged plus 31/32/33 and 63/64/65 boundaries, ties, NaNs and block/item coverage edges.
+- Profile LDS traffic, occupancy, VGPRs, pass count and duration; compare PNRO06-only control with PNRO06+PNRO07 on identical real signatures.
+- Retain selector/fallback when wave32 assumptions are not proven or benefit is subset-only; do not extrapolate wave size.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Wave32 reductions must use explicit width/masks and keep shared-memory fallback. Two-half radix scans must validate threshold selection around the 32/64 boundary. Separate semantic and items/thread changes for attribution.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro08.md
+patches/1257_nro08_topk_wave32/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}; PNRO06 fixtures; wave32 boundary tests; profiler/campaign evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Exact PNRO06 outputs; 31/32/33 and 63/64/65 boundaries; high/low radix thresholds; block/item rounding; ties/NaNs; supported activation only; PNRO06 vs PNRO07 causal performance and non-target model regression.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependency-aware composition; exact routing semantics; preserve fallback; no unsupported wave-size assumptions.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Outputs match PNRO06/reference; wave32 activates only where supported; real gfx1100 signatures show measurable kernel/LDS/pass benefit; no >1% non-target regression; otherwise retain PNRO06 fallback.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro08
 - 2026-09-09T11:58:01.081564+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.725809+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:42:47.187884+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024304_three-nasone-successors-now-pr_2691
+- 2026-09-10T02:43:04.870594+00:00 (updated-by): Updated: section:ledger-events
