@@ -1,6 +1,6 @@
 ---
 id: RRVP03
-order: 0
+order: 9
 plan: run-rocm-vulkan-provider
 state: pending
 created-at: '2026-09-09T10:59:58.197113+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P2
 ---
 
 # Runtime stack attestation
@@ -65,6 +65,8 @@ Supersedes: RO05
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-rocm-vulkan-provider-ro05
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): PROTOCOL FREEZE REQUIRED then implement. Boundary (RV129: expected identity from RRVP02, expected build identity from BRVP01, this item owns actual-LOADED attestation only) is correct; three details must be nailed down before coding: (1) how actual loaded-module identity is determined — use loaded-module evidence/provider APIs directly, never infer from PATH/ROCM_PATH/LD_LIBRARY_PATH/ICD selectors; (2) provider-exercising warmup/finalization semantics for lazily-loaded libraries — an init-only report cannot satisfy attestation for a lazy provider, must refresh after untimed warmup and before first accepted sample; (3) atomic/versioned report lifecycle. Every evidence-accepting stage must hard-fail before accepting samples on expected/actual mismatch — no warn-and-continue. Execution order: ranked #9, after BRVP01.
+
 ## Change Log
 
 - 2026-09-09T10:59:58.197113+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-rocm-vulkan-provider-ro05
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:47.119856+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:08.151672+00:00 (updated-by): Updated: order=9, priority='P2'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.968864+00:00 (updated-by): Updated: section:ledger-events

@@ -1,6 +1,6 @@
 ---
 id: RDR02
-order: 0
+order: 12
 plan: run-docs-reference
 state: pending
 created-at: '2026-09-09T10:47:27.966718+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: basic
 created-by: capability-rebaseline-v3
 work: M
-priority: P2
+priority: P3
 ---
 
 # Migrate docs from hardcoded host facts to environment roles
@@ -65,6 +65,8 @@ Supersedes: DR01
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-docs-reference-dr01
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, after RDR01. Design (the 5-step prose/path migration already specified) is sufficient as-is. Add one explicit rule not previously stated: migration applies to MAINTAINED/LIVE docs only, not to immutable historical evidence/archive/campaign artifacts whose literal host/path/IP values are themselves provenance — those may legitimately keep Brutus-identity statements. No backward-compat aliases for old hardcoded paths (project doctrine: migrate up fully). Execution order: ranked #12, last — depends on RDR01 first establishing which files are live vs immutable evidence, so the mechanical pass doesn't touch the wrong set.
+
 ## Change Log
 
 - 2026-09-09T10:47:27.966718+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-docs-reference-dr01
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.745382+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:57.299621+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:10.126436+00:00 (updated-by): Updated: order=12, priority='P3'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.911837+00:00 (updated-by): Updated: section:ledger-events

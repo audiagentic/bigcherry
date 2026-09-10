@@ -65,6 +65,8 @@ Supersedes: CD01
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-campaign-durability-cd01
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED PARK / do not implement now. Predecessor design is sufficient as a dormant reference; add one explicit activation trigger not previously stated: reactivate only after repeated REAL campaign failures that actually require cross-process/host recovery (not preemptively). Before any eventual implementation, resolve cross-host fencing/ownership (how a new host proves the former executor cannot publish while cross-host lock-breaking remains forbidden). Preserve the RE11 design's operation-spec vs execution-hash split, immutable result records, byte verification, and interrupted-never-equals-success rule. Execution order: explicitly NOT ranked in the 1-12 sequence — stays dormant.
+
 ## Change Log
 
 - 2026-09-09T10:47:10.667188+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,9 @@ Successor key: run-campaign-durability-cd01
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.731253+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:59.576114+00:00 (updated-by): Updated: section:notes
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.898595+00:00 (updated-by): Updated: section:ledger-events

@@ -1,6 +1,6 @@
 ---
 id: RHA01
-order: 0
+order: 3
 plan: run-hip-autotune
 state: pending
 created-at: '2026-09-09T10:48:34.167227+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: intermediate
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # profile-campaign CPU call-graph capability via perf (enhancement, deferred -- perf currently non-functional on Brutus)
@@ -63,6 +63,8 @@ Successor key: run-hip-autotune-hi133
 
 Evaluated against the completed RHA04/RHA10/RHA11 production admission path. This is an optional profiling enhancement, not a prerequisite for the parity/admission mission. Brutus currently exposes no usable perf events for the requested CPU call graph; implementing perf.py integration without a functioning target would produce no decision-grade evidence. Leave pending/deferred until a perf-capable host or kernel configuration is available; do not reopen the completed GPU admission items.
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO after a tiny contract freeze — design is settled enough to implement now. Freeze before coding: (1) configured direct perf binary path + explicit sudo policy (per this item's own prior verified findings: /usr/lib/linux-tools-6.8.0-139/perf with sudo); (2) normalized perf artifact schema including tool-version/command capture; (3) a failed sampling pass is failed diagnostic evidence, never silently replaced by the control run. Keep perf and rocprofv3 mutually exclusive per the existing design. THA16 (dispatch-resolver-overhead question) confirmed as the right first real validation target. Execution order: ranked #3.
+
 ## Change Log
 
 - 2026-09-09T10:48:34.167227+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +78,7 @@ Evaluated against the completed RHA04/RHA10/RHA11 production admission path. Thi
 - 2026-09-09T21:02:58.731913+00:00 (updated-by): Updated: section:validation, section:notes
 - chg_20260909_210309_the-only-remaining-active-plan_2565
 - 2026-09-09T21:03:09.280906+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:32.121390+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:04.125826+00:00 (updated-by): Updated: order=3, priority='P2'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.930653+00:00 (updated-by): Updated: section:ledger-events

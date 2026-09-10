@@ -1,6 +1,6 @@
 ---
 id: RQW01
-order: 0
+order: 4
 plan: run-qualification-workflow
 state: pending
 created-at: '2026-09-09T10:53:26.474843+00:00'
@@ -8,7 +8,7 @@ breadth: ''
 skill: intermediate
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # Add standard console telemetry to CLI harness launches
@@ -65,6 +65,8 @@ Supersedes: QU02
 Migration: capability-rebaseline-v3-2026-09
 Successor key: run-qualification-workflow-qu02
 
+External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, design sufficient as-is. Build one shared telemetry primitive with typed launch/progress/completion events, stderr-only. Default summaries expose argument NAMES/counts/digests, never prompt/credential VALUES. Tests must prove machine-readable stdout is unchanged and secrets/raw prompts are absent from telemetry output. Confirmed reusable by RHA01 and future workflows without becoming a hard acceptance dependency of them. Execution order: ranked #4 (small cross-cutting win, land before more bespoke per-tool output accumulates).
+
 ## Change Log
 
 - 2026-09-09T10:53:26.474843+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,5 +74,10 @@ Successor key: run-qualification-workflow-qu02
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.125469+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:07:34.165791+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:08:04.650246+00:00 (updated-by): Updated: order=4, priority='P2'
+- chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
+- 2026-09-10T00:08:28.936166+00:00 (updated-by): Updated: section:ledger-events
