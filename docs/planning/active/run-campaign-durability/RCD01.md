@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Deferred RE11 durability protocol remains explicitly retained; cross-process run resume is unfinished.
+Keep generalized cross-process/host durable campaign restart dormant until real routine failures justify it; retain only the minimum rehydration protocol scope.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Do not preemptively build. On reactivation, define typed campaign intent/run, complete operation specs, dependency-output bindings, persisted success descriptors and hash validation; rehydrate from empty process state and resume without rerunning completed stages; exclude distributed locks/host reclamation and generic workflow engine.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+HI82 already provides campaign-specific workdir identity/artifact validation/resume. Residual scope is reusable-build scheduler-grade restart across process/host interruption, triggered by evidence of routine multi-hour failures.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-tools/bigcherry/campaign_graph.py, tools/bigcherry/campaign.py, tools/bigcherry/resources.py (per RE11's original Files list -- verify these still exist under current tools/bigcherry/campaign/ layout before reactivating; project has reorganized since RE11 was filed 2026-08-15).
+Reusable campaign run/intent schema, ArtifactStore rehydration integration, resume validator/tests and interruption fixtures when activated.
 
 ## Validation
 
-DORMANT -- not evaluated this pass. When reactivated: NEGATIVE/FALSIFICATION per RE11 -- kill the process mid-run, then resume; a tampered intent is rejected; output artifacts are re-byte-verified before reuse; a stage left 'running' by the crash does not surface as success; two concurrent processes cannot corrupt each other's run state; changing any field of the operation spec changes stage identity.
+Deferred until activation: persisted intent and stage outputs reproduce after process/host interruption without re-running completed stages.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Remain dormant until real campaign failures justify it; when activated, resume is hash-validated, deterministic, and minimum-protocol only.
 
 ## Notes
 
@@ -84,3 +78,6 @@ RE-ASSESSED 2026-09-10 against the WHOLE project run history (per user directive
 - 2026-09-10T02:55:52.402689+00:00 (updated-by): Updated: section:notes
 - chg_20260910_025604_confirmed-via-a-fresh-whole-pr_7836
 - 2026-09-10T02:56:04.074592+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:38:05.874609+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033817_repaired-vulkan-provenance-and_3027
+- 2026-09-10T03:38:17.204821+00:00 (updated-by): Updated: section:ledger-events

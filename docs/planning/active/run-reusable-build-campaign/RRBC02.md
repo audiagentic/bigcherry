@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-Real Vulkan device and ICD identity replacement remains planned.
+Replace Vulkan platform targets placeholder with normalized runtime device/ICD identity and capability provenance, distinct from compile-target identity.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Define vendor/device class/UUID policy, ICD/driver/API/features/capability/shader digest; include in platform/build/runtime provenance; keep targets legacy-only or remove semantic use; add descriptor/mismatch tests; require driver/ICD and shader-cache state on Vulkan Experiment Contracts and never pool corpora across ICDs.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+HIP AMDGPU_TARGETS remains compile identity. Vulkan identity is runtime capability/provenance; ordinals/BDF/paths are evidence only. RRBC02 is single identity authority consumed by campaigns/contracts/replay.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-PAUSED (Vulkan) -- when resumed: config/recipes.toml, tools/bigcherry/config.py, recipes.py, campaign_build.py, provenance.py, builds.py -- backend-aware schema migration separating HIP compile-target identity (platform.targets stays for HIP) from Vulkan platform/device constraints (new fields), consuming RRVP02's resolved_stack_fingerprint/capability_snapshot_digest rather than inventing a parallel identity.
+recipes/config/provenance/build/campaign identity and Vulkan tests.
 
 ## Validation
 
-PAUSED (Vulkan). Vulkan platform config carries vendor/device-class/ICD/API constraints only -- no probed identity duplicated here. Raw device ordinal stays out of reusable identity. HIP compile-target semantics on platform.targets must remain unaffected by the migration.
+Config parsing, stable identity under device reorder, missing ICD/API rejection, HIP compatibility, real stock artifact identity/capability digest, per-ICD evidence separation.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Vulkan artifacts carry normalized stable runtime identity and capability digest; driver/ICD is mandatory provenance; no ordinal-based reusable identity or cross-ICD pooling.
 
 ## Notes
 
@@ -74,6 +68,7 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.480385+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:51.075586+00:00 (updated-by): Updated: section:notes
@@ -87,3 +82,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.866232+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:59.179507+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T03:37:58.055369+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033817_repaired-vulkan-provenance-and_3027
+- 2026-09-10T03:38:17.192078+00:00 (updated-by): Updated: section:ledger-events
