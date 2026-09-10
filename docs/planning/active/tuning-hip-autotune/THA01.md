@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Nested C++ writer correction never landed; schema and live-HIP validation remain.
+Complete and hardware-validate nested runtime transform provenance emission, then retire the transitional flat adapter only in a separately gated follow-up.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Verify runtime build descriptor hash matches offline manifest; update hip-autotune-tuner.cu flush to nested runtime schema with schema version, hardware architecture, build descriptor hash and evidence references; add nested fixture ingestion/analyze_gap provenance_complete tests; compile/run real Brutus tuning and ingest artifact; keep flat adapter until real nested artifacts exist, then remove in separate item with fail-closed old-header rejection.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Make runtime transform records intrinsically complete so DB identity resolution is unnecessary. Preserve current flat adapter as transitional and never alter tuning timing/behavior. Use the same manifest inputs and hash algorithm as offline cache; bind by source revision, manifest hash and build descriptor hash.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi104.md
+vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-tuner.cu; transform_records.py; transform_loader.py; tuning tests; Brutus artifact.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI97.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (1) on predecessor.
+Hash parity fixture; nested runtime-shaped ingest/analyze with provenance_complete=True; full offline suite; real nested Brutus artifact ingest without DB identity resolution.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Complete only after C++ writer emits valid nested records, offline and real hardware artifacts ingest with complete provenance, and flat-adapter retirement is separately planned and gated.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi104
 - 2026-09-09T11:58:00.789339+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.264375+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:24:37.131528+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032455_repaired-two-tuning-successors_8434
+- 2026-09-10T03:24:55.035392+00:00 (updated-by): Updated: section:ledger-events
