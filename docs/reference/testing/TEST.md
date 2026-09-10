@@ -360,9 +360,13 @@ Without `--dry-run`, the configured worker is run serially for each resolved
 cell, with canonical `ROCR_VISIBLE_DEVICES`/`HIP_VISIBLE_DEVICES` and the
 immutable descriptor in `BIGCHERRY_RUNTIME_CELL_JSON`. The output directory
 contains `resolved-matrix.json`, atomic `status.json`, and sanitized,
-append-only `events.jsonl`; these files are sufficient for polling a UI at this
-stage. Worker stdout/stderr are retained as bounded child results, and a
+append-only `events.jsonl`, plus an atomic `summary.json` retaining each child
+result; these files are sufficient for polling a UI at this stage. Worker
+stdout/stderr are retained as bounded child results, and a
 non-zero worker exit fails the matrix without upgrading its verdict.
+Before each cell, the adapter rechecks the configuration/registry/recipe
+digests and any available binary identity captured during preflight; drift
+fails the matrix before that cell is launched.
 
 Use `workload.server_bench` for the maintained `bench/run_bench.py
 --bench-type server-bench` boundary. Use `workload.delegate_argv` when an
