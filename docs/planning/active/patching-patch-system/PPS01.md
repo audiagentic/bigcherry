@@ -15,55 +15,47 @@ priority: null
 
 ## Description
 
-Software work is largely complete; overlay, hardware, cross-machine, and final acceptance gates remain.
+Complete PA04's remaining local-CI, overlay, isolated campaign, cross-machine, pin-staleness, regression, documentation, and Definition-of-Done acceptance gates. RS12-RS18 software/package implementation and PA18/RV85 flat-patch disposition remain complete; do not resurrect the superseded flat production patch.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Resolve ownership/disposition for the two TR14.LAB_UNCLASSIFIED tools and the eight overlay.vendor_sync differences without overwriting shared vendor files. 2. Rerun check --quick, check --default, and check --full; add deterministic overlay.vendor_sync tests if absent. 3. Audit/reuse valid §72/§73/§74/§79/§80 evidence. 4. Run isolated §76 PRBE11/RD13 and §77 RD08 subject/control hardware campaigns with declared correctness, smoke, trace-marker, workload, VDR, benchmark, and experiment-contract artifacts. 5. Complete applicable §79 second-machine/architecture and §80 pin-bump staleness evidence. 6. Run §82 regression, §83 documentation/link audit, and §88 Definition-of-Done at the same accepted revision. 7. Assemble immutable acceptance matrix, record exact revision/environment/command/exit/artifact/hash/disposition, and link ledger events to PPS01.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Use PATCH_REFACTOR_RUNBOOK §§39-51, 56-58, 65-88 as reconciled by PA18/RV85. Keep package-only policy: historical flat/simple §75 is superseded/N/A and packaged 1002 is not an automatic replacement. Hardware validation remains explicit through patch-validate/campaign tooling; bigcherry check must not compile ROCm or launch campaigns. Shared overlay synchronization follows the owning workflow and is fail-closed.
 
 ## Code Samples & Guidance
 
-
+Required gates: check --quick, check --default, check --full; isolated PRBE11/RD13 and RD08 campaign manifests; §79 cross-machine record; §80 pin-staleness record; §82 regression; §83 links/docs; §88 DoD acceptance matrix. Every record must identify MCP-proven revision, environment, command, exit code, artifact/hash, and PASS/FAIL/BLOCKED.
 
 ## Files
 
-successor-specs/patching-patch-system-pa04.md
+tools/bigcherry/check.py; tools/bigcherry/__main__.py; tools/bigcherry/paths.py; tools/tests/test_check.py; patches/_template/**; patches/1205_rd12_paired_mmvq_dual_output/**; patches/1206_rd13_mul_mat_add_view_fusion/**; patches/1204_rd08_q6k_mmvq_vdr2/**; docs/reference/patches/PATCH_SYSTEM.md; PATCH_AUTHORING.md; PATCH_VALIDATION.md; PATCH_REFACTOR_RUNBOOK.md; campaign manifests/evidence and immutable acceptance matrix.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: PA02,PA03,PA05,PA18,RD08,RD19.
-
-Active dependencies: Frozen dependencies: PA02,PA03,PA18.
-
-Reference handling: Rewrite forward references (3); preserve historical references (6) on predecessor.
+Software baseline: retained RS12-RS18 tests and package validation (historically 2042 passed, 1 skipped, 66 subtests; rerun at accepted revision). Overlay: vendor sync clean and check --default/full exit 0. Hardware: isolated subject/control evidence for RD12/RD13/RD08, with correctness/smoke/trace/VDR/benchmark contracts. Cross-machine and pin-staleness gates: §79/§80 as applicable. Final §82/§83/§88 all green at one revision.
 
 ## Effort & Risk
 
-
+L; software is largely complete, but shared-overlay ownership and hardware/cross-machine provenance are high-risk. Never convert unavailable or disputed evidence to PASS and never stage unrelated vendor files.
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+PATCH_REFACTOR_RUNBOOK.md §§39-51,56-58,65-88; package-only PA18/RV85 policy; fail-closed local CI and campaign evidence contracts; ag-ledger provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Complete only when quick/default/full checks are green, overlay ownership is resolved, isolated RD12/RD13/RD08 evidence and applicable cross-machine/pin-staleness gates exist, §82/§83/§88 are green, and the immutable acceptance matrix has exact provenance. Unavailable hardware or unsynchronized overlays remain BLOCKED, never PASS.
 
 ## Notes
 
 Supersedes: PA04
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-patch-system-pa04
+
+Supersedes PA04. Current known blockers from predecessor: TR14.LAB_UNCLASSIFIED for two lab tools, overlay.vendor_sync differences, and missing isolated §76/§77 plus applicable §79/§80 evidence. Preserve the historical flat-patch N/A disposition and keep PA05/RD19 separate.
 
 ## Change Log
 
@@ -78,3 +70,6 @@ Successor key: patching-patch-system-pa04
 - 2026-09-09T12:09:33.788649+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.786694+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:14:41.509859+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- chg_20260910_031453_repaired-pps01-so-the-active-p_1890
+- 2026-09-10T03:14:53.220244+00:00 (updated-by): Updated: section:ledger-events
