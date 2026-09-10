@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-BLAS-family search, implementation, promotion, and hipBLASLt follow-on remain.
+Authorize and build BLAS-family candidate search over rocBLAS/Tensile vendor solutions using existing promotion/correctness/behavioral gates.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Implement separate vendor_selection identity layer; ingest rocblas-gemm-tune CSV/override artifacts; restrict to signatures with explicit solution APIs and observe effective backend; resolve/apply exact solution with vendor artifact identity invalidation; measure workspace source/lifetime; run seam parity and full MTP graph lifecycle then positive E2E promotion gates.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Candidate is vendor algorithm/solution selection, not hand-written kernel. Keep HI17 seven-field semantic BLAS plan separate from selector identity. Fail closed on artifact mismatch and use standard HI67/HI143/HTR01 positive performance promotion; HI17 parity is seam-only.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi173.md
+BLAS selector/schema/runtime seam; rocblas-gemm-tune ingestion; workspace telemetry; candidate tests and Brutus evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI17,HI67,HTR01,RD73,RD87,docs/planning/completed/rdna-boost-experiments/RD87.md.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (5); preserve historical references (6) on predecessor.
+Specified tests, real rocblas-gemm-tune on RD87 shapes, native seam parity, artifact invalidation, MTP capture/replay and per-solution determinism/workspace, positive E2E.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Promote only exact vendor-artifact-compatible solutions with correctness, graph lifecycle, workspace and positive E2E benefit; no interpolation or bare version reuse.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi173
 - 2026-09-09T11:58:00.929508+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.498621+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:30:17.383046+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033046_repaired-four-more-tuning-succ_3978
+- 2026-09-10T03:30:47.014113+00:00 (updated-by): Updated: section:ledger-events

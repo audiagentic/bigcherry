@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-RoPE candidate search is explicitly not started and is blocked on HI174 proving the non-matmul dispatch/candidate pattern.
+After THA18 establishes a viable pilot pattern, authorize RoPE candidate search only if real internal variants exist.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Wait for THA18's decomposition-versus-authoring result; map rope.cu variants and stable resolved-config identity; use THA18 hook and HI67/HI143/HTR01 evidence pipeline; add candidate search/correctness/behavioral gating only for proven variants, otherwise file a separate kernel-authoring item.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+RoPE remains blocked until the foundational non-matmul hook and identity extension are accepted. Do not invent variants or silently widen scope.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi175.md
+rope.cu dispatch, candidate schema/registry, correctness/behavioral evidence and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI67,HTR01.
-
-Active dependencies: Frozen dependencies: HI174.
-
-Reference handling: Rewrite forward references (9); preserve historical references (2) on predecessor.
+Native/candidate correctness and real record telemetry; candidate performance only after foundation and positive gate.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No implementation before THA18; promote only real variants with exact identity and full correctness/behavioral/E2E evidence, otherwise retain native.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi175
 - 2026-09-09T11:58:00.939547+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.514013+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:30:32.574143+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033046_repaired-four-more-tuning-succ_3978
+- 2026-09-10T03:30:47.035703+00:00 (updated-by): Updated: section:ledger-events
