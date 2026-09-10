@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Converged null-result evidence exists, but RD89 records an explicit unfinished ncols=5/6 eligibility follow-up for the dominant MTP shape.
+Resolve the MMVQ dequant-float decode candidate with correct activation-shape coverage. Existing ncols=1 evidence is correctness-positive but null; dominant MTP ncols=5/6 remains the open eligibility follow-up.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Reconcile patch 1241 summary versus hardware evidence and record one authoritative activation/disposition.
+- Confirm F32xQ dequant path arithmetic and template plumbing for ncols 1..8; preserve forced-candidate and ncols>8 fallback.
+- Run test-backend-ops tolerance correctness for n=1 and widened small-ncols, fused-gate/GLU, forced-candidate and non-target cases.
+- Use rocprof/resource checks and interleaved paired A/B on production Qwen3.8-27B MTP where ncols=5/6 dominates; do not rely on the noisy first sequential round.
+- Promote only on statistically supported E2E gain with quality/non-inferiority guard; otherwise retain the validated null/shape-mismatch disposition.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd33.md
+patch 1241 f32-act MMVQ; ncols eligibility/instantiations; test-backend-ops and GLU fixtures; forced/non-target controls; rocprof/resource evidence; interleaved production A/B and authoritative disposition.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI13,HI67,RD29,RD87.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (5); preserve historical references (4) on predecessor.
+ncols 1..8 tolerance; path execution; forced/ncols>8 fallback; GLU; kernel resources; Qwen3.8-27B MTP ncols 5/6 interleaved A/B; quality and TG guard.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (5); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Shape-aware eligibility; tolerance not bit identity; interleaved evidence; no noisy sequential conclusion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Correctness holds for widened gate and unsupported paths remain native; only a real interleaved production gain promotes. If effect remains null, close as validated null with dominant-shape coverage documented; do not claim the earlier n=1 result covered MTP.
 
 ## Notes
 
@@ -73,10 +71,12 @@ Successor key: patching-rdna-boost-experiments-rd33
 ## Ledger-events
 
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.244503+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_143622_cleaned-up-the-tooling-registr_2452
 - 2026-09-09T14:36:22.965188+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.975621+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:55:15.763944+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025542_rdna-successors-prbe2628-now_5552
+- 2026-09-10T02:55:42.877445+00:00 (updated-by): Updated: section:ledger-events
