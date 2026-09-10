@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Qualify dedicated scratch for concurrent graph branches after AMD-STREAM-001, with safety before memory optimization.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require RD39/AMD-STREAM-001 graph-concurrency prerequisite and identify shared-expert diamond/independent branches.
+- Separate temporary allocation lifetimes so concurrently executing branches cannot alias; preserve sequential allocator behavior.
+- Stress varying shapes and repeated concurrent graph runs against sequential control; check bit-identical outputs and memory corruption.
+- Measure metadata/VRAM overhead and allocation cost only after safety passes.
+- Keep optimizations scoped to proven concurrent branches and fail safely otherwise.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd41.md
+Graph optimizer/concurrent buffer allocator; branch lifetime/scratch ownership; shared-expert diamond fixtures; sequential/concurrent stress and memory diagnostics.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD39.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Concurrent vs sequential output identity; varying shapes; repeated runs; corruption/race detection; memory overhead/allocation cost; fallback.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Correctness prerequisite; isolate branch lifetimes; optimize memory only after safety.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No scratch aliasing or output corruption under stress; memory cost is bounded; optimization is not promoted before safety proof.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd41
 - 2026-09-09T11:58:01.276223+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.024905+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:58:24.631748+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025843_amd-stream-successors-prbe323_9820
+- 2026-09-10T02:58:43.103972+00:00 (updated-by): Updated: section:ledger-events

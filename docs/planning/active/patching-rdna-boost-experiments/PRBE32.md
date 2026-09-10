@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Qualify per-(device,stream) BLAS handles after the AMD-STREAM-001 prerequisite, preserving ordinary single-stream behavior.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require and identify the RD39/AMD-STREAM-001 context prerequisite.
+- Implement independent handle/stream/workspace state per device+stream in the HIP BLAS compatibility context.
+- Exercise two auxiliary streams with repeated concurrent GEMMs and compare deterministic outputs/race/error behavior to single-stream control.
+- Measure single-stream overhead and actual overlap; do not promote if ordinary path slows materially.
+- Record handle lifetime/destruction and fail-safe behavior under repeated context creation.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd40.md
+HIP/cuBLAS compatibility backend context; per-device/stream handle registry; stream/workspace lifetime tests; concurrent GEMM fixtures; overlap/overhead evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD39.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Single-stream control; 1/2 aux streams; thousands of iterations; output parity; race/error detection; handle lifecycle; overlap and ordinary overhead.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Concurrency correctness before performance; explicit handle ownership; no ordinary-path penalty.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Concurrent GEMMs are correct and independent with no leaks/races; any promotion requires useful overlap without material single-stream regression; otherwise retain as prerequisite evidence.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd40
 - 2026-09-09T11:58:01.272314+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.017739+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:58:17.807856+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025843_amd-stream-successors-prbe323_9820
+- 2026-09-10T02:58:43.089488+00:00 (updated-by): Updated: section:ledger-events
