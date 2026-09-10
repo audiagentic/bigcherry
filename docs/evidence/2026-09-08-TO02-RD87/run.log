@@ -1,0 +1,10 @@
+hipBLASLt version: 100401
+hipBLASLt git version: 2668040765
+Query device success: there are 1 devices. (Target device ID is 0)
+Device ID 0 : AMD Radeon RX 7900 XTX gfx1100 (PCI Chip ID: (not available))
+with 25.8 GB memory, max. SCLK 2371 MHz, max. MCLK 1249 MHz, compute capability 11.0
+maxGridDimX 2147483647, sharedMemPerBlock 65.5 KB, maxThreadsPerBlock 1024, warpSize 32
+
+Is supported 1 / Total solutions: 1
+[0]:transA,transB,grouped_gemm,batch_count,m,n,k,alpha,lda,stride_a,beta,ldb,stride_b,ldc,stride_c,ldd,stride_d,a_type,b_type,c_type,d_type,compute_type,scaleA,scaleB,scaleC,scaleD,amaxD,swizzle_a,swizzle_b,activation_type,bias_vector,bias_type,aux_type,rotating_buffer,flush,use_gpu_timer,hipblaslt-Gflops,hipblaslt-GB/s,us
+    N,N,0,1,1024,1024,1024,1,1024,1048576,0,1024,1048576,1024,1048576,1024,1048576,f16_r,f16_r,f16_r,f16_r,f32_r,0,0,0,0,0,0,0,none,0,f16_r,f16_r,0,0,0,22392.9,61.0988,95.9

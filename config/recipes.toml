@@ -24,6 +24,43 @@ patches = [
 required-state = "validated"
 
 [patch-set.validated-enhancements]
+# The production/release enhancement set: performance patches that have
+# ACTUALLY qualified, composed on top of `framework` by [source.bigcherry].
+# This is what separates a release build from bigcherry-native.
+#
+# Entry bar is deliberately higher than `required-state = "validated"` alone.
+# STATE is a durable lifecycle label; it does NOT mean current qualifying
+# evidence exists. Of the 17 patches currently marked validated, 14 hold only
+# the one-time HI83 legacy grandfather waiver and 2 report missing-or-stale.
+# A patch belongs here when `patch-verify-evidence` reports
+# validated-evidence against the ACTIVE pin -- otherwise a release build
+# would ship on the strength of a label rather than a measurement.
+#
+# Adding one is a deliberate act with a real consequence: production runs it.
+# Record what qualified it and what the evidence does NOT cover.
+#
+# DEMOTED 2026-09-09 (HI162, docs/planning/completed/hip-autotune/HI162.md):
+# 1233_rd73_stable_graph_cache_key (RD73) was promoted 2026-09-05 on
+# +1.8886% end-to-end, 95% CI [1.4754, 2.3523], 6 pre-registered sessions,
+# 0.0% control regression, bit-identical output (contract
+# RD73-STABLE-GRAPH-CACHE-KEY, hash 8827bd6d) -- that original promotion
+# evidence is PRESERVED, not erased; it remains in
+# patches/1233_rd73_stable_graph_cache_key/evidence/validation.json and the
+# ledger. A later balanced, order-rotated, composition-verified 4-arm A/B on
+# the SAME contract workload (MTP speculative decode, tierL-qwen27b-q8,
+# gfx1100x2, -sm tensor) instead measured RD73 as a REGRESSION: tg128 -1.96%,
+# tg512 -1.24%, pp1024 -0.69%, pp4096 -0.60%, pp2048 -0.59%, with COMPLETE
+# statistical separation at n=8/arm (Mann-Whitney p=0.00016 per metric,
+# tg128 ranges [99.21-100.51] vs [101.58-102.31] never touching). This
+# regression finding specifically SURVIVED a later methodology correction
+# (GP11, commit 1d73e7a2) that withdrew two OTHER conclusions from the same
+# investigation (framework overhead, replay-build cost) as artifacts of an
+# unrelated dispatch-mode flag defect -- RD73's mechanism (the CUDA graph
+# cache key) is not gated behind that flag, so RD73 remained the only real
+# difference between the compared arms. Both claims cannot be true; the
+# later, better-controlled measurement is trusted over the earlier one.
+# patch.toml state set validated -> rejected accordingly. Demotion is this
+# deliberate act, not an automatic consequence of either benchmark.
 patches = []
 required-state = "validated"
 
@@ -38,6 +75,9 @@ required-state = "validated"
 # dependency chain (e.g. rd44-only below, which pulls in its two
 # prerequisites) is not "two patches together" in that sense -- it is one
 # patch's own declared closure, expanded by expand_composition().
+[experiment.hi166-ordered-trace-only]
+patches = ["0850_ordered_speculative_trace"]
+
 [experiment.rd19-only]
 patches = ["1200_rd19_single_gpu_meta_bypass"]
 
@@ -101,6 +141,9 @@ patches = ["1235_rd09_q81_activation_cache_foundation"]
 
 [experiment.rd30-only]
 patches = ["1237_rd30_moe_mmq_compact_grid"]
+
+[experiment.gp11-fusion-ncols]
+patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
 
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
@@ -198,6 +241,17 @@ options = { GGML_HIP_AUTOTUNE = "ON" }
 variant-set = "inventory"
 needs = []
 
+# HI168: production-shaped framework baseline. The historical control build
+# above includes the tuner and implicit diagnostics; preserve its identity and
+# provide a distinct build instead of silently changing old campaign meaning.
+# Run this in MODE=native. For native-vs-winners isolation, use the SAME replay
+# binary in both modes, not this inventory-only candidate catalog.
+[build.native]
+description = "Production dispatch, native catalog, no tuner or diagnostics; run in native mode."
+options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "OFF", GGML_HIP_AUTOTUNE = "OFF" }
+variant-set = "inventory"
+needs = []
+
 [build.record]
 description = "Discovers which signatures a workload actually issues."
 options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_AUTOTUNE_RECORD = "ON" }
@@ -227,7 +281,7 @@ needs = ["inventory", "promoted-winners"]
 # what ships.
 [build.replay-diagnostic]
 description = "Replay with per-dispatch hit-log attribution -- validation only, not what ships."
-options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON" }
+options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
 variant-set = "replay-full"
 needs = ["inventory", "promoted-winners"]
 
@@ -245,7 +299,7 @@ needs = []
 [platform.linux-multi]
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
-options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON" }
+options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON" }
 c-compiler = "/opt/rocm/llvm/bin/clang"
 cxx-compiler = "/opt/rocm/llvm/bin/clang++"
 
@@ -308,6 +362,98 @@ lanes = [
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
+# HI168: reusable server build matrix, not a benchmark execution schedule.
+# Select architecture(s) with --arch; inventory/winners must belong to the
+# model/topology campaign. Native/replay modes share the production replay
+# binary during measurement. Record/tune/diagnostic lanes are observations,
+# never substitutes for an instrumentation-free throughput baseline.
+# audit/full-max remains opt-in: compiling every candidate is unnecessary for
+# an end-to-end workload-specific comparison.
+[campaign.e2e-build-matrix]
+lanes = [
+  { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
+]
+
+# VA26: the repeatable patch-qualification matrix. `standard` above varies the
+# BUILD variant (the autotune record/tune/replay pipeline); this one varies the
+# patch COMPOSITION, which is the axis a patch is judged on.
+#
+# Four arms, and each answers a question the others cannot:
+#
+#   llama-native        upstream, unpatched -- what everything is ultimately
+#                       measured against
+#   bc-native           framework only -- the control for the isolated
+#                       comparison, and (vs llama-native) the cost of our own
+#                       instrumentation
+#   bc-native + patch   the patch's ISOLATED effect
+#   bc-release + patch  the patch IN SITU, on top of everything already
+#                       shipped -- because a patch worth +2% alone can be
+#                       neutral or negative once composed with the rest
+#
+# Run it across architectures with --arch, e.g.
+#
+#   python -m bigcherry build --profile patch-qualification --arch gfx1100
+#
+# Note lanes 2 and 3 share one source/build/platform and differ ONLY by the
+# experiment. That is the point of the pair, and it is why CampaignLaneSelector
+# carries a per-lane experiment: a request-level --experiment applies to every
+# lane and so cannot express a profile whose baselines must stay unpatched.
+#
+# The experiment named here is the patch under test. Swap it per patch; the
+# rest of the profile is invariant.
+# Every lane builds llama-SERVER, not llama-bench. That is not a preference:
+# llama-bench cannot measure what production runs -- it has no speculative/MTP
+# flags at all, and on the real 27B/dual-GPU -sm tensor config it fails
+# outright (OOM under contention; a hard parse error for --fit, which it does
+# not register). The documented measurement path (TEST.md, "Server benchmark
+# (Brutus bench runner)") drives a running llama-server via
+# bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
+#
+# ARM 4 AND ALREADY-SHIPPED PATCHES. Arm 4 is the release composition WITH the
+# patch. How it is written depends on whether the patch has already shipped:
+#
+#   not yet shipped -> source = "bigcherry", experiment = "<patch>-only"
+#   already shipped -> source = "bigcherry" alone; the release set already
+#                      contains it, and adding the experiment is rejected with
+#                      "experiment repeats a base patch module" (correctly).
+#
+# RD73 is already in validated-enhancements, so arm 4 carries no experiment
+# here. Note the consequence honestly: RD73 is currently the ONLY promoted
+# enhancement, so arm 4's composition is IDENTICAL to arm 3's (framework +
+# RD73). That makes arm 4 a consistency check -- it proves the release set
+# really does contain the patch -- rather than an independent data point. Once
+# a second enhancement ships, the two diverge and arm 4 starts measuring
+# genuine composition effects.
+#
+# `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
+# it, so a lane left at the default publishes -- and therefore builds -- only
+# llama-bench, and produces no server to measure at all.
+[campaign.patch-qualification]
+lanes = [
+  { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
+  # so comparing it against llama-native measures our instrumentation, not our
+  # optimisations. replay is "applies stored winners without measuring -- what
+  # ships", so replay-vs-llama-native is the contrast that actually answers
+  # "what does a user get". tune is included because replay's winners are
+  # meaningless without the run that produced them.
+  #
+  # These carry `needs` (tune: inventory; replay: inventory + promoted-winners),
+  # so a bare `build --profile patch-qualification` cannot satisfy them --
+  # supply --inventory/--winners, or select the control-only lanes explicitly.
+  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
+]
+
 # HI130: named server-args + tuner-context bundles for `bigcherry
 # tune-campaign --runtime-profile <name>`, so a real production launch
 # profile (matching the dual-xtx-27b bench-harness baseline) is
@@ -336,7 +482,14 @@ behavioral-classes = ["mtp-speculative"]
 # corpus edition this profile validates against -- publishing a new
 # edition (a new fixtures/corpus-<edition>.toml file) never requires a
 # code change, only bumping this string.
-behavioral-corpus-edition = "qwen38-production-v1"
+# GP11 2026-09-06: bumped v1 -> v2. v1 had ONE vector at n_predict=128, so
+# the gate certified a single generation length. Campaign 27e45ae32ec4 passed
+# v1 validation, and a balanced A/B on its published cache then measured
+# tg512 -8.98% and tg2048 -5.54% (complete separation) with MTP acceptance
+# 0.94734 -> 0.86391, bit-identical across all 16 cells. tg128 -- the one
+# length v1 tests -- was the only metric that improved. v2 keeps the HI141
+# vector unchanged and adds 512 and 2048.
+behavioral-corpus-edition = "qwen38-production-v2"
 
 [runtime-profile.hi134-layer-split-control]
 # HI134 step 5: negative control for the __amd_rocclr_copyBufferRectAligned
@@ -397,6 +550,21 @@ server-args = ["--flash-attn", "on"]
 tune-context = 4096
 production-context = 8192
 min-free-vram-bytes-per-device = 1073741824  # 1GiB headroom
+# GP11 2026-09-06: this profile had NO behavioural gate. Three campaigns on
+# 2026-09-06 promoted 12, 11 and 8 winners on gfx1201/gfx1030 through it with
+# no output-divergence check at all -- while the one profile that did declare
+# a gate was the single Q8_0 lane, not the Q6_K lanes that carry most
+# contracts (models.toml: tierA-qwen4b-q6k is "the default lane for most
+# contracts (12 of 19)").
+#
+# "dense-decode" rather than "mtp-speculative" because this profile's
+# server-args carry no --spec-type, so no drafts are generated. The gate then
+# compares generated token IDs alone, which is the correct check here: its
+# HARD FAIL state -- model-visible output changed -- applies whether or not
+# speculation is involved. Only the acceptance-trace comparison is absent,
+# and that has no meaning without drafts.
+behavioral-classes = ["dense-decode"]
+behavioral-corpus-edition = "single-card-dense-v1"
 
 # --- RE48: tree registry (pin-status --all-remotes / --complete) ----------------
 # local is implicit (the tree running the command); it is listed so the

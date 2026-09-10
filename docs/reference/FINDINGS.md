@@ -92,7 +92,7 @@ q6_K-quantized input, J-tile size 112, thread configuration t256/o2/i128,
 shared-memory q6_k path.
 
 **Internal context:** found via a live end-to-end build/tune/replay pipeline
-test on brutus. Diagnostic tooling built to pin this down (an opt-in
+test on the build server. Diagnostic tooling built to pin this down (an opt-in
 `GGML_HIP_TUNE_TRACE_ATTEMPTS` journal event, see HI48) is now part of the
 tuner permanently. Tracked for investigation and fix at
 `docs/planning/active/external-fixes/EX02.md`. Quarantined from tuning
@@ -143,7 +143,7 @@ Both are genuine platform/behavior facts worth knowing even though they are
 not this bug's cause — the HIP no-op macro in particular is real and could
 matter for a different, larger config that does exceed the default limit.
 
-**Current status, 2026-08-14:** two exact-model Brutus runs with the quarantine
+**Current status, 2026-08-14:** two exact-model build-server runs with the quarantine
 disabled only through the opt-in diagnostic switch completed cleanly. The
 candidate was measured 39 times in each run and the Q6_K MMQ family 526 times
 in the full sweep; the second run was under `rocgdb`, with no device fault.
@@ -162,7 +162,7 @@ capture the actual faulting instruction/address inside the MMA vec_dot kernel
 sweep, quarantine change, or speculative kernel fix is justified by clean
 non-reproduction runs.
 
-The mechanism was validated on the rebuilt Brutus vendor overlay with one real
+The mechanism was validated on the rebuilt build-server vendor overlay with one real
 Qwen3.5-0.8B completion: 1,395/1,395 durable attempt events contained a
 parsed object-valued `signature_json`, including the complete extents, strides,
 types, flags, operation, and refinement fields. The journal SHA-256 is

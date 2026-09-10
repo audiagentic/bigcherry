@@ -9,8 +9,8 @@ materialize actually runs), and RE14's own step ordering only requires
 sequential execution to be correct, not parallel or graph-unified. And
 deliberately built over canonical v2 identities (config.Source/Build/
 Platform names, config.CampaignLaneSelector/CampaignProfile from RE19) --
-not legacy recipes/groups/states, which recipes.py's own _load_v2_compat
-adapter documents as transitional compatibility concepts only.
+not legacy recipes/groups/states, which were transitional compatibility
+concepts only.
 
 The run_id collision trap flagged during RE17's design review: every
 run-scoped filesystem/ArtifactStore path inside campaign_execution.py and
@@ -114,6 +114,13 @@ class CampaignRequest:
 
 def lane_id(lane: CampaignLane) -> str:
     base = f"{lane.source_name}:{lane.build_name}:{lane.platform_name}"
+    if lane.experiment is not None:
+        # A patch-qualification profile deliberately holds the SAME
+        # source/build/platform twice -- once plain as the baseline, once
+        # carrying the patch under test. Without the experiment in the id
+        # those two collide, and run_campaign()'s duplicate-lane check would
+        # silently drop the arm that gives the comparison its meaning.
+        base = f"{base}+{lane.experiment}"
     if lane.contract_id is None:
         return base
     # Contract-expanded lanes (EC03) legitimately share one source/build/
@@ -195,6 +202,10 @@ def plan(
         # every caller rather than leaving it a fail-open edge in the
         # production planner.
         selector_id = f"{selector.source}:{selector.build}:{selector.platform}"
+        if selector.experiment is not None:
+            # Must match lane_id()'s composition exactly, or a legitimate
+            # patched/unpatched pair on one source is rejected as a duplicate.
+            selector_id = f"{selector_id}+{selector.experiment}"
         if selector_id in seen_lane_ids:
             raise CampaignPlannerError(f"duplicate lane {selector_id!r} in request")
         seen_lane_ids.add(selector_id)
@@ -205,10 +216,19 @@ def plan(
             architectures=_resolve_architectures(request.architectures, platform_cfg),
             inputs=request.inputs_by_build.get(selector.build, ()),
             validation=request.validation_by_build.get(selector.build),
-            binary_relative_path=request.binary_relative_path,
+            # A lane's own binary wins: it decides which cmake target is built,
+            # so a profile that needs llama-server must be able to say so
+            # without the caller remembering --binary-relative-path.
+            binary_relative_path=selector.binary or request.binary_relative_path,
             c_compiler=request.c_compiler, cxx_compiler=request.cxx_compiler,
             smoke_environment=request.smoke_environment,
-            experiment=request.experiment,
+            # A lane's OWN experiment wins over the request-level one. A
+            # patch-qualification profile needs arms that carry the patch and
+            # arms that deliberately do not (the baselines they are measured
+            # against), which a single request-level --experiment applying to
+            # every lane cannot express. Request-level remains the default for
+            # "isolate one patch across the standard lane set".
+            experiment=selector.experiment or request.experiment,
         ))
     return tuple(lanes)
 

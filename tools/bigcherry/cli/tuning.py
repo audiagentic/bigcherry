@@ -76,6 +76,82 @@ def cmd_replay_inspect(args: Namespace) -> int:
     return report["_exit"]
 
 
+def cmd_execution_audit(args: Namespace) -> int:
+    """Per-promoted-key execution audit. See tuning.execution_audit's module
+    docstring for why an exact cache hit is not evidence of tuned execution,
+    and why per-key production GPU time is not fabricated here."""
+    from ..tuning import execution_audit
+
+    try:
+        rows = execution_audit.build_audit(
+            promoted_path=args.promoted,
+            hit_log_path=args.hit_log,
+            e2e_verdicts_path=args.e2e_verdicts,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"execution-audit: {exc}", file=sys.stderr)
+        return 1
+
+    execution_audit.write_audit(rows, args.output)
+    summary = execution_audit.summarize(rows)
+
+    if args.json:
+        print(json.dumps({
+            "total_promoted": summary.total,
+            "by_classification": summary.by_classification,
+            "unproven_fraction": summary.unproven_fraction,
+            "output": str(args.output),
+        }, indent=2, sort_keys=True))
+    else:
+        print(f"execution-audit: {summary.total} promoted key(s) audited")
+        for cls, n in sorted(summary.by_classification.items()):
+            print(f"  {cls:16} {n}")
+        print(f"  unproven (NOT_EXECUTED + FALLBACK) fraction: {summary.unproven_fraction:.1%}")
+        print(f"  wrote: {args.output}")
+        if not args.hit_log:
+            print(
+                "  WARNING: no --hit-log supplied. Every row is NOT_EXECUTED "
+                "by construction -- this audits the ABSENCE of evidence, not "
+                "a real finding. Run a GGML_HIP_REPLAY_DIAGNOSTICS build with "
+                "GGML_HIP_DISPATCH_HIT_LOG set to get real launch evidence.",
+                file=sys.stderr,
+            )
+    return 0
+
+
+def cmd_tuning_rollup(args: Namespace) -> int:
+    """Consolidated rollup across multiple tune campaigns. See
+    tuning.rollup's module docstring for why this is a derived view over the
+    per-campaign artifacts, not a merged replay cache."""
+    from ..tuning import rollup
+
+    try:
+        rows = rollup.build_rollup(args.campaign_dirs)
+    except (OSError, ValueError, json.JSONDecodeError, KeyError) as exc:
+        print(f"tuning-rollup: {exc}", file=sys.stderr)
+        return 1
+
+    rollup.write_rollup(rows, args.output)
+    summary = rollup.summarize(rows)
+
+    if args.json:
+        print(json.dumps({
+            "total": summary.total,
+            "by_campaign": summary.by_campaign,
+            "by_classification": summary.by_classification,
+            "output": str(args.output),
+        }, indent=2, sort_keys=True))
+    else:
+        print(f"tuning-rollup: {summary.total} promoted key(s) across {len(summary.by_campaign)} campaign(s)")
+        for campaign, n in sorted(summary.by_campaign.items()):
+            print(f"  {campaign:32} {n}")
+        print("  by execution-audit classification (None = no audit run yet):")
+        for cls, n in sorted(summary.by_classification.items()):
+            print(f"    {cls:20} {n}")
+        print(f"  wrote: {args.output}")
+    return 0
+
+
 def cmd_project_replay(args: Namespace) -> int:
     """HI121 M4: project a measurements JSONL to the rows a specific target
     HIP build can safely reuse, using its own verified producer-capability
@@ -462,7 +538,66 @@ def cmd_tune_campaign(args: Namespace) -> int:
         print(f"promoted: {receipt.promoted_before_evidence} -> {receipt.promoted_after_evidence}")
         if receipt.replay_coverage is not None:
             print(f"replay coverage: {receipt.replay_coverage}")
-        print(
-            f"receipt: {context.work_root / 'tune-campaigns' / receipt.campaign_run_id / 'tune-campaign-receipt.json'}"
+        campaign_dir = (
+            context.work_root / "tune-campaigns" / receipt.campaign_run_id
         )
+        print(f"receipt: {campaign_dir / 'tune-campaign-receipt.json'}")
+        _emit_campaign_advisories(campaign_dir, receipt)
     return 0
+
+
+def _emit_campaign_advisories(campaign_dir, receipt) -> None:
+    """Tell the operator what this result does and does not establish.
+
+    Best-effort by construction: a campaign that has already spent real GPU
+    hours must not fail at the last line because an advisory input was
+    missing or malformed, so every read here is guarded and any failure
+    silently yields fewer advisories.
+    """
+    try:
+        import json as _json
+
+        from bigcherry.tuning.advisories import advisories_for_campaign, emit
+
+        def _load(name):
+            path = campaign_dir / name
+            try:
+                return _json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+
+        vectors = ()
+        gate = _load("behavioral-gate.json")
+        if isinstance(gate, dict):
+            raw = gate.get("vectors") or gate.get("selected_vectors") or []
+            vectors = tuple(
+                type("V", (), {"n_predict": v.get("n_predict"), "scenario": v.get("scenario")})()
+                for v in raw
+                if isinstance(v, dict)
+            )
+
+        promoted_count = getattr(receipt, "promoted_after_evidence", None)
+        promoted_path = campaign_dir / "promoted.jsonl"
+        execution_audit_path = campaign_dir / "hip-tuning-execution-audit.jsonl"
+
+        # A file existing at this path is NOT evidence THIS run was audited --
+        # a reused run_id/workdir can leave a stale audit from a different
+        # promoted set sitting right here. Only an audit that actually covers
+        # every currently-promoted dispatch counts; see
+        # execution_audit.audit_covers_promoted for why.
+        from bigcherry.tuning.execution_audit import audit_covers_promoted
+        covered = (
+            promoted_path.is_file()
+            and audit_covers_promoted(promoted_path, execution_audit_path)
+        )
+
+        emit(advisories_for_campaign(
+            replay_coverage=getattr(receipt, "replay_coverage", None),
+            recovery_result=_load("recovery-result.json"),
+            corpus_vectors=vectors,
+            inventory=_load("inventory.json"),
+            promoted_count=promoted_count,
+            execution_audit_path=execution_audit_path if covered else None,
+        ))
+    except Exception:
+        pass

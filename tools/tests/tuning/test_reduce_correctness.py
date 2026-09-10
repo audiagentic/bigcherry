@@ -157,6 +157,26 @@ class CaseRoundTripTests(unittest.TestCase):
                     peer_access="partial", devices=devices, slice_shape=(4, 1, 1, 1),
                 )
 
+    def test_slice_shape_wrong_length_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices, slice_shape=(2, 2, 2),
+                )
+
+    def test_slice_shape_non_positive_dims_rejected(self):
+        devices = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(rc.CorrectnessError):
+                rc.write_case(
+                    Path(tmp) / "case-0001", case_id="case-0001", seed=1, pattern="ordinary_signed",
+                    reduction_signature_key="sig-a", topology_key="n2:peer1001",
+                    peer_access="partial", devices=devices, slice_shape=(-8, 1, 1, 1),
+                )
+
 
 class SignatureKeyTests(unittest.TestCase):
     def test_matches_real_telemetry_key_format(self):
@@ -191,6 +211,53 @@ class SignatureKeyTests(unittest.TestCase):
             )
 
 
+# The 4-signature representative subset GPT scoped from the real dual-XTX
+# Qwen3.8-27B MTP production capture (artifacts/hardware/20260820-qwen38-
+# mtp-dual-xtx/reduction.jsonl): dominant anchor, max-s1 stress, near-max-odd
+# stress, and the s1=1 minimum boundary.
+REAL_PRODUCTION_SIGNATURES = [
+    (30720, (5120, 6, 1, 1), 460200, "dominant real decode signature"),
+    (2621440, (5120, 512, 1, 1), 7150, "max s1, power-of-two stress"),
+    (2606080, (5120, 509, 1, 1), 2600, "near-max odd/non-power-of-two stress"),
+    (5120, (5120, 1, 1, 1), 41130, "minimum/boundary s1=1"),
+]
+
+
+class RealProductionSignatureTests(unittest.TestCase):
+    def test_real_production_signature_keys_are_well_formed(self):
+        for element_count, slice_shape, observation_count, note in REAL_PRODUCTION_SIGNATURES:
+            with self.subTest(note=note):
+                key = rc.make_reduction_signature_key(
+                    element_type="f32", element_count=element_count,
+                    slice_shape=slice_shape, topology_key="n2:peer1001",
+                )
+                s0, s1, s2, s3 = slice_shape
+                self.assertEqual(key, f"split_reduce:v1:f32:{element_count}:{s0},{s1},{s2},{s3}:n2:peer1001")
+                self.assertEqual(s0 * s1 * s2 * s3, element_count)
+                self.assertGreater(observation_count, 0)
+
+    def test_real_production_signatures_write_case_round_trips(self):
+        for element_count, slice_shape, _observation_count, note in REAL_PRODUCTION_SIGNATURES:
+            with self.subTest(note=note):
+                devices = rc.generate_case(
+                    seed=1, pattern="ordinary_signed", element_count=element_count, device_count=2,
+                )
+                with tempfile.TemporaryDirectory() as tmp:
+                    case_dir = Path(tmp) / "case-0001"
+                    rc.write_case(
+                        case_dir, case_id="case-0001", seed=1, pattern="ordinary_signed",
+                        reduction_signature_key=rc.make_reduction_signature_key(
+                            element_type="f32", element_count=element_count,
+                            slice_shape=slice_shape, topology_key="n2:peer1001",
+                        ),
+                        topology_key="n2:peer1001", peer_access="partial",
+                        devices=devices, slice_shape=slice_shape,
+                    )
+                    loaded_manifest, ranks = rc.load_case(case_dir)
+                    self.assertEqual(loaded_manifest["element_count"], element_count)
+                    self.assertEqual(rc.from_f32_bytes(ranks[0]), devices[0])
+
+
 class AnalyticalBoundTests(unittest.TestCase):
     def test_bound_grows_with_device_count(self):
         sum_abs = [1.0]
@@ -215,11 +282,10 @@ class EvaluateProviderRunTests(unittest.TestCase):
             seed=1, pattern="ordinary_signed", element_count=16, device_count=2,
         )
         self.manifest = _make_manifest(self.device_values)
-        self.reference, sum_abs = rc.cpu_reference(self.device_values)
-        self.allowed = rc.analytical_error_bound(sum_abs, device_count=2)
+        self.reference, self.sum_abs = rc.cpu_reference(self.device_values)
 
     def _eval(self, run: rc.ProviderRun) -> rc.CaseResult:
-        return rc.evaluate_provider_run(self.manifest, self.device_values, self.reference, self.allowed, run)
+        return rc.evaluate_provider_run(self.manifest, self.device_values, self.reference, self.sum_abs, run)
 
     def test_correct_rccl_run_passes(self):
         run = _clean_run(self.manifest, self.device_values, "rccl")
@@ -380,8 +446,7 @@ class AggregateTests(unittest.TestCase):
         manifest = _make_manifest(device_values)
         run = _clean_run(manifest, device_values, "rccl")
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
-        results = [rc.evaluate_provider_run(manifest, device_values, reference, allowed, run)]
+        results = [rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)]
         agg = rc.aggregate_case_results("sig-a", "rccl", results)
         self.assertTrue(agg.all_correct)
         self.assertEqual(agg.failing_case_ids, ())
@@ -390,15 +455,14 @@ class AggregateTests(unittest.TestCase):
         device_values = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
         manifest = _make_manifest(device_values)
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
         good_run = _clean_run(manifest, device_values, "rccl")
         bad = list(reference)
         bad[0] += 1.0
         bad_manifest = _make_manifest(device_values, case_id="case-0002")
         bad_run = _clean_run(bad_manifest, device_values, "rccl",
                               outputs=(_f32_bytes(bad), _f32_bytes(reference)))
-        good_result = rc.evaluate_provider_run(manifest, device_values, reference, allowed, good_run)
-        bad_result = rc.evaluate_provider_run(bad_manifest, device_values, reference, allowed, bad_run)
+        good_result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, good_run)
+        bad_result = rc.evaluate_provider_run(bad_manifest, device_values, reference, sum_abs, bad_run)
         agg = rc.aggregate_case_results("sig-a", "rccl", [good_result, bad_result])
         self.assertFalse(agg.all_correct)
         self.assertEqual(agg.failing_case_ids, ("case-0002",))
@@ -413,9 +477,8 @@ class JsonlWriterTests(unittest.TestCase):
         device_values = rc.generate_case(seed=1, pattern="ordinary_signed", element_count=8, device_count=2)
         manifest = _make_manifest(device_values)
         reference, sum_abs = rc.cpu_reference(device_values)
-        allowed = rc.analytical_error_bound(sum_abs, device_count=2)
         run = _clean_run(manifest, device_values, "rccl")
-        result = rc.evaluate_provider_run(manifest, device_values, reference, allowed, run)
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
         row = rc.case_result_to_row(
             result, source_revision="deadbeef", manifest_hash="cafef00d",
             reduction_signature_key="sig-a", topology_key="n2:peer1001",
@@ -435,6 +498,150 @@ class JsonlWriterTests(unittest.TestCase):
             self.assertEqual(len(lines), 1)
             round_tripped = json.loads(lines[0])
             self.assertEqual(round_tripped["case_id"], row["case_id"])
+
+
+class Bf16WireCompressionBoundTests(unittest.TestCase):
+    """GP05: the analytical bound must widen for the rccl provider's real
+    BF16-wire-compression regime (element_count >= the real upstream
+    threshold), and ONLY for that provider/regime -- never a blanket
+    loosening. See tools/bigcherry/tuning/reduction.py's
+    NCCL_BF16_WIRE_THRESHOLD_BY_DEVICE_COUNT / provider_uses_bf16_wire."""
+
+    def test_thresholds_match_pinned_source(self):
+        self.assertEqual(rc.nccl_bf16_wire_threshold(1), 32768)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(2), 32768)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(3), 131072)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(4), 262144)
+        self.assertEqual(rc.nccl_bf16_wire_threshold(8), 262144)  # >=4 shares one threshold
+
+    def test_provider_uses_bf16_wire_gates_on_provider_and_size(self):
+        self.assertTrue(rc.provider_uses_bf16_wire("rccl", 32768, 2))
+        self.assertTrue(rc.provider_uses_bf16_wire("rccl", 2621440, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("rccl", 32767, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("meta", 2621440, 2))
+        self.assertFalse(rc.provider_uses_bf16_wire("auto", 2621440, 2))
+
+    def test_bf16_bound_strictly_wider_than_f32_bound(self):
+        sum_abs = [1.0, 1000.0]
+        f32_bound = rc.analytical_error_bound(sum_abs, device_count=2, bf16_wire=False)
+        bf16_bound = rc.analytical_error_bound(sum_abs, device_count=2, bf16_wire=True)
+        for f32_b, bf16_b in zip(f32_bound, bf16_bound):
+            self.assertGreater(bf16_b, f32_b)
+
+    def _above_threshold_case(self):
+        # element_count=40000 is above the <=2-device 32768 threshold --
+        # real regime the two stress signatures in production evidence
+        # (2621440 / 2606080) fall into, kept smaller here purely so the
+        # pure-Python reference/evaluation loops stay fast in CI.
+        device_values = rc.generate_case(
+            seed=7, pattern="ordinary_signed", element_count=40000, device_count=2,
+        )
+        manifest = _make_manifest(device_values, case_id="bf16-case")
+        manifest["element_count"] = 40000
+        reference, sum_abs = rc.cpu_reference(device_values)
+        return device_values, manifest, reference, sum_abs
+
+    def _bf16_scale_perturb(
+        self, reference: list[float], sum_abs: list[float], device_count: int,
+    ) -> list[float]:
+        """Perturb every element to 90% of the REAL BF16-widened bound
+        (derived from analytical_error_bound itself, not a hardcoded
+        guess) -- large enough to exceed the plain F32 bound by orders of
+        magnitude, and specifically large enough to exceed the FLAT
+        single-quantization bound the first (incomplete) version of this
+        fix used, so this test actually exercises the corrected
+        accumulation-composition formula rather than a magnitude too
+        small to distinguish the two."""
+        bound = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)
+        return [
+            v + 0.9 * b if s > 0.0 else v
+            for v, s, b in zip(reference, sum_abs, bound)
+        ]
+
+    def test_rccl_above_threshold_with_bf16_scale_error_passes(self):
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertTrue(result.valid, result.reason)
+        self.assertTrue(result.correct, result.reason)
+
+    def test_meta_above_threshold_with_same_error_still_fails(self):
+        # Same perturbation magnitude, but as a meta run -- meta never gets
+        # BF16 slack (it doesn't wire-compress), so this must still fail.
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
+        run = _clean_run(
+            manifest, device_values, "meta",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
+
+    def test_rccl_below_threshold_with_same_error_still_fails(self):
+        # Same relative perturbation, but element_count stays below the
+        # real wire threshold -- rccl must NOT get BF16 slack here either.
+        device_values = rc.generate_case(
+            seed=7, pattern="ordinary_signed", element_count=1024, device_count=2,
+        )
+        manifest = _make_manifest(device_values, case_id="below-threshold-case")
+        reference, sum_abs = rc.cpu_reference(device_values)
+        perturbed = self._bf16_scale_perturb(reference, sum_abs, manifest["device_count"])
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
+
+    def test_corrected_bound_wider_than_original_flat_quantization_only_bound(self):
+        # gpt-dev-agent review, req_8714cf1798af40a4: the FIRST version of
+        # this fix only widened by a flat BF16_ULP * sum_abs (covering
+        # just initial operand quantization), missing that RCCL's real
+        # BF16 reduction also rounds the running sum to BF16 after EVERY
+        # addition -- up to (device_count - 1) further roundings. The
+        # corrected bound must be strictly wider than that original flat
+        # formula, with the gap growing as device_count grows (more
+        # accumulation steps).
+        sum_abs = [1000.0]
+        for device_count in (2, 3, 4):
+            corrected = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)[0]
+            original_flat = rc.BF16_ULP * sum_abs[0]  # what the first fix computed
+            with self.subTest(device_count=device_count):
+                self.assertGreater(
+                    corrected, original_flat,
+                    f"device_count={device_count}: corrected bound must exceed "
+                    "the original single-quantization-only bound",
+                )
+
+    def test_bound_gap_grows_with_device_count(self):
+        # More participating devices -> more BF16-rounded accumulation
+        # steps -> a wider gap between the corrected and flat bounds.
+        sum_abs = [1000.0]
+        gaps = []
+        for device_count in (2, 3, 4):
+            corrected = rc.analytical_error_bound(sum_abs, device_count, bf16_wire=True)[0]
+            original_flat = rc.BF16_ULP * sum_abs[0]
+            gaps.append(corrected - original_flat)
+        self.assertLess(gaps[0], gaps[1])
+        self.assertLess(gaps[1], gaps[2])
+
+    def test_rccl_above_threshold_fails_when_error_exceeds_corrected_bound(self):
+        # The corrected bound is not infinitely permissive -- an error
+        # clearly beyond it (not just beyond the old flat one) must still
+        # fail, proving this isn't a blanket loosening.
+        device_values, manifest, reference, sum_abs = self._above_threshold_case()
+        bound = rc.analytical_error_bound(sum_abs, manifest["device_count"], bf16_wire=True)
+        perturbed = [v + 5.0 * b for v, b in zip(reference, bound)]
+        run = _clean_run(
+            manifest, device_values, "rccl",
+            outputs=(_f32_bytes(reference), _f32_bytes(perturbed)),
+        )
+        result = rc.evaluate_provider_run(manifest, device_values, reference, sum_abs, run)
+        self.assertFalse(result.correct)
 
 
 class LoadProbeRunTests(unittest.TestCase):

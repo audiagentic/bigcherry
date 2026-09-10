@@ -1,0 +1,105 @@
+---
+id: NRO06
+order: 6
+plan: nasone-rdna-optimizations
+state: superseded
+created-at: '2026-09-08T09:50:40+10:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P0
+work: L
+---
+
+# Adaptive MTP draft-depth controller
+
+## Description
+
+Re-evaluate and port the adaptive MTP feature represented by nasone commit `10579a7365a3bc86c4f8e41aaab20e73e1571e5e`. BigCherry's older stew675 registry deliberately excluded an earlier adaptive-MTP series because that intake was scoped to RDNA kernel work; the current project now uses MTP in production-shaped workloads, so exclusion-by-scope is no longer a technical rejection.
+
+The source adds a distinct `draft-mtp-adaptive` mode with per-sequence state. Draft depth starts at a configurable floor, climbs after sustained full acceptance, and drops after accumulated miss pressure. This can reduce wasted verify work on unpredictable text while allowing deeper drafts on highly predictable spans. It is algorithm/runtime policy, not a GPU kernel optimization, and should be evaluated independently of kernel patches.
+
+## Steps
+
+1. Freeze current nasone adaptive controller and compare against the earlier stew675 adaptive-MTP commits already recorded as excluded; document semantic differences rather than creating two independent controllers.
+2. Add a distinct speculative type, leaving fixed `draft-mtp` unchanged.
+3. Add `n_min_adaptive` configuration/CLI with explicit floor/cap validation.
+4. Implement per-sequence controller state: current depth, climb streak, drop pressure, reset semantics.
+5. Port source climb thresholds and drop-pressure rule initially as candidate policy, not universal truth. Instrument every requested/accepted depth transition.
+6. Ensure multi-sequence generation has independent controllers and no cross-sequence state leakage.
+7. Define reset boundaries: new request, sequence reset, context rewind, failure/retry, and implementation recreation.
+8. Compare against fixed depths 1..n_max and the current production fixed depth. Measure accepted tokens per target eval, drafted-but-rejected work, target/draft latency, and total TPS.
+9. Run heterogeneous content sets (prose, code, repetitive text, reasoning-like text) to prevent a controller tuned to one acceptance distribution from overfitting.
+10. Evaluate policy constants only after baseline characterization; any retuning becomes a separately recorded experiment identity.
+
+## Detailed Solution & Technical Design
+
+Source state machine:
+
+- `n_cur` current depth in `[floor,n_max]`;
+- `n_climb` consecutive full-accept verifies;
+- `n_drop` accumulated `n_draft-n_accepted` pressure;
+- full accept resets drop pressure and may climb when a depth-specific streak threshold is reached;
+- any miss resets climb, accumulates drop pressure, and drops one level when `max(depth*5,20)` is reached;
+- floor state does not accumulate pressure below the floor.
+
+The source uses a hardened depth-3->4 barrier because acceptance reportedly collapses in ordinary prose beyond that point. BigCherry must treat those constants as source hypotheses. Instrumentation should permit replaying acceptance traces through the controller offline so alternative constants can be evaluated without rerunning model inference, but runtime policy must remain one fixed pre-registered candidate during qualification.
+
+Correctness is primarily behavioral: adaptive and fixed modes may choose different amounts of speculative work but must preserve target-model semantics. Under deterministic sampling/temperature zero, accepted final token sequence should match nonspeculative/reference generation subject to existing MTP determinism rules.
+
+## Code Samples & Guidance
+
+Keep controller logic pure/testable, e.g. a small struct with `reset()` and `update(n_draft,n_accepted,cap,floor)`. Separate controller policy from model/context plumbing so exhaustive state-machine tests require no GPU.
+
+## Files
+
+- `docs/planning/active/nasone-rdna-optimizations/NRO06.md`
+- `patches/1255_nro06_adaptive_mtp_depth/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}`
+- shared/static patch tests; future unit tests for controller transitions and request reset semantics.
+
+## Validation
+
+CPU/offline: exhaustive transition tests over depths and acceptance counts, floor/cap edges, repeated reset, multi-sequence independence, malformed configuration.
+
+Model: deterministic output parity vs target/fixed MTP; acceptance trace integrity; long request and request-boundary resets. Performance: interleaved adaptive versus best fixed baseline over multiple content classes and contexts.
+
+## Effort & Risk
+
+Medium-high. Implementation is smaller than a kernel, but controller constants can overfit and shift workload rather than make kernels faster. Aggregate TPS alone can conceal lower acceptance or changed token semantics.
+
+## Standards
+
+Treat source policy constants as experimental. No outcome-conditioned pair deletion. Final token correctness and work accounting are required alongside throughput.
+
+## Acceptance Criteria
+
+- State machine passes exhaustive deterministic unit tests.
+- Fixed `draft-mtp` behavior remains byte/behavior unchanged.
+- Adaptive deterministic final output agrees with the target reference.
+- No request/sequence state leakage.
+- Adaptive establishes improvement versus the best relevant fixed-depth control across the pre-registered workload mix, not just one prompt class.
+
+## Notes
+
+This item intentionally revives an idea formerly marked `excluded` only because the old intake scope was kernel-focused. That historical record should be cross-linked, not erased.
+
+This item intentionally revives an idea formerly marked `excluded` only because the old intake scope was kernel-focused. That historical record should be cross-linked, not erased.
+
+DUPLICATE FLAGGED 2026-09-08 (full plan audit): this item duplicates rdna-boost-experiments/RD62 ('UP-MTP-001: Adaptive MTP draft depth') -- same feature (adaptive per-sequence MTP draft-depth controller), but cited to two DIFFERENT sources: this item to nasone32/llama.cpp-RDNA3-7900xtx-opt commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e, RD62 to llama.cpp upstream PR #27210. RD62 already has dual-R9700 evidence on file per its own notes; this item does not yet. Do NOT work both in parallel -- reconcile into ONE item first: read both source implementations, determine whether they're the same algorithm/design or genuinely different approaches to the same goal, and decide which plan item is the real owner (likely RD62, given its existing evidence) before any implementation starts on either. Cross-referenced in config/external-sources.toml's nasone-rdna-optimizations source block.
+
+This item intentionally revives an idea formerly marked `excluded` only because the old intake scope was kernel-focused. That historical record should be cross-linked, not erased.
+
+SUPERSEDED 2026-09-09: confirmed duplicate of rdna-boost-experiments/RD62 ('UP-MTP-001: Adaptive MTP draft depth'). Verified via `gh api repos/nasone32/llama.cpp-RDNA3-7900xtx-opt/commits/10579a7365a3bc86c4f8e41aaab20e73e1571e5e`: this commit's author is Stew Forster <stew675@gmail.com> -- the SAME author as RD62's source, llama.cpp PR #27210 ('spec: add adaptive MTP draft depth (draft-mtp-adaptive)'). This is stew675's own commit, cherry-picked into the nasone fork (commit message: 'rdna-boosts: block 01: adaptive MTP draft depth'), not an independently nasone-authored implementation. Not merely similar -- the same source work, reached via two different citation routes.
+
+This item's considerably more detailed design content (state-machine spec, phased implementation steps, code-sample guidance, acceptance criteria) has been merged into RD62, which is now the single owner going forward. Do not resume work on this item directly; work happens on RD62. The already-materialized patch (patches/1255_nro06_adaptive_mtp_depth/) stays where it is for now -- renaming/re-homing it to an RD-numbered patch ID is a separate, deliberate housekeeping decision, not required before RD62 work continues.
+
+## Change Log
+
+- 2026-09-08T09:50:40+10:00 (created-by): Created from current nasone adaptive-MTP implementation; P0.
+
+## Ledger-events
+
+- Pending: ag-ledger MCP unavailable in authoring session.
+- 2026-09-08T17:46:30.049272+00:00 (updated-by): Updated: section:notes
+- 2026-09-08T21:00:51.997983+00:00 (updated-by): Updated: section:notes
+- 2026-09-08T21:00:57.211841+00:00 (state-transition): State: pending → superseded

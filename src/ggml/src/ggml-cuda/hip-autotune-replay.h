@@ -202,9 +202,16 @@ void ggml_hip_replay_flush_misses();
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
 // Present only in diagnostic replay builds: production replay has no hit-log
 // call or branch on the dispatch hot path.
+//
+// HI171: call this ONLY from the true final decision point (after every
+// revalidation), never from a provisional resolution -- a candidate/
+// from_cache pair recorded before the arch/can_execute recheck can be wrong
+// by the time the executor actually launches. See hip-autotune-dispatch.cu's
+// ggml_hip_dispatch_resolve() for the one call site that satisfies this.
 void ggml_hip_replay_record_hit(const ggml_hip_digest & dispatch_digest,
                                 const ggml_hip_digest & signature_digest,
-                                const ggml_hip_candidate_descriptor * candidate);
+                                const ggml_hip_candidate_descriptor * candidate,
+                                bool from_cache);
 void ggml_hip_replay_flush_hits();
 #endif
 

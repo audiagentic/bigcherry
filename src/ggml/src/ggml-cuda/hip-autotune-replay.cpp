@@ -47,7 +47,10 @@ struct Miss {
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
 struct Hit {
     ggml_hip_digest signature_digest;
-    std::string     candidate_name;
+    std::string     candidate_name;   // the FINAL launched candidate (HI171)
+    bool            from_cache;       // false means it launched as native,
+                                       // even though this dispatch key had a
+                                       // cache entry -- this is FALLBACK
     uint64_t        calls;
 };
 #endif
@@ -562,21 +565,34 @@ ggml_hip_resolution_v2 ggml_hip_replay_lookup(
 }
 
 #ifdef GGML_HIP_REPLAY_DIAGNOSTICS
+// HI171: called from the TRUE final decision point in
+// ggml_hip_dispatch_resolve (hip-autotune-dispatch.cu), after every
+// revalidation -- `candidate`/`from_cache` here are exactly what the
+// executor is about to launch, never a provisional resolution that a later
+// check might still override.
 void ggml_hip_replay_record_hit(const ggml_hip_digest & dispatch_digest,
                                 const ggml_hip_digest & signature_digest,
-                                const ggml_hip_candidate_descriptor * candidate) {
+                                const ggml_hip_candidate_descriptor * candidate,
+                                bool from_cache) {
     if (candidate == nullptr) {
         return;
     }
     std::lock_guard<std::mutex> lock(g_hits_mutex);
     auto found = g_hits.find(dispatch_digest);
     if (found != g_hits.end()) {
+        // Update to the LATEST observed decision rather than only counting:
+        // if this dispatch key ever flips between launching tuned and
+        // launching native across the run, the log must show what actually
+        // happened most recently, not silently freeze on the first call.
+        found->second.candidate_name = candidate->stable_name;
+        found->second.from_cache     = from_cache;
         ++found->second.calls;
         return;
     }
     Hit hit;
     hit.signature_digest = signature_digest;
     hit.candidate_name = candidate->stable_name;
+    hit.from_cache = from_cache;
     hit.calls = 1;
     g_hits.emplace(dispatch_digest, std::move(hit));
 }
@@ -598,10 +614,11 @@ void ggml_hip_replay_flush_hits() {
     for (const auto & [digest, hit] : g_hits) {
         fprintf(file,
                 "{\"dispatch\":\"%s\",\"signature\":\"%s\","
-                "\"candidate\":\"%s\",\"calls\":%llu}\n",
+                "\"candidate\":\"%s\",\"from_cache\":%s,\"calls\":%llu}\n",
                 ggml_hip_digest_hex(digest).c_str(),
                 ggml_hip_digest_hex(hit.signature_digest).c_str(),
                 hit.candidate_name.c_str(),
+                hit.from_cache ? "true" : "false",
                 (unsigned long long) hit.calls);
     }
     fclose(file);

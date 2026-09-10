@@ -22,11 +22,20 @@ both describe builds that should not exist:
 GROUP = "core"
 STATE = "validated"
 
+import re
+
 from bigcherry.patcher import Edit, FilePatch
 
 _OPTIONS = """
 option(GGML_HIP_AUTOTUNE                    "ggml: build the HIP dispatch autotuner"          OFF)
 option(GGML_HIP_DISPATCH_REPLAY             "ggml: build HIP replay dispatch (no tuner)"      OFF)
+# bigcherry: hot-path diagnostics. OFF is the PRODUCTION shape -- the dispatch
+# counters, the native-select sample timing and the per-launch coverage
+# counting are all compiled out, not merely runtime-disabled. Coverage counting
+# in particular was unconditional (two atomic RMWs per dispatch, ~382,000 per
+# bench run), with the env var controlling only whether a report was WRITTEN.
+# A build used for a final performance number must not carry any of it.
+option(GGML_HIP_DISPATCH_DIAGNOSTICS        "ggml: HIP dispatch hot-path diagnostics"         OFF)
 set   (GGML_HIP_AUTOTUNE_VARIANT_SET "inventory" CACHE STRING
                                             "ggml: HIP autotune candidate set")
 set_property(CACHE GGML_HIP_AUTOTUNE_VARIANT_SET PROPERTY STRINGS
@@ -120,6 +129,12 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     endif()
     if (GGML_HIP_DISPATCH_REPLAY)
         add_compile_definitions(GGML_HIP_DISPATCH_REPLAY)
+    endif()
+    # Tuning and recording builds need the counters to do their job, so they
+    # get diagnostics implicitly; a pure replay build does not and must be
+    # able to be built clean for benchmarking.
+    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)
+        add_compile_definitions(GGML_HIP_DISPATCH_DIAGNOSTICS)
     endif()
     # HI27. Global rather than per-source: the transform machinery is declared
     # in hip-autotune-types.h, which the tuner, the dispatcher and the replay
@@ -237,6 +252,18 @@ OPTIONS_PATCH = FilePatch(
     ),
 )
 
+_COVERAGE_SOURCE_OLD = (
+    '        "../ggml-cuda/hip-autotune-blake2b.cpp"\n'
+    '        "../ggml-cuda/hip-autotune-coverage.cpp")'
+)
+_COVERAGE_SOURCE_DIAGNOSTIC = (
+    '        "../ggml-cuda/hip-autotune-blake2b.cpp")\n'
+    '    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)\n'
+    '        list(APPEND _BC_DISPATCH_SOURCES\n'
+    '            "../ggml-cuda/hip-autotune-coverage.cpp")\n'
+    '    endif()'
+)
+
 HIP_BACKEND_PATCH = FilePatch(
     path="ggml/src/ggml-hip/CMakeLists.txt",
     description="HIP backend compile definitions, generated sources, SQLite",
@@ -261,6 +288,15 @@ HIP_BACKEND_PATCH = FilePatch(
                 '        "../ggml-cuda/hip-autotune-coverage.cpp")'
             ),
             guard=r'hip-autotune-coverage\.cpp',
+        ),
+        Edit(
+            id="hip-autotune-coverage-diagnostics-only",
+            anchor=re.escape(_COVERAGE_SOURCE_OLD),
+            text=_COVERAGE_SOURCE_DIAGNOSTIC,
+            mode="replace",
+            guard=re.escape(_COVERAGE_SOURCE_DIAGNOSTIC),
+            expect_matches=1,
+            rationale="HI168: remove coverage implementation from the production link graph",
         ),
         # No link edit. The dispatch layer has no external dependencies -- the
         # only one it ever had was SQLite, and record mode writes JSON Lines

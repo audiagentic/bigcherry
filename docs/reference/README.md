@@ -23,16 +23,20 @@ at the top level.
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [testing/TEST.md](testing/TEST.md) | Test invocations, dispatch modes, tuning/coverage workflows | Testing, tuning, or running on hardware |
-| [testing/COVERAGE_AUDIT.md](testing/COVERAGE_AUDIT.md) | What the tuner can/cannot choose between; gaps | Understanding why a signature has few options |
+| [testing/README.md](testing/README.md) | Testing authority map, decision flow, and status boundaries | Choosing a hardware-free gate, diagnostic, or qualification path |
+| [testing/TEST.md](testing/TEST.md) | Repository checks, dispatch/correctness/timing procedures, and build-server qualification recipe | Running tests or hardware procedures |
+| [testing/PATCH_VALIDATION.md](testing/PATCH_VALIDATION.md) | Patch evidence, contract gates, campaign capabilities, and lifecycle semantics | Creating, testing, validating, promoting, or demoting a patch |
+| [testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md](testing/MULTI_GPU_LARGE_MODEL_VALIDATION.md) | Scoped build-server findings for large multi-GPU validation lanes | Designing a large-model server/benchmark lane |
+| [testing/RCCL_HETEROGENEOUS_RUNBOOK.md](testing/RCCL_HETEROGENEOUS_RUNBOOK.md) | RCCL heterogeneous source viability, correctness, qualification, and replay runbook | Investigating or qualifying heterogeneous RCCL |
 
 ## Tooling
 
 | Document | What it is | When to read it |
 | --- | --- | --- |
-| [tooling/TOOLING.md](tooling/TOOLING.md) | Domain map: which package owns what, migration state | Finding where a capability lives before adding a new one |
-| [tooling/TUNE_CAMPAIGN.md](tooling/TUNE_CAMPAIGN.md) | `bigcherry tune-campaign` — record→tune→correctness→promote→replay orchestrator | Running the full tuning pipeline in one command |
-| [tooling/PROFILING.md](tooling/PROFILING.md) | `bigcherry profile-campaign` — real rocprofv3 kernel/timing/resource profiling | Deep-diving why a workload spends time where it does |
+| [tooling/TOOLING.md](tooling/TOOLING.md) | Normative tooling ownership, boundaries, commands, evidence rules, and compatibility policy | Finding where a capability lives before adding, moving, or retiring one |
+| [tooling/TOOL_DISPOSITION.md](tooling/TOOL_DISPOSITION.md) | Current 397-row tooling disposition registry; frozen TR00 baseline is separate evidence | Checking an existing tool's recorded owner/disposition before changing it |
+| [tooling/TUNE_CAMPAIGN.md](tooling/TUNE_CAMPAIGN.md) | `bigcherry tune-campaign` — record→tune→correctness→tuning-promotion→replay orchestrator | Running the full tuning pipeline in one command |
+| [tooling/PROFILING.md](tooling/PROFILING.md) | `bigcherry profile-campaign` — real rocprofv3 kernel/timing/resource profiling | Deep-diving why a workload spends time where it does; not accepting a patch |
 
 ## Patches
 
@@ -40,7 +44,7 @@ at the top level.
 | --- | --- | --- |
 | [patches/PATCH_SYSTEM.md](patches/PATCH_SYSTEM.md) | Patch catalog, states, groups, composition | Understanding how patches apply and compose |
 | [patches/PATCH_AUTHORING.md](patches/PATCH_AUTHORING.md) | Writing a new patch | Authoring a patch |
-| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Validation states and evidence requirements | Promoting a patch toward validated |
+| [patches/PATCH_VALIDATION.md](patches/PATCH_VALIDATION.md) | Patch-validation navigation pointer; policy lives under testing | Finding the correct validation authority |
 | [patches/PATCH_REFACTOR_RUNBOOK.md](patches/PATCH_REFACTOR_RUNBOOK.md) | Refactoring an existing patch | Restructuring a patch without breaking its evidence |
 
 Patch-specific documentation, fixtures, validators, and validation evidence
@@ -80,3 +84,4 @@ improvements, and coverage numbers.
 
 Historical originals are in [`docs/archive/`](../archive/) for provenance only;
 they are not current implementation or status guidance.
+

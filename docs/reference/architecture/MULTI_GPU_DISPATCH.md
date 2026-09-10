@@ -3,7 +3,7 @@
 What actually runs when you choose `-sm layer` vs `-sm tensor`, and which
 reduction provider (RCCL / internal / META) handles tensor-split's
 cross-device sum on a given hardware topology. Established through real
-hardware investigation on Brutus (HI84, HI85, HI132, HI134) — see those
+hardware investigation on the build server (HI84, HI85, HI132, HI134) — see those
 plan items for the full evidence trail.
 
 ## `-sm layer` (pipeline/layer split)
@@ -30,7 +30,7 @@ controlled by `GGML_CUDA_ALLREDUCE` (default: unset, which tries RCCL first
 on Linux):
 
 1. **RCCL** — the first choice by default. Works **only when every
-   participating device shares the same GPU architecture**. On Brutus, that
+   participating device shares the same GPU architecture**. On the build server, that
    means only the `{0,1}` dual-XTX pair (both gfx1100/RDNA3). Any
    architecture mismatch — even a single RDNA3+RDNA4 pair — reliably
    crashes RCCL's collective kernel dispatch (HI85's finding: the kernel
@@ -55,7 +55,7 @@ on Linux):
    back, which this project treats as unacceptable.
 
 2. **internal AllReduce** — a P2P-based path. Only supports exactly 2
-   devices, and needs real peer access. Brutus has **no PCIe P2P bridge for
+   devices, and needs real peer access. The build server has **no PCIe P2P bridge for
    any device pair, homogeneous or heterogeneous** (HI84), so this path
    declines too, on every topology tested.
 
@@ -77,7 +77,7 @@ on Linux):
 | Any 2-device mixed-arch pair | ❌ fails closed (patch 1225) | ❌ no P2P | ✅ used |
 | Any 3+ device group (any arch mix) | ❌ fails closed | ❌ only supports 2 devices | ✅ used |
 
-So: **on Brutus, META is what's actually doing the reduction work any time
+So: **on the build server, META is what's actually doing the reduction work any time
 `-sm tensor` is used across anything other than the dual-XTX pair.**
 
 ## HI134's finding: META's cost is already near the hardware limit

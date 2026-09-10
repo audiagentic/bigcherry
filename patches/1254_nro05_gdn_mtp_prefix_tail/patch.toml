@@ -1,0 +1,17 @@
+schema = 1
+id = "1254_nro05_gdn_mtp_prefix_tail"
+order = 1254
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["NRO05"]
+requires = ["1253_nro04_gfx1100_bf16_chunked_gdn"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["gated-delta-net", "mtp", "state-snapshots"]
+hardware = ["gfx1100"]
+validation-architectures = []
+backends = ["hip"]

@@ -210,7 +210,7 @@ def _resolve_v2_source(source_name: str) -> "campaign_resolution.CanonicalSelect
     ``source_ref``/``patch_set_id`` (not merely the resulting id list) can.
     Two logically distinct v2 patch-set compositions can resolve to the
     identical module-id set; ``patch_set_id`` is the identity that actually
-    distinguishes them (gpt-dev-agent review, compat.recipe removal plan,
+    distinguishes them (gpt-dev-agent review, legacy recipe removal plan,
     session ses_5307d9c58ec645cb)."""
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
@@ -953,7 +953,7 @@ def _require_fresh(
             # merely the resulting id list: two logically distinct v2
             # patch-set compositions can resolve to the identical module-id
             # set, and patch_set_id is the identity that actually
-            # distinguishes them (gpt-dev-agent review, compat.recipe
+            # distinguishes them (gpt-dev-agent review, legacy recipe
             # removal plan, session ses_5307d9c58ec645cb).
             current_selection = _resolve_v2_source(source_name)
             current_ids = set(current_selection.patch_ids)

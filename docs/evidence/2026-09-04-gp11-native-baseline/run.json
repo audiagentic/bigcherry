@@ -1,0 +1,270 @@
+{
+  "command": [
+    "-m",
+    "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "-sm",
+    "tensor",
+    "-p",
+    "512",
+    "-n",
+    "128",
+    "-r",
+    "1"
+  ],
+  "arms": [
+    {
+      "name": "native-stock-rccl",
+      "binary": "/tmp/gp11-native-build/src/build/bin/llama-bench",
+      "env": {
+        "HIP_VISIBLE_DEVICES": "0,1,2",
+        "ROCR_VISIBLE_DEVICES": "0,1,2"
+      },
+      "extra_args": [],
+      "requires_rccl": true
+    },
+    {
+      "name": "bc-rccl",
+      "binary": "/home/audumla/bigcherry/artifacts/gp03-validation/bc-hybrid/vendor/llama.cpp/build/bin/llama-bench",
+      "env": {
+        "HIP_VISIBLE_DEVICES": "0,1,2",
+        "ROCR_VISIBLE_DEVICES": "0,1,2",
+        "GGML_CUDA_ALLREDUCE": "nccl"
+      },
+      "extra_args": [],
+      "requires_rccl": true
+    },
+    {
+      "name": "bc-hybrid-n3",
+      "binary": "/home/audumla/bigcherry/artifacts/gp03-validation/bc-hybrid/vendor/llama.cpp/build/bin/llama-bench",
+      "env": {
+        "HIP_VISIBLE_DEVICES": "0,1,2",
+        "ROCR_VISIBLE_DEVICES": "0,1,2",
+        "GGML_CUDA_ALLREDUCE": "hybrid"
+      },
+      "extra_args": [],
+      "requires_rccl": true
+    }
+  ],
+  "baseline": "native-stock-rccl",
+  "rounds": 3,
+  "settle_seconds": 15.0,
+  "metrics": [
+    "pp512",
+    "tg128"
+  ],
+  "directions": {},
+  "runs": [
+    {
+      "pair": 1,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.87379264831543,
+      "stdout": "pair-001-native-stock-rccl.stdout.log",
+      "stderr": "pair-001-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1317.86,
+        "tg128": 35.78
+      },
+      "arm": "native-stock-rccl",
+      "round": 0
+    },
+    {
+      "pair": 1,
+      "mode": "bc-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.828230142593384,
+      "stdout": "pair-001-bc-rccl.stdout.log",
+      "stderr": "pair-001-bc-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1317.43,
+        "tg128": 35.8
+      },
+      "arm": "bc-rccl",
+      "round": 0
+    },
+    {
+      "pair": 2,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.896964311599731,
+      "stdout": "pair-002-native-stock-rccl.stdout.log",
+      "stderr": "pair-002-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1326.74,
+        "tg128": 35.75
+      },
+      "arm": "native-stock-rccl",
+      "round": 0
+    },
+    {
+      "pair": 2,
+      "mode": "bc-hybrid-n3",
+      "returncode": 0,
+      "elapsed_s": 15.354691982269287,
+      "stdout": "pair-002-bc-hybrid-n3.stdout.log",
+      "stderr": "pair-002-bc-hybrid-n3.stderr.log",
+      "metrics": {
+        "pp512": 1324.14,
+        "tg128": 38.73
+      },
+      "arm": "bc-hybrid-n3",
+      "round": 0
+    },
+    {
+      "pair": 3,
+      "mode": "bc-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.833272457122803,
+      "stdout": "pair-003-bc-rccl.stdout.log",
+      "stderr": "pair-003-bc-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1313.53,
+        "tg128": 35.77
+      },
+      "arm": "bc-rccl",
+      "round": 1
+    },
+    {
+      "pair": 3,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.827274799346924,
+      "stdout": "pair-003-native-stock-rccl.stdout.log",
+      "stderr": "pair-003-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1321.11,
+        "tg128": 35.8
+      },
+      "arm": "native-stock-rccl",
+      "round": 1
+    },
+    {
+      "pair": 4,
+      "mode": "bc-hybrid-n3",
+      "returncode": 0,
+      "elapsed_s": 15.293865442276001,
+      "stdout": "pair-004-bc-hybrid-n3.stdout.log",
+      "stderr": "pair-004-bc-hybrid-n3.stderr.log",
+      "metrics": {
+        "pp512": 1328.05,
+        "tg128": 38.69
+      },
+      "arm": "bc-hybrid-n3",
+      "round": 1
+    },
+    {
+      "pair": 4,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.81837248802185,
+      "stdout": "pair-004-native-stock-rccl.stdout.log",
+      "stderr": "pair-004-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1321.15,
+        "tg128": 35.75
+      },
+      "arm": "native-stock-rccl",
+      "round": 1
+    },
+    {
+      "pair": 5,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.866692543029785,
+      "stdout": "pair-005-native-stock-rccl.stdout.log",
+      "stderr": "pair-005-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1319.25,
+        "tg128": 35.79
+      },
+      "arm": "native-stock-rccl",
+      "round": 2
+    },
+    {
+      "pair": 5,
+      "mode": "bc-hybrid-n3",
+      "returncode": 0,
+      "elapsed_s": 15.267672777175903,
+      "stdout": "pair-005-bc-hybrid-n3.stdout.log",
+      "stderr": "pair-005-bc-hybrid-n3.stderr.log",
+      "metrics": {
+        "pp512": 1318.48,
+        "tg128": 38.66
+      },
+      "arm": "bc-hybrid-n3",
+      "round": 2
+    },
+    {
+      "pair": 6,
+      "mode": "native-stock-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.86240553855896,
+      "stdout": "pair-006-native-stock-rccl.stdout.log",
+      "stderr": "pair-006-native-stock-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1324.37,
+        "tg128": 35.8
+      },
+      "arm": "native-stock-rccl",
+      "round": 2
+    },
+    {
+      "pair": 6,
+      "mode": "bc-rccl",
+      "returncode": 0,
+      "elapsed_s": 15.805368661880493,
+      "stdout": "pair-006-bc-rccl.stdout.log",
+      "stderr": "pair-006-bc-rccl.stderr.log",
+      "metrics": {
+        "pp512": 1323.14,
+        "tg128": 35.85
+      },
+      "arm": "bc-rccl",
+      "round": 2
+    }
+  ],
+  "schedule_seed": 0,
+  "comparisons": {
+    "bc-rccl": {
+      "pp512": {
+        "paired_rounds": 3,
+        "geometric_effect_pct": -0.23338182433747523,
+        "ci95_low_pct": -0.5737599442892649,
+        "ci95_high_pct": -0.0326286555476174,
+        "resamples": 10000,
+        "seed": 0
+      },
+      "tg128": {
+        "paired_rounds": 3,
+        "geometric_effect_pct": 0.03721188288161592,
+        "ci95_low_pct": -0.08379888268155167,
+        "ci95_high_pct": 0.13966480446927498,
+        "resamples": 10000,
+        "seed": 0
+      }
+    },
+    "bc-hybrid-n3": {
+      "pp512": {
+        "paired_rounds": 3,
+        "geometric_effect_pct": 0.0888288553819283,
+        "ci95_low_pct": -0.1959690670364833,
+        "ci95_high_pct": 0.5222722628013265,
+        "resamples": 10000,
+        "seed": 0
+      },
+      "tg128": {
+        "paired_rounds": 3,
+        "geometric_effect_pct": 8.192733953545117,
+        "ci95_low_pct": 8.018999720592346,
+        "ci95_high_pct": 8.335664335664328,
+        "resamples": 10000,
+        "seed": 0
+      }
+    }
+  },
+  "qualification": {
+    "qualification_jsonl": "/home/audumla/bigcherry/artifacts/gp01-qualification/xtx_xtx_r9700-2.27.7/cases.jsonl",
+    "topology_id": "xtx_xtx_r9700",
+    "compatibility_revision_id": "57e58688f44c77076ad536ef1f6b68741fc6e694"
+  }
+}

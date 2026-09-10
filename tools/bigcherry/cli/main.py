@@ -45,6 +45,8 @@ from .patch import (
 from .profiling import cmd_profile_campaign
 from .source import cmd_audit, cmd_pull
 from .tuning import (
+    cmd_execution_audit,
+    cmd_tuning_rollup,
     cmd_generate,
     cmd_inventory,
     cmd_project_replay,
@@ -467,6 +469,64 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="machine-readable report"
     )
     replay_inspect_cmd.set_defaults(func=cmd_replay_inspect)
+
+    execution_audit_cmd = sub.add_parser(
+        "execution-audit",
+        help=(
+            "per-promoted-key execution audit: does a tuned kernel actually "
+            "launch? An exact replay cache hit proves compatibility, not "
+            "tuned execution -- see tools/bigcherry/tuning/execution_audit.py"
+        ),
+    )
+    execution_audit_cmd.add_argument(
+        "--promoted", required=True,
+        help="promoted.jsonl from a tune campaign",
+    )
+    execution_audit_cmd.add_argument(
+        "--hit-log", default=None,
+        help="GGML_HIP_DISPATCH_HIT_LOG output from a "
+        "GGML_HIP_REPLAY_DIAGNOSTICS build; omit if no diagnostic run exists "
+        "yet -- every promoted key will then classify as NOT_EXECUTED, which "
+        "is the honest answer, not an error",
+    )
+    execution_audit_cmd.add_argument(
+        "--e2e-verdicts", default=None,
+        help="optional JSON object {dispatch_digest: 'improved'|'regressed'} "
+        "transcribed from a real end-to-end comparison (e.g. a HI168-style "
+        "baseline); never inferred by this command",
+    )
+    execution_audit_cmd.add_argument(
+        "--output", required=True,
+        help="write hip-tuning-execution-audit.jsonl here",
+    )
+    execution_audit_cmd.add_argument(
+        "--json", action="store_true", help="print the summary as JSON",
+    )
+    execution_audit_cmd.set_defaults(func=cmd_execution_audit)
+
+    tuning_rollup_cmd = sub.add_parser(
+        "tuning-rollup",
+        help=(
+            "consolidated, derived, read-only rollup of promoted.jsonl (+ "
+            "execution-audit classification, if present) across multiple "
+            "tune campaigns -- not a cache merge; see "
+            "tools/bigcherry/tuning/rollup.py for why a merged binary "
+            "replay cache is the wrong packaging abstraction"
+        ),
+    )
+    tuning_rollup_cmd.add_argument(
+        "--campaign-dir", dest="campaign_dirs", action="append", required=True,
+        help="a tune-campaign directory (containing promoted.jsonl and "
+        "tune-campaign-receipt.json); repeat for each campaign to roll up",
+    )
+    tuning_rollup_cmd.add_argument(
+        "--output", required=True,
+        help="write the consolidated rollup JSONL here",
+    )
+    tuning_rollup_cmd.add_argument(
+        "--json", action="store_true", help="print the summary as JSON",
+    )
+    tuning_rollup_cmd.set_defaults(func=cmd_tuning_rollup)
 
     project_replay_cmd = sub.add_parser(
         "project-replay",
@@ -924,8 +984,10 @@ def build_parser() -> argparse.ArgumentParser:
         "ab-benchmark",
         help="paired, interleaved native-versus-replay end-to-end benchmark",
     )
-    ab.add_argument("--cache", required=True)
-    ab.add_argument("--output", required=True)
+    ab.add_argument("--inspect-build", help="read-only compiler/diagnostic inventory; no hardware execution")
+    ab.add_argument("--server-config", help="local JSON configuration for balanced server-bench capture; no performance admission")
+    ab.add_argument("--cache")
+    ab.add_argument("--output")
     ab.add_argument("--pairs", type=int, default=3)
     ab.add_argument("--schedule-seed", type=int, default=0)
     ab.add_argument("--structured", action="store_true")
@@ -965,10 +1027,10 @@ def build_parser() -> argparse.ArgumentParser:
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
-                "--cache",
-                args.cache,
-                "--output",
-                args.output,
+                *(["--inspect-build", args.inspect_build] if args.inspect_build else []),
+                *(["--server-config", args.server_config] if args.server_config else []),
+                *(["--cache", args.cache] if args.cache else []),
+                *(["--output", args.output] if args.output else []),
                 "--pairs",
                 str(args.pairs),
                 "--schedule-seed",
@@ -997,8 +1059,7 @@ def build_parser() -> argparse.ArgumentParser:
                     if args.patched_cmake_cache
                     else []
                 ),
-                "--",
-                *args.command,
+                *(["--", *args.command] if args.command else []),
             ]
         )
     )

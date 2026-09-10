@@ -109,7 +109,7 @@ class PortedBenchedTests(unittest.TestCase):
             build_identities={"tune": _build_identity("1"), "replay": _build_identity("2"),
                                "stock": _build_identity("3")},
             validation_build_identities={"control": _build_identity("4"), "subject": _build_identity("5")},
-            campaign_workdir=self.workdir,
+            campaign_workdir=self.workdir, lane_effects=(),
             check_results=check_results,
         )
 

@@ -89,7 +89,7 @@ lanes = [
 
 class CampaignProfileTests(unittest.TestCase):
     """RE19: the canonical standard/default campaign profile, expressed
-    directly in v2 identities rather than derived from compat.recipe.*."""
+    directly in v2 identities rather than derived from legacy recipe data."""
 
     def _load(self, doc: str) -> campaign_config.Config:
         with tempfile.TemporaryDirectory() as directory:

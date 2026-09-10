@@ -3,7 +3,7 @@
 ``--source NAME`` resolves an EXACT, curated patch-id list via
 ``campaign/resolution.py``'s v2 machinery -- the sole selection mechanism.
 The legacy ``--recipe``/``--groups``/``--states`` predicate-filter path
-(and the ``[compat.recipe.*]`` config bridge it depended on) has been
+(and the retired compatibility config bridge it depended on) has been
 removed entirely; there is no group/state filtering axis to override.
 """
 

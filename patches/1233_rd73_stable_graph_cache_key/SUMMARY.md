@@ -1,8 +1,17 @@
 # 1233_rd73_stable_graph_cache_key: Replace the HIP/CUDA graph-cache key with a stable FNV-1a shape fingerprint (RD73, re-scoped from FORK-MTP-003)
 
-**Status:** untested
+**Status:** rejected
 **Group:** rdna-boosts
 **Plan item:** RD73
+
+> Promoted 2026-09-05 on 6 pre-registered measurement sessions:
+> **+1.889% end-to-end, 95% CI [1.475, 2.352], 0.0% control regression,
+> bit-identical output.** See "GOVERNED QUALIFICATION" below.
+> **DEMOTED 2026-09-09** (HI162): a later, better-controlled balanced A/B on
+> the same contract workload measured this as a real REGRESSION instead. See
+> "DEMOTION" section at the end of this file. The promotion evidence above
+> is preserved, not erased -- it is superseded by the later measurement, not
+> deleted.
 
 ## What it does
 
@@ -15,3 +24,275 @@ The raw first-node pointer is allocation-dependent, so a fresh allocation for an
 ## Upstream / provenance
 
 Ported byte-for-byte from mrlordcat-rdna-lab commit 7f2e7e4a3 (https://github.com/MrLordCat/llama.cpp-rdna-lab), after an external review caught and fixed a bug in an earlier draft (hashing the whole fixed name buffer instead of its used length). Not merged into ggml-org/llama.cpp master.
+
+
+## MTP validation (2026-09-04): mechanism does NOT engage on this pin
+
+The open gate on RD73 was an MTP speculative-verify workload isolated from the
+production 27B service. Done: isolated clone, isolated servers, lane
+`bigcherry-native:control:linux-multi`, control vs `--experiment rd73-only`,
+both under rocprofv3, identical workload (Qwen3.8-27B-Q8_0, `-sm tensor`,
+`--spec-type draft-mtp`, `spec_draft_n_max=5`, same prompt, seed=42, temp=0,
+n_predict=200). Patch application verified in the materialized source (FNV-1a
+offset basis literal at ggml-cuda.cu:2884).
+
+| metric | control | rd73-only |
+|---|---|---|
+| **graphs reused** | **65** | **65** |
+| large gaps >100us (count) | 615 | 614 |
+| large gaps >100us (total) | 523.9 ms | 421.7 ms |
+| throughput | 51.54 tps | 52.17 tps (+1.22%) |
+
+**Graph reuse is identical.** That is the direct test of the mechanism: an
+unstable `nodes[0]` key would show as FEWER reuses in control. It does not. The
+large-gap count is unchanged too; only total gap time moved, with the same
+number of gaps, which is host-timing variance rather than fewer recaptures.
+
+The +1.22% is **not** attributable to this patch -- single sample per arm,
+inside documented run-to-run variance, and the causing mechanism provably did
+not activate.
+
+This confirms the earlier non-MTP finding generalises: bigcherry's pinned
+llama.cpp already produces a stable `nodes[0]` per recurring shape, including
+for speculative-verify shapes. The port is faithful (byte-for-byte from
+`7f2e7e4a`, verified against the real diff); the difference from the fork's
+150ms->57ms result is in the base tree, not the patch.
+
+**Disposition: stays `untested`, unpromoted.** Correct and correctness-neutral,
+but no measurable benefit on this hardware and pin. Cheap re-check if the pin
+advances: just compare `graphs reused` between arms -- no full A/B needed.
+
+
+## CORRECTION (2026-09-04, later): the ad-hoc "null" above is RETRACTED
+
+The section immediately above concluded from an ad-hoc single-completion A/B
+that the mechanism does not engage and the +1.22% was noise. **That is
+retracted.** One sample per arm cannot resolve a ~2% effect against this
+project's documented 0.5-0.9% repetition noise floor.
+
+The standardised Experiment Contract was then run
+(`bigcherry.patch.validation_campaign ... --run-rd73-contract --rd73-corpus
+tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl`, dual gfx1100,
+HIP_VISIBLE_DEVICES=0,1, model `tierL-qwen27b-q8`):
+
+```
+metric                   mtp_wall_tps
+paired rounds            10 measured (+2 warmup), 12 control + 12 subject reqs
+geometric effect         +1.855%
+95% CI                   [+1.482%, +2.169%]   <-- excludes zero
+bootstrap                10,000 resamples, seed 0
+max control regression   0.0%
+correctness gate         PASS (bit_identical)
+resource gate            PASS (graph_cache_entries)
+trigger proof            PASS (1 lane, 0 untriggered)
+promotion                FAIL -- 1.855% below required 3.0%
+```
+
+**RD73 produces a real, statistically significant ~+1.9% end-to-end gain on the
+MTP workload**, with zero decode-control regression and bit-identical output. It
+fails promotion only against this contract's 3.0% policy bar.
+
+**Open mechanism question:** `graphs reused` was 65 in *both* arms in the ad-hoc
+capture, which is not what a cold-miss-to-warm-replay conversion should look
+like. Either that counter doesn't measure what was assumed, or the gain arrives
+another way. The contract settles the *effect*, not the *mechanism*.
+
+**Evidence status:** contract artifacts are real and sha256-bound
+(`rd73-contract-qualification.json`, `rd73-mtp-lane.json`,
+`rd73-decode-control.json`, `rd73-activation.json`). But
+`patch-verify-evidence` still reports **missing-or-stale**: the generic checks
+`performance` and `controls` ERROR with *"benchmark artifact requires non-empty
+metrics"*, and `activation`/`correctness` are BLOCKED. That is the same known
+adapter gap this patch's `validation.toml` already documents for correctness --
+now shown to affect performance/controls as well. Recorded as the real state,
+not worked around.
+
+**Disposition:** stays `untested`/unpromoted — but because it **misses the 3%
+bar at a measured +1.86%**, not because it does nothing. Worth re-evaluating if
+the bar is revisited or if it is combined with other gains.
+
+## THREE-RUN CONTRACT RESULT (2026-09-05): real effect, sits ON the bar
+
+Two further real dual-gfx1100 contract runs were executed against the frozen
+1.0% bar (contract hash `de6e54ff`, 10 paired rounds each, isolated clone,
+`--run-rd73-contract`). With the earlier run, three independent contract-path
+measurements now exist:
+
+| run | point estimate | ci95_low | gate |
+|---|---|---|---|
+| 1 (2026-09-04) | +1.855% | +1.482% | (pre-registration evidence only) |
+| 2 (2026-09-05) | +1.717% | +1.385% | PASS |
+| 3 (2026-09-05) | **+1.249%** | **+0.576%** | **FAIL** |
+
+Every run: control regression 0.0%, correctness `bit_identical` PASS, resource
+`graph_cache_entries` PASS, trigger proof PASS. Run 3's sole failure reason is
+`end_to_end_gain_pct ci95_low 0.576 below required 1.0`.
+
+**The effect is real; its magnitude straddles the materiality bar.** All three
+runs are positive and all three intervals exclude zero. What they do not agree
+on is whether the true effect clears 1.0%.
+
+### Between-run drift exceeds the within-run interval
+
+Per-pair effects, same build, same corpus, same hardware, hours apart:
+
+    run 2   sd 0.551   [2.55 1.87 1.95 2.37 1.33 0.73 1.14 1.53 1.79 1.93]
+    run 3   sd 1.144   [3.22 -0.20 1.63 0.37 1.72 0.17 1.69 1.30 2.62 0.04]
+
+Run 3 is twice as noisy and contains a negative pair. Its point estimate
+(+1.249%) falls BELOW run 2's ci95_low (+1.385%). The paired block bootstrap
+resamples only within a run, so it cannot see session-to-session drift and its
+interval is correspondingly optimistic. This is a measured instance of the
+systematic-bias failure mode: a CI only quantifies the uncertainty its sampling
+model represents.
+
+Pooled over all 20 valid pairs the estimate is **+1.483%, CI [1.084, 1.861]**.
+
+**That pooled number is NOT used to promote this patch, deliberately.** The
+frozen re-run policy (EXPERIMENT_CONTRACT.md, "Re-running") permits extending a
+run to a pre-declared `N_max` and estimating over all valid pairs -- but
+`N_min`/`N_max` must be pre-declared, and this contract declares only
+`min_paired_rounds = 10`. Pooling after seeing run 3 miss the bar would be
+choosing the estimator that gives the wanted answer, which is the precise
+failure the policy exists to prevent. It is recorded here as the best current
+estimate of the effect, not as qualifying evidence.
+
+**Disposition: stays `untested`/unpromoted.** Not because it does nothing --
+it demonstrably does something -- but because three runs cannot agree that it
+clears the bar it must clear. Settling it requires a pre-registered extension
+rule (direction-blind precision criterion, declared `N_min`/`N_max`) committed
+BEFORE the next run.
+
+Superseded above: the "misses the 3% bar" disposition (the bar is now 1.0) and
+the "adapter gap" evidence status (fixed -- see RV95; run 3 produced
+`verdict: activation-verified` and `correctness.disposition: passed`).
+
+## GOVERNED QUALIFICATION (2026-09-05): PASS -- promoted to `validated`
+
+Qualified under `session_ci95_threshold_bound_v1`, whose stopping rule was
+**pre-registered** in contract hash `8827bd6d` and committed BEFORE any of the
+sessions below were collected.
+
+| | |
+|---|---|
+| sessions | 6 of a pre-declared max 8 (60 paired rounds) |
+| per-session | 1.326  2.356  1.373  1.922  2.626  1.730 |
+| effect | **+1.8886%** end-to-end |
+| 95% CI | **[1.4754, 2.3523]**, width 0.8769 (target <= 1.0) |
+| between-session sd | 0.5238 |
+| control regression | **0.0%**, ci95_high 0.0 |
+| correctness | PASS (`bit_identical`) |
+| resource | PASS (`graph_cache_entries`) |
+| trigger proof | PASS |
+| promotion | **PASS**, no blocking reasons |
+
+`patch-verify-evidence` reports `validated-evidence` with zero problems, and
+holds under `--no-legacy-grandfather`.
+
+### Why this took six sessions, and why that matters
+
+The four earlier measurements (+1.855, +1.717, +1.249, +2.244) were honest but
+were collected under an older contract hash with no stopping rule, so they
+count for nothing here -- a new policy is prospective. They did their job as
+planning input: they exposed a between-session sd of ~0.4-0.6, LARGER than the
+standard error any single run reports, with one session's point estimate
+falling below another's ci95_low. A single run's interval therefore overstates
+precision, which is why this contract measures across sessions at all.
+
+The stopping rule refused a decision twice on evidence that would have passed
+a naive interval gate:
+
+- at 4 sessions, ci95_low 1.2929 (above the 1.0 bar) -- refused, width 1.111
+- at 5 sessions, ci95_low 1.4289 (well above it)     -- refused, width 1.0101
+
+The second refusal missed the precision target by **0.0101** and was the exact
+moment a movable threshold would have been moved. It was not. The criterion is
+direction-blind by construction -- it reads session count and interval WIDTH
+and is never passed the acceptance threshold -- so it could not stop early
+because the answer looked good. At session 6 the width reached 0.8769 and the
+rule decided; the run loop stopped immediately, because continuing past a
+decision is optional stopping in the other direction.
+
+Every session's own verdict is retained in `evidence/validation.json`
+(five `invalid`, then `pass`), so the full sequence is auditable rather than
+just the outcome.
+
+### Machinery this exposed
+
+Reaching a verdict required fixing four defects, each verified on hardware:
+
+- **RV95** -- the record lacked the activation/correctness dispositions the
+  evidence verifier reads, while `eligible_for_validated_state` reported True:
+  a fail-OPEN disagreement between the flag and the verifier.
+- **RV96** -- `campaign_identity_digest` is a BUILD identity, so a build could
+  only ever hold one record. A passing run was stored while a later confirming
+  run that FAILED could not be -- the direction that flatters a patch.
+- **RV99** -- the record persisted verdicts but not the measurements
+  (`pair_ratios` lived only in gitignored `artifacts/`), so no interval could
+  be re-derived or aggregated from committed evidence.
+- **`lane_effect_from_run` dropped `pair_ratios`** -- both ends had the field
+  and nothing joined them, so every lane effect carried an empty vector.
+  Sessions would have counted zero for ever while each record looked healthy.
+
+### Open
+
+Still not in any patch-set: capturing this gain in production is a separate,
+deliberate step. And per the contract's own resource limit, RD73 buys its
+timing with a measured ~68.7% increase in peak `graph_cache_entries`
+(386 -> 651), inside the declared 800 budget but worth watching if the cap is
+ever approached.
+
+[RD73 was subsequently added to `[patch-set.validated-enhancements]` and
+shipped in production builds between 2026-09-05 and 2026-09-09 -- see
+`config/recipes.toml`'s own git history for that addition; this file was not
+updated to say so at the time, which is itself a process gap worth noting.]
+
+## DEMOTION (2026-09-09): HI162's balanced A/B measures this as a real regression
+
+Filed as `docs/planning/completed/hip-autotune/HI162.md` (P0, 2026-09-05,
+`created-by: claude-opus-5`). An order-balanced, composition-verified 4-arm
+comparison on the SAME contract workload (MTP speculative decode, model
+`tierL-qwen27b-q8`, gfx1100 x2, `-sm tensor`) as the GOVERNED QUALIFICATION
+above:
+
+| arm       | tg128  | tg512  | tg2048 | pp1024 | pp4096  |
+|-----------|--------|--------|--------|--------|---------|
+| bcnative  | 102.02 | 100.34 | 106.95 | 987.36 | 1236.73 |
+| bcrd73    | 100.02 |  99.09 | 106.32 | 980.52 | 1229.26 |
+| delta     | -1.96% | -1.24% | -0.59% | -0.69% | -0.60%  |
+
+tg128, tg512 and pp1024 show COMPLETE separation at n=8 per arm (every
+`bcrd73` sample worse than every `bcnative` sample -- Mann-Whitney
+p = 2/C(16,8) = 0.00016 per metric). tg128 ranges [99.21-100.51] vs
+[101.58-102.31] never overlap.
+
+**Both the promotion evidence above and this regression cannot both be
+true.** The investigation that produced this table also found and withdrew
+two OTHER conclusions from the same measurement session (framework overhead
+measured as zero; the `GGML_HIP_DISPATCH_REPLAY` build flag measured as
+free) after discovering the dispatch-mode layer was OFF for every arm in
+that session (commit `1d73e7a2`, "GP11: the dispatch layer was OFF for
+every benchmark in this session"). RD73's regression finding SURVIVED that
+correction specifically: RD73 changes the CUDA graph cache key, a mechanism
+that is not gated behind the dispatch-mode flag that invalidated the other
+two conclusions, so RD73 remained the only real difference between the
+compared arms even after the fix. That commit's own words: *"NOT withdrawn:
+RD73's ~2% regression (HI162)... 1233 remains the only difference between
+them."*
+
+**Decision (via the bigcherry-patch-lifecycle skill, not inferred
+automatically from either benchmark): DEMOTED.**
+- `config/recipes.toml`: removed from `[patch-set.validated-enhancements]`
+  (production no longer ships this patch).
+- `patch.toml`: `state` changed `validated` -> `rejected` (the durable
+  implementation-state axis; this candidate's own performance claim is now
+  disproven by better-controlled evidence, which is exactly what `rejected`
+  means in this project's lifecycle vocabulary).
+- The original GOVERNED QUALIFICATION evidence above is preserved verbatim,
+  per this project's append-only-evidence rule -- it is superseded, not
+  deleted, and remains available if a future re-measurement (under a
+  properly balanced, order-rotated, composition-verified procedure, per
+  `docs/reference/testing/TEST.md`'s now-documented mandatory A/B
+  discipline) disagrees with HI162's finding.
+- `patch-graph --roots 1233_rd73_stable_graph_cache_key` shows no
+  dependents, so this demotion has no downstream composition impact.

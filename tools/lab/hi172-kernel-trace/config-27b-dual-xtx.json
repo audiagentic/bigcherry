@@ -1,0 +1,18 @@
+{
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "common_args": [
+    "-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096",
+    "--flash-attn", "on", "--ubatch-size", "512", "--batch-size", "2048",
+    "--threads", "8", "--parallel", "1"
+  ],
+  "env": {
+    "HIP_VISIBLE_DEVICES": "0,1",
+    "ROCR_VISIBLE_DEVICES": "0,1"
+  },
+  "native_binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+  "replay_binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/5ffe0ebb35a044d0397aa986d53da12d/bin/llama-server",
+  "replay_cache": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-27b-dual-reexport-20260908/dispatch.cache",
+  "prompt_repeat_sentence": "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ",
+  "prompt_repeat_count": 220,
+  "n_predict": 8
+}

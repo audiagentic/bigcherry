@@ -119,6 +119,41 @@ class ParseContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ec.ExperimentContractError, "duplicates"):
             ec.parse_contract(doc, contract_id="X")
 
+    def test_lane_in_both_positive_and_controls_rejected(self):
+        """A lane is (model, workload). Naming the same lane in both roles asks
+        one measurement to satisfy two contradictory requirements, and makes the
+        regression budget self-referential: the 'control' IS the treatment, so
+        it can never detect the collateral damage a control exists to catch."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["shared-model"], "workloads": ["decode"]}
+        doc["controls"] = {"models": ["shared-model"], "workloads": ["decode"]}
+        with self.assertRaisesRegex(ec.ExperimentContractError,
+                                    r"shared-model/decode.*BOTH positive and controls"):
+            ec.parse_contract(doc, contract_id="X")
+
+    def test_partial_lane_overlap_rejected_naming_only_the_shared_lanes(self):
+        """Overlap is per-LANE, not per-set: sharing a model is fine so long as
+        no (model, workload) pair is claimed by both roles. Here decode overlaps
+        and prefill does not, so only decode may be reported."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["m"], "workloads": ["decode", "small_m"]}
+        doc["controls"] = {"models": ["m"], "workloads": ["decode", "prefill"]}
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.parse_contract(doc, contract_id="X")
+        message = str(caught.exception)
+        self.assertIn("m/decode", message)
+        self.assertNotIn("m/prefill", message)
+        self.assertNotIn("m/small_m", message)
+
+    def test_same_workload_on_a_different_model_is_a_valid_control(self):
+        """The rule must not over-reach into the common, correct pattern of
+        controlling a workload on a model the hypothesis does not claim."""
+        doc = _base_doc()
+        doc["positive"] = {"models": ["claimed"], "workloads": ["decode"]}
+        doc["controls"] = {"models": ["unclaimed"], "workloads": ["decode"]}
+        contract = ec.parse_contract(doc, contract_id="X")
+        self.assertEqual(contract.controls.models, ("unclaimed",))
+
     def test_negative_gain_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=-5)
@@ -502,7 +537,7 @@ workloads = ["decode"]
 
 [contract.A.controls]
 models = ["m"]
-workloads = ["decode"]
+workloads = ["prefill"]
 
 [contract.A.acceptance]
 max_control_regression_pct = 1
@@ -531,7 +566,7 @@ workloads = ["decode"]
 
 [contract.B.controls]
 models = ["m"]
-workloads = ["decode"]
+workloads = ["prefill"]
 
 [contract.B.acceptance]
 max_control_regression_pct = 1
@@ -596,6 +631,582 @@ active = true
             )
 
 
+_MODEL_CHECK_TOML = """
+[contract.A]
+title = "t"
+
+[contract.A.source]
+source_id = "s"
+commits = ["c"]
+atomic_part = "p"
+
+[contract.A.hypothesis]
+family = "mmq"
+expected_effect = "performance"
+rationale = "r"
+
+[contract.A.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.A.positive]
+models = ["{positive}"]
+workloads = ["decode"]
+
+[contract.A.controls]
+models = ["{controls}"]
+workloads = ["prefill"]
+
+[contract.A.acceptance]
+max_control_regression_pct = 1
+"""
+
+
+class KnownModelIdsFromModelsRegistryTests(unittest.TestCase):
+    """Model refs in an evaluation set were unvalidated free text: _evaluation_set()
+    constrained `workloads` to WORKLOAD_TAGS and `models` to nothing. A typo or a
+    model that never existed validated clean and failed only at hardware time --
+    or worse, did not fail at all, since the ref is a LABEL and the real gguf
+    arrives separately via --model, so evidence could claim a lane it never
+    measured."""
+
+    def test_real_registry_yields_known_ids(self):
+        ids = ec.known_model_ids_from_models_registry()
+        self.assertIn("tierA-qwen4b-q6k", ids)
+        self.assertIn("tierL-qwen27b-q8", ids)
+        self.assertIn("tierM-gptoss20b-q6k", ids)
+
+    def test_explicit_path_used_over_default(self):
+        path = _write("""
+version = 1
+
+[[models]]
+id = "only-one"
+family = "f"
+path = "f/x.gguf"
+quantisation = "Q8_0"
+parameters = "1B"
+size-bytes = 1
+mtp = false
+""")
+        self.assertEqual(
+            ec.known_model_ids_from_models_registry(path), frozenset({"only-one"})
+        )
+
+    def test_missing_file_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.known_model_ids_from_models_registry("/no/such/models.toml")
+
+    def test_unregistered_positive_model_rejected(self):
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="no-such-model", controls="tierA-qwen4b-q6k"))
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
+        self.assertIn("no-such-model", str(caught.exception))
+        self.assertIn("positive", str(caught.exception))
+
+    def test_unregistered_control_model_rejected(self):
+        # Controls matter as much as positives: an unresolvable control lane
+        # means the regression budget is measured against nothing.
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="tierA-qwen4b-q6k", controls="no-such-model"))
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
+        self.assertIn("controls", str(caught.exception))
+
+    def test_check_is_opt_in_and_skipped_when_not_requested(self):
+        # Callers building a contract in isolation must not be forced to
+        # maintain a models.toml fixture -- same contract as the source-id check.
+        path = _write(_MODEL_CHECK_TOML.format(
+            positive="anything-at-all", controls="tierA-qwen4b-q6k"))
+        self.assertEqual(len(ec.load_contracts(path)), 1)
+
+    def test_shipped_registry_cross_checks_clean(self):
+        from bigcherry.core import paths
+        known = ec.known_model_ids_from_models_registry()
+        registry = ec.load_contracts(paths.EXPERIMENT_CONTRACTS, known_model_ids=known)
+        for contract in registry:
+            for model in (*contract.positive.models, *contract.controls.models):
+                self.assertIn(model, known)
+
+
+def _ratios(*percents: float) -> tuple[float, ...]:
+    return tuple(1.0 + pct / 100.0 for pct in percents)
+
+
+class BootstrapSessionEffectTests(unittest.TestCase):
+    """The estimator exists because a within-run interval structurally cannot
+    see drift BETWEEN runs. RD73 measured one build three times -- +1.855%,
+    +1.717%, +1.249% -- and the third run's point estimate fell below the
+    second run's ci95_low, so its single-run interval overstated precision."""
+
+    # Two sessions that disagree, in the way RD73's runs 2 and 3 disagreed.
+    DRIFTED = [
+        _ratios(2.55, 1.87, 1.95, 2.37, 1.33, 0.73, 1.14, 1.53, 1.79, 1.93),
+        _ratios(3.22, -0.20, 1.63, 0.37, 1.72, 0.17, 1.69, 1.30, 2.62, 0.04),
+    ]
+
+    def test_too_few_sessions_returns_none_rather_than_a_narrow_guess(self):
+        for count in range(1, ec.MIN_BOOTSTRAP_SESSIONS):
+            with self.subTest(sessions=count):
+                self.assertIsNone(
+                    ec.bootstrap_session_effect([self.DRIFTED[0]] * count)
+                )
+
+    def test_at_the_threshold_it_estimates(self):
+        result = ec.bootstrap_session_effect(
+            [self.DRIFTED[0]] * ec.MIN_BOOTSTRAP_SESSIONS
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result["sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_empty_or_nonfinite_session_returns_none(self):
+        base = [self.DRIFTED[0]] * ec.MIN_BOOTSTRAP_SESSIONS
+        self.assertIsNone(ec.bootstrap_session_effect(base[:-1] + [()]))
+        self.assertIsNone(ec.bootstrap_session_effect(base[:-1] + [(1.0, -0.5)]))
+        self.assertIsNone(
+            ec.bootstrap_session_effect(base[:-1] + [(1.0, float("nan"))])
+        )
+
+    def test_drift_widens_the_interval_beyond_a_single_run(self):
+        # THE reason this estimator exists. Sessions that disagree must yield
+        # a wider interval than the same number of identical sessions, whose
+        # only variation is within-run.
+        drifted = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        steady = ec.bootstrap_session_effect([self.DRIFTED[0]] * 4)
+        drifted_width = drifted["ci95_high_pct"] - drifted["ci95_low_pct"]
+        steady_width = steady["ci95_high_pct"] - steady["ci95_low_pct"]
+        self.assertGreater(drifted_width, steady_width)
+        self.assertGreater(drifted["between_session_sd_pct"], 0.0)
+        self.assertAlmostEqual(steady["between_session_sd_pct"], 0.0, places=9)
+
+    def test_sessions_are_weighted_equally_not_by_pair_count(self):
+        # A session that happened to collect more pairs must not speak louder
+        # about where the true effect lies -- the session is the unit.
+        few = _ratios(4.0, 4.0)
+        many = _ratios(*([0.0] * 40))
+        result = ec.bootstrap_session_effect([few, many, few, many])
+        # Equal weighting puts the point estimate midway between the two
+        # session effects (~4% and ~0%); pair weighting would drag it to ~0.4%.
+        self.assertAlmostEqual(result["geometric_effect_pct"], 2.0, delta=0.05)
+
+    def test_point_estimate_is_the_mean_of_per_session_effects(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        per_session = result["per_session_effect_pct"]
+        self.assertEqual(len(per_session), 4)
+        self.assertAlmostEqual(
+            result["geometric_effect_pct"], sum(per_session) / 4, places=9
+        )
+
+    def test_is_deterministic_for_a_given_seed(self):
+        first = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=7)
+        second = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=7)
+        self.assertEqual(first, second)
+        other = ec.bootstrap_session_effect(self.DRIFTED * 2, seed=8)
+        self.assertNotEqual(first["ci95_low_pct"], other["ci95_low_pct"])
+
+    def test_interval_brackets_the_point_estimate(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        self.assertLessEqual(result["ci95_low_pct"], result["geometric_effect_pct"])
+        self.assertLessEqual(result["geometric_effect_pct"], result["ci95_high_pct"])
+
+    def test_reports_total_pairs_across_sessions(self):
+        result = ec.bootstrap_session_effect(self.DRIFTED * 2)
+        self.assertEqual(result["paired_rounds_total"], 40)
+
+
+def _asymmetric_contract(**acceptance_overrides):
+    acceptance = {
+        "end_to_end_gain_pct": 0.0,
+        "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "improvement_no_regression_v1",
+        "min_paired_rounds": 10,
+        "min_sessions": 4,
+    }
+    acceptance.update(acceptance_overrides)
+    return _minimal_contract(acceptance=acceptance)
+
+
+class ImprovementNoRegressionPolicyTests(unittest.TestCase):
+    """The asymmetric rule: an improvement need only be ESTABLISHED, never
+    large; a regression stays strictly bounded by its interval.
+
+    The two errors are not symmetric -- shipping a regression costs real
+    throughput, adopting a genuine small improvement costs almost nothing --
+    so the decision rule is not symmetric either. The earlier policies mixed
+    "is the effect real" (evidence) with "is it big enough to be worth
+    carrying" (a value judgement) into one threshold; this one keeps only the
+    first."""
+
+    CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+
+    def _gate(self, *, low, high, sessions=5, regression=0.0, regression_high=0.0,
+              contract=None):
+        return ec.evaluate_promotion_gate(
+            contract or _asymmetric_contract(),
+            correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": (low + high) / 2,
+                "end_to_end_gain_pct_ci95_low": low,
+                "end_to_end_gain_pct_ci95_high": high,
+                "end_to_end_gain_pct_sessions": sessions,
+                "end_to_end_gain_pct_paired_rounds": 10 * sessions,
+                "max_control_regression_pct": regression,
+                "max_control_regression_pct_ci95_high": regression_high,
+                "max_control_regression_pct_paired_rounds": 10 * sessions,
+            },
+        )
+
+    def test_a_tiny_established_improvement_passes(self):
+        # The point of the policy: +0.31% with CI [0.12, 0.50] is a real win
+        # and is accepted, where a materiality bar would have refused it.
+        self.assertEqual(self._gate(low=0.12, high=0.50)["status"], "pass")
+
+    def test_interval_width_does_not_matter(self):
+        # No bound has to be resolved, so a wide interval that still excludes
+        # the floor is perfectly decidable -- unlike the session policy, which
+        # would call this inconclusive.
+        self.assertEqual(self._gate(low=0.05, high=9.0)["status"], "pass")
+
+    def test_a_positive_point_estimate_whose_interval_reaches_zero_fails(self):
+        # "Established" means the interval, not the point estimate. This is
+        # the safeguard that stops noise being adopted as an accumulating win.
+        result = self._gate(low=-0.10, high=4.0)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("does not establish an improvement", str(result["reasons"]))
+
+    def test_exactly_at_the_floor_is_not_established(self):
+        self.assertEqual(self._gate(low=0.0, high=2.0)["status"], "fail")
+
+    def test_evidence_floor_can_be_raised_to_a_measured_harness_bias(self):
+        # If the rig systematically reads +0.4%, a +0.3% "win" is an artifact.
+        contract = _asymmetric_contract(min_evidence_effect_pct=0.4)
+        self.assertEqual(
+            self._gate(low=0.3, high=0.9, contract=contract)["status"], "fail")
+        self.assertEqual(
+            self._gate(low=0.5, high=1.1, contract=contract)["status"], "pass")
+
+    def test_regression_over_budget_fails_however_good_the_gain(self):
+        self.assertEqual(
+            self._gate(low=3.0, high=4.0, regression=2.0, regression_high=2.0)["status"],
+            "fail",
+        )
+
+    def test_regression_budget_is_established_by_the_interval_not_the_estimate(self):
+        # The strict side stays strict: a small point estimate whose upper
+        # bound breaches the budget still fails.
+        result = self._gate(low=1.5, high=2.0, regression=0.2, regression_high=1.4)
+        self.assertEqual(result["status"], "fail")
+        self.assertIn("ci95_high", str(result["reasons"]))
+
+    def test_too_few_sessions_is_inconclusive(self):
+        # Drift does not stop being real because the decision rule changed.
+        self.assertEqual(self._gate(low=1.5, high=2.0, sessions=3)["status"], "invalid")
+
+    def test_missing_session_count_is_invalid(self):
+        result = ec.evaluate_promotion_gate(
+            _asymmetric_contract(), correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": 1.5,
+                "end_to_end_gain_pct_ci95_low": 1.2,
+                "end_to_end_gain_pct_ci95_high": 1.8,
+                "end_to_end_gain_pct_paired_rounds": 40,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 40,
+            },
+        )
+        self.assertEqual(result["status"], "invalid")
+
+    def test_declaring_a_materiality_bar_is_rejected(self):
+        # Keeping a gain bar under this policy would silently reintroduce the
+        # conflation the policy exists to remove.
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _asymmetric_contract(end_to_end_gain_pct=1.0)
+        self.assertIn("MATERIALITY", str(caught.exception))
+
+    def test_declaring_no_gain_field_at_all_is_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _asymmetric_contract(end_to_end_gain_pct=None)
+        self.assertIn("must name WHICH", str(caught.exception).replace("\n", " "))
+
+    def test_width_target_is_rejected_as_meaningless(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(max_ci95_width_pct=1.0)
+
+    def test_min_sessions_is_required_and_floored(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(min_sessions=None)
+        with self.assertRaises(ec.ExperimentContractError):
+            _asymmetric_contract(min_sessions=ec.MIN_BOOTSTRAP_SESSIONS - 1)
+
+
+class AggregateSessionEffectsTests(unittest.TestCase):
+    """RV99: rebuild a session-level interval from committed records alone.
+    Before lane_effects were persisted, pair_ratios existed only under
+    artifacts/ (gitignored), so no interval could be re-derived from evidence."""
+
+    METRIC = "mtp_wall_tps"
+
+    def _record(self, *percents, role="positive", metric=None, arch="gfx1100"):
+        # Real records carry gpu_architectures; the aggregator filters on it,
+        # so a fixture without one is not a realistic record.
+        return {"gpu_architectures": [arch], "lane_effects": [{
+            "role": role, "metric": metric or self.METRIC,
+            "pair_ratios": [1.0 + pct / 100.0 for pct in percents],
+        }]}
+
+    def _aggregate(self, records):
+        return ec.aggregate_session_effects(
+            records, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
+
+    def test_reports_session_count_even_when_it_cannot_estimate(self):
+        # The gate must be able to say how many were found and how many more
+        # are needed -- reporting nothing would be indistinguishable from
+        # having no evidence at all.
+        result = self._aggregate([self._record(1.0), self._record(2.0)])
+        self.assertEqual(result["gain_sessions"], 2)
+        self.assertNotIn("gain_ci95_low", result)
+
+    def test_aggregates_once_enough_sessions_exist(self):
+        result = self._aggregate([self._record(2.0, 1.0)] * ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertIn("gain_ci95_low", result)
+        self.assertIn("gain_between_session_sd_pct", result)
+        self.assertEqual(result["gain_paired_rounds"], 2 * ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_ignores_lanes_of_another_role_or_metric(self):
+        records = [self._record(2.0, 1.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        records.append(self._record(50.0, role="control"))
+        records.append(self._record(50.0, metric="other_tps"))
+        result = self._aggregate(records)
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+
+    def test_a_record_without_a_matching_lane_is_not_a_zero_session(self):
+        # Counting it as zero-effect would quietly drag the estimate toward
+        # zero while looking like more evidence.
+        records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        with_empty = records + [{"gpu_architectures": ["gfx1100"], "lane_effects": []}, {}]
+        self.assertEqual(
+            self._aggregate(with_empty)["gain_sessions"],
+            self._aggregate(records)["gain_sessions"],
+        )
+        self.assertAlmostEqual(
+            self._aggregate(with_empty)["gain"], self._aggregate(records)["gain"], places=9
+        )
+
+    def test_every_valid_session_contributes_regardless_of_order(self):
+        # Selecting or reordering sessions is exactly what the frozen re-run
+        # policy forbids, so the estimate must not depend on it.
+        records = [self._record(3.0, 2.0), self._record(0.5, 0.2),
+                   self._record(1.5, 1.0), self._record(2.5, 2.0)]
+        forward = self._aggregate(records)
+        backward = self._aggregate(list(reversed(records)))
+        self.assertEqual(forward["gain_sessions"], backward["gain_sessions"])
+        self.assertAlmostEqual(forward["gain"], backward["gain"], places=9)
+
+    def test_sessions_from_another_architecture_are_never_pooled(self):
+        # Found when preparing a gfx1201 run against a patch already qualified
+        # on gfx1100: without this filter the new architecture's sessions
+        # would be pooled with the old ones into a single "effect" describing
+        # neither -- silently, because every input record is individually
+        # valid. A settled result on one card could be corrupted just by
+        # measuring on another.
+        gfx1100 = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        gfx1201 = [self._record(40.0, 40.0, arch="gfx1201") for _ in range(3)]
+        result = ec.aggregate_session_effects(
+            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        # ~2%, not dragged toward the 40% foreign sessions.
+        self.assertAlmostEqual(result["gain"], 2.0, delta=0.05)
+
+    def test_the_other_architecture_aggregates_on_its_own(self):
+        gfx1100 = [self._record(2.0, 2.0) for _ in range(3)]
+        gfx1201 = [self._record(5.0, 5.0, arch="gfx1201")
+                   for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        result = ec.aggregate_session_effects(
+            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
+            architectures=["gfx1201"])
+        self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
+        self.assertAlmostEqual(result["gain"], 5.0, delta=0.05)
+
+    def test_a_record_with_no_architecture_is_not_pooled(self):
+        # Pre-RV99 records carry no lane_effects anyway, but a record whose
+        # hardware is unknown must never be assumed to match.
+        records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        unknown = {"lane_effects": [{
+            "role": "positive", "metric": self.METRIC, "pair_ratios": [1.4, 1.4]}]}
+        self.assertEqual(
+            ec.aggregate_session_effects(
+                records + [unknown], field="gain", role="positive",
+                metric=self.METRIC, architectures=["gfx1100"])["gain_sessions"],
+            ec.MIN_BOOTSTRAP_SESSIONS,
+        )
+
+    def test_empty_architecture_filter_is_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            ec.aggregate_session_effects(
+                [self._record(2.0)], field="gain", role="positive",
+                metric=self.METRIC, architectures=[])
+
+    def test_result_feeds_the_session_gate_directly(self):
+        # The aggregator's output keys must be exactly what the stopping rule
+        # reads -- otherwise the two halves never meet.
+        records = [self._record(2.0, 1.8) for _ in range(5)]
+        aggregated = ec.aggregate_session_effects(
+            records, field="end_to_end_gain_pct", role="positive", metric=self.METRIC,
+            architectures=["gfx1100"])
+        aggregated.update({
+            "max_control_regression_pct": 0.0,
+            "max_control_regression_pct_ci95_high": 0.0,
+            "max_control_regression_pct_paired_rounds": 10,
+        })
+        result = ec.evaluate_promotion_gate(
+            _session_contract(end_to_end_gain_pct=0.5),
+            correctness_gate={"passed": True, "missing_checks": [], "failed_checks": []},
+            aggregated_effects=aggregated,
+        )
+        self.assertIn(result["status"], {"pass", "fail"})  # decided, not invalid
+
+
+def _session_contract(**acceptance_overrides):
+    acceptance = {
+        "end_to_end_gain_pct": 1.0,
+        "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "session_ci95_threshold_bound_v1",
+        "min_paired_rounds": 10,
+        "min_sessions": 4,
+        "max_sessions": 8,
+        "max_ci95_width_pct": 1.0,
+    }
+    acceptance.update(acceptance_overrides)
+    return _minimal_contract(acceptance=acceptance)
+
+
+class SessionEvidencePolicyParsingTests(unittest.TestCase):
+    def test_policy_requires_the_whole_stopping_rule(self):
+        for missing in ("min_sessions", "max_sessions", "max_ci95_width_pct"):
+            with self.subTest(missing=missing):
+                acceptance = {
+                    "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                    "effect_evidence_policy": "session_ci95_threshold_bound_v1",
+                    "min_paired_rounds": 10, "min_sessions": 4, "max_sessions": 8,
+                    "max_ci95_width_pct": 1.0,
+                }
+                del acceptance[missing]
+                with self.assertRaises(ec.ExperimentContractError) as caught:
+                    _minimal_contract(acceptance=acceptance)
+                self.assertIn(missing, str(caught.exception))
+
+    def test_min_sessions_below_the_bootstrap_floor_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _session_contract(min_sessions=ec.MIN_BOOTSTRAP_SESSIONS - 1)
+        self.assertIn("min_sessions", str(caught.exception))
+
+    def test_max_sessions_below_min_rejected(self):
+        with self.assertRaises(ec.ExperimentContractError):
+            _session_contract(min_sessions=6, max_sessions=5)
+
+    def test_stopping_rule_without_the_policy_rejected(self):
+        # A declared-but-unconsulted stopping rule is worse than none: it
+        # reads as though the run was governed when nothing enforced it.
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _minimal_contract(acceptance={
+                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                "min_sessions": 4,
+            })
+        self.assertIn("min_sessions", str(caught.exception))
+
+    def test_valid_session_contract_parses(self):
+        contract = _session_contract()
+        self.assertEqual(contract.acceptance.min_sessions, 4)
+        self.assertEqual(contract.acceptance.max_sessions, 8)
+        self.assertEqual(contract.acceptance.max_ci95_width_pct, 1.0)
+
+
+class SessionStoppingRuleGateTests(unittest.TestCase):
+    """The stopping rule must consult session count and interval WIDTH only.
+    A rule that can see where ci95_low sits relative to the threshold is a
+    rule that stops when it likes the answer."""
+
+    CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
+
+    def _gate(self, *, sessions, low, high, contract=None):
+        return ec.evaluate_promotion_gate(
+            contract or _session_contract(),
+            correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": (low + high) / 2,
+                "end_to_end_gain_pct_ci95_low": low,
+                "end_to_end_gain_pct_ci95_high": high,
+                "end_to_end_gain_pct_sessions": sessions,
+                "end_to_end_gain_pct_paired_rounds": 10 * sessions,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 10 * sessions,
+            },
+        )
+
+    def test_too_few_sessions_is_inconclusive_not_a_fail(self):
+        result = self._gate(sessions=3, low=1.5, high=1.9)
+        self.assertEqual(result["status"], "invalid")
+
+    def test_wide_interval_below_max_sessions_is_inconclusive(self):
+        # Width 1.4 > target 1.0, and 5 < max 8 -> collect another session.
+        result = self._gate(sessions=5, low=1.1, high=2.5)
+        self.assertEqual(result["status"], "invalid")
+        self.assertTrue(
+            any("INCONCLUSIVE" in str(r) for r in result.get("reasons", []))
+        )
+
+    def test_wide_interval_at_max_sessions_is_decided_not_deferred(self):
+        # At max_sessions the rule must stop deferring and decide on what it
+        # has, otherwise a noisy patch defers for ever.
+        result = self._gate(sessions=8, low=1.1, high=2.5)
+        self.assertEqual(result["status"], "pass")
+
+    def test_precise_enough_and_above_threshold_passes(self):
+        self.assertEqual(self._gate(sessions=5, low=1.2, high=1.9)["status"], "pass")
+
+    def test_precise_enough_and_below_threshold_is_a_real_fail(self):
+        # Precision satisfied, bound not met -> an ordinary FAIL, never
+        # "collect more until it passes".
+        result = self._gate(sessions=5, low=0.4, high=1.1)
+        self.assertEqual(result["status"], "fail")
+
+    def test_stopping_decision_ignores_which_side_of_the_bar_it_lands(self):
+        # THE direction-blindness property. Two runs with the SAME session
+        # count and the SAME interval width, one comfortably above the bar and
+        # one below it, must reach the same STOPPING decision -- both decided,
+        # differing only in pass/fail.
+        width = 0.8
+        above = self._gate(sessions=5, low=1.6, high=1.6 + width)
+        below = self._gate(sessions=5, low=0.2, high=0.2 + width)
+        self.assertEqual(above["status"], "pass")
+        self.assertEqual(below["status"], "fail")
+        for result in (above, below):
+            self.assertNotIn(
+                "INCONCLUSIVE", " ".join(str(r) for r in result.get("reasons", []))
+            )
+
+    def test_missing_session_count_is_invalid(self):
+        result = ec.evaluate_promotion_gate(
+            _session_contract(), correctness_gate=self.CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": 1.5,
+                "end_to_end_gain_pct_ci95_low": 1.2,
+                "end_to_end_gain_pct_ci95_high": 1.8,
+                "end_to_end_gain_pct_paired_rounds": 40,
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 40,
+            },
+        )
+        self.assertEqual(result["status"], "invalid")
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -607,7 +1218,10 @@ def _minimal_contract(**overrides) -> ec.ExperimentContract:
         "hypothesis": {"family": "mmq", "expected_effect": "performance", "rationale": "r"},
         "scope": {"backend": "hip", "architectures": ["gfx1100"]},
         "positive": {"models": ["m"], "workloads": ["decode"]},
-        "controls": {"models": ["m"], "workloads": ["decode"]},
+        # Deliberately a different workload from the positive lane: a lane
+        # cannot be both the thing that must improve and the thing that must
+        # hold constant (parse_contract rejects the overlap).
+        "controls": {"models": ["m"], "workloads": ["prefill"]},
         "acceptance": {"max_control_regression_pct": 1},
     }
     doc.update(overrides)
@@ -938,6 +1552,340 @@ class PromotionGateTests(unittest.TestCase):
             contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
+
+    # -------- VA24 multi-lane (dev-gpt-agent req_a667633429fa4c9e) --------
+
+    def test_regression_interval_endpoints_reverse_under_negation(self):
+        """HIGH-risk invariant, pinned deliberately.
+
+        regression = max(0, -effect), so R_high derives from E_ci95_LOW, not
+        from E_ci95_high. Using the effect's upper bound would report the most
+        OPTIMISTIC case as the worst case.
+        """
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            # effect CI [-0.9, +0.4] -> worst plausible regression is 0.9,
+            # which comes from the LOW end. Taking the high end would give 0.0.
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=-0.9, ci95_high_pct=0.4, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertAlmostEqual(agg["max_control_regression_pct_ci95_high"], 0.9)
+
+    def test_multi_control_stays_fail_closed(self):
+        """Independent per-lane 95% bounds are not a 95% FAMILY guarantee, and
+        no contract in the registry exercises K>1 yet, so the correction is
+        deliberately unimplemented rather than untested-and-shipped."""
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c1", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c2", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("max_control_regression_pct_ci95_high", agg)
+
+    def test_multi_positive_bootstraps_the_fixed_composite_mean(self):
+        """Two fixed positive lanes now yield an aggregate interval, computed
+        by resampling WITHIN each lane -- never resampling lane identity."""
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        lane_a = tuple([1.03] * 10)   # ~+3%
+        lane_b = tuple([1.01] * 10)   # ~+1%
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
+                          ci95_low_pct=3.0, ci95_high_pct=3.0, paired_rounds=10,
+                          pair_ratios=lane_a),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
+                          ci95_low_pct=1.0, ci95_high_pct=1.0, paired_rounds=10,
+                          pair_ratios=lane_b),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertIn("target_kernel_gain_pct_ci95_low", agg)
+        # zero within-lane variance -> the aggregate collapses on the mean of
+        # the two fixed lane effects, ~2%.
+        self.assertAlmostEqual(agg["target_kernel_gain_pct_ci95_low"], 2.0, places=6)
+        self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 10)
+
+    def test_multi_positive_rounds_is_the_weakest_contributor(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
+                          ci95_low_pct=3.0, ci95_high_pct=3.0, paired_rounds=10,
+                          pair_ratios=tuple([1.03] * 10)),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
+                          ci95_low_pct=1.0, ci95_high_pct=1.0, paired_rounds=4,
+                          pair_ratios=tuple([1.01] * 4)),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 4)
+
+    def test_multi_positive_without_ratios_yields_no_interval(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
+                          ci95_low_pct=2.5, ci95_high_pct=3.5, paired_rounds=10),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
+                          ci95_low_pct=0.5, ci95_high_pct=1.5, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
+
+    # --------- VA24 P0 hardening (dev-gpt-agent req_d563bd481bcf4324) ---------
+
+    def test_ci_policy_requires_an_explicit_rounds_floor(self):
+        """An interval policy with no evidence-depth floor is weaker than it
+        looks: run_paired_lane() accepts pairs=1, whose bootstrap yields a
+        degenerate interval that can look arbitrarily significant."""
+        with self.assertRaises(ec.ExperimentContractError) as caught:
+            _minimal_contract(acceptance={
+                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                "effect_evidence_policy": "ci95_threshold_bound_v1"})
+        self.assertIn("min_paired_rounds", str(caught.exception))
+
+    def test_rounds_floor_applies_to_the_control_lane_too(self):
+        """A regression budget from one usable pair is as untrustworthy as a
+        gain from one; the floor must not be gain-only."""
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2,
+            max_control_regression_pct_paired_rounds=1)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("control interval" in r for r in gate["reasons"]), gate)
+
+    def test_inverted_source_interval_is_rejected_before_regression_derivation(self):
+        """max(0, -effect) can hide an inverted source interval, so the
+        LaneEffect must be validated atomically before the transform."""
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            # low > point: incoherent, and the regression transform would
+            # otherwise still yield a plausible non-negative bound.
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=0.9, ci95_high_pct=1.5, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("max_control_regression_pct_ci95_high", agg)
+
+    def test_point_estimate_outside_interval_is_not_usable(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=9.0,
+                          ci95_low_pct=1.0, ci95_high_pct=2.0, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
+                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
+
+    # ------------- VA24: interval plumbing through aggregation -------------
+
+    def test_single_lane_interval_is_carried_through_exactly(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.855,
+                          ci95_low_pct=1.482, ci95_high_pct=2.169, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertEqual(agg["target_kernel_gain_pct_ci95_low"], 1.482)
+        self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 10)
+        # regression = max(0, -effect), so its UPPER bound comes from the
+        # effect's LOWER bound: max(0, -(-0.6)) == 0.6
+        self.assertAlmostEqual(agg["max_control_regression_pct_ci95_high"], 0.6)
+
+    def test_multi_lane_refuses_to_invent_an_aggregate_interval(self):
+        """mean(lane ci95_lows) is NOT the ci95_low of the mean effect.
+
+        Rather than emit a plausible-looking but statistically invalid
+        number, aggregation omits the interval entirely for multi-lane
+        contracts; the gate then reports "invalid" under an interval policy.
+        """
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
+                          ci95_low_pct=0.5, ci95_high_pct=1.5, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
+                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertEqual(agg["target_kernel_gain_pct"], 1.5)          # point estimate still averaged
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)      # interval withheld
+
+    def test_multi_lane_under_interval_policy_is_invalid_not_pass(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+            "effect_evidence_policy": "ci95_threshold_bound_v1",
+            "min_paired_rounds": 10})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
+                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.8,
+                          ci95_low_pct=1.4, ci95_high_pct=2.2, paired_rounds=10),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.1,
+                          ci95_low_pct=-0.2, ci95_high_pct=0.4, paired_rounds=10),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=agg)
+        self.assertEqual(gate["status"], "invalid", gate)
+
+    def test_lane_effects_without_intervals_omit_them(self):
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        effects = [
+            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0),
+            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0),
+        ]
+        agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
+        self.assertNotIn("max_control_regression_pct_ci95_high", agg)
+
+    # ---------------- VA24: ci95_threshold_bound_v1 ----------------
+
+    CI_ACCEPT = {
+        "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "ci95_threshold_bound_v1", "min_paired_rounds": 10,
+    }
+
+    def _ci_gate(self, **effects):
+        base = {"end_to_end_gain_pct_paired_rounds": 10,
+                "max_control_regression_pct_paired_rounds": 10}
+        base.update(effects)
+        return ec.evaluate_promotion_gate(
+            _minimal_contract(acceptance=dict(self.CI_ACCEPT)),
+            correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=base)
+
+    def test_ci_policy_requires_lower_bound_to_reach_the_threshold(self):
+        """The BOUND must be established, not merely positivity.
+
+        +1.1% with CI [0.1, 2.1] "excludes zero" but never establishes the
+        declared 1.0% gain, so it must FAIL. This is the specific weakness
+        of a "CI excludes zero" rule (dev-gpt-agent req_cd86e5fd4a3b4328).
+        """
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.1, end_to_end_gain_pct_ci95_low=0.1,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2)
+        self.assertEqual(gate["status"], "fail", gate)
+        self.assertTrue(any("ci95_low" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_passes_when_lower_bound_clears_the_threshold(self):
+        # RD73's real shape: point 1.855, ci95_low 1.482, threshold 1.0.
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "pass", gate)
+
+    def test_ci_policy_missing_interval_is_invalid_not_fail(self):
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertFalse(gate["passed"])
+
+    def test_ci_policy_insufficient_paired_rounds_is_invalid(self):
+        """pairs=1 yields a degenerate bootstrap interval that can look
+        arbitrarily significant; a rounds floor is what makes the interval
+        policy actually stronger than the point estimate."""
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            end_to_end_gain_pct_paired_rounds=1,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("paired rounds" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_incoherent_interval_is_invalid(self):
+        gate = self._ci_gate(
+            end_to_end_gain_pct=1.0, end_to_end_gain_pct_ci95_low=2.0,
+            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+        self.assertEqual(gate["status"], "invalid", gate)
+        self.assertTrue(any("incoherent" in r for r in gate["reasons"]), gate)
+
+    def test_ci_policy_regression_upper_bound_must_sit_inside_budget(self):
+        """Noise absorbed, uncertain over-budget regression rejected."""
+        ok = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=0.4)
+        self.assertEqual(ok["status"], "pass", ok)
+        bad = self._ci_gate(
+            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=1.2)
+        self.assertEqual(bad["status"], "fail", bad)
+        self.assertTrue(any("ci95_high" in r for r in bad["reasons"]), bad)
+
+    def test_legacy_contracts_keep_point_estimate_behaviour(self):
+        contract = _minimal_contract(acceptance={
+            "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        self.assertEqual(contract.acceptance.effect_evidence_policy, "point_estimate_v1")
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects={"end_to_end_gain_pct": 1.5,
+                                "max_control_regression_pct": 0.5})
+        self.assertEqual(gate["status"], "pass", gate)
+
+    def test_nan_effect_does_not_satisfy_any_threshold(self):
+        """NaN must never PASS a bound.
+
+        Regression test for a real gate hole (dev-gpt-agent review,
+        req_cd86e5fd4a3b4328): the gate used isinstance(x, (int, float)),
+        and every ordered comparison against NaN is False --
+        `nan < required_gain` is False and `nan > regression_budget` is
+        False -- so a NaN effect silently satisfied BOTH the gain and the
+        regression check and produced a PASS from malformed evidence.
+        """
+        nan = float("nan")
+        contract = _minimal_contract(acceptance={
+            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1,
+            "max_control_regression_pct": 1,
+        })
+        effects = {"target_kernel_gain_pct": nan, "end_to_end_gain_pct": nan,
+                   "max_control_regression_pct": nan}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
+        joined = " ".join(gate["reasons"])
+        self.assertIn("target_kernel_gain_pct", joined)
+        self.assertIn("end_to_end_gain_pct", joined)
+        self.assertIn("max_control_regression_pct", joined)
+
+    def test_infinite_regression_does_not_satisfy_budget(self):
+        contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
+        effects = {"max_control_regression_pct": float("-inf")}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
+
+    def test_bool_is_not_accepted_as_a_measured_effect(self):
+        """bool is a subclass of int; True must not be read as 1.0."""
+        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 0.5,
+                                                 "max_control_regression_pct": 1})
+        effects = {"target_kernel_gain_pct": True, "max_control_regression_pct": 0.0}
+        gate = ec.evaluate_promotion_gate(
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+        self.assertFalse(gate["passed"], gate)
 
     def test_fails_when_target_gain_below_threshold(self):
         contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})

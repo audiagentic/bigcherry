@@ -257,10 +257,18 @@ def compare_one_shape_seed(
     subject_status = "ok" if subject_run.returncode == 0 else "failed"
     control_status = "ok" if control_run.returncode == 0 else "failed"
 
-    subject_digest = ce.find_digest_for_tensor(subject_run.stderr, "dst")
-    control_digest = ce.find_digest_for_tensor(control_run.stderr, "dst")
-    subject_metric = ce.find_metric_for_tensor(subject_run.stderr, "dst")
-    control_metric = ce.find_metric_for_tensor(control_run.stderr, "dst")
+    # Real hardware finding (2026-09-01, gfx1100/b10705 re-qualification,
+    # RD103): the real MUL_MAT test case in vendor/llama.cpp/tests/
+    # test-backend-ops.cpp (struct test_mul_mat::build_graph()) always
+    # names its output tensor "out" (ggml_set_name(out, "out")) -- "dst"
+    # does not appear anywhere in that struct. Looking up "dst" made
+    # every digest/metric comparison silently return None, so this check
+    # was reporting a missing-evidence failure rather than the real
+    # comparison result on every single run.
+    subject_digest = ce.find_digest_for_tensor(subject_run.stderr, "out")
+    control_digest = ce.find_digest_for_tensor(control_run.stderr, "out")
+    subject_metric = ce.find_metric_for_tensor(subject_run.stderr, "out")
+    control_metric = ce.find_metric_for_tensor(control_run.stderr, "out")
 
     return ShapeSeedComparison(
         shape_name=shape.name,

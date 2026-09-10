@@ -24,11 +24,14 @@ capability = "controls"
 validator = "benchmark"
 required = true
 
-# No real per-check correctness producer exists yet for RD73's
-# bit_identical obligation -- declared honestly against a real validator
-# shape (backend-ops), never faked via autotune-campaign as a
-# placeholder. Stays BLOCKED (no ctx.correctness_evidence bound) until a
-# real producer exists. See README.md's "Known limitations".
+# RD73's real bit_identical evidence is produced by
+# validation_campaign.evaluate_rd73_mtp_correctness() (VA06), driven by
+# --run-rd73-contract -- but that producer is not wired into this
+# generic backend-ops check (ctx.correctness_evidence stays unbound for
+# it). Declared honestly against a real validator shape, never faked via
+# autotune-campaign as a placeholder. Stays BLOCKED here until the
+# generic adapter is rebound; see README.md's "Known gap"/"Known
+# limitations".
 [[check]]
 id = "correctness"
 capability = "correctness"
@@ -36,13 +39,15 @@ validator = "backend-ops"
 required = true
 ops = ["RD73_MTP_BIT_IDENTICAL"]
 
-# No real subject-hit/control-miss RD73 marker probe exists yet (RD73's
-# patch source carries no BIGCHERRY_PATCH_TRACE-gated marker). Declared
-# honestly against the real, future exact marker text this patch would
-# need to emit -- the generic tune-binary/GGML_CUDA_DISABLE_FUSION
-# negative control is NOT valid for this patch (RD73 is graph-cache
-# keying, not a fusion path) and must never be substituted here. Stays
-# BLOCKED until a real marker + probe exist.
+# RD73's patch source now carries a real BIGCHERRY_PATCH_TRACE-gated
+# marker, and validation_campaign.run_rd73_activation_evidence() (VA06)
+# produces a real subject-hit/control-miss result -- but that producer
+# is not wired into this generic trace-marker check
+# (ctx.trace_evidence stays unbound for it). The generic tune-binary/
+# GGML_CUDA_DISABLE_FUSION negative control is still NOT valid for this
+# patch (RD73 is graph-cache keying, not a fusion path) and must never
+# be substituted here. Stays BLOCKED here until the generic adapter is
+# rebound; see README.md's "Known gap"/"Known limitations".
 [[check]]
 id = "activation"
 capability = "activation"

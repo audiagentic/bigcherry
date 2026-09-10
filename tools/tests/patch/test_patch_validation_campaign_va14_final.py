@@ -404,12 +404,20 @@ class EndToEndEligibilityCompositionTests(unittest.TestCase):
         adapter_verdict = _Verdict(eligible=True)
         contract_promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
         self.assertTrue(
-            vc.compute_persisted_validation_eligible(descriptor, adapter_verdict, contract_promotions)
+            vc.compute_persisted_validation_eligible(
+                descriptor, adapter_verdict, contract_promotions,
+                activation_disposition="activation-verified",
+                correctness={"disposition": "passed"},
+            )
         )
         # And the failure side: adapter PASS alone (no real promotion) must
         # NOT be eligible -- the exact bug this whole slice exists to fix.
         self.assertFalse(
-            vc.compute_persisted_validation_eligible(descriptor, adapter_verdict, {})
+            vc.compute_persisted_validation_eligible(
+                descriptor, adapter_verdict, {},
+                activation_disposition="activation-verified",
+                correctness={"disposition": "passed"},
+            )
         )
 
 

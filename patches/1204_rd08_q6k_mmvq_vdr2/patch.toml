@@ -11,3 +11,4 @@ plan-ids = ["RD08"]
 requires = []
 conflicts = []
 experiment-contract = "RD08-Q6K-MMVQ-VDR2"
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]

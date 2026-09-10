@@ -34,6 +34,17 @@ class RuntimeSmokeSpec:
     split_mode: str = "none"
     tensor_split: tuple[float, ...] = ()
     environment: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    #: KV depth to prefill before measuring (llama-bench -d/--n-depth).
+    #: llama-bench has NO -c/--ctx-size, so this is how a context-size
+    #: measurement is expressed: depth=49152 means "generate at ~48k context".
+    #: 0 keeps the original depth-less behaviour.
+    depth: int = 0
+    #: KV cache quantisation. Must be IDENTICAL across cards in any
+    #: cross-architecture comparison -- it changes the work being measured, so
+    #: tuning it per card would make the comparison meaningless. Pick one
+    #: setting that fits the smallest card and use it everywhere.
+    cache_type_k: str | None = None
+    cache_type_v: str | None = None
 
 
 def smoke_argv(binary: Path, spec: RuntimeSmokeSpec) -> list[str]:
@@ -49,6 +60,12 @@ def smoke_argv(binary: Path, spec: RuntimeSmokeSpec) -> list[str]:
     ]
     if spec.tensor_split:
         args += ["-ts", "/".join(str(value) for value in spec.tensor_split)]
+    if spec.depth:
+        args += ["-d", str(spec.depth)]
+    if spec.cache_type_k:
+        args += ["-ctk", spec.cache_type_k]
+    if spec.cache_type_v:
+        args += ["-ctv", spec.cache_type_v]
     return args
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import tempfile
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -27,6 +28,19 @@ def _args(**overrides) -> Namespace:
 
 
 class ResolvedPinShaTests(unittest.TestCase):
+    def test_campaign_mirror_is_used_without_vendor_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mirror = Path(temporary) / "upstream.git"
+            mirror.mkdir()
+            with patch("bigcherry.core.config.load", return_value=Namespace(pinned="pin")), \
+                 patch("bigcherry.patch.patchset.catalog", return_value=[]), \
+                 patch("bigcherry.core.context.ProjectContext.resolve", return_value=Namespace(upstream_repo=mirror)), \
+                 patch("bigcherry.source.workspace.UpstreamRepository") as repository, \
+                 patch("bigcherry.patch.catalog.validation_evidence_statuses", return_value={}):
+                repository.return_value.resolve_ref.return_value = "a" * 40
+                self.assertEqual(cli_patch.cmd_patch_verify_evidence(_args()), 0)
+            repository.assert_called_once_with(mirror)
+
     def test_resolved_sha_is_passed_to_validation_evidence_statuses(self):
         captured = {}
 

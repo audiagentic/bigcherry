@@ -1,4 +1,4 @@
-"""cmd_pull's --source ref resolution (compat.recipe removal plan).
+"""cmd_pull's --source ref resolution (legacy recipe removal plan).
 
 gpt-dev-agent-reviewed design, dev-gpt-agent gateway session
 ses_5307d9c58ec645cb: "pull needs the source REF, not build/platform --

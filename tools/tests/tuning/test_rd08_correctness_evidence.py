@@ -42,12 +42,12 @@ def _completed(returncode: int, stderr: str):
     return result
 
 
-def _digest_line(*, name="dst", digest="abc123", call_index=0, nels=1024):
+def _digest_line(*, name="out", digest="abc123", call_index=0, nels=1024):
     return f"BIGCHERRY_REF_DIGEST name={name} call_index={call_index} digest={digest} nels={nels}\n"
 
 
 def _metric_line(
-    *, tensor="dst", err="1e-05", max_abs="0.001", backend1_digest, backend2_digest
+    *, tensor="out", err="1e-05", max_abs="0.001", backend1_digest, backend2_digest
 ):
     return (
         f"BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor={tensor} "
@@ -151,6 +151,32 @@ class CompareOneShapeSeedTests(unittest.TestCase):
 
         return runner
 
+    def test_real_tensor_name_is_out_not_dst(self):
+        # Real hardware finding (2026-09-01, RD103): vendor/llama.cpp/tests/
+        # test-backend-ops.cpp's test_mul_mat always names its output
+        # tensor "out" (ggml_set_name(out, "out")) -- "dst" never appears
+        # for MUL_MAT. Evidence emitted under the wrong name ("dst") must
+        # be treated as MISSING, never silently matched -- this is what
+        # let the original "dst" lookup bug silently report None/None as
+        # a generic failure instead of the real comparison result.
+        subject_stderr = _digest_line(name="dst", digest="abc") + _metric_line(
+            tensor="dst", backend1_digest="deadbeef", backend2_digest="cafef00d"
+        )
+        control_stderr = _digest_line(name="dst", digest="abc") + _metric_line(
+            tensor="dst", backend1_digest="deadbeef", backend2_digest="00000000"
+        )
+        runner = self._runner_pair(subject_stderr, control_stderr)
+        row = rd08.compare_one_shape_seed(
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0],
+            seed=1,
+            runner=runner,
+        )
+        self.assertFalse(row.ok)
+        self.assertIsNone(row.subject_digest)
+        self.assertIsNone(row.control_digest)
+
     def test_matching_digests_are_ok(self):
         subject_stderr = _digest_line(digest="abc") + _metric_line(
             backend1_digest="deadbeef", backend2_digest="cafef00d"
@@ -207,7 +233,7 @@ class CompareOneShapeSeedTests(unittest.TestCase):
         # backend1_digest/backend2_digest in the metric line at all.
         subject_stderr = (
             _digest_line(digest="abc")
-            + "BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor=dst backend1=HIP0 "
+            + "BIGCHERRY_CORRECTNESS_METRIC op=MUL_MAT tensor=out backend1=HIP0 "
             "backend2=CPU err=1e-05 max_abs=0.001 threshold=5e-4 n=1024\n"
         )
         control_stderr = _digest_line(digest="abc") + _metric_line(
