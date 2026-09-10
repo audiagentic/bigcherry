@@ -99,9 +99,12 @@ FINAL STATE: config/recipes.toml pinned=b10884 (moved twice this session: b10705
 
 ## Ledger-events
 
+
 - chg_20260910_053053_successfully-bumped-the-llama_6506
 - 2026-09-10T05:30:53.720115+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T05:31:54.933096+00:00 (updated-by): Updated: section:notes
 - chg_20260910_053852_ran-a-second-real-pin-bump-b_8197
 - 2026-09-10T05:38:52.614139+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T05:39:02.500714+00:00 (updated-by): Updated: section:notes
+- chg_20260910_065505_replaced-all-11-dispositioned_7448
+- 2026-09-10T06:55:05.638982+00:00 (updated-by): Updated: section:ledger-events
