@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Adaptive screen-stage retention remains blocked on HI35 re-baseline and lacks the required real-hardware validation.
+Derive screen-stage retention band from same-kernel canary under the settled no-flush execution contract.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Compute canary_screen_pct before retention; derive band=clamp(2×canary, screen_keep_within_pct, band_max_pct); use dispersion fallback when no pair; validate quiet/noisy runs, identical preconditioning, no flush widening, and THA27 no-flush baseline.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Quiet runs floor at 10%; RV21-style ~14% canary widens near 28%; never exceed max. This changes candidate admission, so require real hardware and regression comparison.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi95.md
+Screen-stage canary/retention logic, HI24 contract tests, real hardware evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI24,HI37,HI65.
-
-Active dependencies: Frozen dependencies: HI24,HI35.
-
-Reference handling: Rewrite forward references (2); preserve historical references (3) on predecessor.
+Quiet finalist sets byte-identical to current; noisy retention widens appropriately; cap enforced; real RX7900 GRE validation.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Band is reproducibly derived, bounded, and improves noisy-run retention without changing quiet behavior or violating no-flush policy.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi95
 - 2026-09-09T11:58:00.998833+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.599655+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:35:13.824060+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033527_repaired-five-more-tuning-succ_3062
+- 2026-09-10T03:35:27.102590+00:00 (updated-by): Updated: section:ledger-events

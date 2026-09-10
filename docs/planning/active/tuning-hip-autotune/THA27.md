@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Tooling landed; profiling, re-baseline, and documentation gates remain.
+Make tuning falsifiable by joining call-weighted per-signature savings to measured matmul fraction and required A/B repetitions.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Implement impact report from record calls + measurements with confidence intervals and family/signature breakdown; trace rocprofv3 matmul fraction by stable kernel mapping; compute expected E2E effect and repetitions; run A/B at required count or record below-resolution result. Use no-flush B2 execution contract.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Separate precise local kernel evidence from noisy end-to-end throughput. Predicted effect = matmul_fraction × predicted_saving; never present point estimates as exact.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi35.md
+bigcherry impact tool, trace aggregation/mapping, TUNING-DETAIL report and evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI09,HI12,HI23,HI24,HI34,HI65,HI74,PH01.
-
-Active dependencies: Frozen dependencies: HI12.
-
-Reference handling: Rewrite forward references (4); preserve historical references (8) on predecessor.
+Reproduce RV19 ~10.2% call-weighted result, interval propagation, fraction and repetition estimate, real A/B/no-resolution conclusion.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Every claimed tuning benefit has reproducible impact model, confidence bounds, measured decode fraction, and a resolved A/B or explicit below-resolution disposition.
 
 ## Notes
 
@@ -78,3 +68,6 @@ Successor key: tuning-hip-autotune-hi35
 - 2026-09-09T12:09:29.097375+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.573334+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:34:45.973983+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033527_repaired-five-more-tuning-succ_3062
+- 2026-09-10T03:35:27.044252+00:00 (updated-by): Updated: section:ledger-events

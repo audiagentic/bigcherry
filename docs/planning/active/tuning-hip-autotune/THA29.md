@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The source explicitly says the broader topology-aware planner should stay pending/backlog until concrete need arises; it is not terminal.
+Keep topology-aware execution planning as an architectural backlog item until a concrete multi-feature need justifies a smallest useful slice.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Do not implement top-down planner now; if needed, begin with HI85/HI18 SPLIT_REDUCE strategy-class/admissibility slice, audit HI88 and any independent placement/KV feature, and verify against actual code before designing shared planner.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Avoid architecture-for-its-own-sake and combinatorial candidate planning. Use coarse strategy classes and owning-subsystem resource claims only after real duplicate needs appear; mixed RCCL/META remains mathematically invalid without hierarchy.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi86.md
+Architecture decision record and future topology planner design only when triggered by concrete need.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI138,HI18,HI85,HI87,HI88.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (5) on predecessor.
+Code-grounded overlap/admissibility review, strategy-class proof and no duplicated planner authority.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Remain pending/backlog unless independent features demand it; no speculative planner or parallel candidate database is created.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi86
 - 2026-09-09T11:58:00.988505+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.587041+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:34:58.936780+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033527_repaired-five-more-tuning-succ_3062
+- 2026-09-10T03:35:27.074245+00:00 (updated-by): Updated: section:ledger-events

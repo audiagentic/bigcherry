@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Generalized digest, lookup, coverage, holdout, and alignment work remains.
+Implement replay-v5 generalized two-level lookup for mmq/mmvq using canonical masked digests and explicit match provenance.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+After v5 foundation, define C++/Python byte-identical generalized digest masks (mmq family/type/K/M; mmvq family/type/full ne0); export representative highest-call promoted winner with collision assertion; lookup exact→generalized→native; guard can_execute; separate counters/match_kind; run alignment-class experiment and holdouts.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Generalized key is recommendation only; real target signature authorization remains can_execute. No generalized keys for mmvf/blas. Exact behavior unchanged when disabled.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi75.md
+replay v5 format/digest, exporter, C++/Python lookup, coverage and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI36,HI37,HI67,HI74,PH01.
-
-Active dependencies: Frozen dependencies: HI37,HI67,HI74.
-
-Reference handling: Rewrite forward references (1); preserve historical references (5) on predecessor.
+Cross-language vectors, disabled byte-identical counters, can_execute failure native/miss, same-workload exact hits unchanged, 49/49 holdout prediction target.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Promote only mmq/mmvq generalized entries with self-describing match_kind/provenance, digest equivalence, can_execute safety, and holdout evidence; no v4 marker or NO-GO family keys.
 
 ## Notes
 
@@ -78,3 +68,6 @@ Successor key: tuning-hip-autotune-hi75
 - 2026-09-09T12:09:31.481521+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.580210+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:34:52.915790+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033527_repaired-five-more-tuning-succ_3062
+- 2026-09-10T03:35:27.061717+00:00 (updated-by): Updated: section:ledger-events
