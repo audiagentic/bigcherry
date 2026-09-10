@@ -38,15 +38,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-kernel-coverage-kc03.md
+EC16/EC19 contract identity fields; RRVP identity/persistence references; GP03/GP07/GP08/GP10 evidence schemas; decision record and owner handoff.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC16,EC19,GP03,GP07,GP08,GP10.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (6); preserve historical references (6) on predecessor.
+Representability matrix for provider, topology, root, threshold, protocol, fallback and negative evidence; ambiguity examples; CPU-only/provider misuse negative checks; owner assignment for any proven gap.
 
 ## Effort & Risk
 
@@ -58,7 +54,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-A documented decision establishes whether existing identity/contracts are sufficient; no CPU-only provider acceptance, collective registry, or backend implementation is introduced by this item.
+A documented decision establishes whether existing identity/contracts are sufficient; any gap is assigned to an existing GP/provider/contract owner; no collective registry or backend implementation is introduced.
 
 ## Notes
 
@@ -69,6 +65,10 @@ Successor key: patching-kernel-coverage-kc03
 Supersedes: KC03
 Inherited constraints: RV107, RV112, RV123 — this is a cross-backend identity sufficiency decision only.
 Migration: capability-rebaseline-v3-2026-09
+
+Supersedes: KC03
+Inherited constraints: RV107, RV112, RV123 — cross-backend identity sufficiency decision only.
+semantic-carryforward: concrete files and validation restored 2026-09-10.
 
 ## Change Log
 
@@ -85,3 +85,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T00:52:43.052122+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
 - chg_20260910_005948_legacy-planning-folders-now-co_1240
 - 2026-09-10T00:59:49.018109+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:39:37.092116+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_023948_hip-collective-and-kernel-cove_9788
+- 2026-09-10T02:39:48.417756+00:00 (updated-by): Updated: section:ledger-events

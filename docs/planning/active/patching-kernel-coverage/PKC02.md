@@ -39,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-kernel-coverage-kc02.md
+graph/DAG recipe identity schema; node provenance/source/stream records; dependency/conflict resolver including 1205+1207; replay validator; isolated/combined experiment manifests; promotion/disposition reports; EC16/EC19 integration tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC16,EC19.
-
-Active dependencies: Frozen dependencies: RD12,RD13,RD17,RD39,RD43.
-
-Reference handling: Rewrite forward references (6); preserve historical references (2) on predecessor.
+Stable identity across serialization/replay; node source, stream/schedule and evidence provenance; dependency and mutual-exclusion conflicts including 1205+1207; deterministic replay; unsafe composition rejection; isolated controls and combined evidence; backend/provider selection excluded.
 
 ## Effort & Risk
 
@@ -59,7 +55,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Recipe identity, dependency/conflict, replay, provenance, node evidence, and fail-closed promotion semantics are specified and tested; backend optimization/provider selection is explicitly out of scope.
+Recipe identity, dependency/conflict, replay, provenance, node evidence and fail-closed promotion semantics are specified and tested; backend optimization/provider selection remains explicitly out of scope.
 
 ## Notes
 
@@ -70,6 +66,10 @@ Successor key: patching-kernel-coverage-kc02
 Supersedes: KC02
 Inherited constraints: RV109, RV110, RV122 — stable recipe identity/replay/provenance/node evidence and fail-closed conflict contract.
 Migration: capability-rebaseline-v3-2026-09
+
+Supersedes: KC02
+Inherited constraints: RV109, RV110, RV122 — stable recipe identity/replay/provenance/node evidence and fail-closed conflict contract.
+semantic-carryforward: concrete files and validation restored 2026-09-10.
 
 ## Change Log
 
@@ -86,3 +86,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T00:52:34.568374+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
 - chg_20260910_005948_legacy-planning-folders-now-co_1240
 - 2026-09-10T00:59:49.006474+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:39:31.420207+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_023948_hip-collective-and-kernel-cove_9788
+- 2026-09-10T02:39:48.405015+00:00 (updated-by): Updated: section:ledger-events
