@@ -875,7 +875,7 @@ def make_smoke_worker(
         argv = runtime_smoke.smoke_argv(binary_ref.path, spec)
         # `env=environment` (a small, deliberately minimal override dict,
         # e.g. just HIP_VISIBLE_DEVICES + PATH from
-        # smoke_environment_for_hip_devices) REPLACES the entire subprocess
+        # smoke_environment_for_backend) REPLACES the entire subprocess
         # environment when passed directly, not just overlays those keys.
         # On Linux that's mostly survivable; on Windows it produces a
         # process missing SystemRoot/TEMP/TMP/USERPROFILE/etc, which made a
