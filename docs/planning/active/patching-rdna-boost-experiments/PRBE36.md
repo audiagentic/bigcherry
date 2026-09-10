@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Consider graph-opt default-on for gfx1151 only after the complete AMD-STREAM prerequisite chain passes; current hardware is not sufficient.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE32, PRBE33, PRBE34 and PRBE35 validated identities.
+- Keep default change scoped to gfx1151 architecture; gfx1100/gfx1201 behavior must remain unaffected.
+- Run broad dense/MoE/GDN and MTP on/off regression suite with capture stress and long-context edge cases.
+- Compare correctness, capture failures, output divergence and performance distribution across models, not a single winner.
+- If hardware-wide confidence is absent, retain graph-opt opt-in and document the blocking evidence.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd44.md
+Architecture default configuration; prerequisite identities; gfx1151 broad regression recipes; dense/MoE/GDN/MTP/capture evidence; non-selection controls.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD39,RD40,RD41,RD42,RD43.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (6); preserve historical references (0) on predecessor.
+Full prerequisite chain; gfx1151 hardware; broad model suite; graph capture stress; long context; correctness/output; performance distribution; non-gfx1151 controls.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (6); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Last-in-chain policy change; architecture-scoped; broad evidence; no single-model extrapolation.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Default-on is allowed only after hardware-wide gfx1151 confidence with no capture/output regression; otherwise remain opt-in.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd44
 - 2026-09-09T11:58:01.290852+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.044114+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:59:46.152511+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_030005_amd-streamfus-successors-prbe_8761
+- 2026-09-10T03:00:05.767790+00:00 (updated-by): Updated: section:ledger-events

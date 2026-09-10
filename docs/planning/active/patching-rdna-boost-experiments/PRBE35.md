@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Protect the concurrent-region join node from graph fusion after PRBE34 shared-expert overlap; this is a mandatory prerequisite for graph-opt defaulting.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE34 exact shared-expert concurrency identity.
+- Guard graph fusion so the concurrent-region join remains present and aux stream rejoin semantics are preserved.
+- Run repeated graph capture/replay on MoE decode with graph-opt on, plus graph-opt-off and dense controls.
+- Verify no capture abort, output parity and no material ordinary regression.
+- Do not enable PRBE36 default-on until this protection passes.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd43.md
+Graph fusion eligibility around concurrent-region join; PRBE34 scheduler; capture/replay fixtures; MoE/dense controls; trace and output evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD42
-
-Active dependencies: RD44.
-
-Reference handling: Frozen dependencies: none recorded.
+Repeated capture/replay; no abort; output parity; graph-opt off/dense controls; no material regression; join/rejoin trace.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Frozen dependencies: none recorded.
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Concurrency join correctness; dependency-aware defaulting; no fusion false positives.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Join protection prevents capture failure and preserves output under eligible concurrency; PRBE36 remains blocked until this gate passes.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd43
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.037669+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:59:39.595087+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_030005_amd-streamfus-successors-prbe_8761
+- 2026-09-10T03:00:05.752127+00:00 (updated-by): Updated: section:ledger-events

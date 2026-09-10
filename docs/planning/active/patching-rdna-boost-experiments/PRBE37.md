@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly records RD45 as still pending with no patch; its GEMV epilogue-fusion qualification remains.
+Qualify pattern-matched GEMV epilogue activation fusion as the root AMD-FUS-001 candidate, preserving fallback and PRBE38 dependency.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit current mul_mat_vec_f/q epilogues and define exact non-gated activation patterns.
+- Implement only pattern-matched SILU/SIGMOID epilogue fusion; preserve unmatched graph and prefill paths.
+- Validate bit/tolerance parity across Q8/Q4/Q6 and dense/hybrid decode; test graph capture and false positives.
+- Measure launch count, HBM traffic and TG for 4B/9B/27B with prefill and nonmatching controls.
+- Promote only if end-to-end gain is repeatable and PRBE38 consumes the exact root identity.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd45.md
+mul_mat_vec_f/q epilogue; pattern matcher/fallback; Q8/Q4/Q6 fixtures; graph capture; launch/HBM/TG campaign; PRBE38 dependency identity.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD46.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Exact activation patterns; bit/tolerance output; graph capture; prefill/nonmatch controls; launch count; traffic; TG across model sizes.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Pattern-matched only; correctness before launch reduction; preserve fallback; no broad epilogue fusion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Eligible paths fuse correctly and show repeatable TG benefit with non-target paths unchanged; unsupported patterns fall back; PRBE38 depends on this validated root.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd45
 - 2026-09-09T11:58:01.296126+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.050932+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:59:52.821708+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_030005_amd-streamfus-successors-prbe_8761
+- 2026-09-10T03:00:05.781141+00:00 (updated-by): Updated: section:ledger-events
