@@ -212,6 +212,9 @@ _SWITCH_OLD = """                        gate_value += gate_biases[j];
                             case GGML_GLU_OP_SWIGLU_OAI:
                                 result = ggml_cuda_op_swiglu_oai_single(gate_value, result);
                                 break;
+                            case GGML_GLU_OP_SWIGLU_CLAMP:
+                                result = ggml_cuda_op_swiglu_clamp_single(gate_value, result, glu_limit);
+                                break;
                             default:
                                 result = result * gate_value;
                                 break;
@@ -235,15 +238,18 @@ _SWITCH_NEW = """                        gate_value += gate_biases[j];
                                 case GGML_GLU_OP_SWIGLU_OAI:
                                     result = ggml_cuda_op_swiglu_oai_single(gate_value, result);
                                     break;
+                                case GGML_GLU_OP_SWIGLU_CLAMP:
+                                    result = ggml_cuda_op_swiglu_clamp_single(gate_value, result, glu_limit);
+                                    break;
                                 default:
                                     result = result * gate_value;
                                     break;
                             }
                         }"""
 
-_UNUSED_OLD = """        GGML_UNUSED_VARS(use_gate, use_bias, use_gate_bias, use_scale, use_gate_scale, active_glu, gate_bias, x_bias, x_scale, gate_scale, tmp_gate);"""
+_UNUSED_OLD = """        GGML_UNUSED_VARS(use_gate, use_bias, use_gate_bias, use_scale, use_gate_scale, active_glu, glu_limit, gate_bias, x_bias, x_scale, gate_scale, tmp_gate);"""
 
-_UNUSED_NEW = """        GGML_UNUSED_VARS(use_gate, use_bias, use_gate_bias, use_scale, use_gate_scale, use_dst_gate, active_glu, gate_bias, x_bias, x_scale, gate_scale, tmp_gate, dst_gate);"""
+_UNUSED_NEW = """        GGML_UNUSED_VARS(use_gate, use_bias, use_gate_bias, use_scale, use_gate_scale, use_dst_gate, active_glu, glu_limit, gate_bias, x_bias, x_scale, gate_scale, tmp_gate, dst_gate);"""
 
 _HOST_SIDE_OLD = """        fusion_local.glu_op = fusion->glu_op;"""
 
