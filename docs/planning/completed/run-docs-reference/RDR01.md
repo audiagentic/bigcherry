@@ -2,7 +2,7 @@
 id: RDR01
 order: 11
 plan: run-docs-reference
-state: pending
+state: completed
 created-at: '2026-09-09T10:47:23.952788+00:00'
 breadth: ''
 skill: intermediate
@@ -69,12 +69,24 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): AUDIT FIRST
 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): this is CLOSER TO DONE than the prior review's "audit first, scope unknown" framing suggested. docs/reference/README.md already establishes ownership/location rules; the experiment reference corpus is now small; the HI36 verdict is under evidence; historical material has already been moved to docs/archive. Treat this as a BOUNDED closure audit against the checklist already in this item's notes, not a potentially-large unknown relocation task. Execution order stays #11 (unchanged), immediately before RDR02.
 
+CLOSURE AUDIT DONE 2026-09-10, per the deeper repo-validated review's exact checklist -- all 8 items checked directly against current HEAD:
+1. Loose docs at root: only docs/README.md (clean).
+2. Per-entry classification: docs/reference/README.md already gives every entry an explicit type + authority; spot-checked CANDIDATES.md/FINDINGS.md/START_HERE.md/TUNING-DETAIL.md/the RDNA backlog pointer -- all self-documented (generated / cross-project log / orientation guide / archive pointer / plan-item pointer).
+3+7. THA27/HI36 corpus: `git grep -nE 'THA27|HI36' -- docs tools` and `-- tools/tests` found ZERO remaining THA27 references and only HI36 as design-rationale comments (generalise.py, test_generalise.py) plus one fixture-provenance note (tools/tests/fixtures/replay/README.md, 'extracted from the HI35/HI36 campaign bundle' -- already extracted/owned locally, not a live external corpus needing relocation). DO01's original 'resolve ownership for the THA27/HI36 campaign corpus' concern is RESOLVED -- no corpus remains unresolved.
+5. Stale top-level report refs (REPORT_GPU_RUNTIME_MIGRATION etc): none found.
+6. Duplicate filenames under docs/**: 12 names duplicate, ALL verified as legitimate archive-vs-live pairs or split-authority pointers (e.g. docs/reference/archive/HANDOFF.md is a 5-line compat stub vs the real 969-line docs/archive/HANDOFF.md; docs/archive/TUNING-DETAIL.md vs docs/archive/hip-autotune/TUNING-DETAIL.md are genuinely different historical snapshots, not duplicates; PATCH_VALIDATION.md/TOOL_DISPOSITION.md pairs are pointer-vs-authority by design per README.md's own table). No unresolved duplicate ownership found.
+8. Archive immutability: spot-checked, holds.
+Local Markdown-link audit: wrote an ad-hoc regex-based checker (not a new permanent tool) over all docs/**/*.md relative links. Found 5 candidates; 3 were false positives from code-comment parens inside completed/historical plan items (not real links); 2 were real -- one (docs/planning/completed/hip-autotune/HI19.md, docs/planning/completed/session-recovery/SE03.md) is quoted historical text inside COMPLETED plan items, correctly left as-is per checklist item 8 (immutable historical evidence, not live reference); one WAS a real broken link in a live maintained doc (docs/reference/patches/PATCH_REFACTOR_RUNBOOK.md pointed at planning/active/patch-system/... but that plan item has since completed and moved to planning/completed/patch-system/...) -- FIXED.
+
+VERDICT: classification + THA27/HI36 authority/consumer map + link/fixture validation are all complete. Per the review's own instruction ('if all entries classify cleanly and consumer/reference scans are clean, close RDR01; do not manufacture relocation work to satisfy the stub'), this item is CLOSED AS SATISFIED -- no further relocation/classification work identified. DO01's original scope is done.
+
 ## Change Log
 
 - 2026-09-09T10:47:23.952788+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:24.437731+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.739805+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +97,7 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): this is CLOSE
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.183063+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:08.857215+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:30:11.881190+00:00 (updated-by): Updated: section:notes
+- 2026-09-10T00:30:14.091301+00:00 (state-transition): State: pending → completed
+- chg_20260910_003019_closed-the-docs-reference-clas_8141
+- 2026-09-10T00:30:19.567154+00:00 (updated-by): Updated: section:ledger-events
