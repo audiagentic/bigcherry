@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Document and optionally validate Linux PCIe ASPM performance policy as host tuning for bandwidth-bound discrete RDNA systems; never implement a runtime toggle.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Recheck R9700 discussion evidence; compare default versus performance ASPM policy on R9700/XTX with dense and MoE workloads, single-GPU fully resident and transfer-heavy controls, cold boots, PCIe link state, TG/PP, transaction latency, and idle/power; document only locally reproduced results.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+This is OS-level operations guidance outside llama.cpp. Aggressive link power saving may increase transfer latency on some systems but is topology/system dependent. Do not bake it into runtime or claim a universal setting.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd77.md
+Host tuning documentation and reproducible measurement record; no llama.cpp runtime patch.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+No output impact; TG/PP, PCIe latency, power/idle and link-state evidence across cold boots/workload controls.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Document as optional host tuning only if local hardware reproduces a repeatable benefit; never add a runtime ASPM toggle or universal recommendation.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd77
 - 2026-09-09T11:58:01.398077+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.212166+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:15:55.582608+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031644_repaired-four-more-active-succ_8062
+- 2026-09-10T03:16:44.945234+00:00 (updated-by): Updated: section:ledger-events
