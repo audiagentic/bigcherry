@@ -15,13 +15,15 @@ priority: P1
 
 ## Description
 
-Graph/DAG lifecycle identity, dependency, conflict, and provenance implementation remains planned.
+Provide reusable graph/DAG recipe identity, dependency, conflict, evidence, and promotion semantics for graph and schedule recipes. Backend optimization, primitive/provider identity, benchmarking, and candidate selection remain owner-specific.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Define stable composition identity and graph structure.
+2. Bind node-level source, stream/schedule, and evidence provenance.
+3. Model patch/recipe dependencies and mutual exclusions, including 1205+1207.
+4. Make replay deterministic and reject unsafe compositions fail-closed.
+5. Preserve isolated controls and combined-experiment evidence without selecting backend candidates here.
 
 ## Detailed Solution & Technical Design
 
@@ -57,13 +59,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Recipe identity, dependency/conflict, replay, provenance, node evidence, and fail-closed promotion semantics are specified and tested; backend optimization/provider selection is explicitly out of scope.
 
 ## Notes
 
 Supersedes: KC02
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-kernel-coverage-kc02
+
+Supersedes: KC02
+Inherited constraints: RV109, RV110, RV122 — stable recipe identity/replay/provenance/node evidence and fail-closed conflict contract.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +83,6 @@ Successor key: patching-kernel-coverage-kc02
 - 2026-09-09T11:58:01.039267+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.671135+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:52:34.568374+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:49.006474+00:00 (updated-by): Updated: section:ledger-events
