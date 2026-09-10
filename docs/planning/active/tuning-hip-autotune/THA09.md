@@ -15,15 +15,15 @@ priority: P1
 
 ## Description
 
-Evaluate lazy native_select on the HIP dispatch hot path under the strict sub-1% policy, preserving force semantics and structural proof.
+Run the residual guard-deferral experiment for lazy native_select on the HIP dispatch hot path. Preserve the already-completed zero-allocation memoized provider/counters; this item must not reimplement that mechanism.
 
 ## Steps
 
-Implement zero-allocation memoized native provider keyed by tensor pointers/context with computed flag/cache; make dispatch_resolve consume provider; preserve force-once semantics and do not move !native.valid guard; add counters for dispatch/L1 hits/misses/native calls/forces; compare baseline and patched structural counts and interleaved E2E.
+1. Reuse the completed memoized native provider and existing dispatch/L1/native/force counters; do not reimplement or replace them. 2. Add an explicit experiment-only mode that defers BOTH `!native.valid` guards (the guard in `ggml_hip_dispatch_try` and the guard in `ggml_hip_dispatch_resolve`) until after the signature/L1 path, while leaving default behavior unchanged. 3. Make the shadow validity check reachable and non-vacuous in that experiment mode: it must be able to observe disagreement rather than being structurally guaranteed by an earlier guard. 4. Preserve force-once semantics, native fallback, and fail-closed invalid handling; prove the L1-hit path never forces. 5. Compare control versus experiment with structural counters, graph/correctness checks, diagnostics-off E2E, and interleaved production-like runs. 6. Ship only if the explicit sub-1% policy passes; otherwise retain the mechanism as non-promoted experiment evidence.
 
 ## Detailed Solution & Technical Design
 
-Avoid computing native selection on ~99.8% of dispatches where cache already resolves. No std::function/allocation. L1-hit path must never force. Counter reduction proves mechanism but does not justify shipping absent E2E benefit.
+The completed provider/counter mechanism is the baseline and is not recreated here. The residual question is whether moving both validity guards under an explicit experiment selector can remove native_select work without changing behavior. Default mode keeps both guards and existing routing. Experiment mode makes the shadow path reachable, records both validity decisions and disagreement counts, and falls back safely on invalid native selection. No std::function or allocation is permitted on the hot path; counters prove reachability/mechanism but cannot justify promotion without E2E evidence.
 
 ## Code Samples & Guidance
 
@@ -31,11 +31,11 @@ Avoid computing native selection on ~99.8% of dispatches where cache already res
 
 ## Files
 
-HIP native_select/dispatch resolve; structural counters and diagnostics; hot-path tests and Brutus benchmark evidence.
+Existing HIP native_select/dispatch-resolve provider and counters; experiment-mode guard selection; shadow-validity telemetry; hot-path/graph/correctness tests; diagnostics-off and interleaved Brutus E2E evidence.
 
 ## Validation
 
-native_select calls approximate misses plus force paths; correctness/force behavior unchanged; end-to-end and dispatch overhead measured with interleaved controls.
+Prove both guard sites are exercised in experiment mode and that shadow validity can report both agreement and disagreement under a non-vacuous test fixture or real signature set. Verify default mode is byte/behavior unchanged, force-once and native fallback remain correct, and L1 hits do not force. Compare native_select calls, dispatch/L1 hits/misses, native calls, forces, resolver overhead, graph/correctness, diagnostics-off, and E2E results using interleaved controls. A counter-only reduction is insufficient; require the explicit sub-1% regression policy before promotion.
 
 ## Effort & Risk
 
@@ -47,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Ship only if zero-allocation behavior is proven and end-to-end regression is below the explicit sub-1% policy; counter improvement alone is insufficient.
+The already-completed memoized provider and counters are reused, not reimplemented. Both `!native.valid` guards are named and moved only under an explicit experiment mode. The shadow validity path is reachable/non-vacuous and can detect disagreement. Default behavior remains unchanged; invalid/unsupported/force cases fail safely. Promotion requires correctness, graph, diagnostics-off E2E, and the sub-1% policy; no E2E benefit means no promotion.
 
 ## Notes
 
@@ -58,6 +58,8 @@ Successor key: tuning-hip-autotune-hi158
 Supersedes: HI158
 Inherited constraint: RV133 — do not reimplement completed mechanism; both validity guards must be named and the shadow counter must be reachable/non-vacuous.
 Migration: capability-rebaseline-v3-2026-09
+
+Supersedes HI158. Preserve RV133: the original shadow counter was vacuous because the resolver guard made L1 unreachable for invalid native selection, and the dispatch entry point has a second guard. This successor owns only the follow-up experiment; do not reimplement the completed mechanism.
 
 ## Change Log
 
@@ -77,3 +79,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T03:30:11.111314+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_033046_repaired-four-more-tuning-succ_3978
 - 2026-09-10T03:30:46.991974+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T04:01:50.125123+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_040226_fixed-the-four-remaining-seman_2499
+- 2026-09-10T04:02:26.584992+00:00 (updated-by): Updated: section:ledger-events
