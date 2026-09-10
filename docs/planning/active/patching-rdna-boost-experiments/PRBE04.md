@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-Patch exists; eligibility benchmark and EX02 safeguard re-verification remain.
+Qualify the gfx1201 Q6_K MMQ sub-scale fold/hoist from patch 1203, preserving the existing BigCherry 1000/HI71 eligibility and PEF01 safety barriers.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit the exact Q6_K symbol/hunk against patch 1000 and resolve the current baseline including 1000.
+- Run PEF01-specific safety, illegal-memory and correctness gates before timing.
+- Compare baseline plus PRBE04 only on exact Q6_K shapes, with gfx1201 primary and gfx1100 control.
+- Verify dense-shape-aware eligibility from HI71 and retain optional diagnostic arms only as explanatory.
+- Record exact patch identity, shape matrix, fallback/quarantine decisions and balanced performance evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The production treatment is baseline plus PRBE04 where baseline includes validated 1000. Keep stock/1000 diagnostic arms explanatory only; do not bypass EX02/PEF01 or generalize eligibility beyond the proven Q6_K pattern.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd07.md
+patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq; MMQ vec-dot/mmq sources; Q6_K fixtures; PEF01 quarantine evidence; HI71 eligibility cross-reference; campaign artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI71,RD02,RD03.
-
-Active dependencies: Frozen dependencies: EX02,RD02,RD03.
-
-Reference handling: Rewrite forward references (2); preserve historical references (3) on predecessor.
+Exact Q6_K shapes; gfx1201 primary; gfx1100 non-regression; output and memory safety; PEF01 reproduction/quarantine checks; HI71 dense-shape eligibility; balanced repeated performance.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+PEF01 quarantine mandatory; exact identity; fail-closed promotion; never relax EX02.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No illegal-memory or correctness failure occurs under PEF01/EX02 gates; only eligible Q6_K shapes select the treatment; gfx1201 evidence meets the registered performance boundary and gfx1100 is non-regressed, otherwise quarantine/reject.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd07
 - 2026-09-09T11:58:01.142855+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.816199+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:30:25.570783+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023037_three-rdna-boost-successors-no_6965
+- 2026-09-10T02:30:37.095824+00:00 (updated-by): Updated: section:ledger-events
