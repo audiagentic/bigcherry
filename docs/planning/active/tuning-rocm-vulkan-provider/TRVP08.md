@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-CK dense GEMM provider integration and qualification are pending.
+Integrate CK dense GEMM through the provider mechanism with source/build/provider identity and correctness-gated candidates.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Start only after the hipBLASLt provider mechanism and raw-kernel audit prerequisites are complete. 2. Add CK dense GEMM through the existing BLAS family/provider route without changing native BLAS semantics. 3. Before qualification, pin CK source revision, compiler/toolchain, target architecture, templates/configuration, and all build-affecting CK options into BuildPlan, manifest, and attestation. 4. If CK is compiled, include source/template/config/compiler/options/architecture in the implementation digest; if prebuilt, record an exact provider fingerprint. 5. Expose candidates through the existing tuner and provider-qualified catalog/runtime identity, then gate promotion on correctness and independent evidence. 6. Preserve exact stack/device provenance and fallback behavior.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+CK dense GEMM is a provider candidate family behind the existing BLAS contract. Candidate identity is bound to the CK source revision or prebuilt fingerprint, compiler/toolchain, architecture, template/configuration/options, and runtime stack. BuildPlan/manifest/attestation carry this identity before measurement or promotion. Correctness is the baseline for the sibling split-K/pipeline and grouped/MoE work; native remains available and mathematically unchanged on unsupported or failed CK paths.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-rocm-vulkan-provider-ro13.md
+tuning/providers/ck.py; CK provider probes and build/attestation metadata; HIP provider route; catalog/runtime candidate identity; correctness, fallback, and qualification tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RO12.
-
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+Build and inspect CK identity metadata, then run dense GEMM representative shapes/types against the native/reference oracle. Verify candidates are measured through the existing tuner, carry exact provider/build/architecture identity, and reject missing or mismatched fingerprints. Exercise unsupported hardware/configuration fallback and ensure native BLAS semantics remain valid. Do not promote a CK winner before correctness and identity evidence passes.
 
 ## Effort & Risk
 
@@ -57,13 +47,15 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No CK candidate is qualified without pinned source/build/provider fingerprint and manifest/attestation coverage. Dense GEMM correctness, fallback, tuner measurement, and provenance gates pass. Native BLAS behavior remains unchanged, and a candidate from another CK source/compiler/architecture/configuration is rejected.
 
 ## Notes
 
 Supersedes: RO13
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-rocm-vulkan-provider-ro13
+
+Supersedes RO13. TRVP09 and TRVP10 are sibling extensions after this dense-provider baseline. Preserve patch 1225 and planning/ledger governance.
 
 ## Change Log
 
@@ -77,3 +69,6 @@ Successor key: tuning-rocm-vulkan-provider-ro13
 - 2026-09-09T11:58:01.565145+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:47.411873+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:43:56.529048+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_034415_repaired-trvp07-09-with-the-co_7761
+- 2026-09-10T03:44:15.620153+00:00 (updated-by): Updated: section:ledger-events
