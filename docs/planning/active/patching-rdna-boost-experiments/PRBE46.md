@@ -15,55 +15,47 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly calls RD55 genuinely open with no patch and a real next candidate.
+Implement and qualify Vulkan MoE density-aware MMV routing for RADV RDNA3/3.5/4, replacing the fixed batch cutoff only where routing density and driver evidence support it.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Recheck llama.cpp PR #27332 against the pinned Vulkan backend. 2. Add a density-aware MUL_MAT_ID routing heuristic and preserve explicit batch boundary behavior at B=8 and B=9. 3. Gate by expert density, batch/concurrency 1..64, driver, and supported architecture; retain existing path for unsupported cases. 4. Test Qwen MoE -np 8/9/16/32/64, B<=8 controls, PP512, and dense models. 5. Record path selection, TG aggregate, kernel timing, and per-request latency across target drivers.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Route Vulkan MUL_MAT_ID to MMV based on expert density rather than a fixed batch<=8 cutoff, targeting the reported batch-9 cliff. Keep the heuristic explicit and driver-aware; do not assume the source threshold generalizes across RADV generations. Preserve old routing as fallback and make B=8/B=9 boundary behavior observable.
 
 ## Code Samples & Guidance
 
-
+Trigger: Qwen MoE -np 8,9,16,32,64 on XTX/R9700 RADV. Controls: B<=8, PP512, dense models, and unsupported drivers/architectures. Boundary: batch/concurrency 1..64 and routing density.
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd55.md
+Vulkan MUL_MAT_ID dispatch heuristic; density/path-selection tests; RADV architecture/driver matrix; Qwen MoE replay manifests and evidence for UP-VK-001.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Correctness: output parity against existing Vulkan path. Performance: report selected path, TG aggregate, kernel timing, and per-request latency with interleaved controls, explicitly covering B=8 and B=9. Acceptance: promote only when benefit generalizes to target drivers/architectures without regression; retain fixed routing otherwise.
 
 ## Effort & Risk
 
-
+M; routing thresholds may overfit a driver or workload. Require density controls and explicit boundary tests.
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Preserve Vulkan fallback, driver/architecture qualification, and campaign evidence provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Acceptance requires output parity, explicit B=8/B=9 boundary coverage, density/driver/architecture controls, and a repeatable target-driver latency/TG benefit without regressing other batches; otherwise retain the existing routing.
 
 ## Notes
 
 Supersedes: RD55
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd55
+
+Supersedes RD55; coordinate with reusable-build Vulkan scoping without duplicating ownership.
 
 ## Change Log
 
@@ -77,3 +69,7 @@ Successor key: patching-rdna-boost-experiments-rd55
 - 2026-09-09T11:58:01.337328+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.109221+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:08:34.398338+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
+- 2026-09-10T03:09:12.902174+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260910_030930_repaired-two-more-active-patch_7368
+- 2026-09-10T03:09:30.729645+00:00 (updated-by): Updated: section:ledger-events
