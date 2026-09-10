@@ -1,0 +1,114 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 34,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "10c8d307cbb7a4c5f376e5454345d4c986293b36",
+  "first_seen": "2026-09-10T21:51:01.577409+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "replay-diagnostics-option": "applied"
+      },
+      "ggml/src/ggml-backend-meta.cpp": {
+        "meta-reduce-telemetry-fallback": "applied",
+        "meta-reduce-telemetry-hook-field": "applied",
+        "meta-reduce-telemetry-hook-resolve": "applied",
+        "meta-reduce-telemetry-hook-type": "applied",
+        "meta-reduce-telemetry-include": "applied",
+        "meta-reduce-telemetry-node-declaration": "applied",
+        "meta-reduce-telemetry-node-scope": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "pool-alloc-requested-size-member": "applied",
+        "pool-workspace-members": "applied",
+        "pool-workspace-note-alloc": "applied",
+        "pool-workspace-note-free": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "pool-leg-clear-cache": "applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-tuner.cu": {
+        "emit-result-canonical-json": "already-applied",
+        "format-result-canonical-json": "already-applied",
+        "result-canonical-json": "already-applied",
+        "set-result-canonical-json": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "q2k-mma-unroll-guard": "applied",
+        "q6k-mma-float-promotion": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-case-forward": "applied",
+        "mmq-case-signature": "applied",
+        "mmq-helpers-and-switch": "applied",
+        "mmq-instantiation-macro": "applied",
+        "mmq-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "ggml_hip_family_mmvq-diagnostics-only-count": "applied",
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "replay-diagnostics-definition": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "hi70-direct-op-corpus": "applied"
+      },
+      "tools/server/server.cpp": {
+        "server-shutdown-cstdlib": "applied",
+        "server-shutdown-response": "applied",
+        "server-shutdown-route": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "b10900",
+  "revision": "50182a53fa2c26bd2a7fc31d855231effdc2f4ad",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-09-10T22:06:27.404907+00:00"
+}
