@@ -15,15 +15,15 @@ priority: P2
 
 ## Description
 
-Thread explicit stack_name through CampaignRequest, lane/execution specs, planner backend checks, CLI/workflow stages, receipts, and lane identity while preserving legacy --lane syntax.
+Thread explicit stack selection through campaign requests, lane/execution identity, planner checks, CLI/workflow stages, receipts, and replay. Migrate callers to stack-aware identity in one pass; do not preserve the legacy three-part lane as a compatibility shim.
 
 ## Steps
 
-Add stack selection/absence semantics; parse source:build:platform plus stack internally; thread through build/record/tune/profile/verifier/replay and receipt reconstruction; reject missing/ambiguous/unknown/backend-mismatched stack before evidence execution; add legacy compatibility and collision tests.
+1. Add explicit stack selection and absence semantics to CampaignRequest, CampaignLane, execution specs, workflow reconstruction, and receipts. 2. Preserve source:build:platform parsing only as an external input grammar if required, then resolve an explicit stack field or configured default into internal source:build:platform:stack identity; never infer from PATH, environment, or whichever stack exists. 3. Thread the resolved stack through build, record, tune, profile, verifier, replay, and receipt reconstruction. 4. Reject missing, ambiguous, unknown, and source/backend-mismatched stacks before any evidence-producing work. 5. Migrate all request/CLI/lane identity callers and tests in one pass; do not add a legacy --lane compatibility parser or shim that preserves stackless identity.
 
 ## Detailed Solution & Technical Design
 
-Selected stack is execution intent and campaign identity, distinct from runtime attestation. Resolve cfg.stacks once, preserve public three-part lane grammar, and make source:build:platform:stack internal identity.
+Stack is execution intent and campaign identity, distinct from runtime attestation. A request must carry an explicit stack or an explicit configured default; absence is not an invitation to infer. Internal lane identity is always source:build:platform:stack. RRVP01 owns workflow propagation only and consumes RO01's authoritative stack selection; it must not create a second stack-selection path. The migration is fail-closed and atomic across callers, so old three-part lane semantics cannot silently produce evidence.
 
 ## Code Samples & Guidance
 
@@ -31,11 +31,11 @@ Selected stack is execution intent and campaign identity, distinct from runtime 
 
 ## Files
 
-campaign planner/lane/CLI build/tuning/profiling/workflow and tests.
+campaign request/planner/lane/execution specs; CLI build/tuning/profiling and workflow reconstruction; receipts/replay projection; stack-aware identity and fail-closed migration tests.
 
 ## Validation
 
-All stack stages preserve stack_name in receipts; legacy lanes parse; distinct stacks cannot collide; mismatch fails closed.
+Run build, tune-campaign, profile-campaign, verifier, and replay with explicit stack selection and verify every receipt/stage preserves it. Test explicit configured defaults, missing/ambiguous/unknown stacks, backend mismatch, source/build/platform collisions, and distinct stacks producing distinct internal lane IDs. Assert that legacy stackless lane requests are rejected or require explicit migration—not accepted through a compatibility shim—and no evidence-producing work begins before stack resolution.
 
 ## Effort & Risk
 
@@ -47,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Stack-aware campaign identity is threaded end-to-end, legacy syntax remains compatible, and invalid or mismatched stacks fail before evidence-producing work.
+All evidence-producing workflows carry explicit resolved stack identity internally. Missing, ambiguous, unknown, and backend-mismatched stack requests fail before work. Same source/build/platform with different stacks cannot collide. Caller/CLI/lane migration is complete in one pass with no legacy three-part --lane compatibility shim or second stack-selection path.
 
 ## Notes
 
@@ -60,6 +60,8 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once abs
 STRONGLY CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): checked CampaignRequest, CampaignLane, CampaignLaneSelector, and lane_id() directly -- none currently contain any stack selection/identity. RO01's BackendStack config already exists and is unused downstream, so this item is exactly the missing threading layer, not speculative work. Execution order shifts to #5 in the revised sequence.
 
 PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, but implementation is paused. This item's design remains as reviewed above (GO once absence semantics explicit); a partial implementation was started (CampaignLane.stack_name, CampaignRequest.stack, _resolve_stack() fail-closed validation, lane_id() including stack) and then REVERTED uncommitted rather than landed, specifically because making stack mandatory on every plan() call has a real blast radius across cli/build.py, profiling/workflow.py, tuning/workflow.py, and two test files that needs its own deliberate pass -- not something to rush through under a paused-scope directive. Do not resume implementation until Vulkan work is unpaused; the design/order above stays valid for when it is.
+
+Supersedes RO02. Preserve RO01 as authoritative stack selection and the later no-shim review doctrine; external syntax may be parsed only to require explicit stack resolution, never to preserve old stackless identity. Current Vulkan implementation is paused, but this plan remains the migration authority when resumed.
 
 ## Change Log
 
@@ -85,3 +87,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T03:28:45.445536+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032911_repaired-three-providerrun-su_5934
 - 2026-09-10T03:29:11.969018+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T04:01:57.861841+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_040226_fixed-the-four-remaining-seman_2499
+- 2026-09-10T04:02:26.607718+00:00 (updated-by): Updated: section:ledger-events
