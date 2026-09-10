@@ -1,8 +1,8 @@
 {
-  "declaring_commit": "7412f995bd72e2df5cf1dd15ad96262772475215",
-  "from_sha": "2578138397d7b422bb0e160efdd429976c55fb55",
+  "declaring_commit": "a4333d8a47bbccbfa305d35da78a5688e9b95edf",
+  "from_sha": "91f6a6cf361385700bbe15981f0f39909df77498",
   "schema_version": 1,
-  "set_at": "2026-09-10T05:04:39.642297+00:00",
-  "tag": "b10883",
-  "to_sha": "91f6a6cf361385700bbe15981f0f39909df77498"
+  "set_at": "2026-09-10T05:34:46.300938+00:00",
+  "tag": "b10884",
+  "to_sha": "434ddbbc0e30522e897670681e503b797c12b7c1"
 }
