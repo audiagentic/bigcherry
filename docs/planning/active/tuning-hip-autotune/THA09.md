@@ -15,23 +15,15 @@ priority: P1
 
 ## Description
 
-Complete the residual lazy-native-select experiment: the memoized provider mechanism and force-once/per-site counters are already implemented; only a reachable guard-deferral experiment and end-to-end proof remain.
+Evaluate lazy native_select on the HIP dispatch hot path under the strict sub-1% policy, preserving force semantics and structural proof.
 
 ## Steps
 
-1. Preserve the implemented zero-allocation memoized provider and existing behavior with both guards.
-2. Add an explicit experiment mode that moves BOTH native.valid guards (dispatch_try and resolve) only when enabled.
-3. Collect a non-vacuous shadow validity comparison in that mode; do not claim evidence from the guarded path.
-4. Run correctness, graph-capture, diagnostics-OFF, and end-to-end latency/no-regression gates.
-5. Keep the default path unchanged unless the measured sub-1% policy and evidence gates pass.
+Implement zero-allocation memoized native provider keyed by tensor pointers/context with computed flag/cache; make dispatch_resolve consume provider; preserve force-once semantics and do not move !native.valid guard; add counters for dispatch/L1 hits/misses/native calls/forces; compare baseline and patched structural counts and interleaved E2E.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Avoid computing native selection on ~99.8% of dispatches where cache already resolves. No std::function/allocation. L1-hit path must never force. Counter reduction proves mechanism but does not justify shipping absent E2E benefit.
 
 ## Code Samples & Guidance
 
@@ -39,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi158.md
+HIP native_select/dispatch resolve; structural counters and diagnostics; hot-path tests and Brutus benchmark evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI87.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (1) on predecessor.
+native_select calls approximate misses plus force paths; correctness/force behavior unchanged; end-to-end and dispatch overhead measured with interleaved controls.
 
 ## Effort & Risk
 
@@ -59,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-The experiment can observe real guard-deferral behavior, proves correctness and graph capture, and demonstrates an attributable end-to-end result within the sub-1% policy before any default promotion.
+Ship only if zero-allocation behavior is proven and end-to-end regression is below the explicit sub-1% policy; counter improvement alone is insufficient.
 
 ## Notes
 
@@ -86,3 +74,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T00:52:57.320952+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
 - chg_20260910_005948_legacy-planning-folders-now-co_1240
 - 2026-09-10T00:59:49.044583+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:30:11.111314+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033046_repaired-four-more-tuning-succ_3978
+- 2026-09-10T03:30:46.991974+00:00 (updated-by): Updated: section:ledger-events

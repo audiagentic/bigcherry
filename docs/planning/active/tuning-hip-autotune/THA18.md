@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-Non-matmul dispatch acceptance checklist remains unstarted.
+Extend HIP autotune observability and candidate identity to one non-matmul pilot op without authorizing search or promotion.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Select RoPE or rmsnorm pilot; inspect real dispatch variants and determine decomposition versus new kernel authoring; choose per-op versus generic hook architecture; define resolved-config candidate identity; extend hook/signature/replay only as needed; add native telemetry and offline tests; validate pilot on real gfx1100 while proving matmul unchanged.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Infra-first foundation, not all-op tuning. Preserve HIP_AUTOTUNE_STANDARDS: resolved config in identity, request shape/type in signature, fail closed. Flash-attention remains later due complexity.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi174.md
+Pilot op dispatch and 0200 hook; signature/manifest/replay extension; record telemetry; tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI17,HI67,HTR01,RD73.
-
-Active dependencies: Frozen dependencies: HI17,HI25.
-
-Reference handling: Rewrite forward references (8); preserve historical references (4) on predecessor.
+Pilot contract tests plus full suite; native correctness and record telemetry on gfx1100; matmul regression unchanged.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Close only after pilot/architecture choice is justified, candidate identity and hook strategy are documented, telemetry works, and no candidate search/promotion is enabled.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi174
 - 2026-09-09T11:58:00.934855+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.506371+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:30:27.100795+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033046_repaired-four-more-tuning-succ_3978
+- 2026-09-10T03:30:47.025121+00:00 (updated-by): Updated: section:ledger-events
