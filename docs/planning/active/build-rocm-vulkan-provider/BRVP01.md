@@ -1,6 +1,6 @@
 ---
 id: BRVP01
-order: 8
+order: 7
 plan: build-rocm-vulkan-provider
 state: pending
 created-at: '2026-09-09T10:59:53.142667+00:00'
@@ -67,14 +67,14 @@ Successor key: build-rocm-vulkan-provider-ro04
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once RRVP02 is frozen. Design is sufficient as-is: define an explicit per-backend COMPILE-AFFECTING projection of RRVP02's identity rather than hashing the entire RRVP02 object blindly (matches RO04's original stack_name/resolved_stack_fingerprint/build_stack_fingerprint three-way split). "Persist full attestation beside metadata" means the build-time RRVP02 probe record specifically — NOT RRVP03's runtime-loaded attestation, which is a separate later stage. Exact cache-identity mismatch must reject reuse (no warn-and-reuse), per this item's own already-frozen validate_reuse requirement. Execution order: ranked #8 — binds the compile-affecting projection into build/cache identity, unlocking RRVP03.
 
+CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): fits existing code directly -- extend the existing BuildPlan/build_plan_id/effective_build_id/reuse machinery rather than introducing a second build-identity system. The codebase already distinguishes requested build identity from effective configuration/runtime-bundle identity, which this item's stack_name/resolved_stack_fingerprint/build_stack_fingerprint split maps onto cleanly. Execution order shifts to #7 in the revised sequence.
+
 ## Change Log
 
 - 2026-09-09T10:59:53.142667+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:55.975074+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.524607+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +84,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once RRV
 - 2026-09-10T00:08:28.974624+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.406863+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:19:00.040229+00:00 (updated-by): Updated: order=7, section:notes
