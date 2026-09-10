@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Reusable recovery-patch extraction depends on HTR02 and has no implementation/qualification evidence.
+Empirically compare BH, BY, and Holm multiplicity correction under BigCherry's real measurement dependence before changing production policy.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Use archived native-twin/known-null campaign data preserving cross-signature correlation; compare false-discovery behavior under BH/BY/Holm; keep fixed prospective hypothesis family; only if material BH risk appears design versioned MultiplicityPolicy, otherwise document no change.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+HI141 behavioral failure is orthogonal to performance FDR and does not justify changing BH. Correction method may become pluggable; family definition must never be runtime-configurable.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-tune-recovery-htr05.md
+Offline study tooling/report and archived campaign artifacts; future policy interface only if warranted.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI141.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (1) on predecessor.
+Empirical FDR/power comparison using real correlation, not only independent uniform simulation.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No production correction change without material empirical risk; any future policy is versioned while hypothesis-family boundaries stay fixed.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-tune-recovery-htr05
 - 2026-09-09T11:58:01.021353+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.633220+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:36:39.858389+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033709_repaired-five-recovery-success_3695
+- 2026-09-10T03:37:09.543479+00:00 (updated-by): Updated: section:ledger-events
