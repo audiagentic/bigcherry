@@ -78,6 +78,7 @@ IMPLEMENTED 2026-09-10: tools/bigcherry/environment_inputs.py -- EnvironmentInpu
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.497934+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:29.804131+00:00 (updated-by): Updated: section:notes
@@ -87,3 +88,5 @@ IMPLEMENTED 2026-09-10: tools/bigcherry/environment_inputs.py -- EnvironmentInpu
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.365735+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:20.773386+00:00 (updated-by): Updated: section:notes
+- chg_20260910_001944_added-a-typed-environment-inpu_2998
+- 2026-09-10T00:19:44.473629+00:00 (updated-by): Updated: section:ledger-events
