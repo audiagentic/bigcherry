@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly records RD38 as still pending with no patch and as a high-value remaining candidate.
+Derive the large-M crossover between native quantized MMQ and tuned hipBLASLt over a PRBE29 F16 shadow, preserving negative evidence.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE29 shadow and optionally PRBE30 identity; define Qwen3.6-27B Q8_0 dense signatures with Q4/Q6 secondary.
+- Sweep M=64,128,192,256,384,512,768,1024,2048,4096 and compare native MMQ, default hipBLASLt and tuned hipBLASLt.
+- Use M<=128, decode and memory-constrained controls; validate tolerant/exact output and PPL first.
+- Record per-architecture/per-quant kernel/E2E PP, VRAM and load cost; derive crossover from measurements, not fixed threshold.
+- If tuned MMQ always wins, reject shadow dispatch while retaining EC10-style negative evidence.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd38.md
+PRBE29 shadow and optional PRBE30; dense MUL_MAT dispatch; hipBLASLt/native controls; M-sweep campaign; correctness/PPL/VRAM/load artifacts; EC10 disposition.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC10.
-
-Active dependencies: Frozen dependencies: RD36,RD37.
-
-Reference handling: Rewrite forward references (3); preserve historical references (1) on predecessor.
+Output/PPL; M sweep; native/default/tuned controls; per-arch/quant kernel+PP; VRAM/load; decode/memory controls; durable crossover or negative result.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Derived threshold; dependency-aware; preserve negative result; no shadow default from kernel-only timing.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Only a measured per-architecture/quant crossover with positive E2E benefit promotes; if no crossover exists, explicitly reject dispatch and retain evidence.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd38
 - 2026-09-09T11:58:01.267648+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.009190+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:57:05.654512+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025719_dense-gemm-successors-prbe293_6872
+- 2026-09-10T02:57:19.708858+00:00 (updated-by): Updated: section:ledger-events
