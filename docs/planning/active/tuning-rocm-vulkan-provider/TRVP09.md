@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-CK split-K/preshuffle/pipeline implementation and correctness matrix are pending.
+Add CK split-K, preshuffle, and pipeline variants with transformed-weight identity/cost accounting and safe candidate promotion. This is a sibling of TRVP10 after the shared RO13 successor, not a dependency on grouped-GEMM.
 
 ## Steps
 
@@ -41,11 +41,11 @@ successor-specs/tuning-rocm-vulkan-provider-ro14.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
+Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
 
-Active dependencies: Frozen dependencies: RO13,RO15.
+Active dependencies: TRVP08 (RO13 successor). TRVP09 and TRVP10 are siblings; TRVP09 does not depend on TRVP10.
 
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Reference handling: Rewrite forward references; preserve historical references on predecessor.
 
 ## Effort & Risk
 
@@ -65,6 +65,10 @@ Supersedes: RO14
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-rocm-vulkan-provider-ro14
 
+Supersedes: RO14
+Inherited constraint: RV119 — retain transformed-weight ownership here and remove the erroneous dependency on TRVP10; TRVP09/TRVP10 are siblings after RO13.
+Migration: capability-rebaseline-v3-2026-09
+
 ## Change Log
 
 - 2026-09-09T11:00:48.791946+00:00 (created-by): Created by capability-rebaseline-v3
@@ -77,3 +81,9 @@ Successor key: tuning-rocm-vulkan-provider-ro14
 - 2026-09-09T11:58:01.569354+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:47.419247+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:52:01.900940+00:00 (updated-by): Updated: section:description, section:validation, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:48.958541+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T01:02:49.037323+00:00 (updated-by): Updated: section:validation
+- chg_20260910_010342_successor-plans-now-have-expli_8662
+- 2026-09-10T01:03:42.545695+00:00 (updated-by): Updated: section:ledger-events

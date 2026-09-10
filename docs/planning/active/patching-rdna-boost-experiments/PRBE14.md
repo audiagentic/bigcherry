@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Patch 1207 materialized the MoE top-k fold, but the source explicitly keeps RD17 active until correctness/performance disposition.
+Evaluate MoE top-k weights folded into down projection while preserving the explicit composition boundary between patch 1207 and patch 1205.
 
 ## Steps
 
@@ -57,13 +57,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Correctness/performance qualification covers 1207 alone. 1205 and 1207 are mutually exclusive unless an explicitly declared composed experiment passes graph identity, conflict, and composition validation through PKC02; no implicit composition is admitted.
 
 ## Notes
 
 Supersedes: RD17
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd17
+
+Supersedes: RD17
+Inherited constraint: RV105 — retain the 1205/1207 composition conflict and mutually exclusive recipe identities; link graph/DAG composition decisions to PKC02.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +81,6 @@ Successor key: patching-rdna-boost-experiments-rd17
 - 2026-09-09T11:58:01.192523+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.895469+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:52:25.957169+00:00 (updated-by): Updated: section:description, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:48.994822+00:00 (updated-by): Updated: section:ledger-events

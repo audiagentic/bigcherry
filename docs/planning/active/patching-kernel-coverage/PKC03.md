@@ -15,13 +15,14 @@ priority: P3
 
 ## Description
 
-CPU-only provider acceptance remains undecided and unverified.
+Decision-only gate: determine whether collective identity needs a cross-backend extension. Do not implement a collective registry.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Inspect EC16/EC19, RRVP identity/persistence, and GP evidence.
+2. Test whether collective provider, topology, root, threshold, protocol, fallback, and negative evidence are representable without ambiguity.
+3. Assign any proven gap to the existing GP, provider, or contract owner.
+4. Close this gate when existing machinery is sufficient.
 
 ## Detailed Solution & Technical Design
 
@@ -57,13 +58,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A documented decision establishes whether existing identity/contracts are sufficient; no CPU-only provider acceptance, collective registry, or backend implementation is introduced by this item.
 
 ## Notes
 
 Supersedes: KC03
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-kernel-coverage-kc03
+
+Supersedes: KC03
+Inherited constraints: RV107, RV112, RV123 — this is a cross-backend identity sufficiency decision only.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +82,6 @@ Successor key: patching-kernel-coverage-kc03
 - 2026-09-09T11:58:01.043490+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.677197+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:52:43.052122+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:49.018109+00:00 (updated-by): Updated: section:ledger-events

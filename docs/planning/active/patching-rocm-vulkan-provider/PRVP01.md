@@ -41,11 +41,11 @@ successor-specs/patching-rocm-vulkan-provider-ro19.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
+Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
 
-Active dependencies: Frozen dependencies: RE30,RO18.
+Active dependencies: TRBC01 (RE30 successor), TRVP13 (RO18 successor).
 
-Reference handling: Rewrite forward references (5); preserve historical references (0) on predecessor.
+Reference handling: Rewrite forward references; preserve historical references on predecessor.
 
 ## Effort & Risk
 
@@ -77,3 +77,6 @@ Successor key: patching-rocm-vulkan-provider-ro19
 - 2026-09-09T11:58:01.592969+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:47.455637+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T01:03:20.062956+00:00 (updated-by): Updated: section:validation
+- chg_20260910_010342_successor-plans-now-have-expli_8662
+- 2026-09-10T01:03:42.607862+00:00 (updated-by): Updated: section:ledger-events

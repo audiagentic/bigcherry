@@ -15,13 +15,16 @@ priority: null
 
 ## Description
 
-N-way AllReduce landed; soak, topology, size qualification, and production disposition remain.
+Complete qualification and promotion decision for landed N-way internal AllReduce with explicit negative evidence retention.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Reconcile patch 1244 metadata and SUMMARY with current evidence.
+2. Run soak and root/topology/size matrix across supported N-way regimes.
+3. Compare against the correct native baseline and record correctness before performance.
+4. Retain patch 1245 as negative/dispositioned evidence; do not reopen it.
+5. Record K-COLLECTIVE-03/04/05 as conditional/deferred unless evidence changes their scope.
+6. Make promotion/disposition fail-closed and provenance-bound.
 
 ## Detailed Solution & Technical Design
 
@@ -57,13 +60,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Patch 1244 has correctness, soak, root/topology/size coverage, baseline comparison, and a final promotion decision; 1245 remains retained negative evidence; conditional K items are explicitly dispositioned.
 
 ## Notes
 
 Supersedes: GP11
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-gpu-collectives-gp11
+
+Supersedes: GP11
+Inherited constraints: RV103 and RV114 — retain N=3 qualification boundary, soak/root/topology/baseline gates, duplicate-claim reconciliation, 1245 negative evidence, and conditional K-item dispositions.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +84,6 @@ Successor key: patching-gpu-collectives-gp11
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.231843+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:53:05.364557+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:49.055704+00:00 (updated-by): Updated: section:ledger-events

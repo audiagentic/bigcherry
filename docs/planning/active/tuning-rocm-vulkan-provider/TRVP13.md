@@ -41,11 +41,11 @@ successor-specs/tuning-rocm-vulkan-provider-ro18.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
+Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
 
-Active dependencies: Frozen dependencies: RO08,RO17.
+Active dependencies: TRVP03, TRVP12 (RO08/RO17 successors).
 
-Reference handling: Rewrite forward references (6); preserve historical references (0) on predecessor.
+Reference handling: Rewrite forward references; preserve historical references on predecessor.
 
 ## Effort & Risk
 
@@ -77,3 +77,6 @@ Successor key: tuning-rocm-vulkan-provider-ro18
 - 2026-09-09T11:58:01.588209+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:47.448900+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T01:03:14.213881+00:00 (updated-by): Updated: section:validation
+- chg_20260910_010342_successor-plans-now-have-expli_8662
+- 2026-09-10T01:03:42.596223+00:00 (updated-by): Updated: section:ledger-events

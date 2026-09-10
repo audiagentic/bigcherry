@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Manifest/DB/run-identity migration and E2E lineage work are pending.
+Bind expected build-stack identity and actual runtime attestation into manifests, measurements, and tuning DB with independent run identity; preserve append-only evidence and replay mismatch rejection.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Allocate the next unused schema migration and add stack/provider/run fields.
+2. Make measurement uniqueness run-aware so identical build/candidate/signature results from independent runs coexist.
+3. Persist expected build identity separately from actual runtime attestation; reject missing, substituted, or mismatched lineage.
+4. Gate replay and promotion on the same identity checks.
+5. Validate migration, append-only behavior, and negative mismatch cases.
 
 ## Detailed Solution & Technical Design
 
@@ -41,11 +43,11 @@ successor-specs/tuning-rocm-vulkan-provider-ro06.md
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
+Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
 
-Active dependencies: Frozen dependencies: RO05.
+Active dependencies: RRVP03 (RO05 successor).
 
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+Reference handling: Rewrite forward references; preserve historical references on predecessor.
 
 ## Effort & Risk
 
@@ -57,13 +59,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Independent runs with identical build/candidate/signature coexist; expected-vs-actual stack identity is persisted and compared fail-closed; replay mismatch is rejected; migration uses the next unused number; evidence lineage is reproducible.
 
 ## Notes
 
 Supersedes: RO06
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-rocm-vulkan-provider-ro06
+
+Supersedes: RO06
+Inherited constraints: RV116 and RV130 — preserve run-ID uniqueness, next-unused migration allocation, expected/runtime separation, lineage rejection, and replay mismatch gates.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +83,9 @@ Successor key: tuning-rocm-vulkan-provider-ro06
 - 2026-09-09T11:58:01.533033+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.420426+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:51:49.108839+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:48.923500+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T01:02:31.164200+00:00 (updated-by): Updated: section:validation
+- chg_20260910_010342_successor-plans-now-have-expli_8662
+- 2026-09-10T01:03:42.488874+00:00 (updated-by): Updated: section:ledger-events

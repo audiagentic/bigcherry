@@ -15,13 +15,15 @@ priority: P3
 
 ## Description
 
-Small-N dispatch-gap profiling, kernel coverage implementation, and benchmark/regression proof remain open.
+Conditional, low-priority decision gate for whether Vulkan attention or transport/collective scope needs a reusable lifecycle extension after current Vulkan owners establish coverage.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Defer until TRVP11-TRVP15 and related Vulkan owners establish current ownership and capability coverage.
+2. Inventory remaining attention/transport semantics.
+3. Close if existing ownership/contracts suffice.
+4. If a lifecycle gap is proven, open the smallest follow-up under the correct existing owner.
+5. Do not implement kernels, attention, transport, collectives, profiling, or benchmarks here.
 
 ## Detailed Solution & Technical Design
 
@@ -57,13 +59,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A conditional ownership decision is recorded after current Vulkan coverage exists; this item contains no kernel/attention/transport implementation or benchmark work.
 
 ## Notes
 
 Supersedes: KC04
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-kernel-coverage-kc04
+
+Supersedes: KC04
+Inherited constraints: RV108, RV113, RV124 — lifecycle scope gate only; keep speculative transport candidates out of the critical path.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +83,6 @@ Successor key: patching-kernel-coverage-kc04
 - 2026-09-09T11:58:01.048940+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.683688+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:52:50.713702+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
+- chg_20260910_005948_legacy-planning-folders-now-co_1240
+- 2026-09-10T00:59:49.031122+00:00 (updated-by): Updated: section:ledger-events
