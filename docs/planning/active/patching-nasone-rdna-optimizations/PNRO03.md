@@ -15,13 +15,16 @@ priority: P0
 
 ## Description
 
-P2P provider correctness probes, fallback, and performance qualification remain.
+Evaluate an optional correctness-first HIP P2P transport provider for validated internal AllReduce on exactly two gfx1100 devices. Host staging remains the mandatory fallback and rejection is valid.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Require validated internal AllReduce; keep P2P default OFF behind an explicit selector.
+2. Gate on exactly two devices, bidirectional peer capability, peer enable, and completed correctness probes.
+3. Use source-current push semantics per direction with source-owned streams/events and destination-local scratch; never use one issuer for both directions.
+4. Probe deterministic nonzero asymmetric patterns both ways; disable P2P on any mismatch and fall back to host staging.
+5. Exclude kernel direct peer reads/writes; this is DMA/copy-engine transport only.
+6. Sweep sizes, validate every element, compare host staging/P2P, then measure real internal-AllReduce decode/prefill; reject if no stable winning envelope.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +40,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro03.md
+patches/1252_nro03_allreduce_p2p_provider; provider selector/probes; static tests; dual-gfx1100 evidence
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+Repeated bidirectional synthetic validation, size edges, nonzero/asymmetric values, peer-enable handling, forced fallback, GPU count !=2 control, and per-direction evidence. Microbench plus real model lanes with correctness before bandwidth.
 
 ## Effort & Risk
 
@@ -53,17 +52,21 @@ Reference handling: Rewrite forward references (4); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+PGC corrected Brutus evidence; capability bits/API success are not correctness; fail closed to validated host staging.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Both directed probes pass repeatedly with source-current push evidence; failures disable P2P without correctness loss; a repeatable collective-level winning envelope exists or the provider is rejected; no global default without independent topology coverage.
 
 ## Notes
 
 Supersedes: NRO03
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-nasone-rdna-optimizations-nro03
+
+Supersedes: NRO03
+Inherited semantic scope: preserve source-current push direction, probe/fallback, no direct peer reads, and correctness-first acceptance.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -77,3 +80,6 @@ Successor key: patching-nasone-rdna-optimizations-nro03
 - 2026-09-09T11:58:01.061978+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.701391+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:26:09.609126+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- chg_20260910_022800_five-nasone-successor-plans-no_4030
+- 2026-09-10T02:28:00.291162+00:00 (updated-by): Updated: section:ledger-events
