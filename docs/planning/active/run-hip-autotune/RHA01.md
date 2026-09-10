@@ -67,12 +67,15 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO after a 
 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10, checked against planning-refactor HEAD 429134745b04b7b96c2e86ad1c18625cbcbb4ff3): the prior GO verdict understated two real problems. (1) This item's own Description says perf is unblocked while its Validation/older Notes still say Brutus has no usable perf -- self-contradictory as currently written, fix before treating as implementation-ready. (2) The prior review's "THA16 is the right first validation target" claim is NOT well-supported by the repo: THA16 is primarily the already-existing GPU trace/tuning-divergence investigation built on HI132 primitives, not a CPU-attribution question this item's perf capability was designed to answer. RETRACT that specific target; instead validate perf.py against a concrete, currently-unresolved CPU-attribution question (not yet identified -- pick one when implementing, do not default back to THA16 without re-justifying it). Execution order DROPS to #10 (after RRBC02), not #3 -- the original priority reflected an unsupported blocker claim.
 
+RE-ASSESSED 2026-09-10 against the WHOLE project run history including tonight's new RU01/PHC03 finding (per user directive). Verdict: CONFIRMED KEEP DEFERRED, still no legitimate CPU-attribution target. Specifically checked whether PHC03 (the real META D=3 segfault found by RU01 tonight) could be RHA01's real target -- it cannot: RU01 already localized the deterministic crash into ggml_backend_cuda_cpy_tensor_async during META's fold/copy-back path via a symbol-resolved gdb backtrace, and PHC03's own scope (find the exact copy/fallback branch responsible) is crash/control-flow localization work, not CPU on-CPU-time attribution -- sampling CPU call graphs would add little over gdb/core-dump/source instrumentation and would not answer PHC03's actual question. Every previously-considered candidate (THA16/THA13/THA09/THA10-class questions) remains either a non-CPU-attribution question or already resolved by direct evidence, confirmed again with the fuller history in view. No other currently open item supplies a genuine unresolved host-CPU attribution question. Repo evidence is sufficient to justify continued deferral -- but completing RHA01 cannot be justified from the repo alone regardless: Brutus still lacks a system-default usable perf event source (the workaround binary found earlier this project is a manual path, not a default-available one) AND the project currently lacks a real validation target; both conditions would need to hold before reopening. No action taken; correctly remains an optional, activation-gated capability, not scheduled work. Do NOT use PHC03 as a synthetic justification to force this open.
+
 ## Change Log
 
 - 2026-09-09T10:48:34.167227+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:04:37.889270+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.818915+00:00 (updated-by): Updated: section:ledger-events
@@ -87,3 +90,6 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10, checked agains
 - 2026-09-10T00:14:42.306685+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:18:48.452755+00:00 (updated-by): Updated: order=10, section:notes
 - 2026-09-10T00:27:44.126726+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T02:55:58.252588+00:00 (updated-by): Updated: section:notes
+- chg_20260910_025604_confirmed-via-a-fresh-whole-pr_7836
+- 2026-09-10T02:56:04.082942+00:00 (updated-by): Updated: section:ledger-events
