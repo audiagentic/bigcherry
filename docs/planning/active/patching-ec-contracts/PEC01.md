@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-The Vulkan MoE ubatch boundary sweep and resulting campaign/recommendation disposition are still unevaluated.
+Run and disposition the Vulkan MoE physical-ubatch boundary sweep. This is campaign infrastructure/recommendation work, not a runtime kernel patch.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Verify source discussion #21043 and freeze the exact Vulkan baseline/provider identity before porting or measuring.
+- Sweep physical ubatch 256, 512, 1024, 2048 and 4096 where memory allows on Qwen MoE Vulkan prefill.
+- Use dense Qwen and memory-constrained controls; keep model/workload, context and batch dimensions fixed across arms.
+- Check output correctness and collect PP, VRAM and latency with balanced repeats and failure/OOM evidence.
+- Record whether the result becomes an EC03 campaign boundary or a model/workload tuning recommendation; do not convert it into a generic runtime default.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Hypothesis is that large physical ubatch improves MoE tile/occupancy while dense models may not benefit. The result belongs in EC01 boundary.dimensions/EC03 campaign expansion and must remain workload/provider scoped.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-ec-contracts-ec14.md
+Vulkan MoE campaign recipe; ubatch boundary matrix; Qwen MoE and dense controls; correctness/PP/VRAM/latency artifacts; EC03 recommendation.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC01,EC03.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (2) on predecessor.
+Output unchanged; ubatch 256/512/1024/2048/4096 where feasible; MoE vs dense; memory-constrained control; PP, VRAM, latency and OOM evidence.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Campaign boundary, not kernel patch; causal controls; preserve memory safety and correctness.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A reproducible sweep yields an explicit recommendation or rejection. If beneficial, record it as a scoped model/workload boundary for EC03; no unqualified runtime patch or default is claimed.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-ec-contracts-ec14
 - 2026-09-09T11:58:00.749756+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.197048+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:36:20.969226+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023638_the-two-ec-contract-successors_4025
+- 2026-09-10T02:36:38.452678+00:00 (updated-by): Updated: section:ledger-events

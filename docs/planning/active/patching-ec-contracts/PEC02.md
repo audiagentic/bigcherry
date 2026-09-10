@@ -14,21 +14,19 @@ priority: null
 
 ## Description
 
-Telemetry to TriggerEvidence wiring and INVALID reporting remain open.
+Complete the production half of the mandatory trigger-proof contract: populate TriggerEvidence from real telemetry and thread INVALID status through campaign/report validation.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Select and document one real telemetry source first (0700 coverage_counters is the preferred launch-count source), then map its on-disk fields to positive contract lanes.
+- Implement a reader that constructs TriggerEvidence with candidate launches/route selections and rejects malformed or absent evidence.
+- Thread the reader through campaign_planner.expand_contract() and the per-lane evaluation path so evaluate_promotion_gate() receives trigger_proof for real runs.
+- Preserve the existing semantics: positive lanes must trigger, control/boundary lanes are not required to trigger, empty evidence is INVALID, and INVALID short-circuits pass/fail evaluation.
+- Run one real contract artifact end-to-end, add fixture/negative tests, and surface INVALID distinctly in report/release validation.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+PEC02 closes the wiring gap left by the existing pure evaluation gate. Telemetry extraction must be schema-validated and provenance-bound to the same lane/signature; never infer trigger proof from benchmark completion or final logits. Keep backward compatibility only for explicitly legacy callers, while campaign-produced contracts require trigger evidence.
 
 ## Code Samples & Guidance
 
@@ -36,15 +34,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-ec-contracts-ec18.md
+tools/bigcherry/experiment_contract.py; telemetry reader for 0700/0810/0820/0830; campaign_planner per-lane pipeline; contract/report/release validation; fixtures and tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC06,EC07,EC09.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (3) on predecessor.
+Malformed/missing telemetry; zero positive launches; route-selected-only; controls/boundaries; real artifact end-to-end; INVALID report rendering; full offline contract suite.
 
 ## Effort & Risk
 
@@ -52,11 +46,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Fail closed on untriggered candidates; distinguish INVALID from FAIL; no benchmark-completion inference; preserve backward compatibility only for legacy explicit callers.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+At least one real campaign contract consumes machine-derived TriggerEvidence; untriggered positive lanes are INVALID, not pass/fail; evidence is schema/provenance bound; tests cover malformed, empty, control and passing cases.
 
 ## Notes
 
@@ -76,3 +70,6 @@ Successor key: patching-ec-contracts-ec18
 - 2026-09-09T11:58:00.753861+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.203609+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:36:27.738695+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023638_the-two-ec-contract-successors_4025
+- 2026-09-10T02:36:38.467423+00:00 (updated-by): Updated: section:ledger-events
