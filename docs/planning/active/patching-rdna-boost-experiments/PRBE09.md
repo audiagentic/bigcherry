@@ -15,21 +15,19 @@ priority: P2
 
 ## Description
 
-Frozen RD104 retains an open upstream-tracking and adoption path for Vulkan tensor-parallel AllReduce; the scope decision is a future gate, not completed work.
+Track the upstream Vulkan tensor-parallel AllReduce path and decide a BigCherry adoption route; implementation is not implied by tracking.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Identify the upstream PR/issue, current status, API/ABI and licensing/source commit.
+- Map the proposal to RD68 and RD57 constraints, including tensor-parallel topology and Vulkan provider boundaries.
+- Define a reproducible local control/treatment plan only if an upstream implementation is available and buildable.
+- Measure correctness, synchronization, fallback and end-to-end throughput on representative single/dual topology.
+- Record adopt, defer, or reject with explicit evidence and preserve the upstream reference.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+This item owns adoption analysis for Vulkan tensor-parallel AllReduce. It must not silently duplicate RD57 or claim a patch exists. Keep host/native fallback, provider identity and topology assumptions explicit.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd104.md
+Upstream PR/issue record; Vulkan AllReduce integration seam; RD68/RD57 cross-references; adoption decision and campaign evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD68.
-
-Active dependencies: Frozen dependencies: RD57
-
-Reference handling: RE30.
+Upstream status and source verification; build/license check; collective correctness and fallback; tensor-parallel topology matrix; balanced performance evidence.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: RE30.
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Upstream provenance; provider/topology isolation; no implementation claim without source and evidence.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+An auditable upstream/adoption decision is recorded; any adopted code has exact source identity and passes correctness/fallback gates; otherwise the candidate remains deferred without production claims.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd104
 - 2026-09-09T11:58:01.169761+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.860761+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:35:11.802321+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023529_three-more-rdna-successors-now_3176
+- 2026-09-10T02:35:29.332235+00:00 (updated-by): Updated: section:ledger-events
