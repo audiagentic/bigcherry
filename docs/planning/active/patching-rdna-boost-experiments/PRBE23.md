@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Candidate identity/disposition and full n_expert=256 E2E qualification remain.
+Qualify MoE-aware MMQ work reduction using the preferred compact actual-work grid (#63 concept), with mean-occupancy selection only as a control and durable candidate identity.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit current table-driven MMQ architecture; do not port obsolete #39 mmq_x_best anchors.
+- Use native rectangular grid as control, compacted expert_bounds block map as preferred treatment, and mean/expected occupancy only as explanatory control.
+- Define mapping/overflow/workspace/stream-K/multi-GPU/autotune identity and preserve exact expert/tile enumeration with legacy fallback.
+- Run EC13/RD94 hostile routing: uniform, Zipf/skew, concentrated, single-hot and captured natural routing at n_expert=256.
+- Run record/tune/promote/replay on Qwen3.6-35B-A3B and interleaved A/B; stale candidate-tuning evidence must be remeasured after grid change.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd30.md
+patch 1237/compact-grid source and registry; mmq map/grid selector; workspace accounting; EC13/RD94 hostile routing; n_expert=256 E2E campaign; candidate identity/disposition evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC08,EC13,HI105,HI54,RD94,docs/planning/completed/hip-autotune/HI105.md.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (6) on predecessor.
+Current table seam audit; exact mapping; overflow/legacy fallback; native/tune correctness; hostile routing; real dual-gfx1100 Qwen3.6-35B-A3B pp/tg; interleaved A/B; non-target controls.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Redesign-first; exact enumeration; fail-closed overflow; causal identity; preserve negative/noise evidence.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Compact-grid candidate has durable identity and passes correctness/hostile routing; real E2E gain is reproduced with controlled A/B; no broad default or mean-based selector is promoted without its own evidence.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd30
 - 2026-09-09T11:58:01.231064+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.956316+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:53:23.331205+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025409_moe-mmq-successors-prbe2325-n_6205
+- 2026-09-10T02:54:09.740115+00:00 (updated-by): Updated: section:ledger-events

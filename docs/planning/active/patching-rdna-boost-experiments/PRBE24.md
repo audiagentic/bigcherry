@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-RD89 says RD31 is newly unblocked; its old diff no longer applies and the compact-map experiment still needs redesign/qualification.
+Redesign AMD-MOE-002 GPU compact MoE MMQ block-map construction against the current table-driven MMQ architecture; it is a prerequisite of PRBE25.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit current launch_mul_mat_q<type,mmq_x,fallback> and mmq-config tables; do not apply obsolete two-parameter PR #63 anchors.
+- Define device prefix/map kernel from expert token counts with no host readback in steady state.
+- Validate GPU map exactly against CPU reference for uniform, all-one, skew, Zipf, tiny and n_expert=256 distributions.
+- Measure map-build time, synchronization, temporary bytes and grid limits independently; retain legacy fallback on overflow or unsupported stream-K.
+- Only after map correctness/overhead is proven, expose the map to PRBE25 and record dependency identity.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd31.md
+Current mmq-config/launch seam; compact map prep kernel/workspace; CPU reference; routing distribution fixtures; overflow/fallback and map-overhead evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD32.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Current architecture anchors; exact GPU/CPU map parity; tokens 1..4096; expert distributions; map microtiming; sync/temp bytes; no host readback; fallback.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Needs-redesign; no stale diff port; exact map correctness; no host synchronization in steady state.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Current table-driven redesign produces an exact map with acceptable overhead and safe fallback; PRBE25 cannot proceed on obsolete source assumptions.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd31
 - 2026-09-09T11:58:01.236456+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.963459+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:53:47.892982+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025409_moe-mmq-successors-prbe2325-n_6205
+- 2026-09-10T02:54:09.755635+00:00 (updated-by): Updated: section:ledger-events

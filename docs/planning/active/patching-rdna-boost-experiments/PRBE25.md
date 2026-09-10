@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-RD89 says RD32 is newly unblocked; compact-grid work remains pending and depends on RD31.
+Redesign and qualify compact per-expert MMQ launch grid after PRBE24 map qualification.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE24 exact map and source identity; use same routing-distribution matrix.
+- Launch only compact actual-work blocks while preserving expert/tile enumeration and exact output parity.
+- Measure launched/useful blocks, empty fraction, kernel time and E2E PP for Qwen3.6-35B-A3B pp128..4096.
+- Use dense/uniform and tiny-batch controls to quantify indirection overhead and retain rectangular fallback where it dominates.
+- Promote conditionally only at >=2% PP gain on target routing with <1% dense loss; revalidate candidate tuning/replay identity.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd32.md
+PRBE24 map API; current MMQ grid enumeration; Qwen3.6-35B-A3B campaign; dense/tiny controls; launched/useful block telemetry; E2E PP evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD31.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Exact output; same routing matrix; block counts/empty fraction; kernel us; pp128/512/1024/4096; dense/tiny controls; PRBE24 dependency and fallback.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependency-aware promotion; exact output; conditional fallback; current table-driven architecture only.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Compact grid is correct and produces >=2% target PP gain with <1% dense loss, or remains deferred; no promotion without PRBE24 and durable candidate evidence.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd32
 - 2026-09-09T11:58:01.240579+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.968825+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:53:57.011832+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025409_moe-mmq-successors-prbe2325-n_6205
+- 2026-09-10T02:54:09.770527+00:00 (updated-by): Updated: section:ledger-events
