@@ -105,21 +105,54 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 f"{stem}: fork and original commit must differ (rebase)",
             )
 
-    # Patches promoted out of the first-sweep isolation contract after
-    # passing their isolated bench + review. RD19 (1200_rd19) was promoted
-    # here on 2026-08-24 but that promotion post-dated the HI83 evidence
-    # contract (5cd10ff, 2026-08-22) with no qualifying evidence produced --
-    # see docs/planning/active/patch-system/PA05.md. Owner disposition
-    # (2026-08-25): deliberately demoted back to untested pending real HI83
-    # evidence, not re-added here. Empty until a real post-HI83 promotion
-    # exists.
-    PROMOTED_RDNA_PATCHES = frozenset()
+    # Patches out of the first-sweep isolation contract. RD19 (1200_rd19) was
+    # promoted here on 2026-08-24 but that promotion post-dated the HI83
+    # evidence contract (5cd10ff, 2026-08-22) with no qualifying evidence
+    # produced -- see docs/planning/active/patch-system/PA05.md. Owner
+    # disposition (2026-08-25): deliberately demoted back to untested pending
+    # real HI83 evidence, and not listed below.
+    #
+    # Two INDEPENDENT axes, which a single allowlist previously conflated.
+    #
+    # VALIDATED_RDNA_PATCHES: the evidence stands (STATE="validated").
+    # SHIPPED_RDNA_PATCHES:   production actually runs it (in a patch-set).
+    #
+    # A patch can be validated without being shipped -- putting a patch into
+    # production is a separate decision from establishing that its evidence
+    # holds. Collapsing the two would force every validated patch to ship
+    # the moment it qualified. Currently empty: RD73 (the only patch that
+    # was ever in this set) was DEMOTED 2026-09-09 -- see RETIRED_RDNA_PATCHES
+    # below and HI162 (docs/planning/completed/hip-autotune/HI162.md).
+    VALIDATED_RDNA_PATCHES = frozenset()
+    # Patches actually composed into [patch-set.validated-enhancements],
+    # which [source.bigcherry] builds on top of framework -- so the release
+    # build genuinely runs them. Shipping is a separate, deliberate axis
+    # from VALIDATED_RDNA_PATCHES above, taken only after the evidence axis
+    # was satisfied. Currently empty for the same reason as above.
+    SHIPPED_RDNA_PATCHES = frozenset()
 
-    # Patches retired from the first-sweep pool because upstream shipped the
-    # same fix independently (STATE = "superseded", not "rejected" -- the
-    # patch itself was never wrong). See each patch module's own STATE
-    # comment for the supersession trail.
-    RETIRED_RDNA_PATCHES = frozenset({"1201_rd20_attn_gate_tp_split"})
+    # Patches retired from the first-sweep pool, either because upstream
+    # shipped the same fix independently (STATE = "superseded" -- the patch
+    # itself was never wrong) or because later, better-controlled evidence
+    # disproved the patch's own claim (STATE = "rejected"). See each patch
+    # module's own STATE comment / SUMMARY.md for the retirement trail.
+    #
+    # 1233_rd73_stable_graph_cache_key (RD73): promoted 2026-09-05 on 6
+    # pre-registered sessions (+1.889% end-to-end, 95% CI [1.475, 2.352],
+    # 0.0% control regression, bit-identical output, contract hash 8827bd6d);
+    # DEMOTED 2026-09-09 (HI162) after an order-balanced, composition-
+    # verified 4-arm A/B on the SAME contract workload measured it as a real
+    # regression instead (complete statistical separation at n=8/arm,
+    # p=0.00016 per metric), a finding that specifically survived a later
+    # methodology correction that withdrew two OTHER, unrelated conclusions
+    # from the same investigation. Removed from validated-enhancements;
+    # STATE validated -> rejected. Original promotion evidence preserved in
+    # SUMMARY.md, not erased -- see docs/planning/completed/hip-autotune/
+    # HI162.md and patches/1233_rd73_stable_graph_cache_key/SUMMARY.md.
+    RETIRED_RDNA_PATCHES = frozenset({
+        "1201_rd20_attn_gate_tp_split",
+        "1233_rd73_stable_graph_cache_key",
+    })
 
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
         """The first-sweep isolation contract: rdna-boosts patches must NOT be
@@ -134,7 +167,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                     info.state, ("rejected", "superseded"),
                     f"{info.name}: expected a retired state",
                 )
-            elif info.name in self.PROMOTED_RDNA_PATCHES:
+            elif info.name in self.VALIDATED_RDNA_PATCHES:
                 self.assertEqual(
                     info.state, "validated", f"{info.name}: expected validated"
                 )
@@ -159,11 +192,21 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
                 f"{patch_id} must not be in a production patch-set "
                 f"before isolated validation",
             )
-        for patch_id in self.PROMOTED_RDNA_PATCHES:
+        for patch_id in self.SHIPPED_RDNA_PATCHES:
             self.assertIn(
                 patch_id,
                 production,
-                f"{patch_id} was promoted and must be in a production patch-set",
+                f"{patch_id} is marked shipped and must be in a production patch-set",
+            )
+        # Validated-but-unshipped is a legitimate, deliberate state: the
+        # evidence holds, and putting it into production is a separate call.
+        for patch_id in self.VALIDATED_RDNA_PATCHES - self.SHIPPED_RDNA_PATCHES:
+            self.assertNotIn(
+                patch_id,
+                production,
+                f"{patch_id} is validated but not marked shipped, so it must not "
+                f"be in a production patch-set -- add it to SHIPPED_RDNA_PATCHES "
+                f"when production is genuinely meant to run it",
             )
 
     def test_cross_check_detects_provenance_mismatch(self):

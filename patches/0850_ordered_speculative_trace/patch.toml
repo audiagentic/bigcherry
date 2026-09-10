@@ -1,0 +1,17 @@
+schema = 1
+id = "0850_ordered_speculative_trace"
+order = 850
+group = "core"
+state = "untested"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = ["HI166"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []

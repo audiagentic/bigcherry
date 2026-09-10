@@ -232,12 +232,18 @@ class TestPatchContext(unittest.TestCase):
             self.assertEqual(mocked.call_args.kwargs.get("resolved_base_revision"), "deadbeef" * 5)
             self.assertEqual(mocked.call_args.kwargs.get("patches_dir"), catalog_path.parent)
 
-    def test_patches_for_backend_on_the_real_catalog_is_empty_for_vulkan(self):
-        """No Vulkan patches exist yet -- an empty result is the CORRECT
-        answer (RE30 phases 2+ need real Vulkan hardware evidence first),
-        not a bug."""
+    def test_patches_for_backend_on_the_real_catalog_only_matches_agnostic_patches_for_vulkan(self):
+        """CO01 closure audit (2026-09-08): this used to assert an empty
+        result ('no Vulkan patches exist yet, RE30 phases 2+ need real
+        Vulkan hardware evidence first') -- that stopped being literally
+        true once an agnostic-backend patch (NRO06) was added, since
+        patches_for_backend() matches backend in (backend, 'agnostic') by
+        design. Still no HIP-specific patch has vulkan backend; only
+        genuinely backend-agnostic patches match."""
         result = patch_catalog.patches_for_backend("vulkan")
-        self.assertEqual(result, ())
+        entries = patch_catalog.build_snapshot().metadata
+        expected = tuple(sorted(pid for pid, e in entries.items() if e.backend == "agnostic"))
+        self.assertEqual(result, expected)
 
     def test_patches_for_backend_on_the_real_catalog_returns_all_hip_patches(self):
         result = patch_catalog.patches_for_backend("hip")
@@ -359,6 +365,37 @@ class TestPackagedCatalogIntegration(unittest.TestCase):
             self.assertEqual(first.digest, second.digest)
             self.assertEqual(first.modules, second.modules)
             self.assertEqual(first.metadata, second.metadata)
+
+    def test_digest_changes_when_a_catalog_entry_value_changes_with_no_id_added_or_removed(self):
+        """RE47 regression: the digest used to hash only sorted(metadata.keys()),
+        so editing an existing entry's VALUE (e.g. its declared kind) with no
+        ID added or removed produced an IDENTICAL digest -- a snapshot that
+        could not detect the exact kind of staleness it exists to catch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            catalog_path = root / "catalog.toml"
+            before = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+            self.assertEqual(before.metadata["0100_dep"].kind, "framework")
+
+            edited = LEGACY_CATALOG_TOML.replace('kind = "framework"', 'kind = "enhancement"')
+            catalog_path.write_text(edited, encoding="utf-8")
+            after = patch_catalog.build_snapshot(patches_dir=root, catalog_path=catalog_path)
+
+            self.assertEqual(after.metadata["0100_dep"].kind, "enhancement")
+            self.assertEqual(set(before.metadata), set(after.metadata))  # same ID set
+            self.assertNotEqual(before.digest, after.digest)
+
+    def test_metadata_mapping_is_not_mutable_via_normal_item_assignment(self):
+        """RE47: a frozen dataclass only blocks reassigning the ATTRIBUTE; a
+        plain dict inside it is still mutable in place. metadata must be a
+        real immutable mapping so a caller cannot silently invalidate an
+        already-taken snapshot's identity after the fact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._tree(tmp)
+            snapshot = patch_catalog.build_snapshot(
+                patches_dir=root, catalog_path=root / "catalog.toml")
+            with self.assertRaises(TypeError):
+                snapshot.metadata["0100_dep"] = snapshot.metadata["0100_dep"]
 
     def test_packaged_patch_with_catalog_entry_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

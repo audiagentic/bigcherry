@@ -29,9 +29,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import math
 import statistics
 import tomllib
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,8 +73,95 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
 
 ACCEPTANCE_FIELDS: tuple[str, ...] = (
     "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
-    "resource_limits",
+    "resource_limits", "effect_evidence_policy", "min_paired_rounds",
+    "min_sessions", "max_sessions", "max_ci95_width_pct",
+    "min_evidence_effect_pct",
 )
+
+# VA24: how a declared acceptance bound must be evidenced.
+#
+#   point_estimate_v1     -- legacy. Compare the point estimate against the
+#                            bound. This is what every contract predating
+#                            VA24 used, and it cannot distinguish a real
+#                            effect from a lucky sample.
+#   ci95_threshold_bound_v1 -- the bound must be established by the interval,
+#                            not the point estimate:
+#                              gain:       ci95_low  >= declared threshold
+#                              regression: ci95_high <= declared budget
+#
+# Note the gain rule is deliberately STRONGER than "CI excludes zero"
+# (dev-gpt-agent, req_cd86e5fd4a3b4328). "Excludes zero" only establishes
+# "probably positive"; +1.1% with CI [0.1, 2.1] would clear a 1.0 bound
+# without ever establishing a 1.0% gain. Requiring the lower bound to reach
+# the threshold establishes the claim the contract actually makes.
+#   session_ci95_threshold_bound_v1
+#                          -- as ci95_threshold_bound_v1, but the interval
+#                            must come from bootstrap_session_effect() over
+#                            REPEATED SESSIONS rather than from pairs inside
+#                            one run, and the run length is governed by a
+#                            pre-declared, direction-blind stopping rule.
+#
+# Why the session policy exists. ci95_threshold_bound_v1's interval is
+# computed by resampling pairs WITHIN a single run, so it represents only
+# within-session variation. RD73 measured one unchanged build four times and
+# got +1.855%, +1.717%, +1.249% and +2.244%: a between-session sd of 0.411,
+# larger than the standard error any individual run reported, with session 3's
+# point estimate falling below session 2's ci95_low. Every one of those runs
+# was honest; the drift between occasions is simply variance that a within-run
+# interval structurally cannot see. A single run's interval therefore
+# overstates precision, and a bound established from one is weaker than it
+# looks.
+#
+# The stopping rule is the other half, and it is what stops "collect until it
+# passes". Declare min_sessions/max_sessions and a max_ci95_width_pct
+# precision target. Collect at least min_sessions; while the interval is wider
+# than the target and fewer than max_sessions have been collected, the result
+# is INCONCLUSIVE (invalid), not a fail -- collect another session and
+# re-estimate over ALL of them. The criterion consults interval WIDTH and
+# session count ONLY. It never looks at where ci95_low sits relative to the
+# threshold, because a stopping rule that can see the answer is a rule that
+# stops when it likes the answer.
+#   improvement_no_regression_v1
+#                          -- asymmetric. An improvement must be ESTABLISHED
+#                            (ci95_low above the evidence floor) but need not
+#                            reach any materiality bar; a regression stays
+#                            strictly bounded by the interval. Sessions are
+#                            the unit, as in the session policy above.
+#
+# Why the asymmetric policy exists. The three policies above all ask "is the
+# gain at least X?", where X mixes two unrelated questions: is the effect REAL
+# (an evidence question) and is it BIG ENOUGH TO BE WORTH CARRYING (a value
+# judgement). Conflating them means a nine-times-measured, never-negative,
+# zero-regression improvement can be refused for missing a bar that was
+# written down before anyone knew what effect sizes this hardware yields.
+#
+# The two errors are not symmetric. Shipping a regression costs real
+# throughput; adopting a genuine small improvement costs almost nothing beyond
+# the patch's own maintenance. So the decision rule should not be symmetric
+# either: hold the regression side strictly, and let any established
+# improvement through.
+#
+# Note this policy needs NO precision/width criterion, and that is not an
+# exemption carved out for convenience. Width mattered only because a bound
+# like ">= 1.0%" had to be resolved; if the question is "is it positive and
+# non-regressing", ci95_low answers it directly and the width of the interval
+# is not what the decision turns on.
+#
+# min_evidence_effect_pct is the floor an improvement's ci95_low must clear.
+# It defaults to 0.0 -- "the interval excludes no-change" -- but it is NOT
+# merely a significance test. It is where a measured harness bias floor
+# belongs: if the rig systematically reads +0.2% for reasons unrelated to any
+# patch, then at a 0.0 floor an unbounded stream of "established" wins would
+# be measurement artifacts, and they would look MORE significant the more
+# sessions were collected. Set it from an A-A null run (control vs control,
+# identical builds); 0.0 is the honest placeholder until one exists.
+EFFECT_EVIDENCE_POLICIES: tuple[str, ...] = (
+    "point_estimate_v1",
+    "ci95_threshold_bound_v1",
+    "session_ci95_threshold_bound_v1",
+    "improvement_no_regression_v1",
+)
+DEFAULT_EFFECT_EVIDENCE_POLICY = "point_estimate_v1"
 
 # VA12: RD73-class patches (a stable graph-cache key) trade a timing claim
 # against a resource-cost claim -- retaining more shape-specific cache
@@ -164,6 +253,56 @@ def _percent(raw: object, where: str) -> float | None:
             f"{where} must be a finite number >= 0 (a negative, NaN, or "
             f"infinite gain/regression-budget threshold is not a meaningful "
             f"requirement -- {value!r} given)"
+        )
+    return value
+
+
+def _effect_evidence_policy(raw: object, where: str) -> str:
+    """VA24: parse acceptance.effect_evidence_policy, defaulting for
+    contracts that predate it. Unknown values are a parse error rather than
+    a silent fallback -- a typo must not quietly downgrade a contract to the
+    weaker point-estimate rule."""
+    if raw is None:
+        return DEFAULT_EFFECT_EVIDENCE_POLICY
+    if not isinstance(raw, str) or raw not in EFFECT_EVIDENCE_POLICIES:
+        raise ExperimentContractError(
+            f"{where} must be one of {list(EFFECT_EVIDENCE_POLICIES)} "
+            f"({raw!r} given)"
+        )
+    return raw
+
+
+def _min_paired_rounds(raw: object, where: str) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ExperimentContractError(f"{where} must be an integer")
+    if raw < 1:
+        raise ExperimentContractError(
+            f"{where} must be >= 1 ({raw!r} given)"
+        )
+    return raw
+
+
+def _session_count(raw: object, where: str) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise ExperimentContractError(f"{where} must be an integer")
+    if raw < 1:
+        raise ExperimentContractError(f"{where} must be >= 1 ({raw!r} given)")
+    return raw
+
+
+def _max_ci95_width(raw: object, where: str) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ExperimentContractError(f"{where} must be a number")
+    value = float(raw)
+    if not _finite_number(value) or value <= 0.0:
+        raise ExperimentContractError(
+            f"{where} must be a finite positive percentage ({raw!r} given)"
         )
     return value
 
@@ -511,6 +650,35 @@ class Acceptance:
     end_to_end_gain_pct: float | None
     max_control_regression_pct: float | None
     resource_limits: tuple[ResourceLimit, ...] = ()
+    # VA24. Defaulted so every pre-VA24 contract keeps its exact behaviour
+    # AND its exact contract_hash (both fields are omitted from the identity
+    # payload when left at their defaults, following VA12's resource_limits
+    # precedent). A contract that opts in gets a new hash, which is correct:
+    # it has changed what it demands of evidence.
+    effect_evidence_policy: str = DEFAULT_EFFECT_EVIDENCE_POLICY
+    # Minimum paired rounds a lane must contribute before its interval is
+    # trusted. run_paired_lane() accepts pairs=1, whose bootstrap produces a
+    # degenerate interval that can look arbitrarily significant, so an
+    # interval-based policy without a rounds floor is not actually stronger
+    # than the point estimate it replaces.
+    min_paired_rounds: int | None = None
+    # session_ci95_threshold_bound_v1's pre-declared stopping rule. Required
+    # by that policy, meaningless without it. min_sessions may not fall below
+    # MIN_BOOTSTRAP_SESSIONS -- the cluster bootstrap cannot produce an
+    # honest interval from fewer. max_sessions bounds the cost of a run that
+    # never reaches the precision target.
+    min_sessions: int | None = None
+    max_sessions: int | None = None
+    # DIRECTION-BLIND precision target: the ci95 WIDTH below which the
+    # measurement is precise enough to decide. Never a comparison of ci95_low
+    # against the acceptance threshold -- that would let the rule stop as soon
+    # as the answer looked good.
+    max_ci95_width_pct: float | None = None
+    # improvement_no_regression_v1: the floor an improvement's ci95_low must
+    # clear to count as ESTABLISHED. 0.0 means "the interval excludes
+    # no-change". Raise it to a measured harness bias floor (from an A-A null
+    # run) so systematic measurement error cannot be adopted as a win.
+    min_evidence_effect_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -608,6 +776,43 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
                     ]
                 }
                 if contract.acceptance.resource_limits else {}
+            ),
+            # VA24: same treatment as resource_limits above -- omitted while
+            # left at the default, so every contract predating VA24 keeps its
+            # exact original contract_hash. A contract that actually opts into
+            # an interval-based policy (or declares a rounds floor) gets a new
+            # hash, which is correct: it has changed what it demands of
+            # evidence, so previously-recorded evidence should not silently
+            # continue to satisfy it.
+            **(
+                {"effect_evidence_policy": contract.acceptance.effect_evidence_policy}
+                if contract.acceptance.effect_evidence_policy != DEFAULT_EFFECT_EVIDENCE_POLICY
+                else {}
+            ),
+            **(
+                {"min_paired_rounds": contract.acceptance.min_paired_rounds}
+                if contract.acceptance.min_paired_rounds is not None else {}
+            ),
+            # Same conditional treatment: a contract that does not declare a
+            # session stopping rule keeps its exact existing hash. One that
+            # does gets a new hash, which is correct -- the stopping rule is
+            # part of what it demands of evidence, so evidence gathered under
+            # a different rule must not silently continue to satisfy it.
+            **(
+                {"min_sessions": contract.acceptance.min_sessions}
+                if contract.acceptance.min_sessions is not None else {}
+            ),
+            **(
+                {"max_sessions": contract.acceptance.max_sessions}
+                if contract.acceptance.max_sessions is not None else {}
+            ),
+            **(
+                {"max_ci95_width_pct": contract.acceptance.max_ci95_width_pct}
+                if contract.acceptance.max_ci95_width_pct is not None else {}
+            ),
+            **(
+                {"min_evidence_effect_pct": contract.acceptance.min_evidence_effect_pct}
+                if contract.acceptance.min_evidence_effect_pct is not None else {}
             ),
         },
         "source_evidence": (
@@ -744,6 +949,28 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     positive = _evaluation_set("positive")
     controls = _evaluation_set("controls")
 
+    # A lane is identified by (model, workload) -- EvaluationSet carries no
+    # further axis, so a lane named by BOTH roles is one measurement asked to
+    # satisfy two contradictory requirements at once: gain at least
+    # target_kernel_gain_pct AND change by no more than
+    # max_control_regression_pct. Worse, it makes the regression budget
+    # self-referential: the "control" is the treatment, so it can never
+    # detect the collateral damage a control exists to catch.
+    shared_lanes = sorted(
+        (model, workload)
+        for model in set(positive.models) & set(controls.models)
+        for workload in set(positive.workloads) & set(controls.workloads)
+    )
+    if shared_lanes:
+        rendered = ", ".join(f"{model}/{workload}" for model, workload in shared_lanes)
+        raise ExperimentContractError(
+            f"{where}: lane(s) {rendered} appear in BOTH positive and controls -- "
+            f"a lane cannot be both the thing that must improve and the thing that "
+            f"must hold constant. A control must name a model/workload the "
+            f"hypothesis does NOT claim to speed up, otherwise the regression "
+            f"budget is measured against the treatment itself and is vacuous"
+        )
+
     boundary_data = _table(data.get("boundary"), f"{where}.boundary")
     dims_data = _table(boundary_data.get("dimensions"), f"{where}.boundary.dimensions")
     dimensions: list[tuple[str, tuple[object, ...]]] = []
@@ -834,7 +1061,132 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             acceptance_data.get("max_control_regression_pct"),
             f"{where}.acceptance.max_control_regression_pct"),
         resource_limits=tuple(resource_limits),
+        effect_evidence_policy=_effect_evidence_policy(
+            acceptance_data.get("effect_evidence_policy"),
+            f"{where}.acceptance.effect_evidence_policy"),
+        min_paired_rounds=_min_paired_rounds(
+            acceptance_data.get("min_paired_rounds"),
+            f"{where}.acceptance.min_paired_rounds"),
+        min_sessions=_session_count(
+            acceptance_data.get("min_sessions"), f"{where}.acceptance.min_sessions"),
+        max_sessions=_session_count(
+            acceptance_data.get("max_sessions"), f"{where}.acceptance.max_sessions"),
+        max_ci95_width_pct=_max_ci95_width(
+            acceptance_data.get("max_ci95_width_pct"),
+            f"{where}.acceptance.max_ci95_width_pct"),
+        min_evidence_effect_pct=_percent(
+            acceptance_data.get("min_evidence_effect_pct"),
+            f"{where}.acceptance.min_evidence_effect_pct"),
     )
+    asymmetric_policy = (
+        acceptance.effect_evidence_policy == "improvement_no_regression_v1"
+    )
+    if asymmetric_policy:
+        # Sessions are still the unit -- between-session drift is real
+        # regardless of which decision rule reads the interval -- but this
+        # policy needs NO max_ci95_width_pct, because no bound has to be
+        # resolved. Declaring one would imply a precision requirement nothing
+        # enforces.
+        if acceptance.min_sessions is None:
+            raise ExperimentContractError(
+                f"{where}.acceptance: effect_evidence_policy="
+                f"'improvement_no_regression_v1' requires min_sessions -- an "
+                f"improvement established from a single run's pairs cannot see "
+                f"between-session drift, and this policy has no other depth floor"
+            )
+        if acceptance.min_sessions < MIN_BOOTSTRAP_SESSIONS:
+            raise ExperimentContractError(
+                f"{where}.acceptance.min_sessions must be >= {MIN_BOOTSTRAP_SESSIONS} "
+                f"({acceptance.min_sessions} given) -- a cluster bootstrap over fewer "
+                f"sessions has too small a resample space to give an honest interval"
+            )
+        if acceptance.max_ci95_width_pct is not None:
+            raise ExperimentContractError(
+                f"{where}.acceptance.max_ci95_width_pct is meaningless under "
+                f"'improvement_no_regression_v1' -- this policy resolves no bound, so "
+                f"interval width is not what its decision turns on"
+            )
+        for field, value in (
+            ("target_kernel_gain_pct", acceptance.target_kernel_gain_pct),
+            ("end_to_end_gain_pct", acceptance.end_to_end_gain_pct),
+        ):
+            if value:
+                raise ExperimentContractError(
+                    f"{where}.acceptance.{field}={value} is a MATERIALITY bar, which "
+                    f"'improvement_no_regression_v1' deliberately does not have. Any "
+                    f"established improvement is acceptable under this policy; set the "
+                    f"bar to 0.0 (or drop it) and use min_evidence_effect_pct to say "
+                    f"what counts as established"
+                )
+        # ... but ONE of them must still be declared (as 0.0), because it names
+        # which measured field the improvement check reads. Leaving both unset
+        # would make this policy silently check nothing at all -- a contract
+        # that looks governed and gates on no gain evidence whatsoever.
+        if (acceptance.target_kernel_gain_pct is None
+                and acceptance.end_to_end_gain_pct is None):
+            raise ExperimentContractError(
+                f"{where}.acceptance: 'improvement_no_regression_v1' requires "
+                f"target_kernel_gain_pct or end_to_end_gain_pct to be declared as 0.0 "
+                f"-- it carries no materiality bar, but the field must name WHICH "
+                f"effect has to be established, or nothing is checked"
+            )
+
+    session_policy = (
+        acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
+    )
+    session_fields = {
+        "min_sessions": acceptance.min_sessions,
+        "max_sessions": acceptance.max_sessions,
+        "max_ci95_width_pct": acceptance.max_ci95_width_pct,
+    }
+    if asymmetric_policy:
+        pass
+    elif session_policy:
+        missing = sorted(name for name, value in session_fields.items() if value is None)
+        if missing:
+            raise ExperimentContractError(
+                f"{where}.acceptance: effect_evidence_policy="
+                f"'session_ci95_threshold_bound_v1' requires {', '.join(missing)} -- "
+                f"the stopping rule must be pre-declared IN FULL before evidence is "
+                f"collected, otherwise 'how many sessions' is decided after seeing "
+                f"the sessions"
+            )
+        if acceptance.min_sessions < MIN_BOOTSTRAP_SESSIONS:
+            raise ExperimentContractError(
+                f"{where}.acceptance.min_sessions must be >= {MIN_BOOTSTRAP_SESSIONS} "
+                f"({acceptance.min_sessions} given) -- a cluster bootstrap over fewer "
+                f"sessions has too small a resample space to give an honest interval"
+            )
+        if acceptance.max_sessions < acceptance.min_sessions:
+            raise ExperimentContractError(
+                f"{where}.acceptance.max_sessions ({acceptance.max_sessions}) must be "
+                f">= min_sessions ({acceptance.min_sessions})"
+            )
+    else:
+        declared = sorted(name for name, value in session_fields.items() if value is not None)
+        if declared:
+            raise ExperimentContractError(
+                f"{where}.acceptance: {', '.join(declared)} is meaningless without "
+                f"effect_evidence_policy = 'session_ci95_threshold_bound_v1' -- a "
+                f"stopping rule no gate consults is worse than none, because it reads "
+                f"as though the run was governed when it was not"
+            )
+    # VA24 P0 (dev-gpt-agent, req_d563bd481bcf4324): an interval policy
+    # without a rounds floor is not actually stronger than the point estimate
+    # it replaces -- run_paired_lane() accepts pairs=1, whose bootstrap yields
+    # a degenerate interval that can look arbitrarily significant. Requiring
+    # the floor makes "this contract uses intervals" mean "this contract
+    # guarantees a minimum evidence depth", rather than leaving that to be
+    # discovered per-contract.
+    if (acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+            and acceptance.min_paired_rounds is None):
+        raise ExperimentContractError(
+            f"{where}.acceptance: effect_evidence_policy="
+            f"'ci95_threshold_bound_v1' requires an explicit min_paired_rounds "
+            f"-- an interval computed from a single paired round is degenerate "
+            f"and can look arbitrarily significant, so a confidence policy with "
+            f"no evidence-depth floor is weaker than it appears"
+        )
     if acceptance.max_control_regression_pct is None:
         raise ExperimentContractError(
             f"{where}.acceptance.max_control_regression_pct is required -- every "
@@ -998,8 +1350,45 @@ def known_source_ids_from_external_sources(
     )
 
 
+def known_model_ids_from_models_registry(
+    path: str | Path | None = None,
+) -> frozenset[str]:
+    """Real cross-check input for ``load_contracts(known_model_ids=...)``:
+    every ``[[models]] id`` registered in ``config/models.toml``
+    (``paths.MODELS`` by default).
+
+    Exists because ``_evaluation_set()`` constrains ``workloads`` to
+    WORKLOAD_TAGS but constrained ``models`` to nothing -- an evaluation set
+    could name a model that had never existed and validation would pass,
+    deferring the failure to hardware time after a build and a model load had
+    been spent. Worse, a silently-wrong model ref means recorded evidence
+    CLAIMS a lane it did not measure, since the ref is a label and the actual
+    gguf arrives separately via ``--model``.
+
+    Kept as an explicit opt-in call for the same reason the source-id
+    equivalent is: a caller wanting the real registry cross-check asks for
+    it; a unit test building a contract in isolation is not forced to
+    maintain a models.toml fixture."""
+    import tomllib as _tomllib
+
+    resolved = Path(path) if path is not None else None
+    if resolved is None:
+        from ..core import paths
+        resolved = paths.MODELS
+    try:
+        raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ExperimentContractError(f"no models registry at {resolved}") from None
+    except _tomllib.TOMLDecodeError as exc:
+        raise ExperimentContractError(f"{resolved}: {exc}") from None
+    return frozenset(
+        entry["id"] for entry in raw.get("models", []) if isinstance(entry, dict) and entry.get("id")
+    )
+
+
 def load_contracts(path: str | Path, *,
-                    known_source_ids: frozenset[str] | None = None) -> ContractRegistry:
+                    known_source_ids: frozenset[str] | None = None,
+                    known_model_ids: frozenset[str] | None = None) -> ContractRegistry:
     """Load every ``[contract.<id>]`` table in ``path`` (default
     ``experiment-contracts.toml`` at the repo root -- see
     ``paths.EXPERIMENT_CONTRACTS``) deterministically. Rejects duplicate IDs
@@ -1036,6 +1425,20 @@ def load_contracts(path: str | Path, *,
                     f"{contract.source.source_id!r} is not a known "
                     f"external-sources.toml entry"
                 )
+
+    if known_model_ids is not None:
+        for contract in contracts.values():
+            for role, evaluation_set in (
+                ("positive", contract.positive), ("controls", contract.controls),
+            ):
+                for model in evaluation_set.models:
+                    if model not in known_model_ids:
+                        raise ExperimentContractError(
+                            f"contract.{contract.id}.{role}.models: {model!r} is not "
+                            f"a known models.toml entry -- an evaluation set may only "
+                            f"name a registered model, otherwise the recorded lane "
+                            f"identifies a measurement nothing can resolve"
+                        )
 
     unknown_prerequisites: dict[str, tuple[str, ...]] = {}
     for contract in contracts.values():
@@ -1181,6 +1584,162 @@ class LaneEffect:
     metric: str
     geometric_effect_pct: float
     decision: str | None = None
+    # VA24. The producing report (comparisons.run_comparison() /
+    # ab_benchmark.paired_summary()) already computes these; LaneEffect
+    # previously discarded them, so the promotion gate never saw an interval.
+    # Optional and defaulted so every existing construction is unchanged.
+    ci95_low_pct: float | None = None
+    ci95_high_pct: float | None = None
+    paired_rounds: int | None = None
+    # VA24: the ordered per-pair ratio vector this lane's interval was
+    # bootstrapped from -- the sufficient statistic for recomputing an
+    # AGGREGATE interval across several lanes without re-running benchmarks.
+    pair_ratios: tuple[float, ...] = ()
+
+
+def bootstrap_fixed_composite_mean(
+    lanes: list[LaneEffect], *, seed: int = 0, resamples: int = 10_000,
+) -> tuple[float, float] | None:
+    """VA24: CI for the mean effect across a FIXED set of positive lanes.
+
+    The estimand is the existing point-estimate semantic -- mean of the
+    per-lane effects -- and this puts an interval on it without changing it.
+
+    Critically it resamples ONLY WITHIN each lane, never the lanes
+    themselves::
+
+        for replicate b:
+            E_j[b] = effect(resample lane j's own pair ratios)   for each lane j
+            G[b]   = mean_j E_j[b]
+        CI(G) = percentiles(G)
+
+    Bootstrapping lane identity would be wrong: decode and prefill are fixed
+    components the contract names, not IID draws from a population of
+    workloads, and with two heterogeneous lanes "sampling a lane" is
+    meaningless. What is uncertain is each lane's own measurement, so that is
+    what gets resampled (dev-gpt-agent, req_a667633429fa4c9e).
+
+    Mirrors block_bootstrap_effect()'s estimator exactly -- geometric mean of
+    per-pair ratios, expressed as a percentage -- so a single-lane call here
+    reproduces that function's own interval rather than a second, subtly
+    different statistic.
+
+    Returns None when any lane lacks its ratio vector, so the caller emits no
+    interval and the gate reports "invalid" rather than guessing.
+    """
+    if not lanes:
+        return None
+    lane_logs: list[list[float]] = []
+    for lane in lanes:
+        if not lane.pair_ratios or any(
+            not _finite_number(ratio) or ratio <= 0 for ratio in lane.pair_ratios
+        ):
+            return None
+        lane_logs.append([math.log(ratio) for ratio in lane.pair_ratios])
+
+    rng = random.Random(seed)
+    replicates: list[float] = []
+    for _ in range(resamples):
+        lane_effects_pct = []
+        for logs in lane_logs:
+            resampled = [rng.choice(logs) for _ in logs]
+            lane_effects_pct.append(
+                100.0 * (math.exp(statistics.mean(resampled)) - 1.0))
+        replicates.append(statistics.mean(lane_effects_pct))
+    replicates.sort()
+    return (
+        replicates[int(0.025 * resamples)],
+        replicates[min(resamples - 1, int(0.975 * resamples))],
+    )
+
+
+#: Fewest measurement sessions ``bootstrap_session_effect()`` will estimate
+#: from. A cluster bootstrap draws whole sessions with replacement, so with
+#: very few clusters the resample space is tiny (S=2 admits 3 distinct
+#: multisets, S=3 admits 10) and the resulting interval is badly
+#: anticonservative -- it would report a narrow interval precisely when
+#: between-session drift is least well characterised. Below this the function
+#: returns None and the caller reports "not evaluable" rather than a number
+#: nobody should act on, matching this module's existing failure style.
+MIN_BOOTSTRAP_SESSIONS = 4
+
+
+def bootstrap_session_effect(
+    sessions: list[tuple[float, ...]], *, seed: int = 0, resamples: int = 10_000,
+) -> dict[str, object] | None:
+    """Effect and interval across repeated measurement SESSIONS of one lane.
+
+    ``sessions`` is one per-pair ratio vector per session (the same
+    ``pair_ratios`` sufficient statistic ``block_bootstrap_effect()`` already
+    records, one entry per independent run).
+
+    WHY THIS EXISTS. ``block_bootstrap_effect()`` resamples pairs within a
+    single run, so its interval covers only within-session variation. RD73
+    measured the same build three times and got +1.855%, +1.717% and +1.249%;
+    the third run's point estimate fell BELOW the second run's ci95_low. The
+    runs are not inconsistent measurements of different things -- they are
+    honest measurements taken on different occasions, and the drift between
+    occasions is real variance that a within-run interval structurally cannot
+    see. Quoting a single run's interval therefore overstates precision.
+
+    WHY RESAMPLING SESSION IDENTITY IS CORRECT HERE, where
+    ``bootstrap_fixed_composite_mean()`` deliberately refuses to resample LANE
+    identity: a contract's lanes are fixed components it names by hand
+    (decode, prefill) -- "sampling a lane" is meaningless. Sessions are the
+    opposite: they are exchangeable draws from the population of occasions on
+    which this measurement could have been taken, and that population is
+    exactly what a claim about the effect generalises over. Drawing sessions
+    with replacement is what propagates between-occasion variance into the
+    interval::
+
+        for replicate b:
+            draw S sessions with replacement from the S observed
+            for each drawn session: resample its own pairs with replacement
+            G[b] = mean of those sessions' geometric effects
+        CI(G) = percentiles(G)
+
+    Sessions are weighted EQUALLY rather than by pair count: the session is
+    the unit of replication, so a run that happened to collect more pairs
+    should not speak louder about where the true effect lies.
+
+    Returns None -- never a guess -- when fewer than MIN_BOOTSTRAP_SESSIONS
+    are supplied, or when any session's ratio vector is empty or non-finite.
+    """
+    if len(sessions) < MIN_BOOTSTRAP_SESSIONS:
+        return None
+    session_logs: list[list[float]] = []
+    for ratios in sessions:
+        if not ratios or any(not _finite_number(r) or r <= 0 for r in ratios):
+            return None
+        session_logs.append([math.log(r) for r in ratios])
+
+    def _effect_pct(logs: list[float]) -> float:
+        return 100.0 * (math.exp(statistics.mean(logs)) - 1.0)
+
+    point = statistics.mean(_effect_pct(logs) for logs in session_logs)
+    rng = random.Random(seed)
+    replicates: list[float] = []
+    for _ in range(resamples):
+        drawn = [rng.choice(session_logs) for _ in session_logs]
+        replicates.append(statistics.mean(
+            _effect_pct([rng.choice(logs) for _ in logs]) for logs in drawn
+        ))
+    replicates.sort()
+    per_session = [_effect_pct(logs) for logs in session_logs]
+    return {
+        "sessions": len(session_logs),
+        "paired_rounds_total": sum(len(logs) for logs in session_logs),
+        "geometric_effect_pct": point,
+        "ci95_low_pct": replicates[int(0.025 * resamples)],
+        "ci95_high_pct": replicates[min(resamples - 1, int(0.975 * resamples))],
+        "per_session_effect_pct": tuple(per_session),
+        # The variance component a within-run interval cannot see. Reported so
+        # a reader can compare it against the single-run intervals directly.
+        "between_session_sd_pct": (
+            statistics.stdev(per_session) if len(per_session) > 1 else 0.0
+        ),
+        "resamples": resamples, "seed": seed,
+    }
 
 
 def aggregate_contract_effects(
@@ -1252,11 +1811,119 @@ def aggregate_contract_effects(
         if effect.role == "positive" and effect.metric == e2e_metric
     ]
 
-    return {
+    aggregated: dict[str, object] = {
         "target_kernel_gain_pct": statistics.mean(positive_target),
         "end_to_end_gain_pct": statistics.mean(e2e_effects) if e2e_effects else None,
         "max_control_regression_pct": max_control_regression_pct,
     }
+
+    # VA24: attach intervals ONLY where they can be carried through exactly.
+    #
+    # For a single contributing lane the aggregate IS that lane, so its
+    # interval transfers unchanged. For several lanes it does NOT:
+    # mean(lane ci95_lows) is not the ci95_low of the mean effect, and the
+    # interval of the lane with the worst POINT estimate is not the interval
+    # of the worst regression. Computing the aggregate interval properly means
+    # bootstrapping the aggregate statistic from the per-round paired data,
+    # which this function does not receive.
+    #
+    # So multi-lane contracts deliberately get NO interval here. Under
+    # ci95_threshold_bound_v1 the gate then reports "invalid" (unevaluable)
+    # rather than passing or failing -- which is the correct fail-closed
+    # outcome, and far better than emitting a plausible-looking number from
+    # invalid statistics. Removing this restriction requires giving this
+    # function the raw paired observations, not a cleverer formula.
+    # (dev-gpt-agent, req_cd86e5fd4a3b4328, P0.)
+    def _usable_interval(effect: LaneEffect) -> bool:
+        """VA24 P0: validate the SOURCE interval atomically, before any
+        derivation (dev-gpt-agent, req_d563bd481bcf4324).
+
+        Requires finite point/low/high and ``low <= point <= high`` -- which
+        also proves ``low <= high``, so no separate ordering check is needed.
+
+        Validating here rather than at the gate matters for the control side:
+        the regression transform ``max(0, -effect)`` can otherwise HIDE a
+        malformed source interval (e.g. an inverted low/high still yields a
+        plausible-looking non-negative regression bound). A lane whose
+        interval fails this check contributes no interval at all, so an
+        interval policy reports "invalid" instead of trusting a derived
+        number computed from nonsense.
+        """
+        return (
+            _finite_number(effect.geometric_effect_pct)
+            and _finite_number(effect.ci95_low_pct)
+            and _finite_number(effect.ci95_high_pct)
+            and effect.ci95_low_pct <= effect.geometric_effect_pct <= effect.ci95_high_pct
+        )
+
+    def _sole(role: str, metric: str) -> LaneEffect | None:
+        matching = [
+            effect for effect in lane_effects
+            if effect.role == role and effect.metric == metric
+        ]
+        return matching[0] if len(matching) == 1 else None
+
+    def _gain_interval(field: str, metric: str) -> None:
+        """Attach the gain interval for one metric.
+
+        One contributing lane: the aggregate IS that lane, so its own
+        interval transfers unchanged. Several lanes: bootstrap the mean
+        across the FIXED lane set, resampling only within each lane. The
+        reported paired_rounds is the MINIMUM across contributing lanes,
+        since the evidence floor must be met by the weakest contributor --
+        an aggregate is not made trustworthy by one well-sampled lane
+        carrying an under-sampled one.
+        """
+        lanes = [
+            effect for effect in lane_effects
+            if effect.role == "positive" and effect.metric == metric
+        ]
+        if not lanes:
+            return
+        if len(lanes) == 1:
+            if _usable_interval(lanes[0]):
+                aggregated[f"{field}_ci95_low"] = lanes[0].ci95_low_pct
+                aggregated[f"{field}_paired_rounds"] = lanes[0].paired_rounds
+            return
+        if not all(_usable_interval(lane) for lane in lanes):
+            return
+        interval = bootstrap_fixed_composite_mean(lanes)
+        if interval is None:
+            return
+        rounds = [lane.paired_rounds for lane in lanes]
+        aggregated[f"{field}_ci95_low"] = interval[0]
+        aggregated[f"{field}_paired_rounds"] = (
+            min(rounds) if all(isinstance(r, int) and not isinstance(r, bool) for r in rounds)
+            else None
+        )
+
+    _gain_interval("target_kernel_gain_pct", target_metric)
+    _gain_interval("end_to_end_gain_pct", e2e_metric)
+
+    control_lanes = [effect for effect in lane_effects if effect.role == "control"]
+    if len(control_lanes) == 1 and _usable_interval(control_lanes[0]):
+        # regression = max(0, -effect), so the interval ENDPOINTS REVERSE
+        # under the negation:
+        #     R_low  = max(0, -E_ci95_high)
+        #     R_high = max(0, -E_ci95_low)
+        # The interval does NOT transfer across unchanged. Taking the effect's
+        # ci95_high as the regression's upper bound would be a correctness
+        # bug -- it would report the most OPTIMISTIC case as the worst case.
+        # Flagged HIGH risk in review (dev-gpt-agent, req_a667633429fa4c9e)
+        # and pinned by test_regression_interval_endpoints_reverse.
+        aggregated["max_control_regression_pct_ci95_high"] = max(
+            0.0, -control_lanes[0].ci95_low_pct)
+        aggregated["max_control_regression_pct_paired_rounds"] = control_lanes[0].paired_rounds
+    # len(control_lanes) > 1 deliberately attaches NO interval. Independent
+    # per-lane 95% bounds are not a 95% FAMILY guarantee, and the right
+    # simultaneous procedure (Bonferroni vs a direct bootstrap of the fixed
+    # max-regression statistic vs something else) depends on cross-lane
+    # dependence that no contract in this registry currently exercises --
+    # every one has exactly one control lane. Building an untested correction
+    # with no consumer is worse than failing closed, so the gate reports
+    # "invalid" until a real multi-control contract exists to design against.
+
+    return aggregated
 
 
 # ------------------------------------------------------------- correctness (EC07)
@@ -1554,6 +2221,150 @@ def evaluate_trigger_proof(trigger_evidence: list[TriggerEvidence]) -> dict[str,
 # --------------------------------------------------------------- promotion (EC09)
 
 
+def _finite_number(value: object) -> bool:
+    """True only for a real, finite, non-boolean number.
+
+    ``isinstance(x, (int, float))`` alone is not sufficient for a fail-closed
+    gate, for two reasons found in review (dev-gpt-agent, req_cd86e5fd4a3b4328):
+
+      * ``bool`` is a subclass of ``int``, so ``True`` would be accepted and
+        compared as ``1``.
+      * NaN and infinity pass the isinstance check, and NaN silently defeats
+        BOTH threshold comparisons in evaluate_promotion_gate(), because every
+        ordered comparison against NaN is False:
+
+            float("nan") < required_gain   -> False   (so the gain check passes)
+            float("nan") > regression_budget -> False (so the regression check passes)
+
+        i.e. a NaN effect produced a PASS on both gain and regression. That is
+        a confidently wrong verdict from malformed evidence, which is exactly
+        what a fail-closed gate must never do.
+
+    Malformed evidence must therefore be rejected here and reported as a
+    failure reason, never silently satisfy a bound.
+    """
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
+
+
+def aggregate_session_effects(
+    records: Iterable[Mapping[str, object]], *, field: str, role: str, metric: str,
+    architectures: Iterable[str], seed: int = 0, resamples: int = 10_000,
+) -> dict[str, object]:
+    """RV99: build the ``aggregated_effects`` a session policy needs from
+    several validation records -- one per measurement SESSION.
+
+    Each record contributes the ``lane_effects`` entry matching ``role`` and
+    ``metric``; its ``pair_ratios`` is that session's observation. Records
+    lacking a matching lane, or carrying an empty ratio vector, contribute
+    nothing -- they are not treated as a zero-effect session, which would
+    quietly drag the estimate toward zero.
+
+    Returns ``{field: ..., field_ci95_low: ..., field_ci95_high: ...,
+    field_sessions: ...}``. When ``bootstrap_session_effect()`` declines (too
+    few sessions), the count is still reported so the gate can say how many
+    were found and how many more are needed, rather than reporting nothing.
+
+    Sessions are ORDER-INDEPENDENT here: every valid record contributes, and
+    none is dropped. Selecting which sessions to aggregate is exactly the
+    move the frozen re-run policy forbids.
+    """
+    # Sessions must come from the SAME hardware. A record carries
+    # gpu_architectures; ignoring it would pool a gfx1201 session with gfx1100
+    # ones into a single "effect" that describes neither -- and would do it
+    # silently, since every input is individually valid. The filter is a
+    # required argument rather than an optional refinement precisely because
+    # forgetting it produces a plausible-looking wrong number, not an error.
+    wanted = frozenset(architectures)
+    if not wanted:
+        raise ExperimentContractError(
+            "aggregate_session_effects: architectures must be non-empty -- an "
+            "unfiltered aggregate silently mixes hardware"
+        )
+    sessions: list[tuple[float, ...]] = []
+    for record in records:
+        record_archs = record.get("gpu_architectures") or ()
+        if isinstance(record_archs, str):
+            record_archs = (record_archs,)
+        if not wanted.issuperset(record_archs) or not record_archs:
+            continue
+        for lane in record.get("lane_effects") or ():
+            if not isinstance(lane, Mapping):
+                continue
+            if lane.get("role") != role or lane.get("metric") != metric:
+                continue
+            ratios = lane.get("pair_ratios") or ()
+            if ratios:
+                sessions.append(tuple(float(value) for value in ratios))
+            break
+    estimate = bootstrap_session_effect(sessions, seed=seed, resamples=resamples)
+    if estimate is None:
+        return {f"{field}_sessions": len(sessions)}
+    return {
+        field: estimate["geometric_effect_pct"],
+        f"{field}_ci95_low": estimate["ci95_low_pct"],
+        f"{field}_ci95_high": estimate["ci95_high_pct"],
+        f"{field}_sessions": estimate["sessions"],
+        f"{field}_paired_rounds": estimate["paired_rounds_total"],
+        f"{field}_between_session_sd_pct": estimate["between_session_sd_pct"],
+        f"{field}_per_session_effect_pct": list(estimate["per_session_effect_pct"]),
+    }
+
+
+def _session_stopping_rule_met(
+    field: str, acceptance: Acceptance, aggregated_effects: Mapping[str, object],
+    invalid_reasons: list[str],
+) -> bool:
+    """session_ci95_threshold_bound_v1's pre-declared stopping rule.
+
+    Returns True when the evidence is precise enough to decide. Otherwise
+    appends an INVALID reason (not a fail -- an under-collected run is
+    inconclusive, not a measured negative) and returns False.
+
+    DIRECTION-BLIND BY CONSTRUCTION. This function reads only the session
+    count and the interval WIDTH. It is never passed the acceptance threshold
+    and never sees where ci95_low falls relative to it, so it cannot stop
+    early because the answer looks good, or keep going because it does not.
+    That property is the whole point of the rule and is asserted by its tests.
+    """
+    sessions = aggregated_effects.get(f"{field}_sessions")
+    low = aggregated_effects.get(f"{field}_ci95_low")
+    high = aggregated_effects.get(f"{field}_ci95_high")
+    if not isinstance(sessions, int) or isinstance(sessions, bool):
+        invalid_reasons.append(
+            f"{field}: session_ci95_threshold_bound_v1 requires a "
+            f"{field}_sessions count from bootstrap_session_effect() "
+            f"(got {sessions!r})"
+        )
+        return False
+    if sessions < acceptance.min_sessions:
+        invalid_reasons.append(
+            f"{field}: {sessions} session(s) is below the pre-declared minimum "
+            f"{acceptance.min_sessions} -- collect more; a within-run interval "
+            f"cannot represent between-session drift"
+        )
+        return False
+    if not _finite_number(low) or not _finite_number(high):
+        invalid_reasons.append(
+            f"{field}: session policy requires finite ci95 bounds "
+            f"(got {low!r} / {high!r})"
+        )
+        return False
+    width = high - low
+    if width > acceptance.max_ci95_width_pct and sessions < acceptance.max_sessions:
+        invalid_reasons.append(
+            f"{field}: ci95 width {width:.3f} exceeds the pre-declared precision "
+            f"target {acceptance.max_ci95_width_pct} after {sessions} of at most "
+            f"{acceptance.max_sessions} sessions -- INCONCLUSIVE, collect another "
+            f"session and re-estimate over all of them (never discard one)"
+        )
+        return False
+    return True
+
+
 def evaluate_promotion_gate(
     contract: ExperimentContract, *, correctness_gate: dict[str, object],
     aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
@@ -1609,28 +2420,153 @@ def evaluate_promotion_gate(
         )
 
     acceptance = contract.acceptance
-    if acceptance.target_kernel_gain_pct is not None:
-        measured = aggregated_effects.get("target_kernel_gain_pct")
-        if not isinstance(measured, (int, float)) or measured < acceptance.target_kernel_gain_pct:
-            reasons.append(
-                f"target_kernel_gain_pct {measured} below required "
-                f"{acceptance.target_kernel_gain_pct}"
+    session_policy = (
+        acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1"
+    )
+    asymmetric_policy = (
+        acceptance.effect_evidence_policy == "improvement_no_regression_v1"
+    )
+    interval_policy = (
+        acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+        or session_policy or asymmetric_policy
+    )
+    # VA24: evidence that is missing or malformed under an interval policy is
+    # neither a pass nor a measured negative -- it is unevaluable, and must
+    # surface as "invalid" exactly like an unproven trigger_proof does. These
+    # are collected separately from `reasons` so a genuine below-threshold
+    # result stays an ordinary "fail".
+    invalid_reasons: list[str] = []
+
+    def _gain_reasons(field: str, threshold: float) -> None:
+        measured = aggregated_effects.get(field)
+        if not interval_policy:
+            if not _finite_number(measured) or measured < threshold:
+                reasons.append(f"{field} {measured} below required {threshold}")
+            return
+        ci_low = aggregated_effects.get(f"{field}_ci95_low")
+        rounds = aggregated_effects.get(f"{field}_paired_rounds")
+        if not _finite_number(measured) or not _finite_number(ci_low):
+            invalid_reasons.append(
+                f"{field}: ci95_threshold_bound_v1 requires a finite point estimate "
+                f"and ci95 lower bound (got {measured!r} / {ci_low!r})"
             )
-    if acceptance.end_to_end_gain_pct is not None:
-        measured = aggregated_effects.get("end_to_end_gain_pct")
-        if not isinstance(measured, (int, float)) or measured < acceptance.end_to_end_gain_pct:
+            return
+        if ci_low > measured:
+            invalid_reasons.append(
+                f"{field}: incoherent interval -- ci95_low {ci_low} exceeds the "
+                f"point estimate {measured}"
+            )
+            return
+        required_rounds = acceptance.min_paired_rounds
+        if required_rounds is not None:
+            if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < required_rounds:
+                invalid_reasons.append(
+                    f"{field}: {rounds!r} paired rounds is below the required "
+                    f"minimum {required_rounds} -- the interval is not trustworthy"
+                )
+                return
+        if session_policy and not _session_stopping_rule_met(
+            field, acceptance, aggregated_effects, invalid_reasons,
+        ):
+            return
+        if asymmetric_policy:
+            # No materiality bar: an ESTABLISHED improvement is acceptable
+            # whatever its size. Only the evidence floor applies, and the
+            # session-depth floor before it -- drift does not stop being real
+            # just because the decision rule changed.
+            sessions = aggregated_effects.get(f"{field}_sessions")
+            if not isinstance(sessions, int) or isinstance(sessions, bool):
+                invalid_reasons.append(
+                    f"{field}: improvement_no_regression_v1 requires a "
+                    f"{field}_sessions count from bootstrap_session_effect() "
+                    f"(got {sessions!r})"
+                )
+                return
+            if sessions < acceptance.min_sessions:
+                invalid_reasons.append(
+                    f"{field}: {sessions} session(s) is below the pre-declared minimum "
+                    f"{acceptance.min_sessions} -- collect more; a within-run interval "
+                    f"cannot represent between-session drift"
+                )
+                return
+            floor = acceptance.min_evidence_effect_pct or 0.0
+            if ci_low <= floor:
+                reasons.append(
+                    f"{field} ci95_low {ci_low} does not establish an improvement above "
+                    f"the evidence floor {floor} (point estimate {measured}) -- a "
+                    f"positive point estimate whose interval reaches the floor is not "
+                    f"an established gain"
+                )
+            return
+        # The BOUND, not merely positivity, must be established by the
+        # interval. "CI excludes zero" would only show "probably positive".
+        if ci_low < threshold:
             reasons.append(
-                f"end_to_end_gain_pct {measured} below required "
-                f"{acceptance.end_to_end_gain_pct}"
+                f"{field} ci95_low {ci_low} below required {threshold} "
+                f"(point estimate {measured})"
             )
 
+    if acceptance.target_kernel_gain_pct is not None:
+        _gain_reasons("target_kernel_gain_pct", acceptance.target_kernel_gain_pct)
+    if acceptance.end_to_end_gain_pct is not None:
+        _gain_reasons("end_to_end_gain_pct", acceptance.end_to_end_gain_pct)
+
     measured_regression = aggregated_effects.get("max_control_regression_pct")
-    if (not isinstance(measured_regression, (int, float))
-            or measured_regression > acceptance.max_control_regression_pct):
-        reasons.append(
-            f"max_control_regression_pct {measured_regression} exceeds budget "
-            f"{acceptance.max_control_regression_pct}"
-        )
+    if not interval_policy:
+        if (not _finite_number(measured_regression)
+                or measured_regression > acceptance.max_control_regression_pct):
+            reasons.append(
+                f"max_control_regression_pct {measured_regression} exceeds budget "
+                f"{acceptance.max_control_regression_pct}"
+            )
+    else:
+        # VA24, regression side. The symmetric-looking rule "a regression only
+        # fails when it is SIGNIFICANTLY negative" was explicitly rejected in
+        # review (dev-gpt-agent, req_cd86e5fd4a3b4328) as fail-OPEN: it would
+        # let an uncertain, genuinely-over-budget regression through simply
+        # because the interval was wide.
+        #
+        # The requirement is the mirror of the gain rule: the budget must be
+        # ESTABLISHED by the interval, i.e. the UPPER bound on the regression
+        # must sit inside the budget. With a 1.0 budget:
+        #     point -0.2, ci95_high 0.4  -> passes (noise absorbed)
+        #     point -0.2, ci95_high 1.2  -> fails  (could really exceed 1.0)
+        # This matters most for correctness-first contracts, where the
+        # regression budget is the ONLY performance gate they have.
+        ci_high = aggregated_effects.get("max_control_regression_pct_ci95_high")
+        control_rounds = aggregated_effects.get("max_control_regression_pct_paired_rounds")
+        required_rounds = acceptance.min_paired_rounds
+        if not _finite_number(measured_regression) or not _finite_number(ci_high):
+            invalid_reasons.append(
+                f"max_control_regression_pct: ci95_threshold_bound_v1 requires a "
+                f"finite point estimate and ci95 upper bound "
+                f"(got {measured_regression!r} / {ci_high!r})"
+            )
+        # VA24 P0: the rounds floor applies to the CONTROL lane too. A
+        # regression budget established from a single usable pair is exactly
+        # as untrustworthy as a gain established from one, and leaving the
+        # floor off here meant a contract could demand N rounds of evidence
+        # for its claim while accepting n=1 evidence that it broke nothing.
+        elif (required_rounds is not None
+              and (not isinstance(control_rounds, int)
+                   or isinstance(control_rounds, bool)
+                   or control_rounds < required_rounds)):
+            invalid_reasons.append(
+                f"max_control_regression_pct: {control_rounds!r} paired rounds is "
+                f"below the required minimum {required_rounds} -- the control "
+                f"interval is not trustworthy"
+            )
+        elif ci_high < measured_regression:
+            invalid_reasons.append(
+                f"max_control_regression_pct: incoherent interval -- ci95_high "
+                f"{ci_high} is below the point estimate {measured_regression}"
+            )
+        elif ci_high > acceptance.max_control_regression_pct:
+            reasons.append(
+                f"max_control_regression_pct ci95_high {ci_high} exceeds budget "
+                f"{acceptance.max_control_regression_pct} "
+                f"(point estimate {measured_regression})"
+            )
 
     if generalisation_result is not None and not generalisation_result.get("passed"):
         reasons.append("generalisation proof did not pass")
@@ -1651,6 +2587,20 @@ def evaluate_promotion_gate(
             reasons.append(
                 f"resource gate failed (missing={list(missing_r)}, failed={list(failed_r)})"
             )
+
+    # VA24: unevaluable evidence is "invalid", never "fail" and never "pass" --
+    # the same three-state distinction trigger_proof already establishes. A
+    # missing/malformed/degenerate interval means we could not measure the
+    # claim, which is not the same finding as having measured it and found it
+    # wanting. Reported alongside any ordinary failures so a reader sees both.
+    if invalid_reasons:
+        return {
+            "status": "invalid",
+            "passed": False,
+            "reasons": invalid_reasons + reasons,
+            "contract_id": contract.id,
+            "contract_hash": contract.contract_hash,
+        }
 
     return {
         "status": "pass" if not reasons else "fail",
@@ -1819,3 +2769,105 @@ def render_report(
     lines.append("")
 
     return "\n".join(lines)
+
+
+# ------------------------------------------------- VA24 legacy migration lint
+
+
+LEGACY_MANIFEST_PATH = "config/experiment-contract-legacy.toml"
+
+
+@dataclass(frozen=True)
+class LegacyWaiver:
+    """One frozen pre-VA24 entry from config/experiment-contract-legacy.toml."""
+    contract_id: str
+    waiver_class: str
+    baseline_contract_hash: str
+    migration: str
+
+
+def load_legacy_waivers(path: Path) -> dict[str, LegacyWaiver]:
+    """Load the frozen legacy manifest. A missing file is an empty mapping --
+    i.e. every gain-declaring contract must then use the interval policy --
+    rather than an error, so the lint fails CLOSED if the manifest is lost."""
+    try:
+        raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    waivers: dict[str, LegacyWaiver] = {}
+    for contract_id, entry in (raw.get("legacy") or {}).items():
+        if not isinstance(entry, dict):
+            raise ExperimentContractError(
+                f"{path}: legacy.{contract_id} must be a table")
+        for field in ("waiver_class", "baseline_contract_hash", "migration"):
+            if not isinstance(entry.get(field), str) or not entry[field]:
+                raise ExperimentContractError(
+                    f"{path}: legacy.{contract_id}.{field} is required")
+        waivers[contract_id] = LegacyWaiver(
+            contract_id=contract_id, waiver_class=entry["waiver_class"],
+            baseline_contract_hash=entry["baseline_contract_hash"],
+            migration=entry["migration"],
+        )
+    return waivers
+
+
+def declares_gain_threshold(contract: ExperimentContract) -> bool:
+    return (contract.acceptance.target_kernel_gain_pct is not None
+            or contract.acceptance.end_to_end_gain_pct is not None)
+
+
+def lint_effect_evidence_policy(
+    registry: ContractRegistry, waivers: dict[str, LegacyWaiver],
+) -> list[str]:
+    """VA24 REGISTRY LINT, keyed by contract ID (edit time).
+
+    A contract declaring a gain threshold under the weaker
+    ``point_estimate_v1`` is valid only if its ID appears in the frozen
+    legacy manifest. New contracts must adopt ``ci95_threshold_bound_v1``.
+
+    Deliberately keyed by ID, NOT by contract_hash. Hash keying was the
+    first proposal and is wrong here: contract_hash covers rationale prose
+    and source provenance, so a typo fix would evaporate the waiver and
+    demand a fresh hardware qualification -- impossible for contracts
+    targeting hardware this project does not own, which would make them
+    permanently uneditable. Evidence identity and migration policy are
+    different invariants; the exact-hash rule belongs at qualification time
+    (see legacy_evidence_is_honoured) where old evidence must genuinely not
+    satisfy an edited contract.
+
+    Returns a list of human-readable problems; empty means clean.
+    """
+    problems: list[str] = []
+    for contract in sorted(registry, key=lambda c: c.id):
+        if not declares_gain_threshold(contract):
+            continue
+        if contract.acceptance.effect_evidence_policy != "point_estimate_v1":
+            continue
+        if contract.id not in waivers:
+            problems.append(
+                f"{contract.id}: declares a gain threshold under "
+                f"point_estimate_v1 but is not in the frozen legacy manifest "
+                f"({LEGACY_MANIFEST_PATH}) -- new performance contracts must "
+                f"declare effect_evidence_policy = 'ci95_threshold_bound_v1' "
+                f"(with a min_paired_rounds floor). The manifest is frozen: "
+                f"adding an entry for a new contract is not the fix."
+            )
+    return problems
+
+
+def legacy_evidence_is_honoured(
+    contract: ExperimentContract, waivers: dict[str, LegacyWaiver],
+) -> bool:
+    """VA24 QUALIFICATION RULE, keyed by exact baseline_contract_hash.
+
+    Legacy point-estimate EVIDENCE is honoured only for the exact contract
+    version recorded in the manifest. Once any edit changes the hash, that
+    version cannot acquire fresh legacy qualification and must migrate to
+    the interval policy before it is next qualified.
+
+    This is where exact-hash strictness genuinely belongs: it is the
+    existing "old evidence must not silently satisfy a changed contract"
+    invariant, not a restriction on editing the registry.
+    """
+    waiver = waivers.get(contract.id)
+    return waiver is not None and waiver.baseline_contract_hash == contract.contract_hash

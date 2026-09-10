@@ -103,6 +103,17 @@ def build_manifest(
     }
 
 
+def compile_inputs_digest(tree_document: dict[str, Any]) -> str:
+    """Recompute the existing compile-input identity from a tree record."""
+    try:
+        actual = _compile_inputs_hash(tree_document["files"], tuple(tree_document["compile_inputs"]))
+    except (KeyError, TypeError) as exc:
+        raise GeneratedTreeError(f"invalid generated compile-input record: {exc}") from exc
+    if actual != tree_document.get("compile_inputs_hash"):
+        raise GeneratedTreeError("generated compile-input hash does not recompute")
+    return actual
+
+
 def verify_tree(generated_root: Path, tree_document: dict[str, Any]) -> None:
     """Re-hash ``generated_root`` and require an EXACT match against
     ``tree_document`` -- not just the compile inputs. A file appearing that

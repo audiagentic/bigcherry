@@ -114,6 +114,11 @@ void ggml_hip_coverage_report() {
                 ggml_hip_replay_resolution_count(GGML_HIP_RESOLVE_MISS),
                 ggml_hip_replay_is_stale() ? "true" : "false");
 #endif
+        // The hot-path counters go in the artifact for the same reason the
+        // replay provenance above does: the log channel does not survive
+        // llama-server, so a number that only ever appears in a log line is a
+        // number no benchmark can use.
+        ggml_hip_dispatch_counters_write_json(out);
         fprintf(out, "\n}\n");
         fclose(out);
     }

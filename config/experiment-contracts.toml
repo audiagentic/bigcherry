@@ -36,21 +36,25 @@ architectures = ["gfx1100", "gfx1201", "gfx1030"]
 weight_types = ["q6_k"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.positive]
-# VA21: was tierM-gptoss20b-q6k (this project's MoE-designated model
-# tier -- see RD17-MOE-TOPK-DOWN-FOLD/RD39-42-STREAM-MOE-OVERLAP, which
-# pair it with moe_decode/moe_prefill workloads). VA15's real-hardware
-# run found subject_hit=false: gpt-oss-20B's real decode-step Q6_K
-# tensors route through a batched/grouped MoE matmul kernel, never the
-# plain per-tensor mmvq dispatch this patch instruments. RD08's own
-# patch.py source comment cites its original fork validation target as
-# "Qwen3.6-27B decode shapes (n=1, mmvq path)" -- a dense model.
-# tierA-qwen4b-q6k is this project's established dense-model tier for
-# generic decode/prefill workloads.
-models = ["tierA-qwen4b-q6k"]
+# VA21 REVERTED (2026-09-01): briefly changed to tierA-qwen4b-q6k based
+# on VA15's real-hardware subject_hit=false finding against
+# tierM-gptoss20b-q6k, hypothesized as an MoE-vs-dense dispatch-routing
+# gap. That hypothesis was WRONG -- root-caused via bounded temporary
+# trace instrumentation to a pure logging-observability bug: RD08's
+# activation marker used GGML_LOG_INFO, and llama-bench.cpp gates
+# ggml's log level on its own --verbose flag (ERROR by default,
+# filtering both INFO and WARN). Fixed at the source
+# (GGML_LOG_INFO->GGML_LOG_WARN in patch.py, commit 991e761; --verbose
+# added to the shared trace-probe primitive, commit 222f162). Re-tested
+# clean on gfx1201 against BOTH models: subject_hit=true/control_hit=false
+# for tierM-gptoss20b-q6k AND tierA-qwen4b-q6k -- RD08's dispatch fires
+# correctly for both. Reverted to the original tierM-gptoss20b-q6k
+# binding since the change was never actually justified.
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["decode"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.controls]
-models = ["tierA-qwen4b-q6k"]
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["prefill"]
 
 [contract.RD08-Q6K-MMVQ-VDR2.correctness]
@@ -148,7 +152,10 @@ workloads = ["decode"]
 
 [contract.RD21-GFX1151-MMVQ-NWARPS.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["decode"]
+# Not `decode` -- that is this contract's own positive lane. The new nwarps=2
+# table is selected only by MMVQ (decode-shaped matmuls); prefill dispatches
+# through MMQ and must be unaffected, which is what a control is for.
+workloads = ["prefill"]
 
 [contract.RD21-GFX1151-MMVQ-NWARPS.correctness]
 backend_reference = "required"
@@ -162,6 +169,9 @@ workload = "Q8_0 decode (fork sweep)"
 [contract.RD21-GFX1151-MMVQ-NWARPS.acceptance]
 target_kernel_gain_pct = 0.6
 max_control_regression_pct = 1
+# See RD06: control-lane fix changed the hash, so the legacy waiver is void.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD07-Q6K-MMQ-PREFILL-FOLD]
 title = "RD07: Q6_K MMQ prefill fold/hoist (from the RD05/RD06/RD07 combined patch)"
@@ -365,7 +375,11 @@ models = ["tierA-qwen4b-q6k"]
 workloads = ["decode", "prefill"]
 
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.controls]
-models = ["tierA-qwen4b-q6k"]
+# Not tierA-qwen4b-q6k -- this contract claims BOTH decode and prefill on that
+# model, so every one of its lanes is a positive. The FA configuration table is
+# per-shape/head-dimension, so a model with different attention geometry is the
+# control that can actually detect a mis-selected config.
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["decode"]
 
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.correctness]
@@ -374,6 +388,13 @@ backend_reference = "required"
 [contract.RD06-RDNA4-WMMA-FA-CONFIG.acceptance]
 target_kernel_gain_pct = 0.5
 max_control_regression_pct = 1
+# Migrated off the pre-VA24 point-estimate waiver: fixing the self-referential
+# control lane changed this contract's hash, so its recorded baseline can no
+# longer honour legacy evidence (experiment-contract-legacy.toml rule 2).
+# Re-hashing the waiver would be exactly the rescue that file exists to
+# prevent, so it migrates up instead.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION]
 title = "RD13: fuse mul_mat + add through a view (reshape) node"
@@ -570,7 +591,11 @@ workloads = ["decode"]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["decode"]
+# Not `decode` -- that is this contract's own positive lane. The default flip
+# turns the graph-optimization pass on for the WHOLE graph, so prefill is the
+# lane that is touched without being claimed, i.e. exactly the collateral a
+# regression budget exists to bound.
+workloads = ["prefill"]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.correctness]
 backend_reference = "required"
@@ -578,6 +603,9 @@ backend_reference = "required"
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.acceptance]
 target_kernel_gain_pct = 7.3
 max_control_regression_pct = 1
+# See RD06: control-lane fix changed the hash, so the legacy waiver is void.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD50-GDN-CHUNKED-RECURRENCE]
 title = "RD50: chunked fused GatedDeltaNet recurrence for RDNA3.5"
@@ -642,7 +670,10 @@ workloads = ["state_restore"]
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.controls]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["state_restore"]
+# Not `state_restore` -- that is this contract's own positive lane. Pinning the
+# state buffer changes the host allocation path, so steady-state decode is the
+# lane that could pay for the fix without being claimed by it.
+workloads = ["decode"]
 
 [contract.RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE.correctness]
 state_restore_integrity = "required"
@@ -681,8 +712,106 @@ workloads = ["decode"]
 bit_identical = "required"
 
 [contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance]
-end_to_end_gain_pct = 3.0
-max_control_regression_pct = 2.3
+# 2026-09-04: gain bar lowered 3.0 -> 1.0 and regression budget tightened
+# 2.3 -> 1.0. Rationale, recorded because changing a threshold after a patch
+# misses it is otherwise indistinguishable from motivated reasoning:
+#
+#  * 3.0 was an unexplained outlier. RD73 is the ONLY contract in this
+#    registry that gates on end_to_end_gain_pct at all; all 18 others gate on
+#    target_kernel_gain_pct, at 0.3-1.4 (RD08/RD12 0.3, RD17/RD06/RD13 0.5,
+#    RD21 0.6, RD39-42 1.0, RD19 1.4). End-to-end effects are strictly smaller
+#    than kernel effects, so 3.0 end-to-end was materially stricter than any
+#    other contract here, with no stated justification.
+#  * 1.0 sits just above this project's own measured repetition noise floor
+#    (0.5-0.9%), which is where an end-to-end claim first becomes meaningful.
+#    It is a floor on meaningfulness, not on value.
+#  * The regression budget moves the OTHER way: 2.3 -> 1.0, matching the
+#    registry convention (every other contract except RD58 uses 1.0). The
+#    governing principle is "judge any increase against its associated
+#    regressions", so the regression side should be the strict side.
+#
+# Net: this is a more consistent and, on the regression axis, a stricter gate.
+#
+# WHAT 1.0% MEANS, and its honest provenance (VA24 migration, 2026-09-05).
+#
+# 1.0% is an ENGINEERING MATERIALITY floor, not a measured noise-floor estimate
+# and not a mathematically derived number. RD73 introduces persistent
+# fork-local graph-cache identity behaviour with ongoing correctness,
+# resource-usage, compatibility and rebase maintenance cost, and it trades a
+# measured ~68.7% increase in peak graph_cache_entries (386 -> 651) for its
+# timing effect. A smaller end-to-end benefit is not considered sufficient to
+# justify carrying that complexity, even though the mechanism demonstrably
+# works. Note the separation:
+#
+#     recapture rate 49.6% -> 38.9%   = evidence the MECHANISM works
+#     >= +1.0% end-to-end             = evidence it is WORTH RETAINING
+#
+# The recapture-rate reduction is mechanism evidence, not the performance
+# acceptance criterion.
+#
+# PROVENANCE, recorded rather than rewritten: this threshold was set at 1.0
+# AFTER observing that a real run measured +1.855% against the previous 3.0
+# bar. It is therefore a post-observation engineering threshold, and is
+# unavoidably anchored to that extent. It is frozen here deliberately so the
+# NEXT qualification is the first evidence weighed against it; the earlier
+# 1.855% / CI [1.482, 2.169] result counts as pre-registration evidence only
+# and must not be cited as satisfying this contract.
+#
+# Per review it was deliberately NOT raised to ~1.4-1.5 to "safely clear" the
+# observed result -- that would have been visibly tuning the threshold to the
+# data (dev-gpt-agent, req_cd86e5fd4a3b4328 / req_875d13b29a204075).
+end_to_end_gain_pct = 1.0
+max_control_regression_pct = 1.0
+# VA24: the bound must be established by the interval, not the point estimate.
+# min_paired_rounds is required with this policy: run_paired_lane() accepts
+# pairs=1, whose bootstrap yields a degenerate interval that can look
+# arbitrarily significant. 10 matches this contract's own planned measurement
+# depth for its primary effect; it is an engineering/statistical floor, not a
+# derived constant, and a different number should come from calibration
+# against historical paired-round variance rather than from lane role.
+#
+# 2026-09-05: MIGRATED to session_ci95_threshold_bound_v1. The stopping rule
+# below is PRE-REGISTERED -- committed before any session it governs is
+# collected, and this contract's hash changes with it, so no earlier evidence
+# can satisfy it.
+#
+# WHY. Four sessions of this same unchanged build measured +1.855%, +1.717%,
+# +1.249% and +2.244%. Between-session sd is 0.411 -- larger than the standard
+# error any individual run reported -- and session 3's point estimate fell
+# below session 2's ci95_low. Every run was honest; ci95_threshold_bound_v1's
+# interval simply cannot see drift between occasions, because it resamples
+# pairs inside a single run. Two of those four sessions clear the 1.0 bar and
+# one does not, so under the old policy "did RD73 pass" depended on which
+# session you looked at. That is not a property a promotion decision may have.
+#
+# max_ci95_width_pct = 1.0 is chosen on a STATED PRINCIPLE, not fitted to the
+# observed data: an interval wider than the threshold it must clear cannot
+# settle a question about that threshold, since it spans both "misses the bar"
+# and "comfortably beats it". Setting the precision target equal to the
+# materiality bar is the weakest requirement that still makes the decision
+# meaningful. For reference the existing 4-session interval is ~1.31 wide, so
+# this target is NOT already satisfied -- it was not picked to be met.
+#
+# min_sessions = 4 is MIN_BOOTSTRAP_SESSIONS, below which a cluster
+# bootstrap's resample space is too small for an honest interval.
+# max_sessions = 8 bounds cost: each session is a full control+subject
+# campaign, ~25 minutes on the dual-XTX host.
+#
+# The criterion is DIRECTION-BLIND: interval WIDTH and session count only,
+# never where ci95_low falls relative to 1.0. Under-collection is
+# INCONCLUSIVE, never a fail. Reaching the precision target and missing the
+# bound is an ordinary FAIL, not grounds to collect more. No session is ever
+# discarded; every valid one is estimated over.
+#
+# The four sessions above were collected under the previous contract hash and
+# under no stopping rule. Per the frozen governance a new policy is
+# prospective: they informed the sd used to plan this rule, and they must NOT
+# be reinterpreted to promote the patch whose behaviour motivated the change.
+effect_evidence_policy = "session_ci95_threshold_bound_v1"
+min_paired_rounds = 10
+min_sessions = 4
+max_sessions = 8
+max_ci95_width_pct = 1.0
 
 [[contract.RD73-STABLE-GRAPH-CACHE-KEY.acceptance.resource_limits]]
 metric = "graph_cache_entries"

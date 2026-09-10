@@ -1,3 +1,24 @@
 # Validator configuration only. Experiment Contract fields do not belong here.
-# [checks]
-# activation = { validator = "trace-marker", marker-regex = "..." }
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Add contract-required producers only when the patch has a resolvable
+# Experiment Contract. Example:
+#
+# [[check]]
+# id = "activation"
+# capability = "activation"
+# validator = "trace-marker"
+# required = true
+# marker-regex = "BIGCHERRY_PATCH_HIT patch=<id> path=<name>"

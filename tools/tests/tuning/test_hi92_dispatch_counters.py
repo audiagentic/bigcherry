@@ -26,7 +26,19 @@ class Hi92DispatchCountersContractTests(unittest.TestCase):
         self.assertIn('getenv("GGML_HIP_DISPATCH_COUNTERS")', self.src)
 
     def test_disabled_by_default(self):
-        self.assertIn("static std::atomic<bool> enabled{false};", self.src)
+        # HI159/GP11: the contract STRENGTHENED. It used to be a runtime
+        # atomic defaulting to false; a production build now has no counter
+        # code at all, because the predicate is compile-time false unless
+        # GGML_HIP_DISPATCH_DIAGNOSTICS is defined. "Absent" is a stronger
+        # guarantee than "off", and it is what the owner asked for: a binary
+        # used for a final performance number carries no instrumentation.
+        idx = self.src.index("bool dispatch_counters_enabled() {")
+        window = self.src[idx:idx + 900]
+        self.assertIn("#ifndef GGML_HIP_DISPATCH_DIAGNOSTICS", window)
+        self.assertIn("return false;", window)
+        # ...and inside a diagnostics build it is still opt-in via the env
+        # var, so enabling diagnostics does not silently start counting.
+        self.assertIn('getenv("GGML_HIP_DISPATCH_COUNTERS")', window)
 
     def test_every_counter_increment_is_guarded_not_unconditional(self):
         # Every fetch_add must be reached only through a dispatch_counters_
@@ -34,8 +46,12 @@ class Hi92DispatchCountersContractTests(unittest.TestCase):
         # would defeat the "zero cost when disabled" requirement.
         import re
 
+        # Window widened from 200 to 500 chars: one guard legitimately covers
+        # several increments in a single block (the L1-hit probe records three
+        # counters under one check), so the last of them sits further from the
+        # guard than 200 chars while still being guarded by it.
         for match in re.finditer(r"g_dispatch_counters\.\w+\.fetch_add", self.src):
-            window = self.src[max(0, match.start() - 200):match.start()]
+            window = self.src[max(0, match.start() - 500):match.start()]
             self.assertIn(
                 "dispatch_counters_enabled()", window,
                 f"unguarded fetch_add near offset {match.start()}",
@@ -112,15 +128,21 @@ class Hi92DispatchCountersContractTests(unittest.TestCase):
         self.assertEqual(
             self.src.count("g_dispatch_counters.hardware_key_builds.fetch_add"), 1,
         )
+        # GP11: the miss branch is now a std::call_once, so there is no
+        # "found in cache" early return to sit after -- the once-flag itself
+        # is what guarantees the counter fires exactly once per device, which
+        # is the property this test exists to protect.
         fn_idx = self.src.index("cached_hardware_identity(int device) {")
         incr_idx = self.src.index(
             "g_dispatch_counters.hardware_key_builds.fetch_add", fn_idx
         )
         window = self.src[fn_idx:incr_idx]
-        # The increment must be reached only after the "found in cache"
-        # early return, i.e. only on the miss path.
-        self.assertIn("found != g_hardware_identity_by_device.end()) {\n        return found->second;",
-                      window)
+        self.assertIn("std::call_once", window)
+        # The increment sits INSIDE the call_once body, so it is reached only
+        # on first construction for that device -- the same guarantee the old
+        # "after the found-in-cache early return" check gave, expressed
+        # against the mechanism that now provides it.
+        self.assertIn("std::call_once(built[device]", window)
 
     def test_report_computes_hit_rate_percentages(self):
         self.assertIn("L1 hit=%llu miss=%llu (%.1f%%)", self.src)

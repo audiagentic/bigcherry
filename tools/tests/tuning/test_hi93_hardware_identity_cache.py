@@ -31,7 +31,10 @@ class Hi93HardwareIdentityCacheContractTests(unittest.TestCase):
         body_end = self.src.index("\n}", idx)
         body = self.src[idx:body_end]
         self.assertNotIn("hipGetDevice", body)
-        self.assertIn("g_hardware_identity_by_device.find(device)", body)
+        # GP11: a fixed per-device array replaced the map. The property under
+        # test is unchanged -- the caller's device index indexes the storage
+        # directly, and nothing re-derives it.
+        self.assertIn("identities[device]", body)
 
     def test_cache_stores_both_key_and_digest(self):
         self.assertIn("struct HardwareIdentity {", self.src)
@@ -73,10 +76,22 @@ class Hi93HardwareIdentityCacheContractTests(unittest.TestCase):
         self.assertIn("hw_identity.key", window)
         self.assertIn("hw_identity.digest", window)
 
-    def test_lookup_and_insert_are_mutex_guarded(self):
+    def test_construction_is_once_per_device_without_a_global_lock(self):
+        # CONTRACT CHANGED (GP11, dev-gpt-agent req_7bd85f40). This previously
+        # required a std::lock_guard on a global mutex. That made every call
+        # take a GLOBAL lock -- on the L1-MISS path, 130,107 times in one
+        # measured bench run -- purely to read a value that is immutable once
+        # built, serialising GPU submission threads with nothing to do with
+        # each other.
+        #
+        # The guarantee was never "there is a mutex"; it was "constructed
+        # exactly once per device, safely, under concurrent first use".
+        # std::call_once provides that, and the post-construction path becomes
+        # an atomic load rather than a lock acquisition.
         idx = self.src.index("cached_hardware_identity(int device) {")
-        window = self.src[idx:idx + 200]
-        self.assertIn("std::lock_guard<std::mutex> lock(g_hardware_identity_mutex);", window)
+        window = self.src[idx:idx + 400]
+        self.assertIn("std::call_once(built[device]", window)
+        self.assertNotIn("g_hardware_identity_mutex", window)
 
 
 if __name__ == "__main__":

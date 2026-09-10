@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from . import behavioral_corpus as behavioral_corpus_mod
 from . import behavioral_gate as behavioral_gate_mod
+from . import catalog as catalog_mod
 from . import inventory as inv_mod
 from . import recovery as recovery_mod
 from . import replay as replay_mod
@@ -31,8 +32,10 @@ from . import tune_promotion
 from .server_runner import ServerError, ServerRunner
 from .. import hi80_generate_correctness_evidence as hi80
 from ..campaign import planner as campaign_planner
+from ..build import generated_tree
 from ..campaign.lane import CampaignLaneResult
 from ..core import config as campaign_config
+from ..core import environment as environment_mod
 from ..core import gpu as gpu_mod
 from ..core import paths
 from ..core.artifacts import ArtifactStore
@@ -79,6 +82,7 @@ class WorkflowReceipt:
     replay_coverage: dict | None
     started_at: str
     finished_at: str
+    replay_validation: StageIdentity | None = None
 
 
 def _stage_identity(result: CampaignLaneResult) -> StageIdentity:
@@ -99,6 +103,20 @@ def _stage_identity(result: CampaignLaneResult) -> StageIdentity:
 
 def _devices_tuple(devices: str) -> tuple[int, ...]:
     return tuple(int(d) for d in devices.split(","))
+
+
+def _gpu_visibility_env(devices: str) -> dict[str, str]:
+    """ROCR_VISIBLE_DEVICES + HIP_VISIBLE_DEVICES, correctly paired (VA22,
+    the two-selector trap -- see environment.gpu_visibility_pair). Every
+    ServerRunner env_overrides in this module must set BOTH via this helper,
+    never HIP_VISIBLE_DEVICES alone: leaving ROCR_VISIBLE_DEVICES to ambient/
+    inherited state is fragile the moment this runs in a parent shell or CI
+    context that already has it set to something else, and setting both to
+    the same raw physical-index string is the exact bug this helper exists
+    to prevent for any device selection that does not start at physical
+    index 0.
+    """
+    return environment_mod.gpu_visibility_pair(_devices_tuple(devices))
 
 
 def _plan_and_run_one_lane(
@@ -128,6 +146,67 @@ def _plan_and_run_one_lane(
     return result
 
 
+#: HI167: the record stage's job is SIGNATURE DISCOVERY, not measurement --
+#: it must exercise the shape ENVELOPE the real production workload uses, or
+#: whole families of dispatch never enter the inventory at all (not filtered
+#: out downstream -- never observed in the first place). Confirmed on real
+#: hardware (campaign 27e45ae32ec4): a single ~15-token prompt produced 38
+#: mmvq signatures / 39,272 calls and ZERO mmq signatures, because native
+#: dispatch only selects MMQ for large-ne11 (prefill-shaped) work, and a
+#: short prompt with n_predict=96 is almost entirely decode-shaped from the
+#: first token onward. The production benchmark corpus sweeps pp256/pp1024/
+#: pp4096; record must span that same envelope or it is discovering a
+#: different, narrower workload than the one being tuned for.
+#:
+#: `_stage_tune` NOW ALSO uses this same sweep (added once HI166 -- ordered
+#: per-verify-step acceptance trace equality -- landed and unblocked
+#: widening what tune actually measures; see that function for why this
+#: was deliberately deferred rather than done at the same time as this
+#: record-side fix). record's job is "what signatures exist"; tune's job
+#: is "measure THIS signature under work identical between native/
+#: candidate" (HI130's equality rule is about A/B pairs, not about
+#: discovery vs. measurement matching each other) -- sharing the SWEEP
+#: SHAPE between the two does not violate that: each of record and tune
+#: still runs its own native-vs-candidate comparison independently, using
+#: whatever measurement the tuner's own screen/final-sample loop produces
+#: once a signature is dispatched at all, exactly like every other
+#: candidate family already tuned this way.
+#:
+#: Word count, not exact token count: this drives a live server's
+#: /completion endpoint with a plain string: there is no tokenizer available
+#: here to hit an exact count, and per gpt review an exact pp256/pp1024/
+#: pp4096 token match is not required for discovery -- these are a
+#: deliberately generous envelope (a single common word is close to one
+#: token for most tokenizers), verified empirically against the resulting
+#: record file's observed families, not assumed correct from this length
+#: alone.
+_RECORD_DISCOVERY_WORD_COUNTS: tuple[int, ...] = (256, 1024, 4096)
+
+
+def _synthetic_prefill_prompt(word_count: int) -> str:
+    return "the quick brown fox jumps over the lazy dog . " * (word_count // 10 + 1)
+
+
+def _discovery_word_counts_fitting_context(context_size: int, *, n_predict: int) -> tuple[int, ...]:
+    """Real bug found on real hardware (HI167 follow-up validation): tune's
+    context is deliberately SMALLER than record's (tune_context=4096 vs.
+    production_context=8192 on every current runtime profile -- see
+    RuntimeProfile's own docstring for why), so blindly reusing
+    _RECORD_DISCOVERY_WORD_COUNTS unfiltered for tune sent a prompt that
+    overflowed tune_context and got a real HTTP 400 from the live server.
+    ``_synthetic_prefill_prompt`` already deliberately overshoots its target
+    word count (see that function), so this applies a generous 1.3x safety
+    margin on top for word-to-token ratio uncertainty rather than assuming
+    a tighter, unverified bound -- always keeping at least the smallest
+    target so a pathologically small context still gets SOME prefill-shaped
+    exposure rather than silently skipping discovery/measurement entirely."""
+    safe = tuple(
+        wc for wc in _RECORD_DISCOVERY_WORD_COUNTS
+        if wc * 1.3 <= context_size - n_predict
+    )
+    return safe or _RECORD_DISCOVERY_WORD_COUNTS[:1]
+
+
 def _stage_record(
     *, context, cfg, store, run_id, platform_name, source_name,
     model_path: Path, devices: str, runtime_profile: campaign_config.RuntimeProfile,
@@ -144,7 +223,7 @@ def _stage_record(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.production_context), *runtime_profile.server_args),
         env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
+            **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "record",
             "GGML_HIP_DISPATCH_DB": str(record_db_path),
             "GGML_CUDA_DISABLE_GRAPHS": "1",
@@ -152,7 +231,18 @@ def _stage_record(
         log_path=workdir / "record-server.log",
     )
     with runner:
+        # Original short decode-shaped smoke request -- kept: cheap, and
+        # still the right shape for confirming mmvq/decode signatures exist.
         runner.run_completion("Describe the water cycle in two sentences.", n_predict=96)
+        # HI167: prefill-shaped discovery sweep, small n_predict (this is
+        # about exercising the PREFILL dispatch, not generation length).
+        # Filtered to what actually fits this stage's own context -- see
+        # _discovery_word_counts_fitting_context's docstring for the real
+        # HTTP 400 this prevents.
+        for word_count in _discovery_word_counts_fitting_context(
+            runtime_profile.production_context, n_predict=8,
+        ):
+            runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     actual_record_path = record_db_path  # the binary writes this exact path, no suffix
     if not actual_record_path.is_file():
         raise TuneCampaignError(f"record stage produced no output at {actual_record_path}")
@@ -188,7 +278,7 @@ def _stage_tune(
         binary=binary_path, model=model_path,
         extra_args=("-ngl", "99", "-c", str(runtime_profile.tune_context), *runtime_profile.server_args),
         env_overrides={
-            "HIP_VISIBLE_DEVICES": devices,
+            **_gpu_visibility_env(devices),
             "GGML_HIP_DISPATCH_MODE": "tune",
             "GGML_HIP_DISPATCH_DB": str(tune_db_path),
             "GGML_HIP_TUNE_SCREEN_SAMPLES": str(screen_samples),
@@ -198,7 +288,32 @@ def _stage_tune(
         log_path=workdir / "tune-server.log",
     )
     with runner:
+        # Original short decode-shaped smoke request -- kept: cheap, and
+        # still the right shape for measuring mmvq/decode signatures.
         runner.run_completion("Write a short paragraph about the ocean.", n_predict=96)
+        # HI167 (unblocked by HI166 landing): the tuner measures a signature
+        # once, on its FIRST live dispatch -- internally looping its own
+        # screen_samples/final_samples timing synchronously within that one
+        # interception, then caching the result (g_results.find() in
+        # hip-autotune-tuner.cu short-circuits every later occurrence). So a
+        # signature that never gets dispatched here never gets measured at
+        # all, however many MMQ candidates the inventory-driven build
+        # compiled in. This is the exact same prefill-shape gap _stage_record
+        # had -- one exposure per shape point is sufficient, no repeats
+        # needed, since the tuner's own internal loop does the repeated
+        # timing.
+        #
+        # Filtered to what fits tune_context specifically -- REAL bug found
+        # on real hardware: tune_context is deliberately smaller than
+        # production_context (every current runtime profile sets
+        # tune-context=4096 vs. production-context=8192), and the
+        # unfiltered largest discovery prompt (~4100 words) overflowed it,
+        # producing a real HTTP 400 from the live tune-mode server. See
+        # _discovery_word_counts_fitting_context.
+        for word_count in _discovery_word_counts_fitting_context(
+            runtime_profile.tune_context, n_predict=8,
+        ):
+            runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
     measurements_path = Path(f"{tune_db_path}.measurements.jsonl")
     if not measurements_path.is_file():
         raise TuneCampaignError(f"tune stage produced no measurements at {measurements_path}")
@@ -430,15 +545,72 @@ def _stage_replay_export(
 def _stage_replay_build(
     *, context, cfg, store, run_id, platform_name, source_name,
     inventory_path: Path, winners_path: Path,
+    build_name: str = "replay",
 ) -> CampaignLaneResult:
+    if build_name not in ("replay", "replay-diagnostic"):
+        raise TuneCampaignError("replay stage requires replay or replay-diagnostic build")
     return _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
-        build_name="replay", platform_name=platform_name, run_id=run_id,
+        build_name=build_name, platform_name=platform_name, run_id=run_id,
         binary_relative_path="bin/llama-server",
         inputs_by_build={
-            "replay": (("inventory", inventory_path), ("promoted-winners", winners_path)),
+            build_name: (("inventory", inventory_path), ("promoted-winners", winners_path)),
         },
     )
+
+
+def _verify_replay_companion(production: CampaignLaneResult, diagnostic: CampaignLaneResult) -> None:
+    """Fail closed before validating a production cache with another binary.
+
+    Use existing source/catalog/generated-input identities, not a second
+    compatibility scheme. The differing diagnostics flags are deliberate;
+    generated registry and candidate compile inputs must remain identical.
+    """
+    if production.source_slice_id != diagnostic.source_slice_id:
+        raise TuneCampaignError("replay companion source composition differs")
+    manifests = []
+    generated_inputs = []
+    common_options = []
+    for result, require_diagnostics in ((production, False), (diagnostic, True)):
+        options = dict(result.build_plan.cmake_options)
+        common_options.append({key: value for key, value in options.items() if key not in {
+            "GGML_HIP_DISPATCH_DIAGNOSTICS", "GGML_HIP_REPLAY_DIAGNOSTICS",
+        }})
+        enabled = lambda name: str(options.get(name, "OFF")).upper() in ("ON", "TRUE", "1", "YES")
+        if (not enabled("GGML_HIP_DISPATCH_REPLAY") or enabled("GGML_HIP_AUTOTUNE")
+                or enabled("GGML_HIP_AUTOTUNE_RECORD")
+                or enabled("GGML_HIP_DISPATCH_DIAGNOSTICS") != require_diagnostics
+                or enabled("GGML_HIP_REPLAY_DIAGNOSTICS") != require_diagnostics):
+            raise TuneCampaignError("replay companion build roles/configuration are invalid")
+        if result.manifest_ref is None or result.generated_tree_ref is None:
+            raise TuneCampaignError("replay companion lacks manifest/generated-tree evidence")
+        try:
+            manifest = json.loads(result.manifest_ref.path.read_text(encoding="utf-8"))
+            if manifest["manifest_hash"] != catalog_mod.manifest_hash(manifest):
+                raise TuneCampaignError("replay companion manifest hash does not recompute")
+            descriptor = catalog_mod.build_descriptor(manifest)
+            if descriptor != manifest["build_descriptor"]:
+                raise TuneCampaignError("replay companion descriptor does not recompute")
+            manifests.append(descriptor)
+            tree = json.loads(result.generated_tree_ref.path.read_text(encoding="utf-8"))
+            compiled_inputs_digest = generated_tree.compile_inputs_digest(tree)
+            bundle_bytes = result.runtime_bundle_ref.path.read_bytes()
+            if ArtifactStore.digest(bundle_bytes) != result.runtime_bundle_ref.content_hash:
+                raise TuneCampaignError("replay companion runtime bundle evidence hash mismatch")
+            bundle = json.loads(bundle_bytes)
+            if (bundle.get("generated_inputs_verification") != "compiled-copy-v1"
+                    or bundle.get("generated_compile_inputs_hash") != compiled_inputs_digest):
+                raise TuneCampaignError("replay companion lacks matching build-bound compiled-input evidence")
+            inputs = {name: tree["files"][name] for name in tree["compile_inputs"]}
+            if not inputs or "hip-autotune-registry.inc" not in inputs:
+                raise TuneCampaignError("replay companion lacks generated registry evidence")
+            generated_inputs.append(inputs)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise TuneCampaignError(f"invalid replay companion evidence: {exc}") from exc
+    if common_options[0] != common_options[1]:
+        raise TuneCampaignError("replay companion non-diagnostic requested CMake options differ")
+    if manifests[0] != manifests[1] or generated_inputs[0] != generated_inputs[1]:
+        raise TuneCampaignError("replay companion catalog/registry compile inputs differ")
 
 
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -596,6 +768,10 @@ def _stage_replay_validate(
     coverage_path = workdir / "coverage.json"
     report_path = workdir / "behavioral-gate.json"
     final_cache_path = workdir / "dispatch.cache"
+    # Diagnostic-only final-binding evidence; the production replay binary
+    # remains free of this branch. Keep it beside the other per-run artifacts
+    # and remove it before launch so a reused run-id cannot reuse old proof.
+    hit_log_path = workdir / "hip-dispatch-hit-log.jsonl"
     # Same stale-artifact defense as the old _stage_replay_verify (GPT
     # deep-review P2, 2026-08-29), extended to the FINALIZED cache itself
     # (gpt review, 2026-08-29): a reused workdir/run-id must never let a
@@ -603,7 +779,7 @@ def _stage_replay_validate(
     # run's result -- an old finalized cache surviving a failed rerun
     # would otherwise remain visible even though THIS validation rejected
     # its provisional replacement.
-    for stale in (coverage_path, report_path, final_cache_path):
+    for stale in (coverage_path, report_path, final_cache_path, hit_log_path):
         if stale.exists():
             stale.unlink()
 
@@ -619,10 +795,11 @@ def _stage_replay_validate(
     env_unset = (
         "GGML_HIP_FORCE_CANDIDATE", "GGML_HIP_FORCE_CANDIDATE_STRICT",
         "GGML_HIP_DISPATCH_DB", "GGML_HIP_DISPATCH_CACHE", "GGML_HIP_DISPATCH_COVERAGE",
+        "GGML_HIP_DISPATCH_HIT_LOG",
     )
 
     def _run_leg(*, dispatch_mode: str, log_name: str, extra_env: dict[str, str]) -> list[behavioral_gate_mod.BehavioralTrace]:
-        env = {"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
+        env = {**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": dispatch_mode, **extra_env}
         runner = ServerRunner(
             binary=binary_path, model=model_path, extra_args=common_args,
             env_overrides=env, env_unset=env_unset, log_path=workdir / log_name,
@@ -641,10 +818,11 @@ def _stage_replay_validate(
     candidate_env = {
         "GGML_HIP_DISPATCH_CACHE": str(provisional_cache),
         "GGML_HIP_DISPATCH_COVERAGE": str(coverage_path),
+        "GGML_HIP_DISPATCH_HIT_LOG": str(hit_log_path),
     }
     candidate_runner = ServerRunner(
         binary=binary_path, model=model_path, extra_args=common_args,
-        env_overrides={"HIP_VISIBLE_DEVICES": devices, "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
+        env_overrides={**_gpu_visibility_env(devices), "GGML_HIP_DISPATCH_MODE": "replay", **candidate_env},
         env_unset=env_unset, log_path=workdir / "behavioral-candidate.log",
     )
     try:
@@ -811,6 +989,18 @@ def _stage_replay_validate(
     # be silently overwritten by a later run reusing the same workdir.
     import hashlib
     coverage["validated_cache_digest"] = hashlib.sha256(final_cache_path.read_bytes()).hexdigest()
+    # Keep the receipt relocatable; execution-audit consumes the sibling JSONL
+    # directly. No server-local absolute path is committed to evidence docs.
+    if hit_log_path.is_file():
+        with hit_log_path.open(encoding="utf-8") as fh:
+            hit_log_records = sum(1 for _ in fh)
+    else:
+        hit_log_records = 0
+    coverage["hit_log"] = {
+        "path": hit_log_path.name,
+        "exists": hit_log_path.is_file(),
+        "records": hit_log_records,
+    }
     coverage["behavioral_gate_report_path"] = str(report_path)
     coverage["behavioral_gate_report_digest"] = hashlib.sha256(report_path.read_bytes()).hexdigest()
     coverage["runtime_profile_digest"] = runtime_profile.digest
@@ -936,6 +1126,7 @@ def run_tune_campaign(
         _final_promote_result = _promote_result2
 
     replay_result: CampaignLaneResult | None = None
+    replay_validation_result: CampaignLaneResult | None = None
     replay_coverage: dict | None = None
     dispatch_cache_path: Path | None = None
     if promoted_after > 0:
@@ -953,6 +1144,13 @@ def run_tune_campaign(
         )
         if replay_result.manifest_ref is None:
             raise TuneCampaignError("replay build produced no manifest_ref -- cannot export cache")
+        replay_validation_result = _stage_replay_build(
+            context=context, cfg=cfg, store=store, run_id=f"{campaign_run_id}-replay-diagnostic",
+            platform_name=platform_name, source_name=source_name,
+            inventory_path=inventory_path, winners_path=workdir / "promoted.jsonl",
+            build_name="replay-diagnostic",
+        )
+        _verify_replay_companion(replay_result, replay_validation_result)
         provisional_cache_path = _stage_replay_export(
             promoted_path=workdir / "promoted.jsonl",
             target_manifest_path=Path(replay_result.manifest_ref.path),
@@ -965,7 +1163,7 @@ def run_tune_campaign(
         # the provisional cache get atomically renamed to dispatch.cache,
         # which is the path this receipt records below.
         replay_coverage = _stage_replay_validate(
-            lane_result=replay_result, model_path=model_path, devices=devices,
+            lane_result=replay_validation_result, model_path=model_path, devices=devices,
             runtime_profile=profile, provisional_cache=provisional_cache_path, workdir=workdir,
             promoted_path=workdir / "promoted.jsonl",
             manifest_path=Path(replay_result.manifest_ref.path),
@@ -985,11 +1183,14 @@ def run_tune_campaign(
             ),
             correctness_seeds=correctness_seeds, campaign_run_id=campaign_run_id,
         )
+        replay_coverage["observation_role"] = "diagnostic-companion"
+        replay_coverage["validation_build_plan_id"] = replay_validation_result.build_plan_id
+        replay_coverage["production_build_plan_id"] = replay_result.build_plan_id
         dispatch_cache_path = workdir / "dispatch.cache"
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     receipt = WorkflowReceipt(
-        schema_version=3,
+        schema_version=4,
         campaign_run_id=campaign_run_id,
         model_path=str(model_path),
         platform_name=platform_name,
@@ -1006,6 +1207,10 @@ def run_tune_campaign(
         replay=(
             _stage_identity(replay_result)
             if replay_result is not None else None
+        ),
+        replay_validation=(
+            _stage_identity(replay_validation_result)
+            if replay_validation_result is not None else None
         ),
         promoted_before_evidence=promoted_before,
         promoted_after_evidence=promoted_after,

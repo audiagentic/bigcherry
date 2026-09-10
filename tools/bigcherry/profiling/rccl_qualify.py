@@ -33,6 +33,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bigcherry.profiling.rccl_schema import RcclCompatibilityRevision
+from bigcherry.profiling.rccl_schema import qualification_key
+
 SCHEMA_VERSION = 1
 
 # Runbook P1.6/P2.4 superset (10 states) -- gpt-agreed (session
@@ -79,10 +82,8 @@ _UNSUPPORTED_MARKERS = (
 # EVERY run on this hardware, successful or not -- it previously
 # misclassified a clean PASS (0 wrong, correct algo/proto reported) as
 # UNSUPPORTED. Same class of over-broad-substring bug this file's own
-# INIT_FAILURE narrowing below already fixed once; neutralize this specific
-# known-benign substring rather than removing the (still useful) general
-# markers, and only the substring (not its whole line) so a genuine
-# unsupported marker sharing that line is still caught.
+# INIT_FAILURE narrowing below already fixed once; exclude this specific
+# known-benign line rather than removing the (still useful) general markers.
 _UNSUPPORTED_BENIGN_MARKERS = (
     "Symmetric memory is not supported",
 )
@@ -176,6 +177,21 @@ class RcclCaseResult:
     stdout_path: str
     stderr_path: str
 
+    # GP07: required, no defaults -- this project migrates every caller to
+    # a new field rather than shipping it as an optional, default-
+    # preserving addition (CLAUDE.md: "No legacy, no backward
+    # compatibility -- always migrate up"). compatibility_revision_id and
+    # qualification_key are always a real durable identity (RcclCompatibilityRevision
+    # is a required run_case() argument); attempt is always a real rep
+    # index. plan_verification's type stays Optional because None is a
+    # legitimate DOMAIN value here (e.g. a TIMEOUT/SIGNAL/GPU_FAULT result
+    # never reaches plan verification at all) -- that is not the same
+    # thing as an optional field with a compatibility-preserving default.
+    compatibility_revision_id: str
+    attempt: int
+    plan_verification: str | None
+    qualification_key: str
+
     def __post_init__(self) -> None:
         if self.classification not in CLASSIFICATIONS:
             raise ValueError(f"unknown classification: {self.classification!r}")
@@ -205,6 +221,10 @@ class RcclCaseResult:
             "rccl_output_path": self.rccl_output_path,
             "stdout_path": self.stdout_path,
             "stderr_path": self.stderr_path,
+            "compatibility_revision_id": self.compatibility_revision_id,
+            "attempt": self.attempt,
+            "plan_verification": self.plan_verification,
+            "qualification_key": self.qualification_key,
         }
 
 
@@ -248,50 +268,65 @@ def build_command(
     return command, env
 
 
+# GP07 plan_verification values (gpt-dev-agent review, req_acf7c8da985f4f17):
+# a separate stable field from `detail`'s free text, so machine consumers
+# (the campaign driver, GP08's qualification lookup) don't have to parse
+# prose to tell "RCCL explicitly declined" from "RCCL silently substituted
+# a different plan" from "we never actually confirmed what ran."
+PLAN_VERIFIED = "verified"
+PLAN_SUBSTITUTED = "plan_substituted"
+PLAN_UNVERIFIED = "unverified"
+PLAN_EXPLICIT_DECLINE = "explicit_declined"
+
+
 def _classify(
     *, returncode: int | None, term_signal: int | None, timed_out: bool,
     combined_output: str, rccl_json: list | None,
-) -> tuple[str, bool | None, str]:
-    """Return (classification, correct, detail). Order matters: check the
-    most specific/actionable signal before falling back to a bare
-    nonzero-exit guess."""
+    requested_algorithm: str | None = None, requested_protocol: str | None = None,
+    observed_algorithm: str | None = None, observed_protocol: str | None = None,
+) -> tuple[str, bool | None, str, str | None]:
+    """Return (classification, correct, detail, plan_verification). Order
+    matters: check the most specific/actionable signal before falling back
+    to a bare nonzero-exit guess."""
     if timed_out:
-        return TIMEOUT, None, "outer harness timeout expired"
+        return TIMEOUT, None, "outer harness timeout expired", None
 
     if any(marker in combined_output for marker in _RCCL_TEST_TIMEOUT_MARKERS):
-        return TIMEOUT, None, "RCCL Tests' own internal -T test timeout expired"
+        return TIMEOUT, None, "RCCL Tests' own internal -T test timeout expired", None
 
     # DEVICE_LOST takes precedence over SIGNAL/GPU_FAULT -- it is what the
     # campaign-level safety rule keys off (recheck GPU health, possibly
     # stop the whole matrix), not merely "this one case crashed."
     if any(marker in combined_output for marker in _DEVICE_LOST_MARKERS):
-        return DEVICE_LOST, None, "device-loss marker found in output"
+        return DEVICE_LOST, None, "device-loss marker found in output", None
 
     if term_signal is not None:
-        return SIGNAL, None, f"terminated by signal {term_signal}"
+        return SIGNAL, None, f"terminated by signal {term_signal}", None
 
     if any(marker in combined_output for marker in _GPU_FAULT_MARKERS):
-        return GPU_FAULT, None, "GPU/HIP fault marker found in output"
+        return GPU_FAULT, None, "GPU/HIP fault marker found in output", None
 
-    # Neutralize only the known-benign substring, not the whole line, so a
-    # genuine unsupported marker sharing a line with it is still caught.
-    unsupported_scan_text = combined_output
-    for benign in _UNSUPPORTED_BENIGN_MARKERS:
-        unsupported_scan_text = unsupported_scan_text.replace(benign, "")
+    unsupported_scan_text = "\n".join(
+        line for line in combined_output.splitlines()
+        if not any(benign in line for benign in _UNSUPPORTED_BENIGN_MARKERS)
+    )
     if any(marker in unsupported_scan_text for marker in _UNSUPPORTED_MARKERS):
-        return UNSUPPORTED, None, "RCCL declined the requested plan as unsupported"
+        return (
+            UNSUPPORTED, None, "RCCL declined the requested plan as unsupported",
+            PLAN_EXPLICIT_DECLINE,
+        )
 
     if any(marker in combined_output for marker in _INIT_FAILURE_MARKERS) and returncode:
-        return INIT_FAILURE, None, "communicator initialization failed"
+        return INIT_FAILURE, None, "communicator initialization failed", None
 
     if returncode is None:
-        return HARNESS_FAILURE, None, "process produced no return code"
+        return HARNESS_FAILURE, None, "process produced no return code", None
 
     if returncode != 0:
-        return LAUNCH_FAILURE, None, f"nonzero exit code {returncode}, no specific marker matched"
+        return LAUNCH_FAILURE, None, f"nonzero exit code {returncode}, no specific marker matched", None
 
     if rccl_json is None:
-        return HARNESS_FAILURE, None, "process exited 0 but produced no parseable RCCL JSON output"
+        return HARNESS_FAILURE, None, "process exited 0 but produced no parseable RCCL JSON output", None
 
     # Real -Z json output (verified on real hardware, RCCL Tests
     # develop_deprecated:40b1b17) is a JSON ARRAY of per-pass records
@@ -301,21 +336,58 @@ def _classify(
     # channels fields appear in the JSON at all (those are -M 1's
     # human-readable stdout table only).
     if not isinstance(rccl_json, list) or not rccl_json:
-        return HARNESS_FAILURE, None, "process exited 0 but RCCL JSON output was not a non-empty array"
+        return HARNESS_FAILURE, None, "process exited 0 but RCCL JSON output was not a non-empty array", None
 
     total_wrong = 0
     for record in rccl_json:
         if not isinstance(record, dict) or "wrong" not in record:
-            return HARNESS_FAILURE, None, f"malformed RCCL JSON record: {record!r}"
+            return HARNESS_FAILURE, None, f"malformed RCCL JSON record: {record!r}", None
         try:
             total_wrong += int(record["wrong"])
         except (TypeError, ValueError):
-            return HARNESS_FAILURE, None, f"non-integer 'wrong' field: {record['wrong']!r}"
+            return HARNESS_FAILURE, None, f"non-integer 'wrong' field: {record['wrong']!r}", None
 
     if total_wrong != 0:
-        return WRONG_RESULT, False, f"RCCL reported {total_wrong} correctness error(s) across {len(rccl_json)} record(s)"
+        return (
+            WRONG_RESULT, False,
+            f"RCCL reported {total_wrong} correctness error(s) across {len(rccl_json)} record(s)",
+            None,
+        )
 
-    return PASS, True, "clean exit, correctness check passed"
+    # GP07 (gpt-dev-agent findings, 2026-09-02, requests req_ee04ccbecc814cdb
+    # then req_acf7c8da985f4f17): a clean exit with zero correctness errors
+    # is NOT sufficient for PASS on its own -- RCCL_OVERRIDE_ALGO/PROTO
+    # constrain selection, they don't guarantee it, so RCCL can silently
+    # execute a different plan than requested and still exit 0/correct. A
+    # qualification result must attest to the PLAN actually qualified, not
+    # merely "some plan worked."
+    if requested_algorithm is not None or requested_protocol is not None:
+        # Second review round: failing to even OBSERVE the plan (no -M 1
+        # table line matched at all) must NOT default to PASS either --
+        # that silently treats "we never confirmed what ran" the same as
+        # "we confirmed the right thing ran." Fail closed to HARNESS_FAILURE
+        # instead, distinguishable via plan_verification=PLAN_UNVERIFIED.
+        if observed_algorithm is None or observed_protocol is None:
+            return (
+                HARNESS_FAILURE, None,
+                "clean/correct exit but the actually-executed algorithm/"
+                "protocol could not be verified from output (no -M 1 table "
+                "line matched) -- requested plan was never confirmed",
+                PLAN_UNVERIFIED,
+            )
+        if (
+            observed_algorithm.upper() != requested_algorithm.upper()
+            or observed_protocol.upper() != requested_protocol.upper()
+        ):
+            return (
+                UNSUPPORTED, None,
+                f"requested {requested_algorithm}/{requested_protocol} but RCCL "
+                f"selected {observed_algorithm}/{observed_protocol}",
+                PLAN_SUBSTITUTED,
+            )
+        return PASS, True, "clean exit, correctness check passed, plan verified", PLAN_VERIFIED
+
+    return PASS, True, "clean exit, correctness check passed", None
 
 
 # -M 1's human-readable table ends each size row with "... algo proto
@@ -338,20 +410,94 @@ def _parse_observed_plan(combined_output: str) -> tuple[str | None, str | None, 
     return algo, proto, int(channels)
 
 
+class CompatibilityManifestMismatch(RuntimeError):
+    """Raised when an output directory already holds evidence from a
+    DIFFERENT RCCL compatibility revision than the one now being run.
+
+    Enforced, not merely encouraged (gpt-dev-agent review,
+    req_acf7c8da985f4f17): the same case_id+attempt under a second RCCL
+    build could otherwise silently overwrite the first build's raw
+    artifacts. Namespacing output_dir by revision_id (below) prevents the
+    overwrite in the common case; this check catches the harder case of
+    the SAME namespaced directory being reused for two builds that happen
+    to share a revision_id string but differ in some other recorded field
+    (e.g. a corrected build_config) -- fail loudly rather than silently
+    trust a stale manifest.
+    """
+
+
+_COMPATIBILITY_MANIFEST_NAME = "compatibility.json"
+
+
+def _resolve_case_output_dir(
+    output_dir: Path, compatibility: RcclCompatibilityRevision,
+) -> Path:
+    """Artifacts are always written under output_dir/<revision_id>/ --
+    enforced namespacing, not left to the caller to remember. Writes (or
+    verifies against) a `compatibility.json` manifest in that namespaced
+    directory so a second run under a DIFFERENT compatibility that happens
+    to resolve to the same directory is caught rather than silently
+    overwriting evidence.
+    """
+    namespaced = output_dir / compatibility.revision_id
+    namespaced.mkdir(parents=True, exist_ok=True)
+    manifest_path = namespaced / _COMPATIBILITY_MANIFEST_NAME
+    this_manifest = compatibility.to_json()
+    if manifest_path.exists():
+        try:
+            stored_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CompatibilityManifestMismatch(
+                f"{manifest_path} exists but could not be parsed as the "
+                f"expected compatibility manifest: {exc}"
+            ) from exc
+        if stored_manifest != this_manifest:
+            raise CompatibilityManifestMismatch(
+                f"{namespaced} already holds evidence for a different "
+                f"compatibility revision (stored={stored_manifest!r}, "
+                f"requested={this_manifest!r}) despite sharing "
+                f"revision_id={compatibility.revision_id!r} -- refusing to "
+                "overwrite; use a distinct revision_id or a different "
+                "output_dir."
+            )
+    else:
+        manifest_path.write_text(json.dumps(this_manifest, indent=2), encoding="utf-8")
+
+    return namespaced
+
+
 def run_case(
     case: RcclCase, *, binary: str, visible_devices: tuple[int, ...],
-    output_dir: Path, outer_timeout: float = 30.0,
+    output_dir: Path, attempt: int,
+    compatibility: RcclCompatibilityRevision,
+    outer_timeout: float = 30.0,
 ) -> RcclCaseResult:
     """Run exactly one case in its own subprocess/process-group.
 
     Never retries automatically (RQ02). The caller decides whether/when to
     re-run after inspecting the classification.
+
+    ``attempt`` (the rep index within a qualification run) and
+    ``compatibility`` (the exact RCCL build under test) are both required,
+    not optional -- this project migrates every caller to a new capability
+    rather than keeping the old behavior reachable behind a default
+    (CLAUDE.md: "No legacy, no backward compatibility -- always migrate
+    up"). Every case run through this harness is part of SOME qualification
+    attempt against SOME RCCL build; there is no meaningful "don't care"
+    case. Every rep MUST get a distinct ``attempt`` -- otherwise repeated
+    stdout/stderr/rccl.json overwrite each other while cases.jsonl keeps
+    accumulating rows that no longer match any file on disk (the bug this
+    parameter exists to close).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Raises InsufficientCompatibilityIdentity / CompatibilityManifestMismatch
+    # -- deliberately propagated before any subprocess work starts.
+    case_output_dir = _resolve_case_output_dir(output_dir, compatibility)
     case_id = case.case_id
-    stdout_path = output_dir / f"{case_id}.stdout.log"
-    stderr_path = output_dir / f"{case_id}.stderr.log"
-    rccl_output_path = output_dir / f"{case_id}.rccl.json"
+    suffix = f"__attempt{attempt}"
+    stdout_path = case_output_dir / f"{case_id}{suffix}.stdout.log"
+    stderr_path = case_output_dir / f"{case_id}{suffix}.stderr.log"
+    rccl_output_path = case_output_dir / f"{case_id}{suffix}.rccl.json"
 
     command, env = build_command(
         case, binary=binary, visible_devices=visible_devices,
@@ -410,6 +556,9 @@ def run_case(
             correct=None, detail=f"failed to launch subprocess: {exc}",
             rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
             stderr_path=str(stderr_path),
+            compatibility_revision_id=compatibility.revision_id,
+            attempt=attempt, plan_verification=None,
+            qualification_key=qualification_key(compatibility, case_id),
         )
 
     elapsed = time.monotonic() - start
@@ -432,10 +581,19 @@ def run_case(
 
     observed_algorithm, observed_protocol, observed_channels = _parse_observed_plan(combined_output)
 
-    classification, correct, detail = _classify(
+    classification, correct, detail, plan_verification = _classify(
         returncode=returncode, term_signal=term_signal, timed_out=timed_out,
         combined_output=combined_output, rccl_json=rccl_json,
+        requested_algorithm=case.algorithm, requested_protocol=case.protocol,
+        observed_algorithm=observed_algorithm, observed_protocol=observed_protocol,
     )
+
+    # compatibility.revision_id raises InsufficientCompatibilityIdentity if
+    # `compatibility` lacks a durable identity component (library_build_id
+    # or rccl_source_revision) -- deliberately propagated, not swallowed: a
+    # qualification result recorded under insufficient identity is worse
+    # than one that fails loudly at record time (GP07/gpt-dev-agent review).
+    revision_id = compatibility.revision_id
 
     return RcclCaseResult(
         schema_version=SCHEMA_VERSION, case_id=case_id,
@@ -449,6 +607,10 @@ def run_case(
         observed_channels=observed_channels, returncode=returncode,
         terminating_signal=term_signal, elapsed_seconds=elapsed,
         classification=classification, correct=correct, detail=detail,
+        plan_verification=plan_verification,
+        compatibility_revision_id=revision_id,
+        qualification_key=qualification_key(compatibility, case_id),
+        attempt=attempt,
         rccl_output_path=str(rccl_output_path), stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
     )

@@ -427,7 +427,7 @@ class StaleReportTests(unittest.TestCase):
             rebase._require_fresh(dict(self.report), self.upstream)
 
     def test_source_report_binds_on_patch_set_id_not_just_patch_ids(self):
-        # gpt-dev-agent review (compat.recipe removal plan, session
+        # gpt-dev-agent review (legacy recipe removal plan, session
         # ses_5307d9c58ec645cb): two logically distinct v2 patch-set
         # compositions can resolve to the identical module-id set --
         # re-deriving patch_ids alone would miss that, so a --source report

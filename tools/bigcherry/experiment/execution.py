@@ -28,6 +28,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Callable
 
+from . import attestation
 from . import contract as experiment_contract
 from ..campaign.benchmark import block_bootstrap_effect, extract_metrics
 
@@ -43,6 +44,14 @@ from ..campaign.benchmark import block_bootstrap_effect, extract_metrics
 WORKLOAD_METRIC: dict[str, str] = {
     "decode": "tg128",
     "prefill": "pp512",
+    # RD73/VA06: mtp_wall_tps is the CLIENT-measured, real request-to-
+    # response wall-clock throughput from validation_campaign.py's
+    # run_rd73_mtp_server_lane() (bench/server_completion.py's run_request()
+    # wall_tps field) -- deliberately not the server's own self-reported
+    # predicted_tps, which can exclude HTTP/queueing overhead. Registered
+    # only once that adapter existed and was proven with real tests (GPT
+    # scoping, session ses_1e0bd1ea53db4311).
+    "mtp_verify": "mtp_wall_tps",
 }
 
 
@@ -104,6 +113,7 @@ def run_paired_lane(
     *, metric: str, control_command: list[str], subject_command: list[str],
     pattern: re.Pattern[str], pairs: int = 3, runner: Runner | None = None,
     lower_is_better: bool = False, seed: int = 0, resamples: int = 10_000,
+    execution_identity: "attestation.ExecutionIdentity | None" = None,
 ) -> PairedLaneRun:
     """Run ``pairs`` alternating control/subject rounds of the SAME
     command shape (only the binary differs -- control vs. subject build),
@@ -130,6 +140,19 @@ def run_paired_lane(
                     f"{mode} arm exited {result.returncode} (pair {pair}): "
                     f"command={command!r}; stderr={result.stderr[-500:]!r}"
                 )
+            # VA25: attest EVERY measured process, before its metrics are
+            # accepted. Not a single preflight -- each arm is a separate
+            # process, and one preflight cannot prove the ones that follow.
+            # A ROCm init failure does not stop llama.cpp; it falls back to
+            # CPU and still prints a well-formed table labelled "ROCm", so a
+            # clean exit code and a parseable metric are not evidence that
+            # anything ran on a GPU.
+            if execution_identity is not None:
+                attestation.require_execution_identity(
+                    execution_identity,
+                    attestation.parse_rocm_attestation(result.combined),
+                    context=f"{mode} arm, pair {pair}",
+                )
             metrics = extract_metrics(result.combined, {metric: pattern})
             runs.append({"pair": pair, "mode": mode, "metrics": metrics})
     stats = block_bootstrap_effect(
@@ -140,8 +163,49 @@ def run_paired_lane(
 
 
 def lane_effect_from_run(role: str, metric: str, run: PairedLaneRun) -> experiment_contract.LaneEffect:
+    """VA24: carry the interval and the paired-round count through.
+
+    block_bootstrap_effect() already produces ci95_low_pct/ci95_high_pct
+    alongside the point estimate; this function used to drop them, so the
+    promotion gate could only ever see a point estimate. Under
+    ci95_threshold_bound_v1 the gate needs the interval, and needs the round
+    count because run_paired_lane() accepts pairs=1 -- whose bootstrap yields
+    a degenerate interval that can look arbitrarily significant.
+
+    Values are read straight from the producing report; nothing is derived or
+    defaulted to a plausible number. A stats block lacking an interval yields
+    None, which the gate treats as unevaluable ("invalid") rather than
+    passing.
+    """
+    # VA24 P0 (dev-gpt-agent, req_d563bd481bcf4324): take paired_rounds ONLY
+    # from the bootstrap's own stats. block_bootstrap_effect() derives it from
+    # COMPLETE candidate/reference pairs that actually contained the metric
+    # (benchmark.py: "paired_rounds": len(ratios)).
+    #
+    # An earlier revision fell back to counting distinct `pair` values in
+    # run.runs when stats lacked the field. That was wrong: it counts pairs
+    # that were incomplete or missing the metric, so it can OVERCOUNT the
+    # usable evidence and let a lane clear a rounds floor it did not really
+    # meet. A missing value must stay None, which an interval policy with a
+    # floor then treats as unevaluable ("invalid") rather than sufficient.
+    paired_rounds = run.stats.get("paired_rounds")
+    if not isinstance(paired_rounds, int) or isinstance(paired_rounds, bool):
+        paired_rounds = None
     return experiment_contract.LaneEffect(
         role=role, metric=metric, geometric_effect_pct=run.stats["geometric_effect_pct"],
+        ci95_low_pct=run.stats.get("ci95_low_pct"),
+        ci95_high_pct=run.stats.get("ci95_high_pct"),
+        paired_rounds=paired_rounds,
+        # RV99: carry the ratio vector through. block_bootstrap_effect()
+        # returns it and LaneEffect has always had the field, but this
+        # converter -- the only thing that turns a real paired run into a
+        # LaneEffect -- silently dropped it, so every lane effect the campaign
+        # produced arrived with pair_ratios=() and any session aggregation
+        # over them counted ZERO sessions while looking perfectly healthy.
+        # Caught on hardware: a governed session wrote lane_effects with
+        # pairs=0, which would have made the session policy demand more
+        # evidence for ever, one 13-minute run at a time.
+        pair_ratios=tuple(run.stats.get("pair_ratios") or ()),
     )
 
 

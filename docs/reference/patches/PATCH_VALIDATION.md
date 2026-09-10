@@ -1,27 +1,38 @@
-# Patch validation
+# Patch validation pointer
 
-**Canonical reference:**
-[`docs/reference/testing/PATCH_VALIDATION.md`](../testing/PATCH_VALIDATION.md)
-— the full RD-patch validation methodology (package layout, when a
-package is required, Experiment Contract binding, authoring
-`validation.toml`/`README.md`, the real contract-execution architecture,
-evidence storage, workflow, anti-patterns). This file exists only as a
-short landing pointer from `docs/reference/patches/` — do not duplicate
-policy text here; edit the canonical doc instead.
+This page covers the patch-reference entry point only. The sole canonical
+validation authority is
+[testing/PATCH_VALIDATION.md](../testing/PATCH_VALIDATION.md), which owns
+Experiment Contract obligations, campaign capabilities, evidence provenance,
+status semantics, promotion, demotion, and re-promotion.
 
-Quick facts worth repeating for anyone skimming this directory only:
+Do not duplicate thresholds, campaign flags, lifecycle rules, or evidence
+policy here. If this pointer conflicts with the testing authority, the testing
+authority and the live contract/code are authoritative.
 
-- Validation is fail-closed. Required capabilities need required
-  producers; missing, stale, tampered, or fabricated evidence is not
-  PASS. Every artifact is path-contained and SHA-256 bound to the
-  campaign identity.
-- Validator outcomes are `PASS`, `FAIL`, `BLOCKED`, or `ERROR`. `BLOCKED`
-  means an external prerequisite (e.g. required hardware) is
-  unavailable; it must never be converted to PASS.
-- Activation claims use a positive trace plus a disabled negative
-  control. Performance claims require causal activation evidence, not
-  merely a benchmark artifact existing.
-- Custom validators implement exactly `check(ctx)`. Built-in dispatch is
-  immutable. `bigcherry check` is local and non-mutating; hardware
-  validation runs only via an explicit campaign
-  (`bigcherry.patch.validation_campaign`).
+## Choose the right page
+
+| Need | Read |
+| --- | --- |
+| Create or modify a package-only patch | [PATCH_AUTHORING.md](PATCH_AUTHORING.md) |
+| Understand catalog states, composition, dependencies, or apply mechanics | [PATCH_SYSTEM.md](PATCH_SYSTEM.md) |
+| Validate, qualify, promote, demote, or re-promote a patch | [../testing/PATCH_VALIDATION.md](../testing/PATCH_VALIDATION.md) |
+| Run repository gates or hardware procedures | [../testing/TEST.md](../testing/TEST.md) |
+| Refactor an existing patch without losing identity/evidence | [PATCH_REFACTOR_RUNBOOK.md](PATCH_REFACTOR_RUNBOOK.md) |
+
+## Minimal handoff rule
+
+Before claiming that a patch helps, does not help, or remains unknown:
+
+1. Confirm the patch package, source composition, bound contract IDs, target
+   hardware, and current upstream pin.
+2. Run the hardware-free repository/static gates and an explicitly scoped
+   apply dry-run.
+3. Follow the canonical testing validation workflow for the applicable
+   contract-capable campaign or record the run as diagnostic/blocked.
+4. Preserve control/subject identity, correctness, activation, measurements,
+   provenance, and the exact evidence-backed lifecycle decision.
+
+Patch-specific README, `validation.toml`, fixtures, and evidence belong under
+`patches/<patch-id>/`. This page is navigation, not a second policy.
+

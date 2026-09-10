@@ -969,12 +969,15 @@ thread_local ggml_hip_digest g_trace_signature_digest = {};
 thread_local ggml_hip_dispatch_signature_v1 g_trace_signature = {};
 
 void trace_launch_attempt(const char * stable_name, const char * protocol_stage) {
-    static std::atomic<bool> enabled{false};
-    static std::atomic<bool> checked{false};
-    if (!checked.exchange(true)) {
+    // HI159: function-local static, not a checked/enabled atomic pair. The
+    // old form ran `checked.exchange(true)` on EVERY call -- an unconditional
+    // write to a shared cache line before the `!enabled` early-out could fire.
+    // This sits on the launch path, so the disabled case was paying contended
+    // ownership transfer per launch to learn it had nothing to do.
+    static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_TUNE_TRACE_ATTEMPTS");
-        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
-    }
+        return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
+    }();
     if (!enabled || !ggml_hip_journal_is_open()) return;
     const std::string signature_json = ggml_hip_signature_json(g_trace_signature, true);
     const std::string payload =
@@ -2306,14 +2309,13 @@ struct Hi69CorrectnessTiming {
 };
 static Hi69CorrectnessTiming g_hi69_timing;
 
+// HI159: same fix as trace_launch_attempt above.
 static bool hi69_correctness_timing_enabled() {
-    static std::atomic<bool> enabled{false};
-    static std::atomic<bool> checked{false};
-    if (!checked.exchange(true)) {
+    static const bool enabled = [] {
         const char * flag = getenv("GGML_HIP_TUNE_CORRECTNESS_TIMING");
-        enabled = (flag != nullptr && flag[0] != '\0' && flag[0] != '0');
-    }
-    return enabled.load(std::memory_order_relaxed);
+        return flag != nullptr && flag[0] != '\0' && flag[0] != '0';
+    }();
+    return enabled;
 }
 
 // RAII rather than instrumenting each of ggml_hip_tuner_resolve_impl's ~25

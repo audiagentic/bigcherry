@@ -403,6 +403,16 @@ def run_request(
     predicted_tps = timings.get("predicted_per_second", (
         1000.0 * tokens_predicted / predicted_ms if predicted_ms else None
     ))
+    # RD73/VA06: predicted_tps (above) is the SERVER's own reported decode
+    # timing, which can exclude HTTP/queueing overhead -- it is not a true
+    # end-to-end measurement. wall_tps is measured entirely on this client,
+    # from the same wall-clock span (`start`/`wall_s`, top of this
+    # function) an RD73 paired control/subject comparison needs: real
+    # request-to-response latency, the number an end user actually
+    # experiences. wall_s is never 0 in practice (a real HTTP round trip
+    # against a real server always takes measurable time), but guard the
+    # division anyway rather than let a degenerate 0.0 raise ZeroDivisionError.
+    wall_tps = tokens_predicted / wall_s if wall_s > 0 else None
 
     return {
         "schema": SCHEMA,
@@ -417,6 +427,9 @@ def run_request(
         "tokens_predicted": tokens_predicted,
         "predicted_ms": predicted_ms,
         "predicted_tps": predicted_tps,
+        "wall_s": wall_s,
+        "wall_tps": wall_tps,
+        "content": response.get("content"),
         "draft_generated": delta["draft_generated"],
         "draft_accepted": delta["draft_accepted"],
         "verification_cycles": verification_cycles,

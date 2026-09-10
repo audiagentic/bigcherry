@@ -13,15 +13,47 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from dataclasses import dataclass
+
+
+def _free_port(host: str) -> int:
+    """Bind port 0 and let the OS choose, then release it.
+
+    There is an unavoidable race between releasing and llama-server binding,
+    but it is far smaller than the certainty of colliding with a long-lived
+    service on a fixed port -- which is what actually happened here.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
 
 
 class ServerError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ShutdownResult:
+    """Observed teardown, not an inference from a successful benchmark request."""
+
+    method: str
+    requested: bool
+    forced: bool
+    returncode: int
+    error: str | None = None
+
+    @property
+    def clean(self) -> bool:
+        return self.requested and not self.forced and self.returncode == 0
 
 
 class ServerRunner:
@@ -37,15 +69,30 @@ class ServerRunner:
     """
 
     def __init__(
-        self, *, binary: Path, model: Path, host: str = "127.0.0.1", port: int = 8080,
+        self, *, binary: Path, model: Path, host: str = "127.0.0.1",
+        port: int | None = None,
         extra_args: tuple[str, ...] = (), env_overrides: dict[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
+        shutdown_method: str = "http",
     ):
+        if shutdown_method not in ("http", "sigint"):
+            raise ValueError("shutdown_method must be http or sigint")
+        if shutdown_method == "sigint" and (os.name == "nt" or command_prefix):
+            raise ValueError("sigint shutdown requires an unwrapped POSIX server")
         self.binary = binary
         self.model = model
         self.host = host
-        self.port = port
+        # port=None picks a FREE port instead of defaulting to 8080.
+        #
+        # 8080 was hardcoded, and on the tuning host llama-swap -- the
+        # production inference service -- already owns it. A real
+        # `tune-campaign` run died at its first stage with "exiting due to
+        # HTTP server error", which is what a bind collision looks like from
+        # llama-server. The tuner must be able to run alongside production
+        # without either interfering with the other, and without an operator
+        # remembering to pass a port.
+        self.port = port if port is not None else _free_port(host)
         self.extra_args = extra_args
         self.env_overrides = dict(env_overrides or {})
         # HI143 (gpt review, 2026-08-29): the launched process otherwise
@@ -64,6 +111,11 @@ class ServerRunner:
         # exact flag comes before the target command for every profiler
         # checked (rocprofv3, perf record).
         self.command_prefix = command_prefix
+        # Genuine upstream stock has no BigCherry /shutdown route. Its POSIX
+        # SIGINT handler performs normal server teardown; do not patch stock
+        # merely to make it compatible with the measurement driver.
+        self.shutdown_method = shutdown_method
+        self.last_shutdown: ShutdownResult | None = None
         self._proc: subprocess.Popen | None = None
 
     def _base_url(self) -> str:
@@ -72,6 +124,7 @@ class ServerRunner:
     def launch(self) -> None:
         if self._proc is not None:
             raise ServerError("server already launched")
+        self.last_shutdown = None
         env = dict(os.environ)
         for name in self.env_unset:
             env.pop(name, None)
@@ -131,19 +184,32 @@ class ServerRunner:
             "/completion", {"prompt": prompt, "n_predict": n_predict}, timeout_s=timeout_s,
         )
 
-    def shutdown(self, timeout_s: int = 90) -> None:
+    def shutdown(self, timeout_s: int = 90) -> ShutdownResult | None:
         if self._proc is None:
-            return
+            return self.last_shutdown
+        requested = False
+        forced = False
+        error = None
         try:
-            self.post_json("/shutdown", {})
-        except ServerError:
-            pass
+            if self.shutdown_method == "sigint":
+                self._proc.send_signal(signal.SIGINT)
+            else:
+                self.post_json("/shutdown", {}, timeout_s=timeout_s)
+            requested = True
+        except (ServerError, OSError) as exc:
+            error = str(exc)
         try:
-            self._proc.wait(timeout=timeout_s)
+            returncode = self._proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
+            forced = True
             self._proc.kill()
-            self._proc.wait(timeout=30)
+            returncode = self._proc.wait(timeout=30)
+        self.last_shutdown = ShutdownResult(
+            method=self.shutdown_method, requested=requested, forced=forced,
+            returncode=returncode, error=error,
+        )
         self._proc = None
+        return self.last_shutdown
 
     def _log_tail(self, n: int = 15) -> str:
         if self.log_path is None or not self.log_path.is_file():

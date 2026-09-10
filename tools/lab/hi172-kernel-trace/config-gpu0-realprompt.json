@@ -1,0 +1,18 @@
+{
+  "model": "/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf",
+  "common_args": [
+    "-ngl", "99", "-sm", "none", "--fit", "off", "-c", "8192",
+    "--flash-attn", "on", "--ubatch-size", "512", "--batch-size", "2048",
+    "--threads", "8", "--parallel", "1"
+  ],
+  "env": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "0"
+  },
+  "native_binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/b86b1e97d91605ce764e48f59342a962/bin/llama-server",
+  "replay_binary": "/home/audumla/.cache/bigcherry/builds/cc941b35debd296660cbbc382411a6b7/60f936db36097b7b9360eb7c707808bc/bin/llama-server",
+  "replay_cache": "/home/audumla/.cache/bigcherry/tune-campaigns/hi171-9b-gpu0-reexport-20260908/dispatch.cache",
+  "prompt_file": "/home/audumla/bigcherry-hi171-tuning/src/ggml/src/ggml-cuda/hip-autotune-dispatch.cu",
+  "prompt_max_chars": 9000,
+  "n_predict": 8
+}

@@ -119,6 +119,79 @@ def resolve_patch_set(
     )
 
 
+def resolve_lane_overlay(
+    source_name: str,
+    cfg: config.Config,
+    catalog: list[patchset.PatchModule],
+    *,
+    overlay_patch_ids: tuple[str, ...],
+    overlay_name: str,
+    catalog_directory: object = None,
+) -> ResolvedLane:
+    """Resolve ``source_name``'s base lane with an EXACT extra module set
+    layered on top, under ``resolve_exact``'s ``context_ids`` semantics (the
+    overlay's own REQUIRES may be satisfied by the base lane without the
+    base lane's modules being re-added to the overlay itself).
+
+    This is the generic seam VA26's qualification-matrix planner composes
+    "release" vs "release + candidate patch" through (dev-gpt-agent design
+    review, req_5b7d0dacef604446): PQM's overlay is an unvalidated candidate
+    module, not a named, pre-declared ``cfg.experiments`` entry, so it must
+    not be forced through experiment-name identity. ``resolve_lane``'s own
+    ``experiment=`` path is now a thin wrapper around this primitive (below)
+    so both callers share one implementation of the overlay-composition
+    identity rules.
+
+    ``overlay_name`` is an opaque label folded into the resulting
+    ``patch_set_id``'s identity payload (via ``composition_names``) --
+    distinct overlays over the same base+module-set must not collide; it is
+    not itself validated against ``cfg``.
+    """
+    if source_name not in cfg.sources:
+        raise ResolutionError(f"unknown source {source_name!r}")
+    base = resolve_lane(source_name, cfg, catalog, catalog_directory=catalog_directory)
+    resolved_catalog_directory = catalog_directory or (
+        (catalog[0].catalog_root or catalog[0].path.parent) if catalog else None
+    )
+    overlay_selection = patchset.resolve_exact(
+        tuple(overlay_patch_ids), directory=resolved_catalog_directory, required_state=None,
+        context_ids=frozenset(base.patch_set.module_ids),
+    )
+    if set(base.patch_set.module_ids) & {m.patch_id for m in overlay_selection.modules}:
+        raise ResolutionError(f"overlay {overlay_name!r} repeats a base patch module")
+    by_id = {module.patch_id: module for module in catalog}
+    merged_ids = [
+        *base.patch_set.module_ids, *(m.patch_id for m in overlay_selection.modules),
+    ]
+    merged_modules = tuple(
+        by_id[pid] for pid in patchset.topological_order(merged_ids, modules=by_id)
+    )
+    module_ids = tuple(module.patch_id for module in merged_modules)
+    module_hashes = tuple((module.patch_id, module.content_hash) for module in merged_modules)
+    identity = {
+        "schema_version": 1,
+        "name": base.patch_set.name,
+        "required_state": base.patch_set.required_state,
+        "modules": module_hashes,
+        "classification": "experimental",
+        "composition_names": list(cfg.sources[source_name].patch_sets) + [overlay_name],
+    }
+    resolved = ResolvedPatchSet(
+        name=base.patch_set.name,
+        module_ids=module_ids,
+        module_hashes=module_hashes,
+        classification="experimental",
+        required_state=base.patch_set.required_state,
+        patch_set_id=_digest(identity),
+    )
+    return ResolvedLane(
+        name=f"{source_name}+{overlay_name}",
+        source_name=source_name,
+        patch_set=resolved,
+        promoted_enhancements=base.promoted_enhancements,
+    )
+
+
 def resolve_lane(
     source_name: str,
     cfg: config.Config,
@@ -218,47 +291,39 @@ def resolve_lane(
         )
     resolved_catalog_directory = catalog_directory or ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
     if experiment:
-        extra = cfg.experiments[experiment].patches
-        extra_selection = patchset.resolve_exact(
-            extra, directory=resolved_catalog_directory, required_state=None,
-            context_ids=frozenset(resolved.module_ids),
+        # Delegate to the generic overlay primitive (VA26 design review,
+        # req_5b7d0dacef604446) so a named experiment and an ad-hoc PQM
+        # candidate overlay share one implementation of the composition
+        # identity rules, rather than drifting independently.
+        overlaid = resolve_lane_overlay(
+            source_name, cfg, catalog,
+            overlay_patch_ids=cfg.experiments[experiment].patches,
+            overlay_name=f"experiment:{experiment}",
+            catalog_directory=resolved_catalog_directory,
         )
-        if set(resolved.module_ids) & {module.patch_id for module in extra_selection.modules}:
-            raise ResolutionError("experiment repeats a base patch module")
-        # RV80 follow-up (GPT deep review, systemic): same topological-order
-        # requirement as the multi-set merge above -- never a global
-        # (order, patch_id) re-sort of the base + experiment union.
-        _exp_by_id = {module.patch_id: module for module in catalog}
-        _exp_ids = [
-            *resolved.module_ids, *(m.patch_id for m in extra_selection.modules)
-        ]
-        modules = tuple(
-            _exp_by_id[pid] for pid in patchset.topological_order(_exp_ids, modules=_exp_by_id)
-        )
-        module_ids = tuple(module.patch_id for module in modules)
-        module_hashes = tuple((module.patch_id, module.content_hash) for module in modules)
-        identity = {
-            "schema_version": 1,
-            "name": resolved.name,
-            "required_state": resolved.required_state,
-            "modules": module_hashes,
-            "classification": "experimental",
-            "composition_names": list(source.patch_sets) + [f"experiment:{experiment}"],
-        }
-        resolved = ResolvedPatchSet(
-            name=resolved.name,
-            module_ids=module_ids,
-            module_hashes=module_hashes,
-            classification="experimental",
-            required_state=resolved.required_state,
-            patch_set_id=_digest(identity),
-        )
+        resolved = overlaid.patch_set
     return ResolvedLane(
         name=f"{source_name}+{experiment}" if experiment else source_name,
         source_name=source_name,
         patch_set=resolved,
+        # A view of the promoted enhancements THIS lane actually composes --
+        # not the global contents of validated-enhancements. patch/source.py
+        # already documents the intent ("a declared-config view of them, not
+        # an extra"), but the implementation returned the whole set for every
+        # source, including ones whose patch-sets do not include it.
+        #
+        # Latent while validated-enhancements was empty; populating it made
+        # bigcherry-native -- the framework-only CONTROL source -- report a
+        # promoted enhancement it does not build. Actual patch selection
+        # (patch_set.module_ids) was always correct, so no build shipped the
+        # wrong thing, but any consumer reading this field for a native lane
+        # would have been told the control arm carries an enhancement. That is
+        # precisely the baseline-contamination story a control exists to rule
+        # out, so it must not be merely conventionally true.
         promoted_enhancements=tuple(
-            cfg.patch_sets["validated-enhancements"].patches
+            patch_id
+            for patch_id in cfg.patch_sets["validated-enhancements"].patches
+            if patch_id in set(resolved.module_ids)
         ) if "validated-enhancements" in cfg.patch_sets else (),
     )
 
@@ -268,8 +333,8 @@ class CanonicalSelection:
     """The minimal shape a legacy ``--recipe``-consuming command actually
     needs: a resolved upstream ref plus an exact patch-set identity.
 
-    Introduced to remove ``recipes.py``'s ``[compat.recipe.*]`` bridge (see
-    docs/planning/active/... the compat.recipe removal plan) without
+    Introduced to remove ``recipes.py``'s retired compatibility bridge (see
+    docs/planning/active/... the legacy recipe removal plan) without
     smuggling ``Recipe``'s unrelated build/platform/groups/states baggage
     back in through a different name. Deliberately NOT a drop-in
     replacement for every legacy ``Recipe`` field -- a caller that also

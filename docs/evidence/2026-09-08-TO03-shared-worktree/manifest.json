@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "kind": "non-patch-shared-worktree-verification",
+  "plan_item_ids": ["TO03"],
+  "observed_at_utc": "2026-09-08",
+  "host": {"role": "build-server", "hostname": "brutus"},
+  "source_revision": "52ab88bebc74e800645f0694327f3a8bf4965195",
+  "result": "PASS",
+  "limitations": ["The exercise validates repository ownership/staging protocol, not a scheduler or lock service."],
+  "payloads": ["session-a.log", "session-b.log", "a-before.sha256", "a-after.sha256", "b-a.sha256", "b-sees-a.status", "b-staged.paths", "revision.txt", "RESULT"]
+}

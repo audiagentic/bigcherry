@@ -81,6 +81,24 @@ class Rd08ValidationLaneCommandsTests(unittest.TestCase):
                 model=Path("m"), workload="mtp_verify",
             )
 
+    def test_default_extra_flags_is_empty_rd08_unaffected(self) -> None:
+        control_cmd, _ = vc.rd08_validation_lane_commands(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), workload="decode",
+        )
+        self.assertNotIn("-sm", control_cmd)
+
+    def test_extra_flags_appended_after_workload_flags(self) -> None:
+        # VA06: RD73's decode control lane needs -sm tensor for its 27B
+        # model on 2x gfx1100.
+        control_cmd, subject_cmd = vc.rd08_validation_lane_commands(
+            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+            model=Path("m.gguf"), workload="decode", extra_flags=("-sm", "tensor"),
+        )
+        self.assertIn("-sm", control_cmd)
+        self.assertEqual(control_cmd[control_cmd.index("-sm") + 1], "tensor")
+        self.assertIn("-sm", subject_cmd)
+
 
 class RunRd08ValidationLanesTests(unittest.TestCase):
     def test_persists_evidence_and_returns_real_lane_effects(self) -> None:

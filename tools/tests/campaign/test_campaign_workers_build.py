@@ -194,6 +194,57 @@ class _Harness:
 
 
 class FreshBuildTests(unittest.TestCase):
+    def test_copy_mutation_is_rejected_before_configure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            inputs = harness.generate_inputs()
+            copy = campaign_workers.shutil.copytree
+            def corrupt(source, destination):
+                result = copy(source, destination)
+                (destination / "hip-autotune-registry.inc").write_text("changed")
+                return result
+            with (patch("bigcherry.campaign.workers.shutil.copytree", corrupt),
+                  patch("bigcherry.campaign.workers.subprocess.run") as compiler):
+                with self.assertRaises(generated_tree.GeneratedTreeError):
+                    harness.worker()(inputs)
+            compiler.assert_not_called()
+
+    def test_compiled_copy_mutation_fails_before_publication(self):
+        for stage in ("configure", "compile"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                harness = _Harness(Path(directory))
+                inputs = harness.generate_inputs()
+                compiler = harness.fake_compiler()
+                build_dir = build_directory(harness.context, harness.source_slice_id, harness.build_plan)
+                def mutate(cmd, **kwargs):
+                    result = compiler(cmd, **kwargs)
+                    if ("--build" in cmd) == (stage == "compile"):
+                        (build_dir / "generated-inputs" / "hip-autotune-registry.inc").write_text("changed")
+                    return result
+                with patch("bigcherry.campaign.workers.subprocess.run", mutate):
+                    with self.assertRaises(generated_tree.GeneratedTreeError):
+                        harness.worker()(inputs)
+                self.assertFalse((build_dir / "bigcherry-build-metadata-llama-bench.json").exists())
+                self.assertEqual(len(harness.calls), 1 if stage == "configure" else 2)
+
+    def test_historical_copy_cannot_be_attested_retroactively(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = _Harness(Path(directory))
+            inputs = harness.generate_inputs()
+            with patch("bigcherry.campaign.workers.subprocess.run", harness.fake_compiler()):
+                refs = harness.worker()(inputs)
+            bundle = json.loads(refs[1].path.read_text())
+            self.assertEqual(bundle["generated_inputs_verification"], "compiled-copy-v1")
+            build_dir = build_directory(harness.context, harness.source_slice_id, harness.build_plan)
+            path = build_dir / "bigcherry-build-metadata-llama-bench.json"
+            metadata = json.loads(path.read_text())
+            metadata.pop("generated_inputs_verification")
+            path.write_text(json.dumps(metadata))
+            with patch("bigcherry.campaign.workers.subprocess.run") as compiler:
+                with self.assertRaisesRegex(CampaignBuildError, "retroactively"):
+                    harness.worker()(inputs)
+            compiler.assert_not_called()
+
     def test_compiles_for_real_and_records_reuse_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = _Harness(Path(directory))

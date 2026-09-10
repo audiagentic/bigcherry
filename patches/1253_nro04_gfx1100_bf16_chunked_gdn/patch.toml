@@ -1,0 +1,17 @@
+schema = 1
+id = "1253_nro04_gfx1100_bf16_chunked_gdn"
+order = 1253
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["NRO04"]
+requires = ["1221_rd50_gdn_chunked_recurrence"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["gated-delta-net", "wmma", "prefill"]
+hardware = ["gfx1100"]
+validation-architectures = []
+backends = ["hip"]

@@ -16,6 +16,7 @@ Example::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -55,6 +56,29 @@ def schedule(rounds: int, *, include_stock: bool, seed: int = 0) -> list[tuple[s
 def round_modes(round_index: int, *, include_stock: bool) -> tuple[str, ...]:
     """Compatibility-free public schedule accessor using the fixed seed."""
     return schedule(round_index + 1, include_stock=include_stock)[round_index]
+
+
+def schedule_named_arms(rounds: int, arm_names: list[str], seed: int = 0) -> list[tuple[str, ...]]:
+    """GP08: generalized version of schedule() for an arbitrary, named set
+    of arms (not just native/replay/stock) -- same balanced-complete-
+    permutation-block methodology, generalized to N arms. Used by
+    collective_benchmark.py to compare an arbitrary provider/build arm set
+    (native-rccl, bigcherry-rccl, internal, hybrid, meta, layer-split, ...)
+    rather than this module's own fixed three-arm vocabulary."""
+    if rounds < 1:
+        raise ValueError("rounds must be positive")
+    if len(arm_names) < 2:
+        raise ValueError("need at least 2 arms to compare")
+    if len(set(arm_names)) != len(arm_names):
+        raise ValueError("arm_names must be unique")
+    orders = list(itertools.permutations(arm_names))
+    rng = random.Random(seed)
+    result: list[tuple[str, ...]] = []
+    for _ in range(math.ceil(rounds / len(orders))):
+        block = list(orders)
+        rng.shuffle(block)
+        result.extend(block)
+    return result[:rounds]
 
 
 _CMAKE_PARITY_KEYS = (
@@ -231,6 +255,17 @@ def block_bootstrap_effect(
         "ci95_low_pct": samples[int(0.025 * resamples)],
         "ci95_high_pct": samples[min(resamples - 1, int(0.975 * resamples))],
         "resamples": resamples, "seed": seed,
+        # VA24: the ordered per-pair ratio vector is the SUFFICIENT STATISTIC
+        # for re-running this estimator -- the bootstrap's input is defined to
+        # be these ratios, so retaining them allows an aggregate (multi-lane)
+        # interval to be computed later without re-running the benchmark, and
+        # without persisting 10,000 replicate values. Raw per-arm values are
+        # deliberately NOT carried: they are unnecessary for reproducing a
+        # ratio-based estimator. Note they WOULD be required for a future
+        # estimator using absolute differences or weighting, so this is
+        # sufficiency for the current estimator, not for all time
+        # (dev-gpt-agent, req_a667633429fa4c9e).
+        "pair_ratios": tuple(ratios),
     }
 
 
@@ -470,13 +505,269 @@ def _run_arm(
     )
 
 
+def run_server_arm_capture(
+    *, binary: Path, model: Path, extra_args: tuple[str, ...],
+    output: Path, pair: int, side: str, position: int,
+    env: dict[str, str], bench_configs: str, runner_root: Path,
+    required_metrics: tuple[str, ...], repetitions: int = 1,
+    shutdown_method: str = "http",
+    expected_execution: dict[str, Any] | None = None,
+    execution_evidence: str = "required",
+) -> dict[str, Any]:
+    """Capture one server-bench cell using the maintained process lifecycle.
+
+    This is measurement capture, NOT performance admission: source/binary
+    identity, activation and work-equivalence must be checked by the caller.
+    Full runner streams and teardown results survive failed cells too.
+    """
+    from dataclasses import asdict
+    from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
+    from bigcherry.tuning.server_runner import ServerRunner
+
+    if not required_metrics:
+        raise ValueError("server cells require explicit expected metrics")
+    if execution_evidence not in ("required", "observe"):
+        raise ValueError("execution_evidence must be required or observe")
+    if pair < 0 or position < 0 or not re.fullmatch(r"[A-Za-z0-9_-]+", side):
+        raise ValueError("invalid cell identity")
+    cell = output / f"pair-{pair + 1:03d}-{side}"
+    cell.mkdir(parents=True, exist_ok=False)
+    run: dict[str, Any] = {
+        "pair": pair + 1, "mode": side, "position": position,
+        "returncode": 1, "performance_admitted": False,
+        "server_log": str(cell / "server.log"),
+    }
+    # Supply a complete, caller-sanitized environment. Merely overlaying it
+    # would resurrect dispatch/tuning variables removed by the caller.
+    server = ServerRunner(
+        binary=binary, model=model, extra_args=extra_args,
+        env_overrides=env, env_unset=tuple(os.environ),
+        log_path=cell / "server.log", shutdown_method=shutdown_method,
+    )
+    started = time.monotonic()
+    try:
+        with server:
+            if expected_execution is not None:
+                from bigcherry.experiment.attestation import (
+                    ExecutionIdentity, parse_llama_server_attestation, require_execution_identity,
+                )
+                expected = ExecutionIdentity(
+                    backend=expected_execution["backend"],
+                    architectures=tuple(expected_execution["architectures"]),
+                    locators=tuple(expected_execution["locators"]),
+                )
+                observed = parse_llama_server_attestation(
+                    (cell / "server.log").read_text(encoding="utf-8", errors="replace"),
+                    architecture_by_locator=dict(zip(expected.locators, expected.architectures)),
+                )
+                run["execution_attestation"] = observed.document() if observed else None
+                if observed is None and execution_evidence == "observe":
+                    run["execution_evidence_status"] = "missing"
+                    run["admission_blockers"] = ["physical-device execution evidence missing"]
+                else:
+                    require_execution_identity(expected, observed, context=f"server cell {side}")
+                    run["execution_evidence_status"] = "verified"
+            run["metrics"] = run_bench_runner_server_bench(
+                server_url=f"http://{server.host}:{server.port}",
+                bench_configs=bench_configs, repetitions=repetitions,
+                runner_root=runner_root, model_label=model.stem,
+                evidence_dir=cell / "bench", required_metrics=required_metrics,
+            )
+        if server.last_shutdown is None or not server.last_shutdown.clean:
+            raise ValueError("server teardown was not clean; cell rejected")
+        run["returncode"] = 0
+    except Exception as exc:
+        run["metric_error"] = str(exc)
+        # A failed cell must not accidentally contribute partially captured
+        # throughput to callers that select rows by metric presence.
+        run.pop("metrics", None)
+    finally:
+        run["elapsed_s"] = time.monotonic() - started
+        run["shutdown"] = asdict(server.last_shutdown) if server.last_shutdown else None
+        (cell / "cell.json").write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+    return run
+
+
+def run_server_comparison_capture(
+    config_path: Path, output: Path, *, rounds: int, seed: int, settle_seconds: float,
+) -> int:
+    """Thin server lifecycle integration over the existing balanced A/B engine.
+
+    Captures are explicitly unadmitted: build configuration observations and
+    paired estimates do not establish execution, work equivalence or tuning
+    activation. Keep those missing gates visible rather than implying that a
+    successful subprocess constitutes a production performance result.
+    """
+    from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts
+    from bigcherry.campaign.bench_runner import _resolve_runner_root
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("schema_version") != 1:
+        raise ValueError("server capture configuration requires schema_version 1")
+    arms = config.get("arms", [])
+    if not isinstance(arms, list) or not 2 <= len(arms) <= 3:
+        raise ValueError("server comparisons require two or three arms; use separate balanced contrasts for larger matrices")
+    if rounds < 2 or rounds % math.factorial(len(arms)) or not math.isfinite(settle_seconds) or settle_seconds < 0:
+        raise ValueError("server captures require complete permutation blocks and nonnegative finite settling")
+    names = [arm["name"] for arm in arms]
+    if len(set(names)) != len(names) or any(not re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in names):
+        raise ValueError("arm names must be unique simple identifiers")
+    role = config.get("evidence_role")
+    if role not in ("production", "diagnostic"):
+        raise ValueError("explicit production or diagnostic evidence_role required")
+    model = Path(os.path.expandvars(config["model"])).expanduser().resolve()
+    extra_args = tuple(os.path.expandvars(value) for value in config["server_args"])
+    if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in extra_args):
+        raise ValueError("server_args cannot override the managed model or endpoint")
+    metrics = tuple(config["required_metrics"])
+    if not metrics or any(not re.fullmatch(r"\w+_tps", name) for name in metrics):
+        raise ValueError("explicit server-bench throughput metrics required")
+    repetitions = config.get("repetitions", 1)
+    if not isinstance(repetitions, int) or isinstance(repetitions, bool) or repetitions < 1:
+        raise ValueError("repetitions must be a positive integer")
+    supplied_env = {key: os.path.expandvars(value) for key, value in config["environment"].items()}
+    expected_execution = config.get("expected_execution")
+    execution_evidence = config.get("execution_evidence", "required")
+    if execution_evidence not in ("required", "observe"):
+        raise ValueError("execution_evidence must be required or observe")
+    if "execution_attestor" in config:
+        raise ValueError("optional execution_attestor integration is deferred under HI169")
+    if not isinstance(expected_execution, dict) or not expected_execution.get("locators"):
+        raise ValueError("server comparison requires expected_execution backend, architectures and physical device locators")
+    from bigcherry.experiment.attestation import ExecutionIdentity
+    ExecutionIdentity(expected_execution["backend"], tuple(expected_execution["architectures"]), tuple(expected_execution["locators"]))
+    if any(not supplied_env.get(key) for key in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")):
+        raise ValueError("both explicit device selectors are required")
+    runner_root = _resolve_runner_root(Path(os.path.expandvars(config["runner_root"])) if config.get("runner_root") else None)
+    prepared = {}
+    for arm in arms:
+        binary = Path(os.path.expandvars(arm["binary"])).expanduser().resolve()
+        mode = arm["mode"]
+        if mode not in ("stock", "native", "record", "tune", "replay"):
+            raise ValueError(f"unsupported dispatch mode: {mode}")
+        build_dir = binary.parent.parent
+        observation = inspect_dispatch_build(build_dir)
+        if observation["issues"] or bool(observation["instrumented"]) != (role == "diagnostic"):
+            raise ValueError(f"{arm['name']}: compiled instrumentation disagrees with evidence role")
+        metadata_path = build_dir / f"bigcherry-build-metadata-{binary.name}.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        # Every managed comparison must record its canonical source worktree;
+        # source identity is never optional for an admitted server arm.
+        source_root = None
+        for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("CMAKE_HOME_DIRECTORY:") and "=" in line:
+                source_root = Path(line.split("=", 1)[1].strip())
+                break
+        source_attestation = None
+        if source_root is None:
+            raise ValueError(f"{arm['name']}: CMAKE_HOME_DIRECTORY is required for source attestation")
+        from bigcherry.campaign.workers import _source_attestation, _source_metadata_path, _verify_source
+        metadata_sidecar = _source_metadata_path(source_root)
+        if not metadata_sidecar.is_file() or not metadata.get("source_slice_id"):
+            raise ValueError(f"{arm['name']}: source attestation metadata is incomplete")
+        source_attestation = _source_attestation(
+            source_root,
+            source_slice_id=str(metadata["source_slice_id"]),
+        )
+        if source_attestation is None:
+            raise ValueError(f"{arm['name']}: source attestation is unavailable")
+        _verify_source(source_root, source_attestation)
+        runtime = {path.name: binary_hash(path) for path in resolve_runtime_artifacts(binary)}
+        if metadata.get("binary_hash") != binary_hash(binary) or any(
+                metadata.get("runtime_artifacts", {}).get(name) != digest for name, digest in runtime.items()):
+            raise ValueError(f"{arm['name']}: runtime bytes disagree with campaign metadata")
+        env = sanitize_environment({**os.environ, **supplied_env}, "stock" if mode == "stock" else "native")
+        for key in tuple(env):
+            if key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_AUTOTUNE_", "GGML_HIP_TUNE_", "GGML_HIP_FORCE_")):
+                env.pop(key)
+        if mode != "stock":
+            env["GGML_HIP_DISPATCH_MODE"] = mode
+        # Only explicitly supplied arm controls survive ambient sanitization.
+        controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
+        if any(not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_")) for key in controls):
+            raise ValueError("arm-specific environment is limited to dispatch/tuning controls; topology belongs to the shared environment")
+        if "GGML_HIP_DISPATCH_MODE" in controls:
+            raise ValueError("arm environment cannot override the declared dispatch mode")
+        env.update(controls)
+        if mode == "replay" and not Path(env.get("GGML_HIP_DISPATCH_CACHE", "")).is_file():
+            raise ValueError("replay arm requires an existing explicit cache")
+        prepared[arm["name"]] = {
+            "binary": binary, "env": env, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "source_root": source_root, "source_attestation": source_attestation,
+            "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
+                           "compiler_observation": observation,
+                           "source_attestation": (
+                               {**dataclasses.asdict(source_attestation),
+                                "allowed_untracked": sorted(source_attestation.allowed_untracked)}
+                               if source_attestation is not None else None
+                           )},
+        }
+    if "stock" in names and "native" in names:
+        validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
+                              prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
+    output.mkdir(parents=True, exist_ok=False)
+    run_schedule = schedule_named_arms(rounds, names, seed)
+    summary = {
+        "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,
+        "performance_admitted": False, "admission_blockers": [
+            "full source provenance and work equivalence require verification",
+            "replay activation, if applicable, requires separate admission",
+        ],
+        "configuration": config, "model_sha256": binary_hash(model),
+        "arm_provenance": {name: value["provenance"] for name, value in prepared.items()},
+        "schedule": run_schedule, "schedule_seed": seed, "settle_seconds": settle_seconds,
+        "runs": [],
+    }
+    def persist():
+        (output / "run.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    persist()
+    for pair, order in enumerate(run_schedule):
+        for position, name in enumerate(order):
+            arm = prepared[name]
+            if arm["source_attestation"] is not None:
+                try:
+                    from bigcherry.campaign.workers import _verify_source
+                    _verify_source(arm["source_root"], arm["source_attestation"])
+                except Exception as exc:
+                    summary["runs"].append({"pair": pair + 1, "mode": name,
+                                            "position": position, "returncode": 1,
+                                            "source_attestation_error": str(exc)})
+                    persist()
+                    return 1
+            print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
+            result = run_server_arm_capture(
+                binary=arm["binary"], model=model, extra_args=extra_args, output=output,
+                pair=pair, side=name, position=position, env=arm["env"],
+                bench_configs=config["bench_configs"], runner_root=runner_root,
+                required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
+                expected_execution=expected_execution,
+                execution_evidence=execution_evidence,
+            )
+            summary["runs"].append(result)
+            persist()
+            if result["returncode"]:
+                return 1
+            if (pair, position) != (rounds - 1, len(order) - 1) and settle_seconds:
+                time.sleep(settle_seconds)
+    summary["exploratory_comparisons"] = {
+        f"{candidate}_vs_{names[0]}": {metric: block_bootstrap_effect(summary["runs"], candidate, names[0], metric)
+                                      for metric in metrics}
+        for candidate in names[1:]
+    }
+    persist()
+    print("Capture complete; performance admission remains false.", flush=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="bigcherry ab-benchmark",
         description="Run paired, interleaved native-versus-replay end-to-end benchmarks.",
     )
-    parser.add_argument("--cache", required=True, help="replay cache exported from this tune")
-    parser.add_argument("--output", required=True, help="new artifacts/tuning-runs/<run> directory")
+    parser.add_argument("--inspect-build", type=Path, help="read-only dispatch/diagnostic compiler inventory; no benchmark is launched")
+    parser.add_argument("--server-config", type=Path, help="capture balanced server-bench arms from a local JSON run configuration; not performance admission")
+    parser.add_argument("--cache", help="replay cache exported from this tune")
+    parser.add_argument("--output", help="new artifacts/tuning-runs/<run> directory")
     parser.add_argument("--pairs", type=int, default=3, help="interleaved rounds per arm (default: 3; use power for a decision-grade count)")
     parser.add_argument("--schedule-seed", type=int, default=0)
     parser.add_argument("--structured", action="store_true", help="require current benchmark_result JSONL and retain all repetitions")
@@ -497,6 +788,33 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--patched-cmake-cache", default=None, help="patched build's CMakeCache.txt; required with --stock-binary")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="benchmark command, after --")
     args = parser.parse_args(argv)
+
+    if args.server_config is not None:
+        if (not args.output or args.command or args.cache or args.stock_binary
+                or args.inspect_build or args.decision_grade or args.structured or args.metric):
+            parser.error("--server-config requires --output and cannot use command-mode arms or decision-grade admission")
+        try:
+            return run_server_comparison_capture(
+                args.server_config, Path(args.output), rounds=args.pairs,
+                seed=args.schedule_seed, settle_seconds=args.settle_seconds,
+            )
+        except (ValueError, OSError, KeyError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+    if args.inspect_build is not None:
+        if args.command or args.cache or args.output or args.stock_binary:
+            parser.error("--inspect-build cannot be combined with a benchmark command or arms")
+        from bigcherry.build.builds import BuildIdentityError, inspect_dispatch_build
+        try:
+            observation = inspect_dispatch_build(args.inspect_build)
+        except (BuildIdentityError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(observation, indent=2))
+        return 1 if observation["issues"] else 0
+    if not args.cache or not args.output:
+        parser.error("benchmark execution requires --cache and --output")
 
     if args.pairs < 1 or args.settle_seconds < 0:
         print("error: --pairs must be >= 1 and --settle-seconds must be >= 0", file=sys.stderr)

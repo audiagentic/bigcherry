@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from bigcherry.profiling import rccl_qualify as rq
+from bigcherry.profiling import rccl_schema as rs
 
 
 XTX_XTX = rq.RcclTopology(topology_id="xtx_xtx", device_arches=("gfx1100", "gfx1100"))
@@ -22,6 +23,14 @@ XTX_6900XT = rq.RcclTopology(topology_id="xtx_6900xt", device_arches=("gfx1100",
 XTX_R9700 = rq.RcclTopology(topology_id="xtx_r9700", device_arches=("gfx1100", "gfx1201"))
 XTX_XTX_6900XT = rq.RcclTopology(
     topology_id="xtx_xtx_6900xt", device_arches=("gfx1100", "gfx1100", "gfx1030")
+)
+
+# run_case() requires a real compatibility+attempt on every call (GP07: no
+# default-preserving optional params -- CLAUDE.md's "always migrate up").
+# This is a fixed TEST fixture used where the exact revision doesn't matter
+# to the assertion, not a library-level default.
+_TEST_REVISION = rs.RcclCompatibilityRevision(
+    rccl_version="2.28.3", rccl_source_revision="57e58688f44c77076ad536ef1f6b68741fc6e694",
 )
 
 
@@ -117,7 +126,10 @@ def test_visible_devices_set_from_diagnostic_binding_only():
 # ---------------------------------------------------------------------------
 
 
-def _run_fake(tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, name: str = "fake"):
+def _run_fake(
+    tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, name: str = "fake",
+    attempt: int = 1, compatibility: rs.RcclCompatibilityRevision = _TEST_REVISION,
+):
     """Write `script` as a standalone python file and run it through
     rccl_qualify.run_case via a thin wrapper (run_case takes a single
     executable path, not "python script.py"), simulating one case's
@@ -139,6 +151,7 @@ def _run_fake(tmp_path: Path, script: str, *, case=None, outer_timeout=10.0, nam
     return rq.run_case(
         used_case, binary=binary, visible_devices=(0, 1),
         output_dir=tmp_path / "out", outer_timeout=outer_timeout,
+        attempt=attempt, compatibility=compatibility,
     )
 
 
@@ -241,26 +254,30 @@ def test_unsupported_text_classified_unsupported(tmp_path: Path):
     assert result.classification == rq.UNSUPPORTED
 
 
-def test_benign_symmetric_memory_line_alone_not_unsupported(tmp_path: Path):
-    # Real hardware evidence (2026-09-02, xtx_xtx homogeneous control, RCCL
-    # 2.30.4): this exact line is a routine capability-negotiation trace
-    # printed on every run, successful or not -- must not misclassify a
-    # clean run as UNSUPPORTED.
+def test_symmetric_memory_benign_line_does_not_classify_unsupported(tmp_path: Path):
+    # Real hardware regression (2026-09-02): "Symmetric memory is not
+    # supported. cuMemEnable 0, ..." is a routine NCCL_DEBUG=INFO
+    # capability-negotiation trace line printed on every run on this
+    # hardware, successful or not -- it previously misclassified a clean
+    # PASS as UNSUPPORTED via the bare "not supported" substring marker.
     result = _run_fake(tmp_path, """
         import sys
-        print("Symmetric memory is not supported. cuMemEnable 0, ...")
+        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+              "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
+        print('    RING    SIMPLE           2')
         sys.exit(0)
     """)
     assert result.classification != rq.UNSUPPORTED
 
 
-def test_benign_symmetric_memory_line_does_not_mask_real_unsupported(tmp_path: Path):
-    # The benign substring must be neutralized on its own line only --
-    # a genuine unsupported marker on the SAME line must still classify
-    # as UNSUPPORTED (guards against over-broad whole-line suppression).
+def test_real_unsupported_line_alongside_benign_line_still_classified_unsupported(tmp_path: Path):
+    # The benign-line exclusion must not swallow a genuine decline that
+    # happens to share a process with the routine trace line.
     result = _run_fake(tmp_path, """
         import sys
-        print("Symmetric memory is not supported. RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
+        print("brutus:1:1 [0] NCCL INFO Symmetric memory is not supported. "
+              "cuMemEnable 0, globalGinSupport 0, globalNicFused 0 cuMemGdrSupport 1")
+        print("RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
         sys.exit(1)
     """)
     assert result.classification == rq.UNSUPPORTED
@@ -271,6 +288,7 @@ def test_missing_binary_classified_harness_failure(tmp_path: Path):
     result = rq.run_case(
         case, binary=str(tmp_path / "does_not_exist_binary"),
         visible_devices=(0, 1), output_dir=tmp_path / "out", outer_timeout=5.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     assert result.classification == rq.HARNESS_FAILURE
 
@@ -328,10 +346,12 @@ def test_topology_identity_unaffected_by_diagnostic_visible_devices(tmp_path: Pa
     result_a = rq.run_case(
         _fake_case(), binary=str(wrapper), visible_devices=(0, 1),
         output_dir=tmp_path / "out_a", outer_timeout=10.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     result_b = rq.run_case(
         _fake_case(), binary=str(wrapper), visible_devices=(5, 9),
         output_dir=tmp_path / "out_b", outer_timeout=10.0,
+        attempt=1, compatibility=_TEST_REVISION,
     )
     assert result_a.topology_id == result_b.topology_id
     assert result_a.case_id == result_b.case_id
@@ -355,6 +375,9 @@ def test_rccl_case_result_rejects_unknown_classification(tmp_path: Path):
             returncode=0, terminating_signal=None, elapsed_seconds=0.1,
             classification="not_a_real_state", correct=True, detail="",
             rccl_output_path="", stdout_path="", stderr_path="",
+            compatibility_revision_id=_TEST_REVISION.revision_id, attempt=1,
+            plan_verification=None,
+            qualification_key=rs.qualification_key(_TEST_REVISION, "x"),
         )
 
 
@@ -373,6 +396,9 @@ def test_results_jsonl_append_only(tmp_path: Path):
         returncode=0, terminating_signal=None, elapsed_seconds=0.1,
         classification=rq.PASS, correct=True, detail="", rccl_output_path="",
         stdout_path="", stderr_path="",
+        compatibility_revision_id=_TEST_REVISION.revision_id, attempt=1,
+        plan_verification=rq.PLAN_VERIFIED,
+        qualification_key=rs.qualification_key(_TEST_REVISION, "a"),
     )
     r2 = r1
     rq.append_result(r1, path)
@@ -391,8 +417,14 @@ def test_output_files_are_unique_per_case(tmp_path: Path):
         case_a, binary="x", visible_devices=(0, 1), rccl_output_path="/tmp/a.json",
     )
     out_dir = tmp_path / "out"
-    result_a = rq.run_case(case_a, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir)
-    result_b = rq.run_case(case_b, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir)
+    result_a = rq.run_case(
+        case_a, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
+    )
+    result_b = rq.run_case(
+        case_b, binary=str(tmp_path / "missing"), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
+    )
     assert result_a.stdout_path != result_b.stdout_path
     assert result_a.rccl_output_path != result_b.rccl_output_path
 
@@ -419,3 +451,175 @@ def test_byte_count_rejects_unknown_dtype():
     case = _fake_case(dtype="not_a_real_dtype")
     with pytest.raises(ValueError):
         _ = case.byte_count
+
+
+# ---------------------------------------------------------------------------
+# GP07: plan-verification fail-closed behaviour, compatibility identity,
+# attempt artifact isolation (gpt-dev-agent review, req_acf7c8da985f4f17)
+# ---------------------------------------------------------------------------
+
+
+def test_plan_substitution_downgrades_pass_to_unsupported(tmp_path: Path):
+    # Requested Ring/Simple, RCCL actually reports Tree/LL128 -- must not
+    # be a silent PASS.
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    TREE    LL128           4")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.UNSUPPORTED
+    assert result.plan_verification == rq.PLAN_SUBSTITUTED
+
+
+def test_missing_plan_observation_fails_closed_not_pass(tmp_path: Path):
+    # Clean/correct exit but no -M 1 table line at all -- the requested
+    # plan was never actually confirmed, so this must NOT default to PASS.
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_UNVERIFIED
+
+
+def test_matched_plan_classified_pass_with_verified_marker(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.PASS
+    assert result.plan_verification == rq.PLAN_VERIFIED
+
+
+def test_explicit_decline_marked_explicit_declined(tmp_path: Path):
+    result = _run_fake(tmp_path, """
+        import sys
+        print("RCCL_OVERRIDE_PROTO=LL128 not supported on this topology")
+        sys.exit(1)
+    """)
+    assert result.classification == rq.UNSUPPORTED
+    assert result.plan_verification == rq.PLAN_EXPLICIT_DECLINE
+
+
+def test_revision_id_requires_durable_identity():
+    bare_version_only = rs.RcclCompatibilityRevision(rccl_version="2.30.4")
+    with pytest.raises(rs.InsufficientCompatibilityIdentity):
+        _ = bare_version_only.revision_id
+
+
+def test_revision_id_prefers_library_build_id_over_source_revision():
+    rev = rs.RcclCompatibilityRevision(
+        rccl_version="2.30.4", rccl_source_revision="abc123",
+        library_build_id="sha256:deadbeef",
+    )
+    assert rev.revision_id == "sha256:deadbeef"
+
+
+def test_run_case_with_durable_compatibility_records_revision_and_key(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    fake = tmp_path / "fake.py"
+    fake.write_text(_py("""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """))
+    if sys.platform.startswith("win"):
+        wrapper = tmp_path / "fake_all_reduce_perf.bat"
+        wrapper.write_text(f'@"{sys.executable}" "{fake}" %*\r\n')
+    else:
+        wrapper = tmp_path / "fake_all_reduce_perf.sh"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
+        wrapper.chmod(0o755)
+
+    result = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1),
+        output_dir=tmp_path / "out", attempt=1, compatibility=_TEST_REVISION,
+    )
+    assert result.compatibility_revision_id == _TEST_REVISION.revision_id
+    assert result.qualification_key == rs.qualification_key(_TEST_REVISION, case.case_id)
+    # Enforced namespacing: artifacts land under output_dir/<revision_id>/.
+    assert _TEST_REVISION.revision_id in result.stdout_path
+
+
+def test_run_case_rejects_insufficient_compatibility_identity(tmp_path: Path):
+    case = _fake_case()
+    bare_version_only = rs.RcclCompatibilityRevision(rccl_version="2.30.4")
+    with pytest.raises(rs.InsufficientCompatibilityIdentity):
+        rq.run_case(
+            case, binary=str(tmp_path / "does_not_exist"), visible_devices=(0, 1),
+            output_dir=tmp_path / "out", attempt=1, compatibility=bare_version_only,
+        )
+
+
+def test_compatibility_manifest_mismatch_rejected(tmp_path: Path):
+    # Same revision_id, different recorded fields -- must not silently
+    # share a namespaced directory.
+    rev_a = rs.RcclCompatibilityRevision(
+        rccl_version="2.28.3", rccl_source_revision="samecommit",
+        build_config="Release",
+    )
+    rev_b = rs.RcclCompatibilityRevision(
+        rccl_version="2.28.3", rccl_source_revision="samecommit",
+        build_config="Debug",
+    )
+    case = _fake_case()
+    out_dir = tmp_path / "out"
+    rq.run_case(
+        case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
+        output_dir=out_dir, attempt=1, compatibility=rev_a,
+    )
+    with pytest.raises(rq.CompatibilityManifestMismatch):
+        rq.run_case(
+            case, binary=str(tmp_path / "missing"), visible_devices=(0, 1),
+            output_dir=out_dir, attempt=1, compatibility=rev_b,
+        )
+
+
+def test_attempt_suffix_isolates_repeated_case_artifacts(tmp_path: Path):
+    case = _fake_case()
+    fake = tmp_path / "fake.py"
+    fake.write_text(_py("""
+        import sys, json, random
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """))
+    if sys.platform.startswith("win"):
+        wrapper = tmp_path / "fake_all_reduce_perf.bat"
+        wrapper.write_text(f'@"{sys.executable}" "{fake}" %*\r\n')
+    else:
+        wrapper = tmp_path / "fake_all_reduce_perf.sh"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n')
+        wrapper.chmod(0o755)
+
+    out_dir = tmp_path / "out"
+    result_1 = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=1, compatibility=_TEST_REVISION,
+    )
+    result_2 = rq.run_case(
+        case, binary=str(wrapper), visible_devices=(0, 1), output_dir=out_dir,
+        attempt=2, compatibility=_TEST_REVISION,
+    )
+    assert result_1.stdout_path != result_2.stdout_path
+    assert result_1.rccl_output_path != result_2.rccl_output_path
+    assert Path(result_1.stdout_path).exists()
+    assert Path(result_2.stdout_path).exists()

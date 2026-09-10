@@ -36,7 +36,7 @@ workloads = ["decode"]
 
 [contract.SMOKE-TEST-001.controls]
 models = ["m"]
-workloads = ["decode"]
+workloads = ["prefill"]
 
 [contract.SMOKE-TEST-001.acceptance]
 max_control_regression_pct = 1

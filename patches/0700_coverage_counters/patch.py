@@ -22,6 +22,8 @@ coverage looks like 100%. It needs a real model.
 GROUP = "core"
 STATE = "validated"
 
+import re
+
 from bigcherry.patcher import Edit, FilePatch
 
 # Both headers, because the family entries need the coverage counters (this
@@ -72,6 +74,24 @@ def _count(family: str, fusion: str | None = None) -> str:
     return block + "#endif\n"
 
 
+def _diagnostics_only_count(family: str) -> Edit:
+    # Apply after the original insertion so existing materializations upgrade
+    # too: the old insertion guard still recognizes its historical output.
+    count = ("    if (!ggml_hip_dispatch_is_reentrant()) {\n"
+             f"        ggml_hip_coverage_count_executed({family});\n"
+             "    }")
+    guarded = "#ifdef GGML_HIP_DISPATCH_DIAGNOSTICS\n" + count + "\n#endif"
+    return Edit(
+        id=f"{family.lower()}-diagnostics-only-count",
+        anchor=re.escape(count),
+        text=guarded,
+        mode="replace",
+        guard=re.escape(guarded),
+        expect_matches=1,
+        rationale="HI168: exclude the family counter and its TLS probe in production",
+    )
+
+
 MMQ_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmq.cu",
     description="count MMQ launches at the family entry point",
@@ -90,6 +110,7 @@ MMQ_PATCH = FilePatch(
             text=_count("GGML_HIP_FAMILY_MMQ", "/*fusion =*/ nullptr"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_MMQ\)",
         ),
+        _diagnostics_only_count("GGML_HIP_FAMILY_MMQ"),
     ),
 )
 
@@ -121,6 +142,7 @@ MMVQ_PATCH = FilePatch(
             text=_count("GGML_HIP_FAMILY_MMVQ", "fusion"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_MMVQ\)",
         ),
+        _diagnostics_only_count("GGML_HIP_FAMILY_MMVQ"),
     ),
 )
 
@@ -142,6 +164,7 @@ MMVF_PATCH = FilePatch(
             text=_count("GGML_HIP_FAMILY_MMVF", "fusion"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_MMVF\)",
         ),
+        _diagnostics_only_count("GGML_HIP_FAMILY_MMVF"),
     ),
 )
 
@@ -163,6 +186,7 @@ MMF_PATCH = FilePatch(
             text=_count("GGML_HIP_FAMILY_MMF", "/*fusion =*/ nullptr"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_MMF\)",
         ),
+        _diagnostics_only_count("GGML_HIP_FAMILY_MMF"),
     ),
 )
 
@@ -198,6 +222,7 @@ BLAS_PATCH = FilePatch(
             text=_count("GGML_HIP_FAMILY_BLAS"),
             guard=r"ggml_hip_coverage_count_executed\(GGML_HIP_FAMILY_BLAS\)",
         ),
+        _diagnostics_only_count("GGML_HIP_FAMILY_BLAS"),
     ),
 )
 

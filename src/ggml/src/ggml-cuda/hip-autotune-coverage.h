@@ -18,9 +18,9 @@
 // The difference is exactly what is escaping through uncovered collection
 // points (standards 9.1 lists five; HI04 covers two).
 //
-// Cost is one relaxed atomic increment per launch, on a path that is about to
-// do a matrix multiply. It stays compiled in because a coverage number nobody
-// can produce on demand is a coverage number nobody checks.
+// Diagnostic builds pay one relaxed atomic increment per counted launch.
+// Production call sites exclude both counting and its reentrancy probe with
+// GGML_HIP_DISPATCH_DIAGNOSTICS; setting a report path cannot enable them.
 
 #pragma once
 
@@ -37,5 +37,19 @@ void ggml_hip_coverage_count_dispatched(ggml_hip_kernel_family family);
 // Write the coverage report. Called from ggml_hip_autotune_flush; writes to
 // GGML_HIP_DISPATCH_COVERAGE if set, otherwise logs a summary.
 void ggml_hip_coverage_report();
+
+// Defined in hip-autotune-dispatch.cu. Appends the hot-path counters to the
+// coverage JSON as a "dispatch" object, or writes nothing when they are
+// disabled.
+//
+// This exists because the log channel is unusable under llama-server: it
+// installs a log callback that swallows the library's GGML_LOG_INFO lines
+// entirely, so the counter report, the native-force report and the startup
+// replay cache-load line NEVER reach stdout or stderr. Runs that looked
+// completely silent -- and were read as "the dispatch layer never ran" --
+// were in fact working the whole time. The JSON file is the only channel
+// that survives, so anything needed to interpret a benchmark has to go here
+// rather than into a log line.
+void ggml_hip_dispatch_counters_write_json(void * out_file);
 
 #endif // GGML_USE_HIP && GGML_HIP_DISPATCH

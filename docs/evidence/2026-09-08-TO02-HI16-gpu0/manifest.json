@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "non-patch-hardware-verification",
+  "plan_item_ids": ["TO02", "HI16"],
+  "observed_at_utc": "2026-09-08",
+  "host": {"role": "build-server", "hostname": "brutus", "gpu": "GPU0 RX 7900 XTX", "arch": "gfx1100"},
+  "source_revision": "52ab88bebc74e800645f0694327f3a8bf4965195",
+  "command": "PYTHONPATH=tools ROCR_VISIBLE_DEVICES=0 HIP_VISIBLE_DEVICES=0 GGML_HIP_TUNE_DOUBLE_NATIVE=1 HIP_LAUNCH_BLOCKING=1 python3 -m bigcherry.hi16_forced_native_parity --binary <test-backend-ops> --screen-samples 3 --final-samples 15 --case <four-family cases> --case 'type_a=q4_0,type_b=f32,m=16,n=1,k=256'",
+  "result": "PASS",
+  "limitations": ["Forced-native parity only; replay fallback and performance are out of scope."],
+  "payloads": ["hi16-main.log", "hi16-mmvq.log", "binary.sha256"]
+}

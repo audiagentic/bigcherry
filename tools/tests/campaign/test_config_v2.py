@@ -20,6 +20,23 @@ def _write(text: str) -> Path:
 
 
 class ConfigV2Tests(unittest.TestCase):
+    def test_e2e_matrix_separates_production_native_from_instrumented_control(self):
+        loaded = config.load(paths.RECIPES)
+        native = loaded.builds["native"]
+        self.assertEqual(dict(native.options)["GGML_HIP_AUTOTUNE"], "OFF")
+        self.assertEqual(dict(native.options)["GGML_HIP_DISPATCH_DIAGNOSTICS"], "OFF")
+        self.assertEqual(dict(native.options)["GGML_HIP_DISPATCH_REPLAY"], "ON")
+        self.assertEqual(native.variant_set, "inventory")
+        self.assertFalse(native.needs)
+        self.assertEqual(dict(loaded.builds["control"].options)["GGML_HIP_AUTOTUNE"], "ON")
+        diagnostic = dict(loaded.builds["replay-diagnostic"].options)
+        self.assertEqual(diagnostic["GGML_HIP_DISPATCH_DIAGNOSTICS"], "ON")
+        self.assertEqual(diagnostic["GGML_HIP_REPLAY_DIAGNOSTICS"], "ON")
+        lanes = loaded.campaigns["e2e-build-matrix"].lanes
+        self.assertEqual({lane.build for lane in lanes},
+                         {"stock", "native", "control", "record", "tune", "replay", "replay-diagnostic"})
+        self.assertTrue(all(lane.binary == "bin/llama-server" for lane in lanes))
+
     def test_v1_is_rejected_instead_of_silently_reinterpreted(self):
         path = _write('pinned = "b10362"\n')
         with self.assertRaisesRegex(config.ConfigError, "version = 2"):

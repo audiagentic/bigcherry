@@ -64,7 +64,7 @@ class SchemaV3RecordTests(unittest.TestCase):
             gpu_architectures="gfx1100", activation_evidence=activation_evidence,
             activation_disposition="activation-verified", correctness=correctness,
             campaign_identity_digest=_HEX64, build_identities=self._campaign_builds(),
-            campaign_workdir=self.workdir, **kwargs,
+            campaign_workdir=self.workdir, lane_effects=(), **kwargs,
         )
 
     def test_missing_validation_build_identities_argument_is_required(self):
@@ -84,7 +84,7 @@ class SchemaV3RecordTests(unittest.TestCase):
                 activation_disposition="activation-verified",
                 correctness={"schema_version": 1, "disposition": "passed", "mechanism": "m", "detail": "d"},
                 campaign_identity_digest=_HEX64, build_identities=self._campaign_builds(),
-                campaign_workdir=self.workdir,
+                campaign_workdir=self.workdir, lane_effects=(),
             )
 
     def test_supplying_validation_builds_produces_v3_with_both_domains(self):
@@ -115,7 +115,7 @@ class SchemaV3RecordTests(unittest.TestCase):
                 correctness={"schema_version": 1, "disposition": "passed", "mechanism": "m", "detail": "d"},
                 campaign_identity_digest=_HEX64, build_identities=campaign,
                 validation_build_identities=self._validation_builds(),
-                campaign_workdir=self.workdir,
+                campaign_workdir=self.workdir, lane_effects=(),
             )
 
     def test_missing_control_subject_role_rejected(self):
@@ -138,7 +138,7 @@ class SchemaV3RecordTests(unittest.TestCase):
                 correctness={"schema_version": 1, "disposition": "passed", "mechanism": "m", "detail": "d"},
                 campaign_identity_digest=_HEX64, build_identities=bad_campaign,
                 validation_build_identities=self._validation_builds(),
-                campaign_workdir=self.workdir,
+                campaign_workdir=self.workdir, lane_effects=(),
             )
         bad_validation = self._validation_builds()
         bad_validation["subject"] = {"effective_build_id": "only-one-field"}
@@ -224,7 +224,7 @@ class WriteRecordSchemaUpgradeTests(unittest.TestCase):
             campaign_identity_digest=_HEX64,
             build_identities={"tune": _build_identity("t"), "replay": _build_identity("r"), "stock": _build_identity("s")},
             validation_build_identities={"control": _build_identity("c"), "subject": _build_identity("j")},
-            campaign_workdir=self.workdir,
+            campaign_workdir=self.workdir, lane_effects=(),
         )
         pve.write_record(new_record, root=self.root)
 

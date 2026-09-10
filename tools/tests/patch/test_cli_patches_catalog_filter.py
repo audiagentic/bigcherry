@@ -13,6 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry import __main__ as cli  # noqa: E402
+from bigcherry.patch import catalog as patch_catalog  # noqa: E402
+from bigcherry.patch import patchset  # noqa: E402
 
 
 def _run(argv: list[str]) -> tuple[int, str, str]:
@@ -24,12 +26,23 @@ def _run(argv: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
+def _real_catalog_total() -> int:
+    """The real, current patch count -- read fresh at test time rather than
+    hardcoded, so this test does not silently drift every time a patch is
+    added to or removed from the real catalog (CO01 closure audit,
+    2026-09-08: three assertions here hardcoded a stale total and failed on
+    every unrelated catalog growth, independent of whatever change was
+    actually under test)."""
+    return len(patchset.catalog())
+
+
 class PatchesCatalogFilterTests(unittest.TestCase):
     def test_no_filter_shows_every_patch_unchanged(self):
         code, out, _ = _run(["patches"])
         self.assertEqual(code, 0)
         self.assertNotIn("catalog:", out)
-        self.assertIn("53 of 53 shown selected", out)
+        total = _real_catalog_total()
+        self.assertIn(f"{total} of {total} shown selected", out)
 
     def test_kind_framework_shows_only_framework_patches(self):
         code, out, _ = _run(
@@ -43,7 +56,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         self.assertIn("catalog:   kind=framework backend=any origin=any", out)
         self.assertIn("0100_cmake_options", out)
         self.assertNotIn("1200_rd19_single_gpu_meta_bypass", out)
-        self.assertIn("(53 total in catalog)", out)
+        self.assertIn(f"({_real_catalog_total()} total in catalog)", out)
 
     def test_backend_vulkan_currently_matches_nothing(self):
         # Real state of the catalog today: zero Vulkan patches exist (RE30
@@ -70,7 +83,18 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
-        self.assertIn("53 of 53 shown selected (53 total in catalog)", out)
+        # cli/patch.py's own --backend filter is an EXACT match
+        # (entry.backend != args.backend), not patch_catalog.
+        # patches_for_backend()'s "hip or agnostic" semantics -- the two
+        # disagree today (a real, separate inconsistency worth its own
+        # look, out of scope here). This test verifies the CLI's actual
+        # behavior, so it must count entries the same way the CLI does.
+        snapshot = patch_catalog.build_snapshot()
+        hip_matching = sum(
+            1 for entry in snapshot.metadata.values() if entry.backend == "hip")
+        total = _real_catalog_total()
+        self.assertIn(
+            f"{hip_matching} of {hip_matching} shown selected ({total} total in catalog)", out)
 
     def test_origin_external_fork_matches_only_rdna_boost_patches(self):
         code, out, _ = _run(

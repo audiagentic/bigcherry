@@ -1,0 +1,87 @@
+# Host environment: every machine-specific fact in one place.
+#
+# WHY THIS EXISTS. The reference docs carried 83 occurrences of a hostname,
+# 64 of a share path, 39 of a home directory and 15 hardcoded IP addresses
+# across 40 files. That makes the documentation describe ONE person's machine
+# rather than the procedure, and it means moving to a second build host is a
+# 40-file edit rather than a config change.
+#
+# Docs should name a ROLE ("the build server") and resolve the specifics from
+# here. A reader on a different box changes this file and nothing else.
+#
+# This is deliberately NOT config/recipes.toml's [[trees]]. Those model repo
+# CHECKOUTS -- name, path, required, role, expected tooling revision -- and
+# say nothing about the host itself: no address, no model root, no toolchain,
+# no device inventory. The two are orthogonal: one host can carry several
+# trees, and a tree's path is meaningless without the host it lives on.
+schema_version = 1
+
+# The role docs should refer to. There is one today; naming it by role rather
+# than by hostname is the whole point, so a second one can be added without
+# touching prose.
+default-host = "build-server"
+
+[host.build-server]
+description = """
+Multi-GPU AMD build and campaign host. Owns every real GPU measurement in
+this project: builds, tune campaigns, profiling and end-to-end benchmarks.
+"""
+# `hostname` is the ssh alias and the name to prefer in prose and commands.
+# `address` exists so a reader can fix their own ssh config; commands should
+# use the alias, never the literal address.
+hostname = "brutus"
+address = "10.10.100.10"
+
+# Filesystem layout.
+home = "/home/audumla"
+# The live git checkout. A REAL local clone -- git operations over the SMB
+# share below were too slow and unreliable, so builds come from here.
+repo = "/home/audumla/bigcherry"
+# Content-addressed build/campaign cache. Identity-bound: never run a manual
+# cmake build inside it, and never hand-edit a generated input there.
+cache-root = "/home/audumla/.cache/bigcherry"
+# File transfer only -- never git, never a build target.
+share = "/mnt/vault/development/llmhosts"
+model-root = "/mnt/vault/llm-models"
+# The documented server-bench harness. Not llama-bench: it cannot observe MTP
+# speculative decode at all.
+bench-harness = "/mnt/vault/development/llmhosts/llamacpp/bench"
+
+# Toolchain. `rocm-shim` is a symlink tree that exposes bin/clang and
+# bin/clang++, which /opt/rocm does not (it ships amdclang/amdclang++ and
+# hides real clang under llvm/bin). Campaigns build compiler paths as
+# <hip-path>/bin/clang, so they need the shim rather than /opt/rocm.
+rocm = "/opt/rocm"
+rocm-shim = "/home/audumla/rocm-shim"
+
+# Ports. 8080 belongs to the production inference service; a benchmark that
+# binds it takes production down, and a tuner that assumes it will fail to
+# start. Anything ad-hoc should take a free port instead.
+production-port = 8080
+bench-port = 18400
+
+# Device inventory. Index is the HIP/ROCR visible-devices ordinal, which is
+# what --devices and *_VISIBLE_DEVICES take.
+[[host.build-server.devices]]
+index = 0
+arch = "gfx1100"
+model = "RX 7900 XTX"
+vram-mib = 24560
+
+[[host.build-server.devices]]
+index = 1
+arch = "gfx1100"
+model = "RX 7900 XTX"
+vram-mib = 24560
+
+[[host.build-server.devices]]
+index = 2
+arch = "gfx1201"
+model = "AI PRO R9700"
+vram-mib = 32624
+
+[[host.build-server.devices]]
+index = 3
+arch = "gfx1030"
+model = "RX 6900 XT"
+vram-mib = 16368

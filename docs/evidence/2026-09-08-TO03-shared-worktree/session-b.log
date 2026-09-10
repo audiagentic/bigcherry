@@ -1,0 +1,6 @@
+SHELL_B_START
+?? tools/tests/.to03-probe-a
+28f5f9854a2916f98e8504cbb290dd66f52b6752afeb264f15583a728a1edbee  /tmp/to03-20260908T115756Z/tools/tests/.to03-probe-a
+tools/tests/.to03-probe-b
+tools/tests/.to03-probe-b
+SHELL_B_PASS

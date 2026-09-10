@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from typing import Any, cast
 
 from bigcherry import __main__ as cli
@@ -55,6 +56,26 @@ class CliSurfaceTests(unittest.TestCase):
             "inventory",
         }
         self.assertTrue(expected <= set(self.commands))
+
+    def test_reference_workflow_commands_are_registered(self) -> None:
+        expected = {
+            "tune-campaign",
+            "profile-campaign",
+            "experiment-contract",
+            "doctor",
+            "check",
+        }
+        self.assertTrue(expected <= set(self.commands))
+
+        repo_root = Path(__file__).resolve().parents[3]
+        tooling_docs = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (repo_root / "docs" / "reference" / "tooling").glob("*.md")
+        )
+        for command in expected:
+            self.assertIn(f"bigcherry {command}", tooling_docs)
+        self.assertIn("bigcherry impact", tooling_docs)
+        self.assertIn("bigcherry kernel-fraction", tooling_docs)
 
     def test_repin_contract(self) -> None:
         args = self.parser.parse_args(["repin", "--ref", "b2"])

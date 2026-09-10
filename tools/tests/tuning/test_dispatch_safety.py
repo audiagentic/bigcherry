@@ -845,7 +845,7 @@ class TestHi31DispatchTransformIntegration(unittest.TestCase):
     def test_blacklist_safety_net_uses_transform_aware_revalidation(self):
         dispatch = DISPATCH.read_text(encoding="utf-8")
         net_start = dispatch.index("// A stored winner that cannot run on this hardware")
-        net_end = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", net_start)
+        net_end = dispatch.index("l2_insert_locked(runtime_fp, hw, sig, binding);", net_start)
         net = dispatch[net_start:net_end]
         self.assertIn("if (binding.transform != nullptr) {", net)
         self.assertIn(
@@ -1050,7 +1050,7 @@ class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
         decl = dispatch.index("bool process_binding_cacheable = true;")
         tune_start = dispatch.index("if (mode == GGML_HIP_DISPATCH_MODE_TUNE) {", decl)
         emplace_guard = dispatch.index("if (process_binding_cacheable) {", tune_start)
-        emplace_call = dispatch.index("g_bindings.emplace(dispatch_digest, binding);", emplace_guard)
+        emplace_call = dispatch.index("l2_insert_locked(runtime_fp, hw, sig, binding);", emplace_guard)
         self.assertLess(decl, tune_start)
         self.assertLess(tune_start, emplace_guard)
         self.assertLess(emplace_guard, emplace_call)
@@ -1077,7 +1077,7 @@ class TestHi64CrossDevicePoisonLeak(unittest.TestCase):
         # narrower gate (thread_binding_cacheable) for a different case --
         # see test_capture_skip_also_clears_thread_binding_cacheable.
         dispatch = DISPATCH.read_text(encoding="utf-8")
-        insert_call = dispatch.index("g_thread_bindings.insert(ctx.device, sig, binding);")
+        insert_call = dispatch.index("g_thread_bindings.insert(ctx.device, sig, binding, runtime_fp);")
         guard_start = dispatch.rindex("if (", 0, insert_call)
         guard_line = dispatch[guard_start:insert_call]
         self.assertIn("mode != GGML_HIP_DISPATCH_MODE_RECORD", guard_line)

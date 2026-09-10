@@ -38,6 +38,7 @@ from bigcherry.core.pipeline import ArtifactRef  # noqa: E402
 from bigcherry.campaign.smoke import RuntimeSmokeSpec  # noqa: E402
 from bigcherry.campaign import workers as campaign_workers  # noqa: E402
 from bigcherry.campaign.build import CampaignBuildError  # noqa: E402
+from bigcherry.campaign import build as campaign_build  # noqa: E402
 from bigcherry.build.builds import BuildPlan, build_directory  # noqa: E402
 from bigcherry.source.identity import (  # noqa: E402
     SourceAttestation,
@@ -420,6 +421,59 @@ class ExecuteCampaignLaneTests(unittest.TestCase):
                     allow_dirty_bigcherry=True,
                 )
             self.assertEqual(captured["backend"], "vulkan")
+
+    def test_architecture_override_reaches_build_plan_and_cmake(self):
+        # --arch is narrower than the platform's declared target matrix.  The
+        # execution seam must carry that selection into both BuildPlan and the
+        # actual configure argv, while planner validation still owns the
+        # broad platform target set.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            upstream, revision = _init_upstream(root)
+            harness = _Harness(root, upstream, revision)
+            harness.cfg = replace(
+                harness.cfg,
+                platforms={
+                    "linux-multi": replace(
+                        harness.cfg.platforms["linux-multi"],
+                        targets=("gfx1100", "gfx1201", "gfx1030"),
+                    )
+                },
+            )
+            _, fake_build, fake_smoke = harness.fake_workers()
+            captured: dict[str, object] = {}
+
+            def capturing_build_worker(**kwargs):
+                captured.update({"plan": kwargs["build_plan"], "platform": kwargs["platform"], "build": kwargs["build"]})
+                return fake_build(**kwargs)
+
+            with (
+                patch(
+                    "bigcherry.campaign.lane.campaign_workers.make_generate_worker",
+                    side_effect=Re25ProvenanceLineageTests._fake_generate_worker(),
+                ),
+                patch(
+                    "bigcherry.campaign.lane.campaign_workers.make_build_worker",
+                    side_effect=capturing_build_worker,
+                ),
+                patch(
+                    "bigcherry.campaign.lane.campaign_workers.make_smoke_worker",
+                    side_effect=fake_smoke,
+                ),
+            ):
+                execute_campaign_lane(
+                    harness.spec(), cfg=harness.cfg, context=harness.context,
+                    store=harness.store, run_id="run1", allow_dirty_bigcherry=True,
+                )
+
+            plan = captured["plan"]
+            platform = captured["platform"]
+            self.assertEqual(plan.targets, ("gfx1100",))
+            self.assertEqual(platform.targets, ("gfx1100",))
+            args = campaign_build.cmake_configure_args(
+                captured["build"], platform, root / "source", root / "build",
+            )
+            self.assertIn("-DAMDGPU_TARGETS=gfx1100", args)
 
     def test_hip_and_vulkan_produce_different_build_plan_id(self):
         # RE-backend-identity (external review, 2026-08-20) P0-1: backend

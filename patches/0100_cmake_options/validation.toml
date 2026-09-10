@@ -1,0 +1,22 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "custom"
+callable = "validation/checks.py:check_apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "custom"
+callable = "validation/checks.py:check_build"
+required = true
+
+[[check]]
+id = "coverage-source-selection"
+capability = "configuration"
+validator = "custom"
+callable = "validation/checks.py:check"
+required = true

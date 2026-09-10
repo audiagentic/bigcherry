@@ -40,8 +40,10 @@ from __future__ import annotations
 import hashlib
 import json
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 from ..core import config as campaign_config
 from . import evidence as patch_validation_evidence
@@ -316,6 +318,30 @@ def validation_evidence_statuses(
             )
             continue
 
+        # Schema-5 framework configuration evidence is distinct from runtime
+        # validation: compiled targets are configuration observations, not
+        # gpu_architectures covered by a hardware campaign.  Keep this branch
+        # restricted to validated framework packages; untested framework
+        # packages retain the existing not-required behavior below.
+        is_framework_configuration = (
+            module.state == "validated"
+            and packaged_descriptor is not None
+            and validation_policy.is_framework_configuration_patch(packaged_descriptor)
+        )
+        if is_framework_configuration:
+            explicit_targets = tuple(packaged_descriptor.validation_architectures)
+            requested_targets = tuple(default_validation_architectures)
+            compiled_targets = tuple(dict.fromkeys((*explicit_targets, *requested_targets)))
+            result[patch_id] = patch_validation_evidence.verify_framework_configuration_patch(
+                module,
+                pinned_ref=pinned_ref,
+                required_compiled_targets=compiled_targets,
+                root=evidence_root,
+                allow_legacy_grandfather=allow_legacy_grandfather,
+                resolved_base_revision=resolved_base_revision,
+            )
+            continue
+
         required_archs = (
             packaged_descriptor.validation_architectures
             if packaged_descriptor is not None
@@ -486,11 +512,23 @@ class CatalogSnapshot:
     ``patchset.describe()`` and ``patch_catalog.load_catalog()``
     separately) and gives the rest of the codebase a real, tested
     construction point to adopt incrementally.
+
+    RE47 (dev-gpt-agent review, req_79d52537bace4b95, 2026-09-08): ``metadata``
+    is a genuinely immutable ``MappingProxyType``, not a plain dict on a
+    frozen dataclass -- a frozen dataclass only blocks reassigning the
+    ATTRIBUTE, so a plain dict here let a caller mutate a "snapshot" after
+    the fact, silently invalidating the whole point of taking one. ``digest``
+    now covers every ``CatalogEntry`` VALUE (see ``_metadata_digest_payload``
+    below), not just the sorted set of patch IDs that happen to have an
+    entry -- a value-only edit (e.g. changing a patch's declared ``kind``,
+    with no ID added or removed) previously produced an IDENTICAL digest,
+    making the digest useless as a staleness signal for exactly the kind of
+    change CatalogSnapshot exists to detect.
     """
 
     root: Path
     modules: tuple["patchset.PatchModule", ...]
-    metadata: dict[str, CatalogEntry]
+    metadata: Mapping[str, CatalogEntry]
     digest: str
 
     @property
@@ -570,13 +608,27 @@ def build_snapshot(
             metadata[descriptor.patch_id] = entry
     payload = {
         "modules": [(m.patch_id, m.content_hash) for m in modules],
-        "metadata": sorted(metadata.keys()),
+        # RE47: every CatalogEntry VALUE, not just the sorted set of IDs
+        # that have one -- see CatalogSnapshot's own docstring for why the
+        # previous keys-only payload made the digest blind to metadata
+        # edits. dataclasses.asdict() recurses through the plain str/tuple
+        # fields into JSON-serializable content; sort_keys below makes the
+        # encoding independent of field-declaration order.
+        "metadata": {
+            patch_id: asdict(entry) for patch_id, entry in metadata.items()
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    # v2: the payload shape changed (full entry values, not just keys), so
+    # every digest computed under v1 is a different, no-longer-comparable
+    # identity -- this is a namespace bump, not a silent reinterpretation of
+    # what a v1 digest already meant.
     digest = hashlib.blake2b(
-        b"bigcherry/catalog-snapshot/v1\0" + encoded, digest_size=16
+        b"bigcherry/catalog-snapshot/v2\0" + encoded, digest_size=16
     ).hexdigest()
-    return CatalogSnapshot(root=root, modules=modules, metadata=metadata, digest=digest)
+    return CatalogSnapshot(
+        root=root, modules=modules, metadata=MappingProxyType(metadata), digest=digest,
+    )
 
 
 # ------------------------------------------------------------------- explain

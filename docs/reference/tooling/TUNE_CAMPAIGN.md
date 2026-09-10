@@ -1,7 +1,7 @@
 # End-to-end tuning: `bigcherry tune-campaign`
 
 A single-command orchestrator (HI130) for the full
-record → tune → correctness-evidence → promote → replay pipeline, driven
+record → tune → correctness-evidence → tuning-promotion → replay pipeline, driven
 against real hardware. Before this existed, running the full pipeline meant
 manually sequencing several separate `bigcherry build`/tuning invocations
 and hand-carrying artifacts (inventory, measurements, promoted winners)
@@ -11,7 +11,7 @@ reproducible receipt.
 ## Basic usage
 
 ```bash
-PYTHONPATH=tools python3 -m bigcherry tune-campaign \
+PYTHONPATH=tools python -m bigcherry tune-campaign \
     --platform linux-multi \
     --model /path/to/model.gguf \
     --devices 0,1 \
@@ -46,13 +46,27 @@ PYTHONPATH=tools python3 -m bigcherry tune-campaign \
    every recorded signature at production tolerances.
 3. **Correctness evidence** — validates promotion-eligible candidates
    against the configured seed count before they're allowed to promote.
-4. **Promote** — writes the promoted-winners JSONL from whatever passed
-   correctness evidence.
-5. **Replay build** — builds the `replay` lane, which applies the promoted
-   winners without re-measuring.
+4. **Tuning promotion** — writes the promoted-winners JSONL from whatever
+   passed correctness evidence. This promotes tuning winners inside this
+   campaign only; it is not patch, contract, plan, release, or production
+   policy acceptance.
+5. **Replay builds** — builds the production `replay` lane and the validation-only
+   `replay-diagnostic` companion. Production excludes diagnostics. The companion
+   enables dispatch coverage and replay-hit diagnostics. Before exporting,
+   require matching source composition, recomputed catalog descriptors,
+   generated registry/compile inputs, and all non-diagnostic requested CMake
+   options. Requested-option parity is not observed compiler-option parity.
+   The runtime bundle must carry `generated_inputs_verification=compiled-copy-v1`
+   and the matching recomputed input digest: the worker verifies the actual
+   `build_dir/generated-inputs` copy before configure, before compile and after
+   compile. Historical builds without this proof cannot be attested retroactively.
 6. **Replay export + verify** — exports the replay cache **against the
-   replay build's own manifest** (not the tune build's), then verifies
-   coverage. This ordering is load-bearing: an earlier version of this
+   production replay build's own manifest** (not the tune build's), then runs
+   behavioral/coverage/recovery validation on the matched diagnostic companion.
+   Receipt schema 4 retains `replay` as the production artifact and adds
+   `replay_validation` for the observer; coverage records both build-plan IDs
+   and `observation_role=diagnostic-companion`. This is not same-cell production
+   performance activation proof. This ordering is load-bearing: an earlier version of this
    workflow exported against the tune stage's manifest, which produced a
    manifest-hash mismatch and silently invalidated every cache entry the
    moment a real replay server started — fixed by reordering to
@@ -65,7 +79,8 @@ stage is a hard failure, not a warning).
 
 ## What this is not
 
-`tune-campaign` finds and promotes tuned candidates. It does not explain
+`tune-campaign` finds and promotes tuned candidates within its own replay
+workflow. That promotion is not a patch or release decision. It does not explain
 *why* the hardware spends time where it does — for real kernel-level
 profiling (rocprofv3 kernel/timing/resource data), see
 [PROFILING.md](PROFILING.md)'s `bigcherry profile-campaign`. The two are

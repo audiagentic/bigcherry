@@ -1,0 +1,7 @@
+workload  841b847b31896f0be7d0032552c5fcd1  (/home/audumla/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-21-hi35-hi36-27b-r9700/record-27b.jsonl)
+tuned     14674a59052a2fca6b368f9454318395  (/home/audumla/bigcherry/artifacts/gp03-validation/bc-native/docs/evidence/2026-08-27-dual-xtx-tune-run/e2e_dualxtx_tune.measurements.jsonl)  DIFFERENT
+
+coverage  0 of 69 observed signatures have a tuned winner
+          0 of 21231 calls covered (0.0%)
+
+Advisory only: this does not gate any cache load or promotion decision -- it says the tune was measured for a different workload, not that it is unsafe.

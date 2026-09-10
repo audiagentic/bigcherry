@@ -37,7 +37,7 @@ once the only rule — which is why the marker supersedes it.
 
 ## The procedure
 
-Work on ONE tree at a time. Do not bump H: and J: (Brutus) in the same
+Work on ONE tree at a time. Do not bump H: and J: (the build server) in the same
 window; bump one, record, then bump the other.
 
 1. **Move the pin, then commit — in that order, in the same minute.**
@@ -135,6 +135,20 @@ window; bump one, record, then bump the other.
 
 5. **Rebuild the campaign surfaces on the new tree** (build dirs, catalog
    generation, descriptors), then `pin-status` again.
+
+   Then run the standing bump-validation matrix on real hardware:
+   `python3 tools/lab/bump-validation/run_bump_validation.py --output
+   <work-dir>` (build server only). It builds one fresh binary at the new
+   pin and launches it under the real production runtime-profiles across
+   every real GPU individually (`production-safe-single`,
+   `tierB-qwen9b-q6k`) plus the real dual-XTX multi-GPU topology
+   (`production-dual-xtx`, `tierL-qwen27b-q8`) -- a real-server-launches-
+   and-completes-correctly gate that `patch-rebase-check`/`patch-lint`
+   cannot provide, since none of the static gates ever launch a server. A
+   failing cell is a bump blocker; investigate before declaring the bump
+   complete. Note: this tool currently needs `bigcherry runtime-matrix`
+   (tools/bigcherry/campaign/runtime_matrix.py + cli/runtime.py), which
+   is not yet on this branch -- see RHA12 for the backport.
 
 6. **Walk the invalidation list below.** Every entry is a question:
    *is there an artifact of this kind that the next step will consume, that

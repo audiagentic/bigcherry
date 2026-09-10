@@ -1,0 +1,17 @@
+schema = 1
+id = "1252_nro03_allreduce_p2p_provider"
+order = 1252
+group = "nasone-rdna"
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["NRO03"]
+requires = ["1001_hip_internal_allreduce"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "p2p", "tensor-parallel"]
+hardware = ["dual-gpu", "gfx1100", "peer-access"]
+validation-architectures = []
+backends = ["hip"]

@@ -1,0 +1,71 @@
+# Behavioural corpus for the single-card profile, which had NO GATE AT ALL.
+#
+# WHY THIS EXISTS. config/recipes.toml declares six runtime profiles. Only
+# production-dual-xtx declared behavioral-classes and
+# behavioral-corpus-edition. production-safe-single -- the profile used for
+# every single-card tune -- declared neither, so three campaigns on
+# 2026-09-06 promoted 12, 11 and 8 winners on gfx1201 and gfx1030 with no
+# behavioural validation whatsoever: no output-divergence check, no HI141
+# witness, nothing.
+#
+# That is the gate HI143 built to catch a candidate that "measured as
+# essentially numerically perfect ... and a genuine 23% real latency win --
+# a clean, obviously-safe promotion by every metric the tuning pipeline
+# checked at the time", and it was running on one profile out of six.
+#
+# It also happens to be the wrong one for coverage: config/models.toml makes
+# Q6_K the dominant quantisation (tierA-qwen4b-q6k is "the default lane for
+# most contracts (12 of 19)", plus tierM-gptoss20b-q6k and tierB-qwen9b-q6k),
+# while the gated profile is the single Q8_0 lane.
+#
+# WHY A SEPARATE CLASS. production-safe-single's server-args are
+# ["--flash-attn", "on"] -- no --spec-type, so speculative decoding does not
+# run and the "mtp-speculative" class does not apply. These vectors therefore
+# declare NO requirements: behavioral_gate.py derives require_mtp from
+# `mtp-telemetry` being requested, and without it draft_n/draft_n_accepted
+# default to 0 and the gate compares generated token IDs alone.
+#
+# That is not a weaker gate for this workload -- it is the correct one. The
+# three-state contract's HARD FAIL is "generated token IDs differ from
+# native: model-visible output changed, never acceptable regardless of
+# throughput", and that applies whether or not drafts are involved. What is
+# absent here is only the acceptance-trace comparison, which has no meaning
+# without speculation.
+#
+# An edition is immutable once published: any add/remove/content/parameter
+# change requires a NEW edition, never an in-place edit, so a past campaign's
+# recorded corpus_edition_id + corpus_content_digest keeps resolving to the
+# exact vectors it saw.
+schema_version = 1
+edition = "single-card-dense-v1"
+classes = ["dense-decode"]
+
+# Same prompt file as the MTP corpus. It is a 4096-token production-shaped
+# prompt and nothing about it is model- or quantisation-specific; reusing it
+# keeps the prefill identical across profiles, so a divergence seen here and
+# not there is attributable to the profile rather than to the input.
+[[vectors]]
+id = "single-card-dense-128-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 128
+seed = 42
+applies_to = ["dense-decode"]
+requirements = []
+scenario = "long-prefill-dense"
+provenance = "GP11 2026-09-06: production-safe-single had no behavioural gate; three Q6_K caches were promoted ungated"
+
+# Longer generation, for the same reason the MTP corpus gained 512 and 2048:
+# a single short vector certifies one generation length and says nothing
+# about any other. The Q8_0 lane's regression was invisible at 128 and
+# separated cleanly at 512.
+[[vectors]]
+id = "single-card-dense-512-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 512
+seed = 42
+applies_to = ["dense-decode"]
+requirements = []
+scenario = "long-prefill-dense-tg512"
+provenance = "GP11 2026-09-06: generation-length coverage, mirroring qwen38-production-v2"

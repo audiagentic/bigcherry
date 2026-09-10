@@ -1,0 +1,77 @@
+# Edition v2: adds the generation lengths production actually serves.
+#
+# WHY THIS EDITION EXISTS. Campaign 27e45ae32ec4 promoted 18 winners after
+# the v1 corpus passed full validation -- the behavioural gate detected a
+# hard_fail, recovery bisected it to signature cd3b5f5b, exhausted all five
+# alternative candidates, fell that signature back to mmvq:native:v1, and
+# republished only once validation passed. The machinery worked exactly as
+# designed.
+#
+# A subsequent order-balanced A/B on the published cache (16 cells, same
+# production binary, winners the only variable) then measured:
+#
+#   tg128   +2.30%  (overlap)
+#   tg512   -8.98%  (complete separation)
+#   tg2048  -5.54%  (complete separation)
+#
+# with MTP draft acceptance falling 0.94734 -> 0.86391, bit-identical in
+# every one of the 16 cells -- deterministic, not noise.
+#
+# v1 contains exactly ONE vector, at n_predict = 128. tg128 is the single
+# metric that improved. The gate certified the generation length it tests
+# and said nothing about anything longer, so a deterministic acceptance
+# regression at 512 and 2048 tokens passed through a gate built precisely
+# to catch acceptance regressions.
+#
+# The failure was coverage, not mechanism. So this edition keeps the HI141
+# vector byte-identical and adds the lengths we serve.
+#
+# An edition is immutable once published: any add/remove/content/parameter
+# change requires a NEW edition, never an in-place edit -- that is what
+# keeps a past campaign's recorded corpus_edition_id + corpus_content_digest
+# resolvable to the exact vectors it saw. v1 is therefore left untouched.
+schema_version = 1
+edition = "qwen38-production-v2"
+classes = ["mtp-speculative"]
+
+# Unchanged from v1, same prompt and parameters, so the HI141 regression
+# witness keeps working exactly as before and this edition remains a strict
+# superset of v1's coverage.
+[[vectors]]
+id = "hi141-mtp-4096-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 128
+seed = 42
+applies_to = ["mtp-speculative"]
+requirements = ["mtp-telemetry"]
+scenario = "long-prefill-mtp"
+provenance = "HI141"
+
+# Same prompt and seed, longer generations. Deliberately the same prompt:
+# holding the prefill fixed isolates generation LENGTH as the only variable
+# against the v1 vector, so a verdict that differs between these three
+# vectors localises the failure to decode length rather than to prompt
+# content. An acceptance regression that only appears after a few hundred
+# tokens is invisible at 128 and is exactly what escaped v1.
+[[vectors]]
+id = "hi141-mtp-4096-tg512-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 512
+seed = 42
+applies_to = ["mtp-speculative"]
+requirements = ["mtp-telemetry"]
+scenario = "long-prefill-mtp-tg512"
+provenance = "GP11 2026-09-06: acceptance regression measured at tg512 (-8.98%, complete separation) that v1's 128-token vector could not see"
+
+[[vectors]]
+id = "hi141-mtp-4096-tg2048-v1"
+prompt_file = "hi141_qwen38_27b_mtp_4096_v1.txt"
+prompt_sha256 = "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f"
+n_predict = 2048
+seed = 42
+applies_to = ["mtp-speculative"]
+requirements = ["mtp-telemetry"]
+scenario = "long-prefill-mtp-tg2048"
+provenance = "GP11 2026-09-06: acceptance regression measured at tg2048 (-5.54%, complete separation) that v1's 128-token vector could not see"

@@ -42,8 +42,10 @@ from . import patchset
 from .activation import ActivationEvidence
 
 SCHEMA_VERSION = 4
-READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4)
+READABLE_SCHEMA_VERSIONS = (1, 2, 3, 4, 5)
 CONTRACT_VERSION = "hi83-v1"
+FRAMEWORK_CONFIGURATION_SCHEMA_VERSION = 5
+FRAMEWORK_CONFIGURATION_KIND = "framework-configuration-v1"
 CORRECTNESS_SCHEMA_VERSION = 1
 
 # One-time migration contract -- see generate_legacy_baseline().
@@ -91,6 +93,7 @@ class EvidenceCheck:
         return self.status in {
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
+            "framework-configuration-evidence",
         }
 
 
@@ -239,6 +242,20 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
         "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
         "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
+        # VA23: RD73's contract artifacts. This list is the record's own
+        # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
+        # a passing performance/controls check whose artifact appears here,
+        # so a contract whose artifacts are absent reports "no recorded
+        # benchmark execution" no matter how real the run was. The
+        # enumeration is deliberate (only known artifact names count, so an
+        # arbitrary file dropped in the workdir cannot become evidence), so
+        # each new contract's artifacts must be added explicitly, exactly as
+        # RD08's are above.
+        "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
+        "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
+        "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
+        "artifacts/rd73-resource.json",
+        "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
@@ -300,6 +317,269 @@ def _validation_digest(patch_path: Path) -> str:
     return hashlib.sha256(b"no-validation-manifest").hexdigest()
 
 
+def _canonical_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                      ensure_ascii=False).encode()).hexdigest()
+
+
+def make_framework_configuration_record(
+    *, descriptor, patch_path: Path, base_ref: str, base_revision: str,
+    source_name: str, source_composition, source_tree: str, source_slice_id: str,
+    compiled_targets, builds, generated_inputs, check_results, artifact_hashes,
+    campaign_workdir: Path, source_identity, compiler_observations,
+) -> dict[str, object]:
+    """Construct the schema-5, configuration-only evidence record.
+
+    This is intentionally separate from :func:`make_record`; the latter is
+    the historical schema-4 campaign writer and must remain unchanged.
+    """
+    patch_path = Path(patch_path)
+    patch_digest = _sha256_file(patch_path)
+    subject_digest = patch_validation_subject_digest(patch_path)
+    source_composition = tuple(source_composition)
+    composition = [{"id": str(pair[0]), "digest": str(pair[1])} for pair in source_composition]
+    targets = [str(target) for target in compiled_targets]
+    if not targets:
+        raise ValidationEvidenceError("compiled_targets must not be empty")
+    normalized_builds = {role: _validate_build_identity(value, field=f"builds.{role}")
+                         for role, value in builds.items()}
+    if set(normalized_builds) != {"production", "diagnostic"}:
+        raise ValidationEvidenceError("builds must contain production and diagnostic")
+    normalized_inputs = json.loads(json.dumps(generated_inputs, sort_keys=True))
+    for role in ("production", "diagnostic"):
+        entry = normalized_inputs.get(role)
+        if not isinstance(entry, dict) or entry.get("proof") != "compiled-copy-v1":
+            raise ValidationEvidenceError(f"generated_inputs.{role} requires compiled-copy-v1")
+    normalized_checks = json.loads(json.dumps(check_results, sort_keys=True))
+    normalized_artifacts = {str(path): _require_hex(value, f"artifact_hashes.{path}", (64,))
+                            for path, value in artifact_hashes.items()}
+    descriptor_id = getattr(descriptor, "patch_id", getattr(descriptor, "id", ""))
+    implementation_digest = getattr(descriptor, "implementation_digest", patch_digest)
+    record: dict[str, object] = {
+        "record_schema_version": FRAMEWORK_CONFIGURATION_SCHEMA_VERSION,
+        "qualification_kind": FRAMEWORK_CONFIGURATION_KIND,
+        "patch_id": _require_string(descriptor_id, "descriptor.patch_id"),
+        "patch_implementation_digest": _require_hex(implementation_digest, "patch_implementation_digest", (64,)),
+        "patch_validation_subject_digest": subject_digest,
+        "validation_digest": descriptor.validation_digest,
+        "base_ref": _require_string(base_ref, "base_ref"), "base_revision": _require_string(base_revision, "base_revision"),
+        "source_name": _require_string(source_name, "source_name"), "source_composition": composition,
+        "source_tree": _require_string(source_tree, "source_tree"), "source_slice_id": _require_string(source_slice_id, "source_slice_id"),
+        "source_identity": json.loads(json.dumps(source_identity)),
+        "compiler_observations": json.loads(json.dumps(compiler_observations)),
+        "compiled_targets": targets, "builds": normalized_builds, "generated_inputs": normalized_inputs,
+        "check_results": normalized_checks, "artifact_hashes": normalized_artifacts,
+        "claim_scope": "configuration-only", "runtime_performance_qualified": False,
+        "hardware_execution_qualified": False, "eligible_for_validated_state": True,
+        "campaign_identity": _canonical_digest({"builds": normalized_builds, "source_tree": source_tree, "targets": targets}),
+        "campaign_workdir": str(Path(campaign_workdir)),
+    }
+    record["campaign_identity_digest"] = record["campaign_identity"]
+    # The producer and offline admission share the same complete predicate.
+    record["record_digest"] = _record_digest(record)
+    eligible, _ = verify_framework_configuration_record(
+        record, descriptor=descriptor, patch_path=patch_path, pinned_ref=base_ref,
+        required_compiled_targets=targets, resolved_base_revision=base_revision,
+        source_composition=source_composition,
+        source_identity=source_identity,
+    )
+    record["eligible_for_validated_state"] = eligible
+    record["record_digest"] = _record_digest(record)
+    return record
+
+
+def verify_framework_configuration_record(
+    record: Mapping[str, object], *, descriptor, patch_path: Path, pinned_ref: str,
+    required_compiled_targets=(), resolved_base_revision: str | None = None,
+    source_composition=None, source_identity=None,
+) -> tuple[bool, tuple[str, ...]]:
+    """Strict offline verifier for schema-5 framework configuration proof."""
+    problems: list[str] = []
+    try:
+        from . import validation_policy
+        if not validation_policy.is_framework_configuration_patch(descriptor):
+            problems.append("descriptor is not a framework configuration patch")
+    except Exception as exc:
+        problems.append(f"cannot classify descriptor: {exc}")
+    if not isinstance(record, Mapping):
+        return False, ("record must be an object",)
+    if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or record.get("qualification_kind") != FRAMEWORK_CONFIGURATION_KIND:
+        problems.append("wrong schema or kind")
+    if record.get("claim_scope") != "configuration-only" or record.get("runtime_performance_qualified") is not False or record.get("hardware_execution_qualified") is not False:
+        problems.append("forbidden runtime or hardware claim")
+    if record.get("record_digest") != _record_digest(record): problems.append("record_digest mismatch")
+    if record.get("base_ref") != pinned_ref: problems.append("stale base_ref")
+    if source_identity is None or record.get("source_identity") != source_identity:
+        problems.append("source materialization identity mismatch")
+    if isinstance(source_identity, Mapping):
+        if (source_identity.get("resolved_revision") != record.get("base_revision")
+                or source_identity.get("materialization_plan_id") != source_identity.get("source_key")
+                or not source_identity.get("source_key")):
+            problems.append("invalid source materialization identity")
+    if resolved_base_revision is not None and record.get("base_revision") != resolved_base_revision: problems.append("stale base_revision")
+    if record.get("patch_id") != getattr(descriptor, "patch_id", None): problems.append("patch identity mismatch")
+    expected_validation_digest = getattr(descriptor, "validation_digest", None)
+    if record.get("validation_digest") != expected_validation_digest: problems.append("validation digest is stale")
+    try:
+        if record.get("patch_implementation_digest") != getattr(descriptor, "implementation_digest", None): problems.append("implementation digest mismatch")
+        if record.get("patch_validation_subject_digest") != patch_validation_subject_digest(Path(patch_path)): problems.append("subject digest mismatch")
+    except Exception as exc: problems.append(f"cannot recompute patch digest: {exc}")
+    targets = record.get("compiled_targets")
+    if (not isinstance(targets, list) or not targets
+            or any(not isinstance(target, str) or not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets)
+            or not set(required_compiled_targets).issubset(targets)):
+        problems.append("compiled target coverage incomplete")
+    builds = record.get("builds")
+    if not isinstance(builds, Mapping) or set(builds) != {"production", "diagnostic"}:
+        problems.append("build role identity set is not production/diagnostic")
+    else:
+        for role, value in builds.items():
+            try: _validate_build_identity(value, field=f"builds.{role}")
+            except ValidationEvidenceError as exc: problems.append(str(exc))
+    inputs = record.get("generated_inputs")
+    observations = record.get("compiler_observations")
+    for role, enabled in (("production", False), ("diagnostic", True)):
+        observation = observations.get(role) if isinstance(observations, Mapping) else None
+        if not isinstance(observation, Mapping):
+            problems.append(f"compiler observation missing: {role}")
+            continue
+        counts = observation.get("compiled_definition_counts")
+        total = observation.get("hip_compile_command_count")
+        if (not isinstance(builds, Mapping) or observation.get("build_identity") != builds.get(role)
+                or not isinstance(total, int) or isinstance(total, bool) or total <= 0
+                or not isinstance(counts, Mapping)
+                or any(not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= total for v in counts.values())
+                or counts.get("GGML_HIP_DISPATCH_DIAGNOSTICS") != (total if enabled else 0)
+                or any(counts.get(flag) != 0 for flag in (
+                    "GGML_HIP_AUTOTUNE", "GGML_HIP_AUTOTUNE_RECORD",
+                    "GGML_HIP_REPLAY_DIAGNOSTICS", "GGML_HIP_WORKSPACE_METRICS"))
+                or observation.get("coverage_translation_unit") is not enabled
+                or observation.get("issues") != []):
+            problems.append(f"compiler observation invalid: {role}")
+    if not isinstance(inputs, Mapping): problems.append("generated_inputs missing")
+    else:
+        for role in ("production", "diagnostic"):
+            entry = inputs.get(role)
+            if not isinstance(entry, Mapping) or entry.get("proof") != "compiled-copy-v1":
+                problems.append(f"generated_inputs.{role} invalid")
+            elif not isinstance(entry.get("compile_inputs_hash"), str) or len(entry["compile_inputs_hash"]) != 64:
+                problems.append(f"generated_inputs.{role} compile_inputs_hash missing")
+            elif not isinstance(inputs.get("production"), Mapping) or entry.get("compile_inputs_hash") != inputs["production"].get("compile_inputs_hash"):
+                problems.append("generated input hashes disagree")
+            else:
+                from bigcherry.build import generated_tree
+                try:
+                    if generated_tree.compile_inputs_digest(entry.get("tree_manifest", {})) != entry["compile_inputs_hash"]:
+                        problems.append(f"generated_inputs.{role} compile_inputs_hash mismatch")
+                    if not entry["tree_manifest"].get("compile_inputs"):
+                        problems.append(f"generated_inputs.{role} compile inputs empty")
+                except (generated_tree.GeneratedTreeError, TypeError, AttributeError) as exc:
+                    problems.append(f"generated_inputs.{role} invalid manifest: {exc}")
+                if not isinstance(builds, Mapping) or entry.get("build_identity") != builds.get(role):
+                    problems.append(f"generated_inputs.{role} is not bound to completed build")
+    checks, artifacts = record.get("check_results"), record.get("artifact_hashes")
+    required_ids: set[str] = set()
+    manifest = Path(patch_path).parent / "validation.toml"
+    try:
+        if manifest.is_file():
+            from . import validation as _validation
+            specs = _validation.parse_validation_toml(manifest)
+            required_ids = {spec.check_id for spec in specs if spec.required}
+            if isinstance(checks, Mapping):
+                for spec in specs:
+                    value = checks.get(spec.check_id)
+                    if spec.required and (not isinstance(value, Mapping)
+                            or value.get("check_id") != spec.check_id
+                            or value.get("capability") != spec.capability):
+                        problems.append(f"required check identity mismatch: {spec.check_id}")
+    except Exception as exc:
+        problems.append(f"cannot read validation manifest: {exc}")
+    if not isinstance(checks, Mapping) or not checks: problems.append("check_results missing")
+    elif required_ids and not required_ids.issubset(checks): problems.append("required manifest check missing")
+    elif not required_ids: problems.append("validation manifest declares no required checks")
+    elif not all(isinstance(v, Mapping) and v.get("status") == "pass" and v.get("artifacts") for v in checks.values()): problems.append("required check missing or not pass")
+    if not isinstance(artifacts, Mapping) or not artifacts: problems.append("artifact_hashes missing")
+    else:
+        for value in checks.values() if isinstance(checks, Mapping) else ():
+            for artifact in value.get("artifacts", ()) if isinstance(value, Mapping) else ():
+                if not isinstance(artifact, Mapping) or artifacts.get(artifact.get("path")) != artifact.get("sha256"): problems.append("check artifact missing or tampered")
+    if record.get("eligible_for_validated_state") is not True:
+        problems.append("record is not eligible")
+    if source_composition is None or record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]:
+        problems.append("source composition mismatch")
+    if record.get("source_name") != "bigcherry-native":
+        problems.append("source is not canonical bigcherry-native framework")
+    if source_composition is not None and (descriptor.patch_id, descriptor.implementation_digest) not in source_composition:
+        problems.append("focal implementation absent from composition")
+    for field, lengths in (("base_revision", (40,64)), ("source_tree", (40,64)), ("source_slice_id", (32,))):
+        try:
+            _require_hex(record.get(field), field, lengths)
+        except ValidationEvidenceError as exc:
+            problems.append(str(exc))
+    forbidden = {"activation", "correctness", "gpu_architectures", "campaign_build_identities", "validation_build_identities", "lane_effects"}
+    if forbidden.intersection(record):
+        problems.append("configuration evidence contains runtime qualification fields")
+    return not problems, tuple(dict.fromkeys(problems))
+
+
+def verify_framework_configuration_patch(
+    module: patchset.PatchModule, *, pinned_ref: str, required_compiled_targets=(),
+    root: Path | None = None, allow_legacy_grandfather: bool = True,
+    resolved_base_revision: str | None = None,
+) -> EvidenceCheck:
+    """Catalog-facing adapter; framework records never use runtime gates."""
+    descriptor = None
+    try:
+        from . import registry as patch_registry
+        descriptor = patch_registry.load_registry(module.catalog_root or paths.PATCHES).get(module.patch_id)
+    except Exception as exc:
+        return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
+    records = load_records(module.patch_id, root=root)
+    qualifying: list[dict[str, object]] = []
+    stale: list[str] = []
+    try:
+        from bigcherry.core import config
+        from bigcherry.campaign import resolution
+        catalog_root = module.catalog_root or paths.PATCHES
+        cfg = config.load(paths.RECIPES)
+        lane = resolution.resolve_lane("bigcherry-native", cfg, patchset.catalog(directory=catalog_root))
+        resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=catalog_root)
+        registry = patch_registry.load_registry(catalog_root)
+        composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
+                            for member in resolved.modules)
+        from . import source as patch_source
+        if resolved_base_revision is None:
+            raise ValidationEvidenceError("resolved base revision required for source identity")
+        identity = patch_source._make_source_identity_v2(
+            resolved_revision=resolved_base_revision, composition=composition,
+            overlay_root=patch_source.REPO_ROOT / "src" if cfg.sources["bigcherry-native"].overlay else None,
+        )
+        identity["materialization_plan_id"] = identity["source_key"]
+    except Exception as exc:
+        return EvidenceCheck("missing-or-stale", (f"cannot resolve canonical framework composition: {exc}",))
+    for record in records:
+        if record.get("record_schema_version") != FRAMEWORK_CONFIGURATION_SCHEMA_VERSION:
+            continue
+        ok, why = verify_framework_configuration_record(
+            record, descriptor=descriptor, patch_path=module.path, pinned_ref=pinned_ref,
+            required_compiled_targets=required_compiled_targets,
+            resolved_base_revision=resolved_base_revision,
+            source_composition=composition,
+            source_identity=identity,
+        )
+        if ok:
+            qualifying.append(record)
+        else:
+            stale.append("; ".join(why))
+    if qualifying:
+        return EvidenceCheck("framework-configuration-evidence", campaign_digests=tuple(
+            sorted(str(r.get("campaign_identity_digest", "")) for r in qualifying)
+        ))
+    if allow_legacy_grandfather and _legacy_hashes(root).get(module.patch_id) == module.content_hash:
+        return EvidenceCheck("legacy-grandfathered")
+    return EvidenceCheck("missing-or-stale", tuple(stale or ("no current framework configuration evidence",)))
+
+
 def make_record(
     *, patch_id: str, patch_path: Path, patch_implementation_digest: str, base_ref: str,
     base_revision: str, framework_baseline_digest: str, patched_source_tree: str,
@@ -319,6 +599,7 @@ def make_record(
     stock_tree: str | None = None, blockers: Iterable[str] = (),
     check_results: Mapping[str, object] | None = None,
     validation_eligible: bool | None = None,
+    lane_effects: Iterable[Mapping[str, object]],
 ) -> dict[str, object]:
     """``build_identities`` is the campaign-build domain
     ({tune,replay,stock}); ``validation_build_identities`` is the
@@ -495,6 +776,27 @@ def make_record(
         "campaign_build_identities": builds,
         "validation_build_identities": validation_builds,
         "campaign_artifacts": _artifact_refs(campaign_workdir),
+        # RV99: the MEASUREMENTS, not just the verdict derived from them.
+        # Before this the record kept identity, provenance, check verdicts and
+        # artifact hashes, but the per-lane effects and their pair_ratios lived
+        # only in the campaign's own artifacts under artifacts/, which is
+        # gitignored. So from committed evidence alone an interval could not be
+        # re-derived, re-aggregated across sessions or lanes, re-analysed under
+        # a new estimator, or audited against the data that produced it -- the
+        # record asserted a number whose inputs were unavailable, and on any
+        # machine that had not run the campaign they were simply gone.
+        #
+        # block_bootstrap_effect() already names pair_ratios "the SUFFICIENT
+        # STATISTIC for recomputing an AGGREGATE interval ... without
+        # re-running the benchmark"; this is where that intent becomes real.
+        # The vector is one float per paired round (10 for RD73), so retaining
+        # it is a decision about what to keep, not new measurement.
+        #
+        # Required rather than defaulted: a campaign that measured lanes and
+        # recorded none of them should be a call-site error, not a silently
+        # thinner record. An empty tuple is legitimate for a campaign with no
+        # measured lanes at all.
+        "lane_effects": [dict(effect) for effect in lane_effects],
         "validation_disposition": "validated" if eligible else "incomplete",
         "eligible_for_validated_state": eligible,
     }
@@ -524,10 +826,41 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
     else:
         document = {"schema_version": SCHEMA_VERSION, "patch_id": patch_id, "records": []}
 
+    if record.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION or any(
+        entry.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION
+        for entry in document["records"] if isinstance(entry, dict)
+    ):
+        document["schema_version"] = FRAMEWORK_CONFIGURATION_SCHEMA_VERSION
+
     records = document["records"]
     assert isinstance(records, list)
     new_record = dict(record)
 
+    # RV96: campaign_identity_digest is a BUILD identity, not a run identity.
+    # e2e_smoke_campaign.Campaign derives it (_make_campaign_identity ->
+    # _stable_json_sha256) from the content identities of the built
+    # executables plus patch identity -- so two independent measurements of
+    # the same binaries necessarily share it.
+    #
+    # This function used to reject the second such record ("campaign digest X
+    # already has different evidence"), which made the digest behave as though
+    # a build could only ever be measured once. Three consequences, all real:
+    #
+    #   * the frozen re-run policy (EXPERIMENT_CONTRACT.md, "Re-running")
+    #     requires extending a run to a pre-declared N_max and estimating over
+    #     all valid pairs -- i.e. producing further measurements of the SAME
+    #     build. Its output was unstorable, so the policy was doctrine only.
+    #   * independent replication on unchanged code was impossible.
+    #   * whichever run was written FIRST owned the digest permanently, so the
+    #     record silently favoured first measurements. RD73 hit exactly this:
+    #     a passing run (+1.717%) was stored and a later confirming run that
+    #     failed the gate (+1.249%) could not be -- the direction that
+    #     flatters a patch.
+    #
+    # Evidence stays append-only: an existing record is never mutated or
+    # replaced here. Re-writing an identical record is still idempotent, and
+    # tampering with a stored record is still caught at READ time by the
+    # record_digest checks in _record_qualifies()/_record_qualifies_for_benched().
     for old in records:
         if not isinstance(old, dict):
             raise ValidationEvidenceError(f"{path}: non-object record")
@@ -535,12 +868,26 @@ def write_record(record: Mapping[str, object], *, root: Path | None = None) -> P
             continue
         if old == new_record:
             return path
-        raise ValidationEvidenceError(
-            f"{path}: campaign digest {campaign_digest} already has different evidence"
-        )
+        # Same build, different measurement -- but the fields the campaign
+        # identity provably determines must still agree. If they do not, the
+        # digest is not identifying what it claims to, which is corruption
+        # rather than replication.
+        for field in ("patch_id", "patch_implementation_digest", "patched_source_tree"):
+            if field in old and field in new_record and old[field] != new_record[field]:
+                raise ValidationEvidenceError(
+                    f"{path}: campaign digest {campaign_digest} has records disagreeing "
+                    f"on {field} ({old[field]!r} vs {new_record[field]!r}) -- the campaign "
+                    f"identity is derived from built-binary and patch identity, so records "
+                    f"sharing it cannot have come from different sources"
+                )
 
     records.append(new_record)
-    records.sort(key=lambda row: str(row.get("campaign_identity_digest", "")))
+    # Sort by campaign identity first (grouping a build's measurements
+    # together), then by record_digest so ordering stays deterministic across
+    # the multiple records a single build may now legitimately have.
+    records.sort(key=lambda row: (
+        str(row.get("campaign_identity_digest", "")), str(row.get("record_digest", "")),
+    ))
     _atomic_json(path, document)
     return path
 
@@ -575,7 +922,7 @@ def _record_qualifies(
         "eligible_for_validated_state": True,
     }
     record_version = record.get("record_schema_version")
-    if record_version not in READABLE_SCHEMA_VERSIONS:
+    if record_version not in (1, 2, 3, 4):
         problems.append(f"record_schema_version={record_version!r} is unsupported")
 
     # VA18: a currently multi-contract patch can NEVER be qualified by a
@@ -923,6 +1270,8 @@ def _record_qualifies_for_deferred_hardware(
     this status is that hardware was unavailable, so demanding hardware
     evidence to qualify it would be self-defeating."""
     problems: list[str] = []
+    if record.get("record_schema_version") == FRAMEWORK_CONFIGURATION_SCHEMA_VERSION:
+        return False, ("framework configuration evidence cannot qualify deferred hardware",)
     if record.get("patch_id") != module.patch_id:
         problems.append(f"patch_id={record.get('patch_id')!r}, expected {module.patch_id!r}")
     if record.get("patch_validation_subject_digest") != subject_digest:
@@ -1052,8 +1401,11 @@ def verify_validated_patch(
     if qualifying and not missing_architectures:
         return EvidenceCheck(
             "validated-evidence",
+            # RV96: a build may now legitimately have several qualifying
+            # measurement records, so de-duplicate -- this reports which
+            # BUILDS are qualified, not how many records exist.
             campaign_digests=tuple(
-                sorted(str(record["campaign_identity_digest"]) for record in qualifying)
+                sorted({str(record["campaign_identity_digest"]) for record in qualifying})
             ),
         )
 
@@ -1101,7 +1453,7 @@ def verify_ported_benched_patch(
     if qualifying:
         return EvidenceCheck(
             "ported-benched-evidence",
-            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+            campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
         )
     problems = ["no current qualifying ported-benched evidence"]
     if stale:
@@ -1135,7 +1487,7 @@ def verify_deferred_hardware_patch(
     if qualifying:
         return EvidenceCheck(
             "deferred-hardware-evidence",
-            campaign_digests=tuple(sorted(str(r["campaign_identity_digest"]) for r in qualifying)),
+            campaign_digests=tuple(sorted({str(r["campaign_identity_digest"]) for r in qualifying})),
         )
     problems = ["no current qualifying deferred-hardware (BLOCKED) evidence"]
     if stale:

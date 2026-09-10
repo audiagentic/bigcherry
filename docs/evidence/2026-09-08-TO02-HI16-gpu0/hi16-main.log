@@ -1,0 +1,4 @@
+PASS  type_a=f16,type_b=f32,m=32,n=7,k=256
+PASS  type_a=f16,type_b=f32,m=16,n=8,k=256
+PASS  type_a=f32,type_b=f32,m=16,n=1,k=256
+PASS  type_a=q4_0,type_b=f32,m=16,n=16,k=256

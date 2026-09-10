@@ -67,13 +67,56 @@ class CampaignResolutionTests(unittest.TestCase):
                 if module.state == "validated" and module.patch_id in framework_patch_ids),
             14,
         )
-        # RD19 was promoted to validated-enhancements on 2026-08-24, but
-        # that promotion post-dated the HI83 evidence contract with no
-        # qualifying evidence produced (see
-        # docs/planning/active/patch-system/PA05.md). Owner disposition
-        # (2026-08-25): deliberately demoted back to untested pending real
-        # HI83 evidence, so validated-enhancements is empty again.
+        # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
+        # a promoted enhancement. That separation is what makes it usable as
+        # the control arm of a validation campaign: if enhancements leaked in
+        # here, every A/B would be measured against a moving baseline.
+        #
+        # This assertion caught a real defect the moment validated-enhancements
+        # stopped being empty (2026-09-05, RD73): promoted_enhancements
+        # returned the whole global set for EVERY source, so the
+        # framework-only control source reported an enhancement it does not
+        # build. Selection itself was always correct; the report was not.
+        #
+        # (RD19 was briefly in validated-enhancements on 2026-08-24; that
+        # promotion post-dated the HI83 evidence contract with no qualifying
+        # evidence, and was deliberately reverted -- see
+        # docs/planning/active/patch-system/PA05.md.)
         self.assertEqual(lane.promoted_enhancements, ())
+        # ...and belt-and-braces on the thing that actually gets built.
+        non_empty = self.cfg.patch_sets["validated-enhancements"].patches
+        for patch_id in non_empty:
+            self.assertNotIn(
+                patch_id, lane.patch_set.module_ids,
+                f"{patch_id} leaked into the framework-only control source",
+            )
+
+    def test_release_source_is_framework_plus_validated_enhancements(self):
+        """[source.bigcherry] is the release build: framework + whatever has
+        actually qualified. This pins the STRUCTURE rather than a count, so
+        promoting a patch does not break the test -- only breaking the
+        composition does."""
+        native = campaign_resolution.resolve_lane(
+            "bigcherry-native", self.cfg, self.catalog)
+        release = campaign_resolution.resolve_lane(
+            "bigcherry", self.cfg, self.catalog)
+
+        native_ids = set(native.patch_set.module_ids)
+        release_ids = set(release.patch_set.module_ids)
+
+        # The release build is a strict superset of the native baseline...
+        self.assertTrue(native_ids <= release_ids)
+        # ...and everything extra is exactly the promoted enhancements.
+        self.assertEqual(release_ids - native_ids, set(release.promoted_enhancements))
+        # Every promoted enhancement must really be STATE="validated" --
+        # required-state on the patch-set is what enforces this, and a
+        # release build must never ship an unvalidated patch.
+        by_id = {module.patch_id: module for module in self.catalog}
+        for patch_id in release.promoted_enhancements:
+            self.assertEqual(
+                by_id[patch_id].state, "validated",
+                f"{patch_id} is in a release patch-set but is not validated",
+            )
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(
@@ -92,7 +135,7 @@ class CampaignResolutionTests(unittest.TestCase):
 
 class CanonicalSelectionTests(unittest.TestCase):
     """resolve_canonical_selection() is the migration helper replacing
-    recipes.py's legacy [compat.recipe.*] bridge -- see the compat.recipe
+    recipes.py's retired compatibility bridge -- see the legacy recipe
     removal plan. These tests pin its exact contract before any --recipe
     consumer is migrated onto it."""
 
@@ -409,3 +452,73 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerLaneExperimentTests(unittest.TestCase):
+    """VA26: a patch-qualification profile holds arms that carry the patch and
+    arms that deliberately do not. A request-level --experiment applies to
+    every lane and so cannot express it."""
+
+    def setUp(self):
+        from bigcherry.core import config, paths
+        self.cfg = config.load(paths.RECIPES)
+
+    def test_profile_declares_patched_and_unpatched_arms(self):
+        lanes = self.cfg.campaigns["patch-qualification"].lanes
+        experiments = [lane.experiment for lane in lanes]
+        self.assertIn(None, experiments, "baseline arms must carry no experiment")
+        self.assertTrue(
+            any(e is not None for e in experiments),
+            "at least one arm must carry the patch under test",
+        )
+
+    def test_same_source_appears_patched_and_unpatched_without_colliding(self):
+        # The pair that gives the isolated comparison its meaning: identical
+        # source/build/platform, differing only by the experiment. Before
+        # lane_id folded in the experiment these collided and the duplicate
+        # check dropped one.
+        from bigcherry.campaign.planner import CampaignRequest, lane_id, plan
+
+        lanes = plan(
+            CampaignRequest(
+                selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
+                architectures=("gfx1100",),
+            ),
+            self.cfg,
+        )
+        ids = [lane_id(lane) for lane in lanes]
+        # Pin the PROPERTY (no collisions, and the patched/unpatched pair both
+        # survive), not a lane count -- the profile legitimately grows as
+        # build variants like tune/replay are added.
+        self.assertEqual(len(ids), len(set(ids)), f"lane ids collided: {ids}")
+        native = [i for i in ids if i.startswith("bigcherry-native:control")]
+        self.assertEqual(len(native), 2, "expected a patched and unpatched pair")
+
+    def test_lane_experiment_overrides_request_level(self):
+        from bigcherry.campaign.planner import CampaignRequest, plan
+
+        lanes = plan(
+            CampaignRequest(
+                selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
+                architectures=("gfx1100",), experiment="rd73-only",
+            ),
+            self.cfg,
+        )
+        # Request-level fills the baselines that declare none; a lane that
+        # declares its own keeps it.
+        by_source = {(l.source_name, l.experiment) for l in lanes}
+        self.assertIn(("bigcherry", "rd73-only"), by_source)
+
+    def test_unknown_lane_experiment_is_rejected(self):
+        # A profile naming an experiment that does not exist must fail at load
+        # time, not silently plan an arm that is identical to its baseline --
+        # which would make the comparison quietly meaningless.
+        text = paths.RECIPES.read_text(encoding="utf-8").replace(
+            'experiment = "rd73-only"', 'experiment = "no-such-experiment"', 1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            recipes = Path(tmp) / "recipes.toml"
+            recipes.write_text(text, encoding="utf-8")
+            with self.assertRaises(config.ConfigError) as caught:
+                config.load(recipes)
+        self.assertIn("no-such-experiment", str(caught.exception))

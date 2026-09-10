@@ -33,6 +33,7 @@ CONFIG = REPO_ROOT / "config"
 RECIPES = CONFIG / "recipes.toml"
 EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
 EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
+MODELS = CONFIG / "models.toml"
 
 _ENV_LLAMA_ROOT = "BIGCHERRY_LLAMA_ROOT"
 
