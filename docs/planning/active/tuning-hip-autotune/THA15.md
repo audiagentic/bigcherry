@@ -15,13 +15,16 @@ priority: P0
 
 ## Description
 
-Multi-session DoD still requires cache refresh, audits, performance matrix, and MTP equivalence.
+Perform provenance-safe promoted-winner execution and winner-versus-runner-up counterfactual replay using immutable source ranking decisions and exact runtime/build identity.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+1. Persist immutable source top-2 ordering, candidate/config/artifact hashes, selection_id, and source-decision digest at promotion time.
+2. Resolve replay manifests strictly from immutable provenance; legacy/incomplete decisions are UNREPLAYABLE_PROVENANCE and require fresh tuning.
+3. Generate winner and runner-up manifests differing only in candidate binding under invariant workload, build, runtime, environment, and hardware.
+4. Run correctness, activation, and exact-launch gates before timing.
+5. Collect multi-session interleaved winner/runner-up/native evidence with cache refresh and teardown receipts.
+6. Verify MTP behavioral equivalence and report predicted-versus-measured E2E effect; never rerank from current policy or mutable caches.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +40,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi171.md
+production ranker/promotion metadata; replay manifest resolver; counterfactual runner; provenance and MTP equivalence evidence
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: CO01,HI141,HI67,HTR01,VA22.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (14); preserve historical references (5) on predecessor.
+Immutable provenance hash checks; strict missing/mismatch rejection; winner/runner-up manifest diff audit; activation and final-launch evidence; multi-session performance matrix; MTP acceptance/output equivalence; cache refresh and clean shutdown.
 
 ## Effort & Risk
 
@@ -57,13 +56,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Every admitted comparison is provenance-bound, candidate-only divergent, activation-verified, correctness-equivalent, and backed by repeatable counterfactual timing. Incomplete historical decisions are rejected rather than reconstructed.
 
 ## Notes
 
 Supersedes: HI171
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi171
+
+Supersedes: HI171
+Inherited semantic scope: preserve immutable top-2 ordering, selection digest, strict UNREPLAYABLE_PROVENANCE behavior, invariant counterfactual manifests, and MTP equivalence gates.
+Migration: capability-rebaseline-v3-2026-09
 
 ## Change Log
 
@@ -78,3 +81,6 @@ Successor key: tuning-hip-autotune-hi171
 - 2026-09-09T12:09:23.246039+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.484034+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:24:15.859276+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260910_022438_the-next-five-high-risk-tuning_6580
+- 2026-09-10T02:24:38.740975+00:00 (updated-by): Updated: section:ledger-events
