@@ -14,21 +14,15 @@ work: L
 
 ## Description
 
-Stock Vulkan/scaffolding exists; record, tune, and replay phases have not started.
+Evaluate and stage a Vulkan-native tunable build line: stock/patch validation first, then bounded MUL_MAT record→tune→replay without widening HIP abstractions.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Preserve completed stock Vulkan lane and backend-aware audit; implement Vulkan-native canonical signature/device-driver-shader provenance and native pipeline record; add explicit complete pipeline candidates after TRBC02 capability ABI; add timestamp tuning transaction, correctness/warmup/winner selection/cache; add backend-namespaced replay with mismatch/native fallback; keep HIP unchanged.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Vulkan candidate is a complete preparation+main+reduction pipeline recipe. Hook immediately before stock MUL_MAT recipe choice, not generic dispatch. Use vk-autotune subtree and separate schemas; native fallback on decline/miss.
 
 ## Code Samples & Guidance
 
@@ -36,15 +30,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-reusable-build-campaign-re30.md
+campaign/build backend plumbing; ggml-vulkan vk-autotune types/record/tune/replay; Vulkan audit/tests/manifests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: EC15,RD08,RD69,RE38,RE41.
-
-Active dependencies: Frozen dependencies: RE32.
-
-Reference handling: Rewrite forward references (9); preserve historical references (5) on predecessor.
+Config/backend isolation, pristine patch/build, real stock smoke; record parser-clean canonical observations, candidates reject unsupported limits, timestamp measurement, replay identity/fallback.
 
 ## Effort & Risk
 
@@ -56,7 +46,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Stock lane remains green and first Vulkan MUL_MAT vertical slice has complete provenance, correctness-first tuning, backend-namespaced replay, and no HIP behavior change.
 
 ## Notes
 
@@ -76,3 +66,6 @@ Successor key: tuning-reusable-build-campaign-re30
 - 2026-09-09T11:58:01.466793+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.312772+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:39:31.943753+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_034017_repaired-six-vulkanprovider-s_6655
+- 2026-09-10T03:40:17.953866+00:00 (updated-by): Updated: section:ledger-events

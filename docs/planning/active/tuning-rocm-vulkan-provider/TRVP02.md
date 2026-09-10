@@ -15,23 +15,15 @@ priority: null
 
 ## Description
 
-Provide closed-world provider discovery and completeness after canonical stack identity and semantic workload foundations, with explicit unavailable/unsupported classifications and ownership handoff.
+Discover and validate complete provider/API inventory for HIP/Vulkan qualification with explicit unknown/unsupported states.
 
 ## Steps
 
-1. Consume RRVP02 resolved stack identity and TRVP01 persistence.
-2. Enumerate expected providers from requested stack and compiled capabilities.
-3. Classify every omission as available, not_built, missing_DSO, ABI_mismatch, unsupported_architecture, disabled, or runtime_probe_failure.
-4. Hand semantic workload inventory to TRVP03 and unresolved-selectable closure to TRVP13.
-5. Add negative tests for unknown and incomplete inventories.
+Probe available providers/APIs and effective backend, preserve tri-state completeness, normalize versions/identities, reject partial inventories for closure, and expose provider enumeration to domain/candidate planners without duplicating taxonomy.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Provider discovery is evidence, not candidate selection. Keep missing/unknown distinct from empty; consume RRVP02/RRVP03 identity and attestation.
 
 ## Code Samples & Guidance
 
@@ -39,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-rocm-vulkan-provider-ro07.md
+Provider discovery/completeness, stack probes, tests and inventory artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor.
-
-Active dependencies: TRVP01 (RO06 successor).
-
-Reference handling: Rewrite forward references; preserve historical references on predecessor.
+Repeated deterministic inventory, missing/unknown/empty semantics, effective backend observation, incomplete inventory blocks closure.
 
 ## Effort & Risk
 
@@ -59,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Provider inventory is closed-world, explicit, deterministic, and fail-closed for unresolved selectable providers; semantic workload inventory and release completeness have unambiguous ownership.
+Qualification cannot claim completeness or enumerate candidates from an incomplete/ambiguous provider inventory.
 
 ## Notes
 
@@ -89,3 +77,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T01:02:25.554542+00:00 (updated-by): Updated: section:validation
 - chg_20260910_010342_successor-plans-now-have-expli_8662
 - 2026-09-10T01:03:42.506795+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:39:57.862234+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_034017_repaired-six-vulkanprovider-s_6655
+- 2026-09-10T03:40:18.012241+00:00 (updated-by): Updated: section:ledger-events
