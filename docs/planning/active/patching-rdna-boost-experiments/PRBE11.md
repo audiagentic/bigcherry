@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-Patch 1205 materialized the paired-MMVQ candidate, but composition-safe correctness/performance qualification remains outstanding.
+Qualify patch 1205 paired MMVQ matmuls over shared activation with RD25 correctness state and composition-conflict controls.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Resolve RD25 batch-vs-seq consistency as a hard prerequisite and verify patch 1205 source identity/post-image.
+- Detect only exact K/V paired MMVQ graph patterns with shared activation lifetime and same output shape.
+- Preserve GLU fusion precedence, views/no-ops, false-positive fallback and unfused reference.
+- Treat patch 1205 and 1207 as composition-conflicting unless a dedicated recipe declares order and validates both; include PRBE05 only as explicit identity dependency.
+- Run isolated rd12-only first on native plus RD25, then graph capture, correctness and causal performance with real signatures.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Use a graph rewrite only after proof of shared activation lifetime. Patch identity must include RD25 and any declared composition; no hidden cache/fusion changes. 1205/1207 overlap common slots by design and cannot be combined implicitly.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd12.md
+patches/1205_rd12_paired_mmvq_dual_output; RD25 correctness state; graph planner/MMVQ seam; exact-pattern/fallback fixtures; rd12-only and declared-composition evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD02,RD03.
-
-Active dependencies: Frozen dependencies: RD02,RD03,RD09,RD25.
-
-Reference handling: Rewrite forward references (4); preserve historical references (2) on predecessor.
+K/V pairs; same shape; GLU precedence; views/no-ops; false positives; unfused numerical reference; graph capture; isolated and declared composition causal arms.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (4); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Exact graph pattern; dependency-aware comparison; fallback; isolated-test-first.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Exact patterns are correct with RD25; unsafe/near-miss graphs fall back; isolated performance and any composition result are separately attributable; 1207 is not silently combined.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd12
 - 2026-09-09T11:58:01.177979+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.874477+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:47:35.743786+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024759_three-rdna-fusion-successors-n_3469
+- 2026-09-10T02:47:59.451164+00:00 (updated-by): Updated: section:ledger-events
