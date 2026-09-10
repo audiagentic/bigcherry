@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Experiment is deferred/gate-blocked on the gfx1151 prerequisite.
+Retain gfx1151 MMVQ nwarps=2 Q8_0 decode as a gate-verified-blocked hardware-specific experiment; do not claim Brutus validation.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE19/RD25 prerequisite and preserve source 1818c3b... identity.
+- Keep the exact gfx1151 guard and Q8_0 decode scope; obtain gfx1151 hardware before timing.
+- On gfx1151 compare native control/treatment for exact shapes with correctness, resource/nwarps and decode evidence.
+- Run explicit non-selection controls on gfx1030/gfx1100/gfx1201 using activation eligibility evidence.
+- If hardware is unavailable, retain gate-verified-blocked disposition; do not extrapolate from current Brutus.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd21.md
+gfx1151 MMVQ catalog/source; activation eligibility evidence 1208_rd21_gfx1151_mmvq_nwarps_table; PRBE19 prerequisite; non-selection/build tests; gfx1151 campaign artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI82.
-
-Active dependencies: Frozen dependencies: HI82,RD25,RD50.
-
-Reference handling: Rewrite forward references (3); preserve historical references (1) on predecessor.
+Eligibility positive/negative architecture evidence; gfx1151 exact Q8_0 shapes; correctness; nwarps/resource; native comparison; no selection elsewhere.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Hardware-specific guard; no unsupported extrapolation; preserve gate-verified-blocked status.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No current-hardware acceptance claim. Promotion requires gfx1151 evidence and exact guard/non-selection; until then the machine-checked blocked disposition remains authoritative.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd21
 - 2026-09-09T11:58:01.201523+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.909397+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:49:12.755157+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024925_rdna-successors-prbe1416-now_9529
+- 2026-09-10T02:49:25.532036+00:00 (updated-by): Updated: section:ledger-events
