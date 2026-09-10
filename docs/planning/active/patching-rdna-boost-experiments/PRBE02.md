@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-Patch exists; isolated benchmark and correctness qualification remain.
+Qualify the materialized flash-attention WMMA barrier/race repair independently from performance configuration. The change must remain correctness-only until repeated validation passes.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Extract and review the barrier/race-repair hunk from 18fc188/patch 1203 as an independent logical identity.
+- Define architecture and shape guards; cover head sizes 192/256/320/512/576 where applicable.
+- Run targeted correctness under graph and non-graph execution, repeated under load, against native/reference outputs.
+- Run the backend corpus and architecture gates; block PRBE03/any performance claim on a failure.
+- Record immutable source SHA, resolved patch identity, environment, repetitions and negative/fallback evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Keep barrier synchronization independent from RDNA4 configuration. Treat this as a race-safety patch: no hidden tuning or performance claims. Acceptance requires repeated agreement for affected head sizes and no graph-lifetime or backend divergence.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd05.md
+patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq; flash-attention WMMA barrier sources; targeted graph/non-graph correctness fixtures; campaign evidence for PRBE02.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Targeted heads 192/256/320/512/576 where applicable; graph and non-graph; repeated loaded runs; backend corpus; gfx1100/gfx1201 architecture guards; native/reference numerical comparison; fail-closed behavior.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Fail closed on correctness; no performance reliance before prerequisite passes; immutable patch/source identity and reproducible evidence.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Barrier repair is independently identified and all targeted shapes pass repeated graph/non-graph and loaded correctness against reference within preregistered tolerances; architecture guards hold; no dependent performance arm is accepted before this gate.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd05
 - 2026-09-09T11:58:01.134485+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.804684+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:30:13.076053+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023037_three-rdna-boost-successors-no_6965
+- 2026-09-10T02:30:37.067104+00:00 (updated-by): Updated: section:ledger-events
