@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-The old gfx1151 MMQ diff no longer applies; the item remains re-scoped to checking/redesigning the current table-driven configuration with hardware evidence.
+Redesign AMD-MMQ-002 as a current table-driven gfx1151 MMQ configuration investigation; obsolete PR #25 anchors must not be ported.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Audit mmq-config-rdna3-5.cuh and current table-driven selector before authoring code.
+- Define gfx1151-only candidate table, dense/MoE Qwen corpus and exact Q4/Q6/Q8 shapes.
+- Use gfx1100/gfx1201 build/non-selection controls and retain decode-neutrality check.
+- On gfx1151 measure pp128/512/1024/4096, TG and resource stats with PPL/temp-0 parity.
+- Promote only with real gfx1151 evidence; otherwise retain hardware-blocked redesign disposition.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd34.md
+Current mmq-config-rdna3-5.cuh/table selector; gfx1151 candidate rows; architecture guards; build/non-selection tests; gfx1151 correctness/perf/resource artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Current seam audit; gfx1151 Q4/Q6/Q8; PPL/temp-0; PP/TG; resource stats; gfx1100/gfx1201 non-selection; decode neutrality.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Needs-redesign; hardware-scoped; no unsupported extrapolation.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A current table-driven gfx1151 design is proven and correct with positive hardware evidence, or no implementation is promoted; obsolete PR #25 diff is never applied.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd34
 - 2026-09-09T11:58:01.249087+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.981923+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:55:23.253944+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025542_rdna-successors-prbe2628-now_5552
+- 2026-09-10T02:55:42.894059+00:00 (updated-by): Updated: section:ledger-events
