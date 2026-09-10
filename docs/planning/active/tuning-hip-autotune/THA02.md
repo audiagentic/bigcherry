@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Harness exists; schema-2 real-hardware rebuild and evidence remain.
+Build and validate a real two-op fused MUL_MAT(_ID)+GLU correctness-evidence harness with deterministic routing and proof the fused signature executed.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Use HI118 fusion flags/geometry and real shared activation/ids tensor identities; fix/init deterministic expert-ID seeding; construct real two mul_mat_id outputs plus terminal GLU (no post-GLU scaling); emit existing digest/metric evidence; require observed signature digest/candidate resolution matches requested; cover remaining dense sibling and behavioral flag toggles; run fresh schema-2 Brutus 4-GPU correctness/record validation and genuine HI83 evidence before promotion.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The single-op mapper cannot represent fused GLU. Add a bespoke ggml C-API harness using exact gate geometry and pointer identity, supported SWIGLU/GEGLU/SWIGLU_OAI only, m==1 restriction, deterministic routing, and observation uniqueness. Preserve schema-2 fail-closed checks and do not certify numerics when dispatch fell back.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi119.md
+New fused-GLU evidence producer; hi80_generate_correctness_evidence.py integration; correctness_evidence.py shared hook only if needed; deterministic test-backend-ops seed coverage; schema/observation tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI105,HI108,HI118,HI80,HI83.
-
-Active dependencies: Frozen dependencies: HI105,HI108,HI118,HI80.
-
-Reference handling: Rewrite forward references (1); preserve historical references (5) on predecessor.
+Native/candidate output parity with max abs/NMSE; deterministic repeated routing; exact observed signature/candidate match; fresh schema-2 4-GPU hardware run; HI83-format validation record; full offline suite.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No promotion until real two-op graph correctness, deterministic IDs, signature execution proof, schema-2 provenance, and HI83 evidence all pass; preserve native fallback and fail closed on ambiguity.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi119
 - 2026-09-09T11:58:00.795562+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.270993+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:24:43.274489+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032455_repaired-two-tuning-successors_8434
+- 2026-09-10T03:24:55.054433+00:00 (updated-by): Updated: section:ledger-events
