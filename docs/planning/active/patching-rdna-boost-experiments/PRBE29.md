@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly records RD36 as still pending with no patch and as a high-value remaining candidate.
+Evaluate persistent F16 shadows of selected quantized dense weights, with PRBE30/31 dependent and strict VRAM/workload gating.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Recheck current loader/device-buffer seams and define eligible dense tensors; never shadow MoE expert weights by default.
+- Compare selected-tensor shadow against all-eligible shadow, with Qwen3.6-27B Q8_0 primary and Q4/Q6 economics controls.
+- Validate shadow dequant contents against reference, model output/PPL, model-load overhead and VRAM delta.
+- Measure PP across M/ubatch 64..4096 and TG/decode neutrality, plus VRAM-constrained and decode-only controls.
+- Expose explicit opt-in and promotion only where PP gain justifies memory; publish durable identity for PRBE30/31.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd36.md
+Model load/device buffer path; selective F16 shadow allocator; dequant/reference fixtures; VRAM/load/PP/TG campaign; PRBE30/31 dependency identity.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD37,RD38.
-
-Reference handling: Rewrite forward references (3); preserve historical references (0) on predecessor.
+Shadow contents; output/PPL; load overhead; VRAM; PP M/ubatch 64..4096; TG neutrality; decode/VRAM controls; selected-vs-all tensor arms.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (3); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Selective shadow; explicit resource accounting; no global default; dependency-aware promotion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A declared target workload shows repeatable PP gain that justifies VRAM/load cost; no global default and no MoE shadow explosion; otherwise retain negative evidence and leave dependents blocked.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd36
 - 2026-09-09T11:58:01.258047+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.995120+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:56:51.645822+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025719_dense-gemm-successors-prbe293_6872
+- 2026-09-10T02:57:19.678291+00:00 (updated-by): Updated: section:ledger-events

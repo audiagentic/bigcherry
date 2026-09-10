@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-K-pad F16-shadow aliasing work remains dependent on RD36 and retains unexecuted correctness/performance validation.
+Evaluate K-padding of the PRBE29 F16 shadow only for proven aliasing strides; dependent on PRBE29 and not an independent shadow implementation.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Require PRBE29 shadow identity and choose affected down_proj/other shapes by measured row-stride alias class.
+- Compare padding 0 vs one cache line (and only additional values if justified) against non-alias controls.
+- Validate F16 stride/consumer layout and GEMM output equivalence.
+- Measure GEMM/PP, shadow memory and load/working-set overhead; keep padding conditional on aliasing stride.
+- Do not combine with PRBE31 crossover in the causal arm unless explicitly declared.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd37.md
+PRBE29 shadow allocator/stride; conditional K-padding selector; affected-shape fixtures; alias/non-alias controls; GEMM/PP/memory evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: RD36.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Exact layout/output; aliasing and non-aliasing strides; padding boundary; GEMM/PP; memory/load overhead; PRBE29 prerequisite.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependency-aware; stride/layout correctness; conditional padding; causal isolation.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Padding is selected only for proven alias classes, preserves output and yields a repeatable net benefit after memory cost; otherwise retain unpadded shadow.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd37
 - 2026-09-09T11:58:01.261941+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.002185+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:56:58.392222+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025719_dense-gemm-successors-prbe293_6872
+- 2026-09-10T02:57:19.697607+00:00 (updated-by): Updated: section:ledger-events
