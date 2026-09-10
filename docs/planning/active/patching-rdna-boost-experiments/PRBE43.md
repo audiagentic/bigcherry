@@ -47,7 +47,7 @@ Preserve PRBE42 eligibility/fallback, deterministic state semantics, portable no
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Acceptance requires tensor/state parity against PRBE42, portable fallback outside supported RDNA geometry, and a repeatable >2% kernel gain with no end-to-end regression; otherwise keep the baseline reduction.
 
 ## Notes
 
@@ -72,3 +72,6 @@ Supersedes RD51. Depends on PRBE42 (AMD-GDN-001); this optimization must not be 
 - 2026-09-10T03:04:38.837182+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - chg_20260910_030451_carried-forward-the-detailed-s_2071
 - 2026-09-10T03:04:51.354035+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:06:05.470300+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260910_030619_removed-migration-placeholder_7703
+- 2026-09-10T03:06:19.348610+00:00 (updated-by): Updated: section:ledger-events

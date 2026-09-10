@@ -47,7 +47,7 @@ Preserve native-BF16/F32 accumulation guards, Q8_0 behavior, unsupported-hardwar
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Acceptance requires exact GEMV->activation->MUL layout proof, independent output parity across supported dtypes/shapes, no fusion for unsupported broadcast/alias forms, and repeatable launch/TG or memory improvement versus unfused control; otherwise retain fallback.
 
 ## Notes
 
@@ -72,3 +72,6 @@ Supersedes RD46. Depends on PRBE37 (AMD-FUS-001). Related fusion work must not b
 - 2026-09-10T03:02:34.325623+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - chg_20260910_030318_repaired-three-patching-succes_9681
 - 2026-09-10T03:03:18.963781+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:05:27.878265+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260910_030619_removed-migration-placeholder_7703
+- 2026-09-10T03:06:19.279192+00:00 (updated-by): Updated: section:ledger-events
