@@ -15,21 +15,15 @@ priority: P1
 
 ## Description
 
-CM1 shader/capability integration and build/static acceptance remain unchecked.
+Integrate PR #27952 CM1 shader generation and capability gating as an available-but-unselected Vulkan candidate with native fallback.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Add/register expected CM1 shader variants and host symbols; extend capability snapshot with integer CM support, tile/operand types, subgroup controls/ballot, shared memory, FP4, driver/ICD/device/toolchain identity; match host LDS accounting to shader; gate by capabilities without enum ordinals; test all 12 types/48 variants, q2_k absence, pipeline-failure and unsupported fallback.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+CM1 requires coupled shader, generator, host pipeline, Q8_1 preparation, quant paths, subgroup and shared-memory checks. Separate can_execute correctness/capability from selection policy; retain native when unavailable/disabled. Do not claim performance qualification until a real contract executor produces named checks.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rocm-vulkan-provider-ro20.md
+Four 1246 vendor files; TRBC02 capability types/snapshot; Vulkan audit/generator tests; existing capability tooling only.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD08.
-
-Active dependencies: Frozen dependencies: RE32.
-
-Reference handling: Rewrite forward references (4); preserve historical references (1) on predecessor.
+Build expected SPIR-V and host symbols; test q4_0/q4_1/q5_0/q5_1/q8_0/iq4_nl/mxfp4/q3_k/q4_k/q5_k/q6_k/nvfp4, q2_k absent; reject unsupported subgroup/LDS/FP4/driver/pipeline; check --full, sources, patch-lint, rebase and pristine Vulkan build.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+All expected variants compile/link, host/shader LDS agrees, unsupported capability is non-executable, native behavior is unchanged when disabled, no unchecked enum ordinal, and CM1 remains blocked from promotion until contract execution exists.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rocm-vulkan-provider-ro20
 - 2026-09-09T11:58:01.596999+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:47.462256+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:23:25.498614+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032340_repaired-the-cm1-source-and-in_5642
+- 2026-09-10T03:23:40.374809+00:00 (updated-by): Updated: section:ledger-events
