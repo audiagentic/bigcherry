@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Foundations landed but residual adoption and validation scope remains.
+Complete residual catalog metadata/provenance validation while keeping executable REQUIRES/CONFLICTS authoritative in patch modules.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Validate merged CatalogSnapshot has exactly one metadata source per registry module (packaged patch.toml or legacy catalog entry, never neither/both); validate plural metadata/plan IDs, backend/options against PatchContext, external-source links and retirement links; expose relationships through snapshot/CLI without duplicating authority.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Catalog metadata is descriptive and merged from packaged descriptors plus legacy catalog. patchset module constants remain executable dependency/conflict authority. Add canonical plan/backend/subsystem/hardware metadata checks and fail closed on dual authority or stale provenance.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-reusable-build-campaign-re40.md
+patch_catalog.py; patchset.py; external_sources.py; patches/catalog.toml; catalog/governance tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: CO01,HI73,RE47.
-
-Active dependencies: Frozen dependencies: RE42.
-
-Reference handling: Rewrite forward references (3); preserve historical references (3) on predecessor.
+1:1 merged metadata source tests, state/agreement and plural-field checks, backend/options applicability, external-source and retirement-link checks, CLI exposure.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Every module has exactly one metadata source, merged metadata is consistent and provenance/retirement links validate; no duplicate REQUIRES/CONFLICTS authority.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-reusable-build-campaign-re40
 - 2026-09-09T11:58:01.507395+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.379203+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:21:46.904522+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032208_repaired-the-reusable-build-ca_4665
+- 2026-09-10T03:22:08.386926+00:00 (updated-by): Updated: section:ledger-events
