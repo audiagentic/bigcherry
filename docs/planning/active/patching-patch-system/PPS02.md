@@ -40,7 +40,7 @@ tools/lab/planning-capability-rebaseline-v3/scripts/validate_semantic_carryforwa
 
 ## Validation
 
-Passes on a fixture set covering a fully repaired successor, a generic placeholder successor, a completed/reference-only predecessor, explicit obsolete/completed dispositions, and duplicate consolidation. Full source inventory has zero unclassified actionable clauses.
+Run validate_semantic_carryforward.py in report mode to enumerate generic steps, generic acceptance, and successor-specs placeholders; require zero findings after explicit carry-forward/disposition repairs. Validate fixtures for repaired successors, explicit exemptions, and terminal/reference-only predecessors before integrating with the structural validator.
 
 ## Effort & Risk
 
@@ -58,11 +58,17 @@ Every continuing successor has explicit semantic carry-forward/disposition cover
 
 Created in response to dev-GPT audit of planning-refactor@04bc4a8. This is a merge-blocking semantic preservation gate, not a request to move or delete predecessor history.
 
+Created in response to dev-GPT audit of planning-refactor@04bc4a8. Validator implementation started; current findings are intentionally fail-closed until the semantic sweep is complete. This is a merge-blocking semantic preservation gate, not a request to move or delete predecessor history.
+
 ## Change Log
 
 - 2026-09-10T02:09:30.604686+00:00 (created-by): Created by gpt-semantic-carry-forward-audit
 
 ## Ledger-events
 
+
 - chg_20260910_021313_the-semantic-audit-is-now-trac_4827
 - 2026-09-10T02:13:13.301450+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:18:31.560164+00:00 (updated-by): Updated: section:validation, section:notes
+- chg_20260910_021844_pps02-now-has-a-repeatable-val_2356
+- 2026-09-10T02:18:44.124290+00:00 (updated-by): Updated: section:ledger-events
